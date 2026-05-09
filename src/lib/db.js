@@ -321,12 +321,22 @@ export async function updateProfile(id, patch) {
 }
 
 export async function getMyProfile() {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { data: null, error: new Error('Not authenticated') };
+  console.log('[getMyProfile] starting...');
+  // Pake getSession() (read from cache) instead of getUser() (network call yang sering hang)
+  const { data: { session } } = await supabase.auth.getSession();
+  console.log('[getMyProfile] session:', session ? `user ${session.user.id}` : 'null');
+
+  if (!session?.user) {
+    return { data: null, error: new Error('Not authenticated') };
+  }
+
+  console.log('[getMyProfile] querying profile...');
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', user.id)
-    .single();
-  return { data, error };
+    .eq('id', session.user.id);
+  console.log('[getMyProfile] result:', data, 'err:', error);
+
+  if (error) return { data: null, error };
+  return { data: data?.[0] || null, error: null };
 }

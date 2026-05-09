@@ -4,13 +4,14 @@ import {
   Search, Download, Upload, Eye, Edit3, Trash2, X, Check,
   TrendingUp, Package, AlertTriangle, CheckCircle2, Filter,
   ChevronRight, Save, RefreshCw, Calendar, Building2, User,
-  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft
+  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
   LineChart, Line, AreaChart, Area
 } from 'recharts';
+import { useAuth } from './contexts/AuthContext';
 
 // ============================
 // PASTEL PALETTE
@@ -468,7 +469,8 @@ export default function StorbitManifest() {
   const [arData, setArData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeMenu, setActiveMenu] = useState('dashboard');
-  const [role, setRole] = useState('super');
+  const { role: authRole, profile, signOut } = useAuth();
+  const role = authRole || 'management';
   const [editingRow, setEditingRow] = useState(null);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editingAR, setEditingAR] = useState(null);
@@ -929,26 +931,37 @@ export default function StorbitManifest() {
             </div>
           </nav>
 
-          {/* Footer: Role + status */}
+          {/* Footer: User + logout */}
           <div className="px-4 py-4 border-t" style={{ borderColor: PASTEL.line }}>
-            <div className="text-[9px] uppercase tracking-[0.2em] font-semibold mb-2" style={{ color: PASTEL.inkMute }}>Acting as</div>
+            <div className="text-[9px] uppercase tracking-[0.2em] font-semibold mb-2" style={{ color: PASTEL.inkMute }}>Logged in as</div>
             <div className="rounded-2xl p-3" style={{ background: PASTEL.lineSoft }}>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-3">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: PASTEL.lavender }}>
                   <User size={13} style={{ color: PASTEL.lavenderDeep }}/>
                 </div>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="flex-1 bg-transparent text-xs font-semibold cursor-pointer focus:outline-none"
-                  style={{ color: PASTEL.ink }}
-                >
-                  {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                </select>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold truncate" style={{ color: PASTEL.ink }}>
+                    {profile?.full_name || 'User'}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wider" style={{ color: PASTEL.inkMute }}>
+                    {ROLES.find(r => r.id === role)?.label || role}
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 text-[10px]" style={{ color: PASTEL.inkSoft }}>
-                <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: PASTEL.mintDeep }}/>
-                Active session
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[10px]" style={{ color: PASTEL.inkSoft }}>
+                  <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: PASTEL.mintDeep }}/>
+                  Active
+                </div>
+                <button
+                  onClick={signOut}
+                  className="text-[10px] font-semibold flex items-center gap-1 hover:opacity-70 transition-opacity"
+                  style={{ color: PASTEL.roseDeep }}
+                  title="Logout"
+                >
+                  <LogOut size={11}/>
+                  Logout
+                </button>
               </div>
             </div>
           </div>
@@ -963,14 +976,15 @@ export default function StorbitManifest() {
               </div>
               <h1 className="font-display text-lg font-semibold">storbit</h1>
             </div>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="border rounded-full px-3 py-1.5 text-[11px] font-medium"
-              style={{ background: 'white', borderColor: PASTEL.line }}
+            <button
+              onClick={signOut}
+              className="border rounded-full px-3 py-1.5 text-[11px] font-medium flex items-center gap-1.5"
+              style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}
+              title={`${profile?.full_name || 'User'} · ${ROLES.find(r => r.id === role)?.label || role}`}
             >
-              {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
+              <LogOut size={11}/>
+              Logout
+            </button>
           </div>
           <nav className="px-3 pb-2 flex items-center gap-1 overflow-x-auto">
             {visibleMenus.map(m => {
