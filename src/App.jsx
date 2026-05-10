@@ -12,6 +12,7 @@ import {
   LineChart, Line, AreaChart, Area
 } from 'recharts';
 import { useAuth } from './contexts/AuthContext';
+import { useCustomers } from './hooks/useCustomers';
 
 // ============================
 // PASTEL PALETTE
@@ -465,7 +466,7 @@ const SEED_AR = [
 // ============================
 export default function StorbitManifest() {
   const [rows, setRows] = useState([]);
-  const [customers, setCustomers] = useState([]);
+  const { customers, saveCustomer: dbSaveCustomer, removeCustomer: dbRemoveCustomer } = useCustomers();
   const [arData, setArData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeMenu, setActiveMenu] = useState('dashboard');
@@ -500,9 +501,8 @@ export default function StorbitManifest() {
   useEffect(() => {
     (async () => {
       try {
-        const [rowsResult, custResult, arResult] = await Promise.all([
+        const [rowsResult, arResult] = await Promise.all([
           window.storage.get(STORAGE_KEY).catch(() => null),
-          window.storage.get(CUSTOMERS_KEY).catch(() => null),
           window.storage.get(AR_KEY).catch(() => null),
         ]);
 
@@ -513,13 +513,6 @@ export default function StorbitManifest() {
           await window.storage.set(STORAGE_KEY, JSON.stringify(SEED_DATA)).catch(()=>{});
         }
 
-        if (custResult && custResult.value) {
-          setCustomers(JSON.parse(custResult.value));
-        } else {
-          setCustomers(SEED_CUSTOMERS);
-          await window.storage.set(CUSTOMERS_KEY, JSON.stringify(SEED_CUSTOMERS)).catch(()=>{});
-        }
-
         if (arResult && arResult.value) {
           setArData(JSON.parse(arResult.value));
         } else {
@@ -528,7 +521,6 @@ export default function StorbitManifest() {
         }
       } catch (e) {
         setRows(SEED_DATA);
-        setCustomers(SEED_CUSTOMERS);
         setArData(SEED_AR);
       } finally {
         setLoading(false);
@@ -730,18 +722,15 @@ export default function StorbitManifest() {
   };
 
   const handleSaveCustomer = async (data) => {
-    let next;
-    if (data.id && customers.find(c => c.id === data.id)) {
-      next = customers.map(c => c.id === data.id ? { ...c, ...data } : c);
-      showToast('Customer berhasil diupdate ✨');
-    } else {
-      const newC = { ...data, id: data.id || `cust-${Date.now()}-${Math.random().toString(36).slice(2,5)}` };
-      next = [...customers, newC];
-      showToast('Customer berhasil ditambahkan ✨');
+    try {
+      const isUpdate = data.id && customers.find(c => c.id === data.id);
+      await dbSaveCustomer(data);
+      showToast(isUpdate ? 'Customer berhasil diupdate ✨' : 'Customer berhasil ditambahkan ✨');
+      setEditingCustomer(null);
+      setShowAddCustomer(false);
+    } catch (err) {
+      showToast('Gagal menyimpan customer: ' + (err.message || 'unknown error'), 'error');
     }
-    await persistCustomers(next);
-    setEditingCustomer(null);
-    setShowAddCustomer(false);
   };
 
   const handleDeleteCustomer = async (id) => {
@@ -753,8 +742,12 @@ export default function StorbitManifest() {
       return;
     }
     if (!confirm(`Yakin hapus customer "${cust.name}"?`)) return;
-    await persistCustomers(customers.filter(c => c.id !== id));
-    showToast('Customer dihapus');
+    try {
+      await dbRemoveCustomer(id);
+      showToast('Customer dihapus');
+    } catch (err) {
+      showToast('Gagal hapus customer: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleSaveAR = async (data) => {
