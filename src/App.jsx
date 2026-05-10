@@ -4,7 +4,7 @@ import {
   Search, Download, Upload, Eye, Edit3, Trash2, X, Check,
   TrendingUp, Package, AlertTriangle, CheckCircle2, Filter,
   ChevronRight, Save, RefreshCw, Calendar, Building2, User,
-  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut
+  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, ShieldCheck
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
@@ -15,6 +15,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
+import UserManagement from './components/UserManagement';
 
 // ============================
 // PASTEL PALETTE
@@ -821,6 +822,7 @@ export default function StorbitManifest() {
     { id: 'outstanding', label: 'Outstanding', icon: Clock, role: ['super','finance','management'] },
     { id: 'ar', label: 'AR Tracker', icon: Wallet, role: ['super','finance'] },
     { id: 'customers', label: 'Customers', icon: Building2, role: ['super'] },
+    { id: 'users', label: 'User Management', icon: ShieldCheck, role: ['super'] },
   ];
 
   const visibleMenus = menus.filter(m => !m.role || m.role.includes(role));
@@ -1081,6 +1083,9 @@ export default function StorbitManifest() {
               onView={(ttf) => setViewingAR(ttf)}
               role={role}
             />
+          )}
+          {activeMenu === 'users' && (
+            <UserManagement currentUserId={profile?.id || null} />
           )}
         </main>
       </div>
