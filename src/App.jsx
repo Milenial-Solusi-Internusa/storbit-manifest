@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { useAuth } from './contexts/AuthContext';
 import { useCustomers } from './hooks/useCustomers';
+import { useSpItems } from './hooks/useSpItems';
 
 // ============================
 // PASTEL PALETTE
@@ -465,8 +466,16 @@ const SEED_AR = [
 // Main App
 // ============================
 export default function StorbitManifest() {
-  const [rows, setRows] = useState([]);
   const { customers, saveCustomer: dbSaveCustomer, removeCustomer: dbRemoveCustomer } = useCustomers();
+  const {
+    rows,
+    saveRow: dbSaveRow,
+    removeRow: dbRemoveRow,
+    removeRowsBySp: dbRemoveRowsBySp,
+    bulkAdd: dbBulkAdd,
+    resetData: dbResetData,
+    clearAll: dbClearAll,
+  } = useSpItems({ customers });
   const [arData, setArData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeMenu, setActiveMenu] = useState('dashboard');
@@ -501,18 +510,7 @@ export default function StorbitManifest() {
   useEffect(() => {
     (async () => {
       try {
-        const [rowsResult, arResult] = await Promise.all([
-          window.storage.get(STORAGE_KEY).catch(() => null),
-          window.storage.get(AR_KEY).catch(() => null),
-        ]);
-
-        if (rowsResult && rowsResult.value) {
-          setRows(JSON.parse(rowsResult.value));
-        } else {
-          setRows(SEED_DATA);
-          await window.storage.set(STORAGE_KEY, JSON.stringify(SEED_DATA)).catch(()=>{});
-        }
-
+        const arResult = await window.storage.get(AR_KEY).catch(() => null);
         if (arResult && arResult.value) {
           setArData(JSON.parse(arResult.value));
         } else {
@@ -520,7 +518,6 @@ export default function StorbitManifest() {
           await window.storage.set(AR_KEY, JSON.stringify(SEED_AR)).catch(()=>{});
         }
       } catch (e) {
-        setRows(SEED_DATA);
         setArData(SEED_AR);
       } finally {
         setLoading(false);
@@ -683,42 +680,48 @@ export default function StorbitManifest() {
   // Handlers
   // ============================
   const handleSave = async (data) => {
-    let newRows;
-    if (data.id && rows.find(r => r.id === data.id)) {
-      newRows = rows.map(r => r.id === data.id ? { ...r, ...data } : r);
-      showToast('Data berhasil diupdate ✨');
-    } else {
-      const newRow = { ...data, id: data.id || `row-${Date.now()}-${Math.random().toString(36).slice(2,7)}` };
-      newRows = [newRow, ...rows];
-      showToast('Data berhasil ditambahkan ✨');
+    try {
+      const isUpdate = data.id && rows.find(r => r.id === data.id);
+      await dbSaveRow(data);
+      showToast(isUpdate ? 'Data berhasil diupdate ✨' : 'Data berhasil ditambahkan ✨');
+      setEditingRow(null);
+      setShipmentRow(null);
+      setFinanceRow(null);
+      setShowAdd(false);
+    } catch (err) {
+      showToast('Gagal menyimpan: ' + (err.message || 'unknown error'), 'error');
     }
-    await persist(newRows);
-    setEditingRow(null);
-    setShipmentRow(null);
-    setFinanceRow(null);
-    setShowAdd(false);
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Yakin hapus item ini?')) return;
-    const newRows = rows.filter(r => r.id !== id);
-    await persist(newRows);
-    showToast('Item dihapus');
+    try {
+      await dbRemoveRow(id);
+      showToast('Item dihapus');
+    } catch (err) {
+      showToast('Gagal hapus: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleDeleteSP = async (spNo) => {
     if (!confirm(`Yakin hapus seluruh SP ${spNo}? Semua item akan terhapus.`)) return;
-    const newRows = rows.filter(r => r.spNo !== spNo);
-    await persist(newRows);
-    setViewingSP(null);
-    showToast(`SP ${spNo} dihapus`);
+    try {
+      await dbRemoveRowsBySp(spNo);
+      setViewingSP(null);
+      showToast(`SP ${spNo} dihapus`);
+    } catch (err) {
+      showToast('Gagal hapus SP: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleImport = async (importedRows) => {
-    const withIds = importedRows.map(r => ({ ...r, id: `imp-${Date.now()}-${Math.random().toString(36).slice(2,7)}` }));
-    await persist([...withIds, ...rows]);
-    showToast(`${withIds.length} baris berhasil diimport`);
-    setShowImport(false);
+    try {
+      await dbBulkAdd(importedRows);
+      showToast(`${importedRows.length} baris berhasil diimport`);
+      setShowImport(false);
+    } catch (err) {
+      showToast('Gagal import: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleSaveCustomer = async (data) => {
@@ -775,15 +778,11 @@ export default function StorbitManifest() {
   };
 
   const handleResetData = async () => {
-    if (!confirm('Reset semua data ke contoh awal?')) return;
-    await persist(SEED_DATA);
-    showToast('Data direset ke contoh awal');
+    showToast('Reset data tidak tersedia di mode multi-user. Hubungi admin.', 'error');
   };
 
   const handleClearAll = async () => {
-    if (!confirm('Hapus SEMUA data? Tindakan ini tidak bisa dibatalkan.')) return;
-    await persist([]);
-    showToast('Semua data terhapus');
+    showToast('Clear all tidak tersedia di mode multi-user. Hubungi admin.', 'error');
   };
 
   const exportCSV = () => {
