@@ -14,6 +14,7 @@ import {
 import { useAuth } from './contexts/AuthContext';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
+import { useTtfs } from './hooks/useTtfs';
 
 // ============================
 // PASTEL PALETTE
@@ -476,7 +477,7 @@ export default function StorbitManifest() {
     resetData: dbResetData,
     clearAll: dbClearAll,
   } = useSpItems({ customers });
-  const [arData, setArData] = useState([]);
+  const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
   const [loading, setLoading] = useState(true);
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const { role: authRole, profile, signOut } = useAuth();
@@ -508,21 +509,8 @@ export default function StorbitManifest() {
   const [arSearch, setArSearch] = useState('');
 
   useEffect(() => {
-    (async () => {
-      try {
-        const arResult = await window.storage.get(AR_KEY).catch(() => null);
-        if (arResult && arResult.value) {
-          setArData(JSON.parse(arResult.value));
-        } else {
-          setArData(SEED_AR);
-          await window.storage.set(AR_KEY, JSON.stringify(SEED_AR)).catch(()=>{});
-        }
-      } catch (e) {
-        setArData(SEED_AR);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    // Semua data load udah di-handle hooks (useCustomers, useSpItems, useTtfs)
+    setLoading(false);
   }, []);
 
   const persist = async (newRows) => {
@@ -754,27 +742,28 @@ export default function StorbitManifest() {
   };
 
   const handleSaveAR = async (data) => {
-    let next;
-    if (data.id && arData.find(a => a.id === data.id)) {
-      next = arData.map(a => a.id === data.id ? { ...a, ...data } : a);
-      showToast('AR data berhasil diupdate ✨');
-    } else {
-      const newAR = { ...data, id: data.id || `ar-${Date.now()}-${Math.random().toString(36).slice(2,5)}` };
-      next = [newAR, ...arData];
-      showToast('AR data berhasil ditambahkan ✨');
+    try {
+      const isUpdate = data.id && arData.find(a => a.id === data.id);
+      await dbSaveTtf(data);
+      showToast(isUpdate ? 'AR data berhasil diupdate ✨' : 'AR data berhasil ditambahkan ✨');
+      setEditingAR(null);
+      setShowAddAR(false);
+    } catch (err) {
+      showToast('Gagal menyimpan AR: ' + (err.message || 'unknown error'), 'error');
     }
-    await persistAR(next);
-    setEditingAR(null);
-    setShowAddAR(false);
   };
 
   const handleDeleteAR = async (id) => {
     const ttf = arData.find(a => a.id === id);
     if (!ttf) return;
     if (!confirm(`Yakin hapus TTF ${ttf.noTTF}? Beserta ${ttf.btbs?.length || 0} BTB items.`)) return;
-    await persistAR(arData.filter(a => a.id !== id));
-    setViewingAR(null);
-    showToast('TTF dihapus');
+    try {
+      await dbRemoveTtf(id);
+      setViewingAR(null);
+      showToast('TTF dihapus');
+    } catch (err) {
+      showToast('Gagal hapus TTF: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleResetData = async () => {

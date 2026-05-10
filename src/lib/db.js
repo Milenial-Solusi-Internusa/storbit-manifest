@@ -101,11 +101,11 @@ export function ttfFromDb(row) {
   if (!row) return null;
   return {
     id: row.id,
-    noTtf: row.no_ttf || '',
-    tanggalTtf: row.tanggal_ttf || '',
+    noTTF: row.no_ttf || '',
+    tanggalTTF: row.tanggal_ttf || '',
     tanggalMenerima: row.tanggal_menerima || '',
-    noInv: row.no_inv || '',
-    noSp: row.no_sp || '',
+    noINV: row.no_inv || '',
+    noSP: row.no_sp || '',
     customerId: row.customer_id || null,
     customer: row.customers?.name || '',
     tglPembayaran: row.tgl_pembayaran || '',
@@ -114,7 +114,7 @@ export function ttfFromDb(row) {
       .sort((a, b) => (a.position || 0) - (b.position || 0))
       .map((b) => ({
         id: b.id,
-        noBtb: b.no_btb || '',
+        noBTB: b.no_btb || '',
         dppPpn: Number(b.dpp_ppn ?? 0),
         pph: Number(b.pph ?? 0),
         payment: Number(b.payment ?? 0),
@@ -125,11 +125,11 @@ export function ttfFromDb(row) {
 export function ttfToDb(t) {
   const d = (v) => (v === '' || v == null ? null : v);
   return {
-    no_ttf: t.noTtf || '',
-    tanggal_ttf: d(t.tanggalTtf),
+    no_ttf: t.noTTF || '',
+    tanggal_ttf: d(t.tanggalTTF),
     tanggal_menerima: d(t.tanggalMenerima),
-    no_inv: t.noInv || '',
-    no_sp: t.noSp || '',
+    no_inv: t.noINV || '',
+    no_sp: t.noSP || '',
     customer_id: t.customerId || null,
     tgl_pembayaran: d(t.tglPembayaran),
     notes: t.notes || '',
@@ -240,7 +240,7 @@ export async function insertTtf(t) {
   // Insert btbs
   const btbPayload = (t.btbs || []).map((b, idx) => ({
     ttf_id: header.id,
-    no_btb: b.noBtb || '',
+    no_btb: b.noBTB || '',
     dpp_ppn: Number(b.dppPpn) || 0,
     pph: Number(b.pph) || 0,
     payment: Number(b.payment) || 0,
@@ -274,7 +274,7 @@ export async function updateTtf(id, t) {
 
   const btbPayload = (t.btbs || []).map((b, idx) => ({
     ttf_id: id,
-    no_btb: b.noBtb || '',
+    no_btb: b.noBTB || '',
     dpp_ppn: Number(b.dppPpn) || 0,
     pph: Number(b.pph) || 0,
     payment: Number(b.payment) || 0,
