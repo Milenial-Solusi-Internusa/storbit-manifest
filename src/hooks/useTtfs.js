@@ -38,8 +38,17 @@ export function useTtfs({ customers = [] } = {}) {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    listTtfs().then(({ data, error: err }) => {
+      if (err) {
+        console.error('[useTtfs] list error:', err);
+        setError(err);
+      } else {
+        setError(null);
+        setArData(data || []);
+      }
+      setLoading(false);
+    });
+  }, []);
 
   const saveTtf = useCallback(
     async (data) => {

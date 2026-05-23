@@ -24,8 +24,17 @@ export function useCustomers() {
 
   // Initial load
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    listCustomers().then(({ data, error: err }) => {
+      if (err) {
+        console.error('[useCustomers] list error:', err);
+        setError(err);
+      } else {
+        setError(null);
+        setCustomers(data || []);
+      }
+      setLoading(false);
+    });
+  }, []);
 
   // Add or update — DB returns row with real UUID, kita merge ke state
   const saveCustomer = useCallback(async (data) => {

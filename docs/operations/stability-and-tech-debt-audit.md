@@ -1,8 +1,8 @@
 # Nexus by MSI — Stability & Technical Debt Audit
 
-**Phase:** 0.5A — Audit Only (no source code changes)
-**Date:** 2026-05-23
-**Branch:** `docs/nexus-erp-foundation`
+**Phase:** 0.5D — Lint Baseline Cleanup (complete)
+**Date:** 2026-05-24
+**Branch:** `phase-5-supabase`
 **Author:** Claude (session handoff)
 
 ---
@@ -28,9 +28,10 @@
 | 0.5D Step 3 | Lint Baseline Cleanup — Unused Params | ✅ Complete |
 | 0.5D Step 4 | Lint Baseline Cleanup — Useless Assignment | ✅ Complete |
 | 0.5D Step 5 | Lint Baseline Cleanup — Purity & Fast-Refresh | ✅ Complete |
+| **0.5D Step 6** | **Lint Baseline Cleanup — setState-in-effect** | ✅ **Complete** |
 | 1.0 | Master Data Foundation | Planned |
 
-**GitHub push status:** Commits exist locally on `docs/nexus-erp-foundation`. Branch has NOT been pushed to remote (network issue in prior session). Push required before any PR or deploy.
+**GitHub push status:** Current work is on branch `phase-5-supabase`. Phase 0.5D Step 6 changes are committed locally. Push required before any PR or deploy.
 
 ---
 
@@ -69,8 +70,9 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 **Result (after Phase 0.5D Step 3):** ❌ FAIL — **10 errors, 0 warnings** (−2 errors)
 **Result (after Phase 0.5D Step 4):** ❌ FAIL — **8 errors, 0 warnings** (−2 errors)
 **Result (after Phase 0.5D Step 5):** ❌ FAIL — **6 errors, 0 warnings** (−2 errors)
+**Result (after Phase 0.5D Step 6):** ✅ PASS — **0 errors, 0 warnings** (−6 errors)
 
-> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope (−4). Phase 0.5D Step 3 removed unused `label` and `dcList` parameters (−2). Phase 0.5D Step 4 removed redundant `else` branches in `calcRow` and `enrichTTF` (−2). Phase 0.5D Step 5 fixed `Date.now()` purity via lazy `useState` initializer and split `useAuth` out of `AuthContext.jsx` to fix fast-refresh (−2).
+> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope (−4). Phase 0.5D Step 3 removed unused `label` and `dcList` parameters (−2). Phase 0.5D Step 4 removed redundant `else` branches in `calcRow` and `enrichTTF` (−2). Phase 0.5D Step 5 fixed `Date.now()` purity via lazy `useState` initializer and split `useAuth` out of `AuthContext.jsx` to fix fast-refresh (−2). Phase 0.5D Step 6 replaced all `useEffect(() => { asyncFn() })` patterns with inline `.then()` chains using raw DB functions — `eslint-plugin-react-hooks@7.1.1` traces callgraphs so any function containing `setState` cannot be called from `useEffect`; the `.then()` pattern is safe because DB functions contain no `setState` (−6).
 
 ---
 
@@ -131,12 +133,19 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
 | **Total** | **8** | | |
 
-### After Phase 0.5D Step 5 (current)
+### After Phase 0.5D Step 5
 
 | ESLint Rule | Count | Severity | Description |
 |-------------|-------|----------|-------------|
 | `react-hooks/set-state-in-effect` | 6 | High | `setState` in `useEffect` — App.jsx (×1), UserManagement.jsx (×2), useCustomers.js (×1), useSpItems.js (×1), useTtfs.js (×1) |
 | **Total** | **6** | | |
+
+### After Phase 0.5D Step 6 (current) ✅
+
+| ESLint Rule | Count | Severity | Description |
+|-------------|-------|----------|-------------|
+| — | 0 | — | No remaining lint errors |
+| **Total** | **0** | | |
 
 ---
 
@@ -205,7 +214,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
 | **Total** | **8** | |
 
-### After Phase 0.5D Step 5 (current)
+### After Phase 0.5D Step 5
 
 | File | Error Count | Remaining Issues |
 |------|-------------|-----------------|
@@ -215,6 +224,17 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/hooks/useSpItems.js` | 1 | setState-in-effect |
 | `src/hooks/useTtfs.js` | 1 | setState-in-effect |
 | **Total** | **6** | |
+
+### After Phase 0.5D Step 6 (current) ✅
+
+| File | Error Count | Fix Applied |
+|------|-------------|-------------|
+| `src/App.jsx` | 0 | Removed `useEffect(() => setLoading(false))` — `loading` replaced with `const loading = false` |
+| `src/components/UserManagement.jsx` | 0 | Replaced `useEffect(() => load())` with inline `.then()` chain; removed `setDraft` effect from `EditableName`, used `key` prop remount instead |
+| `src/hooks/useCustomers.js` | 0 | Replaced `useEffect(() => refresh())` with inline `listCustomers().then(...)` |
+| `src/hooks/useSpItems.js` | 0 | Replaced `useEffect(() => refresh())` with inline `listSpItems().then(...)` |
+| `src/hooks/useTtfs.js` | 0 | Replaced `useEffect(() => refresh())` with inline `listTtfs().then(...)` |
+| **Total** | **0** | |
 
 ### Detailed Error List — src/App.jsx (29 errors)
 
@@ -709,7 +729,7 @@ Complete this checklist before any GitHub push or deploy. Run in a browser with 
 
 ## 12. What Must Not Be Changed Before GitHub Push
 
-The following items are blocking concerns. Resolve these before pushing `docs/nexus-erp-foundation` to remote:
+The following items are blocking concerns. Resolve these before pushing `phase-5-supabase` to remote:
 
 ### Required Before Push
 

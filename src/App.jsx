@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import { useState, useMemo, Suspense, lazy } from 'react';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
   Search, Download, Upload, Eye, Edit3, Trash2, X,
@@ -242,7 +242,7 @@ export default function StorbitManifest() {
     bulkAdd: dbBulkAdd,
   } = useSpItems({ customers });
   const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
-  const [loading, setLoading] = useState(true);
+  const loading = false;
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const { role: authRole, profile, signOut } = useAuth();
   const role = authRole || 'management';
@@ -272,10 +272,6 @@ export default function StorbitManifest() {
   const [arFilterStatus, setArFilterStatus] = useState('all');
   const [arSearch, setArSearch] = useState('');
 
-  useEffect(() => {
-    // Semua data load udah di-handle hooks (useCustomers, useSpItems, useTtfs)
-    setLoading(false);
-  }, []);
 
 
   const showToast = (msg, type = 'success') => {
