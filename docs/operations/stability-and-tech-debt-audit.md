@@ -25,6 +25,7 @@
 | 0.5C | ErrorBoundary Baseline | ✅ Complete |
 | 0.5D Step 1 | Lint Baseline Cleanup — Dead Code | ✅ Complete |
 | 0.5D Step 2 | Lint Baseline Cleanup — SortIcon | ✅ Complete |
+| 0.5D Step 3 | Lint Baseline Cleanup — Unused Params | ✅ Complete |
 | 1.0 | Master Data Foundation | Planned |
 
 **GitHub push status:** Commits exist locally on `docs/nexus-erp-foundation`. Branch has NOT been pushed to remote (network issue in prior session). Push required before any PR or deploy.
@@ -63,8 +64,9 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 **Result (at Phase 0.5A audit time):** ❌ FAIL — **42 errors, 0 warnings**
 **Result (after Phase 0.5D Step 1):** ❌ FAIL — **16 errors, 0 warnings** (−26 errors)
 **Result (after Phase 0.5D Step 2):** ❌ FAIL — **12 errors, 0 warnings** (−4 errors)
+**Result (after Phase 0.5D Step 3):** ❌ FAIL — **10 errors, 0 warnings** (−2 errors)
 
-> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope, removing the 4 `react-hooks/static-components` errors.
+> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope, removing the 4 `react-hooks/static-components` errors. Phase 0.5D Step 3 removed unused `label` and `dcList` parameters from `FilterPill` and `CustomersPage`.
 
 ---
 
@@ -95,7 +97,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
 | **Total** | **16** | | |
 
-### After Phase 0.5D Step 2 (current)
+### After Phase 0.5D Step 2
 
 | ESLint Rule | Count | Severity | Description |
 |-------------|-------|----------|-------------|
@@ -105,6 +107,16 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-hooks/purity` | 1 | Medium | `Date.now()` called in `useState` initializer inside `ARModal` |
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
 | **Total** | **12** | | |
+
+### After Phase 0.5D Step 3 (current)
+
+| ESLint Rule | Count | Severity | Description |
+|-------------|-------|----------|-------------|
+| `react-hooks/set-state-in-effect` | 6 | High | `setState` in `useEffect` — App.jsx (×1), UserManagement.jsx (×2), useCustomers.js (×1), useSpItems.js (×1), useTtfs.js (×1) |
+| `no-useless-assignment` | 2 | Low | `status` initial assignment overwritten immediately in enrichItem / enrichTTF |
+| `react-hooks/purity` | 1 | Medium | `Date.now()` called in `useState` initializer inside `ARModal` |
+| `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
+| **Total** | **10** | | |
 
 ---
 
@@ -137,7 +149,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
 | **Total** | **16** | |
 
-### After Phase 0.5D Step 2 (current)
+### After Phase 0.5D Step 2
 
 | File | Error Count | Remaining Issues |
 |------|-------------|-----------------|
@@ -148,6 +160,18 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/hooks/useTtfs.js` | 1 | setState-in-effect |
 | `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
 | **Total** | **12** | |
+
+### After Phase 0.5D Step 3 (current)
+
+| File | Error Count | Remaining Issues |
+|------|-------------|-----------------|
+| `src/App.jsx` | 4 | setState-in-effect (×1), status (×2), Date.now() (×1) |
+| `src/components/UserManagement.jsx` | 2 | setState-in-effect (×2) |
+| `src/hooks/useCustomers.js` | 1 | setState-in-effect |
+| `src/hooks/useSpItems.js` | 1 | setState-in-effect |
+| `src/hooks/useTtfs.js` | 1 | setState-in-effect |
+| `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
+| **Total** | **10** | |
 
 ### Detailed Error List — src/App.jsx (29 errors)
 
@@ -691,7 +715,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Category | Finding |
 |----------|---------|
 | Build | ✅ PASS — clean, no warnings |
-| Lint | ❌ 12 errors (all pre-existing deferred patterns — set-state-in-effect ×6, no-unused-vars ×2, no-useless-assignment ×2, purity ×1, refresh ×1) |
+| Lint | ❌ 10 errors (all pre-existing deferred patterns — set-state-in-effect ×6, no-useless-assignment ×2, purity ×1, refresh ×1) |
 | ErrorBoundary | 🟡 Partial — Dashboard + User Management lazy sections protected |
 | Pagination | ❌ Missing — all queries fetch all rows |
 | Soft Delete | ❌ Missing — hard DELETE on all business data |
@@ -703,7 +727,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Lazy loading | ✅ Dashboard + UserManagement deferred |
 | Vendor chunk split | ✅ Parallel-cacheable chunks |
 
-**Next recommended step:** Review and commit Phase 0.5D Steps 1 & 2, then plan Phase 0.5D Step 3 scope for remaining deferred errors (set-state-in-effect, no-unused-vars, purity, refresh).
+**Next recommended step:** Review and commit Phase 0.5D Steps 1–3, then plan Phase 0.5D Step 4 scope for remaining deferred errors (set-state-in-effect ×6, no-useless-assignment ×2, purity ×1, refresh ×1).
 
 ---
 
@@ -732,3 +756,28 @@ Verification after Phase 0.5D Step 2:
 - `npm run lint` ❌ FAIL — **12 errors, 0 warnings** (down from 16 — exactly −4 static-components errors)
 
 Risk level: **Low** — structural correctness fix only, zero behavior change.
+
+---
+
+## Phase 0.5D Step 3 Completion Note
+
+**Date:** 2026-05-24
+**Scope:** Remove unused `label` and `dcList` parameters (`no-unused-vars`)
+
+Phase 0.5D Step 3 removed two unused function parameters that the linter flagged as `no-unused-vars`. These were component signature parameters that were destructured but never referenced inside the component body.
+
+Changes made to `src/App.jsx`:
+- `FilterPill`: removed `label` from parameter destructure — `{ label, value, onChange, options }` → `{ value, onChange, options }`. The `label` prop was never rendered in the JSX body (the component renders a bare `<select>`, no visible label). All 3 call sites (lines 1050, 1056, 2394) continue passing `label=` unchanged — React silently ignores extra props on function components.
+- `CustomersPage`: removed `dcList` from parameter destructure — `{ customers, rows, dcList, onAdd, onEdit, onDelete, role }` → `{ customers, rows, onAdd, onEdit, onDelete, role }`. `dcList` was never referenced inside `CustomersPage`. The top-level `dcList` variable (computed at App scope via `useMemo`) remains in use: it is still passed to `Manifest` (used at line 1058 for the DC filter options) and `CustomerModal` (used at line 2232 for the DC datalist). The call site at line 822 (`dcList={dcList}`) is unchanged.
+
+No changes to:
+- Any call site JSX
+- `dcList` top-level useMemo computation (still needed by Manifest and CustomerModal)
+- Any component visual output or behavior
+- Auth, RLS, schema, Supabase config, dependencies, deployment
+
+Verification after Phase 0.5D Step 3:
+- `npm run build` ✅ PASS — 2341 modules transformed, no errors, no warnings
+- `npm run lint` ❌ FAIL — **10 errors, 0 warnings** (down from 12 — exactly −2 `no-unused-vars` errors)
+
+Risk level: **Low** — parameter removal only, zero behavior change.
