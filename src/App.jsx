@@ -1159,7 +1159,7 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
   );
 }
 
-function FilterPill({ label, value, onChange, options }) {
+function FilterPill({ value, onChange, options }) {
   return (
     <select
       value={value}
@@ -2097,7 +2097,7 @@ function ImportModal({ onClose, onImport }) {
 // ============================
 // Customers Page
 // ============================
-function CustomersPage({ customers, rows, dcList, onAdd, onEdit, onDelete, role }) {
+function CustomersPage({ customers, rows, onAdd, onEdit, onDelete, role }) {
   const usageCount = (custName) => rows.filter(r => r.customer === custName).length;
 
   return (
