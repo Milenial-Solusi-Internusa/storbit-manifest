@@ -1,9 +1,9 @@
 # Bundle Size Audit — Nexus by MSI
 
 **Date:** 2026-05-23
-**Phase:** 0.4A — Bundle Size Warning Audit | 0.4B Step 1 — Vendor Chunk Split ✅
+**Phase:** 0.4A — Bundle Size Warning Audit | 0.4B Steps 1–3A ✅
 **Author:** Claude
-**Status:** Phase 0.4B Step 1 complete. 500 kB warning resolved. See Section 13 for results.
+**Status:** Phase 0.4B Step 3A complete. Dashboard extracted. Ready for Step 3B (React.lazy). See Section 15 for latest results.
 
 ---
 
@@ -650,3 +650,96 @@ dist/assets/vendor-recharts-BK9OrOl0.js   386.98 kB │ gzip: 110.99 kB
 ### Files Changed in Step 2
 - `src/App.jsx` — 3 targeted edits (import line, lazy declaration, Suspense wrapper)
 - `docs/performance/bundle-size-audit.md` — updated to record Step 2 results
+
+---
+
+## 15. Phase 0.4B Step 3A — Actual Results (2026-05-23)
+
+### What Changed
+
+`Dashboard` component and its exclusive sub-components extracted from `src/App.jsx` into `src/modules/dashboard/Dashboard.jsx`. Dashboard is still **statically imported** in this step — no lazy loading yet.
+
+**Files created:**
+- `src/modules/dashboard/Dashboard.jsx` — self-contained module (~300 lines)
+
+**Files modified:**
+- `src/App.jsx` — removed recharts import block, added static `import Dashboard from './modules/dashboard/Dashboard'`, removed `function Dashboard(...)`, `function FinancialCard(...)`, `function AlertCard(...)`, `function ChartCard(...)`, `function EmptyChart(...)`, `function CustomTooltip(...)`. Also removed `Check` and `TrendingUp` from lucide import (were only used by extracted components).
+
+**Kept in App.jsx:** `KPICard`, `StatusBadge` (used by FinancePage, ARTrackerPage, Manifest, SPSidePanel, ShipmentPage — deduplication deferred to Phase 0.5).
+
+### Key Design Decision — Self-Contained Dashboard.jsx
+
+`Dashboard.jsx` does **not** import from `App.jsx`. It contains local copies of:
+- `PASTEL` color tokens
+- `formatRupiah`, `formatRupiahShort`, `formatNumber`, `formatDateID`, `monthLabel`
+- `KPICard`, `StatusBadge`
+
+This is intentional. If `Dashboard.jsx` imported from `App.jsx`, then `React.lazy(() => import('./modules/dashboard/Dashboard'))` in Step 3B would create a circular dependency and break the bundle. Self-containment is the prerequisite for Step 3B.
+
+The duplicate copies of `KPICard`, `StatusBadge`, PASTEL, and formatters will be extracted to shared files in Phase 0.5.
+
+### Build Result After Step 3A
+
+```
+$ npm run build
+
+> storbit-manifest@0.0.0 build
+> vite build
+
+vite v8.0.11 building client environment for production...
+✓ 2340 modules transformed.
+
+dist/index.html                             0.89 kB │ gzip:   0.40 kB
+dist/assets/index-Dtb_zCIb.css             16.48 kB │ gzip:   4.21 kB
+dist/assets/rolldown-runtime-S-ySWqyJ.js    0.69 kB │ gzip:   0.42 kB
+dist/assets/UserManagement-D7UmdP7A.js      8.86 kB │ gzip:   2.97 kB
+dist/assets/vendor-lucide-LJsMC_yj.js       9.26 kB │ gzip:   3.60 kB
+dist/assets/index-DByPstR4.js             136.69 kB │ gzip:  28.85 kB
+dist/assets/vendor-react-YvL5Yovn.js      189.64 kB │ gzip:  59.65 kB
+dist/assets/vendor-supabase-CDoftGUu.js   196.30 kB │ gzip:  50.02 kB
+dist/assets/vendor-recharts-DGGvIi-s.js   386.98 kB │ gzip: 110.99 kB
+
+✓ built in 596ms
+```
+
+**No warnings. Build PASS. ✅**
+
+### Before vs After Comparison (Step 2 → Step 3A)
+
+| Metric | After Step 2 | After Step 3A |
+|--------|-------------|---------------|
+| JS chunks | 8 | 8 (unchanged — Dashboard still static) |
+| Warning | ✅ None | ✅ None |
+| Modules transformed | 2339 | 2340 (+1 — new Dashboard.jsx module) |
+| Largest chunk | 386.98 kB (`vendor-recharts`) | 386.98 kB (`vendor-recharts`) |
+| App code chunk (`index`) | 134.44 kB | 136.69 kB (+2.25 kB — Dashboard.jsx local copies) |
+| Recharts loaded | At startup | At startup (no change — static import) |
+| `vendor-recharts` hash | `BK9OrOl0` | `DGGvIi-s` (changed — import graph moved) |
+
+### Key Observations
+
+- **Chunk count unchanged** — Dashboard is still statically imported, so it remains in the `index` bundle. No new split chunk appears. This is expected for Step 3A.
+- **Index chunk slightly larger** (+2.25 kB raw) — Dashboard.jsx has local copies of PASTEL, formatters, KPICard, StatusBadge. These overlap with App.jsx. The duplication is ~2 kB and is intentional — it will be resolved in Phase 0.5 when shared utilities are extracted.
+- **`vendor-recharts` hash changed** — Moving the recharts import from `App.jsx` to `Dashboard.jsx` altered the module dependency graph slightly, causing Rolldown to re-hash the vendor chunk. Content is identical; this is a one-time cache bust on first deploy.
+- **Recharts still loads at startup** — This will be resolved in Step 3B when `React.lazy()` is applied to the Dashboard import. That is the step that actually defers the 110.99 kB recharts chunk.
+
+### Lint Verification
+
+`npm run lint` — 43 pre-existing errors. **No new errors.** Count unchanged.
+
+Note: During extraction, `Check` and `TrendingUp` lucide icons became unused in `App.jsx` (they were only used by the extracted Dashboard sub-components). These were removed from the import — correctly reducing the count back to baseline.
+
+### Files Changed in Step 3A
+
+- `src/modules/dashboard/Dashboard.jsx` — **created** (~300 lines, self-contained)
+- `src/App.jsx` — recharts imports removed, Dashboard static import added, 6 Dashboard sub-components removed, 2 unused lucide icons removed
+- `docs/performance/bundle-size-audit.md` — updated to record Step 3A results
+
+### Next Step: Step 3B — Apply React.lazy() to Dashboard
+
+Step 3B is the **high-impact** step:
+- Change `import Dashboard from './modules/dashboard/Dashboard'` to `const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'))`
+- Wrap `{activeMenu === 'dashboard' && <Dashboard ... />}` in `<Suspense>`
+- Expected result: `vendor-recharts` (110.99 kB gzipped) is **no longer downloaded at startup** — only when the user first visits the Dashboard page
+- App code chunk should shrink ~50–80 kB (Dashboard.jsx code also deferred)
+- Users who never visit the Dashboard page pay zero cost for Recharts
