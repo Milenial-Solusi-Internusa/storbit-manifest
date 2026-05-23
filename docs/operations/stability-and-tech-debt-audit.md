@@ -26,6 +26,7 @@
 | 0.5D Step 1 | Lint Baseline Cleanup — Dead Code | ✅ Complete |
 | 0.5D Step 2 | Lint Baseline Cleanup — SortIcon | ✅ Complete |
 | 0.5D Step 3 | Lint Baseline Cleanup — Unused Params | ✅ Complete |
+| 0.5D Step 4 | Lint Baseline Cleanup — Useless Assignment | ✅ Complete |
 | 1.0 | Master Data Foundation | Planned |
 
 **GitHub push status:** Commits exist locally on `docs/nexus-erp-foundation`. Branch has NOT been pushed to remote (network issue in prior session). Push required before any PR or deploy.
@@ -65,8 +66,9 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 **Result (after Phase 0.5D Step 1):** ❌ FAIL — **16 errors, 0 warnings** (−26 errors)
 **Result (after Phase 0.5D Step 2):** ❌ FAIL — **12 errors, 0 warnings** (−4 errors)
 **Result (after Phase 0.5D Step 3):** ❌ FAIL — **10 errors, 0 warnings** (−2 errors)
+**Result (after Phase 0.5D Step 4):** ❌ FAIL — **8 errors, 0 warnings** (−2 errors)
 
-> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope, removing the 4 `react-hooks/static-components` errors. Phase 0.5D Step 3 removed unused `label` and `dcList` parameters from `FilterPill` and `CustomersPage`.
+> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope (−4). Phase 0.5D Step 3 removed unused `label` and `dcList` parameters (−2). Phase 0.5D Step 4 removed redundant `else` branches in `calcRow` and `enrichTTF` (−2).
 
 ---
 
@@ -108,7 +110,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
 | **Total** | **12** | | |
 
-### After Phase 0.5D Step 3 (current)
+### After Phase 0.5D Step 3
 
 | ESLint Rule | Count | Severity | Description |
 |-------------|-------|----------|-------------|
@@ -117,6 +119,15 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-hooks/purity` | 1 | Medium | `Date.now()` called in `useState` initializer inside `ARModal` |
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
 | **Total** | **10** | | |
+
+### After Phase 0.5D Step 4 (current)
+
+| ESLint Rule | Count | Severity | Description |
+|-------------|-------|----------|-------------|
+| `react-hooks/set-state-in-effect` | 6 | High | `setState` in `useEffect` — App.jsx (×1), UserManagement.jsx (×2), useCustomers.js (×1), useSpItems.js (×1), useTtfs.js (×1) |
+| `react-hooks/purity` | 1 | Medium | `Date.now()` called in `useState` initializer inside `ARModal` |
+| `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
+| **Total** | **8** | | |
 
 ---
 
@@ -161,7 +172,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
 | **Total** | **12** | |
 
-### After Phase 0.5D Step 3 (current)
+### After Phase 0.5D Step 3
 
 | File | Error Count | Remaining Issues |
 |------|-------------|-----------------|
@@ -172,6 +183,18 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/hooks/useTtfs.js` | 1 | setState-in-effect |
 | `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
 | **Total** | **10** | |
+
+### After Phase 0.5D Step 4 (current)
+
+| File | Error Count | Remaining Issues |
+|------|-------------|-----------------|
+| `src/App.jsx` | 2 | setState-in-effect (×1), Date.now() (×1) |
+| `src/components/UserManagement.jsx` | 2 | setState-in-effect (×2) |
+| `src/hooks/useCustomers.js` | 1 | setState-in-effect |
+| `src/hooks/useSpItems.js` | 1 | setState-in-effect |
+| `src/hooks/useTtfs.js` | 1 | setState-in-effect |
+| `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
+| **Total** | **8** | |
 
 ### Detailed Error List — src/App.jsx (29 errors)
 
@@ -715,7 +738,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Category | Finding |
 |----------|---------|
 | Build | ✅ PASS — clean, no warnings |
-| Lint | ❌ 10 errors (all pre-existing deferred patterns — set-state-in-effect ×6, no-useless-assignment ×2, purity ×1, refresh ×1) |
+| Lint | ❌ 8 errors (all pre-existing deferred patterns — set-state-in-effect ×6, purity ×1, refresh ×1) |
 | ErrorBoundary | 🟡 Partial — Dashboard + User Management lazy sections protected |
 | Pagination | ❌ Missing — all queries fetch all rows |
 | Soft Delete | ❌ Missing — hard DELETE on all business data |
@@ -727,7 +750,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Lazy loading | ✅ Dashboard + UserManagement deferred |
 | Vendor chunk split | ✅ Parallel-cacheable chunks |
 
-**Next recommended step:** Review and commit Phase 0.5D Steps 1–3, then plan Phase 0.5D Step 4 scope for remaining deferred errors (set-state-in-effect ×6, no-useless-assignment ×2, purity ×1, refresh ×1).
+**Next recommended step:** Review and commit Phase 0.5D Steps 1–4, then plan Phase 0.5D Step 5 scope for remaining deferred errors (set-state-in-effect ×6, purity ×1, refresh ×1).
 
 ---
 
@@ -781,3 +804,35 @@ Verification after Phase 0.5D Step 3:
 - `npm run lint` ❌ FAIL — **10 errors, 0 warnings** (down from 12 — exactly −2 `no-unused-vars` errors)
 
 Risk level: **Low** — parameter removal only, zero behavior change.
+
+---
+
+## Phase 0.5D Step 4 Completion Note
+
+**Date:** 2026-05-24
+**Scope:** Remove redundant `else` branches (`no-useless-assignment`)
+
+Phase 0.5D Step 4 fixed 2 `no-useless-assignment` errors. Both were in pure utility functions at module scope (`calcRow` and `enrichTTF`). The pattern in each case: a `let status = 'Default'` initialization immediately followed by an `if/else if/else` chain where the final `else` branch also assigned `status = 'Default'`. The linter correctly flagged the initialization as useless because it was always overwritten before being read.
+
+Fix applied to both cases: removed the redundant final `else` branch. The initialization now serves as the default, which is what the `else` was already doing. The final computed value of `status` is identical for every possible input.
+
+**`calcRow` (SP item status computation):**
+- Before: `let status = 'Open'` + three branches ending in `else status = 'Open'`
+- After: `let status = 'Open'` + two branches (Closed, Partial) — falls through to `'Open'` default
+
+**`enrichTTF` (AR TTF payment status computation):**
+- Before: `let status = 'Belum Bayar'` + four branches ending in `else status = 'Belum Bayar'`
+- After: `let status = 'Belum Bayar'` + three branches (Lunas, Lebih Bayar, Partial) — falls through to `'Belum Bayar'` default
+
+No changes to:
+- Status values returned (`'Open'`, `'Closed'`, `'Partial'`, `'Belum Bayar'`, `'Lunas'`, `'Lebih Bayar'`)
+- Any condition in the if/else chain
+- `isOverdue` computation (reads `status` — value is identical)
+- Any component, hook, query, or file other than `src/App.jsx`
+- Auth, RLS, schema, Supabase config, dependencies, deployment
+
+Verification after Phase 0.5D Step 4:
+- `npm run build` ✅ PASS — 2341 modules transformed, no errors, no warnings
+- `npm run lint` ❌ FAIL — **8 errors, 0 warnings** (down from 10 — exactly −2 `no-useless-assignment` errors)
+
+Risk level: **Low** — redundant branch removal only, zero behavior change.
