@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { Package, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 
 // Same palette as App.jsx
 const PASTEL = {

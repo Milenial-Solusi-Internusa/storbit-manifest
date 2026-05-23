@@ -27,6 +27,7 @@
 | 0.5D Step 2 | Lint Baseline Cleanup — SortIcon | ✅ Complete |
 | 0.5D Step 3 | Lint Baseline Cleanup — Unused Params | ✅ Complete |
 | 0.5D Step 4 | Lint Baseline Cleanup — Useless Assignment | ✅ Complete |
+| 0.5D Step 5 | Lint Baseline Cleanup — Purity & Fast-Refresh | ✅ Complete |
 | 1.0 | Master Data Foundation | Planned |
 
 **GitHub push status:** Commits exist locally on `docs/nexus-erp-foundation`. Branch has NOT been pushed to remote (network issue in prior session). Push required before any PR or deploy.
@@ -67,8 +68,9 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 **Result (after Phase 0.5D Step 2):** ❌ FAIL — **12 errors, 0 warnings** (−4 errors)
 **Result (after Phase 0.5D Step 3):** ❌ FAIL — **10 errors, 0 warnings** (−2 errors)
 **Result (after Phase 0.5D Step 4):** ❌ FAIL — **8 errors, 0 warnings** (−2 errors)
+**Result (after Phase 0.5D Step 5):** ❌ FAIL — **6 errors, 0 warnings** (−2 errors)
 
-> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope (−4). Phase 0.5D Step 3 removed unused `label` and `dcList` parameters (−2). Phase 0.5D Step 4 removed redundant `else` branches in `calcRow` and `enrichTTF` (−2).
+> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope (−4). Phase 0.5D Step 3 removed unused `label` and `dcList` parameters (−2). Phase 0.5D Step 4 removed redundant `else` branches in `calcRow` and `enrichTTF` (−2). Phase 0.5D Step 5 fixed `Date.now()` purity via lazy `useState` initializer and split `useAuth` out of `AuthContext.jsx` to fix fast-refresh (−2).
 
 ---
 
@@ -120,7 +122,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
 | **Total** | **10** | | |
 
-### After Phase 0.5D Step 4 (current)
+### After Phase 0.5D Step 4
 
 | ESLint Rule | Count | Severity | Description |
 |-------------|-------|----------|-------------|
@@ -128,6 +130,13 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-hooks/purity` | 1 | Medium | `Date.now()` called in `useState` initializer inside `ARModal` |
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
 | **Total** | **8** | | |
+
+### After Phase 0.5D Step 5 (current)
+
+| ESLint Rule | Count | Severity | Description |
+|-------------|-------|----------|-------------|
+| `react-hooks/set-state-in-effect` | 6 | High | `setState` in `useEffect` — App.jsx (×1), UserManagement.jsx (×2), useCustomers.js (×1), useSpItems.js (×1), useTtfs.js (×1) |
+| **Total** | **6** | | |
 
 ---
 
@@ -184,7 +193,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
 | **Total** | **10** | |
 
-### After Phase 0.5D Step 4 (current)
+### After Phase 0.5D Step 4
 
 | File | Error Count | Remaining Issues |
 |------|-------------|-----------------|
@@ -195,6 +204,17 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/hooks/useTtfs.js` | 1 | setState-in-effect |
 | `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
 | **Total** | **8** | |
+
+### After Phase 0.5D Step 5 (current)
+
+| File | Error Count | Remaining Issues |
+|------|-------------|-----------------|
+| `src/App.jsx` | 1 | setState-in-effect (×1) |
+| `src/components/UserManagement.jsx` | 2 | setState-in-effect (×2) |
+| `src/hooks/useCustomers.js` | 1 | setState-in-effect |
+| `src/hooks/useSpItems.js` | 1 | setState-in-effect |
+| `src/hooks/useTtfs.js` | 1 | setState-in-effect |
+| **Total** | **6** | |
 
 ### Detailed Error List — src/App.jsx (29 errors)
 
@@ -738,7 +758,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Category | Finding |
 |----------|---------|
 | Build | ✅ PASS — clean, no warnings |
-| Lint | ❌ 8 errors (all pre-existing deferred patterns — set-state-in-effect ×6, purity ×1, refresh ×1) |
+| Lint | ❌ 6 errors (all pre-existing deferred patterns — set-state-in-effect ×6) |
 | ErrorBoundary | 🟡 Partial — Dashboard + User Management lazy sections protected |
 | Pagination | ❌ Missing — all queries fetch all rows |
 | Soft Delete | ❌ Missing — hard DELETE on all business data |
@@ -750,7 +770,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Lazy loading | ✅ Dashboard + UserManagement deferred |
 | Vendor chunk split | ✅ Parallel-cacheable chunks |
 
-**Next recommended step:** Review and commit Phase 0.5D Steps 1–4, then plan Phase 0.5D Step 5 scope for remaining deferred errors (set-state-in-effect ×6, purity ×1, refresh ×1).
+**Next recommended step:** Review and commit Phase 0.5D Steps 1–5, then plan Phase 0.5D Step 6 scope for the remaining 6 `react-hooks/set-state-in-effect` errors — each location requires careful review before touching.
 
 ---
 
@@ -836,3 +856,63 @@ Verification after Phase 0.5D Step 4:
 - `npm run lint` ❌ FAIL — **8 errors, 0 warnings** (down from 10 — exactly −2 `no-useless-assignment` errors)
 
 Risk level: **Low** — redundant branch removal only, zero behavior change.
+
+---
+
+## Phase 0.5D Step 5 Completion Note
+
+**Date:** 2026-05-24
+**Scope:** Fix `react-hooks/purity` (`Date.now()`) and `react-refresh/only-export-components` (`AuthContext`)
+
+### Fix 1 — `Date.now()` purity (`src/App.jsx`)
+
+`ARModal` used an eager `useState` initializer that called `Date.now()` directly during render:
+```js
+// Before
+const [data, setData] = useState(initial || {
+  btbs: [{ id: `tmp-${Date.now()}`, ... }]
+});
+```
+`Date.now()` is an impure function (returns a different value each call), which violates React's render purity rule.
+
+Fix: wrapped the initializer as a lazy function `() => ...`:
+```js
+// After
+const [data, setData] = useState(() => initial || {
+  btbs: [{ id: `tmp-${Date.now()}`, ... }]
+});
+```
+React calls the lazy initializer exactly once at component mount. `Date.now()` is now called inside the initializer body (not directly during render), which satisfies the purity rule. The generated `tmp-{timestamp}` ID is semantically identical — produced once when the modal opens.
+
+### Fix 2 — AuthContext fast-refresh split (`src/contexts/`)
+
+`AuthContext.jsx` exported both `AuthProvider` (a React component) and `useAuth` (a hook), mixing component and non-component exports. This breaks Vite's Fast Refresh — React cannot reliably hot-reload a file when it can't distinguish which export to refresh.
+
+Fix: split into three focused files:
+
+| File | Exports | Purpose |
+|------|---------|---------|
+| `src/contexts/authCtx.js` (new) | `AuthContext` | Shared context object — consumed by both files below |
+| `src/contexts/AuthContext.jsx` (modified) | `AuthProvider` only | React component — exports only a component, Fast Refresh happy |
+| `src/contexts/useAuth.js` (new) | `useAuth` only | React hook — exports only a hook, Fast Refresh happy |
+
+`AuthContext.jsx` now imports `AuthContext` from `./authCtx` instead of creating it. The `AuthProvider` component logic, `fetchProfileById` helper, session/profile state, and `signIn`/`signOut`/`refreshProfile` methods are unchanged.
+
+Import paths updated (3 sites):
+- `src/App.jsx`: `'./contexts/AuthContext'` → `'./contexts/useAuth'`
+- `src/components/AuthGate.jsx`: `'../contexts/AuthContext'` → `'../contexts/useAuth'`
+- `src/components/Login.jsx`: `'../contexts/AuthContext'` → `'../contexts/useAuth'`
+
+`src/main.jsx` unchanged — it imports `AuthProvider` from `AuthContext.jsx`, which still exports it.
+
+No changes to:
+- Auth flow, session state, profile fetching, sign-in/sign-out logic
+- `AuthProvider` behavior, `useAuth` return value, `isAuthenticated` logic
+- Any Supabase query, RLS, schema, or config
+- Any UI, business logic, or deployment setting
+
+Verification after Phase 0.5D Step 5:
+- `npm run build` ✅ PASS — 2343 modules transformed (2341 + 2 new context files), no errors, no warnings
+- `npm run lint` ❌ FAIL — **6 errors, 0 warnings** (down from 8 — exactly −2 errors: `purity` and `only-export-components` both gone)
+
+Risk level: **Low** — structural split only; all auth behavior, hook contract, and Provider behavior are preserved exactly.

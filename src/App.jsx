@@ -6,7 +6,7 @@ import {
   ChevronRight, Save, RefreshCw, Calendar, Building2, User,
   ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, ShieldCheck
 } from 'lucide-react';
-import { useAuth } from './contexts/AuthContext';
+import { useAuth } from './contexts/useAuth';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
@@ -2615,7 +2615,7 @@ function ARSidePanel({ ttf, onClose, onEdit, onDelete, role }) {
 // AR Modal
 // ============================
 function ARModal({ initial, customers, onClose, onSave }) {
-  const [data, setData] = useState(initial || {
+  const [data, setData] = useState(() => initial || {
     noTTF: '', tanggalTTF: '', tanggalMenerima: '',
     noINV: '', noSP: '', customer: '',
     tglPembayaran: '', notes: '',
