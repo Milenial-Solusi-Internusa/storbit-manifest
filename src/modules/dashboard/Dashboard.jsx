@@ -13,7 +13,6 @@
 // - FinancialCard, AlertCard, ChartCard, EmptyChart, CustomTooltip are
 //   Dashboard-exclusive and have been removed from App.jsx.
 
-import React from 'react';
 import {
   FileText, Package, Clock, CheckCircle2,
   Truck, AlertTriangle, Wallet,
@@ -21,7 +20,7 @@ import {
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
-  LineChart, Line, AreaChart, Area,
+  AreaChart, Area,
 } from 'recharts';
 
 // ─── PASTEL ──────────────────────────────────────────────────────────────────
