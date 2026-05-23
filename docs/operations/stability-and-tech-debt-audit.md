@@ -23,7 +23,8 @@
 | **0.5A** | **Stability & Tech Debt Audit** | ✅ **This document** |
 | 0.5B | Remove Production Console Logs | ✅ Complete |
 | 0.5C | ErrorBoundary Baseline | ✅ Complete |
-| 0.5D | Lint Baseline Cleanup — Step 1 | ✅ Complete |
+| 0.5D Step 1 | Lint Baseline Cleanup — Dead Code | ✅ Complete |
+| 0.5D Step 2 | Lint Baseline Cleanup — SortIcon | ✅ Complete |
 | 1.0 | Master Data Foundation | Planned |
 
 **GitHub push status:** Commits exist locally on `docs/nexus-erp-foundation`. Branch has NOT been pushed to remote (network issue in prior session). Push required before any PR or deploy.
@@ -61,8 +62,9 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 **Command:** `npm run lint`
 **Result (at Phase 0.5A audit time):** ❌ FAIL — **42 errors, 0 warnings**
 **Result (after Phase 0.5D Step 1):** ❌ FAIL — **16 errors, 0 warnings** (−26 errors)
+**Result (after Phase 0.5D Step 2):** ❌ FAIL — **12 errors, 0 warnings** (−4 errors)
 
-> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**.
+> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**. Phase 0.5D Step 2 moved `SortIcon` to module scope, removing the 4 `react-hooks/static-components` errors.
 
 ---
 
@@ -81,7 +83,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` exports both a component and utility functions — breaks Fast Refresh in dev |
 | **Total** | **42** | | |
 
-### After Phase 0.5D Step 1 (current)
+### After Phase 0.5D Step 1
 
 | ESLint Rule | Count | Severity | Description |
 |-------------|-------|----------|-------------|
@@ -92,6 +94,17 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-hooks/purity` | 1 | Medium | `Date.now()` called in `useState` initializer inside `ARModal` |
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
 | **Total** | **16** | | |
+
+### After Phase 0.5D Step 2 (current)
+
+| ESLint Rule | Count | Severity | Description |
+|-------------|-------|----------|-------------|
+| `react-hooks/set-state-in-effect` | 6 | High | `setState` in `useEffect` — App.jsx (×1), UserManagement.jsx (×2), useCustomers.js (×1), useSpItems.js (×1), useTtfs.js (×1) |
+| `no-unused-vars` | 2 | Medium | `label` (FilterPill param), `dcList` (CustomersPage param) — component signature props, deferred |
+| `no-useless-assignment` | 2 | Low | `status` initial assignment overwritten immediately in enrichItem / enrichTTF |
+| `react-hooks/purity` | 1 | Medium | `Date.now()` called in `useState` initializer inside `ARModal` |
+| `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
+| **Total** | **12** | | |
 
 ---
 
@@ -112,7 +125,7 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/hooks/useTtfs.js` | 1 | setState-in-effect |
 | **Total** | **42** | |
 
-### After Phase 0.5D Step 1 (current)
+### After Phase 0.5D Step 1
 
 | File | Error Count | Remaining Issues |
 |------|-------------|-----------------|
@@ -123,6 +136,18 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/hooks/useTtfs.js` | 1 | setState-in-effect |
 | `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
 | **Total** | **16** | |
+
+### After Phase 0.5D Step 2 (current)
+
+| File | Error Count | Remaining Issues |
+|------|-------------|-----------------|
+| `src/App.jsx` | 6 | setState-in-effect (×1), label (×1), dcList (×1), status (×2), Date.now() (×1) |
+| `src/components/UserManagement.jsx` | 2 | setState-in-effect (×2) |
+| `src/hooks/useCustomers.js` | 1 | setState-in-effect |
+| `src/hooks/useSpItems.js` | 1 | setState-in-effect |
+| `src/hooks/useTtfs.js` | 1 | setState-in-effect |
+| `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
+| **Total** | **12** | |
 
 ### Detailed Error List — src/App.jsx (29 errors)
 
@@ -189,15 +214,14 @@ Currently these functions are assigned to unused variables (caught by `no-unused
 ---
 
 ### STAB-03 — SortIcon Component Defined Inside Render Function
-**Severity: Medium-High**
-**Location:** `src/App.jsx` line 1230 (inside `Manifest` component)
+**Severity: Medium-High** → ✅ **Resolved in Phase 0.5D Step 2**
+**Location:** `src/App.jsx` (was inside `Manifest` component, now at module scope)
 
-`SortIcon` is defined as an arrow function component inside `Manifest`'s render scope. React creates a new component identity on every render of `Manifest`. This means:
-1. React will unmount and remount `SortIcon` on every parent re-render — any local state inside `SortIcon` would be lost
-2. It is a persistent performance waste (new function allocation every render)
-3. The `react-hooks/static-components` rule flags this correctly
+`SortIcon` was defined as an arrow function component inside `Manifest`'s render scope. This caused React to create a new component identity on every render of `Manifest`.
 
-Currently `SortIcon` has no local state, so the actual user-visible impact is low. But it is technically wrong and could cause subtle bugs if `SortIcon` is ever extended.
+**Fix applied (Phase 0.5D Step 2):** `SortIcon` was moved to module scope (above `Manifest`). A `sortBy` prop was added to replace the closure dependency. All 4 JSX call sites now pass `sortBy={sortBy}` explicitly. No visual output, sorting behavior, icon set, or table behavior was changed.
+
+All 4 `react-hooks/static-components` errors are now gone. Lint count: 16 → 12.
 
 ---
 
@@ -630,8 +654,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 
 ### Acceptable Before Push (Do Not Block)
 
-- The 16 remaining lint errors (do not block push, but document in PR)
-- The `SortIcon` render-scope issue (functional, just incorrect pattern)
+- The 12 remaining lint errors (do not block push, but document in PR)
 - ErrorBoundary only protects Dashboard and User Management lazy sections so far
 - Missing pagination (functional, just unscalable at volume)
 
@@ -668,7 +691,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Category | Finding |
 |----------|---------|
 | Build | ✅ PASS — clean, no warnings |
-| Lint | ❌ 42 errors (all pre-existing, none from Phase 0.4B) |
+| Lint | ❌ 12 errors (all pre-existing deferred patterns — set-state-in-effect ×6, no-unused-vars ×2, no-useless-assignment ×2, purity ×1, refresh ×1) |
 | ErrorBoundary | 🟡 Partial — Dashboard + User Management lazy sections protected |
 | Pagination | ❌ Missing — all queries fetch all rows |
 | Soft Delete | ❌ Missing — hard DELETE on all business data |
@@ -680,4 +703,32 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Lazy loading | ✅ Dashboard + UserManagement deferred |
 | Vendor chunk split | ✅ Parallel-cacheable chunks |
 
-**Next recommended step:** Review and commit Phase 0.5C, then continue with a separate scoped cleanup for remaining P0 dead code or broader non-lazy ErrorBoundary coverage.
+**Next recommended step:** Review and commit Phase 0.5D Steps 1 & 2, then plan Phase 0.5D Step 3 scope for remaining deferred errors (set-state-in-effect, no-unused-vars, purity, refresh).
+
+---
+
+## Phase 0.5D Step 2 Completion Note
+
+**Date:** 2026-05-24
+**Scope:** Fix SortIcon static-components lint issue — move to module scope
+
+Phase 0.5D Step 2 fixed the `react-hooks/static-components` lint issue by moving the `SortIcon` component from inside `Manifest`'s render scope to module scope.
+
+Changes made to `src/App.jsx`:
+- `SortIcon` definition moved above `Manifest`, refactored from arrow function to named function declaration
+- `sortBy` added as an explicit prop (replacing the closure dependency)
+- 4 JSX call sites updated: `<SortIcon field="…" sortBy={sortBy}/>` at lines for spDate, spNo, deadline, grandTotal
+- `toggleSort` remains inside `Manifest` (correct — it calls `setSortBy`, a prop, not a free variable)
+
+No changes to:
+- SortIcon visual output (same icons: ArrowUpDown, ArrowUp, ArrowDown, same sizes, same opacity)
+- Sorting behavior (toggleSort function untouched)
+- Table layout, column order, header text
+- Any other component, hook, or file
+- Auth, RLS, schema, Supabase config, dependencies, deployment
+
+Verification after Phase 0.5D Step 2:
+- `npm run build` ✅ PASS — 2341 modules transformed, no errors, no warnings
+- `npm run lint` ❌ FAIL — **12 errors, 0 warnings** (down from 16 — exactly −4 static-components errors)
+
+Risk level: **Low** — structural correctness fix only, zero behavior change.

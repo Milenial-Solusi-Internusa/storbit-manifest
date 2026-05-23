@@ -973,15 +973,15 @@ function StatusBadge({ status, overdue, large }) {
 // ============================
 // Manifest (grouped table)
 // ============================
+function SortIcon({ field, sortBy }) {
+  if (sortBy.field !== field) return <ArrowUpDown size={11} style={{ opacity: 0.3 }}/>;
+  return sortBy.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>;
+}
+
 function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilterStatus, filterDC, setFilterDC, filterCustomer, setFilterCustomer, filterOverdue, setFilterOverdue, dcList, customers, sortBy, setSortBy, onView, onExport }) {
   const toggleSort = (field) => {
     if (sortBy.field === field) setSortBy({ field, dir: sortBy.dir === 'asc' ? 'desc' : 'asc' });
     else setSortBy({ field, dir: 'asc' });
-  };
-
-  const SortIcon = ({field}) => {
-    if (sortBy.field !== field) return <ArrowUpDown size={11} style={{ opacity: 0.3 }}/>;
-    return sortBy.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>;
   };
 
   return (
@@ -1076,10 +1076,10 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
             <thead>
               <tr style={{ background: PASTEL.lineSoft }}>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('spDate')}>
-                  <div className="flex items-center gap-1">SP Date <SortIcon field="spDate"/></div>
+                  <div className="flex items-center gap-1">SP Date <SortIcon field="spDate" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('spNo')}>
-                  <div className="flex items-center gap-1">SP No <SortIcon field="spNo"/></div>
+                  <div className="flex items-center gap-1">SP No <SortIcon field="spNo" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Customer</th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Items</th>
@@ -1088,10 +1088,10 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Status</th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>DC</th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('deadline')}>
-                  <div className="flex items-center gap-1">Deadline <SortIcon field="deadline"/></div>
+                  <div className="flex items-center gap-1">Deadline <SortIcon field="deadline" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-right text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('grandTotal')}>
-                  <div className="flex items-center justify-end gap-1">Grand Total <SortIcon field="grandTotal"/></div>
+                  <div className="flex items-center justify-end gap-1">Grand Total <SortIcon field="grandTotal" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-center text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Finance</th>
                 <th className="px-5 py-3.5 w-12"></th>
