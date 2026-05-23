@@ -1,9 +1,9 @@
 # Bundle Size Audit — Nexus by MSI
 
 **Date:** 2026-05-23
-**Phase:** 0.4A — Bundle Size Warning Audit | 0.4B Steps 1–3A ✅
+**Phase:** 0.4A — Bundle Size Warning Audit | 0.4B Steps 1–3B ✅
 **Author:** Claude
-**Status:** Phase 0.4B Step 3A complete. Dashboard extracted. Ready for Step 3B (React.lazy). See Section 15 for latest results.
+**Status:** Phase 0.4B Step 3B complete. Dashboard lazy-loaded. Recharts fully deferred from startup. See Section 16 for latest results.
 
 ---
 
@@ -743,3 +743,148 @@ Step 3B is the **high-impact** step:
 - Expected result: `vendor-recharts` (110.99 kB gzipped) is **no longer downloaded at startup** — only when the user first visits the Dashboard page
 - App code chunk should shrink ~50–80 kB (Dashboard.jsx code also deferred)
 - Users who never visit the Dashboard page pay zero cost for Recharts
+
+---
+
+## 16. Phase 0.4B Step 3B — Actual Results (2026-05-23)
+
+### What Changed
+
+Two targeted edits to `src/App.jsx` only. `Dashboard.jsx` was not touched.
+
+**Edit 1 — Convert static import to lazy dynamic import (line 13):**
+```js
+// Before:
+import Dashboard from './modules/dashboard/Dashboard';
+
+// After:
+const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'));
+```
+
+**Edit 2 — Wrap Dashboard render in Suspense (line 1024):**
+```jsx
+// Before:
+{activeMenu === 'dashboard' && <Dashboard stats={stats} groupedSP={...} filterMonth={filterMonth}/>}
+
+// After:
+{activeMenu === 'dashboard' && (
+  <Suspense fallback={
+    <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+      Loading...
+    </div>
+  }>
+    <Dashboard stats={stats} groupedSP={...} filterMonth={filterMonth}/>
+  </Suspense>
+)}
+```
+
+`Suspense` and `lazy` were already imported from Step 2 — no import changes needed.
+
+All Dashboard props (`stats`, `groupedSP`, `filterMonth`) are identical — prop contract unchanged.
+
+### Build Result After Step 3B
+
+```
+$ npm run build
+
+> storbit-manifest@0.0.0 build
+> vite build
+
+vite v8.0.11 building client environment for production...
+✓ 2340 modules transformed.
+
+dist/index.html                             0.80 kB │ gzip:   0.38 kB
+dist/assets/index-Dtb_zCIb.css             16.48 kB │ gzip:   4.21 kB
+dist/assets/rolldown-runtime-S-ySWqyJ.js    0.69 kB │ gzip:   0.42 kB
+dist/assets/UserManagement-CuYwPxFU.js      8.86 kB │ gzip:   2.97 kB
+dist/assets/vendor-lucide-LJsMC_yj.js       9.26 kB │ gzip:   3.60 kB
+dist/assets/Dashboard-DVMQJPnO.js          14.65 kB │ gzip:   3.84 kB
+dist/assets/index-BCim19mA.js             122.41 kB │ gzip:  26.15 kB
+dist/assets/vendor-react-YvL5Yovn.js      189.64 kB │ gzip:  59.65 kB
+dist/assets/vendor-supabase-CDoftGUu.js   196.30 kB │ gzip:  50.02 kB
+dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
+
+✓ built in 624ms
+```
+
+**No warnings. Build PASS. ✅**
+
+### Initial HTML Verification
+
+`dist/index.html` module preloads (what the browser downloads on every startup):
+
+```html
+<script type="module" src="/assets/index-BCim19mA.js"></script>
+<link rel="modulepreload" href="/assets/rolldown-runtime-S-ySWqyJ.js">
+<link rel="modulepreload" href="/assets/vendor-supabase-CDoftGUu.js">
+<link rel="modulepreload" href="/assets/vendor-react-YvL5Yovn.js">
+<link rel="modulepreload" href="/assets/vendor-lucide-LJsMC_yj.js">
+```
+
+**`vendor-recharts` is NOT in `index.html` — confirmed deferred. ✅**
+**`Dashboard` chunk is NOT in `index.html` — confirmed deferred. ✅**
+
+Both `Dashboard-DVMQJPnO.js` and `vendor-recharts-LsVsUfOu.js` are only downloaded when the user first clicks the Dashboard menu item.
+
+### Before vs After Comparison (Step 3A → Step 3B)
+
+| Metric | After Step 3A | After Step 3B |
+|--------|--------------|---------------|
+| JS chunks | 8 | 10 |
+| Warning | ✅ None | ✅ None |
+| Modules transformed | 2340 | 2340 (unchanged) |
+| Largest chunk | 386.98 kB (`vendor-recharts`) | 386.98 kB (`vendor-recharts`) — deferred |
+| App code chunk (`index`) | 136.69 kB / 28.85 kB gz | 122.41 kB / 26.15 kB gz (-14.28 kB raw, -2.70 kB gz) |
+| Dashboard chunk | — (in index) | 14.65 kB / 3.84 kB gz — **deferred** ✅ |
+| `vendor-recharts` in startup | ✅ Yes (static import) | ❌ No — **deferred with Dashboard** ✅ |
+| `vendor-recharts` in index.html | Yes | **No** ✅ |
+
+### Full Phase 0.4B Progress Summary
+
+| Step | Action | Initial JS (gzip) | Largest Chunk | Warning |
+|------|--------|------------------|--------------|---------|
+| Baseline | No splitting | 252.45 kB | 924.65 kB | ⚠️ |
+| Step 1 | Vendor chunk split | ~253.63 kB | 386.98 kB | ✅ |
+| Step 2 | Lazy UserManagement | ~253.63 kB | 386.98 kB | ✅ |
+| Step 3A | Extract Dashboard (static) | ~253.63 kB | 386.98 kB | ✅ |
+| **Step 3B** | **Lazy Dashboard** | **~139.84 kB** | **386.98 kB (deferred)** | **✅** |
+
+> Steps 1–3A focused on structure and caching correctness. **Step 3B delivers the actual startup performance win**: initial JS drops from ~253 kB to ~139 kB gzipped — a **-113 kB / -45% reduction** in startup download.
+
+### Initial JS at Startup — Step 3B Breakdown
+
+| Chunk | Gzipped | Loaded at startup |
+|-------|---------|-------------------|
+| `rolldown-runtime` | 0.42 kB | ✅ Always |
+| `vendor-lucide` | 3.60 kB | ✅ Always |
+| `index` (app code) | 26.15 kB | ✅ Always |
+| `vendor-react` | 59.65 kB | ✅ Always |
+| `vendor-supabase` | 50.02 kB | ✅ Always |
+| **Total startup JS** | **139.84 kB** | |
+| `Dashboard` | 3.84 kB | 🕐 On first Dashboard visit |
+| `UserManagement` | 2.97 kB | 🕐 On first Users visit |
+| `vendor-recharts` | 110.99 kB | 🕐 On first Dashboard visit |
+
+### Lint Verification
+
+`npm run lint` — 43 pre-existing errors. **No new errors introduced.** Count unchanged from Step 3A.
+
+### Files Changed in Step 3B
+
+- `src/App.jsx` — 2 targeted edits (static import → `lazy()`, Dashboard render wrapped in `<Suspense>`)
+- `docs/performance/bundle-size-audit.md` — Section 16 added with Step 3B results
+
+### Performance Impact
+
+| Metric | Before Phase 0.4B | After Step 3B |
+|--------|------------------|---------------|
+| Initial JS download (gzip) | 252.45 kB | **139.84 kB** |
+| Initial JS reduction | — | **-112.61 kB (-44.6%)** |
+| Recharts load timing | Always at startup | First Dashboard visit only |
+| Dashboard code load timing | Always at startup | First Dashboard visit only |
+| Parse cost at startup | All 924 kB parsed | Only 122.41 kB (index) + vendor chunks parsed |
+| Users who never visit Dashboard | Pay full Recharts cost | Pay **zero** Recharts cost |
+
+### Security Impact
+
+None. This change is purely a loading strategy change. No data access patterns, permissions, authentication, or RLS policies were modified. The lazy-loaded chunks are served from the same origin as the initial bundle.

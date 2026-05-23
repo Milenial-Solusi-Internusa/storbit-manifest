@@ -10,7 +10,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
-import Dashboard from './modules/dashboard/Dashboard';
+const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'));
 const UserManagement = lazy(() => import('./components/UserManagement'));
 
 // ============================
@@ -1021,7 +1021,15 @@ export default function StorbitManifest() {
           </div>
         )}
 
-          {activeMenu === 'dashboard' && <Dashboard stats={stats} groupedSP={filterMonth === 'all' ? groupedSP : groupedSP.filter(g => monthYearKey(g.spDate) === filterMonth)} filterMonth={filterMonth}/>}
+          {activeMenu === 'dashboard' && (
+            <Suspense fallback={
+              <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                Loading...
+              </div>
+            }>
+              <Dashboard stats={stats} groupedSP={filterMonth === 'all' ? groupedSP : groupedSP.filter(g => monthYearKey(g.spDate) === filterMonth)} filterMonth={filterMonth}/>
+            </Suspense>
+          )}
           {activeMenu === 'manifest' && (
             <Manifest
               grouped={filteredSP}
