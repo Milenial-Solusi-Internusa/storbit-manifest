@@ -102,7 +102,6 @@ const calcRow = (row) => {
   let status = 'Open';
   if (outstandingQty === 0 && qty > 0) status = 'Closed';
   else if (shippedQty > 0 && outstandingQty > 0) status = 'Partial';
-  else status = 'Open';
 
   const today = new Date();
   let isOverdue = false;
@@ -200,7 +199,6 @@ const calcAR = (ttf) => {
   if (Math.abs(totalOS) <= TOLERANCE && totalPayment > 0) status = 'Lunas';
   else if (totalOS < -TOLERANCE) status = 'Lebih Bayar';
   else if (totalPayment > 0 && totalOS > TOLERANCE) status = 'Partial';
-  else status = 'Belum Bayar';
 
   // Overdue: belum lunas + jarak > 30 hari (kalau belum bayar pakai today vs tanggalMenerima)
   let isOverdue = false;
