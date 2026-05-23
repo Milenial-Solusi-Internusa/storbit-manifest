@@ -2,7 +2,7 @@
 // Admin-only page: list semua users, edit role, toggle active status.
 // Invite user baru = manual via Supabase Dashboard (Pendekatan A).
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Users, ShieldCheck, ShieldOff, RefreshCw, AlertCircle,
   Check, X, Info, ExternalLink,

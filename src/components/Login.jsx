@@ -1,7 +1,7 @@
 // src/components/Login.jsx
 // Login screen dengan design system Storbit — cream + pastel + Fraunces.
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Package, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 

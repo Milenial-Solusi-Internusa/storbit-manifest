@@ -1,7 +1,7 @@
 // src/contexts/AuthContext.jsx
 // Global auth state — wrap App di main.jsx, akses via useAuth() di mana aja.
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);

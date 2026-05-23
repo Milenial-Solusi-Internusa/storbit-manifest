@@ -2,7 +2,6 @@
 // Wrapper yang nge-handle 3 auth states: loading → login → app
 // Inactive user juga di-handle (kasih message + tombol logout).
 
-import React from 'react';
 import { Loader2, Package, ShieldOff, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Login from './Login';

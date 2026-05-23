@@ -23,6 +23,7 @@
 | **0.5A** | **Stability & Tech Debt Audit** | ✅ **This document** |
 | 0.5B | Remove Production Console Logs | ✅ Complete |
 | 0.5C | ErrorBoundary Baseline | ✅ Complete |
+| 0.5D | Lint Baseline Cleanup — Step 1 | ✅ Complete |
 | 1.0 | Master Data Foundation | Planned |
 
 **GitHub push status:** Commits exist locally on `docs/nexus-erp-foundation`. Branch has NOT been pushed to remote (network issue in prior session). Push required before any PR or deploy.
@@ -58,13 +59,16 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 ## 3. Lint Status
 
 **Command:** `npm run lint`
-**Result:** ❌ FAIL — **42 errors, 0 warnings**
+**Result (at Phase 0.5A audit time):** ❌ FAIL — **42 errors, 0 warnings**
+**Result (after Phase 0.5D Step 1):** ❌ FAIL — **16 errors, 0 warnings** (−26 errors)
 
-> **Note:** The prior session documented "43 pre-existing errors." The actual current count is **42**. One error may have been resolved during Phase 0.4B (e.g., removing unused `Check`/`TrendingUp` icons from App.jsx during Dashboard extraction). This document uses the verified current count of **42**.
+> **Note:** The prior session documented "43 pre-existing errors." The actual count at 0.5A was **42**. Phase 0.5D Step 1 cleaned all safe unused-variable/import dead code, reducing the count to **16**.
 
 ---
 
 ## 4. Lint Error Summary by Rule
+
+### At Phase 0.5A (baseline)
 
 | ESLint Rule | Count | Severity | Description |
 |-------------|-------|----------|-------------|
@@ -77,9 +81,23 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` exports both a component and utility functions — breaks Fast Refresh in dev |
 | **Total** | **42** | | |
 
+### After Phase 0.5D Step 1 (current)
+
+| ESLint Rule | Count | Severity | Description |
+|-------------|-------|----------|-------------|
+| `react-hooks/set-state-in-effect` | 6 | High | `setState` in `useEffect` — App.jsx (×1), UserManagement.jsx (×2), useCustomers.js (×1), useSpItems.js (×1), useTtfs.js (×1) |
+| `react-hooks/static-components` | 4 | High | `SortIcon` defined inside `Manifest` render scope |
+| `no-unused-vars` | 2 | Medium | `label` (FilterPill param), `dcList` (CustomersPage param) — component signature props, deferred |
+| `no-useless-assignment` | 2 | Low | `status` initial assignment overwritten immediately in enrichItem / enrichTTF |
+| `react-hooks/purity` | 1 | Medium | `Date.now()` called in `useState` initializer inside `ARModal` |
+| `react-refresh/only-export-components` | 1 | Low | `AuthContext.jsx` mixed exports — breaks Fast Refresh |
+| **Total** | **16** | | |
+
 ---
 
 ## 5. Lint Error Summary by File
+
+### At Phase 0.5A (baseline)
 
 | File | Error Count | Top Issues |
 |------|-------------|-----------|
@@ -93,6 +111,18 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 | `src/hooks/useSpItems.js` | 1 | setState-in-effect |
 | `src/hooks/useTtfs.js` | 1 | setState-in-effect |
 | **Total** | **42** | |
+
+### After Phase 0.5D Step 1 (current)
+
+| File | Error Count | Remaining Issues |
+|------|-------------|-----------------|
+| `src/App.jsx` | 10 | SortIcon (×4), setState-in-effect (×1), label (×1), dcList (×1), status (×2), Date.now() (×1) |
+| `src/components/UserManagement.jsx` | 2 | setState-in-effect (×2) |
+| `src/hooks/useCustomers.js` | 1 | setState-in-effect |
+| `src/hooks/useSpItems.js` | 1 | setState-in-effect |
+| `src/hooks/useTtfs.js` | 1 | setState-in-effect |
+| `src/contexts/AuthContext.jsx` | 1 | react-refresh/only-export-components |
+| **Total** | **16** | |
 
 ### Detailed Error List — src/App.jsx (29 errors)
 
@@ -600,7 +630,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 
 ### Acceptable Before Push (Do Not Block)
 
-- The 42 pre-existing lint errors (do not block push, but document in PR)
+- The 16 remaining lint errors (do not block push, but document in PR)
 - The `SortIcon` render-scope issue (functional, just incorrect pattern)
 - ErrorBoundary only protects Dashboard and User Management lazy sections so far
 - Missing pagination (functional, just unscalable at volume)

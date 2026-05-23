@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
   Search, Download, Upload, Eye, Edit3, Trash2, X,
-  Package, AlertTriangle, CheckCircle2, Filter,
+  Package, AlertTriangle, CheckCircle2,
   ChevronRight, Save, RefreshCw, Calendar, Building2, User,
   ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, ShieldCheck
 } from 'lucide-react';
@@ -38,173 +38,6 @@ const PASTEL = {
   lineSoft: '#F5EFE5',
 };
 
-// ============================
-// Sample seed data - multiple items per SP
-// ============================
-const SEED_DATA = [
-  // SP 2020577 - 1 item, closed
-  {
-    id: 'seed-1',
-    spDate: '2026-01-14', spNo: '2020577', customer: 'INDOMARCO',
-    productName: 'STORBIT LOYANG 46 X 33 CM ( SAYBREAD )',
-    sku: 'BKT-SB43-00001',
-    qty: 10, shippedQty: 10,
-    expDate: '2026-06-11', deadline: '',
-    dc: 'DC BOGOR', shippingDate: '2026-04-29', btbNo: '2015214',
-    unitPrice: 120000, shippingPrice: 600000,
-    inv: true, fp: true, submit: true, kirim: true,
-    submitDate: '2026-05-07', emailStatus: '2026-05-07',
-    notes: ''
-  },
-  // SP 2020611 - 3 items, mixed statuses
-  {
-    id: 'seed-2a',
-    spDate: '2026-02-03', spNo: '2020611', customer: 'INDOMARCO',
-    productName: 'STORBIT CONTAINER 30L CLEAR',
-    sku: 'CNT-CL30-00012',
-    qty: 50, shippedQty: 30,
-    expDate: '', deadline: '2026-05-15',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-20', btbNo: '2015301',
-    unitPrice: 85000, shippingPrice: 400000,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: 'Partial shipment, sisa nyusul minggu depan'
-  },
-  {
-    id: 'seed-2b',
-    spDate: '2026-02-03', spNo: '2020611', customer: 'INDOMARCO',
-    productName: 'STORBIT CONTAINER 50L CLEAR',
-    sku: 'CNT-CL50-00013',
-    qty: 30, shippedQty: 30,
-    expDate: '', deadline: '2026-05-15',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-18', btbNo: '2015302',
-    unitPrice: 125000, shippingPrice: 0,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  {
-    id: 'seed-2c',
-    spDate: '2026-02-03', spNo: '2020611', customer: 'INDOMARCO',
-    productName: 'STORBIT TUTUP CONTAINER UNIVERSAL',
-    sku: 'CNT-LID-00001',
-    qty: 80, shippedQty: 60,
-    expDate: '', deadline: '2026-05-15',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-20', btbNo: '2015301',
-    unitPrice: 25000, shippingPrice: 0,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  // SP 2020688 - 2 items, all open
-  {
-    id: 'seed-3a',
-    spDate: '2026-02-18', spNo: '2020688', customer: 'INDOGROSIR',
-    productName: 'STORBIT TRAY ROTI ALU 60X40',
-    sku: 'TRY-AL60-00003',
-    qty: 25, shippedQty: 0,
-    expDate: '', deadline: '2026-05-10',
-    dc: 'DC SURABAYA', shippingDate: '', btbNo: '',
-    unitPrice: 95000, shippingPrice: 750000,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: 'Menunggu produksi'
-  },
-  {
-    id: 'seed-3b',
-    spDate: '2026-02-18', spNo: '2020688', customer: 'INDOGROSIR',
-    productName: 'STORBIT TRAY ROTI ALU 80X40',
-    sku: 'TRY-AL80-00004',
-    qty: 15, shippedQty: 0,
-    expDate: '', deadline: '2026-05-10',
-    dc: 'DC SURABAYA', shippingDate: '', btbNo: '',
-    unitPrice: 135000, shippingPrice: 0,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  // SP 2020734 - 1 item, closed but waiting kirim
-  {
-    id: 'seed-4',
-    spDate: '2026-03-05', spNo: '2020734', customer: 'INDOGROSIR',
-    productName: 'STORBIT LOYANG 60 X 40 CM',
-    sku: 'BKT-LY60-00007',
-    qty: 15, shippedQty: 15,
-    expDate: '2026-09-05', deadline: '',
-    dc: 'DC BOGOR', shippingDate: '2026-04-15', btbNo: '2015245',
-    unitPrice: 145000, shippingPrice: 500000,
-    inv: true, fp: true, submit: true, kirim: false,
-    submitDate: '2026-05-01', emailStatus: '',
-    notes: 'Faktur sudah dibuat, belum dikirim ke customer'
-  },
-  // SP 2020812 - 2 items, overdue
-  {
-    id: 'seed-5a',
-    spDate: '2026-03-22', spNo: '2020812', customer: 'INDOMARCO',
-    productName: 'STORBIT BUCKET 20L FOOD GRADE',
-    sku: 'BKT-FD20-00021',
-    qty: 100, shippedQty: 60,
-    expDate: '', deadline: '2026-04-30',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-10', btbNo: '2015277',
-    unitPrice: 65000, shippingPrice: 850000,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: 'OVERDUE - perlu follow up urgent'
-  },
-  {
-    id: 'seed-5b',
-    spDate: '2026-03-22', spNo: '2020812', customer: 'INDOMARCO',
-    productName: 'STORBIT BUCKET 10L FOOD GRADE',
-    sku: 'BKT-FD10-00020',
-    qty: 50, shippedQty: 50,
-    expDate: '', deadline: '2026-04-30',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-08', btbNo: '2015276',
-    unitPrice: 45000, shippingPrice: 0,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  // April SPs
-  {
-    id: 'seed-6',
-    spDate: '2026-04-08', spNo: '2020901', customer: 'INTERNAL',
-    productName: 'STORBIT LOYANG ALU 30 X 20',
-    sku: 'BKT-AL30-00009',
-    qty: 40, shippedQty: 40,
-    expDate: '2026-10-08', deadline: '',
-    dc: 'DC BANDUNG', shippingDate: '2026-04-25', btbNo: '2015350',
-    unitPrice: 75000, shippingPrice: 450000,
-    inv: true, fp: true, submit: true, kirim: true,
-    submitDate: '2026-05-02', emailStatus: '2026-05-03',
-    notes: ''
-  },
-  {
-    id: 'seed-7a',
-    spDate: '2026-04-15', spNo: '2020945', customer: 'INDOGROSIR',
-    productName: 'STORBIT BOX SAYUR 40L',
-    sku: 'BOX-VG40-00031',
-    qty: 60, shippedQty: 60,
-    expDate: '', deadline: '2026-05-30',
-    dc: 'DC BOGOR', shippingDate: '2026-05-02', btbNo: '2015389',
-    unitPrice: 55000, shippingPrice: 600000,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  {
-    id: 'seed-7b',
-    spDate: '2026-04-15', spNo: '2020945', customer: 'INDOGROSIR',
-    productName: 'STORBIT BOX SAYUR 60L',
-    sku: 'BOX-VG60-00032',
-    qty: 30, shippedQty: 30,
-    expDate: '', deadline: '2026-05-30',
-    dc: 'DC BOGOR', shippingDate: '2026-05-02', btbNo: '2015389',
-    unitPrice: 78000, shippingPrice: 0,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-];
 
 // ============================
 // Utils
@@ -397,69 +230,6 @@ const can = (role, action) => {
   return matrix[role]?.includes(action);
 };
 
-const STORAGE_KEY = 'storbit-manifest:rows-v2';
-const CUSTOMERS_KEY = 'storbit-manifest:customers-v1';
-const AR_KEY = 'storbit-manifest:ar-v1';
-
-const SEED_CUSTOMERS = [
-  { id: 'cust-im', code: 'IM', name: 'INDOMARCO', defaultDC: 'DC JAKARTA', picName: '', picEmail: '', active: true },
-  { id: 'cust-ig', code: 'IG', name: 'INDOGROSIR', defaultDC: 'DC BOGOR', picName: '', picEmail: '', active: true },
-  { id: 'cust-imt', code: 'IMT', name: 'INDOMARET', defaultDC: '', picName: '', picEmail: '', active: true },
-  { id: 'cust-mac', code: 'MAC', name: 'MAC', defaultDC: '', picName: '', picEmail: '', active: true },
-  { id: 'cust-int', code: 'INT', name: 'INTERNAL', defaultDC: '', picName: '', picEmail: '', active: true },
-];
-
-const SEED_AR = [
-  {
-    id: 'ar-1', noTTF: '25E0011001163', tanggalTTF: '2025-10-21', tanggalMenerima: '2025-10-24',
-    noINV: 'JKT-251001', noSP: '1881279', customer: 'INDOMARET',
-    tglPembayaran: '2025-12-10', notes: '',
-    btbs: [
-      { id: 'btb-1', noBTB: '2025-BTB-1773702-NEW', dppPPN: 7988392.50, pph: 0, payment: 7988392.50 },
-      { id: 'btb-2', noBTB: '2025-BTB-1774099-NEW', dppPPN: 14224261.50, pph: 0, payment: 14224261.50 },
-      { id: 'btb-3', noBTB: '2025-BTB-1781382-NEW', dppPPN: 5863797, pph: 0, payment: 5863797 },
-      { id: 'btb-4', noBTB: '2025-BTB-1785309-NEW', dppPPN: 9441882, pph: 0, payment: 9441882 },
-      { id: 'btb-5', noBTB: '2025-BTB-1798736-NEW', dppPPN: 6739251.75, pph: 0, payment: 6739251.75 },
-    ]
-  },
-  {
-    id: 'ar-2', noTTF: '25E0011003859', tanggalTTF: '2025-10-27', tanggalMenerima: '2025-10-30',
-    noINV: 'JKT-251007', noSP: '1908017', customer: 'INDOMARET',
-    tglPembayaran: '2025-12-17', notes: 'Selisih rounding kecil',
-    btbs: [
-      { id: 'btb-6', noBTB: '2025-BTB-1803540-NEW', dppPPN: 3159338, pph: 0, payment: 3159337.50 },
-      { id: 'btb-7', noBTB: '2025-BTB-1803532-NEW', dppPPN: 19259277, pph: 0, payment: 19259277 },
-      { id: 'btb-8', noBTB: '2025-BTB-1788518-NEW', dppPPN: 11516639, pph: 0, payment: 11516638.50 },
-    ]
-  },
-  {
-    id: 'ar-3', noTTF: '25E0011015568', tanggalTTF: '2025-11-21', tanggalMenerima: '2025-11-24',
-    noINV: 'JKT-251108', noSP: '1881821', customer: 'INDOMARET',
-    tglPembayaran: '', notes: 'Belum dibayar',
-    btbs: [
-      { id: 'btb-9', noBTB: '2025-BTB-1835501-NEW', dppPPN: 18168480, pph: 0, payment: 0 },
-      { id: 'btb-10', noBTB: '2025-BTB-1835502-NEW', dppPPN: 353047, pph: 6361, payment: 0 },
-    ]
-  },
-  {
-    id: 'ar-4', noTTF: '25E0011018825', tanggalTTF: '2025-11-26', tanggalMenerima: '2025-12-03',
-    noINV: 'JKT-251111', noSP: '1881825', customer: 'INDOGROSIR',
-    tglPembayaran: '2026-01-14', notes: '',
-    btbs: [
-      { id: 'btb-11', noBTB: '2025-BTB-1841781-NEW', dppPPN: 33894940, pph: 0, payment: 33894960 },
-      { id: 'btb-12', noBTB: '2025-BTB-1841782-NEW', dppPPN: 695232, pph: 12527, payment: 682705.15 },
-    ]
-  },
-  {
-    id: 'ar-5', noTTF: '25E0011022695', tanggalTTF: '2025-12-07', tanggalMenerima: '2025-12-10',
-    noINV: 'JKT-251202', noSP: '1942534', customer: 'INDOMARCO',
-    tglPembayaran: '', notes: '',
-    btbs: [
-      { id: 'btb-13', noBTB: '2025-BTB-1846675-NEW', dppPPN: 74680249, pph: 0, payment: 0 },
-      { id: 'btb-14', noBTB: '2025-BTB-1848953-NEW', dppPPN: 70818000, pph: 0, payment: 0 },
-    ]
-  },
-];
 
 // ============================
 // Main App
@@ -472,8 +242,6 @@ export default function StorbitManifest() {
     removeRow: dbRemoveRow,
     removeRowsBySp: dbRemoveRowsBySp,
     bulkAdd: dbBulkAdd,
-    resetData: dbResetData,
-    clearAll: dbClearAll,
   } = useSpItems({ customers });
   const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
   const [loading, setLoading] = useState(true);
@@ -511,23 +279,6 @@ export default function StorbitManifest() {
     setLoading(false);
   }, []);
 
-  const persist = async (newRows) => {
-    setRows(newRows);
-    try { await window.storage.set(STORAGE_KEY, JSON.stringify(newRows)); }
-    catch (e) { showToast('Gagal menyimpan data', 'error'); }
-  };
-
-  const persistCustomers = async (newCust) => {
-    setCustomers(newCust);
-    try { await window.storage.set(CUSTOMERS_KEY, JSON.stringify(newCust)); }
-    catch (e) { showToast('Gagal menyimpan customer', 'error'); }
-  };
-
-  const persistAR = async (newAR) => {
-    setArData(newAR);
-    try { await window.storage.set(AR_KEY, JSON.stringify(newAR)); }
-    catch (e) { showToast('Gagal menyimpan AR', 'error'); }
-  };
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -584,10 +335,6 @@ export default function StorbitManifest() {
     return out;
   }, [groupedSP, search, filterStatus, filterDC, filterCustomer, filterMonth, filterOverdue, sortBy]);
 
-  const filteredRows = useMemo(() => {
-    if (filterMonth === 'all') return enrichedRows;
-    return enrichedRows.filter(r => monthYearKey(r.spDate) === filterMonth);
-  }, [enrichedRows, filterMonth]);
 
   // ============================
   // Stats
@@ -1269,7 +1016,6 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
         {customers.filter(c => c.active !== false).map(c => {
           const active = filterCustomer === c.name;
           const count = grouped.filter(g => g.customer === c.name).length;
-          const allCount = c.name; // placeholder
           return (
             <button
               key={c.id}
@@ -2550,7 +2296,6 @@ function ARTrackerPage({ arData, customers, filterCustomer, setFilterCustomer, f
   const totalInvoice = enriched.reduce((s, t) => s + t.totalInvoice, 0);
   const totalPayment = enriched.reduce((s, t) => s + t.totalPayment, 0);
   const totalOS = enriched.reduce((s, t) => s + t.totalOS, 0);
-  const lunasCount = enriched.filter(t => t.status === 'Lunas').length;
   const overdueCount = enriched.filter(t => t.isOverdue).length;
   const avgJarak = enriched.filter(t => t.status === 'Lunas' && t.jarakTgl !== null).reduce((s, t, _, arr) => s + t.jarakTgl/arr.length, 0);
 
