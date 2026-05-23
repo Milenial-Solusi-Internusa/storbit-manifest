@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
   Search, Download, Upload, Eye, Edit3, Trash2, X, Check,
@@ -15,7 +15,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
-import UserManagement from './components/UserManagement';
+const UserManagement = lazy(() => import('./components/UserManagement'));
 
 // ============================
 // PASTEL PALETTE
@@ -1085,7 +1085,13 @@ export default function StorbitManifest() {
             />
           )}
           {activeMenu === 'users' && (
-            <UserManagement currentUserId={profile?.id || null} />
+            <Suspense fallback={
+              <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                Loading...
+              </div>
+            }>
+              <UserManagement currentUserId={profile?.id || null} />
+            </Suspense>
           )}
         </main>
       </div>

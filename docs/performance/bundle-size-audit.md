@@ -557,3 +557,96 @@ True deferred loading (Recharts not downloaded until Dashboard is visited) requi
 ### Files Changed in Step 1
 - `vite.config.js` — added `build.rolldownOptions.output.codeSplitting.groups`
 - `docs/performance/bundle-size-audit.md` — updated to record Step 1 results
+
+---
+
+## 14. Phase 0.4B Step 2 — Actual Results (2026-05-23)
+
+### What Changed
+`src/App.jsx` updated with three minimal edits — no other files touched.
+
+1. **Line 1:** Added `Suspense, lazy` to existing React import
+2. **Line 18:** Replaced static import with `React.lazy()` dynamic import
+3. **Lines 1087–1094:** Wrapped `<UserManagement>` render in `<Suspense>` with inline fallback
+
+### Exact Change
+
+```js
+// Line 1 — before:
+import React, { useState, useEffect, useMemo } from 'react';
+// Line 1 — after:
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+
+// Line 18 — before:
+import UserManagement from './components/UserManagement';
+// Line 18 — after:
+const UserManagement = lazy(() => import('./components/UserManagement'));
+
+// Lines 1087–1089 — before:
+{activeMenu === 'users' && (
+  <UserManagement currentUserId={profile?.id || null} />
+)}
+// Lines 1087–1094 — after:
+{activeMenu === 'users' && (
+  <Suspense fallback={
+    <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+      Loading...
+    </div>
+  }>
+    <UserManagement currentUserId={profile?.id || null} />
+  </Suspense>
+)}
+```
+
+### Build Result After Step 2
+
+```
+$ npm run build
+
+> storbit-manifest@0.0.0 build
+> vite build
+
+vite v8.0.11 building client environment for production...
+✓ 2339 modules transformed.
+
+dist/index.html                             0.89 kB │ gzip:   0.40 kB
+dist/assets/index-Dtb_zCIb.css             16.48 kB │ gzip:   4.21 kB
+dist/assets/rolldown-runtime-S-ySWqyJ.js    0.69 kB │ gzip:   0.42 kB
+dist/assets/UserManagement-F2o7WvBh.js      8.86 kB │ gzip:   2.97 kB
+dist/assets/vendor-lucide-LJsMC_yj.js       9.26 kB │ gzip:   3.60 kB
+dist/assets/index-DuhpD4Ev.js             134.44 kB │ gzip:  28.35 kB
+dist/assets/vendor-react-YvL5Yovn.js      189.64 kB │ gzip:  59.65 kB
+dist/assets/vendor-supabase-CG_3_vtU.js   196.30 kB │ gzip:  50.02 kB
+dist/assets/vendor-recharts-BK9OrOl0.js   386.98 kB │ gzip: 110.99 kB
+
+✓ built in 676ms
+```
+
+**No warnings. Build PASS. ✅**
+
+### Before vs After Comparison (Step 1 → Step 2)
+
+| Metric | After Step 1 | After Step 2 |
+|--------|-------------|-------------|
+| JS chunks | 7 | 8 |
+| Warning | ✅ None | ✅ None |
+| Largest chunk | 386.98 kB (`vendor-recharts`) | 386.98 kB (`vendor-recharts`) — unchanged |
+| App code chunk | 141.40 kB | 134.44 kB (-6.96 kB) |
+| UserManagement chunk | not separate | 8.86 kB / 2.97 kB gzipped — **deferred** ✅ |
+| Vendor chunk hashes | stable | stable — **unchanged** ✅ |
+| Build time | ~625ms | ~676ms |
+
+### Key Observations
+
+- `UserManagement-F2o7WvBh.js` now appears as a **separate lazy chunk** — only downloaded when a user first navigates to the Users page (`activeMenu === 'users'`).
+- App code chunk (`index`) reduced: 141.40 kB → 134.44 kB (saved 6.96 kB raw / 1.2 kB gzipped).
+- All vendor chunk hashes **unchanged** (`vendor-lucide`, `vendor-react`, `vendor-supabase`, `vendor-recharts` same hashes as Step 1) — confirms correct caching behavior; vendor updates don't bust app cache and vice versa.
+- `Suspense` boundary is scoped tightly — only wraps `<UserManagement>` inside the `activeMenu === 'users'` conditional. Other pages are completely unaffected.
+- Props are identical (`currentUserId={profile?.id || null}`). Behavior is unchanged.
+
+### Lint Verification
+- `npm run lint` — 43 pre-existing errors. **No new errors introduced.** Count unchanged from Step 1.
+
+### Files Changed in Step 2
+- `src/App.jsx` — 3 targeted edits (import line, lazy declaration, Suspense wrapper)
+- `docs/performance/bundle-size-audit.md` — updated to record Step 2 results
