@@ -1,10 +1,9 @@
 // src/contexts/AuthContext.jsx
 // Global auth state — wrap App di main.jsx, akses via useAuth() di mana aja.
 
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-
-const AuthContext = createContext(null);
+import { AuthContext } from './authCtx';
 
 // Helper: query profile pake user ID langsung (no auth call needed)
 async function fetchProfileById(userId) {
@@ -135,10 +134,3 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used inside <AuthProvider>');
-  }
-  return ctx;
-}

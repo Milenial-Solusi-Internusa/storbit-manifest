@@ -3,7 +3,7 @@
 // Inactive user juga di-handle (kasih message + tombol logout).
 
 import { Loader2, Package, ShieldOff, LogOut } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 import Login from './Login';
 
 const PASTEL = {
