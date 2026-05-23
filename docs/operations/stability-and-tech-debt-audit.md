@@ -21,7 +21,7 @@
 | 0.4B Step 3A | Extract Dashboard Module | ✅ Complete |
 | 0.4B Step 3B | Lazy Load Dashboard | ✅ Complete |
 | **0.5A** | **Stability & Tech Debt Audit** | ✅ **This document** |
-| 0.5B | Stability Fixes (TBD) | 🔜 Next |
+| 0.5B | Remove Production Console Logs | ✅ Complete |
 | 1.0 | Master Data Foundation | Planned |
 
 **GitHub push status:** Commits exist locally on `docs/nexus-erp-foundation`. Branch has NOT been pushed to remote (network issue in prior session). Push required before any PR or deploy.
@@ -350,6 +350,8 @@ The last log prints raw Supabase profile data (including all columns selected vi
 
 **Must be removed before any push to remote.**
 
+**Phase 0.5B status:** ✅ Resolved. The unsafe production console logs in `getMyProfile()` were removed from `src/lib/db.js` without changing Supabase session/profile query behavior or return values.
+
 ---
 
 ### SEC-04 — company_id Not Enforced at Query Level
@@ -378,6 +380,30 @@ The security baseline requires inactive users to be blocked or logged out. No in
 
 ---
 
+## Phase 0.5B Completion Note
+
+**Date:** 2026-05-23
+**Scope:** Remove Production Console Logs
+
+Phase 0.5B removed only the unsafe production logs from `src/lib/db.js`. No business logic, Supabase query behavior, auth/session behavior, schema, config, RLS policy, dependency, deployment, or unrelated lint issue was changed.
+
+Removed logs:
+- `console.log('[getMyProfile] starting...');`
+- `console.log('[getMyProfile] session:', session ? \`user ${session.user.id}\` : 'null');`
+- `console.log('[getMyProfile] querying profile...');`
+- `console.log('[getMyProfile] result:', data, 'err:', error);`
+
+Verification after Phase 0.5B:
+- `rg -n "console\\.(log|debug|info)" src/lib/db.js` found no remaining `console.log`, `console.debug`, or `console.info` calls.
+- `npm run build` ✅ PASS — production build completed with no errors and no 500 kB warning.
+- `npm run lint` ❌ FAIL — 42 errors, 0 warnings. These are the documented pre-existing lint errors from Phase 0.5A and were intentionally not fixed during this phase.
+
+Security impact:
+- The P0 session/profile data exposure risk from production browser console logs is resolved.
+- Existing broader security risks in this audit remain open until handled in their own approved phases.
+
+---
+
 ## 9. Recommended Fix Order
 
 Prioritized by severity and risk. All items in **P0** must be resolved before any GitHub push or production deploy.
@@ -386,11 +412,11 @@ Prioritized by severity and risk. All items in **P0** must be resolved before an
 
 | ID | Item | Effort | Risk if Skipped |
 |----|------|--------|-----------------|
-| SEC-03 | Remove `console.log` statements from `db.js` | Tiny (delete 4 lines) | Session data exposed in browser console in production |
+| SEC-03 | Remove `console.log` statements from `db.js` | ✅ Done in Phase 0.5B | Resolved |
 | STAB-02 | Remove orphaned legacy functions (`persist`, `persistCustomers`, `persistAR`) | Small (delete ~30 lines) | `no-undef` errors; dangerous dead code with undefined refs |
 | STAB-06 | Remove dead `useMemo` and unused variables (SEED_DATA, SEED_CUSTOMERS, SEED_AR, `filteredRows`, `dcList`, `allCount`, `lunasCount`, `dbResetData`, `dbClearAll`) | Small | Noise in lint output, dead computation |
 
-### P1 — Fix in Phase 0.5B (First Coding Pass)
+### P1 — Fix After Phase 0.5B (Separate Scope)
 
 | ID | Item | Effort | Risk if Skipped |
 |----|------|--------|-----------------|
@@ -422,14 +448,13 @@ Prioritized by severity and risk. All items in **P0** must be resolved before an
 
 ---
 
-## 10. Phase 0.5B Recommendation
+## 10. Post-0.5B Recommendation
 
-**Phase 0.5B should be a focused coding pass targeting P0 + P1 items only.**
+**Phase 0.5B was intentionally limited to removing unsafe production console logs. Remaining stability, lint, and performance fixes should be handled in separate scoped phases.**
 
-### Recommended 0.5B Scope
+### Recommended Next Scope
 
-**Commit 1 — P0 cleanup (lowest risk, zero behavior change):**
-- Remove the 4 `console.log` calls from `src/lib/db.js`
+**Commit 1 — Remaining P0 cleanup (lowest risk, zero behavior change):**
 - Remove orphaned legacy functions (`persist`, `persistCustomers`, `persistAR`) and their dead seed arrays (`SEED_DATA`, `SEED_CUSTOMERS`, `SEED_AR`) from `src/App.jsx`
 - Remove dead useMemo results (`filteredRows`, `dcList`, `allCount`, `lunasCount`, `dbResetData`, `dbClearAll`)
 - Remove unused imports (`React` from JSX transform files, `Filter` icon, `LineChart`/`Line` from Dashboard.jsx)
@@ -451,7 +476,7 @@ Prioritized by severity and risk. All items in **P0** must be resolved before an
 - Currently filters client-side so no query reduction yet, but pattern is in place for when server-side search is added
 - Risk: **Low-Medium** — UI behavior change (slight delay before filter applies)
 
-### What 0.5B Should NOT Include
+### What The Next Scope Should NOT Include
 
 - Server-side pagination (Phase 1.0 prep — needs careful RLS and schema coordination)
 - Soft delete migration (requires schema change — needs explicit approval)
@@ -459,17 +484,17 @@ Prioritized by severity and risk. All items in **P0** must be resolved before an
 - `company_id` filter changes (needs RLS verification first)
 - Further App.jsx page extraction (Phase 0.4B continuation — separate scope)
 
-### Estimated Phase 0.5B Lint Reduction
+### Estimated Post-0.5B Lint Reduction
 
 | After | Expected Lint Count |
 |-------|---------------------|
-| Current (0.5A) | 42 errors |
-| After Commit 1 (P0 cleanup) | ~15 errors |
+| Current after Phase 0.5B | 42 errors |
+| After remaining P0 cleanup | ~15 errors |
 | After Commit 2 (ErrorBoundary) | ~15 errors (no lint change) |
 | After Commit 3 (SortIcon) | ~11 errors |
 | After Commit 4 (debounce) | ~11 errors (no lint change) |
 
-Remaining ~11 errors after 0.5B would be: `react-hooks/set-state-in-effect` (6) + `react-refresh/only-export-components` (1) + any remaining `no-unused-vars` in AuthGate/Login/AuthContext/UserManagement.
+Remaining ~11 errors after the proposed next cleanup would be: `react-hooks/set-state-in-effect` (6) + `react-refresh/only-export-components` (1) + any remaining `no-unused-vars` in AuthGate/Login/AuthContext/UserManagement.
 
 ---
 
