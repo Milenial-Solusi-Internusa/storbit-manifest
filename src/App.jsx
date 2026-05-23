@@ -10,6 +10,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
+import ErrorBoundary from './components/ErrorBoundary';
 const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'));
 const UserManagement = lazy(() => import('./components/UserManagement'));
 
@@ -1022,13 +1023,15 @@ export default function StorbitManifest() {
         )}
 
           {activeMenu === 'dashboard' && (
-            <Suspense fallback={
-              <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                Loading...
-              </div>
-            }>
-              <Dashboard stats={stats} groupedSP={filterMonth === 'all' ? groupedSP : groupedSP.filter(g => monthYearKey(g.spDate) === filterMonth)} filterMonth={filterMonth}/>
-            </Suspense>
+            <ErrorBoundary title="Dashboard temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <Dashboard stats={stats} groupedSP={filterMonth === 'all' ? groupedSP : groupedSP.filter(g => monthYearKey(g.spDate) === filterMonth)} filterMonth={filterMonth}/>
+              </Suspense>
+            </ErrorBoundary>
           )}
           {activeMenu === 'manifest' && (
             <Manifest
@@ -1089,13 +1092,15 @@ export default function StorbitManifest() {
             />
           )}
           {activeMenu === 'users' && (
-            <Suspense fallback={
-              <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                Loading...
-              </div>
-            }>
-              <UserManagement currentUserId={profile?.id || null} />
-            </Suspense>
+            <ErrorBoundary title="User Management temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <UserManagement currentUserId={profile?.id || null} />
+              </Suspense>
+            </ErrorBoundary>
           )}
         </main>
       </div>

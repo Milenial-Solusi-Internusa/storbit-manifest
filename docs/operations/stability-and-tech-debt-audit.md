@@ -22,6 +22,7 @@
 | 0.4B Step 3B | Lazy Load Dashboard | ✅ Complete |
 | **0.5A** | **Stability & Tech Debt Audit** | ✅ **This document** |
 | 0.5B | Remove Production Console Logs | ✅ Complete |
+| 0.5C | ErrorBoundary Baseline | ✅ Complete |
 | 1.0 | Master Data Foundation | Planned |
 
 **GitHub push status:** Commits exist locally on `docs/nexus-erp-foundation`. Branch has NOT been pushed to remote (network issue in prior session). Push required before any PR or deploy.
@@ -133,13 +134,15 @@ dist/assets/vendor-recharts-LsVsUfOu.js   386.98 kB │ gzip: 110.99 kB
 
 Risks that could cause app crashes or user-visible failures in production.
 
-### STAB-01 — No ErrorBoundary Anywhere
+### STAB-01 — ErrorBoundary Coverage
 **Severity: High**
 **Location:** `src/App.jsx`, `src/main.jsx`
 
-There is no `<ErrorBoundary>` wrapping any page or the entire application. If any component throws a JavaScript error during render (e.g., a null access on Supabase data, a failed JSON parse), React will unmount the entire app and display a blank white screen. Users cannot recover without a full page refresh, and no error is surfaced to the user.
+At the Phase 0.5A audit point, there was no `<ErrorBoundary>` wrapping any page or the entire application. If any component throws a JavaScript error during render (e.g., a null access on Supabase data, a failed JSON parse), React can unmount the affected tree and leave users with a blank screen. Users cannot recover without a full page refresh when no boundary is present.
 
 **Risk trigger:** Supabase returns unexpected shape, network partial failure, malformed data from import.
+
+**Phase 0.5C status:** 🟡 Partially resolved. `src/components/ErrorBoundary.jsx` now protects the lazy Dashboard and User Management render sections in `src/App.jsx` while preserving their existing `Suspense` fallbacks. The auth shell, navigation shell, and older non-lazy pages are not wrapped yet.
 
 ---
 
@@ -404,6 +407,37 @@ Security impact:
 
 ---
 
+## Phase 0.5C Completion Note
+
+**Date:** 2026-05-23
+**Scope:** ErrorBoundary Baseline
+
+Phase 0.5C added a reusable `ErrorBoundary` component and applied it only around the lazy Dashboard and User Management page sections. This preserves lazy loading and existing `Suspense` loading UI while preventing render errors inside those two modules from white-screening the whole app.
+
+Protected sections:
+- Dashboard lazy render path in `src/App.jsx`
+- User Management lazy render path in `src/App.jsx`
+
+Implementation details:
+- New reusable component: `src/components/ErrorBoundary.jsx`
+- Fallback UI is minimal and does not expose stack traces, user data, session data, profile data, or Supabase details.
+- Errors are logged with `console.error` only.
+- Retry button resets the boundary state for the affected section.
+
+Verification after Phase 0.5C:
+- `npm run build` ✅ PASS — production build completed with no errors and no 500 kB warning.
+- `npm run lint` ❌ FAIL — 42 errors, 0 warnings. These match the documented pre-existing lint baseline and were intentionally not fixed during this phase.
+
+Stability impact:
+- STAB-01 is partially resolved for the highest-risk lazy module islands.
+- A future scoped pass can evaluate whether to wrap the main content area or remaining non-lazy pages without changing auth behavior.
+
+Security impact:
+- No sensitive error details are rendered in the fallback UI.
+- No auth/session behavior, Supabase query behavior, schema, config, or RLS policy was changed.
+
+---
+
 ## 9. Recommended Fix Order
 
 Prioritized by severity and risk. All items in **P0** must be resolved before any GitHub push or production deploy.
@@ -416,17 +450,17 @@ Prioritized by severity and risk. All items in **P0** must be resolved before an
 | STAB-02 | Remove orphaned legacy functions (`persist`, `persistCustomers`, `persistAR`) | Small (delete ~30 lines) | `no-undef` errors; dangerous dead code with undefined refs |
 | STAB-06 | Remove dead `useMemo` and unused variables (SEED_DATA, SEED_CUSTOMERS, SEED_AR, `filteredRows`, `dcList`, `allCount`, `lunasCount`, `dbResetData`, `dbClearAll`) | Small | Noise in lint output, dead computation |
 
-### P1 — Fix After Phase 0.5B (Separate Scope)
+### P1 — Fix After Phase 0.5C (Separate Scope)
 
 | ID | Item | Effort | Risk if Skipped |
 |----|------|--------|-----------------|
-| STAB-01 | Add `<ErrorBoundary>` wrapper to main app and each lazy page | Small | Entire app goes blank on any unhandled throw |
+| STAB-01 | Evaluate broader ErrorBoundary coverage for main content / non-lazy pages | Small | Remaining non-lazy page errors can still affect the app shell |
 | STAB-03 | Move `SortIcon` outside `Manifest` render function | Tiny | State loss on every re-render (currently no state, but bad pattern) |
 | STAB-04 | Review and fix `setState-in-effect` pattern in hooks | Medium | Cascading render cycles possible |
 | SEC-01 | Implement soft delete for customers, sp_items, ar_ttfs | Medium | Permanent data loss on delete, no audit trail |
 | PERF-03 | Add debounce (300ms) to all search inputs | Small | Prerequisite for server-side search |
 
-### P2 — Fix in Phase 0.5C or Phase 1.0 Prep
+### P2 — Fix in Phase 0.5D or Phase 1.0 Prep
 
 | ID | Item | Effort | Risk if Skipped |
 |----|------|--------|-----------------|
@@ -448,9 +482,9 @@ Prioritized by severity and risk. All items in **P0** must be resolved before an
 
 ---
 
-## 10. Post-0.5B Recommendation
+## 10. Post-0.5C Recommendation
 
-**Phase 0.5B was intentionally limited to removing unsafe production console logs. Remaining stability, lint, and performance fixes should be handled in separate scoped phases.**
+**Phase 0.5C was intentionally limited to the ErrorBoundary baseline. Remaining stability, lint, and performance fixes should be handled in separate scoped phases.**
 
 ### Recommended Next Scope
 
@@ -461,17 +495,11 @@ Prioritized by severity and risk. All items in **P0** must be resolved before an
 - Expected: lint errors drop from 42 to ~15 (removing no-unused-vars, no-undef, no-useless-assignment categories)
 - Risk: **Low** — deleting dead code only
 
-**Commit 2 — ErrorBoundary (high safety value, low risk):**
-- Create `src/components/ErrorBoundary.jsx` — simple class component wrapping the error UI
-- Wrap the main app in `<ErrorBoundary>` in `src/main.jsx`
-- Wrap each `<Suspense>` boundary in its own `<ErrorBoundary>` in `src/App.jsx`
-- Risk: **Low** — additive change, no data flow impact
-
-**Commit 3 — SortIcon extraction (low risk):**
+**Commit 2 — SortIcon extraction (low risk):**
 - Move `SortIcon` definition from inside `Manifest` to module scope (above `Manifest` function, inside same file)
 - Risk: **Low** — no behavior change, fixes static-components lint error
 
-**Commit 4 — Debounce search inputs (prerequisite for PERF-01):**
+**Commit 3 — Debounce search inputs (prerequisite for PERF-01):**
 - Add 300ms debounce to filter/search state in Manifest, ARTrackerPage, CustomersPage
 - Currently filters client-side so no query reduction yet, but pattern is in place for when server-side search is added
 - Risk: **Low-Medium** — UI behavior change (slight delay before filter applies)
@@ -484,15 +512,14 @@ Prioritized by severity and risk. All items in **P0** must be resolved before an
 - `company_id` filter changes (needs RLS verification first)
 - Further App.jsx page extraction (Phase 0.4B continuation — separate scope)
 
-### Estimated Post-0.5B Lint Reduction
+### Estimated Post-0.5C Lint Reduction
 
 | After | Expected Lint Count |
 |-------|---------------------|
-| Current after Phase 0.5B | 42 errors |
+| Current after Phase 0.5C | 42 errors |
 | After remaining P0 cleanup | ~15 errors |
-| After Commit 2 (ErrorBoundary) | ~15 errors (no lint change) |
-| After Commit 3 (SortIcon) | ~11 errors |
-| After Commit 4 (debounce) | ~11 errors (no lint change) |
+| After SortIcon extraction | ~11 errors |
+| After debounce | ~11 errors (no lint change) |
 
 Remaining ~11 errors after the proposed next cleanup would be: `react-hooks/set-state-in-effect` (6) + `react-refresh/only-export-components` (1) + any remaining `no-unused-vars` in AuthGate/Login/AuthContext/UserManagement.
 
@@ -575,7 +602,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 
 - The 42 pre-existing lint errors (do not block push, but document in PR)
 - The `SortIcon` render-scope issue (functional, just incorrect pattern)
-- Missing ErrorBoundary (functional, just unprotected)
+- ErrorBoundary only protects Dashboard and User Management lazy sections so far
 - Missing pagination (functional, just unscalable at volume)
 
 ### Do Not Push or Deploy Without Separate Approval
@@ -612,7 +639,7 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 |----------|---------|
 | Build | ✅ PASS — clean, no warnings |
 | Lint | ❌ 42 errors (all pre-existing, none from Phase 0.4B) |
-| ErrorBoundary | ❌ Missing — entire app crashes on any unhandled throw |
+| ErrorBoundary | 🟡 Partial — Dashboard + User Management lazy sections protected |
 | Pagination | ❌ Missing — all queries fetch all rows |
 | Soft Delete | ❌ Missing — hard DELETE on all business data |
 | Audit Log | ❌ Missing — no audit events on any mutation |
@@ -623,4 +650,4 @@ The following items are blocking concerns. Resolve these before pushing `docs/ne
 | Lazy loading | ✅ Dashboard + UserManagement deferred |
 | Vendor chunk split | ✅ Parallel-cacheable chunks |
 
-**Next recommended step:** Phase 0.5B — implement P0 and P1 fixes starting with the `console.log` removal and dead code cleanup, then ErrorBoundary addition.
+**Next recommended step:** Review and commit Phase 0.5C, then continue with a separate scoped cleanup for remaining P0 dead code or broader non-lazy ErrorBoundary coverage.
