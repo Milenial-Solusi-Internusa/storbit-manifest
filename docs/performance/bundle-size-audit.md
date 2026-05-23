@@ -1,9 +1,9 @@
 # Bundle Size Audit — Nexus by MSI
 
 **Date:** 2026-05-23
-**Phase:** 0.4A — Bundle Size Warning Audit
-**Author:** Claude (audit only — no source code changes made)
-**Status:** Audit complete. Phase 0.4B implementation plan included below.
+**Phase:** 0.4A — Bundle Size Warning Audit | 0.4B Step 1 — Vendor Chunk Split ✅
+**Author:** Claude
+**Status:** Phase 0.4B Step 1 complete. 500 kB warning resolved. See Section 13 for results.
 
 ---
 
@@ -484,6 +484,76 @@ After each Phase 0.4B commit, verify:
 
 ## Next Step
 
-**Start Phase 0.4B with Step 1: Add `manualChunks` to `vite.config.js`.**  
-This is the lowest-risk change, requires editing only one config file, and immediately resolves the Vite 500 kB warning. Verify with `npm run build`.  
-Then proceed to Step 2 (UserManagement lazy) and Step 3 (Dashboard extraction + lazy) in subsequent commits.
+~~**Start Phase 0.4B with Step 1: Add `manualChunks` to `vite.config.js`.**~~ ✅ Done — see Section 13.
+
+Next: Phase 0.4B Step 2 — apply `React.lazy()` to `UserManagement` (already a separate file, lowest-risk lazy loading target).
+
+---
+
+## 13. Phase 0.4B Step 1 — Actual Results (2026-05-23)
+
+### What Changed
+`vite.config.js` updated with `build.rolldownOptions.output.codeSplitting.groups`.
+
+**API used:** Native Vite 8 / Rolldown `codeSplitting.groups` (not deprecated `manualChunks` object form).  
+**Reason:** Rolldown only accepts `manualChunks` as a function (object form unsupported), and it is deprecated. The `codeSplitting.groups` API is the recommended Vite 8 path as indicated by the warning message itself.
+
+### Build Result After Step 1
+
+```
+$ npm run build
+
+> storbit-manifest@0.0.0 build
+> vite build
+
+vite v8.0.11 building client environment for production...
+✓ 2338 modules transformed.
+
+dist/index.html                             0.89 kB │ gzip:   0.40 kB
+dist/assets/index-Dtb_zCIb.css             16.48 kB │ gzip:   4.21 kB
+dist/assets/rolldown-runtime-S-ySWqyJ.js    0.69 kB │ gzip:   0.42 kB
+dist/assets/vendor-lucide-LJsMC_yj.js       9.26 kB │ gzip:   3.60 kB
+dist/assets/index-CuJ88kEb.js             141.40 kB │ gzip:  29.55 kB
+dist/assets/vendor-react-YvL5Yovn.js      189.64 kB │ gzip:  59.65 kB
+dist/assets/vendor-supabase-CG_3_vtU.js   196.30 kB │ gzip:  50.02 kB
+dist/assets/vendor-recharts-BK9OrOl0.js   386.98 kB │ gzip: 110.99 kB
+
+✓ built in 625ms
+```
+
+**No warnings. Build PASS. ✅**
+
+### Before vs After Comparison
+
+| Metric | Before (0.4A) | After (0.4B Step 1) |
+|--------|--------------|---------------------|
+| JS chunks | 1 | 7 (+ 1 CSS + html = 9 total assets) |
+| Warning | ⚠️ 500 kB exceeded | ✅ No warning |
+| Largest chunk | 924.65 kB | 386.98 kB (`vendor-recharts`) |
+| App code chunk | 924.65 kB (mixed) | 141.40 kB (`index`) |
+| Total JS gzipped | 252.45 kB | ~253.63 kB (+1.2 kB — rolldown-runtime overhead) |
+| Build time | ~696ms | ~625ms |
+
+### Chunk Breakdown
+
+| Chunk | Raw Size | Gzipped | Notes |
+|-------|----------|---------|-------|
+| `rolldown-runtime` | 0.69 kB | 0.42 kB | New — Rolldown chunk coordinator runtime |
+| `vendor-lucide` | 9.26 kB | 3.60 kB | Lucide icons (17 named) |
+| `index` (app code) | 141.40 kB | 29.55 kB | All app components and business logic |
+| `vendor-react` | 189.64 kB | 59.65 kB | React + React DOM |
+| `vendor-supabase` | 196.30 kB | 50.02 kB | Supabase JS client |
+| `vendor-recharts` | 386.98 kB | 110.99 kB | Recharts — largest, still below 500 kB |
+
+### Important Caveat — Step 1 Benefit Scope
+
+Step 1 (vendor chunks) provides **parallel download and better browser caching**, but does **not** defer loading. All 7 JS chunks are still downloaded and parsed on every initial page load. The total transferred bytes are essentially unchanged (~252–254 kB gzipped).
+
+True deferred loading (Recharts not downloaded until Dashboard is visited) requires **Step 3 — React.lazy()** on the Dashboard component. That is the next high-impact step.
+
+### Lint Verification
+- `npm run lint` — 43 pre-existing errors (same as baseline). No new errors introduced. All errors are in source files (`src/hooks/`, `src/App.jsx`), not in `vite.config.js`.
+
+### Files Changed in Step 1
+- `vite.config.js` — added `build.rolldownOptions.output.codeSplitting.groups`
+- `docs/performance/bundle-size-audit.md` — updated to record Step 1 results
