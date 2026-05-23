@@ -40,8 +40,17 @@ export function useSpItems({ customers = [] } = {}) {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    listSpItems().then(({ data, error: err }) => {
+      if (err) {
+        console.error('[useSpItems] list error:', err);
+        setError(err);
+      } else {
+        setError(null);
+        setRows(data || []);
+      }
+      setLoading(false);
+    });
+  }, []);
 
   // Add or update single row
   // App.jsx pass `data.customer` as name string. Kita resolve ke customer_id di sini.

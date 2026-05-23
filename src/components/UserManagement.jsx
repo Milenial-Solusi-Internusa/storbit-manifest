@@ -66,7 +66,18 @@ export default function UserManagement({ currentUserId }) {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    listProfiles().then(({ data, error: err }) => {
+      if (err) {
+        console.error('[UserMgmt] load error:', err);
+        setError(err.message || 'Gagal memuat user');
+      } else {
+        setError(null);
+        setProfiles(data || []);
+      }
+      setLoading(false);
+    });
+  }, []);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -226,6 +237,7 @@ export default function UserManagement({ currentUserId }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <EditableName
+                          key={p.full_name || ''}
                           value={p.full_name || ''}
                           onSave={(val) => handleNameUpdate(p.id, val)}
                           disabled={isSaving}
@@ -329,10 +341,6 @@ export default function UserManagement({ currentUserId }) {
 function EditableName({ value, onSave, disabled }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
 
   const commit = () => {
     if (draft.trim() && draft !== value) {
