@@ -152,6 +152,30 @@ Do not do any of the following unless explicitly instructed:
 
 ---
 
+## Required Reading Before Coding
+
+Before writing or changing any code, you must have read and understood:
+
+1. `CLAUDE.md` — this file (project identity, principles, safety rules)
+2. `docs/architecture/nexus-master-blueprint.md` — product direction, tech stack, non-negotiable rules
+3. `docs/security/security-baseline.md` — security rules, RLS requirements, MFA policy
+4. `docs/performance/performance-baseline.md` — pagination, search, caching, indexing rules
+
+Before working on a specific area, also read:
+
+| Task Area | Additional Required Reading |
+|-----------|----------------------------|
+| Any new feature | `docs/architecture/feature-registry.md` |
+| Database / schema work | `docs/database/core-schema-draft.md`, `docs/database/indexing-strategy.md` |
+| Approval / document flow | `docs/workflow/approval-engine.md`, `docs/workflow/status-lifecycle.md` |
+| Finance module | `docs/security/permission-matrix.md`, `docs/performance/reporting-performance.md` |
+| Public API / integration | `docs/integration/api-strategy.md`, `docs/integration/public-tracking-api.md` |
+| Deployment / release | `docs/operations/deployment-strategy.md`, `docs/operations/release-checklist.md` |
+| Caching implementation | `docs/performance/caching-strategy.md` |
+| Audit logging | `docs/security/audit-log-policy.md` |
+
+---
+
 ## Development Workflow
 
 For every task, follow this workflow:
@@ -183,6 +207,138 @@ For every task, follow this workflow:
    - Explain verification result.
    - Explain risk level.
    - Recommend the next step.
+
+---
+
+## Stricter Workflow Per Task Type
+
+Different task types carry different risk levels. Follow the stricter workflow below on top of the general workflow above.
+
+---
+
+### Task Type: New Feature Development
+
+Required reading: `docs/architecture/feature-registry.md`, `docs/security/security-baseline.md`, `docs/performance/performance-baseline.md`
+
+Before coding:
+- Confirm the feature is in the feature registry or add it first
+- Confirm the target phase is current or approved
+- Confirm no database schema change is needed (if yes, follow schema change workflow)
+- Confirm no new dependencies are needed (if yes, get explicit approval)
+
+During coding:
+- Add server-side pagination to all new list views
+- Add debounce to all new search inputs
+- Select only required columns in all queries
+- Add `deleted_at IS NULL` filter to all queries
+- Add `company_id` filter to all queries
+- Add audit log call for all create / update / delete actions
+- Do not add hardcoded user IDs, company IDs, or role values
+- Do not add `SELECT *` queries
+
+After coding:
+- Run `npm run build` — must pass
+- Run `npm run lint` — must pass or explain pre-existing errors
+- Manually verify the feature works end-to-end
+
+---
+
+### Task Type: Database Schema Change
+
+> High risk. Requires explicit approval before execution.
+
+Required reading: `docs/database/core-schema-draft.md`, `docs/database/entity-map.md`, `docs/database/indexing-strategy.md`
+
+Before making any schema change:
+1. State clearly: what table is being added or changed
+2. State clearly: why this change is needed
+3. State clearly: which existing data or queries are affected
+4. Wait for explicit approval — do not proceed without it
+
+When approved:
+- Write migration SQL in `/supabase/migrations/{timestamp}_{description}.sql`
+- Include rollback SQL as a comment or separate file
+- Add `company_id` column with NOT NULL if it is a business table
+- Add `deleted_at timestamptz` if it is a business table
+- Add `created_by`, `updated_by` if it is a business table
+- Add `created_at`, `updated_at` with `DEFAULT now()` if it is a business table
+- Add minimum required indexes (see `docs/database/indexing-strategy.md`)
+- Write RLS policy for new table immediately — never leave a table without RLS
+- Test migration on development Supabase before staging
+
+---
+
+### Task Type: RLS Policy Change
+
+> Critical risk. Requires explicit approval before execution.
+
+Required reading: `docs/security/security-baseline.md`, `docs/database/core-schema-draft.md`
+
+Rules:
+- Never weaken RLS to make code work — fix the code instead
+- Never disable RLS on a table that has business data
+- All RLS policies must scope by `company_id`
+- Test every RLS change with at least two different roles before applying to staging
+- RLS changes must be documented in the PR description with before/after comparison
+- Wait for explicit approval — do not proceed without it
+
+---
+
+### Task Type: UI / Frontend Change
+
+Required reading: `docs/performance/performance-baseline.md`, `docs/performance/caching-strategy.md`
+
+Rules:
+- Do not redesign UI unless the task specifically asks for it
+- Do not change unrelated UI components
+- Do not add new npm packages without explicit approval
+- All new list views must have server-side pagination
+- All new search inputs must be debounced (min 300ms)
+- All new large modules must use `React.lazy()` code splitting
+- Do not compute aggregates or run heavy logic inside render functions
+- Do not add `useEffect` that calls `setState` directly inside it unnecessarily
+- Wrap new major page sections in `ErrorBoundary`
+
+---
+
+### Task Type: Refactor
+
+Required reading: `docs/architecture/nexus-master-blueprint.md`
+
+Rules:
+- Refactor must not change any visible behavior
+- Refactor must not change any data flow or business logic
+- Scope must be small — one concern at a time (constants, utils, types)
+- Run `npm run build` and `npm run lint` before and after — both must pass
+- Do not rename database columns or table names as part of a frontend refactor
+- Do not move files that are imported in many places without updating all imports
+
+---
+
+### Task Type: Documentation Update
+
+Rules:
+- Update the relevant `docs/` file when a feature, rule, or decision changes
+- Update `docs/architecture/feature-registry.md` when a new feature is added
+- Update `docs/architecture/implementation-roadmap.md` when phase status changes
+- Update `CLAUDE.md` when a new standing rule or workflow is established
+- Documentation changes do not require `npm run build` but should not break any imports
+
+---
+
+### Task Type: Hotfix (Production Emergency)
+
+> Critical. Fast-track but still requires review.
+
+Rules:
+- Create `hotfix/{description}` branch from `main`
+- Fix must be minimal — address only the critical issue
+- Requires at least one reviewer even for fast-track
+- Deploy to staging first, verify, then production
+- Merge hotfix back to both `main` and `dev`
+- Post-mortem required within 48 hours for any P1 issue
+
+See `docs/operations/release-checklist.md` for full emergency process.
 
 ---
 
@@ -399,22 +555,46 @@ Default status lifecycle:
 
 ---
 
-## Documentation Direction
+## Documentation
 
-Technical documentation should live in the repo under docs/.
+Technical documentation lives in the repo under `docs/`. This is the source of truth.
 
-Target documentation structure:
-
+```
 docs/
 ├── architecture/
+│   ├── nexus-master-blueprint.md     ← Product identity, principles, tech stack
+│   ├── module-map.md                 ← All modules, dependencies, status
+│   ├── business-process-map.md       ← End-to-end process flows per entity
+│   ├── feature-registry.md           ← Feature catalog with full metadata
+│   └── implementation-roadmap.md     ← Phase-by-phase build plan
 ├── database/
+│   ├── core-schema-draft.md          ← Table definitions, conventions, RLS patterns
+│   ├── entity-map.md                 ← Entity relationships and sensitivity
+│   └── indexing-strategy.md          ← Mandatory indexes per table type
 ├── security/
+│   ├── security-baseline.md          ← Full security rules and checklist
+│   ├── permission-matrix.md          ← Role-permission matrix per module
+│   ├── audit-log-policy.md           ← Mandatory audit events and RLS
+│   └── data-retention-policy.md      ← Retention periods and compliance
 ├── workflow/
+│   ├── approval-engine.md            ← Reusable approval engine design
+│   ├── document-numbering.md         ← Numbering format, sequences, rules
+│   └── status-lifecycle.md           ← Status values and transitions per doc type
 ├── integration/
+│   ├── api-strategy.md               ← Internal and external API principles
+│   └── public-tracking-api.md        ← Public tracking endpoint design
 ├── performance/
+│   ├── performance-baseline.md       ← Mandatory performance rules
+│   ├── caching-strategy.md           ← Caching rules per data type
+│   └── reporting-performance.md      ← Report and dashboard performance strategy
 └── operations/
+    ├── deployment-strategy.md        ← Branch strategy, deploy process, rollback
+    ├── environment-strategy.md       ← Dev/staging/prod separation and secrets
+    ├── release-checklist.md          ← Pre-release and release checklist
+    └── monitoring-strategy.md        ← Sentry, Supabase logs, alerting
+```
 
-Business workflow documents may also be maintained in Google Docs for management review, but the technical source of truth should be in the repo.
+Business workflow documents may also be maintained in Google Docs for management review, but the technical source of truth must always be in the repo.
 
 ---
 
@@ -493,13 +673,19 @@ Output:
 
 ## Current Phase
 
-Current phase:
+| Phase | Name | Status |
+|-------|------|--------|
+| 0.0 | Initial Project Instructions | ✅ Complete |
+| 0.1 | Documentation Foundation | ✅ Complete |
+| 0.2 | Final CLAUDE.md | ✅ Complete |
+| 0.3 | Claude Agents | 🔜 Next |
+| 0.4 | Low-Risk Refactor | Planned |
+| 0.5 | Stability & Performance Audit | Planned |
+| 1.0 | Master Data Foundation | Planned |
 
-Phase 0.0 — Initial Project Instructions
+Current phase: **Phase 0.2 — Final CLAUDE.md** ✅ Complete
 
-The next recommended step after this file is created:
-
-Phase 0.1 — Documentation Foundation
+Next recommended step: **Phase 0.3 — Claude Agents**
 
 ---
 
