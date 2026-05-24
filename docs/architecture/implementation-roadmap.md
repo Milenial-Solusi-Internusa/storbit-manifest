@@ -188,9 +188,24 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
   - Critical warning updated to note migration 000 must run first on fresh projects
 - Status: DRAFT — migration must not be executed without explicit approval
 
+### Phase 1.0D+++ — Staging Execution Verification ✅ Complete
+**Branch:** `phase-1-staging-execution-verification`
+**Output:**
+- `docs/operations/staging-execution-verification-log.md` — full execution verification log:
+  - Environment: Supabase staging project `untmpqceexwxzuhlmyrg`
+  - All 15 migrations (000–014) applied successfully to fresh Supabase project
+  - Seed data verified: 3 companies, 3 branches, 21 departments, 13 statuses, 45 doc types, 36 roles, 92 permissions, role_permissions matrix, 5 currencies, 12 taxes, 18 payment terms
+  - Structural verification: all FKs, triggers, and RLS helper functions confirmed
+  - First MSI super admin provisioned (Den Bagus M Jaelani, role: super_admin, company: MSI)
+  - App smoke test: local login and dashboard load confirmed at localhost:5173
+  - Constraint fix documented (migrations 009 and 011 via PR #9)
+  - 12 known intentional gaps documented with resolution phases
+  - Go/No-Go: staging GO, production NO-GO
+- Status: COMPLETE — staging verified; production execution remains blocked
+
 ### Phase 1.0E — First Admin UI Screens
 **Status:** Planned
-**Prerequisites:** 1.0B + 1.0C + 1.0D verified in staging (see staging-migration-readiness.md)
+**Prerequisites:** 1.0D+++ staging execution verified ✅
 **Output:**
 - Admin screens: Company, Branch, Department, Role, Document Type, Status, Tax, Payment Terms
 - All screens: server-side pagination, debounced search, lazy loaded, ErrorBoundary wrapped
@@ -369,3 +384,10 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-24 | `ar_btbs` has no `updated_at` column and no update trigger | db.js updateTtf() always deletes all btb rows then re-inserts — individual row updates never occur |
 | 2026-05-24 | Table name is `ar_ttfs` not `ttfs` | Fresh staging pre-check listed `ttfs` as missing, but db.js consistently uses `ar_ttfs` throughout (lines 225, 234, 256, 266, 289, 298) |
 | 2026-05-24 | No RLS policies in migration 000 | sp_items, ar_ttfs, ar_btbs get RLS in Phase 2+ transaction modules; profiles and customers RLS deferred to Phase 1.0F (company_id backfill required first) |
+| 2026-05-24 | Fresh Supabase staging project created specifically for Nexus by MSI | Isolated from any existing Storbit Manifest data; clean environment for schema verification |
+| 2026-05-24 | Migrations 000–014 applied to staging successfully | All 15 migrations executed in order on a fresh Supabase project with no prior public tables |
+| 2026-05-24 | Constraint fix required for migrations 009 and 011 (PR #9) | PostgreSQL does not support `ADD CONSTRAINT IF NOT EXISTS` syntax; replaced with `DO $$ IF NOT EXISTS pg_constraint $$` blocks |
+| 2026-05-24 | First MSI super admin provisioned in staging | den.itnetwork@exportimportdept.com; profiles.role=super; user_roles role_code=super_admin; company=MSI; mfa_required=true |
+| 2026-05-24 | Legacy operational tables remain RLS-deferred in staging | sp_items, ar_ttfs, ar_btbs are internal-only tables accessed by authenticated staff; deferral is safe for staging and Phase 1.0E development |
+| 2026-05-24 | Phase 1.0E allowed to begin on staging only | Staging verified GO; production execution remains blocked until Phase 1.0F + full RLS test matrix + technical lead and product owner sign-off |
+| 2026-05-24 | Production remains blocked after staging execution | profiles and customers RLS not yet active; backfill required; full cross-company isolation test matrix not yet run |
