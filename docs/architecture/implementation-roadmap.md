@@ -122,13 +122,15 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - `docs/database/master-data-architecture.md` — defines all 19 master data domains
 - Architecture only — no schema changes, no migrations, no RLS, no source code changes
 
-### Phase 1.0B — Schema / Migration Draft Review
-**Status:** Planned
+### Phase 1.0B — Schema / Migration Draft Review ✅ Complete
+**Branch:** `phase-1-master-data-schema-draft`
 **Output:**
-- Draft migration SQL for all P0 domains in `/supabase/migrations/`
+- Draft migration SQL for all 12 P0/P1/P2/P3 domains in `/supabase/migrations/`
+- Rollback SQL included as comment block in every migration file
 - Schema additions to `docs/database/core-schema-draft.md`
 - Entity map additions to `docs/database/entity-map.md`
-- Rollback SQL for every migration
+- Index definitions added to `docs/database/indexing-strategy.md`
+- Status: DRAFT — migrations must not be executed without explicit approval
 
 ### Phase 1.0C — Seed Strategy
 **Status:** Planned
@@ -300,5 +302,7 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-23 | Approval engine as reusable platform, not per-module | Consistency and maintainability |
 | 2026-05-24 | Phase 0.5D lint cleanup completed before Phase 1.0 starts | Clean baseline ensures lint errors introduced in Phase 1 are immediately visible |
 | 2026-05-24 | Phase 1.0 split into sub-phases A–F | Architecture before schema, schema before RLS, RLS before UI, migration last — reduces risk at each step |
+| 2026-05-24 | Phase 1.0B migrations written as DRAFT SQL files, not executed | Schema must be reviewed and approved before any migration runs against Supabase |
+| 2026-05-24 | 12 migration files cover all 19 master data domains defined in Phase 1.0A | Every domain from companies through asset management has a draft migration with rollback SQL |
 | 2026-05-24 | Phase 1.0F migration is additive only | Existing Storbit Manifest UI must remain functional throughout; destructive column drops deferred until 1.0F is verified |
 | 2026-05-24 | 19 master data domains defined before any migration is written | Defining all domains upfront prevents discovery of missing entities mid-migration |
