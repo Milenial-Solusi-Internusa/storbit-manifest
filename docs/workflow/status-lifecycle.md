@@ -1,6 +1,6 @@
 # Nexus by MSI — Status Lifecycle
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-05-24
 
 ---
 
@@ -35,7 +35,7 @@ This document defines the standard status lifecycle for all document types in Ne
 ### General Rules
 1. Status can only move forward in the defined lifecycle
 2. Backward transitions are only allowed for: `revision_requested` → `revised` → `submitted`
-3. Terminal states (`rejected`, `cancelled`, `archived`) cannot transition further
+3. Terminal states (`rejected`, `cancelled`, `completed`, `archived`) cannot transition further
 4. Status changes must be logged in `approval_logs` (for approval states) and `audit_logs` (all states)
 5. Only authorized roles can trigger each transition
 

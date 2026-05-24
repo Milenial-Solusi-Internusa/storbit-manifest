@@ -1,6 +1,6 @@
 # Nexus by MSI — Permission Matrix
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-05-24
 
 ---
 
@@ -140,6 +140,31 @@ Legend: ✅ Allowed | ❌ Not Allowed | ⚠️ Conditional
 | role_change | ✅ | ✅ | ❌ | ❌ |
 | deactivate | ✅ | ✅ | ❌ | ❌ |
 | config | ✅ | ❌ | ❌ | ❌ |
+
+---
+
+## Legacy Role Mapping
+
+During Phase 1.0F, the existing `profiles.role` enum is migrated to `user_roles` entries:
+
+| Old `profiles.role` value | New `roles.code` | Notes |
+|---------------------------|-----------------|-------|
+| `super` | `super_admin` | Direct mapping |
+| `logistic` | `operations_staff` | Renamed for clarity |
+| `procurement` | `procurement_staff` | Renamed for clarity |
+| `finance` | `finance_staff` | Renamed for clarity |
+| `management` | `viewer` | Downgraded to read-only |
+
+**Important:** The legacy `profiles.role` column must NOT be dropped until Phase 1.0F migration is verified in production. Both old and new role systems run in parallel during transition.
+
+---
+
+## Migration Reference
+
+- Roles seeded in: `supabase/migrations/20260524000005_roles_permissions.sql`
+- Permissions seeded in: `supabase/migrations/20260524000005_roles_permissions.sql`
+- Role-permission assignments seeded in: `supabase/migrations/20260524000013_role_permissions_seed.sql`
+- Full seed strategy: `docs/database/seed-strategy.md`
 
 ---
 
