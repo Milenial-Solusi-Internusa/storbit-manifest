@@ -222,23 +222,28 @@ Execute in order. Do NOT skip stages.
 
 ## 7. Known Issues and Deferred Items
 
-### 7.1 deleteCustomer() Hard Delete
+### 7.1 deleteCustomer() Hard Delete → ✅ Resolved
 
-`src/lib/db.js deleteCustomer()` uses `DELETE FROM customers WHERE id = ?`. Once customers RLS is active with no DELETE policy, this will fail with "permission denied for table customers".
+`src/lib/db.js deleteCustomer()` previously used `DELETE FROM customers WHERE id = ?`, which would fail once customers RLS is active (no DELETE policy by design).
 
-**Mitigation:** Before Stage 3, update `deleteCustomer()` to a soft-delete:
+**Resolved in branch `fix/customer-soft-delete-rls`:**
+
 ```js
-// Replace hard delete:
+// Was (hard delete — fails with RLS, no DELETE policy):
 const { error } = await supabase.from('customers').delete().eq('id', id);
 
-// With soft delete:
+// Now (soft delete — RLS-compatible):
 const { error } = await supabase
   .from('customers')
-  .update({ deleted_at: new Date().toISOString() })
+  .update({ deleted_at: new Date().toISOString(), active: false })
   .eq('id', id);
 ```
 
-This is a Phase 1.0F follow-up task. Track in a separate branch.
+Both `deleted_at` and `active` are set on soft delete:
+- `deleted_at`: excludes the row from all `customers_read` RLS policy checks (`deleted_at IS NULL`) and from the explicit `.is('deleted_at', null)` filter in `listCustomers()`
+- `active = false`: keeps legacy in-memory filter logic consistent (App.jsx line 1024 filters `c.active !== false` for SP dropdowns)
+
+`listCustomers()` also updated to add `.is('deleted_at', null)` explicitly (defense-in-depth alongside RLS enforcement).
 
 ### 7.2 listCustomers() SELECT *
 
