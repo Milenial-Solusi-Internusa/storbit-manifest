@@ -151,9 +151,23 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - `profiles` and `customers` RLS blocks commented out (Phase 1.0F dependency — company_id NULL until backfill)
 - Status: DRAFT — migrations must not be executed without explicit approval
 
+### Phase 1.0D+ — Staging Execution Readiness Review ✅ Complete
+**Branch:** `phase-1-master-data-staging-readiness`
+**Output:**
+- `docs/operations/staging-migration-readiness.md` — full staging readiness document:
+  - Migration inventory 001–014 with dependency graph
+  - Pre-execution checklist (environment, backup, schema pre-checks, reviewer sign-off)
+  - Grouped execution order (A–F) with per-group verification queries
+  - Rollback strategy per migration with risk levels
+  - RLS test matrix: 9 test users × 20 tables × SELECT/INSERT/UPDATE/DELETE
+  - Cross-company isolation tests (MSI vs SBI)
+  - Security enforcement tests (actor_id, immutability, cross-company write)
+  - Go/No-Go criteria and production execution gate
+- Status: DOCUMENTATION ONLY — no migrations executed
+
 ### Phase 1.0E — First Admin UI Screens
 **Status:** Planned
-**Prerequisites:** 1.0B + 1.0C + 1.0D verified in staging
+**Prerequisites:** 1.0B + 1.0C + 1.0D verified in staging (see staging-migration-readiness.md)
 **Output:**
 - Admin screens: Company, Branch, Department, Role, Document Type, Status, Tax, Payment Terms
 - All screens: server-side pagination, debounced search, lazy loaded, ErrorBoundary wrapped
@@ -321,3 +335,5 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-24 | exchange_rates has INSERT-only policy, no UPDATE or DELETE | Historical rates are immutable — modifying past rates would corrupt historical document values |
 | 2026-05-24 | approval_logs has INSERT-only policy, no UPDATE or DELETE | Approval history is a permanent tamper-proof audit trail |
 | 2026-05-24 | document_sequences UPDATE allowed for all company users | Any staff member creating documents needs to atomically increment the sequence; application enforces UPDATE...RETURNING pattern |
+| 2026-05-24 | Phase 1.0D+ staging readiness review created before any migration execution | Migrations 001–014 must be verified end-to-end in staging with test matrix and go/no-go criteria before any production execution |
+| 2026-05-24 | Production execution blocked until Phase 1.0E Admin UI is also ready | Running schema migrations without corresponding UI would leave unmanageable data in production |
