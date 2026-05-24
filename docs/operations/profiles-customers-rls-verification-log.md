@@ -263,26 +263,54 @@ which covers the transition. This fallback must remain until all users are migra
 and with `profiles.role` not matching the legacy enum), they will get zero RLS  
 access. Acceptable for staging; must be documented before production go-live.
 
-### 9.3 Cross-Company Isolation Not Yet Tested
+### 9.3 Auth Trigger Broken After profiles.company_id NOT NULL — ⚠️ Pending Migration 016
 
-The full cross-company isolation test (MSI user cannot see SBI customers; SBI user  
-cannot see MSI customers) requires at least one additional test user in a different  
+**Found after Phase 1.0F execution:** `public.handle_new_user()` (defined in migration 000)
+inserts only `(id, full_name, role, active)`. After Phase 1.0F set `profiles.company_id NOT NULL`,
+any new Supabase Auth user creation (via Dashboard "Add user" or Auth API) fails with:
+
+```
+Database error creating new user
+```
+
+The trigger INSERT violates the NOT NULL constraint on `company_id`.
+
+**Resolution:** Migration 016
+(`supabase/migrations/20260524000016_auth_profile_trigger_company_defaults.sql`)
+replaces `handle_new_user()` via `CREATE OR REPLACE FUNCTION`. The new version:
+- Reads `company_code`, `branch_code`, `department_code`, `full_name` from `raw_user_meta_data`
+- Defaults: `company_code = 'MSI'`, `branch_code = 'HO'`, `department_code = 'IT'`
+- Resolves `company_id` from `companies` — raises exception if not found
+- Resolves `branch_id` and `department_id` — nullable, no exception if missing
+- Inserts all required fields: `id, full_name, role, active, company_id, branch_id, department_id, mfa_required`
+
+**Status:** Migration 016 written and committed. Must be applied in staging SQL editor before
+any new Auth users can be created. The existing admin profile is unaffected (trigger only
+fires on INSERT into auth.users, not on existing rows).
+
+### 9.4 Cross-Company Isolation Not Yet Tested
+
+The full cross-company isolation test (MSI user cannot see SBI customers; SBI user
+cannot see MSI customers) requires at least one additional test user in a different
 company. This test is pending and is a **production execution gate requirement**.
 
-### 9.4 profiles.role Enum Column Not Dropped
+**Note:** Creating the required SBI test user is also blocked until migration 016 is
+applied (see 9.3 above).
+
+### 9.5 profiles.role Enum Column Not Dropped
 
 `profiles.role` (legacy `user_role_legacy` ENUM) is still present and still used  
 by `UserManagement.jsx` for display and editing. Column drop is deferred until  
 Phase 1.0F is verified in production and all users are on `user_roles`.
 
-### 9.5 sp_items / ar_ttfs / ar_btbs RLS Not Enabled
+### 9.6 sp_items / ar_ttfs / ar_btbs RLS Not Enabled
 
 These legacy transaction tables remain without RLS. They are accessed by  
 authenticated staff only and are internal-use tables with no company_id scoping  
 today. RLS for transaction tables is deferred to Phase 2+ when the transaction  
 modules are built with proper company_id columns.
 
-### 9.6 deleteCustomer() Leaves Orphaned sp_items References
+### 9.7 deleteCustomer() Leaves Orphaned sp_items References
 
 `sp_items.customer_id` is a FK to `customers` with `ON DELETE SET NULL`. After  
 soft-delete, the customer row remains in the DB (deleted_at set), so the FK  
@@ -325,7 +353,8 @@ applying Phase 1.0F to production:
 
 | Gate | Status |
 |------|--------|
-| Cross-company isolation test (MSI vs SBI user) | ❌ Pending — requires second test user |
+| Migration 016 applied in staging (auth trigger fix) | ❌ Pending — must apply before creating SBI test user |
+| Cross-company isolation test (MSI vs SBI user) | ❌ Pending — blocked by migration 016 |
 | Technical lead sign-off | ❌ Pending |
 | Product owner sign-off | ❌ Pending |
 | Production backfill strategy reviewed (profiles: who gets MSI vs SBI?) | ❌ Pending |
