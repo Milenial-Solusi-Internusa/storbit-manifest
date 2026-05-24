@@ -1,6 +1,6 @@
 # Nexus by MSI — Indexing Strategy
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-05-24
 
 ---
 
@@ -203,8 +203,135 @@ CREATE INDEX idx_audit_logs_record ON audit_logs(record_type, record_id);
 
 ```sql
 CREATE INDEX idx_approval_logs_company_id ON approval_logs(company_id);
-CREATE INDEX idx_approval_logs_document ON approval_logs(document_type, document_id);
-CREATE INDEX idx_approval_logs_created_at ON approval_logs(created_at DESC);
+CREATE INDEX idx_approval_logs_document ON approval_logs(company_id, document_type, document_id);
+CREATE INDEX idx_approval_logs_actor_id ON approval_logs(actor_id);
+CREATE INDEX idx_approval_logs_acted_at ON approval_logs(company_id, acted_at DESC);
+```
+
+---
+
+## Phase 1.0B — New Table Indexes
+
+### `status_catalog`
+```sql
+CREATE INDEX idx_status_catalog_is_active ON status_catalog(is_active);
+```
+
+### `document_types`
+```sql
+CREATE INDEX idx_document_types_company_id ON document_types(company_id);
+CREATE INDEX idx_document_types_company_code ON document_types(company_id, code);
+```
+
+### `document_sequences`
+```sql
+CREATE INDEX idx_document_sequences_company_id ON document_sequences(company_id);
+CREATE INDEX idx_document_sequences_lookup ON document_sequences(company_id, document_type, department_code, year, month);
+```
+
+### `roles`
+```sql
+CREATE INDEX idx_roles_company_id ON roles(company_id);
+CREATE INDEX idx_roles_deleted_at ON roles(deleted_at) WHERE deleted_at IS NOT NULL;
+```
+
+### `role_permissions`
+```sql
+CREATE INDEX idx_role_permissions_role_id ON role_permissions(role_id);
+CREATE INDEX idx_role_permissions_permission_id ON role_permissions(permission_id);
+```
+
+### `user_roles`
+```sql
+CREATE INDEX idx_user_roles_user_id ON user_roles(user_id);
+CREATE INDEX idx_user_roles_role_id ON user_roles(role_id);
+CREATE INDEX idx_user_roles_company_id ON user_roles(company_id);
+-- Hot path: check active roles for a user in a company
+CREATE INDEX idx_user_roles_user_company ON user_roles(user_id, company_id) WHERE is_active = true;
+```
+
+### `permissions`
+```sql
+CREATE INDEX idx_permissions_module ON permissions(module);
+```
+
+### `taxes`
+```sql
+CREATE INDEX idx_taxes_company_id ON taxes(company_id);
+CREATE INDEX idx_taxes_deleted_at ON taxes(deleted_at) WHERE deleted_at IS NOT NULL;
+```
+
+### `payment_terms`
+```sql
+CREATE INDEX idx_payment_terms_company_id ON payment_terms(company_id);
+CREATE INDEX idx_payment_terms_deleted_at ON payment_terms(deleted_at) WHERE deleted_at IS NOT NULL;
+```
+
+### `exchange_rates`
+```sql
+CREATE INDEX idx_exchange_rates_company_id ON exchange_rates(company_id);
+-- Hot path: look up most recent rate for a currency pair
+CREATE INDEX idx_exchange_rates_lookup ON exchange_rates(company_id, from_currency, to_currency, effective_date DESC);
+```
+
+### `vendors`
+```sql
+CREATE INDEX idx_vendors_company_id ON vendors(company_id);
+CREATE INDEX idx_vendors_company_code ON vendors(company_id, code);
+CREATE INDEX idx_vendors_deleted_at ON vendors(deleted_at) WHERE deleted_at IS NOT NULL;
+```
+
+### `products`
+```sql
+CREATE INDEX idx_products_company_id ON products(company_id);
+CREATE INDEX idx_products_company_code ON products(company_id, code);
+CREATE INDEX idx_products_deleted_at ON products(deleted_at) WHERE deleted_at IS NOT NULL;
+```
+
+### `positions`
+```sql
+CREATE INDEX idx_positions_company_id ON positions(company_id);
+CREATE INDEX idx_positions_deleted_at ON positions(deleted_at) WHERE deleted_at IS NOT NULL;
+```
+
+### `approval_rules`
+```sql
+CREATE INDEX idx_approval_rules_company_id ON approval_rules(company_id);
+-- Hot path: look up active rules for a company + doc type at submission
+CREATE INDEX idx_approval_rules_company_doctype ON approval_rules(company_id, document_type) WHERE is_active = true;
+```
+
+### `approval_delegations`
+```sql
+CREATE INDEX idx_approval_delegations_company_id ON approval_delegations(company_id);
+-- Hot path: check if a delegate has active authority for a date range
+CREATE INDEX idx_approval_delegations_delegate ON approval_delegations(delegate_id, valid_from, valid_until) WHERE is_active = true;
+CREATE INDEX idx_approval_delegations_delegator ON approval_delegations(delegator_id);
+```
+
+### `cost_centers`
+```sql
+CREATE INDEX idx_cost_centers_company_id ON cost_centers(company_id);
+CREATE INDEX idx_cost_centers_deleted_at ON cost_centers(deleted_at) WHERE deleted_at IS NOT NULL;
+```
+
+### `chart_of_accounts`
+```sql
+CREATE INDEX idx_coa_company_id ON chart_of_accounts(company_id);
+CREATE INDEX idx_coa_parent_id ON chart_of_accounts(parent_id) WHERE parent_id IS NOT NULL;
+CREATE INDEX idx_coa_account_type ON chart_of_accounts(company_id, account_type);
+CREATE INDEX idx_coa_deleted_at ON chart_of_accounts(deleted_at) WHERE deleted_at IS NOT NULL;
+```
+
+### `asset_categories` / `asset_locations` / `assets`
+```sql
+CREATE INDEX idx_asset_categories_company_id ON asset_categories(company_id);
+CREATE INDEX idx_asset_locations_company_id ON asset_locations(company_id);
+CREATE INDEX idx_asset_locations_branch_id ON asset_locations(branch_id);
+CREATE INDEX idx_assets_company_id ON assets(company_id);
+CREATE INDEX idx_assets_category_id ON assets(category_id);
+CREATE INDEX idx_assets_status ON assets(company_id, status);
+CREATE INDEX idx_assets_deleted_at ON assets(deleted_at) WHERE deleted_at IS NOT NULL;
 ```
 
 ---
