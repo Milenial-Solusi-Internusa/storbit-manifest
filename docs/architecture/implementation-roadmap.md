@@ -217,23 +217,26 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - `App.jsx` updated: `Database` icon, AdminShell lazy import, Master Data menu item (role: super)
 - 0 new lint errors introduced; `npm run build` passes
 
-### Phase 1.0F — Profiles & Customers RLS Transition
-**Status:** 🔄 In Progress
-**Branch:** `phase-1-profiles-customers-rls-transition`
+### Phase 1.0F — Profiles & Customers RLS Transition ✅ Complete
+**Branch:** `phase-1-profiles-customers-rls-transition` (plan) · `fix/customer-soft-delete-rls` (PR #13) · `fix/customer-company-id-rls-insert` (PR #14) · `phase-1-rls-transition-verification` (verification)
 **Prerequisites:** 1.0E admin UI merged ✅
 **Output:**
-- `supabase/migrations/20260524000015_profiles_customers_rls_transition.sql` — DRAFT:
-  - Backfill `profiles.company_id` (decision required: MSI vs SBI assignment per user)
-  - Backfill `customers.company_id` (SBI — legacy Storbit Manifest customers)
-  - NOT NULL constraint steps (Stages 1B + 2B, conditional on backfill verification)
-  - RLS enable + policies for profiles and customers (Stage 3, commented out — manual activation)
-  - Policies sourced from migration 014 Sections 5B + 6B
-- `docs/operations/profiles-customers-rls-transition.md` — staged execution checklist:
-  - 3-stage execution plan with per-stage verification queries
-  - SBI vs MSI backfill decision documentation
-  - deleteCustomer() hard-delete issue flagged as pre-Stage-3 blocker
-  - Rollback plan, go/no-go criteria, production gate
-- Status: DRAFT — staged execution requires explicit DBA approval per stage
+- `supabase/migrations/20260524000015_profiles_customers_rls_transition.sql` — executed in staging (3 stages):
+  - Stage 1: `profiles.company_id` backfilled (Den → MSI via Option B per-user); `customers.company_id` backfilled (SBI default — 0 rows affected, clean)
+  - Stage 2: `profiles.company_id` and `customers.company_id` set NOT NULL
+  - Stage 3: RLS enabled on profiles (2 policies) and customers (3 policies)
+- `docs/operations/profiles-customers-rls-transition.md` — staged execution plan and blocker documentation
+- `docs/operations/profiles-customers-rls-verification-log.md` — full verification log:
+  - RLS enabled, all 5 policies active, all helper functions verified
+  - profiles_count = 1, profiles_company_id_null_count = 0
+  - customers_count = 0, customers_company_id_null_count = 0
+  - App smoke tests: login, User Management, Customer list/add/delete — all pass
+- Source code fixes applied before Stage 3:
+  - `deleteCustomer()` → soft delete (`deleted_at` + `active = false`) — PR #13
+  - `upsertCustomer()` INSERT → resolves and attaches `company_id` from profiles — PR #14
+  - `listCustomers()` → explicit `.is('deleted_at', null)` filter
+- Staging verdict: GO ✅
+- Production gate: BLOCKED pending cross-company isolation test + sign-offs
 
 ---
 
@@ -408,6 +411,12 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-24 | Legacy operational tables remain RLS-deferred in staging | sp_items, ar_ttfs, ar_btbs are internal-only tables accessed by authenticated staff; deferral is safe for staging and Phase 1.0E development |
 | 2026-05-24 | Phase 1.0E allowed to begin on staging only | Staging verified GO; production execution remains blocked until Phase 1.0F + full RLS test matrix + technical lead and product owner sign-off |
 | 2026-05-24 | Production remains blocked after staging execution | profiles and customers RLS not yet active; backfill required; full cross-company isolation test matrix not yet run |
+| 2026-05-25 | profiles and customers RLS enabled in staging — Phase 1.0F staging GO | Staged execution (backfill → NOT NULL → RLS activation) completed; all 5 policies verified; all smoke tests pass |
+| 2026-05-25 | profiles.company_id backfill used Option B (per-user) rather than blanket SBI | Den's profile assigned to MSI explicitly; migration 007 blanket-SBI note was incorrect for this admin |
+| 2026-05-25 | customers.company_id backfill ran as SBI default with 0 rows affected | No legacy customers existed at time of staging execution; constraint applied cleanly |
+| 2026-05-25 | deleteCustomer() converted to soft delete before Stage 3 RLS activation | customers RLS has no DELETE policy by design; hard delete would fail silently after RLS enabled |
+| 2026-05-25 | customer insert company_id resolved from profiles before Supabase call | customerToDb() never produced company_id; INSERT would fail RLS WITH CHECK without it |
+| 2026-05-25 | Phase 1.0F cleared for staging; production gate remains blocked | Cross-company isolation test and technical/product sign-offs required before production execution |
 | 2026-05-24 | Phase 1.0E completed: 8 admin read-only screens, 8 data hooks, AdminShell lazy chunk | All screens follow server-side pagination + debounced search pattern; no new lint errors; build passes |
 | 2026-05-24 | Admin tab bar uses overflow-x-auto with flex-shrink-0 whitespace-nowrap on 8 tabs | Prevents overflow or collapse on narrower viewports without adding a new scroll library |
 | 2026-05-24 | StatusCatalogPage uses COLOR_SWATCH hex lookup map instead of Tailwind bg tokens directly | color_class column stores Tailwind classes (e.g., bg-gray-100); inline styles require hex values — lookup map converts known tokens, falls back to neutral for unknown |
