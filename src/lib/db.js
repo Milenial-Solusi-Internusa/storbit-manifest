@@ -139,6 +139,31 @@ export function ttfToDb(t) {
 // ============================================================
 // CUSTOMERS
 // ============================================================
+
+// Private helper: resolves the current user's company_id from profiles.
+// Called only on the INSERT path of upsertCustomer() when no company_id
+// is present on the input object.
+//
+// Uses getSession() (cache read) rather than getUser() (network call) to
+// stay consistent with getMyProfile() — getUser() has known latency issues
+// in this codebase. The subsequent profiles SELECT validates the user exists.
+async function getCurrentUserCompanyId() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
+    throw new Error('Unable to create customer: not authenticated.');
+  }
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('company_id')
+    .eq('id', session.user.id)
+    .single();
+  if (error) throw error;
+  if (!data?.company_id) {
+    throw new Error('Unable to create customer: current user has no company assigned.');
+  }
+  return data.company_id;
+}
+
 export async function listCustomers() {
   const { data, error } = await supabase
     .from('customers')
@@ -150,7 +175,11 @@ export async function listCustomers() {
 
 export async function upsertCustomer(c) {
   const payload = customerToDb(c);
+
   if (c.id) {
+    // UPDATE — customerToDb() does not include company_id, so the existing
+    // row value is preserved. RLS customers_update USING checks the row's
+    // existing company_id against get_user_company_id().
     const { data, error } = await supabase
       .from('customers')
       .update(payload)
@@ -159,6 +188,22 @@ export async function upsertCustomer(c) {
       .single();
     return { data: customerFromDb(data), error };
   }
+
+  // INSERT — customers_insert RLS WITH CHECK requires
+  // company_id = get_user_company_id(). customerToDb() does not produce
+  // company_id, so we resolve it here.
+  // Honor an explicit company_id on the input object (forward-compatibility);
+  // otherwise fetch from the current user's profile.
+  if (c.company_id) {
+    payload.company_id = c.company_id;
+  } else {
+    try {
+      payload.company_id = await getCurrentUserCompanyId();
+    } catch (err) {
+      return { data: null, error: err };
+    }
+  }
+
   const { data, error } = await supabase
     .from('customers')
     .insert(payload)
