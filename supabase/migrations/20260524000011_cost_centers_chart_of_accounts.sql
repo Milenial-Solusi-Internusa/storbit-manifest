@@ -124,15 +124,44 @@ CREATE INDEX IF NOT EXISTS idx_coa_deleted_at
 -- because chart_of_accounts did not exist yet.
 -- =============================================================================
 
-ALTER TABLE products
-    ADD CONSTRAINT IF NOT EXISTS fk_products_cogs_account
-        FOREIGN KEY (cogs_account_id) REFERENCES chart_of_accounts(id),
-    ADD CONSTRAINT IF NOT EXISTS fk_products_revenue_account
-        FOREIGN KEY (revenue_account_id) REFERENCES chart_of_accounts(id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_products_cogs_account'
+          AND conrelid = 'public.products'::regclass
+    ) THEN
+        ALTER TABLE products
+            ADD CONSTRAINT fk_products_cogs_account
+            FOREIGN KEY (cogs_account_id) REFERENCES chart_of_accounts(id);
+    END IF;
 
-ALTER TABLE taxes
-    ADD CONSTRAINT IF NOT EXISTS fk_taxes_gl_account
-        FOREIGN KEY (gl_account_id) REFERENCES chart_of_accounts(id);
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_products_revenue_account'
+          AND conrelid = 'public.products'::regclass
+    ) THEN
+        ALTER TABLE products
+            ADD CONSTRAINT fk_products_revenue_account
+            FOREIGN KEY (revenue_account_id) REFERENCES chart_of_accounts(id);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_taxes_gl_account'
+          AND conrelid = 'public.taxes'::regclass
+    ) THEN
+        ALTER TABLE taxes
+            ADD CONSTRAINT fk_taxes_gl_account
+            FOREIGN KEY (gl_account_id) REFERENCES chart_of_accounts(id);
+    END IF;
+END $$;
 
 -- =============================================================================
 -- VERIFICATION QUERIES:

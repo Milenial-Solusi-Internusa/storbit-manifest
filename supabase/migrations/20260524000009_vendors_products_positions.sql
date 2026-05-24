@@ -165,9 +165,19 @@ CREATE INDEX IF NOT EXISTS idx_positions_deleted_at
 -- Now that positions table exists, add the FK constraint that was deferred
 -- in migration 7 (profiles_extension.sql).
 -- =============================================================================
-ALTER TABLE profiles
-    ADD CONSTRAINT IF NOT EXISTS fk_profiles_position_id
-    FOREIGN KEY (position_id) REFERENCES positions(id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_profiles_position_id'
+          AND conrelid = 'public.profiles'::regclass
+    ) THEN
+        ALTER TABLE profiles
+            ADD CONSTRAINT fk_profiles_position_id
+            FOREIGN KEY (position_id) REFERENCES positions(id);
+    END IF;
+END $$;
 
 -- =============================================================================
 -- SEED: 5 standard seniority levels for every active company
