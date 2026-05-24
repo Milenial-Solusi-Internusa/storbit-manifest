@@ -142,12 +142,14 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - Confirmed: all existing seed rows in migrations 001–009 match source-of-truth docs
 - Status: DRAFT — migrations must not be executed without explicit approval
 
-### Phase 1.0D — RLS Policy Draft
-**Status:** Planned
+### Phase 1.0D — RLS Policy Draft ✅ Complete
+**Branch:** `phase-1-master-data-rls-draft`
 **Output:**
-- RLS policies for all P0 and P1 tables
-- Helper functions: `get_user_company_id()`, `get_user_role()`
-- Test matrix: each policy tested with minimum 2 different roles
+- `supabase/migrations/20260524000014_rls_policy_draft.sql` — RLS policies for all 20 P0/P1 tables
+- 5 helper functions: `get_user_company_id()`, `is_super_admin()`, `is_admin_or_above()`, `has_role()`, `has_permission()`
+- `docs/security/rls-policy-draft.md` — full policy rationale, test matrix, pre-execution checklist, known gaps
+- `profiles` and `customers` RLS blocks commented out (Phase 1.0F dependency — company_id NULL until backfill)
+- Status: DRAFT — migrations must not be executed without explicit approval
 
 ### Phase 1.0E — First Admin UI Screens
 **Status:** Planned
@@ -313,3 +315,9 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-24 | All 15 document types seeded as is_active=true for all 3 companies | Company admins deactivate inapplicable types post go-live; avoids conditional seed logic |
 | 2026-05-24 | Phase 1.0F migration is additive only | Existing Storbit Manifest UI must remain functional throughout; destructive column drops deferred until 1.0F is verified |
 | 2026-05-24 | 19 master data domains defined before any migration is written | Defining all domains upfront prevents discovery of missing entities mid-migration |
+| 2026-05-24 | All RLS helper functions use SECURITY DEFINER + SET search_path = public | Resolves circular RLS dependency; search_path lock prevents hijacking |
+| 2026-05-24 | is_super_admin() and is_admin_or_above() include legacy profiles.role fallback | New user_roles table is empty until Phase 1.0F; fallback ensures existing super users retain access during transition |
+| 2026-05-24 | profiles and customers RLS blocks commented out in migration 014 | company_id is NULL for all existing rows; enabling RLS before backfill would lock out all users from Customer and User Management pages |
+| 2026-05-24 | exchange_rates has INSERT-only policy, no UPDATE or DELETE | Historical rates are immutable — modifying past rates would corrupt historical document values |
+| 2026-05-24 | approval_logs has INSERT-only policy, no UPDATE or DELETE | Approval history is a permanent tamper-proof audit trail |
+| 2026-05-24 | document_sequences UPDATE allowed for all company users | Any staff member creating documents needs to atomically increment the sequence; application enforces UPDATE...RETURNING pattern |
