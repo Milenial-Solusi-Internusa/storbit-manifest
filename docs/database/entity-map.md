@@ -1,6 +1,6 @@
 # Nexus by MSI — Entity Map
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-05-24
 
 ---
 
@@ -74,9 +74,13 @@ companies → [transaction tables]
 | Price List Item | `price_list_items` | Company | Medium | Yes | No |
 | Currency | `currencies` | Global | Low | No | No |
 | Exchange Rate | `exchange_rates` | Company | Medium | No | Yes |
+| Tax | `taxes` | Company | Medium | Yes | No |
+| Payment Terms | `payment_terms` | Company | Low | Yes | No |
 | Chart of Accounts | `chart_of_accounts` | Company | High | Yes | Yes |
+| Cost Center | `cost_centers` | Company | Medium | Yes | No |
 | Document Type | `document_types` | Company | Medium | No | Yes |
-| Status Catalog | `status_catalog` | Global | Low | No | Yes |
+| Status Catalog | `status_catalog` | Global | Low | No | No |
+| Position / Job Title | `positions` | Company | Low | Yes | No |
 | Port / Airport | `ports` | Global | Low | Yes | No |
 | Carrier | `carriers` | Company | Low | Yes | No |
 
@@ -104,6 +108,8 @@ companies → [transaction tables]
 | Payment Voucher | `payment_vouchers` | Company | High | Yes | Yes |
 | Journal Entry | `journal_entries` | Company | Critical | Yes | Yes |
 | Journal Entry Line | `journal_entry_lines` | Company | Critical | No | No |
+| Asset Category | `asset_categories` | Company | Low | Yes | No |
+| Asset Location | `asset_locations` | Company | Low | Yes | No |
 | Asset | `assets` | Company | Medium | Yes | Yes |
 | Asset Depreciation | `asset_depreciations` | Company | High | No | No |
 | IT Ticket | `it_tickets` | Company | Low | Yes | No |
@@ -115,6 +121,7 @@ companies → [transaction tables]
 |--------|-----------|-------|-------------|-------------|---------|
 | Approval Rule | `approval_rules` | Company | High | No | Yes |
 | Approval Log | `approval_logs` | Company | High | No | No |
+| Approval Delegation | `approval_delegations` | Company | High | No | Yes |
 | Audit Log | `audit_logs` | Company | Critical | No | No |
 | Document Number Seq | `document_sequences` | Company | Medium | No | No |
 | Attachment | `attachments` | Company | Medium | Yes | No |
