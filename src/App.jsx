@@ -4,7 +4,8 @@ import {
   Search, Download, Upload, Eye, Edit3, Trash2, X,
   Package, AlertTriangle, CheckCircle2,
   ChevronRight, Save, RefreshCw, Calendar, Building2, User,
-  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, ShieldCheck
+  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, ShieldCheck,
+  Database,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { useCustomers } from './hooks/useCustomers';
@@ -13,6 +14,7 @@ import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
 const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'));
 const UserManagement = lazy(() => import('./components/UserManagement'));
+const AdminShell = lazy(() => import('./modules/admin/AdminShell'));
 
 // ============================
 // PASTEL PALETTE
@@ -561,6 +563,7 @@ export default function StorbitManifest() {
     { id: 'ar', label: 'AR Tracker', icon: Wallet, role: ['super','finance'] },
     { id: 'customers', label: 'Customers', icon: Building2, role: ['super'] },
     { id: 'users', label: 'User Management', icon: ShieldCheck, role: ['super'] },
+    { id: 'admin', label: 'Master Data', icon: Database, role: ['super'] },
   ];
 
   const visibleMenus = menus.filter(m => !m.role || m.role.includes(role));
@@ -840,6 +843,17 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <UserManagement currentUserId={profile?.id || null} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin' && (
+            <ErrorBoundary title="Master Data section temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <AdminShell />
               </Suspense>
             </ErrorBoundary>
           )}
