@@ -1,6 +1,6 @@
 # Nexus by MSI — Implementation Roadmap
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-05-24
 
 ---
 
@@ -20,7 +20,7 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - No source code changes
 - No database changes
 
-### Phase 0.1 — Documentation Foundation 🔄 In Progress
+### Phase 0.1 — Documentation Foundation ✅ Complete
 **Output:**
 - `docs/architecture/` — blueprint, module map, business process, feature registry, roadmap
 - `docs/database/` — schema draft, entity map, indexing strategy
@@ -32,37 +32,54 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - Updated README.md
 - `.env.example`
 
-### Phase 0.2 — Final CLAUDE.md
+### Phase 0.2 — Final CLAUDE.md ✅ Complete
 **Output:**
 - Update CLAUDE.md to reference docs/
 - Define required reading before coding
 - Define stricter workflow per task type
 
-### Phase 0.3 — Claude Agents
+### Phase 0.3 — Claude Agents ✅ Complete
 **Output:**
-- `.claude/agents/` directory
-- Architecture auditor agent
-- Security reviewer agent
-- Performance reviewer agent
-- Docs maintainer agent
-- QA/build tester agent
-- Refactor planner agent
-- React UI refactorer agent
+- `.claude/agents/` directory with 7 specialized agents
+- Architecture auditor, Security reviewer, Performance reviewer
+- Docs maintainer, QA/build tester, Refactor planner, React UI refactorer
 
-### Phase 0.4 — Low-Risk Refactor
+### Phase 0.4A — Bundle Size Audit ✅ Complete
 **Output:**
-- Extract constants (no behavior change)
-- Extract formatting utilities
-- Extract calculation utilities
-- No UI change, no schema change
+- Production bundle composition audited
+- Large startup chunks and lazy-loading candidates identified
 
-### Phase 0.5 — Stability & Performance Audit
+### Phase 0.4B — Bundle Split and Lazy Loading ✅ Complete
 **Output:**
-- Add ErrorBoundary to critical pages
-- Audit data fetching patterns
-- Identify missing pagination / search / indexing
-- Identify inactive user flow gaps
-- Document technical debt register
+- Vite 8 / Rolldown vendor chunk split
+- `UserManagement` lazy loaded
+- Dashboard extracted to `src/modules/dashboard/Dashboard.jsx` and lazy loaded
+- Recharts deferred into separate chunk
+- 500 kB build warning eliminated
+
+### Phase 0.5A — Stability, Lint, and Tech Debt Audit ✅ Complete
+**Output:**
+- `docs/operations/stability-and-tech-debt-audit.md`
+- Lint baseline documented: 42 pre-existing errors
+- P0 blocker identified and resolved (unsafe console.log in db.js)
+
+### Phase 0.5B — Remove Production Console Logs ✅ Complete
+**Output:**
+- Unsafe `console.log` statements removed from `src/lib/db.js`
+
+### Phase 0.5C — ErrorBoundary Baseline ✅ Complete
+**Output:**
+- `ErrorBoundary` component added
+- Dashboard and UserManagement wrapped
+
+### Phase 0.5D — Lint Baseline Cleanup ✅ Complete (Steps 1–6)
+**Output:**
+- All 42 lint errors resolved (0 errors remaining)
+- Dead code removed, SortIcon moved to module scope
+- Unused parameters removed, redundant assignments removed
+- `Date.now()` purity fix via lazy useState initializer
+- AuthContext split for Fast Refresh compliance
+- `set-state-in-effect` violations replaced with inline `.then()` patterns
 
 ---
 
@@ -70,7 +87,7 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 
 ### Phase 1.0 — Master Data Core
 **Target completion:** Q3 2026  
-**Prerequisites:** Phase 0.x complete
+**Prerequisites:** Phase 0.x complete ✅
 
 **Output:**
 - Company setup (multi-company scaffold)
@@ -87,20 +104,59 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 
 **Database changes required (approval needed before each):**
 - `companies` table
-- `branches` table
-- `departments` table
-- `positions` table
-- `employees` / `users` extension
+- `branches`, `departments`, `positions` tables
+- `user_profiles` extension
+- `roles`, `permissions`, `role_permissions`, `user_roles` tables
 - `customers` table (enhance existing)
-- `vendors` table
-- `products` table
-- `document_types` table
+- `vendors`, `products` tables
+- `document_types`, `document_sequences` tables
 - `status_catalog` table
-- `approval_rules` table
-- `approval_logs` table
-- `chart_of_accounts` table
-- `currencies` table
-- `exchange_rates` table
+- `taxes`, `payment_terms`, `currencies`, `exchange_rates` tables
+- `approval_rules`, `approval_logs`, `approval_delegations` tables
+- `chart_of_accounts`, `cost_centers` tables
+- `asset_categories`, `asset_locations`, `assets` tables (schema only, Phase 4)
+
+### Phase 1.0A — Master Data Architecture Plan ✅ Complete
+**Branch:** `phase-1-master-data-architecture`
+**Output:**
+- `docs/database/master-data-architecture.md` — defines all 19 master data domains
+- Architecture only — no schema changes, no migrations, no RLS, no source code changes
+
+### Phase 1.0B — Schema / Migration Draft Review
+**Status:** Planned
+**Output:**
+- Draft migration SQL for all P0 domains in `/supabase/migrations/`
+- Schema additions to `docs/database/core-schema-draft.md`
+- Entity map additions to `docs/database/entity-map.md`
+- Rollback SQL for every migration
+
+### Phase 1.0C — Seed Strategy
+**Status:** Planned
+**Output:**
+- Seed SQL for all P0 and P1 domains
+- Company, branch, department, role, document type, status catalog seeds
+
+### Phase 1.0D — RLS Policy Draft
+**Status:** Planned
+**Output:**
+- RLS policies for all P0 and P1 tables
+- Helper functions: `get_user_company_id()`, `get_user_role()`
+- Test matrix: each policy tested with minimum 2 different roles
+
+### Phase 1.0E — First Admin UI Screens
+**Status:** Planned
+**Prerequisites:** 1.0B + 1.0C + 1.0D verified in staging
+**Output:**
+- Admin screens: Company, Branch, Department, Role, Document Type, Status, Tax, Payment Terms
+- All screens: server-side pagination, debounced search, lazy loaded, ErrorBoundary wrapped
+
+### Phase 1.0F — Integration with Existing Manifest Data
+**Status:** Planned
+**Output:**
+- Migrate existing `customers` table (add company_id, code, payment_terms_id)
+- Migrate existing `profiles` table (add company_id, branch_id, department_id; map role enum)
+- Verify existing Customer page, SP manifest, AR Tracker all still work
+- Additive migration only — no destructive changes
 
 ---
 
@@ -242,3 +298,7 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-23 | Incremental migration from Storbit Manifest, not rewrite | Reduce risk, preserve working features |
 | 2026-05-23 | Multi-company by design from Phase 1.0 | Future-proof, avoid costly rework later |
 | 2026-05-23 | Approval engine as reusable platform, not per-module | Consistency and maintainability |
+| 2026-05-24 | Phase 0.5D lint cleanup completed before Phase 1.0 starts | Clean baseline ensures lint errors introduced in Phase 1 are immediately visible |
+| 2026-05-24 | Phase 1.0 split into sub-phases A–F | Architecture before schema, schema before RLS, RLS before UI, migration last — reduces risk at each step |
+| 2026-05-24 | Phase 1.0F migration is additive only | Existing Storbit Manifest UI must remain functional throughout; destructive column drops deferred until 1.0F is verified |
+| 2026-05-24 | 19 master data domains defined before any migration is written | Defining all domains upfront prevents discovery of missing entities mid-migration |
