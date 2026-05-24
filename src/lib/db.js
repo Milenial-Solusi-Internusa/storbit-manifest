@@ -143,6 +143,7 @@ export async function listCustomers() {
   const { data, error } = await supabase
     .from('customers')
     .select('*')
+    .is('deleted_at', null)
     .order('name');
   return { data: (data || []).map(customerFromDb), error };
 }
@@ -167,7 +168,13 @@ export async function upsertCustomer(c) {
 }
 
 export async function deleteCustomer(id) {
-  const { error } = await supabase.from('customers').delete().eq('id', id);
+  // Soft delete: customers RLS has no DELETE policy (by design).
+  // Set deleted_at to exclude the row from all future reads,
+  // and active = false so legacy active-filter logic is consistent.
+  const { error } = await supabase
+    .from('customers')
+    .update({ deleted_at: new Date().toISOString(), active: false })
+    .eq('id', id);
   return { error };
 }
 
