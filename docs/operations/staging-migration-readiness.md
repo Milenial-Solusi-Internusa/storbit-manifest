@@ -1,8 +1,8 @@
 # Nexus by MSI — Staging Migration Readiness
 
-**Phase:** 1.0D+  
-**Last Updated:** 2026-05-24  
-**Branch:** `phase-1-master-data-staging-readiness`  
+**Phase:** 1.0D+ / 1.0D++
+**Last Updated:** 2026-05-24
+**Branch:** `phase-1-master-data-staging-readiness` / `phase-1-legacy-baseline-fresh-staging`
 **Status:** REVIEW DOCUMENT — no migration has been executed
 
 ---
@@ -11,10 +11,14 @@
 
 > **Production execution is NOT permitted at this stage.**
 >
-> Migrations 001–014 are all marked `DRAFT`. They must pass the full staging
+> Migrations 000–014 are all marked `DRAFT`. They must pass the full staging
 > verification cycle defined in this document before any production execution
 > is considered. A separate approval gate exists before production: see
 > Section 9 (Go / No-Go Criteria).
+>
+> Migration 000 (`legacy_app_baseline`) must run FIRST on any fresh Supabase
+> project before migrations 001–014 are applied. See
+> `docs/operations/legacy-app-baseline-fresh-staging.md` for details.
 >
 > Do not run `supabase db push`, `supabase migration up`, or any equivalent
 > command against production until that gate is explicitly cleared.
@@ -23,12 +27,17 @@
 
 ## 1. Migration Inventory
 
-All 14 draft migration files are in `supabase/migrations/`. Each is marked
+All 15 draft migration files are in `supabase/migrations/`. Each is marked
 `Status: DRAFT — do NOT execute without explicit approval`.
+
+**Migration 000 is new** (added in Phase 1.0D++). It creates the legacy Storbit
+Manifest tables that must exist before migrations 001–014 can run on a fresh
+Supabase project. See `docs/operations/legacy-app-baseline-fresh-staging.md`.
 
 | # | File | Phase | Purpose | Seed data | Depends on |
 |---|------|-------|---------|-----------|-----------|
-| 001 | `20260524000001_companies.sql` | 1.0B | `companies` table + uuid-ossp extension | MSI, JCI, SBI (3 rows) | — |
+| 000 | `20260524000000_legacy_app_baseline.sql` | 1.0D++ | `profiles`, `customers`, `sp_items`, `ar_ttfs`, `ar_btbs` + auth trigger | None — schema only | Fresh Supabase project with auth schema |
+| 001 | `20260524000001_companies.sql` | 1.0B | `companies` table + uuid-ossp extension | MSI, JCI, SBI (3 rows) | 000 |
 | 002 | `20260524000002_branches_departments.sql` | 1.0B | `branches`, `departments` tables | 1 HO branch × 3 companies; 7 departments × 3 companies | 001 |
 | 003 | `20260524000003_status_catalog.sql` | 1.0B | `status_catalog` table (global) | 13 status values | 001 (shared trigger) |
 | 004 | `20260524000004_document_types_sequences.sql` | 1.0B | `document_types`, `document_sequences` tables | 15 doc types × 3 companies = 45 rows; no initial sequences | 001, 002 |
@@ -43,8 +52,10 @@ All 14 draft migration files are in `supabase/migrations/`. Each is marked
 | 013 | `20260524000013_role_permissions_seed.sql` | 1.0C | Seeds `role_permissions` junction — full permission matrix for all 12 roles | All role-permission grants (depends on 005) | 005 |
 | 014 | `20260524000014_rls_policy_draft.sql` | 1.0D | 5 helper functions + RLS enabled on 20 tables; `profiles` and `customers` blocks commented out (Phase 1.0F) | None — policy only | 001–013 |
 
-**Total active tables created:** 22 new tables  
-**Total tables modified (additive):** 2 existing tables (`profiles`, `customers`)  
+**Total migrations:** 15 (000–014)
+**Legacy tables created by migration 000:** 5 (`profiles`, `customers`, `sp_items`, `ar_ttfs`, `ar_btbs`)
+**ERP tables created by migrations 001–014:** 22 new tables
+**Total tables modified additively by migrations 007–008:** 2 (`profiles`, `customers`)
 **Total tables with RLS enabled in migration 014:** 20 (`profiles` and `customers` deferred to Phase 1.0F)
 
 ---
@@ -64,6 +75,38 @@ Complete every item on this checklist before applying the first migration to sta
 [ ] Migration runner has postgres-level access (Supabase SQL editor or psql with connection string)
 ```
 
+### 2.1a Fresh Staging vs Existing-Data Staging
+
+**If this is a fresh Supabase project (no public tables — as in the current
+staging environment):**
+
+```
+[ ] Confirm no public tables exist:
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public';
+    -- Expected: 0 rows
+[ ] Confirm auth.users is empty:
+    SELECT COUNT(*) FROM auth.users;
+    -- Expected: 0
+[ ] Migration 000 (legacy_app_baseline) MUST be applied first.
+    See docs/operations/legacy-app-baseline-fresh-staging.md
+    for migration 000 pre-checks and first-user setup instructions.
+```
+
+**If this is an existing staging project with legacy data (profiles + customers
+already present from a previous deployment):**
+
+```
+[ ] Migration 000 is NOT needed — tables already exist.
+[ ] Skip migration 000 and start at migration 001.
+[ ] Confirm profiles.role column is of type user_role_legacy enum
+    (required for migration 014 RLS helper functions):
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = 'profiles' AND column_name = 'role';
+    -- Expected: USER-DEFINED (enum type)
+[ ] If profiles.role is TEXT (not enum), a separate migration to
+    convert the column type is required before proceeding.
+```
+
 ### 2.2 Backup and Snapshot
 
 ```
@@ -75,7 +118,7 @@ Complete every item on this checklist before applying the first migration to sta
     -- Record the full list for before/after comparison
 [ ] Existing profiles row count documented:
     SELECT COUNT(*) FROM profiles;
-    -- This is the baseline before migration 007 adds columns
+    -- This is the baseline before migration 007 adds columns (0 if fresh)
 [ ] Existing customers row count documented:
     SELECT COUNT(*) FROM customers;
     -- This is the baseline before migration 008 adds columns
