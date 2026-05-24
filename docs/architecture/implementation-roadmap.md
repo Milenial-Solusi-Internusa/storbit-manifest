@@ -132,11 +132,15 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - Index definitions added to `docs/database/indexing-strategy.md`
 - Status: DRAFT — migrations must not be executed without explicit approval
 
-### Phase 1.0C — Seed Strategy
-**Status:** Planned
+### Phase 1.0C — Seed Strategy ✅ Complete
+**Branch:** `phase-1-master-data-seed-strategy`
 **Output:**
-- Seed SQL for all P0 and P1 domains
-- Company, branch, department, role, document type, status catalog seeds
+- `docs/database/seed-strategy.md` — full domain-by-domain seed review and verification checklist
+- `supabase/migrations/20260524000013_role_permissions_seed.sql` — complete role-permissions matrix (all 12 roles)
+- `docs/workflow/status-lifecycle.md` — corrected: `completed` added as terminal state
+- `docs/security/permission-matrix.md` — legacy role mapping table and migration references added
+- Confirmed: all existing seed rows in migrations 001–009 match source-of-truth docs
+- Status: DRAFT — migrations must not be executed without explicit approval
 
 ### Phase 1.0D — RLS Policy Draft
 **Status:** Planned
@@ -304,5 +308,8 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-24 | Phase 1.0 split into sub-phases A–F | Architecture before schema, schema before RLS, RLS before UI, migration last — reduces risk at each step |
 | 2026-05-24 | Phase 1.0B migrations written as DRAFT SQL files, not executed | Schema must be reviewed and approved before any migration runs against Supabase |
 | 2026-05-24 | 12 migration files cover all 19 master data domains defined in Phase 1.0A | Every domain from companies through asset management has a draft migration with rollback SQL |
+| 2026-05-24 | role_permissions seeded in migration 013, separate from role/permission definitions in 005 | Separates schema decisions (what roles/permissions exist) from grant decisions (which role gets which permission); 013 can be revised independently |
+| 2026-05-24 | `completed` added as 4th terminal status alongside rejected/cancelled/archived | Completed documents should not transition further; status-lifecycle.md updated to match |
+| 2026-05-24 | All 15 document types seeded as is_active=true for all 3 companies | Company admins deactivate inapplicable types post go-live; avoids conditional seed logic |
 | 2026-05-24 | Phase 1.0F migration is additive only | Existing Storbit Manifest UI must remain functional throughout; destructive column drops deferred until 1.0F is verified |
 | 2026-05-24 | 19 master data domains defined before any migration is written | Defining all domains upfront prevents discovery of missing entities mid-migration |
