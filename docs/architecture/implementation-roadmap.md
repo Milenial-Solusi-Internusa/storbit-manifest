@@ -218,25 +218,28 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - 0 new lint errors introduced; `npm run build` passes
 
 ### Phase 1.0F — Profiles & Customers RLS Transition ✅ Complete
-**Branch:** `phase-1-profiles-customers-rls-transition` (plan) · `fix/customer-soft-delete-rls` (PR #13) · `fix/customer-company-id-rls-insert` (PR #14) · `phase-1-rls-transition-verification` (verification)
+**Branch:** `phase-1-profiles-customers-rls-transition` (plan) · `fix/customer-soft-delete-rls` (PR #13) · `fix/customer-company-id-rls-insert` (PR #14) · `phase-1-rls-transition-verification` (verification) · `fix/auth-profile-trigger-company-defaults` (PR #16) · `phase-1-cross-company-isolation-verification` (isolation)
 **Prerequisites:** 1.0E admin UI merged ✅
 **Output:**
 - `supabase/migrations/20260524000015_profiles_customers_rls_transition.sql` — executed in staging (3 stages):
   - Stage 1: `profiles.company_id` backfilled (Den → MSI via Option B per-user); `customers.company_id` backfilled (SBI default — 0 rows affected, clean)
   - Stage 2: `profiles.company_id` and `customers.company_id` set NOT NULL
   - Stage 3: RLS enabled on profiles (2 policies) and customers (3 policies)
+- `supabase/migrations/20260524000016_auth_profile_trigger_company_defaults.sql` — patched `handle_new_user()` with company resolution; defaults MSI/HO/IT; applied to staging
 - `docs/operations/profiles-customers-rls-transition.md` — staged execution plan and blocker documentation
 - `docs/operations/profiles-customers-rls-verification-log.md` — full verification log:
   - RLS enabled, all 5 policies active, all helper functions verified
   - profiles_count = 1, profiles_company_id_null_count = 0
   - customers_count = 0, customers_company_id_null_count = 0
   - App smoke tests: login, User Management, Customer list/add/delete — all pass
+  - Migration 016 verified: new user creation succeeds post-NOT NULL constraint
+  - Cross-company isolation test: SBI viewer sees 0 customers; MSI data confirmed intact — ✅ PASS
 - Source code fixes applied before Stage 3:
   - `deleteCustomer()` → soft delete (`deleted_at` + `active = false`) — PR #13
   - `upsertCustomer()` INSERT → resolves and attaches `company_id` from profiles — PR #14
   - `listCustomers()` → explicit `.is('deleted_at', null)` filter
-- Staging verdict: GO ✅
-- Production gate: BLOCKED pending cross-company isolation test + sign-offs
+- Staging verdict: FULLY VERIFIED ✅
+- Production gate: Pending formal technical lead and product owner sign-offs
 
 ---
 
@@ -426,3 +429,5 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-25 | customers backfill hardcoded to SBI in migration 015 | Legacy Storbit Manifest was built for SBI (General Trading); all existing customers are SBI operational data — consistent with migration 008 note and app context |
 | 2026-05-25 | deleteCustomer() hard-delete flagged as pre-Stage-3 blocker | No DELETE policy will be added to customers RLS; hard DELETE will fail after RLS activation — must migrate to soft-delete before enabling RLS |
 | 2026-05-25 | listCustomers() SELECT * noted as safe post-RLS but flagged for Phase 1.0G refactor | RLS will filter rows to company scope so SELECT * is not a security risk; column-specific select is a performance improvement deferred to refactor phase |
+| 2026-05-25 | handle_new_user() patched in migration 016 after profiles.company_id became NOT NULL | Auth trigger was inserting only 4 columns; NOT NULL constraint on company_id caused every new Auth user creation to fail with "Database error creating new user"; migration 016 resolves company_id/branch_id/department_id from master tables before inserting |
+| 2026-05-25 | Cross-company isolation test confirmed PASS in staging — Phase 1.0F fully complete | SBI viewer (test.sbi.viewer@exportimportdept.com) sees 0 customers from MSI scope; MSI INDOMARCO customer confirmed intact; profiles_read policy correctly scopes by company_id; production gate moves from BLOCKED to Pending Formal Approval |
