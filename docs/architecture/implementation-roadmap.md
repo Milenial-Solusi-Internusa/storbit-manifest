@@ -165,6 +165,29 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
   - Go/No-Go criteria and production execution gate
 - Status: DOCUMENTATION ONLY — no migrations executed
 
+### Phase 1.0D++ — Legacy App Baseline for Fresh Staging ✅ Complete
+**Branch:** `phase-1-legacy-baseline-fresh-staging`
+**Output:**
+- `supabase/migrations/20260524000000_legacy_app_baseline.sql` — baseline migration for fresh Supabase projects:
+  - `user_role_legacy` ENUM (management, logistic, procurement, finance, super)
+  - `profiles` table with auth trigger (`on_auth_user_created` via `handle_new_user()`)
+  - `customers` table (10 legacy columns derived from source code)
+  - `sp_items` table (24 columns derived from `spFromDb`/`spToDb` in db.js)
+  - `ar_ttfs` table (11 columns derived from `ttfFromDb`/`ttfToDb` in db.js)
+  - `ar_btbs` table (8 columns, cascade-delete, no updated_at — rows always replaced)
+  - `set_updated_at()` shared trigger function (CREATE OR REPLACE — safe for migration 001)
+  - 12 verification queries in comments; full rollback block
+  - No ERP columns from migrations 001–014; no RLS; no seed data
+- `docs/operations/legacy-app-baseline-fresh-staging.md` — companion documentation:
+  - Column derivation evidence from db.js, AuthContext.jsx, UserManagement.jsx
+  - Design decisions with rationale (enum type, auth trigger, OR REPLACE, no RLS)
+  - Pre-execution checklist, first user setup steps, known limitations
+- `docs/operations/staging-migration-readiness.md` updated:
+  - Migration 000 added to inventory (15 total migrations)
+  - Section 2.1a added: fresh vs existing-data staging pre-check
+  - Critical warning updated to note migration 000 must run first on fresh projects
+- Status: DRAFT — migration must not be executed without explicit approval
+
 ### Phase 1.0E — First Admin UI Screens
 **Status:** Planned
 **Prerequisites:** 1.0B + 1.0C + 1.0D verified in staging (see staging-migration-readiness.md)
@@ -337,3 +360,12 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-24 | document_sequences UPDATE allowed for all company users | Any staff member creating documents needs to atomically increment the sequence; application enforces UPDATE...RETURNING pattern |
 | 2026-05-24 | Phase 1.0D+ staging readiness review created before any migration execution | Migrations 001–014 must be verified end-to-end in staging with test matrix and go/no-go criteria before any production execution |
 | 2026-05-24 | Production execution blocked until Phase 1.0E Admin UI is also ready | Running schema migrations without corresponding UI would leave unmanageable data in production |
+| 2026-05-24 | Migration 000 created as baseline for fresh Supabase staging projects | Fresh Supabase has no public tables; migrations 007 and 008 would fail without pre-existing profiles and customers tables |
+| 2026-05-24 | Migration 000 filename sorts before 001 (lexicographic: 000 < 001) | Ensures correct execution order without renaming existing migration files 001–014 |
+| 2026-05-24 | All columns in migration 000 derived strictly from source code (db.js, AuthContext, UserManagement) | No guessed columns — every column traceable to spFromDb/spToDb, ttfFromDb/ttfToDb, customerFromDb/customerToDb, or profile field access |
+| 2026-05-24 | `profiles.role` typed as `user_role_legacy` ENUM, not TEXT | Confirmed by `role::text` cast in migration 014 RLS and migration 007 comment "legacy profiles.role (enum)" |
+| 2026-05-24 | `set_updated_at()` in migration 000 uses CREATE OR REPLACE | Migration 001 also defines the same function; OR REPLACE makes the second definition a safe no-op |
+| 2026-05-24 | `handle_new_user()` auth trigger included in migration 000 | AuthContext.jsx requires `profile.active` before granting isAuthenticated; without the trigger, new auth users have no profile row and cannot log in |
+| 2026-05-24 | `ar_btbs` has no `updated_at` column and no update trigger | db.js updateTtf() always deletes all btb rows then re-inserts — individual row updates never occur |
+| 2026-05-24 | Table name is `ar_ttfs` not `ttfs` | Fresh staging pre-check listed `ttfs` as missing, but db.js consistently uses `ar_ttfs` throughout (lines 225, 234, 256, 266, 289, 298) |
+| 2026-05-24 | No RLS policies in migration 000 | sp_items, ar_ttfs, ar_btbs get RLS in Phase 2+ transaction modules; profiles and customers RLS deferred to Phase 1.0F (company_id backfill required first) |
