@@ -203,20 +203,37 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
   - Go/No-Go: staging GO, production NO-GO
 - Status: COMPLETE — staging verified; production execution remains blocked
 
-### Phase 1.0E — First Admin UI Screens
-**Status:** Planned
+### Phase 1.0E — First Admin UI Screens ✅ Complete
+**Branch:** `phase-1-admin-ui-foundation`
 **Prerequisites:** 1.0D+++ staging execution verified ✅
 **Output:**
-- Admin screens: Company, Branch, Department, Role, Document Type, Status, Tax, Payment Terms
-- All screens: server-side pagination, debounced search, lazy loaded, ErrorBoundary wrapped
+- `useDebounce` hook — 300ms debounce utility shared across all admin hooks
+- `useCompanies`, `useBranches`, `useDepartments`, `useRoles` — paginated + debounced hooks
+- `useDocumentTypes`, `useStatusCatalog`, `useTaxes`, `usePaymentTerms` — paginated + debounced hooks
+- `AdminShell.jsx` — lazy-loaded tab shell for all admin screens (8 tabs)
+- Admin pages: CompaniesPage, BranchesPage, DepartmentsPage, RolesPage
+- Admin pages: DocumentTypesPage, StatusCatalogPage, TaxesPage, PaymentTermsPage
+- All screens: server-side pagination, 300ms debounced search, ErrorBoundary per tab
+- `App.jsx` updated: `Database` icon, AdminShell lazy import, Master Data menu item (role: super)
+- 0 new lint errors introduced; `npm run build` passes
 
-### Phase 1.0F — Integration with Existing Manifest Data
-**Status:** Planned
+### Phase 1.0F — Profiles & Customers RLS Transition
+**Status:** 🔄 In Progress
+**Branch:** `phase-1-profiles-customers-rls-transition`
+**Prerequisites:** 1.0E admin UI merged ✅
 **Output:**
-- Migrate existing `customers` table (add company_id, code, payment_terms_id)
-- Migrate existing `profiles` table (add company_id, branch_id, department_id; map role enum)
-- Verify existing Customer page, SP manifest, AR Tracker all still work
-- Additive migration only — no destructive changes
+- `supabase/migrations/20260524000015_profiles_customers_rls_transition.sql` — DRAFT:
+  - Backfill `profiles.company_id` (decision required: MSI vs SBI assignment per user)
+  - Backfill `customers.company_id` (SBI — legacy Storbit Manifest customers)
+  - NOT NULL constraint steps (Stages 1B + 2B, conditional on backfill verification)
+  - RLS enable + policies for profiles and customers (Stage 3, commented out — manual activation)
+  - Policies sourced from migration 014 Sections 5B + 6B
+- `docs/operations/profiles-customers-rls-transition.md` — staged execution checklist:
+  - 3-stage execution plan with per-stage verification queries
+  - SBI vs MSI backfill decision documentation
+  - deleteCustomer() hard-delete issue flagged as pre-Stage-3 blocker
+  - Rollback plan, go/no-go criteria, production gate
+- Status: DRAFT — staged execution requires explicit DBA approval per stage
 
 ---
 
@@ -391,3 +408,12 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-24 | Legacy operational tables remain RLS-deferred in staging | sp_items, ar_ttfs, ar_btbs are internal-only tables accessed by authenticated staff; deferral is safe for staging and Phase 1.0E development |
 | 2026-05-24 | Phase 1.0E allowed to begin on staging only | Staging verified GO; production execution remains blocked until Phase 1.0F + full RLS test matrix + technical lead and product owner sign-off |
 | 2026-05-24 | Production remains blocked after staging execution | profiles and customers RLS not yet active; backfill required; full cross-company isolation test matrix not yet run |
+| 2026-05-24 | Phase 1.0E completed: 8 admin read-only screens, 8 data hooks, AdminShell lazy chunk | All screens follow server-side pagination + debounced search pattern; no new lint errors; build passes |
+| 2026-05-24 | Admin tab bar uses overflow-x-auto with flex-shrink-0 whitespace-nowrap on 8 tabs | Prevents overflow or collapse on narrower viewports without adding a new scroll library |
+| 2026-05-24 | StatusCatalogPage uses COLOR_SWATCH hex lookup map instead of Tailwind bg tokens directly | color_class column stores Tailwind classes (e.g., bg-gray-100); inline styles require hex values — lookup map converts known tokens, falls back to neutral for unknown |
+| 2026-05-24 | DocumentTypesPage uses MODULE_COLORS map with distinct PASTEL accent per module | Visual differentiation of document types by module (sales, operations, procurement, finance, etc.) without adding any new dependency |
+| 2026-05-24 | Phase 1.0F migration uses staged execution (3 stages) rather than single atomic migration | Backfill, NOT NULL constraint, and RLS activation are each independently reversible; single-transaction approach would be unrecoverable if backfill has unexpected NULLs |
+| 2026-05-25 | profiles backfill decision deferred to DBA: migration 007 note conflicts with staging admin being MSI | Migration 007 suggested SBI default but known super admin is MSI; blanket assignment would be incorrect — DBA must review profile rows before choosing Option A or B |
+| 2026-05-25 | customers backfill hardcoded to SBI in migration 015 | Legacy Storbit Manifest was built for SBI (General Trading); all existing customers are SBI operational data — consistent with migration 008 note and app context |
+| 2026-05-25 | deleteCustomer() hard-delete flagged as pre-Stage-3 blocker | No DELETE policy will be added to customers RLS; hard DELETE will fail after RLS activation — must migrate to soft-delete before enabling RLS |
+| 2026-05-25 | listCustomers() SELECT * noted as safe post-RLS but flagged for Phase 1.0G refactor | RLS will filter rows to company scope so SELECT * is not a security risk; column-specific select is a performance improvement deferred to refactor phase |
