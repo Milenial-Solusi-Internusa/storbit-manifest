@@ -241,6 +241,24 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - Staging verdict: FULLY VERIFIED ✅
 - Production gate: Pending formal technical lead and product owner sign-offs
 
+### Phase 1.0G — User Access Management Foundation ✅ Complete
+**Branch:** `phase-1-user-access-management`
+**Prerequisites:** 1.0F complete and verified ✅
+**Output:**
+- `src/hooks/useUserAccess.js` — paginated list hook (profiles + company/branch/dept/position joins + user_roles 2-step merge); async helpers for cascading dropdown data; `saveUserAccess()` mutation (profile UPDATE + user_roles deactivate/upsert)
+- `src/modules/admin/pages/UserAccessPage.jsx` — read + update user access page inside AdminShell:
+  - Debounced search, server-side pagination (20/page)
+  - Table: Name/ID, Company, Legacy Role, ERP Role, Active, MFA
+  - Right-side edit drawer: company, branch, department, position (cascading), legacy role, ERP role, active toggle, MFA toggle
+  - Company change clears and reloads branch/dept/position/ERP role dropdowns
+  - ERP role assignment: deactivate existing active roles, upsert new role
+  - Only updates ERP role if it changed (skips unnecessary user_roles writes)
+  - Self-deactivation guard (cannot deactivate own account)
+  - Clear error surfacing on RLS or save failures
+- `src/modules/admin/AdminShell.jsx` — added "User Access" tab (9th tab)
+- Auth user creation intentionally not supported: remains Supabase Dashboard only
+- Known RLS constraint: user_roles insert/update scoped to current user's company_id; cross-company role assignment requires a future elevated policy
+
 ---
 
 ## Phase 2 — Sales & Operations
@@ -431,3 +449,6 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-25 | listCustomers() SELECT * noted as safe post-RLS but flagged for Phase 1.0G refactor | RLS will filter rows to company scope so SELECT * is not a security risk; column-specific select is a performance improvement deferred to refactor phase |
 | 2026-05-25 | handle_new_user() patched in migration 016 after profiles.company_id became NOT NULL | Auth trigger was inserting only 4 columns; NOT NULL constraint on company_id caused every new Auth user creation to fail with "Database error creating new user"; migration 016 resolves company_id/branch_id/department_id from master tables before inserting |
 | 2026-05-25 | Cross-company isolation test confirmed PASS in staging — Phase 1.0F fully complete | SBI viewer (test.sbi.viewer@exportimportdept.com) sees 0 customers from MSI scope; MSI INDOMARCO customer confirmed intact; profiles_read policy correctly scopes by company_id; production gate moves from BLOCKED to Pending Formal Approval |
+| 2026-05-26 | Auth user creation excluded from User Access UI — remains Supabase Dashboard only | Creating auth users requires service_role or Supabase Admin API; exposing either in frontend violates security baseline; Supabase Dashboard provides a safe, audited alternative for Phase 1.0G |
+| 2026-05-26 | user_roles insert/update RLS limits Phase 1.0G to same-company role assignment | user_roles_insert policy requires company_id = get_user_company_id(); cross-company role writes need a future super_admin override policy; surfaced as a clear UI error rather than silently ignored |
+| 2026-05-26 | user_roles fetched in a separate query and merged client-side (not nested select) | profiles.id → auth.users.id is a cross-schema FK; PostgREST cannot auto-join user_roles via auth schema; 2-step fetch (profiles then user_roles.in(profileIds)) is the correct pattern |
