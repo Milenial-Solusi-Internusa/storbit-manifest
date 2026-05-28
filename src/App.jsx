@@ -4,8 +4,9 @@ import {
   Search, Download, Upload, Eye, Edit3, Trash2, X,
   Package, AlertTriangle, CheckCircle2,
   ChevronRight, Save, RefreshCw, Calendar, Building2, User,
-  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, ShieldCheck,
-  Database,
+  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut,
+  Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
+  Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { useCustomers } from './hooks/useCustomers';
@@ -229,6 +230,98 @@ const can = (role, action) => {
   };
   return matrix[role]?.includes(action);
 };
+
+const PLANNED_MODULES = {
+  operations: {
+    title: 'Operations',
+    description: 'Unified job control for freight forwarding, customs clearance, and general trading execution across MSI Group.',
+    capabilities: ['Job order workspace', 'Shipment milestone control', 'Entity-aware operation queues', 'Document handoff tracking'],
+  },
+  commercial: {
+    title: 'Commercial',
+    description: 'CRM, inquiry, quotation, and sales order flow before work becomes an executable operation.',
+    capabilities: ['Customer inquiry pipeline', 'Quotation builder', 'Sales order conversion', 'Customer activity timeline'],
+  },
+  financeErp: {
+    title: 'Finance',
+    description: 'ERP-grade finance control for billing, AR, AP, collection, cash/bank, and accounting handoff.',
+    capabilities: ['Invoice command board', 'AR and collection control', 'AP vendor invoice flow', 'Finance approval impact'],
+  },
+  procurement: {
+    title: 'Procurement',
+    description: 'Purchase request, vendor sourcing, PO control, and procurement approvals for group operations.',
+    capabilities: ['Purchase request intake', 'Vendor comparison', 'Purchase order workflow', 'Procurement approval queue'],
+  },
+  inventoryAsset: {
+    title: 'Inventory & Asset',
+    description: 'Warehouse stock visibility, asset registry, custody history, and movement tracking.',
+    capabilities: ['Stock movement ledger', 'Asset assignment', 'Warehouse location map', 'Maintenance status tracking'],
+  },
+  approvals: {
+    title: 'Approval Center',
+    description: 'A reusable approval cockpit for documents, exceptions, revisions, and delegated approvals.',
+    capabilities: ['Pending approval inbox', 'Approval history', 'Delegation and backup approvers', 'Revision request flow'],
+  },
+  hrga: {
+    title: 'HRGA Service',
+    description: 'Internal service requests for HR, GA, facilities, and operational support needs.',
+    capabilities: ['Request intake', 'SLA status tracking', 'Assignment queue', 'Employee service history'],
+  },
+  it: {
+    title: 'IT Workspace',
+    description: 'IT service management for support tickets, assets, access requests, and incident follow-up.',
+    capabilities: ['Ticket queue', 'Access request workflow', 'Device inventory linkage', 'Incident timeline'],
+  },
+  reports: {
+    title: 'Reports',
+    description: 'Consolidated reporting workspace for operations, finance, master data, and management review.',
+    capabilities: ['Cross-entity dashboards', 'Scheduled report packs', 'Export approval control', 'KPI drilldowns'],
+  },
+};
+
+const ERP_MENU_GROUPS = [
+  {
+    label: 'Core',
+    items: [
+      { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
+      { id: 'operations', label: 'Operations', icon: Truck },
+      { id: 'commercial', label: 'Commercial', icon: BriefcaseBusiness },
+      { id: 'financeErp', label: 'Finance', icon: Landmark },
+    ],
+  },
+  {
+    label: 'Business Platform',
+    items: [
+      { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
+      { id: 'inventoryAsset', label: 'Inventory & Asset', icon: Boxes },
+      { id: 'approvals', label: 'Approval Center', icon: ClipboardCheck },
+      { id: 'hrga', label: 'HRGA Service', icon: UsersRound },
+      { id: 'it', label: 'IT Workspace', icon: Laptop },
+      { id: 'reports', label: 'Reports', icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'Foundation',
+    items: [
+      { id: 'admin', label: 'Master Data', icon: Database, role: ['super'] },
+      { id: 'users', label: 'Admin Settings', icon: Settings, role: ['super'] },
+    ],
+  },
+  {
+    label: 'Legacy Workspaces',
+    items: [
+      { id: 'manifest', label: 'SP Manifest', icon: FileText },
+      { id: 'input', label: 'Input SP', icon: Plus, role: ['super','logistic'] },
+      { id: 'shipment', label: 'Shipment', icon: Truck, role: ['super','logistic'] },
+      { id: 'finance', label: 'Finance Docs', icon: Wallet, role: ['super','finance'] },
+      { id: 'outstanding', label: 'Outstanding', icon: Clock, role: ['super','finance','management'] },
+      { id: 'ar', label: 'AR Tracker', icon: Wallet, role: ['super','finance'] },
+      { id: 'customers', label: 'Customers', icon: Building2, role: ['super'] },
+    ],
+  },
+];
+
+const canSeeMenuItem = (item, role) => !item.role || item.role.includes(role);
 
 
 // ============================
@@ -553,20 +646,12 @@ export default function StorbitManifest() {
     );
   }
 
-  const menus = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'manifest', label: 'SP Manifest', icon: FileText },
-    { id: 'input', label: 'Input', icon: Plus, role: ['super','logistic'] },
-    { id: 'shipment', label: 'Shipment', icon: Truck, role: ['super','logistic'] },
-    { id: 'finance', label: 'Finance', icon: Wallet, role: ['super','finance'] },
-    { id: 'outstanding', label: 'Outstanding', icon: Clock, role: ['super','finance','management'] },
-    { id: 'ar', label: 'AR Tracker', icon: Wallet, role: ['super','finance'] },
-    { id: 'customers', label: 'Customers', icon: Building2, role: ['super'] },
-    { id: 'users', label: 'User Management', icon: ShieldCheck, role: ['super'] },
-    { id: 'admin', label: 'Master Data', icon: Database, role: ['super'] },
-  ];
-
-  const visibleMenus = menus.filter(m => !m.role || m.role.includes(role));
+  const visibleMenuGroups = ERP_MENU_GROUPS
+    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role)) }))
+    .filter(group => group.items.length > 0);
+  const visibleMenus = visibleMenuGroups.flatMap(group => group.items);
+  const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
+  const currentRoleLabel = ROLES.find(r => r.id === role)?.label || role;
 
   return (
     <div className="min-h-screen" style={{ background: PASTEL.cream, color: PASTEL.ink, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
@@ -591,50 +676,54 @@ export default function StorbitManifest() {
       {/* LAYOUT: Sidebar + Content */}
       <div className="flex min-h-screen">
         {/* SIDEBAR */}
-        <aside className="hidden md:flex flex-col w-64 sticky top-0 h-screen border-r" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <aside className="hidden lg:flex flex-col w-72 sticky top-0 h-screen border-r" style={{ background: 'white', borderColor: PASTEL.line }}>
           {/* Brand */}
-          <div className="px-6 py-6 border-b" style={{ borderColor: PASTEL.line }}>
+          <div className="px-5 py-5 border-b" style={{ borderColor: PASTEL.line }}>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${PASTEL.peach}, ${PASTEL.rose})` }}>
-                <Package size={20} style={{ color: PASTEL.ink }} strokeWidth={2}/>
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: PASTEL.ink }}>
+                <Package size={19} style={{ color: 'white' }} strokeWidth={2}/>
               </div>
               <div className="min-w-0">
-                <h1 className="font-display text-xl font-semibold tracking-tight">storbit</h1>
-                <p className="text-[9px] tracking-[0.18em] uppercase font-medium truncate" style={{ color: PASTEL.inkMute }}>manifest · ops</p>
+                <h1 className="font-display text-xl font-semibold tracking-tight">Nexus by MSI</h1>
+                <p className="text-[9px] tracking-[0.16em] uppercase font-semibold truncate" style={{ color: PASTEL.inkMute }}>Unified Business Core Platform</p>
               </div>
             </div>
           </div>
 
           {/* Nav */}
           <nav className="flex-1 px-3 py-4 overflow-y-auto">
-            <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: PASTEL.inkMute }}>Menu</div>
-            {visibleMenus.map(m => {
-              const Icon = m.icon;
-              const active = activeMenu === m.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => setActiveMenu(m.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium mb-0.5 transition-all"
-                  style={{
-                    background: active ? PASTEL.peach : 'transparent',
-                    color: active ? PASTEL.ink : PASTEL.inkSoft,
-                    fontWeight: active ? 600 : 500,
-                  }}
-                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = PASTEL.lineSoft; }}
-                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <Icon size={16} strokeWidth={active ? 2.4 : 2}/>
-                  <span className="flex-1 text-left">{m.label}</span>
-                  {active && <div className="w-1.5 h-1.5 rounded-full" style={{ background: PASTEL.peachDeep }}/>}
-                </button>
-              );
-            })}
+            {visibleMenuGroups.map(group => (
+              <div key={group.label} className="mb-5">
+                <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: PASTEL.inkMute }}>{group.label}</div>
+                {group.items.map(m => {
+                  const Icon = m.icon;
+                  const active = activeMenu === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setActiveMenu(m.id)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium mb-0.5 transition-all"
+                      style={{
+                        background: active ? '#F8FAFC' : 'transparent',
+                        color: active ? PASTEL.ink : PASTEL.inkSoft,
+                        fontWeight: active ? 700 : 500,
+                        boxShadow: active ? `inset 3px 0 0 ${PASTEL.ink}` : 'none',
+                      }}
+                      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = '#F8FAFC'; }}
+                      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <Icon size={16} strokeWidth={active ? 2.4 : 2}/>
+                      <span className="flex-1 text-left">{m.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
 
             {/* Quick stats in sidebar */}
-            <div className="mt-6 pt-4 border-t" style={{ borderColor: PASTEL.line }}>
+            <div className="mt-2 pt-4 border-t" style={{ borderColor: PASTEL.line }}>
               <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: PASTEL.inkMute }}>Quick Stats</div>
-              <div className="px-3 py-3 rounded-2xl space-y-2.5" style={{ background: PASTEL.lineSoft }}>
+              <div className="px-3 py-3 rounded-2xl space-y-2.5 border" style={{ background: '#F8FAFC', borderColor: PASTEL.line }}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Total SP</span>
                   <span className="font-numeric text-sm font-bold">{groupedSP.length}</span>
@@ -658,17 +747,17 @@ export default function StorbitManifest() {
           {/* Footer: User + logout */}
           <div className="px-4 py-4 border-t" style={{ borderColor: PASTEL.line }}>
             <div className="text-[9px] uppercase tracking-[0.2em] font-semibold mb-2" style={{ color: PASTEL.inkMute }}>Logged in as</div>
-            <div className="rounded-2xl p-3" style={{ background: PASTEL.lineSoft }}>
+            <div className="rounded-2xl p-3 border" style={{ background: '#F8FAFC', borderColor: PASTEL.line }}>
               <div className="flex items-center gap-2 mb-3">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: PASTEL.lavender }}>
-                  <User size={13} style={{ color: PASTEL.lavenderDeep }}/>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
+                  <User size={14} style={{ color: PASTEL.inkSoft }}/>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold truncate" style={{ color: PASTEL.ink }}>
                     {profile?.full_name || 'User'}
                   </div>
                   <div className="text-[10px] uppercase tracking-wider" style={{ color: PASTEL.inkMute }}>
-                    {ROLES.find(r => r.id === role)?.label || role}
+                    {currentRoleLabel}
                   </div>
                 </div>
               </div>
@@ -692,13 +781,16 @@ export default function StorbitManifest() {
         </aside>
 
         {/* MOBILE TOPBAR */}
-        <header className="md:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: PASTEL.line, background: 'rgba(250, 246, 240, 0.92)' }}>
+        <header className="lg:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: PASTEL.line, background: 'rgba(250, 246, 240, 0.94)' }}>
           <div className="px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${PASTEL.peach}, ${PASTEL.rose})` }}>
-                <Package size={18} style={{ color: PASTEL.ink }} strokeWidth={2}/>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: PASTEL.ink }}>
+                <Package size={17} style={{ color: 'white' }} strokeWidth={2}/>
               </div>
-              <h1 className="font-display text-lg font-semibold">storbit</h1>
+              <div>
+                <h1 className="font-display text-lg font-semibold leading-tight">Nexus by MSI</h1>
+                <p className="text-[8px] uppercase tracking-[0.14em] font-semibold leading-tight" style={{ color: PASTEL.inkMute }}>Unified Business Core</p>
+              </div>
             </div>
             <button
               onClick={signOut}
@@ -720,11 +812,11 @@ export default function StorbitManifest() {
                   onClick={() => setActiveMenu(m.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap"
                   style={{
-                    background: active ? PASTEL.peach : 'transparent',
+                    background: active ? PASTEL.ink : 'transparent',
                     color: active ? PASTEL.ink : PASTEL.inkSoft,
                   }}
                 >
-                  <Icon size={13}/>{m.label}
+                  <Icon size={13} style={{ color: active ? 'white' : PASTEL.inkSoft }}/><span style={{ color: active ? 'white' : PASTEL.inkSoft }}>{m.label}</span>
                 </button>
               );
             })}
@@ -732,7 +824,48 @@ export default function StorbitManifest() {
         </header>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 min-w-0 px-6 md:px-10 py-8 max-w-[1400px]">
+        <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6 lg:py-8 max-w-[1480px]">
+          <div className="mb-6 rounded-3xl border p-4 lg:p-5" style={{ background: 'rgba(255,255,255,0.82)', borderColor: PASTEL.line }}>
+            <div className="flex flex-col xl:flex-row xl:items-center gap-4">
+              <div className="min-w-0 xl:w-72">
+                <div className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1" style={{ color: PASTEL.inkMute }}>Current Workspace</div>
+                <h2 className="font-display text-2xl font-semibold tracking-tight truncate">{activeMenuItem?.label || 'Command Center'}</h2>
+              </div>
+              <div className="relative flex-1 min-w-[220px]">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: PASTEL.inkMute }}/>
+                <input
+                  type="text"
+                  placeholder="Search SP, shipment, invoice, customer, asset, ticket..."
+                  className="w-full rounded-2xl pl-10 pr-4 py-3 text-sm outline-none border"
+                  style={{ background: '#F8FAFC', borderColor: PASTEL.line, color: PASTEL.ink }}
+                />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button type="button" className="inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-semibold" style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}>
+                  <Building2 size={14}/>
+                  MSI / JCI / Storbit
+                  <ChevronsUpDown size={13} style={{ color: PASTEL.inkMute }}/>
+                </button>
+                <button type="button" onClick={() => setActiveMenu('approvals')} className="inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-semibold" style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}>
+                  <ClipboardCheck size={14}/>
+                  Pending Approval
+                </button>
+                <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border" style={{ background: 'white', borderColor: PASTEL.line }} title="Notifications">
+                  <Bell size={15} style={{ color: PASTEL.inkSoft }}/>
+                </button>
+                <div className="inline-flex items-center gap-2 rounded-2xl border px-3 py-2" style={{ background: 'white', borderColor: PASTEL.line }}>
+                  <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: PASTEL.lineSoft }}>
+                    <User size={13} style={{ color: PASTEL.inkSoft }}/>
+                  </div>
+                  <div className="min-w-0 hidden sm:block">
+                    <div className="text-xs font-semibold truncate max-w-[140px]">{profile?.full_name || 'User'}</div>
+                    <div className="text-[10px] uppercase tracking-wider truncate max-w-[140px]" style={{ color: PASTEL.inkMute }}>{currentRoleLabel}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Page section header with month filter */}
           {(activeMenu === 'dashboard' || activeMenu === 'manifest') && (
             <div className="mb-6 flex items-center gap-2 flex-wrap">
@@ -776,6 +909,13 @@ export default function StorbitManifest() {
                 <Dashboard stats={stats} groupedSP={filterMonth === 'all' ? groupedSP : groupedSP.filter(g => monthYearKey(g.spDate) === filterMonth)} filterMonth={filterMonth}/>
               </Suspense>
             </ErrorBoundary>
+          )}
+          {PLANNED_MODULES[activeMenu] && (
+            <ComingSoonPage
+              title={PLANNED_MODULES[activeMenu].title}
+              description={PLANNED_MODULES[activeMenu].description}
+              capabilities={PLANNED_MODULES[activeMenu].capabilities}
+            />
           )}
           {activeMenu === 'manifest' && (
             <Manifest
@@ -974,6 +1114,46 @@ function StatusBadge({ status, overdue, large }) {
           Overdue
         </span>
       )}
+    </div>
+  );
+}
+
+function ComingSoonPage({ title, description, capabilities }) {
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <div className="p-6 md:p-8 border-b" style={{ borderColor: PASTEL.line, background: '#F8FAFC' }}>
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="max-w-3xl">
+              <span className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] mb-4" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
+                Planned
+              </span>
+              <h2 className="font-display text-3xl font-semibold tracking-tight">{title}</h2>
+              <p className="text-sm mt-2 leading-6" style={{ color: PASTEL.inkSoft }}>{description}</p>
+            </div>
+            <div className="rounded-2xl border px-4 py-3 min-w-[180px]" style={{ background: 'white', borderColor: PASTEL.line }}>
+              <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1" style={{ color: PASTEL.inkMute }}>Module Status</div>
+              <div className="font-numeric text-2xl font-bold">Roadmap</div>
+              <div className="text-xs mt-1" style={{ color: PASTEL.inkSoft }}>Awaiting phase approval</div>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 md:p-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {capabilities.map((capability, index) => (
+              <div key={capability} className="rounded-2xl border p-4" style={{ background: 'white', borderColor: PASTEL.line }}>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-4 font-mono text-xs font-bold" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
+                  {String(index + 1).padStart(2, '0')}
+                </div>
+                <h3 className="text-sm font-semibold leading-5">{capability}</h3>
+                <p className="text-xs mt-2 leading-5" style={{ color: PASTEL.inkMute }}>
+                  Reserved for the ERP foundation roadmap and future approval-driven workflow design.
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
