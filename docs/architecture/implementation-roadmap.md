@@ -259,6 +259,20 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - Auth user creation intentionally not supported: remains Supabase Dashboard only
 - Known RLS constraint: user_roles insert/update scoped to current user's company_id; cross-company role assignment requires a future elevated policy
 
+### Phase 1.0H — RLS Hardening for Remaining Public Tables ✅ Complete
+**Branch:** `phase-1-rls-hardening-public-tables`
+**Prerequisites:** 1.0G complete ✅
+**Output:**
+- `supabase/migrations/20260524000017_rls_hardening_public_tables.sql` — enables RLS on 8 tables flagged by Supabase Security Advisor (`rls_disabled_in_public`):
+  - **Group A — Legacy operational tables** (`sp_items`, `ar_ttfs`, `ar_btbs`): no `company_id`; authenticated-only policies (`TO authenticated USING (true)`) block anonymous access while preserving all existing app behaviour; marked TRANSITIONAL
+  - **Group B — Finance tables** (`cost_centers`, `chart_of_accounts`): company-scoped read; admin-level write; `chart_of_accounts` write restricted to `finance_controller` or `super_admin`; no DELETE policy
+  - **Group C — Asset tables** (`asset_categories`, `asset_locations`, `assets`): company-scoped read; admin-level write; no DELETE policy
+  - All policies idempotent (`DROP POLICY IF EXISTS` + `CREATE POLICY`); rollback SQL included
+  - `ar_btbs` has SELECT, INSERT, DELETE (no UPDATE) — matches replace strategy in `updateTtf()`
+- `docs/operations/rls-hardening-public-tables.md` — full decision log, policy rationale per table, source code usage confirmation, DBA verification checklist
+- No source files modified; no UI changed; no `.env` files touched
+- Status: MIGRATION DRAFT — must not be executed without DBA sign-off; apply to staging first per `docs/operations/staging-migration-readiness.md`
+
 ---
 
 ## Phase 2 — Sales & Operations
@@ -452,3 +466,8 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-26 | Auth user creation excluded from User Access UI — remains Supabase Dashboard only | Creating auth users requires service_role or Supabase Admin API; exposing either in frontend violates security baseline; Supabase Dashboard provides a safe, audited alternative for Phase 1.0G |
 | 2026-05-26 | user_roles insert/update RLS limits Phase 1.0G to same-company role assignment | user_roles_insert policy requires company_id = get_user_company_id(); cross-company role writes need a future super_admin override policy; surfaced as a clear UI error rather than silently ignored |
 | 2026-05-26 | user_roles fetched in a separate query and merged client-side (not nested select) | profiles.id → auth.users.id is a cross-schema FK; PostgREST cannot auto-join user_roles via auth schema; 2-step fetch (profiles then user_roles.in(profileIds)) is the correct pattern |
+| 2026-05-28 | Legacy tables (sp_items, ar_ttfs, ar_btbs) given authenticated-only RLS rather than company-scoped | These tables have no company_id column; company-scoped policy is impossible without schema migration; authenticated-only policy achieves the Security Advisor goal (block anonymous access) without breaking any existing app behaviour |
+| 2026-05-28 | ar_btbs given DELETE policy but no UPDATE policy | db.js updateTtf() explicitly calls supabase.from('ar_btbs').delete().eq('ttf_id', id) before re-inserting (replace strategy); a DELETE policy is mandatory or the explicit delete fails after RLS is enabled; no UPDATE policy is needed because ar_btbs rows are never individually updated |
+| 2026-05-28 | chart_of_accounts write access restricted to finance_controller or super_admin (stricter than admin) | COA structure is a critical finance asset; incorrect modifications silently corrupt ledger entries; restricting to finance_controller prevents operational admins from accidentally restructuring accounts |
+| 2026-05-28 | No DELETE policies on Phase 2+ and Phase 4.2 tables | Assets, COA entries, and cost centers must never be hard-deleted; application enforces soft-delete (deleted_at) and status transitions; absence of a DELETE policy is an intentional guardrail at the database level |
+| 2026-05-28 | Phase 1.0H migration marked DRAFT — must not be executed without DBA sign-off | Legacy tables (sp_items, ar_ttfs, ar_btbs) are actively used by operational screens; any policy error or missing operation coverage would break running app features; DBA must run on dev Supabase first and verify all app screens before staging execution |
