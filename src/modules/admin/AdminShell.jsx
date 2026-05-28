@@ -14,6 +14,7 @@ import DocumentTypesPage from './pages/DocumentTypesPage';
 import StatusCatalogPage from './pages/StatusCatalogPage';
 import TaxesPage from './pages/TaxesPage';
 import PaymentTermsPage from './pages/PaymentTermsPage';
+import UserAccessPage from './pages/UserAccessPage';
 
 const PASTEL = {
   ink: '#2D2A28',
@@ -34,6 +35,7 @@ const ADMIN_TABS = [
   { id: 'status-catalog', label: 'Status Catalog' },
   { id: 'taxes',          label: 'Taxes' },
   { id: 'payment-terms',  label: 'Payment Terms' },
+  { id: 'user-access',    label: 'User Access' },
 ];
 
 function TabNav({ active, onSelect }) {
@@ -110,6 +112,11 @@ export default function AdminShell() {
       {activeTab === 'payment-terms' && (
         <ErrorBoundary title="Payment Terms section temporarily unavailable">
           <PaymentTermsPage />
+        </ErrorBoundary>
+      )}
+      {activeTab === 'user-access' && (
+        <ErrorBoundary title="User Access section temporarily unavailable">
+          <UserAccessPage />
         </ErrorBoundary>
       )}
     </div>
