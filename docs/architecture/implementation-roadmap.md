@@ -274,6 +274,21 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 - Status: STAGING VERIFIED ✅ — production execution blocked pending formal sign-off
 - Verification log: `docs/operations/rls-hardening-verification-log.md`
 
+### Phase 1.0I — Admin CRUD Foundation ✅ Complete
+**Branch:** `phase-1-admin-crud-foundation`
+**Prerequisites:** 1.0H complete ✅
+**Output:**
+- `src/hooks/useBranches.js` — extended with `createBranch`, `updateBranch`, `softDeleteBranch` async helpers
+- `src/hooks/useDepartments.js` — extended with `createDepartment`, `updateDepartment`, `softDeleteDepartment`, `fetchParentDepartmentsForCompany` helpers
+- `src/hooks/usePositions.js` — new hook: `usePositions` (paginated list), `createPosition`, `updatePosition`, `softDeletePosition`, `fetchDepartmentsForPositionForm`, `POSITION_LEVELS` constant
+- `src/modules/admin/pages/BranchesPage.jsx` — upgraded to full CRUD: New Branch button, Edit button per row, right-side drawer with company/code/name/city/address/is_active fields, Archive (soft-delete) button, toast notifications, inline save error display
+- `src/modules/admin/pages/DepartmentsPage.jsx` — upgraded to full CRUD: same drawer pattern, adds optional parent department dropdown (filtered to same company, excludes self)
+- `src/modules/admin/pages/PositionsPage.jsx` — new page: paginated list with company/code/name/level badge/department/status columns; drawer with company/code/name/level (CHECK constraint values)/department (optional)/is_active
+- `src/modules/admin/AdminShell.jsx` — Positions tab added (10th tab between Departments and Roles); phase badge updated to 1.0I; "Read-only" label updated to "CRUD enabled"
+- No migrations, no RLS changes, no schema changes, no new dependencies
+- Soft delete only — all three tables have `deleted_at`; no DELETE SQL is executed
+- All saves require `is_admin_or_above()` at the RLS layer; RLS errors are surfaced to the drawer UI
+
 ---
 
 ## Phase 2 — Sales & Operations
@@ -472,4 +487,8 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-28 | chart_of_accounts write access restricted to finance_controller or super_admin (stricter than admin) | COA structure is a critical finance asset; incorrect modifications silently corrupt ledger entries; restricting to finance_controller prevents operational admins from accidentally restructuring accounts |
 | 2026-05-28 | No DELETE policies on Phase 2+ and Phase 4.2 tables | Assets, COA entries, and cost centers must never be hard-deleted; application enforces soft-delete (deleted_at) and status transitions; absence of a DELETE policy is an intentional guardrail at the database level |
 | 2026-05-28 | Phase 1.0H migration marked DRAFT — must not be executed without DBA sign-off | Legacy tables (sp_items, ar_ttfs, ar_btbs) are actively used by operational screens; any policy error or missing operation coverage would break running app features; DBA must run on dev Supabase first and verify all app screens before staging execution |
+| 2026-05-30 | Phase 1.0I CRUD uses soft delete (UPDATE deleted_at) not SQL DELETE | branches/departments/positions have no DELETE RLS policy; soft delete via UPDATE is covered by the existing UPDATE policy; archived records disappear from list immediately because all list queries filter deleted_at IS NULL |
+| 2026-05-30 | Company is locked after creation for branches/departments/positions | Changing company_id on an existing row would violate the unique constraint scope and confuse any FK references from profiles or approval rules; UI disables the field on edit to prevent accidental change |
+| 2026-05-30 | Positions drawer clears department when company changes | department_id FK is scoped to the same company; a department from Company A is not a valid FK for a position in Company B; clearing on company change prevents a phantom FK that would pass client validation but fail at the DB level |
+| 2026-05-30 | Departments page loads parent_id options excluding self on edit | self-referential parent would create a circular hierarchy; PostgREST does not enforce acyclicity, so the exclusion is enforced in fetchParentDepartmentsForCompany via .neq('id', excludeId) |
 | 2026-05-28 | Migration 017 applied to staging and verified PASS — Phase 1.0H staging complete | All 8 target tables show rowsecurity=true and all expected policies present; all operational screens (SP Manifest, AR Tracker, Finance, Outstanding) smoke-tested and passing; verification recorded in docs/operations/rls-hardening-verification-log.md; production execution remains blocked pending formal technical lead and product owner sign-off |

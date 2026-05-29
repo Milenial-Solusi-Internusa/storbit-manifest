@@ -3,6 +3,9 @@
 // Joins companies(code, name) for the company column.
 // Filters deleted_at IS NULL (soft delete).
 //
+// Mutation helpers (createBranch, updateBranch, softDeleteBranch) are exported
+// as plain async functions — call them from event handlers, not inside effects.
+//
 // Pattern: all setState calls are inside .then() — never synchronously in the
 // effect body. Matches the set-state-in-effect lint rule enforced project-wide.
 
@@ -41,7 +44,6 @@ export function useBranches({ page = 1, search = '' } = {}) {
     query.then(({ data: rows, count, error: err }) => {
       if (cancelled) return;
       if (err) {
-        console.error('[useBranches] fetch error:', err);
         setError(err);
       } else {
         setData(rows || []);
@@ -64,4 +66,51 @@ export function useBranches({ page = 1, search = '' } = {}) {
     refresh,
     pageSize: BRANCHES_PAGE_SIZE,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Mutation helpers — plain async functions, not hooks.
+// RLS constraint: INSERT/UPDATE require is_admin_or_above() and
+//   company_id = get_user_company_id(). Cross-company writes will fail with
+//   an RLS policy error surfaced to the UI.
+// ---------------------------------------------------------------------------
+
+export async function createBranch({ company_id, code, name, city, address, is_active }) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id || null;
+
+  const { error } = await supabase.from('branches').insert({
+    company_id,
+    code: code.trim().toUpperCase(),
+    name: name.trim(),
+    city: city?.trim() || null,
+    address: address?.trim() || null,
+    is_active: is_active !== false,
+    created_by: userId,
+  });
+  return { error };
+}
+
+export async function updateBranch(id, { code, name, city, address, is_active }) {
+  const { error } = await supabase
+    .from('branches')
+    .update({
+      code: code.trim().toUpperCase(),
+      name: name.trim(),
+      city: city?.trim() || null,
+      address: address?.trim() || null,
+      is_active: is_active !== false,
+    })
+    .eq('id', id)
+    .is('deleted_at', null);
+  return { error };
+}
+
+export async function softDeleteBranch(id) {
+  const { error } = await supabase
+    .from('branches')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null);
+  return { error };
 }
