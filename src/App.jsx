@@ -1,16 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo, useEffect, Suspense, lazy } from 'react';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
-  Search, Download, Upload, Eye, Edit3, Trash2, X, Check,
-  TrendingUp, Package, AlertTriangle, CheckCircle2, Filter,
+  Search, Download, Upload, Eye, Edit3, Trash2, X,
+  Package, AlertTriangle, CheckCircle2,
   ChevronRight, Save, RefreshCw, Calendar, Building2, User,
-  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft
+  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut,
+  Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
+  Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
+  Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen,
 } from 'lucide-react';
-import {
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
-  LineChart, Line, AreaChart, Area
-} from 'recharts';
+import { useAuth } from './contexts/useAuth';
+import { useCustomers } from './hooks/useCustomers';
+import { useSpItems } from './hooks/useSpItems';
+import { useTtfs } from './hooks/useTtfs';
+import ErrorBoundary from './components/ErrorBoundary';
+const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'));
+const UserManagement = lazy(() => import('./components/UserManagement'));
+const AdminShell = lazy(() => import('./modules/admin/AdminShell'));
 
 // ============================
 // PASTEL PALETTE
@@ -36,173 +42,6 @@ const PASTEL = {
   lineSoft: '#F5EFE5',
 };
 
-// ============================
-// Sample seed data - multiple items per SP
-// ============================
-const SEED_DATA = [
-  // SP 2020577 - 1 item, closed
-  {
-    id: 'seed-1',
-    spDate: '2026-01-14', spNo: '2020577', customer: 'INDOMARCO',
-    productName: 'STORBIT LOYANG 46 X 33 CM ( SAYBREAD )',
-    sku: 'BKT-SB43-00001',
-    qty: 10, shippedQty: 10,
-    expDate: '2026-06-11', deadline: '',
-    dc: 'DC BOGOR', shippingDate: '2026-04-29', btbNo: '2015214',
-    unitPrice: 120000, shippingPrice: 600000,
-    inv: true, fp: true, submit: true, kirim: true,
-    submitDate: '2026-05-07', emailStatus: '2026-05-07',
-    notes: ''
-  },
-  // SP 2020611 - 3 items, mixed statuses
-  {
-    id: 'seed-2a',
-    spDate: '2026-02-03', spNo: '2020611', customer: 'INDOMARCO',
-    productName: 'STORBIT CONTAINER 30L CLEAR',
-    sku: 'CNT-CL30-00012',
-    qty: 50, shippedQty: 30,
-    expDate: '', deadline: '2026-05-15',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-20', btbNo: '2015301',
-    unitPrice: 85000, shippingPrice: 400000,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: 'Partial shipment, sisa nyusul minggu depan'
-  },
-  {
-    id: 'seed-2b',
-    spDate: '2026-02-03', spNo: '2020611', customer: 'INDOMARCO',
-    productName: 'STORBIT CONTAINER 50L CLEAR',
-    sku: 'CNT-CL50-00013',
-    qty: 30, shippedQty: 30,
-    expDate: '', deadline: '2026-05-15',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-18', btbNo: '2015302',
-    unitPrice: 125000, shippingPrice: 0,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  {
-    id: 'seed-2c',
-    spDate: '2026-02-03', spNo: '2020611', customer: 'INDOMARCO',
-    productName: 'STORBIT TUTUP CONTAINER UNIVERSAL',
-    sku: 'CNT-LID-00001',
-    qty: 80, shippedQty: 60,
-    expDate: '', deadline: '2026-05-15',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-20', btbNo: '2015301',
-    unitPrice: 25000, shippingPrice: 0,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  // SP 2020688 - 2 items, all open
-  {
-    id: 'seed-3a',
-    spDate: '2026-02-18', spNo: '2020688', customer: 'INDOGROSIR',
-    productName: 'STORBIT TRAY ROTI ALU 60X40',
-    sku: 'TRY-AL60-00003',
-    qty: 25, shippedQty: 0,
-    expDate: '', deadline: '2026-05-10',
-    dc: 'DC SURABAYA', shippingDate: '', btbNo: '',
-    unitPrice: 95000, shippingPrice: 750000,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: 'Menunggu produksi'
-  },
-  {
-    id: 'seed-3b',
-    spDate: '2026-02-18', spNo: '2020688', customer: 'INDOGROSIR',
-    productName: 'STORBIT TRAY ROTI ALU 80X40',
-    sku: 'TRY-AL80-00004',
-    qty: 15, shippedQty: 0,
-    expDate: '', deadline: '2026-05-10',
-    dc: 'DC SURABAYA', shippingDate: '', btbNo: '',
-    unitPrice: 135000, shippingPrice: 0,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  // SP 2020734 - 1 item, closed but waiting kirim
-  {
-    id: 'seed-4',
-    spDate: '2026-03-05', spNo: '2020734', customer: 'INDOGROSIR',
-    productName: 'STORBIT LOYANG 60 X 40 CM',
-    sku: 'BKT-LY60-00007',
-    qty: 15, shippedQty: 15,
-    expDate: '2026-09-05', deadline: '',
-    dc: 'DC BOGOR', shippingDate: '2026-04-15', btbNo: '2015245',
-    unitPrice: 145000, shippingPrice: 500000,
-    inv: true, fp: true, submit: true, kirim: false,
-    submitDate: '2026-05-01', emailStatus: '',
-    notes: 'Faktur sudah dibuat, belum dikirim ke customer'
-  },
-  // SP 2020812 - 2 items, overdue
-  {
-    id: 'seed-5a',
-    spDate: '2026-03-22', spNo: '2020812', customer: 'INDOMARCO',
-    productName: 'STORBIT BUCKET 20L FOOD GRADE',
-    sku: 'BKT-FD20-00021',
-    qty: 100, shippedQty: 60,
-    expDate: '', deadline: '2026-04-30',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-10', btbNo: '2015277',
-    unitPrice: 65000, shippingPrice: 850000,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: 'OVERDUE - perlu follow up urgent'
-  },
-  {
-    id: 'seed-5b',
-    spDate: '2026-03-22', spNo: '2020812', customer: 'INDOMARCO',
-    productName: 'STORBIT BUCKET 10L FOOD GRADE',
-    sku: 'BKT-FD10-00020',
-    qty: 50, shippedQty: 50,
-    expDate: '', deadline: '2026-04-30',
-    dc: 'DC JAKARTA', shippingDate: '2026-04-08', btbNo: '2015276',
-    unitPrice: 45000, shippingPrice: 0,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  // April SPs
-  {
-    id: 'seed-6',
-    spDate: '2026-04-08', spNo: '2020901', customer: 'INTERNAL',
-    productName: 'STORBIT LOYANG ALU 30 X 20',
-    sku: 'BKT-AL30-00009',
-    qty: 40, shippedQty: 40,
-    expDate: '2026-10-08', deadline: '',
-    dc: 'DC BANDUNG', shippingDate: '2026-04-25', btbNo: '2015350',
-    unitPrice: 75000, shippingPrice: 450000,
-    inv: true, fp: true, submit: true, kirim: true,
-    submitDate: '2026-05-02', emailStatus: '2026-05-03',
-    notes: ''
-  },
-  {
-    id: 'seed-7a',
-    spDate: '2026-04-15', spNo: '2020945', customer: 'INDOGROSIR',
-    productName: 'STORBIT BOX SAYUR 40L',
-    sku: 'BOX-VG40-00031',
-    qty: 60, shippedQty: 60,
-    expDate: '', deadline: '2026-05-30',
-    dc: 'DC BOGOR', shippingDate: '2026-05-02', btbNo: '2015389',
-    unitPrice: 55000, shippingPrice: 600000,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-  {
-    id: 'seed-7b',
-    spDate: '2026-04-15', spNo: '2020945', customer: 'INDOGROSIR',
-    productName: 'STORBIT BOX SAYUR 60L',
-    sku: 'BOX-VG60-00032',
-    qty: 30, shippedQty: 30,
-    expDate: '', deadline: '2026-05-30',
-    dc: 'DC BOGOR', shippingDate: '2026-05-02', btbNo: '2015389',
-    unitPrice: 78000, shippingPrice: 0,
-    inv: true, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '',
-    notes: ''
-  },
-];
 
 // ============================
 // Utils
@@ -267,7 +106,6 @@ const calcRow = (row) => {
   let status = 'Open';
   if (outstandingQty === 0 && qty > 0) status = 'Closed';
   else if (shippedQty > 0 && outstandingQty > 0) status = 'Partial';
-  else status = 'Open';
 
   const today = new Date();
   let isOverdue = false;
@@ -365,7 +203,6 @@ const calcAR = (ttf) => {
   if (Math.abs(totalOS) <= TOLERANCE && totalPayment > 0) status = 'Lunas';
   else if (totalOS < -TOLERANCE) status = 'Lebih Bayar';
   else if (totalPayment > 0 && totalOS > TOLERANCE) status = 'Partial';
-  else status = 'Belum Bayar';
 
   // Overdue: belum lunas + jarak > 30 hari (kalau belum bayar pakai today vs tanggalMenerima)
   let isOverdue = false;
@@ -395,80 +232,380 @@ const can = (role, action) => {
   return matrix[role]?.includes(action);
 };
 
-const STORAGE_KEY = 'storbit-manifest:rows-v2';
-const CUSTOMERS_KEY = 'storbit-manifest:customers-v1';
-const AR_KEY = 'storbit-manifest:ar-v1';
+const PLANNED_MODULES = {
+  // ── Commercial & CRM ──────────────────────────────────────────────────────
+  crm: {
+    title: 'CRM & Customer Inquiry',
+    description: 'End-to-end customer relationship and inquiry pipeline for MSI, JCI, and Storbit. Capture, qualify, and convert prospects across all business entities.',
+    capabilities: ['Customer inquiry intake', 'Inquiry-to-quotation pipeline', 'Customer activity timeline', 'Multi-entity CRM scope'],
+  },
+  quotation: {
+    title: 'Quotation Management',
+    description: 'Build, version, and approve formal quotations with line-item detail, margin visibility, and customer delivery. Linked to inquiry and convertible to Sales Order.',
+    capabilities: ['Quotation builder with line items', 'Version and revision control', 'Approval flow per entity', 'Convert to Sales Order'],
+  },
+  // ── Operations ────────────────────────────────────────────────────────────
+  job: {
+    title: 'Job / Operation Management',
+    description: 'Unified job control center for all operational entities. Track job status, milestones, document checklist, and team assignment across MSI, JCI, and Storbit operations.',
+    capabilities: ['Job card creation from SP', 'Milestone and status tracking', 'Entity-aware operation queues', 'Document checklist per job'],
+  },
+  freight: {
+    title: 'Freight Forwarding',
+    description: 'End-to-end forwarding shipment execution workspace for MSI. Manage booking, BL, cargo tracking, port schedule, and customer shipment notifications in one place.',
+    capabilities: ['Booking and BL management', 'Port and carrier schedule', 'Shipment milestone tracking', 'Customer notification automation'],
+  },
+  ppjk: {
+    title: 'PPJK / Customs Clearance',
+    description: 'Customs clearance operational control for JCI. Handle PIB/PEB document preparation, duty calculation, customs filing status, and clearance milestone tracking.',
+    capabilities: ['PIB / PEB document workspace', 'Duty and levy calculation', 'Customs filing status board', 'Clearance milestone timeline'],
+  },
+  trading: {
+    title: 'General Trading',
+    description: 'Trading order and fulfillment workspace for Storbit / SBI. Manage purchase-to-sale flow, order fulfillment, inventory linkage, and customer delivery from a single view.',
+    capabilities: ['Order intake and confirmation', 'Purchase-to-sale linkage', 'Fulfillment and delivery tracking', 'Inventory drawdown per order'],
+  },
+  docHandoff: {
+    title: 'Document Handoff',
+    description: 'Structured document handoff control between operations, finance, and customer-facing teams. Track document status, acknowledge receipt, and flag missing documents.',
+    capabilities: ['Handoff checklist per job', 'Team acknowledgement workflow', 'Missing document alert', 'Digital handoff record'],
+  },
+  // ── Procurement & Vendor ──────────────────────────────────────────────────
+  procRequest: {
+    title: 'Procurement Request',
+    description: 'Internal purchase request intake with department, budget category, and approval routing. Converts to Purchase Order after approval across all MSI Group entities.',
+    capabilities: ['Request form per department', 'Budget category tagging', 'Approval routing by amount', 'Convert approved PR to PO'],
+  },
+  purchaseOrder: {
+    title: 'Purchase Order',
+    description: 'Formal PO issuance, vendor confirmation, and goods receipt tracking. Linked to procurement request and vendor invoice for end-to-end procurement visibility.',
+    capabilities: ['PO creation from approved PR', 'Vendor confirmation workflow', 'Goods receipt recording', 'Link to vendor invoice'],
+  },
+  vendors: {
+    title: 'Vendor Management',
+    description: 'Centralized vendor registry with qualification status, payment terms, contact information, and performance history across procurement and AP workflows.',
+    capabilities: ['Vendor registration and profile', 'Qualification and rating', 'Payment terms per vendor', 'Procurement performance history'],
+  },
+  // ── Inventory & Asset ─────────────────────────────────────────────────────
+  inventory: {
+    title: 'Inventory / Warehouse',
+    description: 'Stock management and warehouse visibility for Storbit / SBI trading operations. Track stock levels, movements, location mapping, and reorder triggers.',
+    capabilities: ['Stock balance and location', 'Inbound and outbound movements', 'Reorder point alerts', 'Warehouse location mapping'],
+  },
+  assets: {
+    title: 'Asset Management',
+    description: 'Group-wide fixed asset registry with purchase tracking, depreciation, custody assignment, and disposal workflow across all MSI Group entities and locations.',
+    capabilities: ['Asset register per entity', 'Depreciation schedule', 'Custody and assignment history', 'Disposal approval workflow'],
+  },
+  // ── Finance & Accounting ──────────────────────────────────────────────────
+  jobCosting: {
+    title: 'Job Costing',
+    description: 'Cost and revenue ledger per job, shipment, or trading order. Compare budgeted vs actual cost, track profitability per entity, and feed accounting entries automatically.',
+    capabilities: ['Cost input per job', 'Revenue vs cost comparison', 'Profitability per entity', 'Accounting entry generation'],
+  },
+  billing: {
+    title: 'Billing / Invoice',
+    description: 'Customer invoice generation from approved jobs or sales orders. Manage invoice status, payment tracking, and customer acknowledgement across all entities.',
+    capabilities: ['Invoice from job or SP', 'Invoice approval flow', 'Payment status tracking', 'Customer acknowledgement'],
+  },
+  ap: {
+    title: 'AP / Vendor Invoice',
+    description: 'Vendor invoice processing, PO matching, and payment approval workflow. Tracks payables aging, payment schedule, and vendor remittance across MSI Group.',
+    capabilities: ['Vendor invoice intake', 'PO and GR matching', 'Payment approval workflow', 'Payables aging report'],
+  },
+  cashBank: {
+    title: 'Cash / Bank',
+    description: 'Cash and bank transaction register for all MSI Group accounts. Record receipts, payments, reconcile bank statements, and manage petty cash per entity.',
+    capabilities: ['Bank account register', 'Receipt and payment recording', 'Bank statement reconciliation', 'Petty cash management'],
+  },
+  accounting: {
+    title: 'Accounting',
+    description: 'General ledger, journal entries, trial balance, and financial statement preparation for MSI Group. Linked to AR, AP, payroll, and asset depreciation modules.',
+    capabilities: ['Journal entry workspace', 'General ledger view', 'Trial balance report', 'Period-end closing workflow'],
+  },
+  // ── Service Management ────────────────────────────────────────────────────
+  hrga: {
+    title: 'HRGA Request',
+    description: 'Internal service requests for HR, GA, facilities, and operational support. Covers all MSI Group entities with SLA tracking and assignment queues.',
+    capabilities: ['Request intake and classification', 'SLA status tracking', 'Assignment and PIC queue', 'Employee service history'],
+  },
+  it: {
+    title: 'IT Service Management',
+    description: 'IT service management for support tickets, access requests, device inventory, and incident follow-up across MSI Group offices and systems.',
+    capabilities: ['Ticket queue and escalation', 'Access request workflow', 'Device inventory linkage', 'Incident timeline'],
+  },
+  // ── Workflow & Document ───────────────────────────────────────────────────
+  approvals: {
+    title: 'Approval Center',
+    description: 'Reusable approval cockpit for all documents, exceptions, revisions, and delegated approvals across MSI Group. Inbox-style interface with full history.',
+    capabilities: ['Pending approval inbox', 'Approval and revision history', 'Delegation and backup approvers', 'Revision request flow'],
+  },
+  docMgmt: {
+    title: 'Document Management',
+    description: 'Centralized document storage, version control, and access management for all operational, legal, and finance documents across MSI Group entities.',
+    capabilities: ['Document repository', 'Version and revision control', 'Access permission per document', 'Linked to jobs and transactions'],
+  },
+  // ── Portal & Integration ──────────────────────────────────────────────────
+  apiCenter: {
+    title: 'API & Integration Center',
+    description: 'Internal and external API management for Nexus by MSI. Configure integrations, manage API keys, monitor usage, and review webhook delivery logs.',
+    capabilities: ['API key management', 'Webhook configuration', 'Integration health monitor', 'Usage and rate limit dashboard'],
+  },
+  publicTracking: {
+    title: 'Public Tracking API',
+    description: 'Secure public shipment tracking endpoint for customers and partners. Returns masked data via token-based access with no internal data exposure.',
+    capabilities: ['Token-based tracking access', 'Masked public shipment view', 'Rate limiting per token', 'Tracking request audit log'],
+  },
+  customerPortal: {
+    title: 'Customer Portal',
+    description: 'Self-service web portal for customers to track shipments, view invoice status, download documents, and submit inquiries without staff involvement.',
+    capabilities: ['Shipment status tracking', 'Invoice and payment view', 'Document download center', 'Inquiry submission'],
+  },
+  vendorPortal: {
+    title: 'Vendor Portal',
+    description: 'Self-service portal for vendors to submit invoices, view PO status, confirm deliveries, and manage their profile and payment terms directly.',
+    capabilities: ['Invoice submission', 'PO and GR confirmation', 'Payment status view', 'Vendor profile management'],
+  },
+  // ── Reporting & Governance ────────────────────────────────────────────────
+  reports: {
+    title: 'Reporting & Dashboard',
+    description: 'Consolidated reporting workspace for operations, finance, master data, and management review across all MSI Group entities with role-scoped access.',
+    capabilities: ['Cross-entity dashboards', 'Scheduled report packs', 'Export approval control', 'KPI drilldowns'],
+  },
+  performance: {
+    title: 'Performance & Cache Layer',
+    description: 'Internal platform performance monitoring for Nexus by MSI. Review query performance, cache hit rates, background job health, and API response benchmarks.',
+    capabilities: ['Query performance dashboard', 'Cache hit rate monitoring', 'Background job status', 'API response benchmarks'],
+  },
+  audit: {
+    title: 'Audit & Compliance',
+    description: 'Tamper-proof audit trail for all critical actions across Nexus by MSI. Review user activity, data changes, approval history, and export logs per retention policy.',
+    capabilities: ['User activity audit trail', 'Data change history', 'Export and download logs', 'Compliance review board'],
+  },
+  // ── Foundation ────────────────────────────────────────────────────────────
+  adminSettings: {
+    title: 'Admin Settings',
+    description: 'System-wide configuration for Nexus by MSI including notifications, security policies, integration settings, and platform preferences per entity.',
+    capabilities: ['Notification configuration', 'Security policy settings', 'Integration setup', 'Platform preferences per entity'],
+  },
+};
 
-const SEED_CUSTOMERS = [
-  { id: 'cust-im', code: 'IM', name: 'INDOMARCO', defaultDC: 'DC JAKARTA', picName: '', picEmail: '', active: true },
-  { id: 'cust-ig', code: 'IG', name: 'INDOGROSIR', defaultDC: 'DC BOGOR', picName: '', picEmail: '', active: true },
-  { id: 'cust-imt', code: 'IMT', name: 'INDOMARET', defaultDC: '', picName: '', picEmail: '', active: true },
-  { id: 'cust-mac', code: 'MAC', name: 'MAC', defaultDC: '', picName: '', picEmail: '', active: true },
-  { id: 'cust-int', code: 'INT', name: 'INTERNAL', defaultDC: '', picName: '', picEmail: '', active: true },
+const ERP_MENU_GROUPS = [
+  {
+    label: 'Core',
+    items: [
+      { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: 'Commercial & CRM',
+    items: [
+      { id: 'crm',        label: 'CRM & Inquiry',        icon: Users },
+      { id: 'quotation',  label: 'Quotation',             icon: FileText },
+      { id: 'manifest',   label: 'Sales Order / SP',      icon: Receipt },
+      { id: 'customers',  label: 'Customer Management',   icon: Building2, role: ['super'] },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { id: 'job',        label: 'Job Management',        icon: BriefcaseBusiness },
+      { id: 'freight',    label: 'Freight Forwarding',    icon: Ship },
+      { id: 'ppjk',       label: 'PPJK / Customs',        icon: ClipboardCheck },
+      { id: 'trading',    label: 'General Trading',       icon: ShoppingCart },
+      { id: 'shipment',   label: 'Shipment Management',   icon: Truck,  role: ['super', 'logistic'] },
+      { id: 'input',      label: 'Input SP',              icon: Plus,   role: ['super', 'logistic'] },
+    ],
+  },
+  {
+    label: 'Procurement & Vendor',
+    items: [
+      { id: 'procRequest',   label: 'Procurement Request', icon: ClipboardCheck },
+      { id: 'purchaseOrder', label: 'Purchase Order',      icon: ShoppingCart },
+      { id: 'vendors',       label: 'Vendor Management',   icon: Users },
+    ],
+  },
+  {
+    label: 'Inventory & Asset',
+    items: [
+      { id: 'inventory', label: 'Inventory / Warehouse', icon: Boxes },
+      { id: 'assets',    label: 'Asset Management',      icon: Package },
+    ],
+  },
+  {
+    label: 'Finance & Accounting',
+    items: [
+      { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt },
+      { id: 'billing',     label: 'Billing / Invoice',   icon: FileText },
+      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   role: ['super', 'finance'] },
+      { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet },
+      { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark },
+      { id: 'accounting',  label: 'Accounting',          icon: BarChart3 },
+      { id: 'finance',     label: 'Finance Docs',        icon: FileText, role: ['super', 'finance'] },
+      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    role: ['super', 'finance', 'management'] },
+    ],
+  },
+  {
+    label: 'Service Management',
+    items: [
+      { id: 'hrga', label: 'HRGA Request',      icon: UsersRound },
+      { id: 'it',   label: 'IT Service Mgmt',   icon: Laptop },
+    ],
+  },
+  {
+    label: 'Workflow & Document',
+    items: [
+      { id: 'approvals', label: 'Approval Center',      icon: ClipboardCheck },
+      { id: 'docMgmt',   label: 'Document Management',  icon: FolderOpen },
+    ],
+  },
+  {
+    label: 'Portal & Integration',
+    items: [
+      { id: 'apiCenter',      label: 'API & Integration',  icon: Link2 },
+      { id: 'publicTracking', label: 'Public Tracking',    icon: Globe },
+      { id: 'customerPortal', label: 'Customer Portal',    icon: Globe },
+      { id: 'vendorPortal',   label: 'Vendor Portal',      icon: Users },
+    ],
+  },
+  {
+    label: 'Reporting & Governance',
+    items: [
+      { id: 'reports',     label: 'Reporting & Dashboard', icon: BarChart3 },
+      { id: 'performance', label: 'Performance & Cache',   icon: Zap },
+      { id: 'audit',       label: 'Audit & Compliance',    icon: ScrollText },
+    ],
+  },
+  {
+    label: 'Foundation',
+    items: [
+      { id: 'users',         label: 'Org & Access Control', icon: Shield,   role: ['super'] },
+      { id: 'admin',         label: 'Master Data',          icon: Database, role: ['super'] },
+      { id: 'adminSettings', label: 'Admin Settings',       icon: Settings, role: ['super'] },
+    ],
+  },
 ];
 
-const SEED_AR = [
-  {
-    id: 'ar-1', noTTF: '25E0011001163', tanggalTTF: '2025-10-21', tanggalMenerima: '2025-10-24',
-    noINV: 'JKT-251001', noSP: '1881279', customer: 'INDOMARET',
-    tglPembayaran: '2025-12-10', notes: '',
-    btbs: [
-      { id: 'btb-1', noBTB: '2025-BTB-1773702-NEW', dppPPN: 7988392.50, pph: 0, payment: 7988392.50 },
-      { id: 'btb-2', noBTB: '2025-BTB-1774099-NEW', dppPPN: 14224261.50, pph: 0, payment: 14224261.50 },
-      { id: 'btb-3', noBTB: '2025-BTB-1781382-NEW', dppPPN: 5863797, pph: 0, payment: 5863797 },
-      { id: 'btb-4', noBTB: '2025-BTB-1785309-NEW', dppPPN: 9441882, pph: 0, payment: 9441882 },
-      { id: 'btb-5', noBTB: '2025-BTB-1798736-NEW', dppPPN: 6739251.75, pph: 0, payment: 6739251.75 },
-    ]
-  },
-  {
-    id: 'ar-2', noTTF: '25E0011003859', tanggalTTF: '2025-10-27', tanggalMenerima: '2025-10-30',
-    noINV: 'JKT-251007', noSP: '1908017', customer: 'INDOMARET',
-    tglPembayaran: '2025-12-17', notes: 'Selisih rounding kecil',
-    btbs: [
-      { id: 'btb-6', noBTB: '2025-BTB-1803540-NEW', dppPPN: 3159338, pph: 0, payment: 3159337.50 },
-      { id: 'btb-7', noBTB: '2025-BTB-1803532-NEW', dppPPN: 19259277, pph: 0, payment: 19259277 },
-      { id: 'btb-8', noBTB: '2025-BTB-1788518-NEW', dppPPN: 11516639, pph: 0, payment: 11516638.50 },
-    ]
-  },
-  {
-    id: 'ar-3', noTTF: '25E0011015568', tanggalTTF: '2025-11-21', tanggalMenerima: '2025-11-24',
-    noINV: 'JKT-251108', noSP: '1881821', customer: 'INDOMARET',
-    tglPembayaran: '', notes: 'Belum dibayar',
-    btbs: [
-      { id: 'btb-9', noBTB: '2025-BTB-1835501-NEW', dppPPN: 18168480, pph: 0, payment: 0 },
-      { id: 'btb-10', noBTB: '2025-BTB-1835502-NEW', dppPPN: 353047, pph: 6361, payment: 0 },
-    ]
-  },
-  {
-    id: 'ar-4', noTTF: '25E0011018825', tanggalTTF: '2025-11-26', tanggalMenerima: '2025-12-03',
-    noINV: 'JKT-251111', noSP: '1881825', customer: 'INDOGROSIR',
-    tglPembayaran: '2026-01-14', notes: '',
-    btbs: [
-      { id: 'btb-11', noBTB: '2025-BTB-1841781-NEW', dppPPN: 33894940, pph: 0, payment: 33894960 },
-      { id: 'btb-12', noBTB: '2025-BTB-1841782-NEW', dppPPN: 695232, pph: 12527, payment: 682705.15 },
-    ]
-  },
-  {
-    id: 'ar-5', noTTF: '25E0011022695', tanggalTTF: '2025-12-07', tanggalMenerima: '2025-12-10',
-    noINV: 'JKT-251202', noSP: '1942534', customer: 'INDOMARCO',
-    tglPembayaran: '', notes: '',
-    btbs: [
-      { id: 'btb-13', noBTB: '2025-BTB-1846675-NEW', dppPPN: 74680249, pph: 0, payment: 0 },
-      { id: 'btb-14', noBTB: '2025-BTB-1848953-NEW', dppPPN: 70818000, pph: 0, payment: 0 },
-    ]
-  },
-];
+const canSeeMenuItem = (item, role) => !item.role || item.role.includes(role);
+
+
+// ============================
+// Sidebar Helper Components
+// ============================
+function SidebarItem({ item, activeMenu, setActiveMenu }) {
+  const Icon = item.icon;
+  const active = activeMenu === item.id;
+  return (
+    <button
+      onClick={() => setActiveMenu(item.id)}
+      className="w-full flex items-center gap-3 px-3.5 py-[10px] rounded-2xl text-sm font-medium mb-0.5 transition-all"
+      style={{
+        background: active ? 'rgba(255,255,255,0.13)' : 'transparent',
+        color: active ? '#FFFDF7' : 'rgba(248,245,237,0.76)',
+        fontWeight: active ? 600 : 400,
+        boxShadow: active ? 'inset 2px 0 0 rgba(255,212,184,0.8), 0 8px 20px rgba(0,0,0,0.12)' : 'none',
+        border: active ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
+      }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+    >
+      <Icon size={17} strokeWidth={active ? 2.2 : 1.8} style={{ color: active ? '#C8EFD9' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
+      <span className="flex-1 text-left leading-snug">{item.label}</span>
+    </button>
+  );
+}
+
+function SidebarGroup({ group, activeMenu, setActiveMenu, isExpanded, onToggle }) {
+  const hasActiveChild = group.items.some(item => item.id === activeMenu);
+  const ParentIcon = group.items[0]?.icon;
+  return (
+    <div className="mb-1.5">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl mb-0.5 transition-all"
+        style={{
+          background: hasActiveChild ? 'rgba(255,255,255,0.08)' : 'transparent',
+          border: '1px solid transparent',
+        }}
+        onMouseEnter={(e) => { if (!hasActiveChild) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+        onMouseLeave={(e) => { if (!hasActiveChild) e.currentTarget.style.background = 'transparent'; }}
+      >
+        {ParentIcon && (
+          <ParentIcon
+            size={14}
+            strokeWidth={1.8}
+            style={{ color: hasActiveChild ? '#C8EFD9' : 'rgba(248,245,237,0.40)', flexShrink: 0 }}
+          />
+        )}
+        <span
+          className="flex-1 text-left text-[11px] uppercase tracking-[0.08em] font-semibold"
+          style={{ color: hasActiveChild ? 'rgba(200,239,217,0.90)' : 'rgba(248,245,237,0.52)' }}
+        >
+          {group.label}
+        </span>
+        <ChevronRight
+          size={13}
+          strokeWidth={2}
+          style={{
+            color: 'rgba(248,245,237,0.35)',
+            flexShrink: 0,
+            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s ease',
+          }}
+        />
+      </button>
+      {isExpanded && (
+        <div className="nexus-sidebar-children pl-2 pb-1.5">
+          {group.items.map(item => (
+            <SidebarItem
+              key={item.id}
+              item={item}
+              activeMenu={activeMenu}
+              setActiveMenu={setActiveMenu}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // ============================
 // Main App
 // ============================
 export default function StorbitManifest() {
-  const [rows, setRows] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [arData, setArData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { customers, saveCustomer: dbSaveCustomer, removeCustomer: dbRemoveCustomer } = useCustomers();
+  const {
+    rows,
+    saveRow: dbSaveRow,
+    removeRow: dbRemoveRow,
+    removeRowsBySp: dbRemoveRowsBySp,
+    bulkAdd: dbBulkAdd,
+  } = useSpItems({ customers });
+  const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
+  const loading = false;
   const [activeMenu, setActiveMenu] = useState('dashboard');
-  const [role, setRole] = useState('super');
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    const init = new Set();
+    for (const group of ERP_MENU_GROUPS) {
+      if (group.items.some(i => i.id === 'dashboard')) {
+        init.add(group.label);
+        break;
+      }
+    }
+    return init;
+  });
+  const toggleGroup = (label) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+  const { role: authRole, profile, signOut } = useAuth();
+  const role = authRole || 'management';
   const [editingRow, setEditingRow] = useState(null);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editingAR, setEditingAR] = useState(null);
@@ -494,63 +631,15 @@ export default function StorbitManifest() {
   const [arFilterCustomer, setArFilterCustomer] = useState('all');
   const [arFilterStatus, setArFilterStatus] = useState('all');
   const [arSearch, setArSearch] = useState('');
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
+  // Close profile dropdown on Escape
   useEffect(() => {
-    (async () => {
-      try {
-        const [rowsResult, custResult, arResult] = await Promise.all([
-          window.storage.get(STORAGE_KEY).catch(() => null),
-          window.storage.get(CUSTOMERS_KEY).catch(() => null),
-          window.storage.get(AR_KEY).catch(() => null),
-        ]);
-
-        if (rowsResult && rowsResult.value) {
-          setRows(JSON.parse(rowsResult.value));
-        } else {
-          setRows(SEED_DATA);
-          await window.storage.set(STORAGE_KEY, JSON.stringify(SEED_DATA)).catch(()=>{});
-        }
-
-        if (custResult && custResult.value) {
-          setCustomers(JSON.parse(custResult.value));
-        } else {
-          setCustomers(SEED_CUSTOMERS);
-          await window.storage.set(CUSTOMERS_KEY, JSON.stringify(SEED_CUSTOMERS)).catch(()=>{});
-        }
-
-        if (arResult && arResult.value) {
-          setArData(JSON.parse(arResult.value));
-        } else {
-          setArData(SEED_AR);
-          await window.storage.set(AR_KEY, JSON.stringify(SEED_AR)).catch(()=>{});
-        }
-      } catch (e) {
-        setRows(SEED_DATA);
-        setCustomers(SEED_CUSTOMERS);
-        setArData(SEED_AR);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const persist = async (newRows) => {
-    setRows(newRows);
-    try { await window.storage.set(STORAGE_KEY, JSON.stringify(newRows)); }
-    catch (e) { showToast('Gagal menyimpan data', 'error'); }
-  };
-
-  const persistCustomers = async (newCust) => {
-    setCustomers(newCust);
-    try { await window.storage.set(CUSTOMERS_KEY, JSON.stringify(newCust)); }
-    catch (e) { showToast('Gagal menyimpan customer', 'error'); }
-  };
-
-  const persistAR = async (newAR) => {
-    setArData(newAR);
-    try { await window.storage.set(AR_KEY, JSON.stringify(newAR)); }
-    catch (e) { showToast('Gagal menyimpan AR', 'error'); }
-  };
+    if (!profileDropdownOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setProfileDropdownOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [profileDropdownOpen]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -607,10 +696,6 @@ export default function StorbitManifest() {
     return out;
   }, [groupedSP, search, filterStatus, filterDC, filterCustomer, filterMonth, filterOverdue, sortBy]);
 
-  const filteredRows = useMemo(() => {
-    if (filterMonth === 'all') return enrichedRows;
-    return enrichedRows.filter(r => monthYearKey(r.spDate) === filterMonth);
-  }, [enrichedRows, filterMonth]);
 
   // ============================
   // Stats
@@ -689,57 +774,60 @@ export default function StorbitManifest() {
   // Handlers
   // ============================
   const handleSave = async (data) => {
-    let newRows;
-    if (data.id && rows.find(r => r.id === data.id)) {
-      newRows = rows.map(r => r.id === data.id ? { ...r, ...data } : r);
-      showToast('Data berhasil diupdate ✨');
-    } else {
-      const newRow = { ...data, id: data.id || `row-${Date.now()}-${Math.random().toString(36).slice(2,7)}` };
-      newRows = [newRow, ...rows];
-      showToast('Data berhasil ditambahkan ✨');
+    try {
+      const isUpdate = data.id && rows.find(r => r.id === data.id);
+      await dbSaveRow(data);
+      showToast(isUpdate ? 'Data berhasil diupdate ✨' : 'Data berhasil ditambahkan ✨');
+      setEditingRow(null);
+      setShipmentRow(null);
+      setFinanceRow(null);
+      setShowAdd(false);
+    } catch (err) {
+      showToast('Gagal menyimpan: ' + (err.message || 'unknown error'), 'error');
     }
-    await persist(newRows);
-    setEditingRow(null);
-    setShipmentRow(null);
-    setFinanceRow(null);
-    setShowAdd(false);
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Yakin hapus item ini?')) return;
-    const newRows = rows.filter(r => r.id !== id);
-    await persist(newRows);
-    showToast('Item dihapus');
+    try {
+      await dbRemoveRow(id);
+      showToast('Item dihapus');
+    } catch (err) {
+      showToast('Gagal hapus: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleDeleteSP = async (spNo) => {
     if (!confirm(`Yakin hapus seluruh SP ${spNo}? Semua item akan terhapus.`)) return;
-    const newRows = rows.filter(r => r.spNo !== spNo);
-    await persist(newRows);
-    setViewingSP(null);
-    showToast(`SP ${spNo} dihapus`);
+    try {
+      await dbRemoveRowsBySp(spNo);
+      setViewingSP(null);
+      showToast(`SP ${spNo} dihapus`);
+    } catch (err) {
+      showToast('Gagal hapus SP: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleImport = async (importedRows) => {
-    const withIds = importedRows.map(r => ({ ...r, id: `imp-${Date.now()}-${Math.random().toString(36).slice(2,7)}` }));
-    await persist([...withIds, ...rows]);
-    showToast(`${withIds.length} baris berhasil diimport`);
-    setShowImport(false);
+    try {
+      await dbBulkAdd(importedRows);
+      showToast(`${importedRows.length} baris berhasil diimport`);
+      setShowImport(false);
+    } catch (err) {
+      showToast('Gagal import: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleSaveCustomer = async (data) => {
-    let next;
-    if (data.id && customers.find(c => c.id === data.id)) {
-      next = customers.map(c => c.id === data.id ? { ...c, ...data } : c);
-      showToast('Customer berhasil diupdate ✨');
-    } else {
-      const newC = { ...data, id: data.id || `cust-${Date.now()}-${Math.random().toString(36).slice(2,5)}` };
-      next = [...customers, newC];
-      showToast('Customer berhasil ditambahkan ✨');
+    try {
+      const isUpdate = data.id && customers.find(c => c.id === data.id);
+      await dbSaveCustomer(data);
+      showToast(isUpdate ? 'Customer berhasil diupdate ✨' : 'Customer berhasil ditambahkan ✨');
+      setEditingCustomer(null);
+      setShowAddCustomer(false);
+    } catch (err) {
+      showToast('Gagal menyimpan customer: ' + (err.message || 'unknown error'), 'error');
     }
-    await persistCustomers(next);
-    setEditingCustomer(null);
-    setShowAddCustomer(false);
   };
 
   const handleDeleteCustomer = async (id) => {
@@ -751,44 +839,45 @@ export default function StorbitManifest() {
       return;
     }
     if (!confirm(`Yakin hapus customer "${cust.name}"?`)) return;
-    await persistCustomers(customers.filter(c => c.id !== id));
-    showToast('Customer dihapus');
+    try {
+      await dbRemoveCustomer(id);
+      showToast('Customer dihapus');
+    } catch (err) {
+      showToast('Gagal hapus customer: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleSaveAR = async (data) => {
-    let next;
-    if (data.id && arData.find(a => a.id === data.id)) {
-      next = arData.map(a => a.id === data.id ? { ...a, ...data } : a);
-      showToast('AR data berhasil diupdate ✨');
-    } else {
-      const newAR = { ...data, id: data.id || `ar-${Date.now()}-${Math.random().toString(36).slice(2,5)}` };
-      next = [newAR, ...arData];
-      showToast('AR data berhasil ditambahkan ✨');
+    try {
+      const isUpdate = data.id && arData.find(a => a.id === data.id);
+      await dbSaveTtf(data);
+      showToast(isUpdate ? 'AR data berhasil diupdate ✨' : 'AR data berhasil ditambahkan ✨');
+      setEditingAR(null);
+      setShowAddAR(false);
+    } catch (err) {
+      showToast('Gagal menyimpan AR: ' + (err.message || 'unknown error'), 'error');
     }
-    await persistAR(next);
-    setEditingAR(null);
-    setShowAddAR(false);
   };
 
   const handleDeleteAR = async (id) => {
     const ttf = arData.find(a => a.id === id);
     if (!ttf) return;
     if (!confirm(`Yakin hapus TTF ${ttf.noTTF}? Beserta ${ttf.btbs?.length || 0} BTB items.`)) return;
-    await persistAR(arData.filter(a => a.id !== id));
-    setViewingAR(null);
-    showToast('TTF dihapus');
+    try {
+      await dbRemoveTtf(id);
+      setViewingAR(null);
+      showToast('TTF dihapus');
+    } catch (err) {
+      showToast('Gagal hapus TTF: ' + (err.message || 'unknown error'), 'error');
+    }
   };
 
   const handleResetData = async () => {
-    if (!confirm('Reset semua data ke contoh awal?')) return;
-    await persist(SEED_DATA);
-    showToast('Data direset ke contoh awal');
+    showToast('Reset data tidak tersedia di mode multi-user. Hubungi admin.', 'error');
   };
 
   const handleClearAll = async () => {
-    if (!confirm('Hapus SEMUA data? Tindakan ini tidak bisa dibatalkan.')) return;
-    await persist([]);
-    showToast('Semua data terhapus');
+    showToast('Clear all tidak tersedia di mode multi-user. Hubungi admin.', 'error');
   };
 
   const exportCSV = () => {
@@ -829,18 +918,12 @@ export default function StorbitManifest() {
     );
   }
 
-  const menus = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'manifest', label: 'SP Manifest', icon: FileText },
-    { id: 'input', label: 'Input', icon: Plus, role: ['super','logistic'] },
-    { id: 'shipment', label: 'Shipment', icon: Truck, role: ['super','logistic'] },
-    { id: 'finance', label: 'Finance', icon: Wallet, role: ['super','finance'] },
-    { id: 'outstanding', label: 'Outstanding', icon: Clock, role: ['super','finance','management'] },
-    { id: 'ar', label: 'AR Tracker', icon: Wallet, role: ['super','finance'] },
-    { id: 'customers', label: 'Customers', icon: Building2, role: ['super'] },
-  ];
-
-  const visibleMenus = menus.filter(m => !m.role || m.role.includes(role));
+  const visibleMenuGroups = ERP_MENU_GROUPS
+    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role)) }))
+    .filter(group => group.items.length > 0);
+  const visibleMenus = visibleMenuGroups.flatMap(group => group.items);
+  const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
+  const currentRoleLabel = ROLES.find(r => r.id === role)?.label || role;
 
   return (
     <div className="min-h-screen" style={{ background: PASTEL.cream, color: PASTEL.ink, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
@@ -860,117 +943,122 @@ export default function StorbitManifest() {
         .animate-slide-in { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
         .animate-fade-in { animation: fadeIn 0.2s ease-out; }
         .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .nexus-main-surface .rounded-3xl {
+          box-shadow: 0 14px 34px rgba(15, 42, 35, 0.045);
+        }
+        .nexus-main-surface table {
+          min-width: 100%;
+        }
+        .nexus-command-button {
+          box-shadow: 0 10px 24px rgba(15, 42, 35, 0.055);
+        }
+        .nexus-cmd-btn {
+          transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, transform 0.1s ease;
+        }
+        .nexus-cmd-btn:hover {
+          background: ${PASTEL.line} !important;
+          transform: translateY(-1px);
+          box-shadow: 0 3px 10px rgba(15,42,35,0.08) !important;
+        }
+        @keyframes dropdownIn {
+          from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-dropdown { animation: dropdownIn 0.14s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes accordionDown {
+          from { opacity: 0; transform: translateY(-5px); }
+          to   { opacity: 1; transform: translateY(0);    }
+        }
+        .nexus-sidebar-children { animation: accordionDown 0.14s ease-out; }
+        .nexus-shell-bg {
+          background:
+            radial-gradient(circle at top left, rgba(200, 239, 217, 0.26), transparent 34rem),
+            linear-gradient(135deg, #FBF7EF 0%, #F6F1E8 42%, #F8FAF7 100%);
+        }
       `}</style>
 
       {/* LAYOUT: Sidebar + Content */}
       <div className="flex min-h-screen">
         {/* SIDEBAR */}
-        <aside className="hidden md:flex flex-col w-64 sticky top-0 h-screen border-r" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <aside
+          className="hidden lg:flex flex-col w-[300px] flex-shrink-0 sticky top-0 h-screen border-r shadow-2xl shadow-emerald-950/10"
+          style={{
+            background: 'linear-gradient(165deg, #0F2A23 0%, #173D34 48%, #F6EFE3 190%)',
+            borderColor: 'rgba(255,255,255,0.12)',
+            color: '#F8F5ED',
+          }}
+        >
           {/* Brand */}
-          <div className="px-6 py-6 border-b" style={{ borderColor: PASTEL.line }}>
+          <div className="px-5 py-5 border-b" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${PASTEL.peach}, ${PASTEL.rose})` }}>
-                <Package size={20} style={{ color: PASTEL.ink }} strokeWidth={2}/>
+              <div
+                className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 border"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(255,212,184,0.96), rgba(200,239,217,0.86))',
+                  borderColor: 'rgba(255,255,255,0.32)',
+                  boxShadow: '0 16px 34px rgba(0,0,0,0.22)',
+                }}
+              >
+                <Package size={19} style={{ color: '#12352D' }} strokeWidth={2.2}/>
               </div>
               <div className="min-w-0">
-                <h1 className="font-display text-xl font-semibold tracking-tight">storbit</h1>
-                <p className="text-[9px] tracking-[0.18em] uppercase font-medium truncate" style={{ color: PASTEL.inkMute }}>manifest · ops</p>
+                <h1 className="font-display text-xl font-semibold tracking-tight" style={{ color: '#FFFDF7' }}>Nexus by MSI</h1>
+                <p className="text-[9px] tracking-[0.16em] uppercase font-semibold truncate" style={{ color: 'rgba(248,245,237,0.62)' }}>Unified Business Core Platform</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl border px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.07)', borderColor: 'rgba(255,255,255,0.11)' }}>
+              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] font-semibold" style={{ color: 'rgba(248,245,237,0.58)' }}>
+                <span>Group Scope</span>
+                <span style={{ color: '#C8EFD9' }}>Live</span>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#FFFDF7' }}>
+                <span>MSI</span>
+                <span style={{ color: 'rgba(248,245,237,0.34)' }}>/</span>
+                <span>JCI</span>
+                <span style={{ color: 'rgba(248,245,237,0.34)' }}>/</span>
+                <span>Storbit</span>
               </div>
             </div>
           </div>
 
           {/* Nav */}
           <nav className="flex-1 px-3 py-4 overflow-y-auto">
-            <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: PASTEL.inkMute }}>Menu</div>
-            {visibleMenus.map(m => {
-              const Icon = m.icon;
-              const active = activeMenu === m.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => setActiveMenu(m.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium mb-0.5 transition-all"
-                  style={{
-                    background: active ? PASTEL.peach : 'transparent',
-                    color: active ? PASTEL.ink : PASTEL.inkSoft,
-                    fontWeight: active ? 600 : 500,
-                  }}
-                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = PASTEL.lineSoft; }}
-                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <Icon size={16} strokeWidth={active ? 2.4 : 2}/>
-                  <span className="flex-1 text-left">{m.label}</span>
-                  {active && <div className="w-1.5 h-1.5 rounded-full" style={{ background: PASTEL.peachDeep }}/>}
-                </button>
-              );
-            })}
+            {visibleMenuGroups.map(group => (
+              <SidebarGroup
+                key={group.label}
+                group={group}
+                activeMenu={activeMenu}
+                setActiveMenu={setActiveMenu}
+                isExpanded={expandedGroups.has(group.label)}
+                onToggle={() => toggleGroup(group.label)}
+              />
+            ))}
 
-            {/* Quick stats in sidebar */}
-            <div className="mt-6 pt-4 border-t" style={{ borderColor: PASTEL.line }}>
-              <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: PASTEL.inkMute }}>Quick Stats</div>
-              <div className="px-3 py-3 rounded-2xl space-y-2.5" style={{ background: PASTEL.lineSoft }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Total SP</span>
-                  <span className="font-numeric text-sm font-bold">{groupedSP.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Items</span>
-                  <span className="font-numeric text-sm font-bold">{rows.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Open</span>
-                  <span className="font-numeric text-sm font-bold" style={{ color: PASTEL.skyDeep }}>{groupedSP.filter(g=>g.status==='Open').length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Overdue</span>
-                  <span className="font-numeric text-sm font-bold" style={{ color: groupedSP.filter(g=>g.isOverdue).length > 0 ? PASTEL.roseDeep : PASTEL.inkMute }}>{groupedSP.filter(g=>g.isOverdue).length}</span>
-                </div>
-              </div>
-            </div>
           </nav>
 
-          {/* Footer: Role + status */}
-          <div className="px-4 py-4 border-t" style={{ borderColor: PASTEL.line }}>
-            <div className="text-[9px] uppercase tracking-[0.2em] font-semibold mb-2" style={{ color: PASTEL.inkMute }}>Acting as</div>
-            <div className="rounded-2xl p-3" style={{ background: PASTEL.lineSoft }}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: PASTEL.lavender }}>
-                  <User size={13} style={{ color: PASTEL.lavenderDeep }}/>
-                </div>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="flex-1 bg-transparent text-xs font-semibold cursor-pointer focus:outline-none"
-                  style={{ color: PASTEL.ink }}
-                >
-                  {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                </select>
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px]" style={{ color: PASTEL.inkSoft }}>
-                <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: PASTEL.mintDeep }}/>
-                Active session
-              </div>
-            </div>
-          </div>
         </aside>
 
         {/* MOBILE TOPBAR */}
-        <header className="md:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: PASTEL.line, background: 'rgba(250, 246, 240, 0.92)' }}>
+        <header className="lg:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: 'rgba(15,42,35,0.12)', background: 'rgba(250, 246, 240, 0.94)' }}>
           <div className="px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${PASTEL.peach}, ${PASTEL.rose})` }}>
-                <Package size={18} style={{ color: PASTEL.ink }} strokeWidth={2}/>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: PASTEL.ink }}>
+                <Package size={17} style={{ color: 'white' }} strokeWidth={2}/>
               </div>
-              <h1 className="font-display text-lg font-semibold">storbit</h1>
+              <div>
+                <h1 className="font-display text-lg font-semibold leading-tight">Nexus by MSI</h1>
+                <p className="text-[8px] uppercase tracking-[0.14em] font-semibold leading-tight" style={{ color: PASTEL.inkMute }}>Unified Business Core</p>
+              </div>
             </div>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="border rounded-full px-3 py-1.5 text-[11px] font-medium"
-              style={{ background: 'white', borderColor: PASTEL.line }}
+            <button
+              onClick={signOut}
+              className="border rounded-full px-3 py-1.5 text-[11px] font-medium flex items-center gap-1.5"
+              style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}
+              title={`${profile?.full_name || 'User'} · ${ROLES.find(r => r.id === role)?.label || role}`}
             >
-              {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
+              <LogOut size={11}/>
+              Logout
+            </button>
           </div>
           <nav className="px-3 pb-2 flex items-center gap-1 overflow-x-auto">
             {visibleMenus.map(m => {
@@ -982,11 +1070,11 @@ export default function StorbitManifest() {
                   onClick={() => setActiveMenu(m.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap"
                   style={{
-                    background: active ? PASTEL.peach : 'transparent',
+                    background: active ? PASTEL.ink : 'transparent',
                     color: active ? PASTEL.ink : PASTEL.inkSoft,
                   }}
                 >
-                  <Icon size={13}/>{m.label}
+                  <Icon size={13} style={{ color: active ? 'white' : PASTEL.inkSoft }}/><span style={{ color: active ? 'white' : PASTEL.inkSoft }}>{m.label}</span>
                 </button>
               );
             })}
@@ -994,10 +1082,181 @@ export default function StorbitManifest() {
         </header>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 min-w-0 px-6 md:px-10 py-8 max-w-[1400px]">
+        <main className="nexus-shell-bg flex-1 min-w-0 w-full overflow-x-hidden">
+          {/* ── DESKTOP STICKY TOPBAR ── */}
+          <header className="hidden lg:block sticky top-0 z-20 border-b bg-white/90 backdrop-blur-xl"
+            style={{ borderColor: '#E8DED0', boxShadow: '0 1px 4px rgba(20,32,28,0.06)' }}
+          >
+            <div className="flex min-h-[68px] items-center gap-3 px-5 sm:px-7 xl:px-9">
+
+              {/* ── LEFT: workspace identity ── */}
+              <div className="lg:w-[230px] lg:shrink-0 min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PASTEL.peachDeep }}/>
+                  <span className="text-[9px] uppercase tracking-[0.18em] font-bold" style={{ color: PASTEL.inkMute }}>Nexus ERP</span>
+                </div>
+                <h2 className="font-display text-[17px] font-semibold tracking-tight truncate leading-tight" style={{ color: PASTEL.ink }}>
+                  {activeMenuItem?.label || 'Command Center'}
+                </h2>
+              </div>
+
+              {/* ── CENTER: search ── */}
+              <div className="flex-1 min-w-0">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: PASTEL.inkMute }}/>
+                  <input
+                    type="text"
+                    placeholder="Search SP, shipment, invoice, customer, asset, ticket..."
+                    className="w-full pl-10 pr-4 text-sm outline-none transition-all"
+                    style={{
+                      height: '42px',
+                      background: PASTEL.lineSoft,
+                      border: '1px solid transparent',
+                      borderRadius: '12px',
+                      color: PASTEL.ink,
+                    }}
+                    onFocus={e => {
+                      e.currentTarget.style.background = 'white';
+                      e.currentTarget.style.borderColor = '#E8DED0';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(20,32,28,0.06)';
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.background = PASTEL.lineSoft;
+                      e.currentTarget.style.borderColor = 'transparent';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* ── RIGHT: actions ── */}
+              <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap lg:shrink-0">
+
+                {/* Entity selector */}
+                <button type="button"
+                  className="nexus-cmd-btn inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', color: PASTEL.inkSoft, height: '36px' }}>
+                  <Building2 size={13} style={{ color: PASTEL.inkMute }}/>
+                  <span className="hidden xl:inline">MSI / JCI / Storbit</span>
+                  <span className="xl:hidden">Entity</span>
+                  <ChevronsUpDown size={11} style={{ color: PASTEL.inkMute }}/>
+                </button>
+
+                {/* Pending Approval */}
+                <button type="button" onClick={() => setActiveMenu('approvals')}
+                  className="nexus-cmd-btn inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', color: PASTEL.inkSoft, height: '36px' }}>
+                  <ClipboardCheck size={13} style={{ color: PASTEL.inkMute }}/>
+                  <span className="hidden xl:inline">Pending Approval</span>
+                  <span className="xl:hidden">Approvals</span>
+                </button>
+
+                {/* Notifications */}
+                <button type="button" title="Notifications"
+                  className="nexus-cmd-btn inline-flex items-center justify-center rounded-[10px] border shrink-0"
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', width: '36px', height: '36px' }}>
+                  <Bell size={14} style={{ color: PASTEL.inkSoft }}/>
+                </button>
+
+                {/* Profile dropdown trigger */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setProfileDropdownOpen(o => !o)}
+                    className="nexus-cmd-btn inline-flex items-center gap-2 rounded-[10px] border px-2.5 max-w-[190px]"
+                    style={{
+                      background: profileDropdownOpen ? PASTEL.line : PASTEL.lineSoft,
+                      borderColor: profileDropdownOpen ? 'rgba(15,42,35,0.2)' : '#E8DED0',
+                      boxShadow: profileDropdownOpen ? '0 0 0 3px rgba(15,42,35,0.06)' : undefined,
+                      height: '36px',
+                    }}
+                  >
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-bold"
+                      style={{ background: 'linear-gradient(135deg, #0F2A23, #1A4A3E)', color: '#C8EFD9' }}>
+                      {(profile?.full_name || 'U')[0].toUpperCase()}
+                    </div>
+                    <div className="min-w-0 hidden sm:block text-left overflow-hidden">
+                      <div className="text-[11px] font-semibold truncate" style={{ color: PASTEL.ink }}>
+                        {profile?.full_name || 'User'}
+                      </div>
+                      <div className="text-[9px] uppercase tracking-wider truncate" style={{ color: PASTEL.inkMute }}>
+                        {currentRoleLabel}
+                      </div>
+                    </div>
+                    <ChevronRight size={12} className="shrink-0 hidden sm:block ml-auto"
+                      style={{ color: PASTEL.inkMute, transform: profileDropdownOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s ease' }}/>
+                  </button>
+
+                  {/* Dropdown */}
+                  {profileDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setProfileDropdownOpen(false)}/>
+                      <div
+                        className="absolute right-0 top-[calc(100%+6px)] z-50 w-56 rounded-2xl border animate-dropdown"
+                        style={{
+                          background: 'white',
+                          borderColor: PASTEL.line,
+                          boxShadow: '0 24px 64px rgba(15,42,35,0.13), 0 4px 14px rgba(15,42,35,0.07)',
+                        }}
+                      >
+                        <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: PASTEL.line }}>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold"
+                              style={{ background: 'linear-gradient(135deg, #0F2A23, #1A4A3E)', color: '#C8EFD9' }}>
+                              {(profile?.full_name || 'U')[0].toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold truncate" style={{ color: PASTEL.ink }}>
+                                {profile?.full_name || 'User'}
+                              </div>
+                              <div className="text-[10px] uppercase tracking-wider" style={{ color: PASTEL.inkMute }}>
+                                {currentRoleLabel}
+                              </div>
+                              <div className="text-[10px]" style={{ color: PASTEL.inkMute }}>MSI Group</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="p-1.5">
+                          {[
+                            { label: 'My Profile',       icon: User,     action: () => setProfileDropdownOpen(false) },
+                            { label: 'Account Settings', icon: Settings, action: () => setProfileDropdownOpen(false) },
+                            { label: 'Admin Settings',   icon: Shield,   action: () => { setActiveMenu('adminSettings'); setProfileDropdownOpen(false); } },
+                          ].map(({ label, icon: Icon, action }) => (
+                            <button key={label} type="button" onClick={action}
+                              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-colors"
+                              style={{ color: PASTEL.ink }}
+                              onMouseEnter={e => e.currentTarget.style.background = PASTEL.lineSoft}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                              <Icon size={14} style={{ color: PASTEL.inkSoft }}/>
+                              {label}
+                            </button>
+                          ))}
+                          <div className="my-1.5 border-t" style={{ borderColor: PASTEL.line }}/>
+                          <button type="button"
+                            onClick={() => { setProfileDropdownOpen(false); signOut(); }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-colors"
+                            style={{ color: '#B83A2E' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#FFF1EE'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            <LogOut size={14} style={{ color: '#B83A2E' }}/>
+                            Logout
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <div className="nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7">
+
           {/* Page section header with month filter */}
           {(activeMenu === 'dashboard' || activeMenu === 'manifest') && (
-            <div className="mb-6 flex items-center gap-2 flex-wrap">
+            <div className="mb-7 flex items-center gap-2 flex-wrap rounded-2xl border px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.58)', borderColor: 'rgba(15,42,35,0.08)' }}>
               <Calendar size={14} style={{ color: PASTEL.inkMute }}/>
               <span className="text-xs uppercase tracking-widest font-medium" style={{ color: PASTEL.inkMute }}>Period:</span>
               <button
@@ -1028,7 +1287,24 @@ export default function StorbitManifest() {
           </div>
         )}
 
-          {activeMenu === 'dashboard' && <Dashboard stats={stats} groupedSP={filterMonth === 'all' ? groupedSP : groupedSP.filter(g => monthYearKey(g.spDate) === filterMonth)} filterMonth={filterMonth}/>}
+          {activeMenu === 'dashboard' && (
+            <ErrorBoundary title="Dashboard temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <Dashboard stats={stats} groupedSP={filterMonth === 'all' ? groupedSP : groupedSP.filter(g => monthYearKey(g.spDate) === filterMonth)} filterMonth={filterMonth}/>
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {PLANNED_MODULES[activeMenu] && (
+            <ComingSoonPage
+              title={PLANNED_MODULES[activeMenu].title}
+              description={PLANNED_MODULES[activeMenu].description}
+              capabilities={PLANNED_MODULES[activeMenu].capabilities}
+            />
+          )}
           {activeMenu === 'manifest' && (
             <Manifest
               grouped={filteredSP}
@@ -1087,6 +1363,29 @@ export default function StorbitManifest() {
               role={role}
             />
           )}
+          {activeMenu === 'users' && (
+            <ErrorBoundary title="User Management temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <UserManagement currentUserId={profile?.id || null} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin' && (
+            <ErrorBoundary title="Master Data section temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <AdminShell />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          </div>
         </main>
       </div>
 
@@ -1164,330 +1463,26 @@ export default function StorbitManifest() {
 // ============================
 // Dashboard
 // ============================
-function Dashboard({ stats, groupedSP, filterMonth }) {
-  const recent = [...groupedSP].sort((a,b) => (b.spDate||'').localeCompare(a.spDate||'')).slice(0,5);
-
-  // Pie data for status
-  const pieData = [
-    { name: 'Open', value: stats.open, color: PASTEL.skyDeep },
-    { name: 'Partial', value: stats.partial, color: PASTEL.butterDeep },
-    { name: 'Closed', value: stats.closed, color: PASTEL.mintDeep },
-  ].filter(d => d.value > 0);
-
-  // Pie data for finance
-  const financePieData = [
-    { name: 'Invoice Pending', value: stats.invPending, color: PASTEL.peachDeep },
-    { name: 'FP Pending', value: stats.fpPending, color: PASTEL.lavenderDeep },
-    { name: 'Submit Pending', value: stats.submitPending, color: PASTEL.butterDeep },
-    { name: 'Kirim Pending', value: stats.kirimPending, color: PASTEL.roseDeep },
-  ].filter(d => d.value > 0);
-
-  // DC bar data
-  const dcData = Object.entries(stats.byDC).sort((a,b) => b[1]-a[1]).map(([name, value]) => ({ name, value }));
-
-  const customerColors = [PASTEL.peachDeep, PASTEL.lavenderDeep, PASTEL.mintDeep, PASTEL.butterDeep, PASTEL.roseDeep, PASTEL.skyDeep];
-  const customerCountData = Object.entries(stats.byCustomer || {})
-    .sort((a,b) => b[1].count - a[1].count)
-    .map(([name, v], i) => ({ name, value: v.count, color: customerColors[i % customerColors.length] }));
-  const customerValueData = Object.entries(stats.byCustomer || {})
-    .sort((a,b) => b[1].value - a[1].value)
-    .map(([name, v], i) => ({ name, value: v.value, color: customerColors[i % customerColors.length] }));
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="font-display text-3xl font-semibold tracking-tight">Operations Overview</h2>
-          <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>
-            {filterMonth === 'all' ? 'Showing all-time data' : `Showing ${monthLabel(filterMonth)}`} · monitoring SP, shipment, finance
-          </p>
-        </div>
-      </div>
-
-      {/* TOP KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KPICard label="Total SP" value={stats.totalSP} icon={FileText} color={PASTEL.peach} accent={PASTEL.peachDeep}/>
-        <KPICard label="Open" value={stats.open} icon={Package} color={PASTEL.sky} accent={PASTEL.skyDeep}/>
-        <KPICard label="Partial" value={stats.partial} icon={Clock} color={PASTEL.butter} accent={PASTEL.butterDeep}/>
-        <KPICard label="Closed" value={stats.closed} icon={CheckCircle2} color={PASTEL.mint} accent={PASTEL.mintDeep}/>
-      </div>
-
-      {/* Financial cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <FinancialCard label="Total Transaksi" value={stats.totalTrx} bg={PASTEL.lavender}/>
-        <FinancialCard label="Total PPN (11%)" value={stats.totalPPN} bg={PASTEL.sky}/>
-        <FinancialCard label="Grand Total" value={stats.grandTotal} bg={PASTEL.mint} highlight/>
-      </div>
-
-      {/* Charts row 1: Pie status + Pie finance + DC bar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <ChartCard title="Status Distribution" subtitle="Breakdown SP berdasarkan status">
-          {pieData.length === 0 ? (
-            <EmptyChart text="No data"/>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
-                  {pieData.map((entry, i) => <Cell key={i} fill={entry.color}/>)}
-                </Pie>
-                <Tooltip content={<CustomTooltip/>}/>
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-          <div className="flex flex-wrap gap-3 justify-center mt-2">
-            {pieData.map(d => (
-              <div key={d.name} className="flex items-center gap-1.5 text-xs">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ background: d.color }}/>
-                <span style={{ color: PASTEL.inkSoft }}>{d.name}</span>
-                <span className="font-mono font-semibold">{d.value}</span>
-              </div>
-            ))}
-          </div>
-        </ChartCard>
-
-        <ChartCard title="Finance Pending" subtitle="Dokumen yang masih outstanding">
-          {financePieData.length === 0 ? (
-            <div className="h-[240px] flex flex-col items-center justify-center">
-              <div className="w-14 h-14 rounded-full flex items-center justify-center mb-2" style={{ background: PASTEL.mint }}>
-                <CheckCircle2 size={24} style={{ color: PASTEL.mintDeep }}/>
-              </div>
-              <div className="text-sm" style={{ color: PASTEL.inkSoft }}>All documents complete ✨</div>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={financePieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
-                  {financePieData.map((entry, i) => <Cell key={i} fill={entry.color}/>)}
-                </Pie>
-                <Tooltip content={<CustomTooltip/>}/>
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-          <div className="flex flex-wrap gap-2 justify-center mt-2">
-            {financePieData.map(d => (
-              <div key={d.name} className="flex items-center gap-1 text-[11px]">
-                <div className="w-2 h-2 rounded-full" style={{ background: d.color }}/>
-                <span style={{ color: PASTEL.inkSoft }}>{d.name}</span>
-                <span className="font-mono font-semibold">{d.value}</span>
-              </div>
-            ))}
-          </div>
-        </ChartCard>
-
-        <ChartCard title="Order by DC" subtitle="Distribusi order per distribution center">
-          {dcData.length === 0 ? (
-            <EmptyChart text="No data"/>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={dcData} layout="vertical" margin={{ left: 10, right: 20, top: 10, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={PASTEL.line} horizontal={false}/>
-                <XAxis type="number" stroke={PASTEL.inkMute} fontSize={10} tickLine={false} axisLine={false}/>
-                <YAxis type="category" dataKey="name" stroke={PASTEL.inkSoft} fontSize={10} width={80} tickLine={false} axisLine={false}/>
-                <Tooltip content={<CustomTooltip/>}/>
-                <Bar dataKey="value" fill={PASTEL.peachDeep} radius={[0, 8, 8, 0]} barSize={18}/>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-      </div>
-
-      {/* Customer charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Order by Customer" subtitle="Jumlah SP per customer">
-          {customerCountData.length === 0 ? <EmptyChart text="No data"/> : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={customerCountData} margin={{ left: 0, right: 20, top: 10, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={PASTEL.line} vertical={false}/>
-                <XAxis dataKey="name" stroke={PASTEL.inkSoft} fontSize={11} tickLine={false} axisLine={false}/>
-                <YAxis stroke={PASTEL.inkMute} fontSize={10} tickLine={false} axisLine={false} allowDecimals={false}/>
-                <Tooltip content={<CustomTooltip/>}/>
-                <Bar dataKey="value" fill={PASTEL.lavenderDeep} radius={[8, 8, 0, 0]} barSize={48}/>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </ChartCard>
-
-        <ChartCard title="Revenue by Customer" subtitle="Total grand total per customer">
-          {customerValueData.length === 0 ? <EmptyChart text="No data"/> : (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={customerValueData} cx="50%" cy="50%" innerRadius={60} outerRadius={95} paddingAngle={3} dataKey="value">
-                  {customerValueData.map((entry, i) => <Cell key={i} fill={entry.color}/>)}
-                </Pie>
-                <Tooltip content={<CustomTooltip currency/>}/>
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-          <div className="flex flex-wrap gap-3 justify-center mt-2">
-            {customerValueData.map(d => (
-              <div key={d.name} className="flex items-center gap-1.5 text-xs">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ background: d.color }}/>
-                <span style={{ color: PASTEL.inkSoft }}>{d.name}</span>
-                <span className="font-numeric font-bold">{formatRupiahShort(d.value)}</span>
-              </div>
-            ))}
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* Monthly trend chart - full width */}
-      <ChartCard title="Monthly Transaction Trend" subtitle="Trend nilai transaksi & PPN per bulan">
-        {stats.monthly.length === 0 ? <EmptyChart text="No data"/> : (
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={stats.monthly} margin={{ left: 0, right: 10, top: 10, bottom: 10 }}>
-              <defs>
-                <linearGradient id="grad-trx" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={PASTEL.lavenderDeep} stopOpacity={0.45}/>
-                  <stop offset="100%" stopColor={PASTEL.lavenderDeep} stopOpacity={0.05}/>
-                </linearGradient>
-                <linearGradient id="grad-grand" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={PASTEL.mintDeep} stopOpacity={0.45}/>
-                  <stop offset="100%" stopColor={PASTEL.mintDeep} stopOpacity={0.05}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={PASTEL.line} vertical={false}/>
-              <XAxis dataKey="label" stroke={PASTEL.inkMute} fontSize={11} tickLine={false} axisLine={false}/>
-              <YAxis stroke={PASTEL.inkMute} fontSize={10} tickFormatter={formatRupiahShort} tickLine={false} axisLine={false}/>
-              <Tooltip content={<CustomTooltip currency/>}/>
-              <Area type="monotone" dataKey="transaksi" name="Total Transaksi" stroke={PASTEL.lavenderDeep} fillOpacity={1} fill="url(#grad-trx)" strokeWidth={2.5}/>
-              <Area type="monotone" dataKey="grandTotal" name="Grand Total" stroke={PASTEL.mintDeep} fillOpacity={1} fill="url(#grad-grand)" strokeWidth={2.5}/>
-              <Legend wrapperStyle={{ fontSize: 11 }}/>
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </ChartCard>
-
-      {/* Alerts & recent */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <AlertCard
-          label="Outstanding QTY" value={formatNumber(stats.outstandingQty)} sub="units belum terkirim"
-          icon={Truck} bg={PASTEL.peach} accent={PASTEL.peachDeep}
-        />
-        <AlertCard
-          label="Overdue SP" value={stats.overdue} sub="melewati deadline"
-          icon={AlertTriangle}
-          bg={stats.overdue > 0 ? PASTEL.rose : PASTEL.line}
-          accent={stats.overdue > 0 ? PASTEL.roseDeep : PASTEL.inkMute}
-        />
-        <AlertCard
-          label="Finance Pending" value={stats.finPending} sub="items perlu di-process"
-          icon={Wallet} bg={PASTEL.lavender} accent={PASTEL.lavenderDeep}
-        />
-      </div>
-
-      {/* Recent SP */}
-      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: PASTEL.line }}>
-          <div>
-            <h3 className="font-display text-xl font-semibold">Recent SP</h3>
-            <p className="text-xs mt-0.5" style={{ color: PASTEL.inkMute }}>5 SP terakhir</p>
-          </div>
-        </div>
-        <div className="divide-y" style={{ borderColor: PASTEL.line }}>
-          {recent.length === 0 && <div className="p-8 text-center text-sm" style={{ color: PASTEL.inkMute }}>Belum ada data</div>}
-          {recent.map(g => (
-            <div key={g.spNo} className="px-6 py-4 flex items-center gap-4 transition-colors hover:bg-opacity-50" style={{ background: 'white' }}>
-              <StatusBadge status={g.status} overdue={g.isOverdue}/>
-              <div className="flex-1 min-w-0">
-                <div className="font-mono text-sm font-medium">SP-{g.spNo}</div>
-                <div className="text-xs truncate" style={{ color: PASTEL.inkMute }}>
-                  {g.itemCount} {g.itemCount > 1 ? 'items' : 'item'} · {g.dc || 'No DC'}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm font-semibold">{formatRupiah(g.grandTotal)}</div>
-                <div className="text-xs font-mono" style={{ color: PASTEL.inkMute }}>{formatDateID(g.spDate)}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ============================
 // Cards & atoms
 // ============================
 function KPICard({ label, value, icon: Icon, color, accent }) {
   return (
-    <div className="rounded-3xl p-5 border transition-all hover:shadow-lg" style={{ background: 'white', borderColor: PASTEL.line }}>
+    <div
+      className="rounded-3xl p-5 border transition-all hover:-translate-y-0.5"
+      style={{
+        background: 'linear-gradient(180deg, #FFFFFF 0%, #FBFCFA 100%)',
+        borderColor: 'rgba(15,42,35,0.1)',
+        boxShadow: '0 14px 34px rgba(15,42,35,0.05)',
+      }}
+    >
       <div className="flex items-center justify-between mb-4">
         <div className="text-[10px] uppercase tracking-[0.18em] font-semibold" style={{ color: PASTEL.inkMute }}>{label}</div>
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: color }}>
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center border" style={{ background: color, borderColor: 'rgba(255,255,255,0.65)' }}>
           <Icon size={16} style={{ color: accent }}/>
         </div>
       </div>
       <div className="font-numeric text-4xl font-bold tracking-tight">{value}</div>
-    </div>
-  );
-}
-
-function FinancialCard({ label, value, bg, highlight }) {
-  return (
-    <div className="rounded-3xl p-6 border transition-all" style={{
-      background: highlight ? `linear-gradient(135deg, ${bg}, white)` : 'white',
-      borderColor: PASTEL.line,
-      ...(highlight && { boxShadow: `0 0 0 1px ${PASTEL.mintDeep}40` })
-    }}>
-      <div className="flex items-center gap-2 mb-2">
-        <div className="w-2 h-2 rounded-full" style={{ background: bg }}/>
-        <div className="text-[10px] uppercase tracking-[0.18em] font-semibold" style={{ color: PASTEL.inkMute }}>{label}</div>
-      </div>
-      <div className="font-numeric text-3xl font-bold tracking-tight">{formatRupiah(value)}</div>
-    </div>
-  );
-}
-
-function AlertCard({ label, value, sub, icon: Icon, bg, accent }) {
-  return (
-    <div className="rounded-3xl p-5 border" style={{ background: bg, borderColor: 'transparent' }}>
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.18em] font-semibold opacity-80" style={{ color: PASTEL.ink }}>{label}</div>
-          <div className="font-numeric text-3xl font-bold mt-1.5" style={{ color: PASTEL.ink }}>{value}</div>
-        </div>
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.6)' }}>
-          <Icon size={18} style={{ color: accent }}/>
-        </div>
-      </div>
-      <div className="text-xs font-medium opacity-75" style={{ color: PASTEL.ink }}>{sub}</div>
-    </div>
-  );
-}
-
-function ChartCard({ title, subtitle, children }) {
-  return (
-    <div className="rounded-3xl p-5 border" style={{ background: 'white', borderColor: PASTEL.line }}>
-      <div className="mb-3">
-        <h3 className="font-display text-lg font-semibold">{title}</h3>
-        {subtitle && <p className="text-xs mt-0.5" style={{ color: PASTEL.inkMute }}>{subtitle}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function EmptyChart({ text }) {
-  return (
-    <div className="h-[240px] flex items-center justify-center text-sm" style={{ color: PASTEL.inkMute }}>
-      {text}
-    </div>
-  );
-}
-
-function CustomTooltip({ active, payload, label, currency }) {
-  if (!active || !payload || !payload.length) return null;
-  return (
-    <div className="px-3 py-2 rounded-xl shadow-lg border text-xs" style={{ background: 'white', borderColor: PASTEL.line }}>
-      {label && <div className="font-semibold mb-1">{label}</div>}
-      {payload.map((p, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full" style={{ background: p.color || p.fill }}/>
-          <span style={{ color: PASTEL.inkSoft }}>{p.name}:</span>
-          <span className="font-mono font-semibold">{currency ? formatRupiah(p.value) : p.value}</span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -1519,24 +1514,119 @@ function StatusBadge({ status, overdue, large }) {
   );
 }
 
+function ComingSoonPage({ title, description, capabilities }) {
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div
+        className="rounded-3xl border overflow-hidden"
+        style={{ background: 'white', borderColor: 'rgba(15,42,35,0.09)', boxShadow: '0 20px 52px rgba(15,42,35,0.07)' }}
+      >
+        {/* Hero */}
+        <div
+          className="px-7 pt-7 pb-6 border-b"
+          style={{
+            borderColor: 'rgba(15,42,35,0.07)',
+            background: 'linear-gradient(135deg, #F3F9F6 0%, #F8F5EE 55%, #FDFBF7 100%)',
+          }}
+        >
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-5">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-4">
+                <span
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em]"
+                  style={{ background: '#DCF0E6', color: '#0F5132' }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#2A9C65' }}/>
+                  Planned — ERP Roadmap
+                </span>
+              </div>
+              <h2 className="font-display text-3xl font-semibold tracking-tight leading-tight mb-2.5">{title}</h2>
+              <p className="text-sm max-w-2xl" style={{ color: PASTEL.inkSoft, lineHeight: '1.7' }}>{description}</p>
+            </div>
+            <div
+              className="shrink-0 rounded-2xl border px-4 py-4 min-w-[160px] self-start"
+              style={{ background: 'rgba(255,255,255,0.82)', borderColor: 'rgba(15,42,35,0.09)' }}
+            >
+              <div className="text-[10px] uppercase tracking-[0.16em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>
+                Phase Status
+              </div>
+              <div className="font-numeric text-xl font-bold mb-2" style={{ color: PASTEL.ink }}>Roadmap</div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#7FC9A0' }}/>
+                <span className="text-[11px]" style={{ color: PASTEL.inkSoft }}>Awaiting phase sign-off</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Capabilities */}
+        <div className="px-7 py-6">
+          <div className="flex items-center justify-between mb-5">
+            <span className="text-[10px] uppercase tracking-[0.18em] font-semibold" style={{ color: PASTEL.inkMute }}>
+              Planned Capabilities
+            </span>
+            <span
+              className="text-[10px] font-bold px-2.5 py-1 rounded-full"
+              style={{ background: '#DCF0E6', color: '#0F5132' }}
+            >
+              {capabilities.length} features
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {capabilities.map((capability, index) => (
+              <div
+                key={capability}
+                className="rounded-2xl border p-4 transition-all hover:-translate-y-0.5"
+                style={{
+                  background: 'linear-gradient(180deg, #FAFCFB 0%, #F7F8F6 100%)',
+                  borderColor: 'rgba(15,42,35,0.08)',
+                  boxShadow: '0 2px 8px rgba(15,42,35,0.03)',
+                }}
+              >
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center mb-3 font-mono text-xs font-bold"
+                  style={{ background: '#DCF0E6', color: '#1A5C3A' }}
+                >
+                  {String(index + 1).padStart(2, '0')}
+                </div>
+                <h3 className="text-sm font-semibold leading-snug mb-1.5">{capability}</h3>
+                <p className="text-xs leading-relaxed" style={{ color: PASTEL.inkMute }}>
+                  Reserved for the ERP foundation roadmap.
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============================
 // Manifest (grouped table)
 // ============================
+function SortIcon({ field, sortBy }) {
+  if (sortBy.field !== field) return <ArrowUpDown size={11} style={{ opacity: 0.3 }}/>;
+  return sortBy.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>;
+}
+
 function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilterStatus, filterDC, setFilterDC, filterCustomer, setFilterCustomer, filterOverdue, setFilterOverdue, dcList, customers, sortBy, setSortBy, onView, onExport }) {
   const toggleSort = (field) => {
     if (sortBy.field === field) setSortBy({ field, dir: sortBy.dir === 'asc' ? 'desc' : 'asc' });
     else setSortBy({ field, dir: 'asc' });
   };
 
-  const SortIcon = ({field}) => {
-    if (sortBy.field !== field) return <ArrowUpDown size={11} style={{ opacity: 0.3 }}/>;
-    return sortBy.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>;
-  };
-
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+              style={{ background: PASTEL.sky, color: '#1F4D6B' }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.skyDeep }}/>
+              Commercial · Sales Order
+            </span>
+          </div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">SP Manifest</h2>
           <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{grouped.length} dari {allCount} SP</p>
         </div>
@@ -1565,7 +1655,6 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
         {customers.filter(c => c.active !== false).map(c => {
           const active = filterCustomer === c.name;
           const count = grouped.filter(g => g.customer === c.name).length;
-          const allCount = c.name; // placeholder
           return (
             <button
               key={c.id}
@@ -1626,10 +1715,10 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
             <thead>
               <tr style={{ background: PASTEL.lineSoft }}>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('spDate')}>
-                  <div className="flex items-center gap-1">SP Date <SortIcon field="spDate"/></div>
+                  <div className="flex items-center gap-1">SP Date <SortIcon field="spDate" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('spNo')}>
-                  <div className="flex items-center gap-1">SP No <SortIcon field="spNo"/></div>
+                  <div className="flex items-center gap-1">SP No <SortIcon field="spNo" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Customer</th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Items</th>
@@ -1638,10 +1727,10 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Status</th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>DC</th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('deadline')}>
-                  <div className="flex items-center gap-1">Deadline <SortIcon field="deadline"/></div>
+                  <div className="flex items-center gap-1">Deadline <SortIcon field="deadline" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-right text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('grandTotal')}>
-                  <div className="flex items-center justify-end gap-1">Grand Total <SortIcon field="grandTotal"/></div>
+                  <div className="flex items-center justify-end gap-1">Grand Total <SortIcon field="grandTotal" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-center text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Finance</th>
                 <th className="px-5 py-3.5 w-12"></th>
@@ -1709,7 +1798,7 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
   );
 }
 
-function FilterPill({ label, value, onChange, options }) {
+function FilterPill({ value, onChange, options }) {
   return (
     <select
       value={value}
@@ -1944,6 +2033,13 @@ function InputPage({ onAdd, onImport, onReset, onClear, rowCount, spCount }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: PASTEL.peach, color: '#5C2F12' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.peachDeep }}/>
+            Operations · Input SP
+          </span>
+        </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Input Data</h2>
         <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>Tambah SP secara manual atau bulk import dari spreadsheet</p>
       </div>
@@ -2012,11 +2108,26 @@ function ShipmentPage({ rows, onUpdate, role }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: PASTEL.peach, color: '#5C2F12' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.peachDeep }}/>
+            Operations · Shipment
+          </span>
+        </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Shipment & Fulfillment</h2>
         <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{pending.length} item perlu update shipment</p>
       </div>
 
       <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <div className="px-5 py-3.5 border-b flex items-center justify-between"
+          style={{ borderColor: PASTEL.line, background: 'linear-gradient(135deg, #F8F5EE 0%, #F3F9F6 100%)' }}>
+          <span className="text-sm font-semibold" style={{ color: PASTEL.ink }}>Pending Shipment Items</span>
+          <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: pending.length > 0 ? PASTEL.peach : PASTEL.mint, color: pending.length > 0 ? '#5C2F12' : '#0F5132' }}>
+            {pending.length} items
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -2068,11 +2179,26 @@ function FinancePage({ rows, onUpdate, role }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: PASTEL.mint, color: '#0F5132' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.mintDeep }}/>
+            Finance · Documents
+          </span>
+        </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Finance & Documents</h2>
         <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>Update invoice, faktur pajak, submit, kirim, dan email status</p>
       </div>
 
       <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <div className="px-5 py-3.5 border-b flex items-center justify-between"
+          style={{ borderColor: PASTEL.line, background: 'linear-gradient(135deg, #F8F5EE 0%, #F3FAF7 100%)' }}>
+          <span className="text-sm font-semibold" style={{ color: PASTEL.ink }}>Finance Document Status</span>
+          <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: PASTEL.mint, color: '#0F5132' }}>
+            {rows.length} items
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -2125,6 +2251,13 @@ function OutstandingPage({ rows, onUpdate, role }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: PASTEL.butter, color: '#5C4416' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.butterDeep }}/>
+            Finance · Outstanding
+          </span>
+        </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Outstanding Finance</h2>
         <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{pending.length} item dengan dokumen pending</p>
       </div>
@@ -2137,6 +2270,14 @@ function OutstandingPage({ rows, onUpdate, role }) {
       </div>
 
       <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <div className="px-5 py-3.5 border-b flex items-center justify-between"
+          style={{ borderColor: PASTEL.line, background: 'linear-gradient(135deg, #F8F5EE 0%, #FEFAF0 100%)' }}>
+          <span className="text-sm font-semibold" style={{ color: PASTEL.ink }}>Items with Pending Documents</span>
+          <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: pending.length > 0 ? PASTEL.peach : PASTEL.mint, color: pending.length > 0 ? '#5C2F12' : '#0F5132' }}>
+            {pending.length} items
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -2647,13 +2788,20 @@ function ImportModal({ onClose, onImport }) {
 // ============================
 // Customers Page
 // ============================
-function CustomersPage({ customers, rows, dcList, onAdd, onEdit, onDelete, role }) {
+function CustomersPage({ customers, rows, onAdd, onEdit, onDelete, role }) {
   const usageCount = (custName) => rows.filter(r => r.customer === custName).length;
 
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+              style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.lavenderDeep }}/>
+              Commercial · Customers
+            </span>
+          </div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">Master Customer</h2>
           <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{customers.length} customer terdaftar · digunakan di SP & filter</p>
         </div>
@@ -2846,7 +2994,6 @@ function ARTrackerPage({ arData, customers, filterCustomer, setFilterCustomer, f
   const totalInvoice = enriched.reduce((s, t) => s + t.totalInvoice, 0);
   const totalPayment = enriched.reduce((s, t) => s + t.totalPayment, 0);
   const totalOS = enriched.reduce((s, t) => s + t.totalOS, 0);
-  const lunasCount = enriched.filter(t => t.status === 'Lunas').length;
   const overdueCount = enriched.filter(t => t.isOverdue).length;
   const avgJarak = enriched.filter(t => t.status === 'Lunas' && t.jarakTgl !== null).reduce((s, t, _, arr) => s + t.jarakTgl/arr.length, 0);
 
@@ -2865,6 +3012,13 @@ function ARTrackerPage({ arData, customers, filterCustomer, setFilterCustomer, f
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+              style={{ background: PASTEL.sky, color: '#1F4D6B' }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.skyDeep }}/>
+              Finance · AR Collection
+            </span>
+          </div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">AR Tracker</h2>
           <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{enriched.length} TTF · {filtered.length} after filter · monitoring outstanding receivables</p>
         </div>
@@ -3168,7 +3322,7 @@ function ARSidePanel({ ttf, onClose, onEdit, onDelete, role }) {
 // AR Modal
 // ============================
 function ARModal({ initial, customers, onClose, onSave }) {
-  const [data, setData] = useState(initial || {
+  const [data, setData] = useState(() => initial || {
     noTTF: '', tanggalTTF: '', tanggalMenerima: '',
     noINV: '', noSP: '', customer: '',
     tglPembayaran: '', notes: '',
