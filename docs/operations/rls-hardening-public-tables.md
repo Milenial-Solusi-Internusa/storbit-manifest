@@ -1,7 +1,7 @@
 # RLS Hardening — Remaining Public Tables
 **Phase:** 1.0H
 **Migration:** `supabase/migrations/20260524000017_rls_hardening_public_tables.sql`
-**Status:** Implemented — pending DBA apply to staging and production
+**Status:** Staging verified ✅ — production pending formal sign-off
 
 ---
 
