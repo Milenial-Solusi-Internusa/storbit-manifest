@@ -271,7 +271,8 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
   - `ar_btbs` has SELECT, INSERT, DELETE (no UPDATE) — matches replace strategy in `updateTtf()`
 - `docs/operations/rls-hardening-public-tables.md` — full decision log, policy rationale per table, source code usage confirmation, DBA verification checklist
 - No source files modified; no UI changed; no `.env` files touched
-- Status: MIGRATION DRAFT — must not be executed without DBA sign-off; apply to staging first per `docs/operations/staging-migration-readiness.md`
+- Status: STAGING VERIFIED ✅ — production execution blocked pending formal sign-off
+- Verification log: `docs/operations/rls-hardening-verification-log.md`
 
 ---
 
@@ -471,3 +472,4 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-28 | chart_of_accounts write access restricted to finance_controller or super_admin (stricter than admin) | COA structure is a critical finance asset; incorrect modifications silently corrupt ledger entries; restricting to finance_controller prevents operational admins from accidentally restructuring accounts |
 | 2026-05-28 | No DELETE policies on Phase 2+ and Phase 4.2 tables | Assets, COA entries, and cost centers must never be hard-deleted; application enforces soft-delete (deleted_at) and status transitions; absence of a DELETE policy is an intentional guardrail at the database level |
 | 2026-05-28 | Phase 1.0H migration marked DRAFT — must not be executed without DBA sign-off | Legacy tables (sp_items, ar_ttfs, ar_btbs) are actively used by operational screens; any policy error or missing operation coverage would break running app features; DBA must run on dev Supabase first and verify all app screens before staging execution |
+| 2026-05-28 | Migration 017 applied to staging and verified PASS — Phase 1.0H staging complete | All 8 target tables show rowsecurity=true and all expected policies present; all operational screens (SP Manifest, AR Tracker, Finance, Outstanding) smoke-tested and passing; verification recorded in docs/operations/rls-hardening-verification-log.md; production execution remains blocked pending formal technical lead and product owner sign-off |

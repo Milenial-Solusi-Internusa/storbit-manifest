@@ -673,19 +673,49 @@ Output:
 
 ## Current Phase
 
+> **Source of truth for phase status:** `docs/architecture/implementation-roadmap.md`
+> This table is a summary. Always defer to the roadmap for the authoritative phase history,
+> sub-phase details, decision log, and accurate completion dates.
+
 | Phase | Name | Status |
 |-------|------|--------|
 | 0.0 | Initial Project Instructions | ✅ Complete |
 | 0.1 | Documentation Foundation | ✅ Complete |
 | 0.2 | Final CLAUDE.md | ✅ Complete |
-| 0.3 | Claude Agents | 🔜 Next |
-| 0.4 | Low-Risk Refactor | Planned |
-| 0.5 | Stability & Performance Audit | Planned |
-| 1.0 | Master Data Foundation | Planned |
+| 0.3 | Claude Agents | ✅ Complete |
+| 0.4A | Bundle Size Audit | ✅ Complete |
+| 0.4B | Bundle Split and Lazy Loading | ✅ Complete |
+| 0.5A | Stability, Lint, and Tech Debt Audit | ✅ Complete |
+| 0.5B | Remove Production Console Logs | ✅ Complete |
+| 0.5C | ErrorBoundary Baseline | ✅ Complete |
+| 0.5D | Lint Baseline Cleanup | ✅ Complete |
+| 1.0A | Master Data Architecture Plan | ✅ Complete |
+| 1.0B | Schema / Migration Draft Review | ✅ Complete |
+| 1.0C | Seed Strategy | ✅ Complete |
+| 1.0D | RLS Policy Draft | ✅ Complete |
+| 1.0D+ | Staging Execution Readiness Review | ✅ Complete |
+| 1.0D++ | Legacy App Baseline for Fresh Staging | ✅ Complete |
+| 1.0D+++ | Staging Execution Verification (migrations 000–014) | ✅ Complete |
+| 1.0E | First Admin UI Screens (8 read-only tabs) | ✅ Complete |
+| 1.0F | Profiles & Customers RLS Transition | ✅ Complete |
+| 1.0G | User Access Management Foundation | ✅ Complete |
+| 1.0H | RLS Hardening — Remaining Public Tables | ✅ Staging verified |
+| 1.0I | Master Data CRUD / Vendors / Products screens | 🔜 Next |
 
-Current phase: **Phase 0.2 — Final CLAUDE.md** ✅ Complete
+Current phase: **Phase 1.0H** ✅ Staging verified
 
-Next recommended step: **Phase 0.3 — Claude Agents**
+Next recommended step: **Phase 1.0I — Master Data CRUD or Vendors/Products admin screens**
+
+### Production Gate
+
+**Production execution is BLOCKED** for all pending migrations, including Migration 017
+(`20260524000017_rls_hardening_public_tables.sql`).
+
+Migration 017 is staging-verified as of 2026-05-28. Production execution requires explicit
+written approval from the technical lead and product owner before any migration may be applied
+to the production Supabase project.
+
+Verification log: `docs/operations/rls-hardening-verification-log.md`
 
 ---
 
