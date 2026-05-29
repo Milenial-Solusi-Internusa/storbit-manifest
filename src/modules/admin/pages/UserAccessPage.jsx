@@ -379,7 +379,7 @@ export default function UserAccessPage() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-5">
         <div
           className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border"
           style={{ background: 'white', borderColor: PASTEL.line }}
@@ -412,7 +412,7 @@ export default function UserAccessPage() {
       >
         {/* Header row */}
         <div
-          className="grid px-4 py-2.5 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
+          className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
           style={{
             gridTemplateColumns: GRID,
             borderColor: PASTEL.line,
@@ -446,7 +446,7 @@ export default function UserAccessPage() {
             return (
               <div
                 key={row.id}
-                className="grid px-4 py-3 border-b items-center text-sm transition-colors"
+                className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
                 style={{
                   gridTemplateColumns: GRID,
                   borderColor: PASTEL.line,

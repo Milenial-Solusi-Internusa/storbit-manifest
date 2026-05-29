@@ -6,13 +6,14 @@ const PASTEL = {
   ink: '#2D2A28',
   inkSoft: '#5C5550',
   inkMute: '#9C948D',
+  line: '#EDE6DC',
   lavender: '#D8C5F0',
   lavenderDeep: '#A98FD8',
 };
 
 export default function AdminPageHeader({ title, subtitle, count }) {
   return (
-    <div className="mb-6">
+    <div className="mb-7 pb-5 border-b" style={{ borderColor: PASTEL.line }}>
       <div className="flex items-center gap-2 mb-1.5">
         <span
           className="text-[10px] uppercase tracking-[0.22em] font-semibold"

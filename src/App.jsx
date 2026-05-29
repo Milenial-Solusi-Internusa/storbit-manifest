@@ -1536,6 +1536,13 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+              style={{ background: PASTEL.sky, color: '#1F4D6B' }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.skyDeep }}/>
+              Commercial · Sales Order
+            </span>
+          </div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">SP Manifest</h2>
           <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{grouped.length} dari {allCount} SP</p>
         </div>
@@ -1942,6 +1949,13 @@ function InputPage({ onAdd, onImport, onReset, onClear, rowCount, spCount }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: PASTEL.peach, color: '#5C2F12' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.peachDeep }}/>
+            Operations · Input SP
+          </span>
+        </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Input Data</h2>
         <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>Tambah SP secara manual atau bulk import dari spreadsheet</p>
       </div>
@@ -2010,11 +2024,26 @@ function ShipmentPage({ rows, onUpdate, role }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: PASTEL.peach, color: '#5C2F12' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.peachDeep }}/>
+            Operations · Shipment
+          </span>
+        </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Shipment & Fulfillment</h2>
         <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{pending.length} item perlu update shipment</p>
       </div>
 
       <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <div className="px-5 py-3.5 border-b flex items-center justify-between"
+          style={{ borderColor: PASTEL.line, background: 'linear-gradient(135deg, #F8F5EE 0%, #F3F9F6 100%)' }}>
+          <span className="text-sm font-semibold" style={{ color: PASTEL.ink }}>Pending Shipment Items</span>
+          <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: pending.length > 0 ? PASTEL.peach : PASTEL.mint, color: pending.length > 0 ? '#5C2F12' : '#0F5132' }}>
+            {pending.length} items
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -2066,11 +2095,26 @@ function FinancePage({ rows, onUpdate, role }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: PASTEL.mint, color: '#0F5132' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.mintDeep }}/>
+            Finance · Documents
+          </span>
+        </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Finance & Documents</h2>
         <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>Update invoice, faktur pajak, submit, kirim, dan email status</p>
       </div>
 
       <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <div className="px-5 py-3.5 border-b flex items-center justify-between"
+          style={{ borderColor: PASTEL.line, background: 'linear-gradient(135deg, #F8F5EE 0%, #F3FAF7 100%)' }}>
+          <span className="text-sm font-semibold" style={{ color: PASTEL.ink }}>Finance Document Status</span>
+          <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: PASTEL.mint, color: '#0F5132' }}>
+            {rows.length} items
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -2123,6 +2167,13 @@ function OutstandingPage({ rows, onUpdate, role }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: PASTEL.butter, color: '#5C4416' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.butterDeep }}/>
+            Finance · Outstanding
+          </span>
+        </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Outstanding Finance</h2>
         <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{pending.length} item dengan dokumen pending</p>
       </div>
@@ -2135,6 +2186,14 @@ function OutstandingPage({ rows, onUpdate, role }) {
       </div>
 
       <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <div className="px-5 py-3.5 border-b flex items-center justify-between"
+          style={{ borderColor: PASTEL.line, background: 'linear-gradient(135deg, #F8F5EE 0%, #FEFAF0 100%)' }}>
+          <span className="text-sm font-semibold" style={{ color: PASTEL.ink }}>Items with Pending Documents</span>
+          <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: pending.length > 0 ? PASTEL.peach : PASTEL.mint, color: pending.length > 0 ? '#5C2F12' : '#0F5132' }}>
+            {pending.length} items
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -2652,6 +2711,13 @@ function CustomersPage({ customers, rows, onAdd, onEdit, onDelete, role }) {
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+              style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.lavenderDeep }}/>
+              Commercial · Customers
+            </span>
+          </div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">Master Customer</h2>
           <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{customers.length} customer terdaftar · digunakan di SP & filter</p>
         </div>
@@ -2862,6 +2928,13 @@ function ARTrackerPage({ arData, customers, filterCustomer, setFilterCustomer, f
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+              style={{ background: PASTEL.sky, color: '#1F4D6B' }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.skyDeep }}/>
+              Finance · AR Collection
+            </span>
+          </div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">AR Tracker</h2>
           <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{enriched.length} TTF · {filtered.length} after filter · monitoring outstanding receivables</p>
         </div>
