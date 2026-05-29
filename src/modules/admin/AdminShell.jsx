@@ -41,8 +41,14 @@ const ADMIN_TABS = [
 function TabNav({ active, onSelect }) {
   return (
     <div
-      className="flex items-center gap-1 mb-8 p-1 rounded-2xl overflow-x-auto"
-      style={{ background: PASTEL.lineSoft, maxWidth: '100%' }}
+      className="nexus-admin-tabs flex items-center gap-0.5 p-1 rounded-2xl border"
+      style={{
+        background: PASTEL.lineSoft,
+        borderColor: PASTEL.line,
+        overflowX: 'auto',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+      }}
     >
       {ADMIN_TABS.map((tab) => {
         const isActive = active === tab.id;
@@ -51,12 +57,26 @@ function TabNav({ active, onSelect }) {
             key={tab.id}
             type="button"
             onClick={() => onSelect(tab.id)}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all flex-shrink-0 whitespace-nowrap"
+            className="flex-shrink-0 whitespace-nowrap px-4 py-2 rounded-xl text-sm transition-all"
             style={{
               background: isActive ? 'white' : 'transparent',
               color: isActive ? PASTEL.ink : PASTEL.inkSoft,
-              fontWeight: isActive ? 600 : 500,
-              boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+              fontWeight: isActive ? 600 : 450,
+              boxShadow: isActive
+                ? '0 1px 3px rgba(45,42,40,0.09), 0 0 0 1px rgba(237,230,220,0.7)'
+                : 'none',
+            }}
+            onMouseEnter={(e) => {
+              if (!isActive) {
+                e.currentTarget.style.background = 'rgba(45,42,40,0.04)';
+                e.currentTarget.style.color = PASTEL.ink;
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isActive) {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = PASTEL.inkSoft;
+              }
             }}
           >
             {tab.label}
@@ -72,8 +92,40 @@ export default function AdminShell() {
 
   return (
     <div>
-      <TabNav active={activeTab} onSelect={setActiveTab} />
+      {/* Hide webkit scrollbar on the tab strip */}
+      <style>{`.nexus-admin-tabs::-webkit-scrollbar { display: none; }`}</style>
 
+      {/* Section identity */}
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-2.5">
+          <span
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
+            style={{ background: '#DCF0E6', color: '#0F5132' }}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0"
+              style={{ background: '#2A9C65' }}
+            />
+            Phase 1.0E
+          </span>
+          <span className="text-[11px] font-medium" style={{ color: PASTEL.inkMute }}>
+            Foundation · Master Data
+          </span>
+        </div>
+        <span
+          className="hidden sm:block text-[10px] uppercase tracking-[0.18em] font-semibold"
+          style={{ color: PASTEL.inkMute }}
+        >
+          Read-only
+        </span>
+      </div>
+
+      {/* Tab navigation */}
+      <div className="mb-7">
+        <TabNav active={activeTab} onSelect={setActiveTab} />
+      </div>
+
+      {/* Page content */}
       {activeTab === 'companies' && (
         <ErrorBoundary title="Companies section temporarily unavailable">
           <CompaniesPage />
