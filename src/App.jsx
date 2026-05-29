@@ -1,4 +1,4 @@
-import { useState, useMemo, Suspense, lazy } from 'react';
+import { useState, useMemo, useEffect, Suspense, lazy } from 'react';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
   Search, Download, Upload, Eye, Edit3, Trash2, X,
@@ -631,8 +631,15 @@ export default function StorbitManifest() {
   const [arFilterCustomer, setArFilterCustomer] = useState('all');
   const [arFilterStatus, setArFilterStatus] = useState('all');
   const [arSearch, setArSearch] = useState('');
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
-
+  // Close profile dropdown on Escape
+  useEffect(() => {
+    if (!profileDropdownOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setProfileDropdownOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [profileDropdownOpen]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -945,6 +952,19 @@ export default function StorbitManifest() {
         .nexus-command-button {
           box-shadow: 0 10px 24px rgba(15, 42, 35, 0.055);
         }
+        .nexus-cmd-btn {
+          transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, transform 0.1s ease;
+        }
+        .nexus-cmd-btn:hover {
+          background: ${PASTEL.line} !important;
+          transform: translateY(-1px);
+          box-shadow: 0 3px 10px rgba(15,42,35,0.08) !important;
+        }
+        @keyframes dropdownIn {
+          from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-dropdown { animation: dropdownIn 0.14s cubic-bezier(0.16, 1, 0.3, 1); }
         @keyframes accordionDown {
           from { opacity: 0; transform: translateY(-5px); }
           to   { opacity: 1; transform: translateY(0);    }
@@ -1014,64 +1034,8 @@ export default function StorbitManifest() {
               />
             ))}
 
-            {/* Quick stats in sidebar */}
-            <div className="mt-2 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.11)' }}>
-              <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: 'rgba(248,245,237,0.46)' }}>Quick Stats</div>
-              <div className="px-3 py-3 rounded-2xl space-y-2.5 border" style={{ background: 'rgba(255,255,255,0.075)', borderColor: 'rgba(255,255,255,0.11)' }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: 'rgba(248,245,237,0.62)' }}>Total SP</span>
-                  <span className="font-numeric text-sm font-bold" style={{ color: '#FFFDF7' }}>{groupedSP.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: 'rgba(248,245,237,0.62)' }}>Items</span>
-                  <span className="font-numeric text-sm font-bold" style={{ color: '#FFFDF7' }}>{rows.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: 'rgba(248,245,237,0.62)' }}>Open</span>
-                  <span className="font-numeric text-sm font-bold" style={{ color: '#C8EFD9' }}>{groupedSP.filter(g=>g.status==='Open').length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: 'rgba(248,245,237,0.62)' }}>Overdue</span>
-                  <span className="font-numeric text-sm font-bold" style={{ color: groupedSP.filter(g=>g.isOverdue).length > 0 ? '#FFD4B8' : 'rgba(248,245,237,0.45)' }}>{groupedSP.filter(g=>g.isOverdue).length}</span>
-                </div>
-              </div>
-            </div>
           </nav>
 
-          {/* Footer: User + logout */}
-          <div className="px-4 py-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.11)' }}>
-            <div className="text-[10px] uppercase tracking-[0.14em] font-semibold mb-2" style={{ color: 'rgba(248,245,237,0.46)' }}>Logged in as</div>
-            <div className="rounded-2xl p-3 border" style={{ background: 'rgba(255,255,255,0.09)', borderColor: 'rgba(255,255,255,0.12)' }}>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.14)' }}>
-                  <User size={14} style={{ color: '#C8EFD9' }}/>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold truncate" style={{ color: '#FFFDF7' }}>
-                    {profile?.full_name || 'User'}
-                  </div>
-                  <div className="text-[10px] uppercase tracking-wider" style={{ color: 'rgba(248,245,237,0.54)' }}>
-                    {currentRoleLabel}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'rgba(248,245,237,0.62)' }}>
-                  <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#C8EFD9' }}/>
-                  Active
-                </div>
-                <button
-                  onClick={signOut}
-                  className="text-[10px] font-semibold flex items-center gap-1 hover:opacity-70 transition-opacity"
-                  style={{ color: '#FFD4B8' }}
-                  title="Logout"
-                >
-                  <LogOut size={11}/>
-                  Logout
-                </button>
-              </div>
-            </div>
-          </div>
         </aside>
 
         {/* MOBILE TOPBAR */}
@@ -1118,57 +1082,177 @@ export default function StorbitManifest() {
         </header>
 
         {/* MAIN CONTENT */}
-        <main className="nexus-shell-bg flex-1 min-w-0 w-full">
-          <div className="nexus-main-surface w-full px-5 sm:px-7 xl:px-9 py-6 lg:py-8">
-          <div
-            className="mb-5 lg:mb-6 rounded-[28px] border p-4 lg:p-5"
-            style={{
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.92), rgba(248,250,247,0.84))',
-              borderColor: 'rgba(15,42,35,0.11)',
-              boxShadow: '0 18px 45px rgba(15,42,35,0.07)',
-            }}
+        <main className="nexus-shell-bg flex-1 min-w-0 w-full overflow-x-hidden">
+          {/* ── DESKTOP STICKY TOPBAR ── */}
+          <header className="hidden lg:block sticky top-0 z-20 border-b bg-white/90 backdrop-blur-xl"
+            style={{ borderColor: '#E8DED0', boxShadow: '0 1px 4px rgba(20,32,28,0.06)' }}
           >
-            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
-              <div className="min-w-0 xl:w-56 xl:shrink-0">
-                <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-0.5" style={{ color: PASTEL.inkMute }}>Current Workspace</div>
-                <h2 className="font-display text-2xl font-semibold tracking-tight truncate">{activeMenuItem?.label || 'Command Center'}</h2>
+            <div className="flex min-h-[68px] items-center gap-3 px-5 sm:px-7 xl:px-9">
+
+              {/* ── LEFT: workspace identity ── */}
+              <div className="lg:w-[230px] lg:shrink-0 min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PASTEL.peachDeep }}/>
+                  <span className="text-[9px] uppercase tracking-[0.18em] font-bold" style={{ color: PASTEL.inkMute }}>Nexus ERP</span>
+                </div>
+                <h2 className="font-display text-[17px] font-semibold tracking-tight truncate leading-tight" style={{ color: PASTEL.ink }}>
+                  {activeMenuItem?.label || 'Command Center'}
+                </h2>
               </div>
-              <div className="relative flex-1 min-w-0">
-                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: PASTEL.inkMute }}/>
-                <input
-                  type="text"
-                  placeholder="Search across SP, shipments, invoices, customers..."
-                  className="w-full rounded-2xl pl-10 pr-4 py-2.5 text-sm outline-none border transition-shadow focus:shadow-lg"
-                  style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}
-                />
+
+              {/* ── CENTER: search ── */}
+              <div className="flex-1 min-w-0">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: PASTEL.inkMute }}/>
+                  <input
+                    type="text"
+                    placeholder="Search SP, shipment, invoice, customer, asset, ticket..."
+                    className="w-full pl-10 pr-4 text-sm outline-none transition-all"
+                    style={{
+                      height: '42px',
+                      background: PASTEL.lineSoft,
+                      border: '1px solid transparent',
+                      borderRadius: '12px',
+                      color: PASTEL.ink,
+                    }}
+                    onFocus={e => {
+                      e.currentTarget.style.background = 'white';
+                      e.currentTarget.style.borderColor = '#E8DED0';
+                      e.currentTarget.style.boxShadow = '0 0 0 3px rgba(20,32,28,0.06)';
+                    }}
+                    onBlur={e => {
+                      e.currentTarget.style.background = PASTEL.lineSoft;
+                      e.currentTarget.style.borderColor = 'transparent';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap xl:shrink-0">
-                <button type="button" className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-md" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}>
-                  <Building2 size={14}/>
-                  <span className="hidden sm:inline">MSI / JCI / Storbit</span>
-                  <span className="sm:hidden">Entity</span>
-                  <ChevronsUpDown size={13} style={{ color: PASTEL.inkMute }}/>
+
+              {/* ── RIGHT: actions ── */}
+              <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap lg:shrink-0">
+
+                {/* Entity selector */}
+                <button type="button"
+                  className="nexus-cmd-btn inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', color: PASTEL.inkSoft, height: '36px' }}>
+                  <Building2 size={13} style={{ color: PASTEL.inkMute }}/>
+                  <span className="hidden xl:inline">MSI / JCI / Storbit</span>
+                  <span className="xl:hidden">Entity</span>
+                  <ChevronsUpDown size={11} style={{ color: PASTEL.inkMute }}/>
                 </button>
-                <button type="button" onClick={() => setActiveMenu('approvals')} className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-md" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}>
-                  <ClipboardCheck size={14}/>
-                  <span className="hidden sm:inline">Pending Approval</span>
-                  <span className="sm:hidden">Approvals</span>
+
+                {/* Pending Approval */}
+                <button type="button" onClick={() => setActiveMenu('approvals')}
+                  className="nexus-cmd-btn inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', color: PASTEL.inkSoft, height: '36px' }}>
+                  <ClipboardCheck size={13} style={{ color: PASTEL.inkMute }}/>
+                  <span className="hidden xl:inline">Pending Approval</span>
+                  <span className="xl:hidden">Approvals</span>
                 </button>
-                <button type="button" className="nexus-command-button inline-flex h-9 w-9 items-center justify-center rounded-2xl border transition-all hover:-translate-y-0.5 hover:shadow-md" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)' }} title="Notifications">
-                  <Bell size={15} style={{ color: PASTEL.inkSoft }}/>
+
+                {/* Notifications */}
+                <button type="button" title="Notifications"
+                  className="nexus-cmd-btn inline-flex items-center justify-center rounded-[10px] border shrink-0"
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', width: '36px', height: '36px' }}>
+                  <Bell size={14} style={{ color: PASTEL.inkSoft }}/>
                 </button>
-                <div className="nexus-command-button inline-flex items-center gap-2.5 rounded-2xl border px-3 py-1.5 cursor-default" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)' }}>
-                  <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0" style={{ background: PASTEL.lineSoft }}>
-                    <User size={13} style={{ color: PASTEL.inkSoft }}/>
-                  </div>
-                  <div className="min-w-0 hidden sm:block">
-                    <div className="text-xs font-semibold truncate max-w-[130px]">{profile?.full_name || 'User'}</div>
-                    <div className="text-[10px] uppercase tracking-wider truncate max-w-[130px]" style={{ color: PASTEL.inkMute }}>{currentRoleLabel}</div>
-                  </div>
+
+                {/* Profile dropdown trigger */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setProfileDropdownOpen(o => !o)}
+                    className="nexus-cmd-btn inline-flex items-center gap-2 rounded-[10px] border px-2.5 max-w-[190px]"
+                    style={{
+                      background: profileDropdownOpen ? PASTEL.line : PASTEL.lineSoft,
+                      borderColor: profileDropdownOpen ? 'rgba(15,42,35,0.2)' : '#E8DED0',
+                      boxShadow: profileDropdownOpen ? '0 0 0 3px rgba(15,42,35,0.06)' : undefined,
+                      height: '36px',
+                    }}
+                  >
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-bold"
+                      style={{ background: 'linear-gradient(135deg, #0F2A23, #1A4A3E)', color: '#C8EFD9' }}>
+                      {(profile?.full_name || 'U')[0].toUpperCase()}
+                    </div>
+                    <div className="min-w-0 hidden sm:block text-left overflow-hidden">
+                      <div className="text-[11px] font-semibold truncate" style={{ color: PASTEL.ink }}>
+                        {profile?.full_name || 'User'}
+                      </div>
+                      <div className="text-[9px] uppercase tracking-wider truncate" style={{ color: PASTEL.inkMute }}>
+                        {currentRoleLabel}
+                      </div>
+                    </div>
+                    <ChevronRight size={12} className="shrink-0 hidden sm:block ml-auto"
+                      style={{ color: PASTEL.inkMute, transform: profileDropdownOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s ease' }}/>
+                  </button>
+
+                  {/* Dropdown */}
+                  {profileDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setProfileDropdownOpen(false)}/>
+                      <div
+                        className="absolute right-0 top-[calc(100%+6px)] z-50 w-56 rounded-2xl border animate-dropdown"
+                        style={{
+                          background: 'white',
+                          borderColor: PASTEL.line,
+                          boxShadow: '0 24px 64px rgba(15,42,35,0.13), 0 4px 14px rgba(15,42,35,0.07)',
+                        }}
+                      >
+                        <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: PASTEL.line }}>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold"
+                              style={{ background: 'linear-gradient(135deg, #0F2A23, #1A4A3E)', color: '#C8EFD9' }}>
+                              {(profile?.full_name || 'U')[0].toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold truncate" style={{ color: PASTEL.ink }}>
+                                {profile?.full_name || 'User'}
+                              </div>
+                              <div className="text-[10px] uppercase tracking-wider" style={{ color: PASTEL.inkMute }}>
+                                {currentRoleLabel}
+                              </div>
+                              <div className="text-[10px]" style={{ color: PASTEL.inkMute }}>MSI Group</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="p-1.5">
+                          {[
+                            { label: 'My Profile',       icon: User,     action: () => setProfileDropdownOpen(false) },
+                            { label: 'Account Settings', icon: Settings, action: () => setProfileDropdownOpen(false) },
+                            { label: 'Admin Settings',   icon: Shield,   action: () => { setActiveMenu('adminSettings'); setProfileDropdownOpen(false); } },
+                          ].map(({ label, icon: Icon, action }) => (
+                            <button key={label} type="button" onClick={action}
+                              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-colors"
+                              style={{ color: PASTEL.ink }}
+                              onMouseEnter={e => e.currentTarget.style.background = PASTEL.lineSoft}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                              <Icon size={14} style={{ color: PASTEL.inkSoft }}/>
+                              {label}
+                            </button>
+                          ))}
+                          <div className="my-1.5 border-t" style={{ borderColor: PASTEL.line }}/>
+                          <button type="button"
+                            onClick={() => { setProfileDropdownOpen(false); signOut(); }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-colors"
+                            style={{ color: '#B83A2E' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#FFF1EE'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            <LogOut size={14} style={{ color: '#B83A2E' }}/>
+                            Logout
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
-          </div>
+          </header>
+
+          <div className="nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7">
 
           {/* Page section header with month filter */}
           {(activeMenu === 'dashboard' || activeMenu === 'manifest') && (
