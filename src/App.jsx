@@ -7,6 +7,7 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut,
   Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
+  Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { useCustomers } from './hooks/useCustomers';
@@ -232,50 +233,160 @@ const can = (role, action) => {
 };
 
 const PLANNED_MODULES = {
-  operations: {
-    title: 'Operations',
-    description: 'Unified job control for freight forwarding, customs clearance, and general trading execution across MSI Group.',
-    capabilities: ['Job order workspace', 'Shipment milestone control', 'Entity-aware operation queues', 'Document handoff tracking'],
+  // ── Commercial & CRM ──────────────────────────────────────────────────────
+  crm: {
+    title: 'CRM & Customer Inquiry',
+    description: 'End-to-end customer relationship and inquiry pipeline for MSI, JCI, and Storbit. Capture, qualify, and convert prospects across all business entities.',
+    capabilities: ['Customer inquiry intake', 'Inquiry-to-quotation pipeline', 'Customer activity timeline', 'Multi-entity CRM scope'],
   },
-  commercial: {
-    title: 'Commercial',
-    description: 'CRM, inquiry, quotation, and sales order flow before work becomes an executable operation.',
-    capabilities: ['Customer inquiry pipeline', 'Quotation builder', 'Sales order conversion', 'Customer activity timeline'],
+  quotation: {
+    title: 'Quotation Management',
+    description: 'Build, version, and approve formal quotations with line-item detail, margin visibility, and customer delivery. Linked to inquiry and convertible to Sales Order.',
+    capabilities: ['Quotation builder with line items', 'Version and revision control', 'Approval flow per entity', 'Convert to Sales Order'],
   },
-  financeErp: {
-    title: 'Finance',
-    description: 'ERP-grade finance control for billing, AR, AP, collection, cash/bank, and accounting handoff.',
-    capabilities: ['Invoice command board', 'AR and collection control', 'AP vendor invoice flow', 'Finance approval impact'],
+  // ── Operations ────────────────────────────────────────────────────────────
+  job: {
+    title: 'Job / Operation Management',
+    description: 'Unified job control center for all operational entities. Track job status, milestones, document checklist, and team assignment across MSI, JCI, and Storbit operations.',
+    capabilities: ['Job card creation from SP', 'Milestone and status tracking', 'Entity-aware operation queues', 'Document checklist per job'],
   },
-  procurement: {
-    title: 'Procurement',
-    description: 'Purchase request, vendor sourcing, PO control, and procurement approvals for group operations.',
-    capabilities: ['Purchase request intake', 'Vendor comparison', 'Purchase order workflow', 'Procurement approval queue'],
+  freight: {
+    title: 'Freight Forwarding',
+    description: 'End-to-end forwarding shipment execution workspace for MSI. Manage booking, BL, cargo tracking, port schedule, and customer shipment notifications in one place.',
+    capabilities: ['Booking and BL management', 'Port and carrier schedule', 'Shipment milestone tracking', 'Customer notification automation'],
   },
-  inventoryAsset: {
-    title: 'Inventory & Asset',
-    description: 'Warehouse stock visibility, asset registry, custody history, and movement tracking.',
-    capabilities: ['Stock movement ledger', 'Asset assignment', 'Warehouse location map', 'Maintenance status tracking'],
+  ppjk: {
+    title: 'PPJK / Customs Clearance',
+    description: 'Customs clearance operational control for JCI. Handle PIB/PEB document preparation, duty calculation, customs filing status, and clearance milestone tracking.',
+    capabilities: ['PIB / PEB document workspace', 'Duty and levy calculation', 'Customs filing status board', 'Clearance milestone timeline'],
   },
-  approvals: {
-    title: 'Approval Center',
-    description: 'A reusable approval cockpit for documents, exceptions, revisions, and delegated approvals.',
-    capabilities: ['Pending approval inbox', 'Approval history', 'Delegation and backup approvers', 'Revision request flow'],
+  trading: {
+    title: 'General Trading',
+    description: 'Trading order and fulfillment workspace for Storbit / SBI. Manage purchase-to-sale flow, order fulfillment, inventory linkage, and customer delivery from a single view.',
+    capabilities: ['Order intake and confirmation', 'Purchase-to-sale linkage', 'Fulfillment and delivery tracking', 'Inventory drawdown per order'],
   },
+  docHandoff: {
+    title: 'Document Handoff',
+    description: 'Structured document handoff control between operations, finance, and customer-facing teams. Track document status, acknowledge receipt, and flag missing documents.',
+    capabilities: ['Handoff checklist per job', 'Team acknowledgement workflow', 'Missing document alert', 'Digital handoff record'],
+  },
+  // ── Procurement & Vendor ──────────────────────────────────────────────────
+  procRequest: {
+    title: 'Procurement Request',
+    description: 'Internal purchase request intake with department, budget category, and approval routing. Converts to Purchase Order after approval across all MSI Group entities.',
+    capabilities: ['Request form per department', 'Budget category tagging', 'Approval routing by amount', 'Convert approved PR to PO'],
+  },
+  purchaseOrder: {
+    title: 'Purchase Order',
+    description: 'Formal PO issuance, vendor confirmation, and goods receipt tracking. Linked to procurement request and vendor invoice for end-to-end procurement visibility.',
+    capabilities: ['PO creation from approved PR', 'Vendor confirmation workflow', 'Goods receipt recording', 'Link to vendor invoice'],
+  },
+  vendors: {
+    title: 'Vendor Management',
+    description: 'Centralized vendor registry with qualification status, payment terms, contact information, and performance history across procurement and AP workflows.',
+    capabilities: ['Vendor registration and profile', 'Qualification and rating', 'Payment terms per vendor', 'Procurement performance history'],
+  },
+  // ── Inventory & Asset ─────────────────────────────────────────────────────
+  inventory: {
+    title: 'Inventory / Warehouse',
+    description: 'Stock management and warehouse visibility for Storbit / SBI trading operations. Track stock levels, movements, location mapping, and reorder triggers.',
+    capabilities: ['Stock balance and location', 'Inbound and outbound movements', 'Reorder point alerts', 'Warehouse location mapping'],
+  },
+  assets: {
+    title: 'Asset Management',
+    description: 'Group-wide fixed asset registry with purchase tracking, depreciation, custody assignment, and disposal workflow across all MSI Group entities and locations.',
+    capabilities: ['Asset register per entity', 'Depreciation schedule', 'Custody and assignment history', 'Disposal approval workflow'],
+  },
+  // ── Finance & Accounting ──────────────────────────────────────────────────
+  jobCosting: {
+    title: 'Job Costing',
+    description: 'Cost and revenue ledger per job, shipment, or trading order. Compare budgeted vs actual cost, track profitability per entity, and feed accounting entries automatically.',
+    capabilities: ['Cost input per job', 'Revenue vs cost comparison', 'Profitability per entity', 'Accounting entry generation'],
+  },
+  billing: {
+    title: 'Billing / Invoice',
+    description: 'Customer invoice generation from approved jobs or sales orders. Manage invoice status, payment tracking, and customer acknowledgement across all entities.',
+    capabilities: ['Invoice from job or SP', 'Invoice approval flow', 'Payment status tracking', 'Customer acknowledgement'],
+  },
+  ap: {
+    title: 'AP / Vendor Invoice',
+    description: 'Vendor invoice processing, PO matching, and payment approval workflow. Tracks payables aging, payment schedule, and vendor remittance across MSI Group.',
+    capabilities: ['Vendor invoice intake', 'PO and GR matching', 'Payment approval workflow', 'Payables aging report'],
+  },
+  cashBank: {
+    title: 'Cash / Bank',
+    description: 'Cash and bank transaction register for all MSI Group accounts. Record receipts, payments, reconcile bank statements, and manage petty cash per entity.',
+    capabilities: ['Bank account register', 'Receipt and payment recording', 'Bank statement reconciliation', 'Petty cash management'],
+  },
+  accounting: {
+    title: 'Accounting',
+    description: 'General ledger, journal entries, trial balance, and financial statement preparation for MSI Group. Linked to AR, AP, payroll, and asset depreciation modules.',
+    capabilities: ['Journal entry workspace', 'General ledger view', 'Trial balance report', 'Period-end closing workflow'],
+  },
+  // ── Service Management ────────────────────────────────────────────────────
   hrga: {
-    title: 'HRGA Service',
-    description: 'Internal service requests for HR, GA, facilities, and operational support needs.',
-    capabilities: ['Request intake', 'SLA status tracking', 'Assignment queue', 'Employee service history'],
+    title: 'HRGA Request',
+    description: 'Internal service requests for HR, GA, facilities, and operational support. Covers all MSI Group entities with SLA tracking and assignment queues.',
+    capabilities: ['Request intake and classification', 'SLA status tracking', 'Assignment and PIC queue', 'Employee service history'],
   },
   it: {
-    title: 'IT Workspace',
-    description: 'IT service management for support tickets, assets, access requests, and incident follow-up.',
-    capabilities: ['Ticket queue', 'Access request workflow', 'Device inventory linkage', 'Incident timeline'],
+    title: 'IT Service Management',
+    description: 'IT service management for support tickets, access requests, device inventory, and incident follow-up across MSI Group offices and systems.',
+    capabilities: ['Ticket queue and escalation', 'Access request workflow', 'Device inventory linkage', 'Incident timeline'],
   },
+  // ── Workflow & Document ───────────────────────────────────────────────────
+  approvals: {
+    title: 'Approval Center',
+    description: 'Reusable approval cockpit for all documents, exceptions, revisions, and delegated approvals across MSI Group. Inbox-style interface with full history.',
+    capabilities: ['Pending approval inbox', 'Approval and revision history', 'Delegation and backup approvers', 'Revision request flow'],
+  },
+  docMgmt: {
+    title: 'Document Management',
+    description: 'Centralized document storage, version control, and access management for all operational, legal, and finance documents across MSI Group entities.',
+    capabilities: ['Document repository', 'Version and revision control', 'Access permission per document', 'Linked to jobs and transactions'],
+  },
+  // ── Portal & Integration ──────────────────────────────────────────────────
+  apiCenter: {
+    title: 'API & Integration Center',
+    description: 'Internal and external API management for Nexus by MSI. Configure integrations, manage API keys, monitor usage, and review webhook delivery logs.',
+    capabilities: ['API key management', 'Webhook configuration', 'Integration health monitor', 'Usage and rate limit dashboard'],
+  },
+  publicTracking: {
+    title: 'Public Tracking API',
+    description: 'Secure public shipment tracking endpoint for customers and partners. Returns masked data via token-based access with no internal data exposure.',
+    capabilities: ['Token-based tracking access', 'Masked public shipment view', 'Rate limiting per token', 'Tracking request audit log'],
+  },
+  customerPortal: {
+    title: 'Customer Portal',
+    description: 'Self-service web portal for customers to track shipments, view invoice status, download documents, and submit inquiries without staff involvement.',
+    capabilities: ['Shipment status tracking', 'Invoice and payment view', 'Document download center', 'Inquiry submission'],
+  },
+  vendorPortal: {
+    title: 'Vendor Portal',
+    description: 'Self-service portal for vendors to submit invoices, view PO status, confirm deliveries, and manage their profile and payment terms directly.',
+    capabilities: ['Invoice submission', 'PO and GR confirmation', 'Payment status view', 'Vendor profile management'],
+  },
+  // ── Reporting & Governance ────────────────────────────────────────────────
   reports: {
-    title: 'Reports',
-    description: 'Consolidated reporting workspace for operations, finance, master data, and management review.',
+    title: 'Reporting & Dashboard',
+    description: 'Consolidated reporting workspace for operations, finance, master data, and management review across all MSI Group entities with role-scoped access.',
     capabilities: ['Cross-entity dashboards', 'Scheduled report packs', 'Export approval control', 'KPI drilldowns'],
+  },
+  performance: {
+    title: 'Performance & Cache Layer',
+    description: 'Internal platform performance monitoring for Nexus by MSI. Review query performance, cache hit rates, background job health, and API response benchmarks.',
+    capabilities: ['Query performance dashboard', 'Cache hit rate monitoring', 'Background job status', 'API response benchmarks'],
+  },
+  audit: {
+    title: 'Audit & Compliance',
+    description: 'Tamper-proof audit trail for all critical actions across Nexus by MSI. Review user activity, data changes, approval history, and export logs per retention policy.',
+    capabilities: ['User activity audit trail', 'Data change history', 'Export and download logs', 'Compliance review board'],
+  },
+  // ── Foundation ────────────────────────────────────────────────────────────
+  adminSettings: {
+    title: 'Admin Settings',
+    description: 'System-wide configuration for Nexus by MSI including notifications, security policies, integration settings, and platform preferences per entity.',
+    capabilities: ['Notification configuration', 'Security policy settings', 'Integration setup', 'Platform preferences per entity'],
   },
 };
 
@@ -284,44 +395,180 @@ const ERP_MENU_GROUPS = [
     label: 'Core',
     items: [
       { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
-      { id: 'operations', label: 'Operations', icon: Truck },
-      { id: 'commercial', label: 'Commercial', icon: BriefcaseBusiness },
-      { id: 'financeErp', label: 'Finance', icon: Landmark },
     ],
   },
   {
-    label: 'Business Platform',
+    label: 'Commercial & CRM',
     items: [
-      { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
-      { id: 'inventoryAsset', label: 'Inventory & Asset', icon: Boxes },
-      { id: 'approvals', label: 'Approval Center', icon: ClipboardCheck },
-      { id: 'hrga', label: 'HRGA Service', icon: UsersRound },
-      { id: 'it', label: 'IT Workspace', icon: Laptop },
-      { id: 'reports', label: 'Reports', icon: BarChart3 },
+      { id: 'crm',        label: 'CRM & Inquiry',        icon: Users },
+      { id: 'quotation',  label: 'Quotation',             icon: FileText },
+      { id: 'manifest',   label: 'Sales Order / SP',      icon: Receipt },
+      { id: 'customers',  label: 'Customer Management',   icon: Building2, role: ['super'] },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { id: 'job',        label: 'Job Management',        icon: BriefcaseBusiness },
+      { id: 'freight',    label: 'Freight Forwarding',    icon: Ship },
+      { id: 'ppjk',       label: 'PPJK / Customs',        icon: ClipboardCheck },
+      { id: 'trading',    label: 'General Trading',       icon: ShoppingCart },
+      { id: 'shipment',   label: 'Shipment Management',   icon: Truck,  role: ['super', 'logistic'] },
+      { id: 'input',      label: 'Input SP',              icon: Plus,   role: ['super', 'logistic'] },
+    ],
+  },
+  {
+    label: 'Procurement & Vendor',
+    items: [
+      { id: 'procRequest',   label: 'Procurement Request', icon: ClipboardCheck },
+      { id: 'purchaseOrder', label: 'Purchase Order',      icon: ShoppingCart },
+      { id: 'vendors',       label: 'Vendor Management',   icon: Users },
+    ],
+  },
+  {
+    label: 'Inventory & Asset',
+    items: [
+      { id: 'inventory', label: 'Inventory / Warehouse', icon: Boxes },
+      { id: 'assets',    label: 'Asset Management',      icon: Package },
+    ],
+  },
+  {
+    label: 'Finance & Accounting',
+    items: [
+      { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt },
+      { id: 'billing',     label: 'Billing / Invoice',   icon: FileText },
+      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   role: ['super', 'finance'] },
+      { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet },
+      { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark },
+      { id: 'accounting',  label: 'Accounting',          icon: BarChart3 },
+      { id: 'finance',     label: 'Finance Docs',        icon: FileText, role: ['super', 'finance'] },
+      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    role: ['super', 'finance', 'management'] },
+    ],
+  },
+  {
+    label: 'Service Management',
+    items: [
+      { id: 'hrga', label: 'HRGA Request',      icon: UsersRound },
+      { id: 'it',   label: 'IT Service Mgmt',   icon: Laptop },
+    ],
+  },
+  {
+    label: 'Workflow & Document',
+    items: [
+      { id: 'approvals', label: 'Approval Center',      icon: ClipboardCheck },
+      { id: 'docMgmt',   label: 'Document Management',  icon: FolderOpen },
+    ],
+  },
+  {
+    label: 'Portal & Integration',
+    items: [
+      { id: 'apiCenter',      label: 'API & Integration',  icon: Link2 },
+      { id: 'publicTracking', label: 'Public Tracking',    icon: Globe },
+      { id: 'customerPortal', label: 'Customer Portal',    icon: Globe },
+      { id: 'vendorPortal',   label: 'Vendor Portal',      icon: Users },
+    ],
+  },
+  {
+    label: 'Reporting & Governance',
+    items: [
+      { id: 'reports',     label: 'Reporting & Dashboard', icon: BarChart3 },
+      { id: 'performance', label: 'Performance & Cache',   icon: Zap },
+      { id: 'audit',       label: 'Audit & Compliance',    icon: ScrollText },
     ],
   },
   {
     label: 'Foundation',
     items: [
-      { id: 'admin', label: 'Master Data', icon: Database, role: ['super'] },
-      { id: 'users', label: 'Admin Settings', icon: Settings, role: ['super'] },
-    ],
-  },
-  {
-    label: 'Legacy Workspaces',
-    items: [
-      { id: 'manifest', label: 'SP Manifest', icon: FileText },
-      { id: 'input', label: 'Input SP', icon: Plus, role: ['super','logistic'] },
-      { id: 'shipment', label: 'Shipment', icon: Truck, role: ['super','logistic'] },
-      { id: 'finance', label: 'Finance Docs', icon: Wallet, role: ['super','finance'] },
-      { id: 'outstanding', label: 'Outstanding', icon: Clock, role: ['super','finance','management'] },
-      { id: 'ar', label: 'AR Tracker', icon: Wallet, role: ['super','finance'] },
-      { id: 'customers', label: 'Customers', icon: Building2, role: ['super'] },
+      { id: 'users',         label: 'Org & Access Control', icon: Shield,   role: ['super'] },
+      { id: 'admin',         label: 'Master Data',          icon: Database, role: ['super'] },
+      { id: 'adminSettings', label: 'Admin Settings',       icon: Settings, role: ['super'] },
     ],
   },
 ];
 
 const canSeeMenuItem = (item, role) => !item.role || item.role.includes(role);
+
+
+// ============================
+// Sidebar Helper Components
+// ============================
+function SidebarItem({ item, activeMenu, setActiveMenu }) {
+  const Icon = item.icon;
+  const active = activeMenu === item.id;
+  return (
+    <button
+      onClick={() => setActiveMenu(item.id)}
+      className="w-full flex items-center gap-3 px-3.5 py-[10px] rounded-2xl text-sm font-medium mb-0.5 transition-all"
+      style={{
+        background: active ? 'rgba(255,255,255,0.13)' : 'transparent',
+        color: active ? '#FFFDF7' : 'rgba(248,245,237,0.76)',
+        fontWeight: active ? 600 : 400,
+        boxShadow: active ? 'inset 2px 0 0 rgba(255,212,184,0.8), 0 8px 20px rgba(0,0,0,0.12)' : 'none',
+        border: active ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
+      }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+    >
+      <Icon size={17} strokeWidth={active ? 2.2 : 1.8} style={{ color: active ? '#C8EFD9' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
+      <span className="flex-1 text-left leading-snug">{item.label}</span>
+    </button>
+  );
+}
+
+function SidebarGroup({ group, activeMenu, setActiveMenu, isExpanded, onToggle }) {
+  const hasActiveChild = group.items.some(item => item.id === activeMenu);
+  const ParentIcon = group.items[0]?.icon;
+  return (
+    <div className="mb-1.5">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl mb-0.5 transition-all"
+        style={{
+          background: hasActiveChild ? 'rgba(255,255,255,0.08)' : 'transparent',
+          border: '1px solid transparent',
+        }}
+        onMouseEnter={(e) => { if (!hasActiveChild) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+        onMouseLeave={(e) => { if (!hasActiveChild) e.currentTarget.style.background = 'transparent'; }}
+      >
+        {ParentIcon && (
+          <ParentIcon
+            size={14}
+            strokeWidth={1.8}
+            style={{ color: hasActiveChild ? '#C8EFD9' : 'rgba(248,245,237,0.40)', flexShrink: 0 }}
+          />
+        )}
+        <span
+          className="flex-1 text-left text-[11px] uppercase tracking-[0.08em] font-semibold"
+          style={{ color: hasActiveChild ? 'rgba(200,239,217,0.90)' : 'rgba(248,245,237,0.52)' }}
+        >
+          {group.label}
+        </span>
+        <ChevronRight
+          size={13}
+          strokeWidth={2}
+          style={{
+            color: 'rgba(248,245,237,0.35)',
+            flexShrink: 0,
+            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s ease',
+          }}
+        />
+      </button>
+      {isExpanded && (
+        <div className="pl-2 pb-1.5">
+          {group.items.map(item => (
+            <SidebarItem
+              key={item.id}
+              item={item}
+              activeMenu={activeMenu}
+              setActiveMenu={setActiveMenu}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 
 // ============================
@@ -339,6 +586,24 @@ export default function StorbitManifest() {
   const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
   const loading = false;
   const [activeMenu, setActiveMenu] = useState('dashboard');
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    const init = new Set();
+    for (const group of ERP_MENU_GROUPS) {
+      if (group.items.some(i => i.id === 'dashboard')) {
+        init.add(group.label);
+        break;
+      }
+    }
+    return init;
+  });
+  const toggleGroup = (label) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
   const { role: authRole, profile, signOut } = useAuth();
   const role = authRole || 'management';
   const [editingRow, setEditingRow] = useState(null);
@@ -671,21 +936,62 @@ export default function StorbitManifest() {
         .animate-slide-in { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
         .animate-fade-in { animation: fadeIn 0.2s ease-out; }
         .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .nexus-main-surface .rounded-3xl {
+          box-shadow: 0 14px 34px rgba(15, 42, 35, 0.045);
+        }
+        .nexus-main-surface table {
+          min-width: 100%;
+        }
+        .nexus-command-button {
+          box-shadow: 0 10px 24px rgba(15, 42, 35, 0.055);
+        }
+        .nexus-shell-bg {
+          background:
+            radial-gradient(circle at top left, rgba(200, 239, 217, 0.26), transparent 34rem),
+            linear-gradient(135deg, #FBF7EF 0%, #F6F1E8 42%, #F8FAF7 100%);
+        }
       `}</style>
 
       {/* LAYOUT: Sidebar + Content */}
       <div className="flex min-h-screen">
         {/* SIDEBAR */}
-        <aside className="hidden lg:flex flex-col w-72 sticky top-0 h-screen border-r" style={{ background: 'white', borderColor: PASTEL.line }}>
+        <aside
+          className="hidden lg:flex flex-col w-[300px] flex-shrink-0 sticky top-0 h-screen border-r shadow-2xl shadow-emerald-950/10"
+          style={{
+            background: 'linear-gradient(165deg, #0F2A23 0%, #173D34 48%, #F6EFE3 190%)',
+            borderColor: 'rgba(255,255,255,0.12)',
+            color: '#F8F5ED',
+          }}
+        >
           {/* Brand */}
-          <div className="px-5 py-5 border-b" style={{ borderColor: PASTEL.line }}>
+          <div className="px-5 py-5 border-b" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: PASTEL.ink }}>
-                <Package size={19} style={{ color: 'white' }} strokeWidth={2}/>
+              <div
+                className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 border"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(255,212,184,0.96), rgba(200,239,217,0.86))',
+                  borderColor: 'rgba(255,255,255,0.32)',
+                  boxShadow: '0 16px 34px rgba(0,0,0,0.22)',
+                }}
+              >
+                <Package size={19} style={{ color: '#12352D' }} strokeWidth={2.2}/>
               </div>
               <div className="min-w-0">
-                <h1 className="font-display text-xl font-semibold tracking-tight">Nexus by MSI</h1>
-                <p className="text-[9px] tracking-[0.16em] uppercase font-semibold truncate" style={{ color: PASTEL.inkMute }}>Unified Business Core Platform</p>
+                <h1 className="font-display text-xl font-semibold tracking-tight" style={{ color: '#FFFDF7' }}>Nexus by MSI</h1>
+                <p className="text-[9px] tracking-[0.16em] uppercase font-semibold truncate" style={{ color: 'rgba(248,245,237,0.62)' }}>Unified Business Core Platform</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl border px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.07)', borderColor: 'rgba(255,255,255,0.11)' }}>
+              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] font-semibold" style={{ color: 'rgba(248,245,237,0.58)' }}>
+                <span>Group Scope</span>
+                <span style={{ color: '#C8EFD9' }}>Live</span>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#FFFDF7' }}>
+                <span>MSI</span>
+                <span style={{ color: 'rgba(248,245,237,0.34)' }}>/</span>
+                <span>JCI</span>
+                <span style={{ color: 'rgba(248,245,237,0.34)' }}>/</span>
+                <span>Storbit</span>
               </div>
             </div>
           </div>
@@ -693,83 +999,66 @@ export default function StorbitManifest() {
           {/* Nav */}
           <nav className="flex-1 px-3 py-4 overflow-y-auto">
             {visibleMenuGroups.map(group => (
-              <div key={group.label} className="mb-5">
-                <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: PASTEL.inkMute }}>{group.label}</div>
-                {group.items.map(m => {
-                  const Icon = m.icon;
-                  const active = activeMenu === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => setActiveMenu(m.id)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium mb-0.5 transition-all"
-                      style={{
-                        background: active ? '#F8FAFC' : 'transparent',
-                        color: active ? PASTEL.ink : PASTEL.inkSoft,
-                        fontWeight: active ? 700 : 500,
-                        boxShadow: active ? `inset 3px 0 0 ${PASTEL.ink}` : 'none',
-                      }}
-                      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = '#F8FAFC'; }}
-                      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      <Icon size={16} strokeWidth={active ? 2.4 : 2}/>
-                      <span className="flex-1 text-left">{m.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <SidebarGroup
+                key={group.label}
+                group={group}
+                activeMenu={activeMenu}
+                setActiveMenu={setActiveMenu}
+                isExpanded={expandedGroups.has(group.label)}
+                onToggle={() => toggleGroup(group.label)}
+              />
             ))}
 
             {/* Quick stats in sidebar */}
-            <div className="mt-2 pt-4 border-t" style={{ borderColor: PASTEL.line }}>
-              <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: PASTEL.inkMute }}>Quick Stats</div>
-              <div className="px-3 py-3 rounded-2xl space-y-2.5 border" style={{ background: '#F8FAFC', borderColor: PASTEL.line }}>
+            <div className="mt-2 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.11)' }}>
+              <div className="text-[9px] uppercase tracking-[0.2em] font-semibold px-3 mb-2" style={{ color: 'rgba(248,245,237,0.46)' }}>Quick Stats</div>
+              <div className="px-3 py-3 rounded-2xl space-y-2.5 border" style={{ background: 'rgba(255,255,255,0.075)', borderColor: 'rgba(255,255,255,0.11)' }}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Total SP</span>
-                  <span className="font-numeric text-sm font-bold">{groupedSP.length}</span>
+                  <span className="text-xs" style={{ color: 'rgba(248,245,237,0.62)' }}>Total SP</span>
+                  <span className="font-numeric text-sm font-bold" style={{ color: '#FFFDF7' }}>{groupedSP.length}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Items</span>
-                  <span className="font-numeric text-sm font-bold">{rows.length}</span>
+                  <span className="text-xs" style={{ color: 'rgba(248,245,237,0.62)' }}>Items</span>
+                  <span className="font-numeric text-sm font-bold" style={{ color: '#FFFDF7' }}>{rows.length}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Open</span>
-                  <span className="font-numeric text-sm font-bold" style={{ color: PASTEL.skyDeep }}>{groupedSP.filter(g=>g.status==='Open').length}</span>
+                  <span className="text-xs" style={{ color: 'rgba(248,245,237,0.62)' }}>Open</span>
+                  <span className="font-numeric text-sm font-bold" style={{ color: '#C8EFD9' }}>{groupedSP.filter(g=>g.status==='Open').length}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Overdue</span>
-                  <span className="font-numeric text-sm font-bold" style={{ color: groupedSP.filter(g=>g.isOverdue).length > 0 ? PASTEL.roseDeep : PASTEL.inkMute }}>{groupedSP.filter(g=>g.isOverdue).length}</span>
+                  <span className="text-xs" style={{ color: 'rgba(248,245,237,0.62)' }}>Overdue</span>
+                  <span className="font-numeric text-sm font-bold" style={{ color: groupedSP.filter(g=>g.isOverdue).length > 0 ? '#FFD4B8' : 'rgba(248,245,237,0.45)' }}>{groupedSP.filter(g=>g.isOverdue).length}</span>
                 </div>
               </div>
             </div>
           </nav>
 
           {/* Footer: User + logout */}
-          <div className="px-4 py-4 border-t" style={{ borderColor: PASTEL.line }}>
-            <div className="text-[9px] uppercase tracking-[0.2em] font-semibold mb-2" style={{ color: PASTEL.inkMute }}>Logged in as</div>
-            <div className="rounded-2xl p-3 border" style={{ background: '#F8FAFC', borderColor: PASTEL.line }}>
+          <div className="px-4 py-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.11)' }}>
+            <div className="text-[9px] uppercase tracking-[0.2em] font-semibold mb-2" style={{ color: 'rgba(248,245,237,0.46)' }}>Logged in as</div>
+            <div className="rounded-2xl p-3 border" style={{ background: 'rgba(255,255,255,0.09)', borderColor: 'rgba(255,255,255,0.12)' }}>
               <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
-                  <User size={14} style={{ color: PASTEL.inkSoft }}/>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.14)' }}>
+                  <User size={14} style={{ color: '#C8EFD9' }}/>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold truncate" style={{ color: PASTEL.ink }}>
+                  <div className="text-xs font-semibold truncate" style={{ color: '#FFFDF7' }}>
                     {profile?.full_name || 'User'}
                   </div>
-                  <div className="text-[10px] uppercase tracking-wider" style={{ color: PASTEL.inkMute }}>
+                  <div className="text-[10px] uppercase tracking-wider" style={{ color: 'rgba(248,245,237,0.54)' }}>
                     {currentRoleLabel}
                   </div>
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[10px]" style={{ color: PASTEL.inkSoft }}>
-                  <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: PASTEL.mintDeep }}/>
+                <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'rgba(248,245,237,0.62)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#C8EFD9' }}/>
                   Active
                 </div>
                 <button
                   onClick={signOut}
                   className="text-[10px] font-semibold flex items-center gap-1 hover:opacity-70 transition-opacity"
-                  style={{ color: PASTEL.roseDeep }}
+                  style={{ color: '#FFD4B8' }}
                   title="Logout"
                 >
                   <LogOut size={11}/>
@@ -781,7 +1070,7 @@ export default function StorbitManifest() {
         </aside>
 
         {/* MOBILE TOPBAR */}
-        <header className="lg:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: PASTEL.line, background: 'rgba(250, 246, 240, 0.94)' }}>
+        <header className="lg:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: 'rgba(15,42,35,0.12)', background: 'rgba(250, 246, 240, 0.94)' }}>
           <div className="px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: PASTEL.ink }}>
@@ -824,10 +1113,18 @@ export default function StorbitManifest() {
         </header>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6 lg:py-8 max-w-[1480px]">
-          <div className="mb-6 rounded-3xl border p-4 lg:p-5" style={{ background: 'rgba(255,255,255,0.82)', borderColor: PASTEL.line }}>
-            <div className="flex flex-col xl:flex-row xl:items-center gap-4">
-              <div className="min-w-0 xl:w-72">
+        <main className="nexus-shell-bg flex-1 min-w-0 w-full">
+          <div className="nexus-main-surface w-full px-4 sm:px-6 xl:px-8 2xl:px-10 py-6 lg:py-8">
+          <div
+            className="mb-5 lg:mb-6 rounded-[28px] border p-4 lg:p-5"
+            style={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.92), rgba(248,250,247,0.84))',
+              borderColor: 'rgba(15,42,35,0.11)',
+              boxShadow: '0 18px 45px rgba(15,42,35,0.07)',
+            }}
+          >
+            <div className="flex flex-col 2xl:flex-row 2xl:items-center gap-4">
+              <div className="min-w-0 2xl:w-72">
                 <div className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1" style={{ color: PASTEL.inkMute }}>Current Workspace</div>
                 <h2 className="font-display text-2xl font-semibold tracking-tight truncate">{activeMenuItem?.label || 'Command Center'}</h2>
               </div>
@@ -836,24 +1133,24 @@ export default function StorbitManifest() {
                 <input
                   type="text"
                   placeholder="Search SP, shipment, invoice, customer, asset, ticket..."
-                  className="w-full rounded-2xl pl-10 pr-4 py-3 text-sm outline-none border"
-                  style={{ background: '#F8FAFC', borderColor: PASTEL.line, color: PASTEL.ink }}
+                  className="w-full rounded-2xl pl-10 pr-4 py-3 text-sm outline-none border transition-shadow focus:shadow-lg"
+                  style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}
                 />
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <button type="button" className="inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-semibold" style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}>
+                <button type="button" className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-0.5" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}>
                   <Building2 size={14}/>
                   MSI / JCI / Storbit
                   <ChevronsUpDown size={13} style={{ color: PASTEL.inkMute }}/>
                 </button>
-                <button type="button" onClick={() => setActiveMenu('approvals')} className="inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-semibold" style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}>
+                <button type="button" onClick={() => setActiveMenu('approvals')} className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-0.5" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}>
                   <ClipboardCheck size={14}/>
                   Pending Approval
                 </button>
-                <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border" style={{ background: 'white', borderColor: PASTEL.line }} title="Notifications">
+                <button type="button" className="nexus-command-button inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-transform hover:-translate-y-0.5" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)' }} title="Notifications">
                   <Bell size={15} style={{ color: PASTEL.inkSoft }}/>
                 </button>
-                <div className="inline-flex items-center gap-2 rounded-2xl border px-3 py-2" style={{ background: 'white', borderColor: PASTEL.line }}>
+                <div className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3 py-2" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)' }}>
                   <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: PASTEL.lineSoft }}>
                     <User size={13} style={{ color: PASTEL.inkSoft }}/>
                   </div>
@@ -868,7 +1165,7 @@ export default function StorbitManifest() {
 
           {/* Page section header with month filter */}
           {(activeMenu === 'dashboard' || activeMenu === 'manifest') && (
-            <div className="mb-6 flex items-center gap-2 flex-wrap">
+            <div className="mb-7 flex items-center gap-2 flex-wrap rounded-2xl border px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.58)', borderColor: 'rgba(15,42,35,0.08)' }}>
               <Calendar size={14} style={{ color: PASTEL.inkMute }}/>
               <span className="text-xs uppercase tracking-widest font-medium" style={{ color: PASTEL.inkMute }}>Period:</span>
               <button
@@ -997,6 +1294,7 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
+          </div>
         </main>
       </div>
 
@@ -1079,10 +1377,17 @@ export default function StorbitManifest() {
 // ============================
 function KPICard({ label, value, icon: Icon, color, accent }) {
   return (
-    <div className="rounded-3xl p-5 border transition-all hover:shadow-lg" style={{ background: 'white', borderColor: PASTEL.line }}>
+    <div
+      className="rounded-3xl p-5 border transition-all hover:-translate-y-0.5"
+      style={{
+        background: 'linear-gradient(180deg, #FFFFFF 0%, #FBFCFA 100%)',
+        borderColor: 'rgba(15,42,35,0.1)',
+        boxShadow: '0 14px 34px rgba(15,42,35,0.05)',
+      }}
+    >
       <div className="flex items-center justify-between mb-4">
         <div className="text-[10px] uppercase tracking-[0.18em] font-semibold" style={{ color: PASTEL.inkMute }}>{label}</div>
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: color }}>
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center border" style={{ background: color, borderColor: 'rgba(255,255,255,0.65)' }}>
           <Icon size={16} style={{ color: accent }}/>
         </div>
       </div>
@@ -1121,17 +1426,17 @@ function StatusBadge({ status, overdue, large }) {
 function ComingSoonPage({ title, description, capabilities }) {
   return (
     <div className="space-y-5 animate-fade-in">
-      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <div className="p-6 md:p-8 border-b" style={{ borderColor: PASTEL.line, background: '#F8FAFC' }}>
+      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.1)', boxShadow: '0 18px 45px rgba(15,42,35,0.06)' }}>
+        <div className="p-6 md:p-8 border-b" style={{ borderColor: 'rgba(15,42,35,0.08)', background: 'linear-gradient(135deg, rgba(248,250,247,0.98), rgba(250,246,240,0.82))' }}>
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="max-w-3xl">
-              <span className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] mb-4" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
+              <span className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] mb-4" style={{ background: '#E8F6EE', color: '#173D34' }}>
                 Planned
               </span>
               <h2 className="font-display text-3xl font-semibold tracking-tight">{title}</h2>
               <p className="text-sm mt-2 leading-6" style={{ color: PASTEL.inkSoft }}>{description}</p>
             </div>
-            <div className="rounded-2xl border px-4 py-3 min-w-[180px]" style={{ background: 'white', borderColor: PASTEL.line }}>
+            <div className="rounded-2xl border px-4 py-3 min-w-[180px]" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.1)' }}>
               <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1" style={{ color: PASTEL.inkMute }}>Module Status</div>
               <div className="font-numeric text-2xl font-bold">Roadmap</div>
               <div className="text-xs mt-1" style={{ color: PASTEL.inkSoft }}>Awaiting phase approval</div>
@@ -1141,8 +1446,8 @@ function ComingSoonPage({ title, description, capabilities }) {
         <div className="p-6 md:p-8">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             {capabilities.map((capability, index) => (
-              <div key={capability} className="rounded-2xl border p-4" style={{ background: 'white', borderColor: PASTEL.line }}>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-4 font-mono text-xs font-bold" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
+              <div key={capability} className="rounded-2xl border p-4" style={{ background: '#FBFCFA', borderColor: 'rgba(15,42,35,0.08)' }}>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-4 font-mono text-xs font-bold" style={{ background: '#E8F6EE', color: '#173D34' }}>
                   {String(index + 1).padStart(2, '0')}
                 </div>
                 <h3 className="text-sm font-semibold leading-5">{capability}</h3>
