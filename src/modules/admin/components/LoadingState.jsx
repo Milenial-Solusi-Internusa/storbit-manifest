@@ -8,11 +8,11 @@ const PASTEL = {
 
 function SkeletonRow() {
   return (
-    <div className="flex items-center gap-4 px-4 py-3 border-b" style={{ borderColor: PASTEL.line }}>
-      <div className="h-3 w-16 rounded-full animate-pulse" style={{ background: PASTEL.lineSoft }} />
-      <div className="h-3 flex-1 rounded-full animate-pulse" style={{ background: PASTEL.lineSoft }} />
-      <div className="h-3 w-24 rounded-full animate-pulse" style={{ background: PASTEL.lineSoft }} />
-      <div className="h-3 w-12 rounded-full animate-pulse" style={{ background: PASTEL.lineSoft }} />
+    <div className="flex items-center gap-4 px-4 py-3.5 border-b" style={{ borderColor: PASTEL.line }}>
+      <div className="h-3 w-16 rounded-full animate-pulse" style={{ background: PASTEL.line }} />
+      <div className="h-3 flex-1 rounded-full animate-pulse" style={{ background: PASTEL.line }} />
+      <div className="h-3 w-24 rounded-full animate-pulse" style={{ background: PASTEL.line }} />
+      <div className="h-3 w-12 rounded-full animate-pulse" style={{ background: PASTEL.line }} />
     </div>
   );
 }

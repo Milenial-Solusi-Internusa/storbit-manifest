@@ -1,6 +1,8 @@
 // src/modules/admin/components/ErrorState.jsx
 // Shown when a list query fails. Offers a retry callback.
 
+import { AlertTriangle } from 'lucide-react';
+
 const PASTEL = {
   ink: '#2D2A28',
   inkSoft: '#5C5550',
@@ -18,10 +20,10 @@ export default function ErrorState({ message, onRetry }) {
       style={{ background: 'white', borderColor: PASTEL.line }}
     >
       <div
-        className="mx-auto mb-4 w-10 h-10 rounded-2xl flex items-center justify-center font-bold"
-        style={{ background: PASTEL.rose, color: PASTEL.roseDeep }}
+        className="mx-auto mb-4 w-12 h-12 rounded-2xl flex items-center justify-center"
+        style={{ background: PASTEL.rose, border: `1px solid ${PASTEL.roseDeep}33` }}
       >
-        !
+        <AlertTriangle size={20} strokeWidth={2} style={{ color: PASTEL.roseDeep }} />
       </div>
       <p className="text-sm font-medium mb-1" style={{ color: PASTEL.ink }}>
         Failed to load data

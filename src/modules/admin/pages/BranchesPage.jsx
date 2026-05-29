@@ -78,7 +78,7 @@ export default function BranchesPage() {
       />
 
       {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-5">
         <div
           className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm"
           style={{ background: 'white', borderColor: PASTEL.line }}
@@ -111,7 +111,7 @@ export default function BranchesPage() {
       >
         {/* Header */}
         <div
-          className="grid px-4 py-2.5 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
+          className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
           style={{
             gridTemplateColumns: '70px 80px 1fr 120px 80px',
             borderColor: PASTEL.line,
@@ -137,7 +137,7 @@ export default function BranchesPage() {
           data.map((row) => (
             <div
               key={row.id}
-              className="grid px-4 py-3 border-b items-center text-sm transition-colors"
+              className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
               style={{
                 gridTemplateColumns: '70px 80px 1fr 120px 80px',
                 borderColor: PASTEL.line,
