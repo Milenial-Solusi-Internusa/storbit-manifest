@@ -555,7 +555,7 @@ function SidebarGroup({ group, activeMenu, setActiveMenu, isExpanded, onToggle }
         />
       </button>
       {isExpanded && (
-        <div className="pl-2 pb-1.5">
+        <div className="nexus-sidebar-children pl-2 pb-1.5">
           {group.items.map(item => (
             <SidebarItem
               key={item.id}
@@ -945,6 +945,11 @@ export default function StorbitManifest() {
         .nexus-command-button {
           box-shadow: 0 10px 24px rgba(15, 42, 35, 0.055);
         }
+        @keyframes accordionDown {
+          from { opacity: 0; transform: translateY(-5px); }
+          to   { opacity: 1; transform: translateY(0);    }
+        }
+        .nexus-sidebar-children { animation: accordionDown 0.14s ease-out; }
         .nexus-shell-bg {
           background:
             radial-gradient(circle at top left, rgba(200, 239, 217, 0.26), transparent 34rem),
@@ -1035,7 +1040,7 @@ export default function StorbitManifest() {
 
           {/* Footer: User + logout */}
           <div className="px-4 py-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.11)' }}>
-            <div className="text-[9px] uppercase tracking-[0.2em] font-semibold mb-2" style={{ color: 'rgba(248,245,237,0.46)' }}>Logged in as</div>
+            <div className="text-[10px] uppercase tracking-[0.14em] font-semibold mb-2" style={{ color: 'rgba(248,245,237,0.46)' }}>Logged in as</div>
             <div className="rounded-2xl p-3 border" style={{ background: 'rgba(255,255,255,0.09)', borderColor: 'rgba(255,255,255,0.12)' }}>
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.14)' }}>
@@ -1114,7 +1119,7 @@ export default function StorbitManifest() {
 
         {/* MAIN CONTENT */}
         <main className="nexus-shell-bg flex-1 min-w-0 w-full">
-          <div className="nexus-main-surface w-full px-4 sm:px-6 xl:px-8 2xl:px-10 py-6 lg:py-8">
+          <div className="nexus-main-surface w-full px-5 sm:px-7 xl:px-9 py-6 lg:py-8">
           <div
             className="mb-5 lg:mb-6 rounded-[28px] border p-4 lg:p-5"
             style={{
@@ -1123,40 +1128,42 @@ export default function StorbitManifest() {
               boxShadow: '0 18px 45px rgba(15,42,35,0.07)',
             }}
           >
-            <div className="flex flex-col 2xl:flex-row 2xl:items-center gap-4">
-              <div className="min-w-0 2xl:w-72">
-                <div className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1" style={{ color: PASTEL.inkMute }}>Current Workspace</div>
+            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
+              <div className="min-w-0 xl:w-56 xl:shrink-0">
+                <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-0.5" style={{ color: PASTEL.inkMute }}>Current Workspace</div>
                 <h2 className="font-display text-2xl font-semibold tracking-tight truncate">{activeMenuItem?.label || 'Command Center'}</h2>
               </div>
-              <div className="relative flex-1 min-w-[220px]">
+              <div className="relative flex-1 min-w-0">
                 <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: PASTEL.inkMute }}/>
                 <input
                   type="text"
-                  placeholder="Search SP, shipment, invoice, customer, asset, ticket..."
-                  className="w-full rounded-2xl pl-10 pr-4 py-3 text-sm outline-none border transition-shadow focus:shadow-lg"
+                  placeholder="Search across SP, shipments, invoices, customers..."
+                  className="w-full rounded-2xl pl-10 pr-4 py-2.5 text-sm outline-none border transition-shadow focus:shadow-lg"
                   style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}
                 />
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button type="button" className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-0.5" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}>
+              <div className="flex items-center gap-2 flex-wrap xl:shrink-0">
+                <button type="button" className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-md" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}>
                   <Building2 size={14}/>
-                  MSI / JCI / Storbit
+                  <span className="hidden sm:inline">MSI / JCI / Storbit</span>
+                  <span className="sm:hidden">Entity</span>
                   <ChevronsUpDown size={13} style={{ color: PASTEL.inkMute }}/>
                 </button>
-                <button type="button" onClick={() => setActiveMenu('approvals')} className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-0.5" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}>
+                <button type="button" onClick={() => setActiveMenu('approvals')} className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-md" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)', color: PASTEL.ink }}>
                   <ClipboardCheck size={14}/>
-                  Pending Approval
+                  <span className="hidden sm:inline">Pending Approval</span>
+                  <span className="sm:hidden">Approvals</span>
                 </button>
-                <button type="button" className="nexus-command-button inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-transform hover:-translate-y-0.5" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)' }} title="Notifications">
+                <button type="button" className="nexus-command-button inline-flex h-9 w-9 items-center justify-center rounded-2xl border transition-all hover:-translate-y-0.5 hover:shadow-md" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)' }} title="Notifications">
                   <Bell size={15} style={{ color: PASTEL.inkSoft }}/>
                 </button>
-                <div className="nexus-command-button inline-flex items-center gap-2 rounded-2xl border px-3 py-2" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)' }}>
-                  <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: PASTEL.lineSoft }}>
+                <div className="nexus-command-button inline-flex items-center gap-2.5 rounded-2xl border px-3 py-1.5 cursor-default" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.12)' }}>
+                  <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0" style={{ background: PASTEL.lineSoft }}>
                     <User size={13} style={{ color: PASTEL.inkSoft }}/>
                   </div>
                   <div className="min-w-0 hidden sm:block">
-                    <div className="text-xs font-semibold truncate max-w-[140px]">{profile?.full_name || 'User'}</div>
-                    <div className="text-[10px] uppercase tracking-wider truncate max-w-[140px]" style={{ color: PASTEL.inkMute }}>{currentRoleLabel}</div>
+                    <div className="text-xs font-semibold truncate max-w-[130px]">{profile?.full_name || 'User'}</div>
+                    <div className="text-[10px] uppercase tracking-wider truncate max-w-[130px]" style={{ color: PASTEL.inkMute }}>{currentRoleLabel}</div>
                   </div>
                 </div>
               </div>
@@ -1426,33 +1433,81 @@ function StatusBadge({ status, overdue, large }) {
 function ComingSoonPage({ title, description, capabilities }) {
   return (
     <div className="space-y-5 animate-fade-in">
-      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.1)', boxShadow: '0 18px 45px rgba(15,42,35,0.06)' }}>
-        <div className="p-6 md:p-8 border-b" style={{ borderColor: 'rgba(15,42,35,0.08)', background: 'linear-gradient(135deg, rgba(248,250,247,0.98), rgba(250,246,240,0.82))' }}>
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-            <div className="max-w-3xl">
-              <span className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] mb-4" style={{ background: '#E8F6EE', color: '#173D34' }}>
-                Planned
-              </span>
-              <h2 className="font-display text-3xl font-semibold tracking-tight">{title}</h2>
-              <p className="text-sm mt-2 leading-6" style={{ color: PASTEL.inkSoft }}>{description}</p>
+      <div
+        className="rounded-3xl border overflow-hidden"
+        style={{ background: 'white', borderColor: 'rgba(15,42,35,0.09)', boxShadow: '0 20px 52px rgba(15,42,35,0.07)' }}
+      >
+        {/* Hero */}
+        <div
+          className="px-7 pt-7 pb-6 border-b"
+          style={{
+            borderColor: 'rgba(15,42,35,0.07)',
+            background: 'linear-gradient(135deg, #F3F9F6 0%, #F8F5EE 55%, #FDFBF7 100%)',
+          }}
+        >
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-5">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-4">
+                <span
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em]"
+                  style={{ background: '#DCF0E6', color: '#0F5132' }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#2A9C65' }}/>
+                  Planned — ERP Roadmap
+                </span>
+              </div>
+              <h2 className="font-display text-3xl font-semibold tracking-tight leading-tight mb-2.5">{title}</h2>
+              <p className="text-sm max-w-2xl" style={{ color: PASTEL.inkSoft, lineHeight: '1.7' }}>{description}</p>
             </div>
-            <div className="rounded-2xl border px-4 py-3 min-w-[180px]" style={{ background: 'white', borderColor: 'rgba(15,42,35,0.1)' }}>
-              <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1" style={{ color: PASTEL.inkMute }}>Module Status</div>
-              <div className="font-numeric text-2xl font-bold">Roadmap</div>
-              <div className="text-xs mt-1" style={{ color: PASTEL.inkSoft }}>Awaiting phase approval</div>
+            <div
+              className="shrink-0 rounded-2xl border px-4 py-4 min-w-[160px] self-start"
+              style={{ background: 'rgba(255,255,255,0.82)', borderColor: 'rgba(15,42,35,0.09)' }}
+            >
+              <div className="text-[10px] uppercase tracking-[0.16em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>
+                Phase Status
+              </div>
+              <div className="font-numeric text-xl font-bold mb-2" style={{ color: PASTEL.ink }}>Roadmap</div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#7FC9A0' }}/>
+                <span className="text-[11px]" style={{ color: PASTEL.inkSoft }}>Awaiting phase sign-off</span>
+              </div>
             </div>
           </div>
         </div>
-        <div className="p-6 md:p-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+
+        {/* Capabilities */}
+        <div className="px-7 py-6">
+          <div className="flex items-center justify-between mb-5">
+            <span className="text-[10px] uppercase tracking-[0.18em] font-semibold" style={{ color: PASTEL.inkMute }}>
+              Planned Capabilities
+            </span>
+            <span
+              className="text-[10px] font-bold px-2.5 py-1 rounded-full"
+              style={{ background: '#DCF0E6', color: '#0F5132' }}
+            >
+              {capabilities.length} features
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {capabilities.map((capability, index) => (
-              <div key={capability} className="rounded-2xl border p-4" style={{ background: '#FBFCFA', borderColor: 'rgba(15,42,35,0.08)' }}>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-4 font-mono text-xs font-bold" style={{ background: '#E8F6EE', color: '#173D34' }}>
+              <div
+                key={capability}
+                className="rounded-2xl border p-4 transition-all hover:-translate-y-0.5"
+                style={{
+                  background: 'linear-gradient(180deg, #FAFCFB 0%, #F7F8F6 100%)',
+                  borderColor: 'rgba(15,42,35,0.08)',
+                  boxShadow: '0 2px 8px rgba(15,42,35,0.03)',
+                }}
+              >
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center mb-3 font-mono text-xs font-bold"
+                  style={{ background: '#DCF0E6', color: '#1A5C3A' }}
+                >
                   {String(index + 1).padStart(2, '0')}
                 </div>
-                <h3 className="text-sm font-semibold leading-5">{capability}</h3>
-                <p className="text-xs mt-2 leading-5" style={{ color: PASTEL.inkMute }}>
-                  Reserved for the ERP foundation roadmap and future approval-driven workflow design.
+                <h3 className="text-sm font-semibold leading-snug mb-1.5">{capability}</h3>
+                <p className="text-xs leading-relaxed" style={{ color: PASTEL.inkMute }}>
+                  Reserved for the ERP foundation roadmap.
                 </p>
               </div>
             ))}
