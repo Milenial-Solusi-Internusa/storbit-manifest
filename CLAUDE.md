@@ -700,11 +700,12 @@ Output:
 | 1.0F | Profiles & Customers RLS Transition | ✅ Complete |
 | 1.0G | User Access Management Foundation | ✅ Complete |
 | 1.0H | RLS Hardening — Remaining Public Tables | ✅ Staging verified |
-| 1.0I | Master Data CRUD / Vendors / Products screens | 🔜 Next |
+| 1.0I | Master Data CRUD / Vendors / Products screens | ✅ Complete |
+| 1.0J | User Access Management — table layout + Add User + Edge Function | ✅ Complete |
 
-Current phase: **Phase 1.0H** ✅ Staging verified
+Current phase: **Phase 1.0J** ✅ Complete
 
-Next recommended step: **Phase 1.0I — Master Data CRUD or Vendors/Products admin screens**
+Next recommended step: **Phase 1.0K — Vendors / Products admin CRUD, or remaining read-only tabs (Companies, Roles, Taxes, Payment Terms)**
 
 ### Production Gate
 

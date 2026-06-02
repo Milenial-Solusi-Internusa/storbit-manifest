@@ -15,7 +15,6 @@ import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
 const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'));
-const UserManagement = lazy(() => import('./components/UserManagement'));
 const AdminShell = lazy(() => import('./modules/admin/AdminShell'));
 
 // ============================
@@ -479,7 +478,6 @@ const ERP_MENU_GROUPS = [
   {
     label: 'Foundation',
     items: [
-      { id: 'users',         label: 'Org & Access Control', icon: Shield,   role: ['super'] },
       { id: 'admin',         label: 'Master Data',          icon: Database, role: ['super'] },
       { id: 'adminSettings', label: 'Admin Settings',       icon: Settings, role: ['super'] },
     ],
@@ -1364,15 +1362,9 @@ export default function StorbitManifest() {
             />
           )}
           {activeMenu === 'users' && (
-            <ErrorBoundary title="User Management temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <UserManagement currentUserId={profile?.id || null} />
-              </Suspense>
-            </ErrorBoundary>
+            // Legacy 'Org & Access Control' nav item removed — redirect to Master Data (AdminShell).
+            // Handles any stale state or bookmarks pointing to the old menu id.
+            (() => { setActiveMenu('admin'); return null; })()
           )}
           {activeMenu === 'admin' && (
             <ErrorBoundary title="Master Data section temporarily unavailable">
