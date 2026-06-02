@@ -702,10 +702,11 @@ Output:
 | 1.0H | RLS Hardening — Remaining Public Tables | ✅ Staging verified |
 | 1.0I | Master Data CRUD / Vendors / Products screens | ✅ Complete |
 | 1.0J | User Access Management — table layout + Add User + Edge Function | ✅ Complete |
+| 1.0K | App Launcher + vertical sidebar per module (Option B layout) | ✅ Complete |
 
-Current phase: **Phase 1.0J** ✅ Complete
+Current phase: **Phase 1.0K** ✅ Complete
 
-Next recommended step: **Phase 1.0K — Vendors / Products admin CRUD, or remaining read-only tabs (Companies, Roles, Taxes, Payment Terms)**
+Next recommended step: **Phase 1.0L — Vendors / Products admin CRUD, or remaining read-only tabs (Companies, Roles, Taxes, Payment Terms)**
 
 ### Production Gate
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, Suspense, lazy } from 'react';
+import { useState, useMemo, useEffect, useCallback, Suspense, lazy } from 'react';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
   Search, Download, Upload, Eye, Edit3, Trash2, X,
@@ -14,8 +14,9 @@ import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
-const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'));
+const Dashboard  = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell = lazy(() => import('./modules/admin/AdminShell'));
+const AppLauncher = lazy(() => import('./modules/launcher/AppLauncher'));
 
 // ============================
 // PASTEL PALETTE
@@ -513,61 +514,63 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
   );
 }
 
-function SidebarGroup({ group, activeMenu, setActiveMenu, isExpanded, onToggle }) {
-  const hasActiveChild = group.items.some(item => item.id === activeMenu);
-  const ParentIcon = group.items[0]?.icon;
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ModuleSidebar — shown inside a module (Option B layout).
+// Replaces the global accordion sidebar. Renders only the active module's items
+// plus a "← Apps" button to return to the launcher.
+// ─────────────────────────────────────────────────────────────────────────────
+function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role }) {
+  const visibleItems = (moduleGroup?.items || []).filter(item => canSeeMenuItem(item, role));
+  const Icon = moduleGroup?.items[0]?.icon;
+
   return (
-    <div className="mb-1.5">
+    <aside
+      className="hidden lg:flex flex-col w-[260px] flex-shrink-0 sticky top-0 h-screen border-r"
+      style={{
+        background: 'linear-gradient(165deg, #0F2A23 0%, #173D34 100%)',
+        borderColor: 'rgba(255,255,255,0.12)',
+        color: '#F8F5ED',
+      }}
+    >
+      {/* Back to Apps */}
       <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl mb-0.5 transition-all"
-        style={{
-          background: hasActiveChild ? 'rgba(255,255,255,0.08)' : 'transparent',
-          border: '1px solid transparent',
-        }}
-        onMouseEnter={(e) => { if (!hasActiveChild) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-        onMouseLeave={(e) => { if (!hasActiveChild) e.currentTarget.style.background = 'transparent'; }}
+        onClick={onBackToApps}
+        className="flex items-center gap-2 mx-3 mt-4 mb-1 px-3 py-2.5 rounded-xl transition-all text-sm font-medium flex-shrink-0"
+        style={{ color: 'rgba(248,245,237,0.60)' }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#FFFDF7'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(248,245,237,0.60)'; }}
       >
-        {ParentIcon && (
-          <ParentIcon
-            size={14}
-            strokeWidth={1.8}
-            style={{ color: hasActiveChild ? '#C8EFD9' : 'rgba(248,245,237,0.40)', flexShrink: 0 }}
-          />
-        )}
-        <span
-          className="flex-1 text-left text-[11px] uppercase tracking-[0.08em] font-semibold"
-          style={{ color: hasActiveChild ? 'rgba(200,239,217,0.90)' : 'rgba(248,245,237,0.52)' }}
-        >
-          {group.label}
-        </span>
-        <ChevronRight
-          size={13}
-          strokeWidth={2}
-          style={{
-            color: 'rgba(248,245,237,0.35)',
-            flexShrink: 0,
-            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s ease',
-          }}
-        />
+        <LayoutDashboard size={14} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+        <span className="text-xs uppercase tracking-[0.14em] font-semibold">Apps</span>
       </button>
-      {isExpanded && (
-        <div className="nexus-sidebar-children pl-2 pb-1.5">
-          {group.items.map(item => (
-            <SidebarItem
-              key={item.id}
-              item={item}
-              activeMenu={activeMenu}
-              setActiveMenu={setActiveMenu}
-            />
-          ))}
+
+      {/* Module identity */}
+      <div className="px-5 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.10)' }}>
+        <div className="flex items-center gap-2.5">
+          {Icon && <Icon size={16} strokeWidth={1.8} style={{ color: 'rgba(200,239,217,0.70)', flexShrink: 0 }} />}
+          <span className="text-sm font-semibold leading-snug" style={{ color: '#FFFDF7' }}>
+            {moduleGroup?.label}
+          </span>
         </div>
-      )}
-    </div>
+      </div>
+
+      {/* Module items */}
+      <nav className="flex-1 px-3 py-3 overflow-y-auto">
+        {visibleItems.map(item => (
+          <SidebarItem
+            key={item.id}
+            item={item}
+            activeMenu={activeMenu}
+            setActiveMenu={onNavigate}
+          />
+        ))}
+      </nav>
+    </aside>
   );
 }
-
 
 // ============================
 // Main App
@@ -583,27 +586,29 @@ export default function StorbitManifest() {
   } = useSpItems({ customers });
   const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
   const loading = false;
+  const [activeModule, setActiveModule] = useState(null); // null = app launcher
   const [activeMenu, setActiveMenu] = useState('dashboard');
-  const [expandedGroups, setExpandedGroups] = useState(() => {
-    const init = new Set();
-    for (const group of ERP_MENU_GROUPS) {
-      if (group.items.some(i => i.id === 'dashboard')) {
-        init.add(group.label);
-        break;
-      }
-    }
-    return init;
-  });
-  const toggleGroup = (label) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      return next;
-    });
-  };
   const { role: authRole, profile, signOut } = useAuth();
   const role = authRole || 'management';
+
+  // Navigate to a specific menu item, auto-detecting which module group it belongs to.
+  // This keeps activeModule in sync when navigating from topbar buttons / deep links.
+  const navigateTo = useCallback((menuId) => {
+    const group = ERP_MENU_GROUPS.find(g => g.items.some(i => i.id === menuId));
+    if (group) setActiveModule(group.label);
+    setActiveMenu(menuId);
+  }, []);
+
+  // Return to app launcher.
+  const goToLauncher = useCallback(() => setActiveModule(null), []);
+
+  // Enter a module group — select the first visible item in that group.
+  const enterModule = useCallback((group) => {
+    const first = group.items.find(item => canSeeMenuItem(item, role));
+    if (!first) return;
+    setActiveModule(group.label);
+    setActiveMenu(first.id);
+  }, [role]);
   const [editingRow, setEditingRow] = useState(null);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editingAR, setEditingAR] = useState(null);
@@ -921,6 +926,10 @@ export default function StorbitManifest() {
     .filter(group => group.items.length > 0);
   const visibleMenus = visibleMenuGroups.flatMap(group => group.items);
   const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
+  // The group corresponding to the currently active module (null in launcher mode).
+  const activeModuleGroup = activeModule
+    ? visibleMenuGroups.find(g => g.label === activeModule) ?? null
+    : null;
   const currentRoleLabel = ROLES.find(r => r.id === role)?.label || role;
 
   return (
@@ -977,64 +986,16 @@ export default function StorbitManifest() {
 
       {/* LAYOUT: Sidebar + Content */}
       <div className="flex min-h-screen">
-        {/* SIDEBAR */}
-        <aside
-          className="hidden lg:flex flex-col w-[300px] flex-shrink-0 sticky top-0 h-screen border-r shadow-2xl shadow-emerald-950/10"
-          style={{
-            background: 'linear-gradient(165deg, #0F2A23 0%, #173D34 48%, #F6EFE3 190%)',
-            borderColor: 'rgba(255,255,255,0.12)',
-            color: '#F8F5ED',
-          }}
-        >
-          {/* Brand */}
-          <div className="px-5 py-5 border-b" style={{ borderColor: 'rgba(255,255,255,0.12)' }}>
-            <div className="flex items-center gap-3">
-              <div
-                className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 border"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(255,212,184,0.96), rgba(200,239,217,0.86))',
-                  borderColor: 'rgba(255,255,255,0.32)',
-                  boxShadow: '0 16px 34px rgba(0,0,0,0.22)',
-                }}
-              >
-                <Package size={19} style={{ color: '#12352D' }} strokeWidth={2.2}/>
-              </div>
-              <div className="min-w-0">
-                <h1 className="font-display text-xl font-semibold tracking-tight" style={{ color: '#FFFDF7' }}>Nexus by MSI</h1>
-                <p className="text-[9px] tracking-[0.16em] uppercase font-semibold truncate" style={{ color: 'rgba(248,245,237,0.62)' }}>Unified Business Core Platform</p>
-              </div>
-            </div>
-            <div className="mt-4 rounded-2xl border px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.07)', borderColor: 'rgba(255,255,255,0.11)' }}>
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] font-semibold" style={{ color: 'rgba(248,245,237,0.58)' }}>
-                <span>Group Scope</span>
-                <span style={{ color: '#C8EFD9' }}>Live</span>
-              </div>
-              <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#FFFDF7' }}>
-                <span>MSI</span>
-                <span style={{ color: 'rgba(248,245,237,0.34)' }}>/</span>
-                <span>JCI</span>
-                <span style={{ color: 'rgba(248,245,237,0.34)' }}>/</span>
-                <span>Storbit</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Nav */}
-          <nav className="flex-1 px-3 py-4 overflow-y-auto">
-            {visibleMenuGroups.map(group => (
-              <SidebarGroup
-                key={group.label}
-                group={group}
-                activeMenu={activeMenu}
-                setActiveMenu={setActiveMenu}
-                isExpanded={expandedGroups.has(group.label)}
-                onToggle={() => toggleGroup(group.label)}
-              />
-            ))}
-
-          </nav>
-
-        </aside>
+        {/* SIDEBAR — only visible when inside a module (Option B: sidebar-after-launcher) */}
+        {activeModule && (
+          <ModuleSidebar
+            moduleGroup={activeModuleGroup}
+            activeMenu={activeMenu}
+            onNavigate={navigateTo}
+            onBackToApps={goToLauncher}
+            role={role}
+          />
+        )}
 
         {/* MOBILE TOPBAR */}
         <header className="lg:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: 'rgba(15,42,35,0.12)', background: 'rgba(250, 246, 240, 0.94)' }}>
@@ -1065,7 +1026,7 @@ export default function StorbitManifest() {
               return (
                 <button
                   key={m.id}
-                  onClick={() => setActiveMenu(m.id)}
+                  onClick={() => navigateTo(m.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap"
                   style={{
                     background: active ? PASTEL.ink : 'transparent',
@@ -1094,7 +1055,7 @@ export default function StorbitManifest() {
                   <span className="text-[9px] uppercase tracking-[0.18em] font-bold" style={{ color: PASTEL.inkMute }}>Nexus ERP</span>
                 </div>
                 <h2 className="font-display text-[17px] font-semibold tracking-tight truncate leading-tight" style={{ color: PASTEL.ink }}>
-                  {activeMenuItem?.label || 'Command Center'}
+                  {activeModule ? (activeMenuItem?.label || 'Command Center') : 'Nexus by MSI'}
                 </h2>
               </div>
 
@@ -1141,7 +1102,7 @@ export default function StorbitManifest() {
                 </button>
 
                 {/* Pending Approval */}
-                <button type="button" onClick={() => setActiveMenu('approvals')}
+                <button type="button" onClick={() => navigateTo('approvals')}
                   className="nexus-cmd-btn inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
                   style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', color: PASTEL.inkSoft, height: '36px' }}>
                   <ClipboardCheck size={13} style={{ color: PASTEL.inkMute }}/>
@@ -1218,7 +1179,7 @@ export default function StorbitManifest() {
                           {[
                             { label: 'My Profile',       icon: User,     action: () => setProfileDropdownOpen(false) },
                             { label: 'Account Settings', icon: Settings, action: () => setProfileDropdownOpen(false) },
-                            { label: 'Admin Settings',   icon: Shield,   action: () => { setActiveMenu('adminSettings'); setProfileDropdownOpen(false); } },
+                            { label: 'Admin Settings',   icon: Shield,   action: () => { navigateTo('adminSettings'); setProfileDropdownOpen(false); } },
                           ].map(({ label, icon: Icon, action }) => (
                             <button key={label} type="button" onClick={action}
                               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-colors"
@@ -1250,7 +1211,18 @@ export default function StorbitManifest() {
             </div>
           </header>
 
-          <div className="nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7">
+          {/* ── APP LAUNCHER (no sidebar, full width) ── */}
+          {!activeModule && (
+            <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center', color: '#9C948D' }}>Loading…</div>}>
+              <AppLauncher
+                moduleGroups={visibleMenuGroups}
+                onSelect={enterModule}
+                profile={profile}
+              />
+            </Suspense>
+          )}
+
+          <div className="nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7" style={{ display: activeModule ? undefined : 'none' }}>
 
           {/* Page section header with month filter */}
           {(activeMenu === 'dashboard' || activeMenu === 'manifest') && (
@@ -1364,7 +1336,7 @@ export default function StorbitManifest() {
           {activeMenu === 'users' && (
             // Legacy 'Org & Access Control' nav item removed — redirect to Master Data (AdminShell).
             // Handles any stale state or bookmarks pointing to the old menu id.
-            (() => { setActiveMenu('admin'); return null; })()
+            (() => { navigateTo('admin'); return null; })()
           )}
           {activeMenu === 'admin' && (
             <ErrorBoundary title="Master Data section temporarily unavailable">
