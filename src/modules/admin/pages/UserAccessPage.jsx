@@ -1,19 +1,25 @@
 // src/modules/admin/pages/UserAccessPage.jsx
-// User Access Management — view and update existing user profiles and ERP role
-// assignments. Auth user creation is NOT supported here; use Supabase Dashboard.
+// User Access Management — table list + Edit modal + Add User modal.
 //
-// Accessible only to super admin users (enforced at AdminShell / App.jsx level).
+// Table columns: Avatar+Name | Company | Role | Status | Actions
+// Actions per row: Edit (full profile + access modal) | Activate/Deactivate (direct)
 //
-// Table: Full Name, Company, Legacy Role, ERP Role, Active, MFA, Edit button.
-// Edit drawer: company, branch, department, position, legacy role, active,
-//              mfa_required, ERP role.
+// Add User: centered modal → calls create-user Edge Function
+//   Fields: Full Name, Email, Password, Legacy Role, Company
+//   Email lives in Supabase Auth (auth.users) — not stored in public.profiles.
+//   It is accepted here for auth user creation only and not displayed in the table.
 //
-// When company changes in the drawer, branch/dept/position/erp-role dropdowns
-// are cleared and refetched for the new company.
+// Edit: centered AdminFormModal — same pattern as BranchesPage.
+//   Sections: Business Identity (company/branch/dept/position)
+//             Access Control (legacy role / ERP role / active / MFA)
+//
+// Deactivate/Activate: per-row direct action with confirm dialog.
+//   Disabled for the logged-in user's own row.
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Search, RefreshCw, ChevronLeft, ChevronRight, X, Check,
+  Search, RefreshCw, ChevronLeft, ChevronRight, Check, Plus,
+  RefreshCw as Spinner,
 } from 'lucide-react';
 import {
   useUserAccess,
@@ -23,17 +29,20 @@ import {
   fetchPositionsForCompany,
   fetchRolesForCompany,
   saveUserAccess,
+  toggleUserActive,
+  createUser,
   USER_ACCESS_PAGE_SIZE,
 } from '../../../hooks/useUserAccess';
 import { useDebounce } from '../../../hooks/useDebounce';
 import { useAuth } from '../../../contexts/useAuth';
 import AdminPageHeader from '../components/AdminPageHeader';
+import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 
 // ─────────────────────────────────────────────────────────────
-// Constants
+// Design tokens
 // ─────────────────────────────────────────────────────────────
 
 const PASTEL = {
@@ -42,7 +51,6 @@ const PASTEL = {
   inkMute:      '#9C948D',
   line:         '#EDE6DC',
   lineSoft:     '#F5EFE5',
-  cream:        '#FAF6F0',
   mint:         '#C8EFD9',
   mintDeep:     '#7FC9A0',
   rose:         '#F5C8D5',
@@ -73,16 +81,53 @@ const LEGACY_ROLE_COLOR = {
   management:  PASTEL.butterDeep,
 };
 
-// Table column template — 7 columns
-const GRID = '1fr 88px 116px 152px 64px 52px 44px';
+// Avatar+Name | Company | Role | Status | Actions
+const GRID = '1fr 80px 180px 80px 148px';
+
+const EMPTY_ADD = {
+  full_name:  '',
+  email:      '',
+  password:   '',
+  role:       'logistic',
+  company_id: '',
+};
 
 // ─────────────────────────────────────────────────────────────
 // Small display components
 // ─────────────────────────────────────────────────────────────
 
-function LegacyRoleBadge({ role }) {
-  const color = LEGACY_ROLE_COLOR[role] || PASTEL.inkMute;
-  const label = LEGACY_ROLES.find((r) => r.value === role)?.label || role;
+function Avatar({ name }) {
+  const initials = (name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('');
+  return (
+    <span
+      className="inline-flex items-center justify-center w-8 h-8 rounded-full flex-shrink-0 text-xs font-bold select-none"
+      style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}
+    >
+      {initials}
+    </span>
+  );
+}
+
+function RoleBadge({ erpRole, legacyRole }) {
+  if (erpRole?.roles) {
+    return (
+      <div>
+        <div className="text-xs font-medium truncate" style={{ color: PASTEL.ink }}>
+          {erpRole.roles.name}
+        </div>
+        <div className="text-[10px]" style={{ color: PASTEL.inkMute }}>
+          {erpRole.roles.code}
+        </div>
+      </div>
+    );
+  }
+  const color = LEGACY_ROLE_COLOR[legacyRole] || PASTEL.inkMute;
+  const label = LEGACY_ROLES.find((r) => r.value === legacyRole)?.label || legacyRole;
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-semibold whitespace-nowrap"
@@ -93,47 +138,57 @@ function LegacyRoleBadge({ role }) {
   );
 }
 
-function ActiveBadge({ active }) {
+function StatusBadge({ active }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide"
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide"
       style={
         active
           ? { background: PASTEL.mint, color: '#1A5C35' }
           : { background: PASTEL.lineSoft, color: PASTEL.inkMute }
       }
     >
-      <span
-        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-        style={{ background: active ? PASTEL.mintDeep : PASTEL.inkMute }}
-      />
+      <span className="w-1 h-1 rounded-full" style={{ background: active ? PASTEL.mintDeep : PASTEL.inkMute }} />
       {active ? 'Active' : 'Inactive'}
     </span>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// Drawer form primitives
+// Modal form primitives (shared by both Edit and Add modals)
 // ─────────────────────────────────────────────────────────────
 
-function FormLabel({ children }) {
+function FieldLabel({ children, required }) {
   return (
-    <div
-      className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1.5"
-      style={{ color: PASTEL.inkMute }}
-    >
+    <div className="text-[11px] font-semibold mb-1.5 uppercase tracking-[0.14em]" style={{ color: PASTEL.inkMute }}>
       {children}
+      {required && <span style={{ color: PASTEL.roseDeep }}> *</span>}
     </div>
   );
 }
 
-function FormSelect({ value, onChange, disabled, children }) {
+function FieldInput({ type = 'text', value, onChange, disabled, placeholder, maxLength }) {
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 placeholder:text-[#B8AEA6]"
+      style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
+    />
+  );
+}
+
+function FieldSelect({ value, onChange, disabled, children }) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition-colors disabled:opacity-50 cursor-pointer"
+      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 cursor-pointer"
       style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
     >
       {children}
@@ -141,38 +196,69 @@ function FormSelect({ value, onChange, disabled, children }) {
   );
 }
 
-function Toggle({ checked, onChange, disabled }) {
+function FieldToggle({ label, helpText, checked, onChange, disabled }) {
   return (
-    <button
-      type="button"
-      onClick={() => !disabled && onChange(!checked)}
-      disabled={disabled}
-      className="flex items-center gap-2.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-      style={{ color: PASTEL.ink }}
-    >
-      <span
-        className="w-10 h-5 rounded-full relative flex-shrink-0 transition-colors"
-        style={{ background: checked ? PASTEL.mintDeep : PASTEL.line }}
+    <div>
+      <button
+        type="button"
+        onClick={() => !disabled && onChange(!checked)}
+        disabled={disabled}
+        className="flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <span
-          className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
-          style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
-        />
-      </span>
-      <span style={{ color: checked ? '#1A5C35' : PASTEL.inkMute }}>
-        {checked ? 'Enabled' : 'Disabled'}
-      </span>
-    </button>
+          className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors"
+          style={{ background: checked ? PASTEL.mintDeep : PASTEL.line }}
+        >
+          <span
+            className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
+            style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
+          />
+        </span>
+        <span className="text-sm font-medium" style={{ color: checked ? '#1A5C35' : PASTEL.inkSoft }}>
+          {label ?? (checked ? 'Enabled' : 'Disabled')}
+        </span>
+      </button>
+      {helpText && (
+        <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>{helpText}</p>
+      )}
+    </div>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <div className="text-[10px] uppercase tracking-[0.22em] font-bold mb-4" style={{ color: PASTEL.lavenderDeep }}>
+      {children}
+    </div>
+  );
+}
+
+function Divider() {
+  return <div className="my-6" style={{ borderTop: `1px solid ${PASTEL.line}` }} />;
+}
+
+function SaveError({ message }) {
+  if (!message) return null;
+  return (
+    <div
+      className="rounded-2xl px-4 py-3.5"
+      style={{ background: PASTEL.rose, border: `1px solid ${PASTEL.roseDeep}` }}
+    >
+      <div className="text-xs font-semibold mb-0.5" style={{ color: PASTEL.ink }}>Save failed</div>
+      <div className="text-xs" style={{ color: PASTEL.inkSoft }}>{message}</div>
+    </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// Helper: pick the first active ERP role from the user_roles array
+// Helpers
 // ─────────────────────────────────────────────────────────────
 
 function getPrimaryErpRole(userRoles) {
   return (userRoles || []).find((ur) => ur.is_active) || null;
 }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ─────────────────────────────────────────────────────────────
 // Main page component
@@ -181,74 +267,76 @@ function getPrimaryErpRole(userRoles) {
 export default function UserAccessPage() {
   const { profile: myProfile } = useAuth();
 
-  // ── List state ──
+  // ── List state ──────────────────────────────────────────────
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
-
   const { data, total, loading, error, refresh } = useUserAccess({ page, search });
-
   const totalPages = Math.max(1, Math.ceil(total / USER_ACCESS_PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * USER_ACCESS_PAGE_SIZE + 1;
   const to = Math.min(page * USER_ACCESS_PAGE_SIZE, total);
+  const handleSearch = useCallback((val) => { setSearchInput(val); setPage(1); }, []);
 
-  const handleSearch = useCallback((val) => {
-    setSearchInput(val);
-    setPage(1);
+  // ── Toast ────────────────────────────────────────────────────
+  const [toast, setToast] = useState(null);
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
   }, []);
 
-  // ── Drawer state ──
-  const [draft, setDraft] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(null);
-  const [toast, setToast] = useState(null);
+  // ── Row toggle (activate/deactivate) ─────────────────────────
+  const [togglingId, setTogglingId] = useState(null);
 
-  // Stable keys for the options-loading effect
-  // editUserId: set when drawer opens, cleared on close
-  // editCompanyId: updated when company changes in the form
+  const handleToggleActive = useCallback(async (row) => {
+    const action = row.active ? 'deactivate' : 'activate';
+    if (!window.confirm(`${action === 'deactivate' ? 'Deactivate' : 'Activate'} ${row.full_name || 'this user'}?`)) return;
+    setTogglingId(row.id);
+    const { error: toggleErr } = await toggleUserActive(row.id, !row.active);
+    setTogglingId(null);
+    if (toggleErr) {
+      showToast(toggleErr.message || `Failed to ${action} user.`, 'error');
+      return;
+    }
+    refresh();
+    showToast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}.`);
+  }, [refresh, showToast]);
+
+  // ── Edit modal state ─────────────────────────────────────────
+  const [editDraft, setEditDraft] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState(null);
   const [editUserId, setEditUserId] = useState(null);
   const [editCompanyId, setEditCompanyId] = useState('');
-
   const [formOptions, setFormOptions] = useState({
     companies: [], branches: [], departments: [], positions: [], erpRoles: [],
   });
 
-  // Load/reload cascading form options when drawer opens or company changes.
-  // All setState calls are inside .then() — matches project lint-safe pattern.
+  // Load / cascade form options when edit modal opens or company changes
   useEffect(() => {
     if (!editUserId) return;
     let cancelled = false;
-
     Promise.all([
       fetchAllCompanies(),
       fetchBranchesForCompany(editCompanyId),
       fetchDepartmentsForCompany(editCompanyId),
       fetchPositionsForCompany(editCompanyId),
       fetchRolesForCompany(editCompanyId),
-    ]).then(([companies, branches, depts, positions, erpRoles]) => {
+    ]).then(([cos, branches, depts, positions, erpRoles]) => {
       if (cancelled) return;
       setFormOptions({
-        companies:   companies.data,
+        companies:   cos.data,
         branches:    branches.data,
         departments: depts.data,
         positions:   positions.data,
         erpRoles:    erpRoles.data,
       });
     });
-
     return () => { cancelled = true; };
   }, [editUserId, editCompanyId]);
 
-  // ── Drawer actions ──
-
-  const showToast = useCallback((msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
-
   const openEdit = useCallback((row) => {
-    const primaryRole = getPrimaryErpRole(row.user_roles);
-    setDraft({
+    const primary = getPrimaryErpRole(row.user_roles);
+    setEditDraft({
       id:                 row.id,
       full_name:          row.full_name || '',
       company_id:         row.company_id || '',
@@ -258,136 +346,186 @@ export default function UserAccessPage() {
       role:               row.role || 'logistic',
       active:             row.active !== false,
       mfa_required:       !!row.mfa_required,
-      erp_role_id:        primaryRole?.role_id || '',
-      _originalErpRoleId: primaryRole?.role_id || '',
+      erp_role_id:        primary?.role_id || '',
+      _originalErpRoleId: primary?.role_id || '',
     });
     setEditUserId(row.id);
     setEditCompanyId(row.company_id || '');
-    setSaveError(null);
+    setEditError(null);
   }, []);
 
   const closeEdit = useCallback(() => {
-    setDraft(null);
+    setEditDraft(null);
     setEditUserId(null);
     setEditCompanyId('');
-    setSaveError(null);
-    setFormOptions({
-      companies: [], branches: [], departments: [], positions: [], erpRoles: [],
-    });
+    setEditError(null);
+    setFormOptions({ companies: [], branches: [], departments: [], positions: [], erpRoles: [] });
   }, []);
 
-  // When company changes: clear dependent fields and trigger options reload
-  const handleCompanyChange = useCallback((newCompanyId) => {
-    setDraft((d) => ({
-      ...d,
-      company_id:    newCompanyId,
-      branch_id:     '',
-      department_id: '',
-      position_id:   '',
-      erp_role_id:   '',
-    }));
-    setEditCompanyId(newCompanyId);
+  const handleEditCompanyChange = useCallback((newCo) => {
+    setEditDraft((d) => ({ ...d, company_id: newCo, branch_id: '', department_id: '', position_id: '', erp_role_id: '' }));
+    setEditCompanyId(newCo);
   }, []);
 
-  const handleSave = useCallback(async () => {
-    if (!draft) return;
-
-    // Guard: cannot deactivate own account
-    if (draft.id === myProfile?.id && !draft.active) {
-      setSaveError('You cannot deactivate your own account.');
+  const handleEditSave = useCallback(async () => {
+    if (!editDraft) return;
+    if (editDraft.id === myProfile?.id && !editDraft.active) {
+      setEditError('You cannot deactivate your own account.');
       return;
     }
+    setEditSaving(true);
+    setEditError(null);
 
-    setSaving(true);
-    setSaveError(null);
-
-    const profilePatch = {
-      company_id:    draft.company_id    || null,
-      branch_id:     draft.branch_id     || null,
-      department_id: draft.department_id || null,
-      position_id:   draft.position_id   || null,
-      role:          draft.role,
-      active:        draft.active,
-      mfa_required:  draft.mfa_required,
-    };
-
-    // Only touch user_roles if the ERP role actually changed
-    const erpRoleChanged = draft.erp_role_id !== draft._originalErpRoleId;
-    const newErpRoleId   = erpRoleChanged ? (draft.erp_role_id || null) : undefined;
-
+    const erpRoleChanged = editDraft.erp_role_id !== editDraft._originalErpRoleId;
     const { error: saveErr } = await saveUserAccess({
-      profileId:    draft.id,
-      profilePatch,
-      newErpRoleId,
-      companyId:    draft.company_id || null,
+      profileId:    editDraft.id,
+      profilePatch: {
+        company_id:    editDraft.company_id    || null,
+        branch_id:     editDraft.branch_id     || null,
+        department_id: editDraft.department_id || null,
+        position_id:   editDraft.position_id   || null,
+        role:          editDraft.role,
+        active:        editDraft.active,
+        mfa_required:  editDraft.mfa_required,
+      },
+      newErpRoleId: erpRoleChanged ? (editDraft.erp_role_id || null) : undefined,
+      companyId:    editDraft.company_id || null,
     });
 
-    setSaving(false);
-
+    setEditSaving(false);
     if (saveErr) {
-      setSaveError(
-        saveErr.message
-          ? `Save failed: ${saveErr.message}`
-          : 'Save failed. Check your permissions and try again.'
-      );
+      setEditError(saveErr.message ? `Save failed: ${saveErr.message}` : 'Save failed. Check your permissions.');
       return;
     }
-
     closeEdit();
     refresh();
-    showToast('User access updated.');
-  }, [draft, myProfile?.id, closeEdit, refresh, showToast]);
+    showToast('User updated.');
+  }, [editDraft, myProfile?.id, closeEdit, refresh, showToast]);
 
-  // ─────────────────────────────────────────────────────────
+  // ── Add User modal state ─────────────────────────────────────
+  const [addOpen, setAddOpen] = useState(false);
+  const [addDraft, setAddDraft] = useState({ ...EMPTY_ADD });
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState(null);
+  const [addCompanies, setAddCompanies] = useState([]);
+
+  useEffect(() => {
+    if (!addOpen) return;
+    fetchAllCompanies().then(({ data: cos }) => setAddCompanies(cos || []));
+  }, [addOpen]);
+
+  const openAdd = useCallback(() => {
+    setAddDraft({ ...EMPTY_ADD });
+    setAddError(null);
+    setAddOpen(true);
+  }, []);
+
+  const closeAdd = useCallback(() => {
+    setAddOpen(false);
+    setAddError(null);
+    setAddCompanies([]);
+  }, []);
+
+  const handleAddSave = useCallback(async () => {
+    const { full_name, email, password, role, company_id } = addDraft;
+    if (!full_name.trim())              { setAddError('Full name is required.'); return; }
+    if (!email.trim())                  { setAddError('Email is required.'); return; }
+    if (!EMAIL_RE.test(email.trim()))   { setAddError('Invalid email format.'); return; }
+    if (!password)                      { setAddError('Password is required.'); return; }
+    if (password.length < 8)           { setAddError('Password must be at least 8 characters.'); return; }
+    if (!role)                          { setAddError('Role is required.'); return; }
+    if (!company_id)                    { setAddError('Company is required.'); return; }
+
+    setAddSaving(true);
+    setAddError(null);
+
+    const { data: result, error: createErr } = await createUser({
+      email: email.trim(),
+      password,
+      full_name: full_name.trim(),
+      role,
+      company_id,
+    });
+
+    setAddSaving(false);
+
+    if (createErr) {
+      setAddError(createErr.message || 'Failed to create user. Check the Edge Function logs.');
+      return;
+    }
+
+    closeAdd();
+    refresh();
+    showToast(result?.warning ? `User created (with warning: ${result.warning})` : 'User created successfully.');
+  }, [addDraft, closeAdd, refresh, showToast]);
+
+  // ── Modal footers ─────────────────────────────────────────────
+  const editFooter = (
+    <div className="flex items-center gap-3">
+      <div className="flex-1" />
+      <button
+        type="button" onClick={closeEdit} disabled={editSaving}
+        className="px-5 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
+        style={{ background: 'white', color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
+      >
+        Cancel
+      </button>
+      <button
+        type="button" onClick={handleEditSave} disabled={editSaving}
+        className="px-5 py-2.5 rounded-2xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
+        style={{ background: PASTEL.ink, color: 'white' }}
+      >
+        {editSaving
+          ? <><Spinner size={13} className="animate-spin" /> Saving…</>
+          : <><Check size={13} /> Save Changes</>}
+      </button>
+    </div>
+  );
+
+  const addFooter = (
+    <div className="flex items-center gap-3">
+      <div className="flex-1" />
+      <button
+        type="button" onClick={closeAdd} disabled={addSaving}
+        className="px-5 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
+        style={{ background: 'white', color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
+      >
+        Cancel
+      </button>
+      <button
+        type="button" onClick={handleAddSave} disabled={addSaving}
+        className="px-5 py-2.5 rounded-2xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
+        style={{ background: PASTEL.ink, color: 'white' }}
+      >
+        {addSaving
+          ? <><Spinner size={13} className="animate-spin" /> Creating…</>
+          : <><Check size={13} /> Create User</>}
+      </button>
+    </div>
+  );
+
+  // ─────────────────────────────────────────────────────────────
   // Render
-  // ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
 
   return (
     <div>
       <AdminPageHeader
         title="User Access"
-        subtitle="Manage company, role, and ERP access for existing users. Auth user creation is via Supabase Dashboard."
+        subtitle="Manage roles, company assignments, and access status for platform users."
         count={loading ? undefined : total}
       />
-
-      {/* Email notice */}
-      <div
-        className="mb-4 rounded-2xl p-3.5 flex gap-3 items-start text-sm"
-        style={{ background: PASTEL.lineSoft, border: `1px solid ${PASTEL.line}` }}
-      >
-        <span
-          className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5"
-          style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}
-        >
-          i
-        </span>
-        <div className="text-sm" style={{ color: PASTEL.inkSoft }}>
-          <span style={{ color: PASTEL.ink, fontWeight: 600 }}>
-            Email is managed in Supabase Auth
-          </span>{' '}
-          and is not stored in public profiles. To create a new auth user, open{' '}
-          <a
-            href="https://supabase.com/dashboard"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: PASTEL.lavenderDeep, fontWeight: 600 }}
-          >
-            Supabase Dashboard
-          </a>
-          {' '}→ Authentication → Users → Add user.
-        </div>
-      </div>
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-5">
         <div
-          className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border"
+          className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm"
           style={{ background: 'white', borderColor: PASTEL.line }}
         >
           <Search size={14} style={{ color: PASTEL.inkMute }} />
           <input
             type="text"
-            placeholder="Search by full name…"
+            placeholder="Search by name…"
             value={searchInput}
             onChange={(e) => handleSearch(e.target.value)}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#9C948D]"
@@ -395,38 +533,36 @@ export default function UserAccessPage() {
           />
         </div>
         <button
-          type="button"
-          onClick={refresh}
+          type="button" onClick={refresh}
           className="p-2.5 rounded-xl border transition-opacity hover:opacity-70"
           style={{ background: 'white', borderColor: PASTEL.line }}
           title="Refresh"
         >
           <RefreshCw size={14} style={{ color: PASTEL.inkSoft }} />
         </button>
+        <button
+          type="button" onClick={openAdd}
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+          style={{ background: PASTEL.ink, color: 'white' }}
+        >
+          <Plus size={14} />
+          Add User
+        </button>
       </div>
 
       {/* Table */}
-      <div
-        className="rounded-2xl border overflow-hidden"
-        style={{ background: 'white', borderColor: PASTEL.line }}
-      >
-        {/* Header row */}
+      <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+
+        {/* Header */}
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
-          style={{
-            gridTemplateColumns: GRID,
-            borderColor: PASTEL.line,
-            background: PASTEL.lineSoft,
-            color: PASTEL.inkMute,
-          }}
+          style={{ gridTemplateColumns: GRID, borderColor: PASTEL.line, background: PASTEL.lineSoft, color: PASTEL.inkMute }}
         >
           <div>Name</div>
           <div>Company</div>
-          <div>Legacy Role</div>
-          <div>ERP Role</div>
-          <div className="text-center">Active</div>
-          <div className="text-center">MFA</div>
-          <div />
+          <div>Role</div>
+          <div>Status</div>
+          <div className="text-right">Actions</div>
         </div>
 
         {/* Body */}
@@ -435,57 +571,41 @@ export default function UserAccessPage() {
         ) : loading ? (
           <LoadingState rows={8} />
         ) : data.length === 0 ? (
-          <EmptyState
-            message={
-              search ? 'No users match your search.' : 'No user profiles found.'
-            }
-          />
+          <EmptyState message={search ? 'No users match your search.' : 'No user profiles found.'} />
         ) : (
           data.map((row) => {
             const primaryErpRole = getPrimaryErpRole(row.user_roles);
+            const isSelf = row.id === myProfile?.id;
+            const isToggling = togglingId === row.id;
             return (
               <div
                 key={row.id}
                 className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
-                style={{
-                  gridTemplateColumns: GRID,
-                  borderColor: PASTEL.line,
-                  opacity: row.active ? 1 : 0.55,
-                }}
+                style={{ gridTemplateColumns: GRID, borderColor: PASTEL.line, opacity: row.active ? 1 : 0.6 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = PASTEL.lineSoft)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                {/* Name + ID + branch/dept subtitle */}
-                <div className="min-w-0 pr-2">
-                  <div className="font-medium truncate" style={{ color: PASTEL.ink }}>
-                    {row.full_name || (
-                      <span style={{ color: PASTEL.inkMute }}>(unnamed)</span>
+                {/* Avatar + Name */}
+                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                  <Avatar name={row.full_name} />
+                  <div className="min-w-0">
+                    <div className="font-medium truncate" style={{ color: PASTEL.ink }}>
+                      {row.full_name || <span style={{ color: PASTEL.inkMute }}>(unnamed)</span>}
+                    </div>
+                    {(row.branches?.name || row.departments?.name) && (
+                      <div className="text-[11px] truncate mt-0.5" style={{ color: PASTEL.inkSoft }}>
+                        {[row.branches?.name, row.departments?.name].filter(Boolean).join(' · ')}
+                      </div>
                     )}
                   </div>
-                  <div
-                    className="text-[10px] font-mono truncate mt-0.5"
-                    style={{ color: PASTEL.inkMute }}
-                  >
-                    {row.id.slice(0, 14)}…
-                  </div>
-                  {(row.branches?.name || row.departments?.name) && (
-                    <div
-                      className="text-[11px] mt-0.5 truncate"
-                      style={{ color: PASTEL.inkSoft }}
-                    >
-                      {[row.branches?.name, row.departments?.name]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </div>
-                  )}
                 </div>
 
-                {/* Company badge */}
+                {/* Company */}
                 <div>
                   {row.companies ? (
                     <span
                       className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-                      style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}
+                      style={{ background: PASTEL.sky, color: PASTEL.skyDeep }}
                     >
                       {row.companies.code}
                     </span>
@@ -494,49 +614,18 @@ export default function UserAccessPage() {
                   )}
                 </div>
 
-                {/* Legacy role badge */}
+                {/* Role */}
+                <div className="min-w-0 pr-2">
+                  <RoleBadge erpRole={primaryErpRole} legacyRole={row.role} />
+                </div>
+
+                {/* Status */}
                 <div>
-                  <LegacyRoleBadge role={row.role} />
+                  <StatusBadge active={row.active} />
                 </div>
 
-                {/* ERP role */}
-                <div className="min-w-0 pr-1">
-                  {primaryErpRole?.roles ? (
-                    <div>
-                      <div
-                        className="text-xs font-medium truncate"
-                        style={{ color: PASTEL.ink }}
-                      >
-                        {primaryErpRole.roles.name}
-                      </div>
-                      <div className="text-[10px]" style={{ color: PASTEL.inkMute }}>
-                        {primaryErpRole.roles.code}
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="text-[11px]" style={{ color: PASTEL.inkMute }}>
-                      No role
-                    </span>
-                  )}
-                </div>
-
-                {/* Active badge */}
-                <div className="flex justify-center">
-                  <ActiveBadge active={row.active} />
-                </div>
-
-                {/* MFA indicator */}
-                <div
-                  className="text-center text-[10px] font-semibold uppercase tracking-wide"
-                  style={{
-                    color: row.mfa_required ? PASTEL.lavenderDeep : PASTEL.inkMute,
-                  }}
-                >
-                  {row.mfa_required ? 'Req' : 'Off'}
-                </div>
-
-                {/* Edit button */}
-                <div className="flex justify-end">
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-1.5">
                   <button
                     type="button"
                     onClick={() => openEdit(row)}
@@ -545,43 +634,40 @@ export default function UserAccessPage() {
                   >
                     Edit
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleActive(row)}
+                    disabled={isSelf || isToggling}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
+                    style={
+                      row.active
+                        ? { background: `${PASTEL.roseDeep}18`, color: PASTEL.roseDeep }
+                        : { background: `${PASTEL.mintDeep}18`, color: PASTEL.mintDeep }
+                    }
+                    title={isSelf ? 'Cannot change your own status' : undefined}
+                  >
+                    {isToggling
+                      ? <Spinner size={11} className="animate-spin" />
+                      : row.active ? 'Deactivate' : 'Activate'}
+                  </button>
                 </div>
               </div>
             );
           })
         )}
 
-        {/* Pagination footer */}
+        {/* Pagination */}
         {!error && (
-          <div
-            className="flex items-center justify-between px-4 py-3"
-            style={{ borderTop: `1px solid ${PASTEL.line}` }}
-          >
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${PASTEL.line}` }}>
             <span className="text-xs" style={{ color: PASTEL.inkMute }}>
-              {total === 0
-                ? 'No records'
-                : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
+              {total === 0 ? 'No records' : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
             </span>
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1 || loading}
-                className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70"
-                style={{ background: PASTEL.lineSoft }}
-              >
+              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
                 <ChevronLeft size={14} style={{ color: PASTEL.inkSoft }} />
               </button>
-              <span className="px-3 text-xs font-medium" style={{ color: PASTEL.inkSoft }}>
-                {page} / {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages || loading}
-                className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70"
-                style={{ background: PASTEL.lineSoft }}
-              >
+              <span className="px-3 text-xs font-medium" style={{ color: PASTEL.inkSoft }}>{page} / {totalPages}</span>
+              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
                 <ChevronRight size={14} style={{ color: PASTEL.inkSoft }} />
               </button>
             </div>
@@ -589,305 +675,243 @@ export default function UserAccessPage() {
         )}
       </div>
 
-      {/* ─────────────────────────────────────────────────────
-          Edit Drawer
-      ───────────────────────────────────────────────────── */}
-      {draft && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-40"
-            style={{ background: 'rgba(45,42,40,0.22)' }}
-            onClick={closeEdit}
-          />
+      {/* ── Edit User Modal ── */}
+      <AdminFormModal
+        open={!!editDraft}
+        eyebrow="Edit User"
+        title={editDraft?.full_name || '(unnamed)'}
+        subtitle="Update company assignment, role, and access settings."
+        onClose={closeEdit}
+        footer={editFooter}
+        maxWidth="680px"
+      >
+        {editDraft && (
+          <div className="space-y-6">
 
-          {/* Panel */}
-          <div
-            className="fixed right-0 top-0 bottom-0 z-50 w-full flex flex-col"
-            style={{
-              maxWidth: 440,
-              background: 'white',
-              borderLeft: `1px solid ${PASTEL.line}`,
-              boxShadow: '-6px 0 32px rgba(45,42,40,0.10)',
-            }}
-          >
-            {/* Drawer header */}
-            <div
-              className="flex items-start justify-between gap-3 px-5 py-4 border-b flex-shrink-0"
-              style={{ borderColor: PASTEL.line }}
-            >
-              <div className="min-w-0">
-                <div
-                  className="text-[10px] uppercase tracking-[0.20em] font-semibold mb-1"
-                  style={{ color: PASTEL.inkMute }}
-                >
-                  Edit User Access
-                </div>
-                <div
-                  className="font-display text-lg font-semibold truncate"
-                  style={{ color: PASTEL.ink }}
-                >
-                  {draft.full_name || '(unnamed)'}
-                </div>
-                <div
-                  className="text-[10px] font-mono mt-0.5 truncate"
-                  style={{ color: PASTEL.inkMute }}
-                >
-                  {draft.id}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeEdit}
-                className="flex-shrink-0 p-2 rounded-xl transition-opacity hover:opacity-70"
-                style={{ background: PASTEL.lineSoft }}
-              >
-                <X size={15} style={{ color: PASTEL.inkSoft }} />
-              </button>
-            </div>
+            {/* Business Identity */}
+            <div>
+              <SectionLabel>Business Identity</SectionLabel>
+              <div className="space-y-4">
 
-            {/* Form body */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-
-              {/* ── Business Identity ── */}
-              <div>
-                <div
-                  className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-3"
-                  style={{ color: PASTEL.lavenderDeep }}
-                >
-                  Business Identity
+                {/* Company */}
+                <div>
+                  <FieldLabel>Company</FieldLabel>
+                  <FieldSelect value={editDraft.company_id} onChange={handleEditCompanyChange} disabled={editSaving}>
+                    <option value="">— Select company —</option>
+                    {formOptions.companies.map((c) => (
+                      <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
+                    ))}
+                  </FieldSelect>
                 </div>
 
-                <div className="space-y-3">
-                  {/* Company */}
+                {/* Branch + Department — 2 col */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <FormLabel>Company</FormLabel>
-                    <FormSelect
-                      value={draft.company_id}
-                      onChange={handleCompanyChange}
-                      disabled={saving}
-                    >
-                      <option value="">— Select company —</option>
-                      {formOptions.companies.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.code} — {c.name}
-                        </option>
-                      ))}
-                    </FormSelect>
-                  </div>
-
-                  {/* Branch */}
-                  <div>
-                    <FormLabel>Branch</FormLabel>
-                    <FormSelect
-                      value={draft.branch_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, branch_id: v }))}
-                      disabled={saving || !draft.company_id}
-                    >
+                    <FieldLabel>Branch</FieldLabel>
+                    <FieldSelect value={editDraft.branch_id} onChange={(v) => setEditDraft((d) => ({ ...d, branch_id: v }))} disabled={editSaving || !editDraft.company_id}>
                       <option value="">— None —</option>
                       {formOptions.branches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.code} — {b.name}
-                        </option>
+                        <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
                       ))}
-                    </FormSelect>
+                    </FieldSelect>
                   </div>
-
-                  {/* Department */}
                   <div>
-                    <FormLabel>Department</FormLabel>
-                    <FormSelect
-                      value={draft.department_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, department_id: v }))}
-                      disabled={saving || !draft.company_id}
-                    >
+                    <FieldLabel>Department</FieldLabel>
+                    <FieldSelect value={editDraft.department_id} onChange={(v) => setEditDraft((d) => ({ ...d, department_id: v }))} disabled={editSaving || !editDraft.company_id}>
                       <option value="">— None —</option>
                       {formOptions.departments.map((dep) => (
-                        <option key={dep.id} value={dep.id}>
-                          {dep.code} — {dep.name}
-                        </option>
+                        <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
                       ))}
-                    </FormSelect>
+                    </FieldSelect>
                   </div>
+                </div>
 
-                  {/* Position */}
-                  <div>
-                    <FormLabel>Position</FormLabel>
-                    <FormSelect
-                      value={draft.position_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, position_id: v }))}
-                      disabled={saving || !draft.company_id}
-                    >
-                      <option value="">— None —</option>
-                      {formOptions.positions.map((pos) => (
-                        <option key={pos.id} value={pos.id}>
-                          {pos.code} — {pos.name}
-                        </option>
-                      ))}
-                    </FormSelect>
-                  </div>
+                {/* Position */}
+                <div>
+                  <FieldLabel>Position</FieldLabel>
+                  <FieldSelect value={editDraft.position_id} onChange={(v) => setEditDraft((d) => ({ ...d, position_id: v }))} disabled={editSaving || !editDraft.company_id}>
+                    <option value="">— None —</option>
+                    {formOptions.positions.map((pos) => (
+                      <option key={pos.id} value={pos.id}>{pos.code} — {pos.name}</option>
+                    ))}
+                  </FieldSelect>
                 </div>
               </div>
+            </div>
 
-              <div style={{ borderTop: `1px solid ${PASTEL.line}` }} />
+            <Divider />
 
-              {/* ── Access Control ── */}
-              <div>
-                <div
-                  className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-3"
-                  style={{ color: PASTEL.lavenderDeep }}
-                >
-                  Access Control
-                </div>
+            {/* Access Control */}
+            <div>
+              <SectionLabel>Access Control</SectionLabel>
+              <div className="space-y-5">
 
-                <div className="space-y-4">
-                  {/* Legacy Role */}
+                {/* Legacy Role + ERP Role — 2 col */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <FormLabel>Legacy Role</FormLabel>
-                    <FormSelect
-                      value={draft.role}
-                      onChange={(v) => setDraft((d) => ({ ...d, role: v }))}
-                      disabled={saving}
-                    >
+                    <FieldLabel>Legacy Role</FieldLabel>
+                    <FieldSelect value={editDraft.role} onChange={(v) => setEditDraft((d) => ({ ...d, role: v }))} disabled={editSaving}>
                       {LEGACY_ROLES.map((r) => (
-                        <option key={r.value} value={r.value}>
-                          {r.label}
-                        </option>
+                        <option key={r.value} value={r.value}>{r.label}</option>
                       ))}
-                    </FormSelect>
+                    </FieldSelect>
                     <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Legacy enum coexists with ERP role during Phase 1.0F transition.
+                      Coexists with ERP role during transition.
                     </p>
                   </div>
-
-                  {/* ERP Role */}
                   <div>
-                    <FormLabel>ERP Role</FormLabel>
-                    <FormSelect
-                      value={draft.erp_role_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, erp_role_id: v }))}
-                      disabled={saving || !draft.company_id}
-                    >
+                    <FieldLabel>ERP Role</FieldLabel>
+                    <FieldSelect value={editDraft.erp_role_id} onChange={(v) => setEditDraft((d) => ({ ...d, erp_role_id: v }))} disabled={editSaving || !editDraft.company_id}>
                       <option value="">— No ERP role —</option>
                       {formOptions.erpRoles.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name} ({r.code})
-                        </option>
+                        <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
                       ))}
-                    </FormSelect>
+                    </FieldSelect>
                     <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Role assignment is scoped to users in your company.
-                      Cross-company assignment requires direct DB access.
-                    </p>
-                  </div>
-
-                  {/* Account active */}
-                  <div>
-                    <FormLabel>Account Active</FormLabel>
-                    <Toggle
-                      checked={draft.active}
-                      onChange={(v) => setDraft((d) => ({ ...d, active: v }))}
-                      disabled={saving || draft.id === myProfile?.id}
-                    />
-                    {draft.id === myProfile?.id && (
-                      <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                        You cannot deactivate your own account.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* MFA required */}
-                  <div>
-                    <FormLabel>MFA Required</FormLabel>
-                    <Toggle
-                      checked={draft.mfa_required}
-                      onChange={(v) => setDraft((d) => ({ ...d, mfa_required: v }))}
-                      disabled={saving}
-                    />
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Recommended for admin, finance controller, BOD, and head-level roles.
+                      Scoped to selected company.
                     </p>
                   </div>
                 </div>
+
+                {/* Account Active */}
+                <FieldToggle
+                  label={editDraft.active ? 'Account active' : 'Account inactive'}
+                  checked={editDraft.active}
+                  onChange={(v) => setEditDraft((d) => ({ ...d, active: v }))}
+                  disabled={editSaving || editDraft.id === myProfile?.id}
+                  helpText={editDraft.id === myProfile?.id ? 'You cannot deactivate your own account.' : undefined}
+                />
+
+                {/* MFA Required */}
+                <FieldToggle
+                  label={editDraft.mfa_required ? 'MFA required' : 'MFA not required'}
+                  checked={editDraft.mfa_required}
+                  onChange={(v) => setEditDraft((d) => ({ ...d, mfa_required: v }))}
+                  disabled={editSaving}
+                  helpText="Recommended for admin, finance controller, BOD, and head-level roles."
+                />
+              </div>
+            </div>
+
+            <SaveError message={editError} />
+          </div>
+        )}
+      </AdminFormModal>
+
+      {/* ── Add User Modal ── */}
+      <AdminFormModal
+        open={addOpen}
+        eyebrow="New User"
+        title="Create User"
+        subtitle="Creates a Supabase Auth account and sets up the user profile."
+        onClose={closeAdd}
+        footer={addFooter}
+      >
+        <div className="space-y-6">
+
+          {/* Identity */}
+          <div>
+            <SectionLabel>Identity</SectionLabel>
+            <div className="space-y-4">
+              <div>
+                <FieldLabel required>Full Name</FieldLabel>
+                <FieldInput
+                  value={addDraft.full_name}
+                  onChange={(v) => setAddDraft((d) => ({ ...d, full_name: v }))}
+                  disabled={addSaving}
+                  placeholder="e.g. Budi Santoso"
+                  maxLength={100}
+                />
               </div>
 
-              {/* Save error */}
-              {saveError && (
-                <div
-                  className="rounded-xl p-3.5"
-                  style={{
-                    background: PASTEL.rose,
-                    border: `1px solid ${PASTEL.roseDeep}`,
-                  }}
-                >
-                  <div
-                    className="text-xs font-semibold mb-0.5"
-                    style={{ color: PASTEL.ink }}
-                  >
-                    Save failed
-                  </div>
-                  <div className="text-xs" style={{ color: PASTEL.inkSoft }}>
-                    {saveError}
-                  </div>
+              {/* Email + Password — 2 col */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel required>Email</FieldLabel>
+                  <FieldInput
+                    type="email"
+                    value={addDraft.email}
+                    onChange={(v) => setAddDraft((d) => ({ ...d, email: v }))}
+                    disabled={addSaving}
+                    placeholder="user@company.com"
+                  />
+                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
+                    Used for login. Stored in Supabase Auth only.
+                  </p>
                 </div>
-              )}
-            </div>
-
-            {/* Drawer footer */}
-            <div
-              className="flex items-center justify-end gap-2 px-5 py-4 border-t flex-shrink-0"
-              style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft }}
-            >
-              <button
-                type="button"
-                onClick={closeEdit}
-                disabled={saving}
-                className="px-4 py-2 rounded-xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
-                style={{
-                  background: 'white',
-                  color: PASTEL.inkSoft,
-                  border: `1px solid ${PASTEL.line}`,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
-                style={{ background: PASTEL.ink, color: 'white' }}
-              >
-                {saving ? (
-                  <>
-                    <RefreshCw size={13} className="animate-spin" />
-                    Saving…
-                  </>
-                ) : (
-                  <>
-                    <Check size={13} />
-                    Save changes
-                  </>
-                )}
-              </button>
+                <div>
+                  <FieldLabel required>Password</FieldLabel>
+                  <FieldInput
+                    type="password"
+                    value={addDraft.password}
+                    onChange={(v) => setAddDraft((d) => ({ ...d, password: v }))}
+                    disabled={addSaving}
+                    placeholder="Min. 8 characters"
+                  />
+                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
+                    User should change this on first login.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-        </>
-      )}
 
-      {/* Toast notification */}
+          <Divider />
+
+          {/* Access */}
+          <div>
+            <SectionLabel>Access</SectionLabel>
+            <div className="space-y-4">
+
+              {/* Company + Role — 2 col */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel required>Company</FieldLabel>
+                  <FieldSelect
+                    value={addDraft.company_id}
+                    onChange={(v) => setAddDraft((d) => ({ ...d, company_id: v }))}
+                    disabled={addSaving}
+                  >
+                    <option value="">— Select company —</option>
+                    {addCompanies.map((c) => (
+                      <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
+                    ))}
+                  </FieldSelect>
+                </div>
+                <div>
+                  <FieldLabel required>Role</FieldLabel>
+                  <FieldSelect
+                    value={addDraft.role}
+                    onChange={(v) => setAddDraft((d) => ({ ...d, role: v }))}
+                    disabled={addSaving}
+                  >
+                    {LEGACY_ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </FieldSelect>
+                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
+                    ERP role can be assigned after creation via Edit.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <SaveError message={addError} />
+        </div>
+      </AdminFormModal>
+
+      {/* Toast */}
       {toast && (
         <div
           className="fixed bottom-6 right-6 rounded-2xl px-4 py-3 text-sm font-semibold shadow-lg flex items-center gap-2 z-[60]"
           style={{
             background: toast.type === 'error' ? PASTEL.rose : PASTEL.mint,
             color: PASTEL.ink,
-            border: `1px solid ${
-              toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep
-            }`,
+            border: `1px solid ${toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep}`,
           }}
         >
-          {toast.type === 'error' ? <X size={14} /> : <Check size={14} />}
+          <Check size={14} />
           {toast.msg}
         </div>
       )}
