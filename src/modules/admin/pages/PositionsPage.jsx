@@ -1,10 +1,10 @@
 // src/modules/admin/pages/PositionsPage.jsx
 // Positions master data — paginated list with create / edit / soft-delete.
-// Phase 1.0I: new page.
+// Phase 1.0I: CRUD via centered AdminFormModal.
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Search, RefreshCw, ChevronLeft, ChevronRight, X, Check, Plus,
+  Search, RefreshCw, ChevronLeft, ChevronRight, Check, Plus, RefreshCw as Spinner,
 } from 'lucide-react';
 import {
   usePositions, POSITIONS_PAGE_SIZE, POSITION_LEVELS,
@@ -14,12 +14,13 @@ import {
 import { fetchAllCompanies } from '../../../hooks/useUserAccess';
 import { useDebounce } from '../../../hooks/useDebounce';
 import AdminPageHeader from '../components/AdminPageHeader';
+import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 
 // ─────────────────────────────────────────────────────────────
-// Constants
+// Design tokens
 // ─────────────────────────────────────────────────────────────
 
 const PASTEL = {
@@ -40,7 +41,6 @@ const PASTEL = {
   peachDeep:    '#F5A78F',
 };
 
-// Level badge colour mapping
 const LEVEL_STYLE = {
   Staff:      { bg: PASTEL.lineSoft,  color: PASTEL.inkMute },
   Supervisor: { bg: PASTEL.sky,       color: PASTEL.skyDeep },
@@ -60,7 +60,7 @@ const EMPTY_DRAFT = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Small display components
+// Table badge components
 // ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ active }) {
@@ -104,19 +104,19 @@ function LevelBadge({ level }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Drawer form primitives
+// Form field primitives
 // ─────────────────────────────────────────────────────────────
 
-function FormLabel({ children, required }) {
+function FieldLabel({ children, required }) {
   return (
-    <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>
+    <div className="text-[11px] font-semibold mb-1.5 uppercase tracking-[0.14em]" style={{ color: PASTEL.inkMute }}>
       {children}
       {required && <span style={{ color: PASTEL.roseDeep }}> *</span>}
     </div>
   );
 }
 
-function FormInput({ value, onChange, disabled, placeholder, maxLength }) {
+function FieldInput({ value, onChange, disabled, placeholder, maxLength }) {
   return (
     <input
       type="text"
@@ -125,19 +125,19 @@ function FormInput({ value, onChange, disabled, placeholder, maxLength }) {
       disabled={disabled}
       placeholder={placeholder}
       maxLength={maxLength}
-      className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition-colors disabled:opacity-50"
+      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 placeholder:text-[#B8AEA6]"
       style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
     />
   );
 }
 
-function FormSelect({ value, onChange, disabled, children }) {
+function FieldSelect({ value, onChange, disabled, children }) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition-colors disabled:opacity-50 cursor-pointer"
+      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 cursor-pointer"
       style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
     >
       {children}
@@ -145,28 +145,40 @@ function FormSelect({ value, onChange, disabled, children }) {
   );
 }
 
-function Toggle({ checked, onChange, disabled }) {
+function FieldToggle({ checked, onChange, disabled }) {
   return (
     <button
       type="button"
       onClick={() => !disabled && onChange(!checked)}
       disabled={disabled}
-      className="flex items-center gap-2.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+      className="flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
     >
       <span
-        className="w-10 h-5 rounded-full relative flex-shrink-0 transition-colors"
+        className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors"
         style={{ background: checked ? PASTEL.mintDeep : PASTEL.line }}
       >
         <span
-          className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
+          className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
           style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
         />
       </span>
-      <span style={{ color: checked ? '#1A5C35' : PASTEL.inkMute }}>
+      <span className="text-sm font-medium" style={{ color: checked ? '#1A5C35' : PASTEL.inkSoft }}>
         {checked ? 'Active' : 'Inactive'}
       </span>
     </button>
   );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <div className="text-[10px] uppercase tracking-[0.22em] font-bold mb-4" style={{ color: PASTEL.lavenderDeep }}>
+      {children}
+    </div>
+  );
+}
+
+function Divider() {
+  return <div className="my-6" style={{ borderTop: `1px solid ${PASTEL.line}` }} />;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -184,12 +196,9 @@ export default function PositionsPage() {
   const from = total === 0 ? 0 : (page - 1) * POSITIONS_PAGE_SIZE + 1;
   const to = Math.min(page * POSITIONS_PAGE_SIZE, total);
 
-  const handleSearch = (val) => {
-    setSearchInput(val);
-    setPage(1);
-  };
+  const handleSearch = (val) => { setSearchInput(val); setPage(1); };
 
-  // ── Drawer state ──
+  // ── Modal state ──
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -203,13 +212,11 @@ export default function PositionsPage() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // Load companies on drawer open
   useEffect(() => {
     if (!draft) return;
     fetchAllCompanies().then(({ data: cos }) => setCompanies(cos || []));
   }, [draft !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload departments when company changes
   useEffect(() => {
     if (!draft) return;
     fetchDepartmentsForPositionForm(draft.company_id).then(
@@ -217,10 +224,7 @@ export default function PositionsPage() {
     );
   }, [draft?.company_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openCreate = useCallback(() => {
-    setDraft({ ...EMPTY_DRAFT });
-    setSaveError(null);
-  }, []);
+  const openCreate = useCallback(() => { setDraft({ ...EMPTY_DRAFT }); setSaveError(null); }, []);
 
   const openEdit = useCallback((row) => {
     setDraft({
@@ -235,7 +239,7 @@ export default function PositionsPage() {
     setSaveError(null);
   }, []);
 
-  const closeDrawer = useCallback(() => {
+  const closeModal = useCallback(() => {
     setDraft(null);
     setSaveError(null);
     setArchiving(false);
@@ -253,30 +257,17 @@ export default function PositionsPage() {
     setSaving(true);
     setSaveError(null);
 
-    const fields = {
-      company_id:    draft.company_id,
-      department_id: draft.department_id,
-      code:          draft.code,
-      name:          draft.name,
-      level:         draft.level,
-      is_active:     draft.is_active,
-    };
-
     const { error: saveErr } = draft.id
-      ? await updatePosition(draft.id, fields)
-      : await createPosition(fields);
+      ? await updatePosition(draft.id, draft)
+      : await createPosition(draft);
 
     setSaving(false);
+    if (saveErr) { setSaveError(saveErr.message || 'Save failed. Check your permissions.'); return; }
 
-    if (saveErr) {
-      setSaveError(saveErr.message || 'Save failed. Check your permissions and try again.');
-      return;
-    }
-
-    closeDrawer();
+    closeModal();
     refresh();
     showToast(draft.id ? 'Position updated.' : 'Position created.');
-  }, [draft, closeDrawer, refresh, showToast]);
+  }, [draft, closeModal, refresh, showToast]);
 
   const handleArchive = useCallback(async () => {
     if (!draft?.id) return;
@@ -284,21 +275,54 @@ export default function PositionsPage() {
 
     setArchiving(true);
     setSaveError(null);
-
     const { error: archErr } = await softDeletePosition(draft.id);
     setArchiving(false);
 
-    if (archErr) {
-      setSaveError(archErr.message || 'Archive failed. Check your permissions.');
-      return;
-    }
+    if (archErr) { setSaveError(archErr.message || 'Archive failed. Check your permissions.'); return; }
 
-    closeDrawer();
+    closeModal();
     refresh();
     showToast('Position archived.');
-  }, [draft, closeDrawer, refresh, showToast]);
+  }, [draft, closeModal, refresh, showToast]);
 
   const isCreate = !draft?.id;
+
+  const modalFooter = (
+    <div className="flex items-center gap-3">
+      {!isCreate && (
+        <button
+          type="button"
+          onClick={handleArchive}
+          disabled={saving || archiving}
+          className="px-4 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
+          style={{ background: 'white', color: PASTEL.roseDeep, border: `1px solid ${PASTEL.roseDeep}55` }}
+        >
+          {archiving ? 'Archiving…' : 'Archive'}
+        </button>
+      )}
+      <div className="flex-1" />
+      <button
+        type="button"
+        onClick={closeModal}
+        disabled={saving || archiving}
+        className="px-5 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
+        style={{ background: 'white', color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={saving || archiving}
+        className="px-5 py-2.5 rounded-2xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
+        style={{ background: PASTEL.ink, color: 'white' }}
+      >
+        {saving
+          ? <><Spinner size={13} className="animate-spin" /> Saving…</>
+          : <><Check size={13} /> {isCreate ? 'Create Position' : 'Save Changes'}</>}
+      </button>
+    </div>
+  );
 
   // ─────────────────────────────────────────────────────────
   // Render
@@ -349,11 +373,7 @@ export default function PositionsPage() {
       </div>
 
       {/* Table */}
-      <div
-        className="rounded-2xl border overflow-hidden"
-        style={{ background: 'white', borderColor: PASTEL.line }}
-      >
-        {/* Header */}
+      <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
           style={{
@@ -372,7 +392,6 @@ export default function PositionsPage() {
           <div />
         </div>
 
-        {/* Body */}
         {error ? (
           <ErrorState message={error.message} onRetry={refresh} />
         ) : loading ? (
@@ -384,28 +403,20 @@ export default function PositionsPage() {
             <div
               key={row.id}
               className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
-              style={{
-                gridTemplateColumns: '70px 80px 1fr 100px 1fr 80px 44px',
-                borderColor: PASTEL.line,
-              }}
+              style={{ gridTemplateColumns: '70px 80px 1fr 100px 1fr 80px 44px', borderColor: PASTEL.line }}
               onMouseEnter={(e) => (e.currentTarget.style.background = PASTEL.lineSoft)}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <div><CompanyBadge company={row.companies} /></div>
               <div>
-                <span
-                  className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-                  style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}
-                >
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold" style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}>
                   {row.code}
                 </span>
               </div>
               <div className="font-medium" style={{ color: PASTEL.ink }}>{row.name}</div>
               <div><LevelBadge level={row.level} /></div>
-              <div className="text-sm" style={{ color: PASTEL.inkSoft }}>
-                {row.departments
-                  ? <span>{row.departments.code}</span>
-                  : <span style={{ color: PASTEL.inkMute }}>—</span>}
+              <div style={{ color: PASTEL.inkSoft }}>
+                {row.departments ? row.departments.code : <span style={{ color: PASTEL.inkMute }}>—</span>}
               </div>
               <div className="flex justify-end"><StatusBadge active={row.is_active} /></div>
               <div className="flex justify-end">
@@ -422,37 +433,17 @@ export default function PositionsPage() {
           ))
         )}
 
-        {/* Pagination */}
         {!error && (
-          <div
-            className="flex items-center justify-between px-4 py-3"
-            style={{ borderTop: `1px solid ${PASTEL.line}` }}
-          >
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${PASTEL.line}` }}>
             <span className="text-xs" style={{ color: PASTEL.inkMute }}>
-              {total === 0
-                ? 'No records'
-                : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
+              {total === 0 ? 'No records' : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
             </span>
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1 || loading}
-                className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70"
-                style={{ background: PASTEL.lineSoft }}
-              >
+              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
                 <ChevronLeft size={14} style={{ color: PASTEL.inkSoft }} />
               </button>
-              <span className="px-3 text-xs font-medium" style={{ color: PASTEL.inkSoft }}>
-                {page} / {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages || loading}
-                className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70"
-                style={{ background: PASTEL.lineSoft }}
-              >
+              <span className="px-3 text-xs font-medium" style={{ color: PASTEL.inkSoft }}>{page} / {totalPages}</span>
+              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
                 <ChevronRight size={14} style={{ color: PASTEL.inkSoft }} />
               </button>
             </div>
@@ -460,93 +451,65 @@ export default function PositionsPage() {
         )}
       </div>
 
-      {/* ─────────────────────────────────────────────────────
-          Drawer
-      ───────────────────────────────────────────────────── */}
-      {draft && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            style={{ background: 'rgba(45,42,40,0.22)' }}
-            onClick={closeDrawer}
-          />
-          <div
-            className="fixed right-0 top-0 bottom-0 z-50 w-full flex flex-col"
-            style={{
-              maxWidth: 440,
-              background: 'white',
-              borderLeft: `1px solid ${PASTEL.line}`,
-              boxShadow: '-6px 0 32px rgba(45,42,40,0.10)',
-            }}
-          >
-            {/* Header */}
-            <div
-              className="flex items-start justify-between gap-3 px-5 py-4 border-b flex-shrink-0"
-              style={{ borderColor: PASTEL.line }}
-            >
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.20em] font-semibold mb-1" style={{ color: PASTEL.inkMute }}>
-                  {isCreate ? 'New Position' : 'Edit Position'}
-                </div>
-                <div className="font-display text-lg font-semibold" style={{ color: PASTEL.ink }}>
-                  {isCreate ? 'Create a position' : draft.name || '(unnamed)'}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeDrawer}
-                className="flex-shrink-0 p-2 rounded-xl transition-opacity hover:opacity-70"
-                style={{ background: PASTEL.lineSoft }}
-              >
-                <X size={15} style={{ color: PASTEL.inkSoft }} />
-              </button>
-            </div>
+      {/* ── Centered modal form ── */}
+      <AdminFormModal
+        open={!!draft}
+        eyebrow={isCreate ? 'New Position' : 'Edit Position'}
+        title={isCreate ? 'Create Position' : draft?.name || 'Edit Position'}
+        subtitle="Define job title, seniority level, and optional department assignment."
+        onClose={closeModal}
+        footer={modalFooter}
+      >
+        {draft && (
+          <div className="space-y-6">
 
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+            {/* ── Identity ── */}
+            <div>
+              <SectionLabel>Identity</SectionLabel>
+              <div className="space-y-4">
 
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-3" style={{ color: PASTEL.lavenderDeep }}>
-                  Identity
-                </div>
-                <div className="space-y-3">
-
-                  <div>
-                    <FormLabel required>Company</FormLabel>
-                    <FormSelect
+                <div>
+                  <FieldLabel required>Company</FieldLabel>
+                  {isCreate ? (
+                    <FieldSelect
                       value={draft.company_id}
                       onChange={(v) => setDraft((d) => ({ ...d, company_id: v, department_id: '' }))}
-                      disabled={saving || !isCreate}
+                      disabled={saving}
                     >
                       <option value="">— Select company —</option>
                       {companies.map((c) => (
                         <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
                       ))}
-                    </FormSelect>
-                    {!isCreate && (
-                      <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                        Company cannot be changed after creation.
-                      </p>
-                    )}
-                  </div>
+                    </FieldSelect>
+                  ) : (
+                    <div
+                      className="rounded-2xl border px-4 py-3 text-sm"
+                      style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
+                    >
+                      {companies.find((c) => c.id === draft.company_id)
+                        ? `${companies.find((c) => c.id === draft.company_id).code} — ${companies.find((c) => c.id === draft.company_id).name}`
+                        : 'Loading…'}
+                      <span className="ml-2 text-[10px] uppercase tracking-wide" style={{ color: PASTEL.inkMute }}>(locked)</span>
+                    </div>
+                  )}
+                </div>
 
+                {/* Code + Name — 2 col */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <FormLabel required>Code</FormLabel>
-                    <FormInput
+                    <FieldLabel required>Code</FieldLabel>
+                    <FieldInput
                       value={draft.code}
                       onChange={(v) => setDraft((d) => ({ ...d, code: v }))}
                       disabled={saving}
-                      placeholder="e.g. MGR, SPV, DIR"
+                      placeholder="e.g. MGR, SPV"
                       maxLength={20}
                     />
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Short identifier, unique per company. Saved as uppercase.
-                    </p>
+                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Saved uppercase. Unique per company.</p>
                   </div>
-
                   <div>
-                    <FormLabel required>Name</FormLabel>
-                    <FormInput
+                    <FieldLabel required>Name</FieldLabel>
+                    <FieldInput
                       value={draft.name}
                       onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
                       disabled={saving}
@@ -554,109 +517,70 @@ export default function PositionsPage() {
                       maxLength={100}
                     />
                   </div>
-
-                  <div>
-                    <FormLabel required>Seniority Level</FormLabel>
-                    <FormSelect
-                      value={draft.level}
-                      onChange={(v) => setDraft((d) => ({ ...d, level: v }))}
-                      disabled={saving}
-                    >
-                      {POSITION_LEVELS.map((lvl) => (
-                        <option key={lvl} value={lvl}>{lvl}</option>
-                      ))}
-                    </FormSelect>
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Used for approval matrix thresholds.
-                    </p>
-                  </div>
-
-                  <div>
-                    <FormLabel>Department</FormLabel>
-                    <FormSelect
-                      value={draft.department_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, department_id: v }))}
-                      disabled={saving || !draft.company_id}
-                    >
-                      <option value="">— All departments —</option>
-                      {departments.map((dep) => (
-                        <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
-                      ))}
-                    </FormSelect>
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Optional. Leave blank if this position spans multiple departments.
-                    </p>
-                  </div>
                 </div>
               </div>
+            </div>
 
-              <div style={{ borderTop: `1px solid ${PASTEL.line}` }} />
+            <Divider />
 
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-3" style={{ color: PASTEL.lavenderDeep }}>
-                  Status
+            {/* ── Organization ── */}
+            <div>
+              <SectionLabel>Organization</SectionLabel>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel required>Seniority Level</FieldLabel>
+                  <FieldSelect
+                    value={draft.level}
+                    onChange={(v) => setDraft((d) => ({ ...d, level: v }))}
+                    disabled={saving}
+                  >
+                    {POSITION_LEVELS.map((lvl) => (
+                      <option key={lvl} value={lvl}>{lvl}</option>
+                    ))}
+                  </FieldSelect>
+                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Used for approval thresholds.</p>
                 </div>
-                <FormLabel>Active</FormLabel>
-                <Toggle
-                  checked={draft.is_active}
-                  onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))}
-                  disabled={saving}
-                />
+                <div>
+                  <FieldLabel>Department</FieldLabel>
+                  <FieldSelect
+                    value={draft.department_id}
+                    onChange={(v) => setDraft((d) => ({ ...d, department_id: v }))}
+                    disabled={saving || !draft.company_id}
+                  >
+                    <option value="">— All departments —</option>
+                    {departments.map((dep) => (
+                      <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
+                    ))}
+                  </FieldSelect>
+                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Optional. Leave blank if cross-department.</p>
+                </div>
               </div>
-
-              {saveError && (
-                <div
-                  className="rounded-xl p-3.5"
-                  style={{ background: PASTEL.rose, border: `1px solid ${PASTEL.roseDeep}` }}
-                >
-                  <div className="text-xs font-semibold mb-0.5" style={{ color: PASTEL.ink }}>Save failed</div>
-                  <div className="text-xs" style={{ color: PASTEL.inkSoft }}>{saveError}</div>
-                </div>
-              )}
             </div>
 
-            {/* Footer */}
-            <div
-              className="flex items-center gap-2 px-5 py-4 border-t flex-shrink-0"
-              style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft }}
-            >
-              {!isCreate && (
-                <button
-                  type="button"
-                  onClick={handleArchive}
-                  disabled={saving || archiving}
-                  className="px-3 py-2 rounded-xl text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-40 mr-auto"
-                  style={{ background: 'white', color: PASTEL.roseDeep, border: `1px solid ${PASTEL.roseDeep}44` }}
-                >
-                  {archiving ? 'Archiving…' : 'Archive'}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={closeDrawer}
-                disabled={saving || archiving}
-                className="px-4 py-2 rounded-xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
-                style={{ background: 'white', color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving || archiving}
-                className="px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
-                style={{ background: PASTEL.ink, color: 'white' }}
-              >
-                {saving ? (
-                  <><RefreshCw size={13} className="animate-spin" /> Saving…</>
-                ) : (
-                  <><Check size={13} /> {isCreate ? 'Create' : 'Save changes'}</>
-                )}
-              </button>
+            <Divider />
+
+            {/* ── Status ── */}
+            <div>
+              <SectionLabel>Status</SectionLabel>
+              <FieldToggle
+                checked={draft.is_active}
+                onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))}
+                disabled={saving}
+              />
             </div>
+
+            {saveError && (
+              <div
+                className="rounded-2xl px-4 py-3.5"
+                style={{ background: PASTEL.rose, border: `1px solid ${PASTEL.roseDeep}` }}
+              >
+                <div className="text-xs font-semibold mb-0.5" style={{ color: PASTEL.ink }}>Save failed</div>
+                <div className="text-xs" style={{ color: PASTEL.inkSoft }}>{saveError}</div>
+              </div>
+            )}
           </div>
-        </>
-      )}
+        )}
+      </AdminFormModal>
 
       {/* Toast */}
       {toast && (
@@ -668,7 +592,7 @@ export default function PositionsPage() {
             border: `1px solid ${toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep}`,
           }}
         >
-          {toast.type === 'error' ? <X size={14} /> : <Check size={14} />}
+          <Check size={14} />
           {toast.msg}
         </div>
       )}
