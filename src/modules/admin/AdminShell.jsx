@@ -1,14 +1,15 @@
 // src/modules/admin/AdminShell.jsx
 // ERP Master Data admin section.
-// Provides sub-navigation between Companies, Branches, Departments, Roles.
+// Provides sub-navigation between all master data admin tabs.
 // This component is lazy-loaded from App.jsx — no nested lazy here.
-// Phase 1.0E: read-only list views. Create/edit/delete comes in later phases.
+// Phase 1.0I: Branches, Departments, Positions have full CRUD.
 
 import { useState } from 'react';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import CompaniesPage from './pages/CompaniesPage';
 import BranchesPage from './pages/BranchesPage';
 import DepartmentsPage from './pages/DepartmentsPage';
+import PositionsPage from './pages/PositionsPage';
 import RolesPage from './pages/RolesPage';
 import DocumentTypesPage from './pages/DocumentTypesPage';
 import StatusCatalogPage from './pages/StatusCatalogPage';
@@ -30,6 +31,7 @@ const ADMIN_TABS = [
   { id: 'companies',      label: 'Companies' },
   { id: 'branches',       label: 'Branches' },
   { id: 'departments',    label: 'Departments' },
+  { id: 'positions',      label: 'Positions' },
   { id: 'roles',          label: 'Roles' },
   { id: 'document-types', label: 'Document Types' },
   { id: 'status-catalog', label: 'Status Catalog' },
@@ -106,7 +108,7 @@ export default function AdminShell() {
               className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0"
               style={{ background: '#2A9C65' }}
             />
-            Phase 1.0E
+            Phase 1.0I
           </span>
           <span className="text-[11px] font-medium" style={{ color: PASTEL.inkMute }}>
             Foundation · Master Data
@@ -116,7 +118,7 @@ export default function AdminShell() {
           className="hidden sm:block text-[10px] uppercase tracking-[0.18em] font-semibold"
           style={{ color: PASTEL.inkMute }}
         >
-          Read-only
+          CRUD enabled
         </span>
       </div>
 
@@ -139,6 +141,11 @@ export default function AdminShell() {
       {activeTab === 'departments' && (
         <ErrorBoundary title="Departments section temporarily unavailable">
           <DepartmentsPage />
+        </ErrorBoundary>
+      )}
+      {activeTab === 'positions' && (
+        <ErrorBoundary title="Positions section temporarily unavailable">
+          <PositionsPage />
         </ErrorBoundary>
       )}
       {activeTab === 'roles' && (

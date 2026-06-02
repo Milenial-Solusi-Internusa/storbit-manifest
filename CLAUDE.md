@@ -719,6 +719,85 @@ Verification log: `docs/operations/rls-hardening-verification-log.md`
 
 ---
 
+## Debugging Field Notes
+
+Lessons learned from real debugging sessions on this project. Read before diagnosing RLS or staging issues.
+
+---
+
+### RLS Policy Not Applied to Staging (2026-06-02)
+
+**Symptom:**
+Super admin user (Den Bagus) could only see MSI branches. JCI branches were not visible despite the UI correctly showing the "SUPER ADMIN" role label.
+
+**Root cause:**
+Migration 019 (`20260524000019_org_master_super_admin_read_bypass.sql`) was not applied to staging. The active `branches_read` policy was still the migration 014 shape:
+
+```sql
+-- Migration 014 — WRONG for super admin cross-company reads
+(company_id = get_user_company_id()) AND ((deleted_at IS NULL) OR is_super_admin())
+```
+
+`is_super_admin()` is nested inside the `company_id` condition. It only bypasses `deleted_at` — the company scope filter is never bypassed regardless of role.
+
+The correct shape (migration 019):
+
+```sql
+-- Migration 019 — CORRECT
+is_super_admin() OR (company_id = get_user_company_id() AND deleted_at IS NULL)
+```
+
+`is_super_admin()` is a top-level OR — when true, the entire company scope filter is bypassed.
+
+**Fix applied:**
+Manually ran migration 019 SQL in Supabase SQL Editor on staging.
+
+**Key lesson — always verify active policy before debugging frontend:**
+
+```sql
+SELECT policyname, cmd, qual
+FROM pg_policies
+WHERE tablename = 'branches' AND cmd = 'SELECT';
+```
+
+Check `qual` — confirm `is_super_admin()` is the outermost condition, not nested inside `company_id`.
+
+---
+
+### RLS Debugging Protocol
+
+Follow this order before assuming a frontend bug when data is missing or filtered unexpectedly:
+
+1. **Check `pg_policies`** — confirm the active policy shape matches the expected migration.
+   Use: `SELECT policyname, cmd, qual FROM pg_policies WHERE tablename = '<table>' AND cmd = 'SELECT';`
+
+2. **Test `is_super_admin()` from the browser session** — add a temporary `console.debug` in the relevant page component (not Dashboard — it is purely presentational and does not import supabase):
+
+   ```js
+   // Temporary — remove after debug
+   useEffect(() => {
+     supabase.auth.getSession().then(({ data: { session } }) => {
+       console.debug('[debug] uid =', session?.user?.id);
+     });
+     supabase.rpc('is_super_admin').then(({ data }) => {
+       console.debug('[debug] is_super_admin =', data);
+     });
+     supabase.rpc('get_user_company_id').then(({ data }) => {
+       console.debug('[debug] get_user_company_id =', data);
+     });
+   }, []);
+   ```
+
+3. **Do not test RLS in the SQL Editor as a substitute for browser session testing.**
+   `auth.uid()` always returns NULL in the SQL Editor — it runs as service role, not as the authenticated user. `is_super_admin()` and `get_user_company_id()` will always return false/null in that context.
+
+4. **Do not test RPC from DevTools console directly.**
+   The Supabase client is not exposed on the `window` object. Temporary `console.debug` calls inside the page component are the correct approach.
+
+5. **Never assume a migration was applied** — always verify with `pg_policies` or `information_schema`. Migrations applied to one environment (dev/staging/production) are independent. A migration committed to the repo is not automatically applied anywhere.
+
+---
+
 ## Final Reminder
 
 This project must be evolved carefully.
