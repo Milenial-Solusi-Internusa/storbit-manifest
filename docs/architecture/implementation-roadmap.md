@@ -304,6 +304,18 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 
 ---
 
+### Phase 1.0K — App Launcher + Per-Module Sidebar (Option B Layout) ✅ Complete
+**Branch:** `phase-1-admin-crud-foundation`
+**Prerequisites:** 1.0J complete ✅
+**Output:**
+- `src/modules/launcher/AppLauncher.jsx` — new: Odoo-style grid of module cards; greeting with time-of-day salutation; color-accented icon circles per group; hover animation; role-filtered via visibleMenuGroups prop
+- `src/App.jsx` — Option B layout: `activeModule` state (null = launcher); `navigateTo(menuId)` auto-detects group; `enterModule(group)` enters first visible item; `goToLauncher()` returns to launcher; `ModuleSidebar` component renders only active module's items + "← Apps" back button; sidebar hidden in launcher mode; topbar label guards for launcher; `AppLauncher` lazy-loaded; `display:none` on module content when in launcher; `SidebarGroup` + `expandedGroups` removed
+- `src/modules/admin/AdminShell.jsx` — sidebar layout (vertical, sticky, sectioned) replacing horizontal tab strip; 3 section groups: Organization, Access Control, Configuration
+- Sidebar white fade bug fixed: removed `#F6EFE3` stop from sidebar background gradient
+- All `setActiveMenu` direct calls replaced with `navigateTo` for correct module detection
+
+---
+
 ## Phase 2 — Sales & Operations
 
 ### Phase 2.0 — CRM & Quotation
@@ -511,3 +523,7 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-06-02 | Edge Function create-user passes full_name in user_metadata | handle_new_user() trigger reads raw_user_meta_data->>'full_name' on INSERT; without user_metadata the trigger inserts empty name and the subsequent UPDATE is the only write path — passing it in metadata makes the trigger the primary path and UPDATE a defense-in-depth fallback |
 | 2026-06-02 | FunctionsHttpError body must be explicitly extracted to surface real error message | supabase.functions.invoke() wraps non-2xx responses in FunctionsHttpError with generic message "Edge Function returned a non-2xx status code"; actual body JSON is in error.context and must be read via error.context.json() — fixed in createUser() helper |
 | 2026-06-02 | Org & Access Control nav item removed, old UserManagement component no longer loaded | UserAccessPage in AdminShell is the single source of truth for user management; duplicate entry was confusing and the old UserManagement component did not support ERP roles or multi-company; activeMenu=users redirects to admin to handle stale state |
+| 2026-06-02 | App Launcher implemented as Option B (sidebar per-module, not global accordion) | Option A (additive launcher + global sidebar) was lower risk; Option B was chosen for UX reasons — sidebar only appears after selecting a module, exactly matching Odoo's navigation model; risk was kept low by using a single new activeModule state with navigateTo() helper that auto-detects group |
+| 2026-06-02 | activeModule state drives both launcher and sidebar visibility | null = launcher (no sidebar); string = active group label (ModuleSidebar shows); navigateTo() sets both activeModule and activeMenu atomically, keeping them in sync from any call site |
+| 2026-06-02 | AdminShell horizontal tabs replaced with vertical sticky sidebar | 10 tabs in a horizontal strip overflowed on narrower viewports; vertical sidebar with 3 section groups (Organization, Access Control, Configuration) is consistent with GLPI-style admin layout and eliminates scroll dependency |
+| 2026-06-02 | Sidebar bottom white fade was the gradient stop #F6EFE3 at 190% position | Not an overlay div or CSS pseudo-element; the aside background gradient had a cream stop far outside the element bounds, causing the bottom to fade to near-white on smaller screens; removed by clamping gradient to 100% |
