@@ -1,11 +1,11 @@
-// src/hooks/useDepartments.js
-// Server-side paginated + debounced-search list of departments.
-// Joins companies(code, name) for the company column.
+// src/hooks/usePositions.js
+// Server-side paginated + debounced-search list of positions.
+// Joins companies(code, name) and departments(code, name).
 // Filters deleted_at IS NULL (soft delete).
 //
-// Mutation helpers (createDepartment, updateDepartment, softDeleteDepartment)
-// and a form helper (fetchParentDepartmentsForCompany) are exported as plain
-// async functions — call from event handlers, not inside effects.
+// Mutation helpers (createPosition, updatePosition, softDeletePosition) and a
+// form helper (fetchDepartmentsForPositionForm) are exported as plain async
+// functions — call from event handlers, not inside effects.
 //
 // Pattern: all setState calls are inside .then() — never synchronously in the
 // effect body. Matches the set-state-in-effect lint rule enforced project-wide.
@@ -13,9 +13,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
-export const DEPARTMENTS_PAGE_SIZE = 20;
+export const POSITIONS_PAGE_SIZE = 20;
 
-export function useDepartments({ page = 1, search = '' } = {}) {
+export const POSITION_LEVELS = [
+  'Staff',
+  'Supervisor',
+  'Manager',
+  'Head',
+  'Director',
+];
+
+export function usePositions({ page = 1, search = '' } = {}) {
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -25,13 +33,13 @@ export function useDepartments({ page = 1, search = '' } = {}) {
   useEffect(() => {
     let cancelled = false;
 
-    const from = (page - 1) * DEPARTMENTS_PAGE_SIZE;
-    const to = from + DEPARTMENTS_PAGE_SIZE - 1;
+    const from = (page - 1) * POSITIONS_PAGE_SIZE;
+    const to = from + POSITIONS_PAGE_SIZE - 1;
 
     let query = supabase
-      .from('departments')
+      .from('positions')
       .select(
-        'id, company_id, code, name, parent_id, is_active, created_at, companies(code, name)',
+        'id, company_id, department_id, code, name, level, is_active, created_at, companies(code, name), departments(code, name)',
         { count: 'exact' }
       )
       .is('deleted_at', null)
@@ -65,20 +73,19 @@ export function useDepartments({ page = 1, search = '' } = {}) {
     loading,
     error,
     refresh,
-    pageSize: DEPARTMENTS_PAGE_SIZE,
+    pageSize: POSITIONS_PAGE_SIZE,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Form helper — fetch parent department candidates for the form dropdown.
-// Excludes the currently-edited department (no self-reference) and
-// already-deleted departments.
+// Form helper — fetch active departments for the position form's optional
+// department dropdown. Filtered to the selected company.
 // ---------------------------------------------------------------------------
 
-export async function fetchParentDepartmentsForCompany(companyId, excludeId = null) {
+export async function fetchDepartmentsForPositionForm(companyId) {
   if (!companyId) return { data: [], error: null };
 
-  let query = supabase
+  const { data, error } = await supabase
     .from('departments')
     .select('id, code, name')
     .eq('company_id', companyId)
@@ -86,41 +93,39 @@ export async function fetchParentDepartmentsForCompany(companyId, excludeId = nu
     .eq('is_active', true)
     .order('name');
 
-  if (excludeId) {
-    query = query.neq('id', excludeId);
-  }
-
-  const { data, error } = await query;
   return { data: data || [], error };
 }
 
 // ---------------------------------------------------------------------------
 // Mutation helpers
 // RLS: INSERT/UPDATE require is_admin_or_above() and company_id = get_user_company_id().
+// level must be one of the 5 CHECK constraint values (enforced at DB level).
 // ---------------------------------------------------------------------------
 
-export async function createDepartment({ company_id, code, name, parent_id, is_active }) {
+export async function createPosition({ company_id, department_id, code, name, level, is_active }) {
   const { data: { session } } = await supabase.auth.getSession();
   const userId = session?.user?.id || null;
 
-  const { error } = await supabase.from('departments').insert({
+  const { error } = await supabase.from('positions').insert({
     company_id,
+    department_id: department_id || null,
     code: code.trim().toUpperCase(),
     name: name.trim(),
-    parent_id: parent_id || null,
+    level: level || 'Staff',
     is_active: is_active !== false,
     created_by: userId,
   });
   return { error };
 }
 
-export async function updateDepartment(id, { code, name, parent_id, is_active }) {
+export async function updatePosition(id, { department_id, code, name, level, is_active }) {
   const { error } = await supabase
-    .from('departments')
+    .from('positions')
     .update({
+      department_id: department_id || null,
       code: code.trim().toUpperCase(),
       name: name.trim(),
-      parent_id: parent_id || null,
+      level: level || 'Staff',
       is_active: is_active !== false,
     })
     .eq('id', id)
@@ -128,9 +133,9 @@ export async function updateDepartment(id, { code, name, parent_id, is_active })
   return { error };
 }
 
-export async function softDeleteDepartment(id) {
+export async function softDeletePosition(id) {
   const { error } = await supabase
-    .from('departments')
+    .from('positions')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', id)
     .is('deleted_at', null);

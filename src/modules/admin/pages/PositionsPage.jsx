@@ -1,5 +1,5 @@
-// src/modules/admin/pages/DepartmentsPage.jsx
-// Departments master data — paginated list with create / edit / soft-delete.
+// src/modules/admin/pages/PositionsPage.jsx
+// Positions master data — paginated list with create / edit / soft-delete.
 // Phase 1.0I: CRUD via centered AdminFormModal.
 
 import { useState, useEffect, useCallback } from 'react';
@@ -7,10 +7,10 @@ import {
   Search, RefreshCw, ChevronLeft, ChevronRight, Check, Plus, RefreshCw as Spinner,
 } from 'lucide-react';
 import {
-  useDepartments, DEPARTMENTS_PAGE_SIZE,
-  createDepartment, updateDepartment, softDeleteDepartment,
-  fetchParentDepartmentsForCompany,
-} from '../../../hooks/useDepartments';
+  usePositions, POSITIONS_PAGE_SIZE, POSITION_LEVELS,
+  createPosition, updatePosition, softDeletePosition,
+  fetchDepartmentsForPositionForm,
+} from '../../../hooks/usePositions';
 import { fetchAllCompanies } from '../../../hooks/useUserAccess';
 import { useDebounce } from '../../../hooks/useDebounce';
 import AdminPageHeader from '../components/AdminPageHeader';
@@ -37,15 +37,25 @@ const PASTEL = {
   lavenderDeep: '#A98FD8',
   sky:          '#C8E4F5',
   skyDeep:      '#8FBCD8',
-  butter:       '#FFE9B8',
+  peach:        '#FFD4B8',
+  peachDeep:    '#F5A78F',
+};
+
+const LEVEL_STYLE = {
+  Staff:      { bg: PASTEL.lineSoft,  color: PASTEL.inkMute },
+  Supervisor: { bg: PASTEL.sky,       color: PASTEL.skyDeep },
+  Manager:    { bg: PASTEL.lavender,  color: PASTEL.lavenderDeep },
+  Head:       { bg: PASTEL.peach,     color: '#C4611E' },
+  Director:   { bg: '#F0E0FF',        color: '#7B3FA0' },
 };
 
 const EMPTY_DRAFT = {
   id: null,
   company_id: '',
+  department_id: '',
   code: '',
   name: '',
-  parent_id: '',
+  level: 'Staff',
   is_active: true,
 };
 
@@ -77,6 +87,18 @@ function CompanyBadge({ company }) {
       style={{ background: PASTEL.sky, color: PASTEL.skyDeep }}
     >
       {company.code}
+    </span>
+  );
+}
+
+function LevelBadge({ level }) {
+  const style = LEVEL_STYLE[level] || { bg: PASTEL.lineSoft, color: PASTEL.inkMute };
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-semibold whitespace-nowrap"
+      style={{ background: style.bg, color: style.color }}
+    >
+      {level}
     </span>
   );
 }
@@ -163,16 +185,16 @@ function Divider() {
 // Main page
 // ─────────────────────────────────────────────────────────────
 
-export default function DepartmentsPage() {
+export default function PositionsPage() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
 
-  const { data, total, loading, error, refresh } = useDepartments({ page, search });
+  const { data, total, loading, error, refresh } = usePositions({ page, search });
 
-  const totalPages = Math.max(1, Math.ceil(total / DEPARTMENTS_PAGE_SIZE));
-  const from = total === 0 ? 0 : (page - 1) * DEPARTMENTS_PAGE_SIZE + 1;
-  const to = Math.min(page * DEPARTMENTS_PAGE_SIZE, total);
+  const totalPages = Math.max(1, Math.ceil(total / POSITIONS_PAGE_SIZE));
+  const from = total === 0 ? 0 : (page - 1) * POSITIONS_PAGE_SIZE + 1;
+  const to = Math.min(page * POSITIONS_PAGE_SIZE, total);
 
   const handleSearch = (val) => { setSearchInput(val); setPage(1); };
 
@@ -183,37 +205,36 @@ export default function DepartmentsPage() {
   const [archiving, setArchiving] = useState(false);
   const [toast, setToast] = useState(null);
   const [companies, setCompanies] = useState([]);
-  const [parentDepts, setParentDepts] = useState([]);
+  const [departments, setDepartments] = useState([]);
 
   const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // Load companies on modal open
   useEffect(() => {
     if (!draft) return;
     fetchAllCompanies().then(({ data: cos }) => setCompanies(cos || []));
   }, [draft !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload parent departments when company changes
   useEffect(() => {
     if (!draft) return;
-    fetchParentDepartmentsForCompany(draft.company_id, draft.id).then(
-      ({ data: depts }) => setParentDepts(depts || [])
+    fetchDepartmentsForPositionForm(draft.company_id).then(
+      ({ data: depts }) => setDepartments(depts || [])
     );
-  }, [draft?.company_id, draft?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [draft?.company_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCreate = useCallback(() => { setDraft({ ...EMPTY_DRAFT }); setSaveError(null); }, []);
 
   const openEdit = useCallback((row) => {
     setDraft({
-      id:         row.id,
-      company_id: row.company_id || '',
-      code:       row.code || '',
-      name:       row.name || '',
-      parent_id:  row.parent_id || '',
-      is_active:  row.is_active !== false,
+      id:            row.id,
+      company_id:    row.company_id || '',
+      department_id: row.department_id || '',
+      code:          row.code || '',
+      name:          row.name || '',
+      level:         row.level || 'Staff',
+      is_active:     row.is_active !== false,
     });
     setSaveError(null);
   }, []);
@@ -223,7 +244,7 @@ export default function DepartmentsPage() {
     setSaveError(null);
     setArchiving(false);
     setCompanies([]);
-    setParentDepts([]);
+    setDepartments([]);
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -231,36 +252,37 @@ export default function DepartmentsPage() {
     if (!draft.company_id) { setSaveError('Company is required.'); return; }
     if (!draft.code.trim()) { setSaveError('Code is required.'); return; }
     if (!draft.name.trim()) { setSaveError('Name is required.'); return; }
+    if (!draft.level)       { setSaveError('Level is required.'); return; }
 
     setSaving(true);
     setSaveError(null);
 
     const { error: saveErr } = draft.id
-      ? await updateDepartment(draft.id, draft)
-      : await createDepartment(draft);
+      ? await updatePosition(draft.id, draft)
+      : await createPosition(draft);
 
     setSaving(false);
     if (saveErr) { setSaveError(saveErr.message || 'Save failed. Check your permissions.'); return; }
 
     closeModal();
     refresh();
-    showToast(draft.id ? 'Department updated.' : 'Department created.');
+    showToast(draft.id ? 'Position updated.' : 'Position created.');
   }, [draft, closeModal, refresh, showToast]);
 
   const handleArchive = useCallback(async () => {
     if (!draft?.id) return;
-    if (!window.confirm('Archive this department? It will no longer appear in active lists.')) return;
+    if (!window.confirm('Archive this position? It will no longer appear in active lists.')) return;
 
     setArchiving(true);
     setSaveError(null);
-    const { error: archErr } = await softDeleteDepartment(draft.id);
+    const { error: archErr } = await softDeletePosition(draft.id);
     setArchiving(false);
 
     if (archErr) { setSaveError(archErr.message || 'Archive failed. Check your permissions.'); return; }
 
     closeModal();
     refresh();
-    showToast('Department archived.');
+    showToast('Position archived.');
   }, [draft, closeModal, refresh, showToast]);
 
   const isCreate = !draft?.id;
@@ -297,7 +319,7 @@ export default function DepartmentsPage() {
       >
         {saving
           ? <><Spinner size={13} className="animate-spin" /> Saving…</>
-          : <><Check size={13} /> {isCreate ? 'Create Department' : 'Save Changes'}</>}
+          : <><Check size={13} /> {isCreate ? 'Create Position' : 'Save Changes'}</>}
       </button>
     </div>
   );
@@ -309,8 +331,8 @@ export default function DepartmentsPage() {
   return (
     <div>
       <AdminPageHeader
-        title="Departments"
-        subtitle="Organizational units. Department codes appear in document numbers."
+        title="Positions"
+        subtitle="Job titles and seniority levels. Levels drive approval matrix thresholds."
         count={loading ? undefined : total}
       />
 
@@ -346,7 +368,7 @@ export default function DepartmentsPage() {
           style={{ background: PASTEL.ink, color: 'white' }}
         >
           <Plus size={14} />
-          New Department
+          New Position
         </button>
       </div>
 
@@ -355,7 +377,7 @@ export default function DepartmentsPage() {
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
           style={{
-            gridTemplateColumns: '70px 80px 1fr 80px 44px',
+            gridTemplateColumns: '70px 80px 1fr 100px 1fr 80px 44px',
             borderColor: PASTEL.line,
             background: PASTEL.lineSoft,
             color: PASTEL.inkMute,
@@ -364,6 +386,8 @@ export default function DepartmentsPage() {
           <div>Company</div>
           <div>Code</div>
           <div>Name</div>
+          <div>Level</div>
+          <div>Department</div>
           <div className="text-right">Status</div>
           <div />
         </div>
@@ -373,23 +397,27 @@ export default function DepartmentsPage() {
         ) : loading ? (
           <LoadingState rows={6} />
         ) : data.length === 0 ? (
-          <EmptyState message={search ? 'No departments match your search.' : 'No departments found.'} />
+          <EmptyState message={search ? 'No positions match your search.' : 'No positions found.'} />
         ) : (
           data.map((row) => (
             <div
               key={row.id}
               className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
-              style={{ gridTemplateColumns: '70px 80px 1fr 80px 44px', borderColor: PASTEL.line }}
+              style={{ gridTemplateColumns: '70px 80px 1fr 100px 1fr 80px 44px', borderColor: PASTEL.line }}
               onMouseEnter={(e) => (e.currentTarget.style.background = PASTEL.lineSoft)}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <div><CompanyBadge company={row.companies} /></div>
               <div>
-                <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold" style={{ background: PASTEL.butter, color: '#5C4416' }}>
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold" style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}>
                   {row.code}
                 </span>
               </div>
               <div className="font-medium" style={{ color: PASTEL.ink }}>{row.name}</div>
+              <div><LevelBadge level={row.level} /></div>
+              <div style={{ color: PASTEL.inkSoft }}>
+                {row.departments ? row.departments.code : <span style={{ color: PASTEL.inkMute }}>—</span>}
+              </div>
               <div className="flex justify-end"><StatusBadge active={row.is_active} /></div>
               <div className="flex justify-end">
                 <button
@@ -426,9 +454,9 @@ export default function DepartmentsPage() {
       {/* ── Centered modal form ── */}
       <AdminFormModal
         open={!!draft}
-        eyebrow={isCreate ? 'New Department' : 'Edit Department'}
-        title={isCreate ? 'Create Department' : draft?.name || 'Edit Department'}
-        subtitle="Fill in department identity and organizational hierarchy."
+        eyebrow={isCreate ? 'New Position' : 'Edit Position'}
+        title={isCreate ? 'Create Position' : draft?.name || 'Edit Position'}
+        subtitle="Define job title, seniority level, and optional department assignment."
         onClose={closeModal}
         footer={modalFooter}
       >
@@ -445,7 +473,7 @@ export default function DepartmentsPage() {
                   {isCreate ? (
                     <FieldSelect
                       value={draft.company_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, company_id: v, parent_id: '' }))}
+                      onChange={(v) => setDraft((d) => ({ ...d, company_id: v, department_id: '' }))}
                       disabled={saving}
                     >
                       <option value="">— Select company —</option>
@@ -474,10 +502,10 @@ export default function DepartmentsPage() {
                       value={draft.code}
                       onChange={(v) => setDraft((d) => ({ ...d, code: v }))}
                       disabled={saving}
-                      placeholder="e.g. SLS, FIN, IT"
+                      placeholder="e.g. MGR, SPV"
                       maxLength={20}
                     />
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Appears in document numbers. Saved uppercase.</p>
+                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Saved uppercase. Unique per company.</p>
                   </div>
                   <div>
                     <FieldLabel required>Name</FieldLabel>
@@ -485,7 +513,7 @@ export default function DepartmentsPage() {
                       value={draft.name}
                       onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
                       disabled={saving}
-                      placeholder="e.g. Sales, Finance"
+                      placeholder="e.g. Operations Manager"
                       maxLength={100}
                     />
                   </div>
@@ -498,20 +526,35 @@ export default function DepartmentsPage() {
             {/* ── Organization ── */}
             <div>
               <SectionLabel>Organization</SectionLabel>
-              <FieldLabel>Parent Department</FieldLabel>
-              <FieldSelect
-                value={draft.parent_id}
-                onChange={(v) => setDraft((d) => ({ ...d, parent_id: v }))}
-                disabled={saving || !draft.company_id}
-              >
-                <option value="">— None (top-level) —</option>
-                {parentDepts.map((dep) => (
-                  <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
-                ))}
-              </FieldSelect>
-              <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                Optional. Leave blank for top-level departments.
-              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel required>Seniority Level</FieldLabel>
+                  <FieldSelect
+                    value={draft.level}
+                    onChange={(v) => setDraft((d) => ({ ...d, level: v }))}
+                    disabled={saving}
+                  >
+                    {POSITION_LEVELS.map((lvl) => (
+                      <option key={lvl} value={lvl}>{lvl}</option>
+                    ))}
+                  </FieldSelect>
+                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Used for approval thresholds.</p>
+                </div>
+                <div>
+                  <FieldLabel>Department</FieldLabel>
+                  <FieldSelect
+                    value={draft.department_id}
+                    onChange={(v) => setDraft((d) => ({ ...d, department_id: v }))}
+                    disabled={saving || !draft.company_id}
+                  >
+                    <option value="">— All departments —</option>
+                    {departments.map((dep) => (
+                      <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
+                    ))}
+                  </FieldSelect>
+                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Optional. Leave blank if cross-department.</p>
+                </div>
+              </div>
             </div>
 
             <Divider />
