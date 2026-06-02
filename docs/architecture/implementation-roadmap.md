@@ -291,6 +291,19 @@ This roadmap defines the phased implementation plan for Nexus by MSI. The strate
 
 ---
 
+### Phase 1.0J — User Access Management Upgrade ✅ Complete
+**Branch:** `phase-1-admin-crud-foundation`
+**Prerequisites:** 1.0I complete ✅
+**Output:**
+- `src/modules/admin/pages/UserAccessPage.jsx` — full rewrite: table layout (Avatar+Name, Company, Role, Status, Actions), centered `AdminFormModal` for Edit (replaces right-side drawer), `+ Add User` button → create-user Edge Function, Deactivate/Activate per-row action (disabled for own account)
+- `src/hooks/useUserAccess.js` — added `toggleUserActive()`, `createUser()` (invokes Edge Function with error body extraction), improved `FunctionsHttpError` handling to surface actual error message instead of generic wrapper
+- `supabase/functions/create-user/index.ts` — **new Edge Function**: verifies caller is `is_super_admin()` via RPC, calls `auth.admin.createUser()` with `user_metadata: { full_name }`, then `UPDATE profiles` with full_name/role/company_id. Service role key is injected by Supabase runtime — never exposed to frontend.
+- `src/App.jsx` — removed `users` nav item (Org & Access Control), removed `UserManagement` lazy import, added redirect from `activeMenu === 'users'` → `admin` for stale state/bookmarks
+- **Bug fix:** `full_name` not set via `user_metadata` on initial `createUser` call — trigger `handle_new_user()` was inserting empty name; fixed by passing `user_metadata: { full_name }` so trigger captures name on INSERT (UPDATE at step 4 is now defense-in-depth, not the only write path)
+- Edge Function deployed to staging project `untmpqceexwxzuhlmyrg`
+
+---
+
 ## Phase 2 — Sales & Operations
 
 ### Phase 2.0 — CRM & Quotation
@@ -494,3 +507,7 @@ These are not phases but continuous requirements throughout all phases:
 | 2026-05-28 | Migration 017 applied to staging and verified PASS — Phase 1.0H staging complete | All 8 target tables show rowsecurity=true and all expected policies present; all operational screens (SP Manifest, AR Tracker, Finance, Outstanding) smoke-tested and passing; verification recorded in docs/operations/rls-hardening-verification-log.md; production execution remains blocked pending formal technical lead and product owner sign-off |
 | 2026-05-30 | Migration 018 adds is_super_admin() bypass to branches/departments/positions INSERT+UPDATE policies | Original policies gate on company_id = get_user_company_id(); a super_admin whose profiles.company_id = MSI cannot create rows for JCI; bypass allows cross-company writes for super_admin while keeping is_admin_or_above() company-scoped |
 | 2026-05-30 | Migration 019 adds is_super_admin() read bypass to branches/departments/positions SELECT policies | UI helpers use insert(...).select().single() — after a cross-company INSERT succeeds (migration 018), the read-back fails because SELECT policy still gates on company_id = get_user_company_id(); super admin read bypass is required for the inserted row to be returned; non-super-admin read remains company-scoped and deleted_at IS NULL |
+| 2026-06-02 | Add User flow uses Edge Function, not Supabase invite flow | auth.admin.createUser() requires service_role key which must never be exposed to frontend; Edge Function is the correct secure boundary; invite flow was rejected because it requires the user to set their own password via email, which is not suitable for internal admin-provisioned accounts |
+| 2026-06-02 | Edge Function create-user passes full_name in user_metadata | handle_new_user() trigger reads raw_user_meta_data->>'full_name' on INSERT; without user_metadata the trigger inserts empty name and the subsequent UPDATE is the only write path — passing it in metadata makes the trigger the primary path and UPDATE a defense-in-depth fallback |
+| 2026-06-02 | FunctionsHttpError body must be explicitly extracted to surface real error message | supabase.functions.invoke() wraps non-2xx responses in FunctionsHttpError with generic message "Edge Function returned a non-2xx status code"; actual body JSON is in error.context and must be read via error.context.json() — fixed in createUser() helper |
+| 2026-06-02 | Org & Access Control nav item removed, old UserManagement component no longer loaded | UserAccessPage in AdminShell is the single source of truth for user management; duplicate entry was confusing and the old UserManagement component did not support ERP roles or multi-company; activeMenu=users redirects to admin to handle stale state |
