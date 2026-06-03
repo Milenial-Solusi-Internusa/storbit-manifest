@@ -669,6 +669,26 @@ Output:
 - Document Type
 - Status Catalog
 
+### Phase 2.0A — HRGA Request Module (Service Management)
+
+Branch: `phase-2-service-management`
+
+Output:
+- `docs/modules/hrga-request-schema-plan.md` — full schema plan, 20 request types, approval matrix
+- Migrations 020–024:
+  - 020: schema (9 tables, RLS, GRANTs)
+  - 021: seed (4 new roles, 20 request types × 3 companies, 108 approval configs)
+  - 022: GRANT DML fix for CLI-created tables
+  - 023: `increment_document_sequence` RPC, relaxed INSERT policy, HRG sequence seed
+  - 024: hrga_request_items INSERT RLS fix (status IN draft/submitted)
+- `src/hooks/useHrgaRequests.js` — useHrgaRequestTypes, useMyHrgaRequests, useHrgaRequestDetail, useAllHrgaRequests, submitHrgaRequest, cancelHrgaRequest
+- `src/modules/hrga/HrgaShell.jsx` — module shell, sidebar (My Requests, Semua Request)
+- `src/modules/hrga/pages/MyRequestsPage.jsx` — list request user sendiri, type picker, submit flow
+- `src/modules/hrga/pages/AllRequestsPage.jsx` — semua request di company, view-only
+- `src/modules/hrga/components/HrgaRequestForm.jsx` — form ATK dengan line items
+- `src/modules/hrga/components/HrgaRequestDetail.jsx` — detail modal (info grid, items table, approval progress, trail)
+- `src/App.jsx` — HrgaShell lazy import, render block, removed from PLANNED_MODULES
+
 ---
 
 ## Current Phase
@@ -703,10 +723,11 @@ Output:
 | 1.0I | Master Data CRUD / Vendors / Products screens | ✅ Complete |
 | 1.0J | User Access Management — table layout + Add User + Edge Function | ✅ Complete |
 | 1.0K | App Launcher + vertical sidebar per module (Option B layout) | ✅ Complete |
+| 2.0A | HRGA Request Module — Schema, Seed, UI (ATK form, My Requests, Semua Request, Detail Modal) | ✅ Staging verified |
 
-Current phase: **Phase 1.0K** ✅ Complete
+Current phase: **Phase 2.0A** ✅ Complete
 
-Next recommended step: **Phase 1.0L — Vendors / Products admin CRUD, or remaining read-only tabs (Companies, Roles, Taxes, Payment Terms)**
+Next recommended step: **Phase 2.0B — Approval Queue (Supervisor / HRGA / Finance inbox), or Phase 1.0L (Vendors / Products admin CRUD)**
 
 ### Production Gate
 
@@ -797,6 +818,131 @@ Follow this order before assuming a frontend bug when data is missing or filtere
    The Supabase client is not exposed on the `window` object. Temporary `console.debug` calls inside the page component are the correct approach.
 
 5. **Never assume a migration was applied** — always verify with `pg_policies` or `information_schema`. Migrations applied to one environment (dev/staging/production) are independent. A migration committed to the repo is not automatically applied anywhere.
+
+---
+
+### HRGA Request Module — Lessons Learned (2026-06-02)
+
+Lessons from building the first Service Management module. Apply to all future modules.
+
+---
+
+#### 1. Tables created via Supabase CLI do NOT get auto-grants
+
+**Symptom:** `permission denied for table <table>` even for super admin.
+
+**Root cause:** Tables created via `supabase db push` (CLI) do not automatically receive
+`SELECT/INSERT/UPDATE/DELETE` grants for the `authenticated` role — unlike tables created via
+the Supabase Dashboard. PostgreSQL checks table-level privilege **before** evaluating RLS.
+The result: every operation is denied before RLS is even reached.
+
+**Fix:** Every migration that creates tables via CLI must include explicit GRANTs:
+
+```sql
+GRANT SELECT, INSERT, UPDATE ON <table> TO authenticated;
+```
+
+Add this immediately after `ENABLE ROW LEVEL SECURITY`, before the policy definitions.
+Use INSERT-only for immutable audit tables (e.g. `hrga_request_approvals`).
+
+**Verification:**
+```sql
+SELECT table_name, string_agg(privilege_type, ', ' ORDER BY privilege_type) AS granted
+FROM information_schema.role_table_grants
+WHERE table_name = '<table>' AND grantee = 'authenticated'
+  AND privilege_type IN ('SELECT','INSERT','UPDATE','DELETE')
+GROUP BY table_name;
+```
+
+---
+
+#### 2. hrga_approval_configs must always be filtered by company_id
+
+**Symptom:** `Cannot coerce the result to a single JSON object` on submit.
+
+**Root cause:** `hrga_approval_configs` is seeded once per company — the same `request_type_id`
+has N rows (one per company). Querying with only `request_type_id + level` returns multiple rows;
+`.single()` throws the coerce error.
+
+**Rule:** Always include `.eq('company_id', profile.company_id)` on every
+`hrga_approval_configs` query. Never filter by `request_type_id` alone.
+
+```js
+// WRONG — returns N rows across companies
+supabase.from('hrga_approval_configs')
+  .eq('request_type_id', id).eq('level', 1).single()
+
+// CORRECT
+supabase.from('hrga_approval_configs')
+  .eq('company_id', profile.company_id)
+  .eq('request_type_id', id).eq('level', 1).single()
+```
+
+Same applies to `hrga_request_types` in any query that expects a single row per type_code —
+always scope by `company_id`.
+
+---
+
+#### 3. increment_document_sequence RPC must be created explicitly
+
+**Symptom:** 404 on RPC call; fallback read-then-update hits 406 (no row) or 403 (RLS).
+
+**Root cause:** The RPC `increment_document_sequence` was referenced in app code but never
+defined in any migration. `document_sequences` INSERT was also restricted to `is_admin_or_above()`,
+blocking non-admin staff from initialising a new sequence row.
+
+**Fix (migration 023):**
+1. Create `increment_document_sequence(company_id, document_type, department_code, year, month)`
+   as `SECURITY DEFINER` — atomically increments, inserts row if missing, returns new integer.
+2. Grant `EXECUTE` to `authenticated`.
+3. Relax `document_sequences_insert` RLS from `is_admin_or_above()` to `company_id = get_user_company_id()`.
+4. Seed initial rows for new document types before they are used.
+
+**Template for any new document type:**
+```sql
+-- Seed sequence rows for a new document type across all active companies
+INSERT INTO document_sequences (company_id, document_type, department_code, year, month, last_sequence)
+SELECT id, '<CODE>', '<DEPT>', EXTRACT(YEAR FROM now())::int, 0, 0
+FROM companies WHERE is_active = true
+ON CONFLICT (company_id, document_type, department_code, year, month) DO NOTHING;
+```
+
+---
+
+#### 4. useHrgaRequestTypes must be called with companyId
+
+**Symptom:** Type picker shows every request type 3×.
+
+**Root cause:** The hook `useHrgaRequestTypes()` fetched all rows without a `company_id` filter.
+Types are seeded per company (20 types × 3 companies = 60 rows total).
+
+**Fix:** Hook signature changed to `useHrgaRequestTypes(companyId)`. Always pass
+`profile.company_id` from `useAuth()`. The hook skips the query if `companyId` is falsy.
+
+```js
+// WRONG
+const { data: types } = useHrgaRequestTypes();
+
+// CORRECT
+const { profile } = useAuth();
+const { data: types } = useHrgaRequestTypes(profile?.company_id);
+```
+
+---
+
+#### 5. RLS INSERT policy must match the actual status at insert time
+
+**Symptom:** 403 on `hrga_request_items` insert immediately after header insert.
+
+**Root cause:** The INSERT policy checked `r.status = 'draft'`. The submit flow creates the
+header with `status = 'submitted'` directly (no draft step in UI), then inserts items.
+By the time items are inserted, the parent is already `submitted` → EXISTS returns false.
+
+**Fix:** Expand INSERT policy to `status IN ('draft', 'submitted')`.
+
+**Rule:** Before writing an RLS INSERT policy that checks a related row's status, trace the
+exact sequence of operations in the application code. The policy must match the status value
+that will be present *at the moment the INSERT occurs*, not the final desired status.
 
 ---
 
