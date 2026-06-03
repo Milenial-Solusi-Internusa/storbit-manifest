@@ -27,7 +27,7 @@ const PASTEL = {
 const GROUP_ACCENT = {
   'Core':                   { bg: PASTEL.lavender,  icon: PASTEL.lavenderDeep },
   'Commercial & CRM':       { bg: PASTEL.peach,     icon: PASTEL.peachDeep    },
-  'Operations':             { bg: PASTEL.sky,       icon: PASTEL.skyDeep      },
+  'Logistics':              { bg: PASTEL.sky,       icon: PASTEL.skyDeep      },
   'Procurement & Vendor':   { bg: PASTEL.mint,      icon: PASTEL.mintDeep     },
   'Inventory & Asset':      { bg: PASTEL.butter,    icon: PASTEL.butterDeep   },
   'Finance & Accounting':   { bg: PASTEL.rose,      icon: PASTEL.roseDeep     },

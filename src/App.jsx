@@ -8,6 +8,8 @@ import {
   Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen,
+  ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
+  ClipboardList, LayoutList, Archive,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { useCustomers } from './hooks/useCustomers';
@@ -17,6 +19,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 const Dashboard   = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell  = lazy(() => import('./modules/admin/AdminShell'));
 const AppLauncher = lazy(() => import('./modules/launcher/AppLauncher'));
+const AssetShell  = lazy(() => import('./modules/assets/AssetShell'));
 const HrgaShell   = lazy(() => import('./modules/hrga/HrgaShell'));
 
 // ============================
@@ -245,7 +248,7 @@ const PLANNED_MODULES = {
     description: 'Build, version, and approve formal quotations with line-item detail, margin visibility, and customer delivery. Linked to inquiry and convertible to Sales Order.',
     capabilities: ['Quotation builder with line items', 'Version and revision control', 'Approval flow per entity', 'Convert to Sales Order'],
   },
-  // ── Operations ────────────────────────────────────────────────────────────
+  // ── Logistics ─────────────────────────────────────────────────────────────
   job: {
     title: 'Job / Operation Management',
     description: 'Unified job control center for all operational entities. Track job status, milestones, document checklist, and team assignment across MSI, JCI, and Storbit operations.',
@@ -293,11 +296,7 @@ const PLANNED_MODULES = {
     description: 'Stock management and warehouse visibility for Storbit / SBI trading operations. Track stock levels, movements, location mapping, and reorder triggers.',
     capabilities: ['Stock balance and location', 'Inbound and outbound movements', 'Reorder point alerts', 'Warehouse location mapping'],
   },
-  assets: {
-    title: 'Asset Management',
-    description: 'Group-wide fixed asset registry with purchase tracking, depreciation, custody assignment, and disposal workflow across all MSI Group entities and locations.',
-    capabilities: ['Asset register per entity', 'Depreciation schedule', 'Custody and assignment history', 'Disposal approval workflow'],
-  },
+  // Note: 'assets' intentionally NOT in PLANNED_MODULES — AssetShell is live (Phase 2).
   // ── Finance & Accounting ──────────────────────────────────────────────────
   jobCosting: {
     title: 'Job Costing',
@@ -325,7 +324,7 @@ const PLANNED_MODULES = {
     capabilities: ['Journal entry workspace', 'General ledger view', 'Trial balance report', 'Period-end closing workflow'],
   },
   // ── Service Management ────────────────────────────────────────────────────
-  // Note: 'hrga' is intentionally NOT in PLANNED_MODULES — HrgaShell is live (Phase 2).
+  // Note: 'hrga' intentionally NOT in PLANNED_MODULES — HrgaShell is live (Phase 2.0A).
   it: {
     title: 'IT Service Management',
     description: 'IT service management for support tickets, access requests, device inventory, and incident follow-up across MSI Group offices and systems.',
@@ -399,13 +398,13 @@ const ERP_MENU_GROUPS = [
     items: [
       { id: 'crm',        label: 'CRM & Inquiry',        icon: Users },
       { id: 'quotation',  label: 'Quotation',             icon: FileText },
-      { id: 'manifest',   label: 'Sales Order / SP',      icon: Receipt },
-      { id: 'customers',  label: 'Customer Management',   icon: Building2, role: ['super'] },
     ],
   },
   {
-    label: 'Operations',
+    label: 'Logistics',
     items: [
+      { id: 'manifest',   label: 'Sales Order / SP',      icon: Receipt },
+      { id: 'customers',  label: 'Customer Management',   icon: Building2, role: ['super'] },
       { id: 'job',        label: 'Job Management',        icon: BriefcaseBusiness },
       { id: 'freight',    label: 'Freight Forwarding',    icon: Ship },
       { id: 'ppjk',       label: 'PPJK / Customs',        icon: ClipboardCheck },
@@ -426,7 +425,31 @@ const ERP_MENU_GROUPS = [
     label: 'Inventory & Asset',
     items: [
       { id: 'inventory', label: 'Inventory / Warehouse', icon: Boxes },
-      { id: 'assets',    label: 'Asset Management',      icon: Package },
+      {
+        id: 'assets', label: 'Asset Management', icon: Package,
+        children: [
+          { id: 'assets',           label: 'Dashboard',           icon: LayoutDashboard },
+          { id: 'assets-analytics', label: 'Analytics & Reports', icon: BarChart2 },
+          { section: 'Assets' },
+          { id: 'assets-kendaraan', label: 'Kendaraan',           icon: Car     },
+          { id: 'assets-it',        label: 'IT Equipment',        icon: Monitor, badge: '128' },
+          { id: 'assets-furniture', label: 'Furniture & Office',  icon: Sofa    },
+          { id: 'assets-properti',  label: 'Properti',            icon: Building2 },
+          { section: 'Maintenance' },
+          { id: 'assets-maint',     label: 'Jadwal Maintenance',  icon: Wrench  },
+          { id: 'assets-hist',      label: 'History Maintenance', icon: Clock   },
+          { id: 'assets-workorders',label: 'Work Orders',         icon: FolderOpen, badge: '6' },
+          { section: 'Dokumen' },
+          { id: 'assets-docs',      label: 'Semua Dokumen',       icon: FolderOpen },
+          { id: 'assets-expiring',  label: 'Akan Expired',        icon: Clock,  badge: '9' },
+          { id: 'assets-expired',   label: 'Sudah Expired',       icon: FileX,  badge: '4' },
+          { section: 'Administration' },
+          { id: 'assets-kategori',  label: 'Kategori Aset',       icon: Tag     },
+          { id: 'assets-lokasi',    label: 'Lokasi & Ruangan',    icon: MapPin  },
+          { id: 'assets-vendor',    label: 'Vendor & Supplier',   icon: Truck   },
+          { id: 'assets-settings',  label: 'Settings',            icon: Settings},
+        ],
+      },
     ],
   },
   {
@@ -445,7 +468,17 @@ const ERP_MENU_GROUPS = [
   {
     label: 'Service Management',
     items: [
-      { id: 'hrga', label: 'HRGA Request',      icon: UsersRound },
+      {
+        id: 'hrga', label: 'HRGA Request', icon: UsersRound,
+        children: [
+          { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList   },
+          { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus            },
+          { section: 'Management' },
+          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList      },
+          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock, badge: '' },
+          { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive         },
+        ],
+      },
       { id: 'it',   label: 'IT Service Mgmt',   icon: Laptop },
     ],
   },
@@ -491,6 +524,92 @@ const canSeeMenuItem = (item, role) => !item.role || item.role.includes(role);
 function SidebarItem({ item, activeMenu, setActiveMenu }) {
   const Icon = item.icon;
   const active = activeMenu === item.id;
+  // Item is "parent-active" when it has children and any child (or itself) matches
+  const childActive = item.children?.some(c => !c.section && activeMenu === c.id);
+  const expanded = item.children && (active || childActive);
+
+  if (item.children) {
+    // Parent item with expandable children
+    return (
+      <div>
+        <button
+          onClick={() => setActiveMenu(item.id)}
+          className="w-full flex items-center gap-3 px-3.5 py-[10px] rounded-2xl text-sm font-medium mb-0.5 transition-all"
+          style={{
+            background: (active || childActive) ? 'rgba(255,255,255,0.10)' : 'transparent',
+            color: (active || childActive) ? '#FFFDF7' : 'rgba(248,245,237,0.76)',
+            fontWeight: (active || childActive) ? 600 : 400,
+            border: '1px solid transparent',
+          }}
+          onMouseEnter={(e) => { if (!active && !childActive) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
+          onMouseLeave={(e) => { if (!active && !childActive) e.currentTarget.style.background = 'transparent'; }}
+        >
+          <Icon size={17} strokeWidth={(active || childActive) ? 2.1 : 1.8} style={{ color: (active || childActive) ? '#C8EFD9' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
+          <span className="flex-1 text-left leading-snug">{item.label}</span>
+          <ChevronDown size={13} strokeWidth={2} style={{
+            color: 'rgba(248,245,237,0.40)', flexShrink: 0,
+            transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transition: 'transform .15s',
+          }}/>
+        </button>
+        {expanded && (
+          <div style={{
+            marginLeft: 14, paddingLeft: 10,
+            borderLeft: '1px solid rgba(255,255,255,0.10)',
+            marginBottom: 4,
+          }}>
+            {item.children.map((child, ci) => {
+              if (child.section) {
+                return (
+                  <div key={`sec-${ci}`} style={{
+                    fontSize: 10, fontWeight: 700, letterSpacing: '.7px',
+                    textTransform: 'uppercase', color: 'rgba(248,245,237,0.35)',
+                    padding: '10px 8px 4px',
+                  }}>
+                    {child.section}
+                  </div>
+                );
+              }
+              const ChildIcon = child.icon;
+              const childIsActive = activeMenu === child.id;
+              return (
+                <button
+                  key={child.id}
+                  onClick={() => setActiveMenu(child.id)}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-xl text-[13px] font-medium mb-[1px] transition-all"
+                  style={{
+                    background: childIsActive ? 'rgba(255,255,255,0.13)' : 'transparent',
+                    color: childIsActive ? '#FFFDF7' : 'rgba(248,245,237,0.65)',
+                    fontWeight: childIsActive ? 600 : 400,
+                    boxShadow: childIsActive ? 'inset 2px 0 0 rgba(255,212,184,0.7)' : 'none',
+                    border: childIsActive ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={(e) => { if (!childIsActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                  onMouseLeave={(e) => { if (!childIsActive) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  {ChildIcon
+                    ? <ChildIcon size={14} strokeWidth={childIsActive ? 2.1 : 1.7} style={{ color: childIsActive ? '#C8EFD9' : 'rgba(248,245,237,0.45)', flexShrink: 0 }} />
+                    : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: childIsActive ? 1 : .45, flexShrink: 0 }} />
+                  }
+                  <span className="flex-1 truncate">{child.label}</span>
+                  {child.badge && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 20,
+                      background: 'rgba(143,203,140,.18)', color: 'rgba(168,214,168,.9)',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                    }}>{child.badge}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Regular item (no children)
   return (
     <button
       onClick={() => setActiveMenu(item.id)}
@@ -585,6 +704,8 @@ export default function StorbitManifest() {
   const loading = false;
   const [activeModule, setActiveModule] = useState(null); // null = app launcher
   const [activeMenu, setActiveMenu] = useState('dashboard');
+  const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
+  const [prevAssetMenu, setPrevAssetMenu] = useState('assets-it'); // where to go back from detail
   const { role: authRole, profile, signOut } = useAuth();
   const role = authRole || 'management';
 
@@ -595,6 +716,21 @@ export default function StorbitManifest() {
     if (group) setActiveModule(group.label);
     setActiveMenu(menuId);
   }, []);
+
+  // Navigate to asset detail — called by list pages on row click.
+  const navigateToAssetDetail = useCallback((assetId) => {
+    setPrevAssetMenu(activeMenu);
+    setActiveAssetId(assetId);
+    const group = ERP_MENU_GROUPS.find(g => g.items.some(i => i.id.startsWith('assets-')));
+    if (group) setActiveModule(group.label);
+    setActiveMenu('assets-detail');
+  }, [activeMenu]);
+
+  // Go back from asset detail to the previous asset list page.
+  const backFromAssetDetail = useCallback(() => {
+    setActiveAssetId(null);
+    setActiveMenu(prevAssetMenu);
+  }, [prevAssetMenu]);
 
   // Return to app launcher.
   const goToLauncher = useCallback(() => setActiveModule(null), []);
@@ -1219,7 +1355,7 @@ export default function StorbitManifest() {
             </Suspense>
           )}
 
-          <div className="nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7" style={{ display: activeModule ? undefined : 'none' }}>
+          <div className={`nexus-main-surface w-full min-w-0 ${(activeMenu === 'assets' || activeMenu?.startsWith('assets-')) ? 'px-5 sm:px-7 xl:px-9 py-6 lg:py-7' : 'px-5 sm:px-7 xl:px-9 py-6 lg:py-7'}`} style={{ display: activeModule ? undefined : 'none' }}>
 
           {/* Page section header with month filter */}
           {(activeMenu === 'dashboard' || activeMenu === 'manifest') && (
@@ -1346,14 +1482,30 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'hrga' && (
+          {(activeMenu === 'assets' || activeMenu?.startsWith('assets-')) && (
+            <ErrorBoundary title="Asset Management section temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <AssetShell
+                  activePage={activeMenu}
+                  assetId={activeAssetId}
+                  onSelectAsset={navigateToAssetDetail}
+                  onBack={backFromAssetDetail}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {(activeMenu === 'hrga' || activeMenu?.startsWith('hrga-')) && (
             <ErrorBoundary title="HRGA Request section temporarily unavailable">
               <Suspense fallback={
                 <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
                   Loading...
                 </div>
               }>
-                <HrgaShell />
+                <HrgaShell activePage={activeMenu} />
               </Suspense>
             </ErrorBoundary>
           )}
@@ -1596,7 +1748,7 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
               style={{ background: PASTEL.sky, color: '#1F4D6B' }}>
               <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.skyDeep }}/>
-              Commercial · Sales Order
+              Logistics · Sales Order
             </span>
           </div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">SP Manifest</h2>
@@ -2009,7 +2161,7 @@ function InputPage({ onAdd, onImport, onReset, onClear, rowCount, spCount }) {
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
             style={{ background: PASTEL.peach, color: '#5C2F12' }}>
             <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.peachDeep }}/>
-            Operations · Input SP
+            Logistics · Input SP
           </span>
         </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Input Data</h2>
@@ -2084,7 +2236,7 @@ function ShipmentPage({ rows, onUpdate, role }) {
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
             style={{ background: PASTEL.peach, color: '#5C2F12' }}>
             <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.peachDeep }}/>
-            Operations · Shipment
+            Logistics · Shipment
           </span>
         </div>
         <h2 className="font-display text-3xl font-semibold tracking-tight">Shipment & Fulfillment</h2>
@@ -2771,7 +2923,7 @@ function CustomersPage({ customers, rows, onAdd, onEdit, onDelete, role }) {
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
               style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>
               <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.lavenderDeep }}/>
-              Commercial · Customers
+              Logistics · Customers
             </span>
           </div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">Master Customer</h2>
