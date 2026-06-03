@@ -14,9 +14,10 @@ import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
-const Dashboard  = lazy(() => import('./modules/dashboard/Dashboard'));
-const AdminShell = lazy(() => import('./modules/admin/AdminShell'));
+const Dashboard   = lazy(() => import('./modules/dashboard/Dashboard'));
+const AdminShell  = lazy(() => import('./modules/admin/AdminShell'));
 const AppLauncher = lazy(() => import('./modules/launcher/AppLauncher'));
+const HrgaShell   = lazy(() => import('./modules/hrga/HrgaShell'));
 
 // ============================
 // PASTEL PALETTE
@@ -324,11 +325,7 @@ const PLANNED_MODULES = {
     capabilities: ['Journal entry workspace', 'General ledger view', 'Trial balance report', 'Period-end closing workflow'],
   },
   // ── Service Management ────────────────────────────────────────────────────
-  hrga: {
-    title: 'HRGA Request',
-    description: 'Internal service requests for HR, GA, facilities, and operational support. Covers all MSI Group entities with SLA tracking and assignment queues.',
-    capabilities: ['Request intake and classification', 'SLA status tracking', 'Assignment and PIC queue', 'Employee service history'],
-  },
+  // Note: 'hrga' is intentionally NOT in PLANNED_MODULES — HrgaShell is live (Phase 2).
   it: {
     title: 'IT Service Management',
     description: 'IT service management for support tickets, access requests, device inventory, and incident follow-up across MSI Group offices and systems.',
@@ -1346,6 +1343,17 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <AdminShell />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'hrga' && (
+            <ErrorBoundary title="HRGA Request section temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <HrgaShell />
               </Suspense>
             </ErrorBoundary>
           )}
