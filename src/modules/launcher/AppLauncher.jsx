@@ -52,15 +52,14 @@ function tint(hex) {
 
 // ─── Card variants ────────────────────────────────────────────────────────
 
-// Logistics — 2×2, dark green gradient, ACTIVE badge
-function LogisticsCard({ group, cfg, onClick }) {
+// Logistics — tall dark green card
+function LogisticsCard({ group, cfg, onClick, pos }) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        order: -1,
-        gridColumn: 'span 2', gridRow: 'span 2',
+        ...pos,
         position: 'relative',
         background: 'linear-gradient(150deg,#1C2B1E 0%,#244A2C 60%,#2F6B3F 120%)',
         border: '1px solid #22361F', borderRadius: 16,
@@ -133,14 +132,14 @@ function LogisticsCard({ group, cfg, onClick }) {
   );
 }
 
-// Finance — 1×2 tall, left green accent border
-function FinanceCard({ group, cfg, onClick }) {
+// Finance — tall card with left green accent border
+function FinanceCard({ group, cfg, onClick, pos }) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        gridRow: 'span 2',
+        ...pos,
         position: 'relative',
         background: T.surface, borderRadius: 16,
         border: `1px solid ${T.line}`, borderLeft: `4px solid ${cfg.color}`,
@@ -195,14 +194,14 @@ function FinanceCard({ group, cfg, onClick }) {
   );
 }
 
-// Foundation — 2×1 wide, horizontal layout
-function WideCard({ group, cfg, onClick }) {
+// Foundation — horizontal layout
+function WideCard({ group, cfg, onClick, pos }) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        gridColumn: 'span 2',
+        ...pos,
         position: 'relative',
         background: T.surface, borderRadius: 16,
         border: `1px solid ${T.line}`,
@@ -246,13 +245,14 @@ function WideCard({ group, cfg, onClick }) {
   );
 }
 
-// Standard 1×1 card
-function StandardCard({ group, cfg, onClick }) {
+// Standard card
+function StandardCard({ group, cfg, onClick, pos }) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
+        ...pos,
         position: 'relative',
         background: T.surface, borderRadius: 16,
         border: `1px solid ${T.line}`,
@@ -311,6 +311,22 @@ function HoverArrow() {
   );
 }
 
+// ─── Explicit grid position per module label ──────────────────────────────
+// Core is hidden (conflicts with Portal & Integration at col 1, row 4)
+const GRID_POS = {
+  'Logistics':              { gridColumn: '1',     gridRow: '1 / 3' },
+  'Commercial & CRM':       { gridColumn: '2',     gridRow: '1'     },
+  'Procurement & Vendor':   { gridColumn: '3',     gridRow: '1'     },
+  'Inventory & Asset':      { gridColumn: '2',     gridRow: '2'     },
+  'Finance & Accounting':   { gridColumn: '3',     gridRow: '2 / 4' },
+  'Service Management':     { gridColumn: '1',     gridRow: '3'     },
+  'Workflow & Document':    { gridColumn: '2',     gridRow: '3'     },
+  'Portal & Integration':   { gridColumn: '1',     gridRow: '4'     },
+  'Reporting & Governance': { gridColumn: '2',     gridRow: '4'     },
+  'Foundation':             { gridColumn: '3',     gridRow: '4'     },
+  'Core':                   null, // hidden — not in final design
+};
+
 // ─── Main component ────────────────────────────────────────────────────────
 export default function AppLauncher({ moduleGroups, onSelect, profile }) {
   // ── UNCHANGED greeting + name logic ──────────────────────────────────
@@ -323,15 +339,21 @@ export default function AppLauncher({ moduleGroups, onSelect, profile }) {
       <style>{`
         .bento-grid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          grid-auto-rows: 163px;
+          grid-template-columns: repeat(3, 1fr);
+          grid-template-rows: repeat(4, minmax(160px, auto));
           gap: 16px;
         }
+        /* On tablet/small: reset explicit positions, reflow to 2-col */
         @media (max-width: 980px) {
-          .bento-grid { grid-template-columns: repeat(2, 1fr); }
+          .bento-grid {
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: none;
+            grid-auto-rows: minmax(160px, auto);
+          }
+          .bento-grid > * { grid-column: auto !important; grid-row: auto !important; }
         }
         @media (max-width: 620px) {
-          .bento-grid { grid-template-columns: 1fr; grid-auto-rows: auto; }
+          .bento-grid { grid-template-columns: 1fr; }
           .bento-grid > * { min-height: 150px; }
         }
       `}</style>
@@ -370,52 +392,59 @@ export default function AppLauncher({ moduleGroups, onSelect, profile }) {
         {/* ── Bento grid ──────────────────────────────────────────────── */}
         <div className="bento-grid">
           {moduleGroups.map((group) => {
+            const pos = GRID_POS[group.label];
+
+            // Hidden modules (Core conflicts with Portal & Integration)
+            if (pos === null) return null;
+
             const cfg = MODULE_CFG[group.label] ?? {
               Icon: Database, color: '#6B7280', desc: '',
             };
+            // Fall back to auto positioning if label not in GRID_POS
+            const gridPos = pos ?? {};
 
-            // LOGISTICS → 2×2 dark card
             if (group.label === 'Logistics') {
               return (
                 <LogisticsCard
                   key={group.label}
                   group={group}
                   cfg={cfg}
+                  pos={gridPos}
                   onClick={() => onSelect(group)}
                 />
               );
             }
 
-            // FINANCE → 1×2 tall card with left accent
             if (group.label === 'Finance & Accounting') {
               return (
                 <FinanceCard
                   key={group.label}
                   group={group}
                   cfg={cfg}
+                  pos={gridPos}
                   onClick={() => onSelect(group)}
                 />
               );
             }
 
-            // FOUNDATION → 2×1 wide horizontal card
             if (group.label === 'Foundation') {
               return (
                 <WideCard
                   key={group.label}
                   group={group}
                   cfg={cfg}
+                  pos={gridPos}
                   onClick={() => onSelect(group)}
                 />
               );
             }
 
-            // All others → standard 1×1
             return (
               <StandardCard
                 key={group.label}
                 group={group}
                 cfg={cfg}
+                pos={gridPos}
                 onClick={() => onSelect(group)}
               />
             );
