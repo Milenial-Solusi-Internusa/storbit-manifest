@@ -67,37 +67,63 @@ The first foundation module to prioritize is Master Data.
 
 ## Current Project Context
 
-The existing application started as Storbit Manifest.
+The project has transitioned from Storbit Manifest (localStorage prototype) into Nexus by MSI ERP.
 
-Current assumed stack:
+**Stack (confirmed):**
 
-- React
-- Vite
-- TailwindCSS
-- Supabase
-- Supabase Auth
-- Supabase RLS
-- Vercel deployment
-- GitHub source control
+- React 19 + Vite 8
+- TailwindCSS 3
+- Supabase (PostgreSQL + Auth + RLS + Edge Functions)
+- Vercel — auto-deploys from `main` → production at `storbitmanifest.dli.my.id`
+- GitHub — `main` is the single integration + production branch
 
-Existing project may already include modules such as:
+**Branch strategy (updated 2026-06-04):**
 
-- Dashboard
-- Manifest / SP
-- Shipment
-- Finance
-- Outstanding
-- AR Tracker
-- Customer
-- User Management
+- `main` → production. Vercel deploys from `main`.
+- Feature work committed directly to `main` (solo developer workflow).
+- `fix/*` branches for hotfixes if needed, merged immediately to `main`.
+- No long-lived feature branches. All phase-1 and phase-2 feature branches have been merged and deleted.
 
-Important existing risks:
+**Active modules (as of 2026-06-04):**
 
-- App.jsx may still be monolithic.
-- Current data layer may not yet be fully modular.
-- Current documentation may be incomplete.
-- Audit log may exist but may not be fully implemented.
-- Testing and deployment readiness may still need improvement.
+| Module | Status | Location |
+|--------|--------|----------|
+| Auth + RLS | ✅ Live | `src/contexts/`, `supabase/migrations/` |
+| Master Data (Admin) | ✅ Live | `src/modules/admin/` |
+| Dashboard | ✅ Live | `src/modules/dashboard/` |
+| App Launcher | ✅ Live | `src/modules/launcher/` |
+| Asset Management | ✅ Live | `src/modules/assets/` |
+| HRGA Request | ✅ Live | `src/modules/hrga/` |
+| Logistics — Sales Order | ✅ Live | `src/modules/logistics/` |
+
+**Module structure (`src/modules/`):**
+
+```
+src/modules/
+├── admin/        Master Data CRUD (Companies, Branches, Departments, Positions, Roles, Users)
+├── assets/       Asset Management (IT Equipment, Kendaraan, detail pages, useAssets hook)
+├── dashboard/    Command Center dashboard
+├── hrga/         HRGA Request module (submit, approval, management)
+├── launcher/     App Launcher (Odoo-style module grid)
+└── logistics/    Sales Order list + SP Detail page
+```
+
+**Migration status (as of 2026-06-04):**
+
+| Range | Scope | Staging | Production |
+|-------|-------|---------|------------|
+| 000–019 | Foundation, master data, RLS | ✅ Applied | ❌ Blocked |
+| 020–024 | HRGA Request schema + seed | ✅ Applied | ❌ Blocked |
+| 025–027 | Asset Management extensions | ✅ Applied | ❌ Blocked |
+
+Production execution is **BLOCKED** — requires explicit written approval from technical lead and product owner before any migration is applied to the production Supabase project.
+
+**Important ongoing tech debt:**
+
+- `src/App.jsx` is 3,900+ lines with 30+ inline components — needs decomposition.
+- `PASTEL` design tokens duplicated in 22+ files — needs a single `src/lib/tokens.js`.
+- `sp_items` has no `deleted_at` column — Delete SP currently hard-deletes.
+- Legacy `can()` / `ROLES` hardcoded permission matrix in App.jsx — diverges from DB roles model.
 
 Do not perform a big-bang rewrite.
 
@@ -671,8 +697,6 @@ Output:
 
 ### Phase 2.0A — HRGA Request Module (Service Management)
 
-Branch: `phase-2-service-management`
-
 Output:
 - `docs/modules/hrga-request-schema-plan.md` — full schema plan, 20 request types, approval matrix
 - Migrations 020–024:
@@ -688,6 +712,25 @@ Output:
 - `src/modules/hrga/components/HrgaRequestForm.jsx` — form ATK dengan line items
 - `src/modules/hrga/components/HrgaRequestDetail.jsx` — detail modal (info grid, items table, approval progress, trail)
 - `src/App.jsx` — HrgaShell lazy import, render block, removed from PLANNED_MODULES
+
+### Phase 2.0B — Asset Management (IT Equipment + Kendaraan)
+
+Output:
+- `src/modules/assets/AssetShell.jsx` — module shell, routes `assets-*` via App.jsx ModuleSidebar
+- `src/modules/assets/pages/AssetDashboardPage.jsx` — stat cards + charts
+- `src/modules/assets/pages/AssetITPage.jsx` — real Supabase data, server-side pagination, 2-step category filter
+- `src/modules/assets/pages/AssetDetailPage.jsx` — Kendaraan detail (6 tabs: Info Dasar, Dokumen, Maintenance, Rute, BBM, History)
+- `src/modules/assets/pages/AssetDetailITPage.jsx` — IT Equipment detail (7 tabs incl. Health Score, Software & Lisensi)
+- `src/hooks/useAssets.js` — useITAssets (paginated), useAssetDetail, useFuelLogs, useITAssetDetail
+- Migrations 025–027: asset_specifications, asset_network, asset_software_licenses, asset_maintenance_records, asset_fuel_logs; seeds 12 IT assets + 1 truck + 4 fuel logs
+
+### Phase 2.0C — Logistics: Sales Order Module
+
+Output:
+- `src/modules/logistics/SalesOrderPage.jsx` — SP list, 4 KPI cards, tab pills (Semua/Pending/Manifest/History), filter bar, sortable table with customer pills + finance progress bar + action buttons, bulk select, pagination, Konfirmasi/Tolak modal
+- `src/modules/logistics/SalesOrderDetailPage.jsx` — SP detail: header card, 3 pastel stat cards, 5-tab card (Overview/Items/Shipment/Dokumen/History), Finance Status table (INV/FP/SUB/KRM per-stage bars), item-cards with fin-pill badges, Edit Item Modal (full form, all sp_items fields, live auto-calc), Delete SP Modal (type-to-confirm)
+- `src/App.jsx` — `selectedSpId` state, lazy imports for both pages, manifest block switches list↔detail, SPSidePanel suppressed when detail is open
+- New menu structure: full ERP menu with 10 module groups, sub-section headers, 100+ planned menu items
 
 ---
 
@@ -724,19 +767,20 @@ Output:
 | 1.0J | User Access Management — table layout + Add User + Edge Function | ✅ Complete |
 | 1.0K | App Launcher + vertical sidebar per module (Option B layout) | ✅ Complete |
 | 2.0A | HRGA Request Module — Schema, Seed, UI (ATK form, My Requests, Semua Request, Detail Modal) | ✅ Staging verified |
+| 2.0B | Asset Management — IT Equipment + Kendaraan list/detail, useAssets hook, migrations 025–027 | ✅ Staging verified |
+| 2.0C | Logistics — Sales Order list page + SP Detail page (real data, INV/FP/SUB/KRM) | ✅ Complete |
 
-Current phase: **Phase 2.0A** ✅ Complete
+Current phase: **Phase 2.0C** ✅ Complete
 
-Next recommended step: **Phase 2.0B — Approval Queue (Supervisor / HRGA / Finance inbox), or Phase 1.0L (Vendors / Products admin CRUD)**
+Next recommended step: **Phase 2.0D — SP Detail mutations (sp_items.status migration for Konfirmasi/Tolak), or Phase 2.0E — Kendaraan list page + Tambah Aset form**
 
 ### Production Gate
 
-**Production execution is BLOCKED** for all pending migrations, including Migration 017
-(`20260524000017_rls_hardening_public_tables.sql`).
+**Production execution is BLOCKED** for all pending migrations (000–027).
 
-Migration 017 is staging-verified as of 2026-05-28. Production execution requires explicit
-written approval from the technical lead and product owner before any migration may be applied
-to the production Supabase project.
+All migrations are staging-verified. Production execution requires explicit written approval
+from the technical lead and product owner before any migration is applied to the production
+Supabase project.
 
 Verification log: `docs/operations/rls-hardening-verification-log.md`
 
