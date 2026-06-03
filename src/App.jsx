@@ -16,11 +16,13 @@ import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
-const Dashboard   = lazy(() => import('./modules/dashboard/Dashboard'));
-const AdminShell  = lazy(() => import('./modules/admin/AdminShell'));
-const AppLauncher = lazy(() => import('./modules/launcher/AppLauncher'));
-const AssetShell  = lazy(() => import('./modules/assets/AssetShell'));
-const HrgaShell   = lazy(() => import('./modules/hrga/HrgaShell'));
+const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
+const AdminShell     = lazy(() => import('./modules/admin/AdminShell'));
+const AppLauncher    = lazy(() => import('./modules/launcher/AppLauncher'));
+const AssetShell     = lazy(() => import('./modules/assets/AssetShell'));
+const HrgaShell      = lazy(() => import('./modules/hrga/HrgaShell'));
+const SalesOrderPage       = lazy(() => import('./modules/logistics/SalesOrderPage'));
+const SalesOrderDetailPage = lazy(() => import('./modules/logistics/SalesOrderDetailPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -387,135 +389,388 @@ const PLANNED_MODULES = {
 };
 
 const ERP_MENU_GROUPS = [
+  // ── CORE ──────────────────────────────────────────────────────────────────
   {
     label: 'Core',
     items: [
-      { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
+      {
+        id: 'dashboard', label: 'Command Center', icon: LayoutDashboard,
+        children: [
+          { id: 'dashboard',               label: 'Overview Dashboard', icon: LayoutDashboard },
+          { id: 'dashboard-tasks',         label: 'My Tasks',           icon: ClipboardList   },
+          { id: 'dashboard-notifications', label: 'Notifications',      icon: Bell            },
+          { id: 'dashboard-activity',      label: 'Recent Activity',    icon: Clock           },
+        ],
+      },
     ],
   },
+  // ── COMMERCIAL & CRM ──────────────────────────────────────────────────────
   {
     label: 'Commercial & CRM',
     items: [
-      { id: 'crm',        label: 'CRM & Inquiry',        icon: Users },
-      { id: 'quotation',  label: 'Quotation',             icon: FileText },
+      {
+        id: 'crm', label: 'CRM & Inquiry', icon: Users,
+        children: [
+          { section: 'CRM & Inquiry' },
+          { id: 'crm-pipeline',  label: 'Pipeline / Leads',  icon: BarChart2  },
+          { id: 'crm-inquiry',   label: 'Inquiry List',       icon: FileText   },
+          { id: 'crm-followup',  label: 'Follow Up',          icon: Clock      },
+          { id: 'crm-prospects', label: 'Customer Prospect',  icon: Users      },
+          { section: 'Quotation' },
+          { id: 'quotation-draft',   label: 'Draft Quotation',   icon: FileText },
+          { id: 'quotation-sent',    label: 'Sent Quotation',    icon: Receipt  },
+          { id: 'quotation-history', label: 'Quotation History', icon: Clock    },
+        ],
+      },
     ],
   },
+  // ── LOGISTICS ─────────────────────────────────────────────────────────────
   {
     label: 'Logistics',
     items: [
-      { id: 'manifest',   label: 'Sales Order / SP',      icon: Receipt },
-      { id: 'customers',  label: 'Customer Management',   icon: Building2, role: ['super'] },
-      { id: 'job',        label: 'Job Management',        icon: BriefcaseBusiness },
-      { id: 'freight',    label: 'Freight Forwarding',    icon: Ship },
-      { id: 'ppjk',       label: 'PPJK / Customs',        icon: ClipboardCheck },
-      { id: 'trading',    label: 'General Trading',       icon: ShoppingCart },
-      { id: 'shipment',   label: 'Shipment Management',   icon: Truck,  role: ['super', 'logistic'] },
-      { id: 'input',      label: 'Input SP',              icon: Plus,   role: ['super', 'logistic'] },
+      { section: 'Storbit — Trading' },
+      {
+        id: 'manifest', label: 'Sales Order / SP', icon: Receipt,
+        children: [
+          { id: 'manifest', label: 'SP Manifest', icon: LayoutList },
+          { id: 'input',    label: 'Input SP',    icon: Plus, role: ['super', 'logistic'] },
+        ],
+      },
+      {
+        id: 'trading', label: 'General Trading', icon: ShoppingCart,
+        children: [
+          { id: 'trading-transaksi', label: 'Transaksi',     icon: FileText  },
+          { id: 'trading-rekap',     label: 'Rekap Trading', icon: BarChart2 },
+        ],
+      },
+      {
+        id: 'customers', label: 'Customer Storbit', icon: Building2, role: ['super'],
+        children: [
+          { id: 'customers',                label: 'Daftar Customer',      icon: Users    },
+          { id: 'customer-storbit-kontrak', label: 'Kontrak & Perjanjian', icon: FileText },
+          { id: 'customer-storbit-history', label: 'History Transaksi',    icon: Clock    },
+        ],
+      },
+      { section: 'MSI — Freight Forwarding' },
+      {
+        id: 'job', label: 'Job Management', icon: BriefcaseBusiness,
+        children: [
+          { id: 'job-semua',   label: 'Semua Job',    icon: LayoutList },
+          { id: 'job-aktif',   label: 'Job Aktif',    icon: Clock      },
+          { id: 'job-buat',    label: 'Buat Job Baru',icon: Plus       },
+          { id: 'job-history', label: 'Job History',  icon: Archive    },
+        ],
+      },
+      {
+        id: 'freight', label: 'Freight Forwarding', icon: Ship,
+        children: [
+          { id: 'freight-fcl', label: 'FCL (Full Container)', icon: Package },
+          { id: 'freight-lcl', label: 'LCL (Less Container)', icon: Package },
+          { id: 'freight-air', label: 'Air Freight',           icon: Package },
+        ],
+      },
+      {
+        id: 'shipment', label: 'Shipment Management', icon: Truck, role: ['super', 'logistic'],
+        children: [
+          { id: 'shipment',         label: 'Tracking Aktif',     icon: Truck    },
+          { id: 'shipment-jadwal',  label: 'Jadwal Pengiriman',  icon: Calendar },
+          { id: 'shipment-riwayat', label: 'Riwayat Pengiriman', icon: Clock    },
+        ],
+      },
+      {
+        id: 'customer-msi', label: 'Customer MSI', icon: Building2,
+        children: [
+          { id: 'customer-msi-daftar',  label: 'Daftar Customer',      icon: Users    },
+          { id: 'customer-msi-kontrak', label: 'Kontrak & Perjanjian', icon: FileText },
+          { id: 'customer-msi-history', label: 'History Transaksi',    icon: Clock    },
+        ],
+      },
+      { section: 'JCI — PPJK / Customs' },
+      {
+        id: 'ppjk-impor', label: 'Pengurusan Impor', icon: ClipboardCheck,
+        children: [
+          { id: 'ppjk-pib',            label: 'PIB',            icon: FileText },
+          { id: 'ppjk-bc23',           label: 'BC 2.3',         icon: FileText },
+          { id: 'ppjk-impor-tracking', label: 'Tracking Impor', icon: Truck    },
+        ],
+      },
+      {
+        id: 'ppjk-ekspor', label: 'Pengurusan Ekspor', icon: ClipboardCheck,
+        children: [
+          { id: 'ppjk-peb',             label: 'PEB',             icon: FileText },
+          { id: 'ppjk-bc30',            label: 'BC 3.0',          icon: FileText },
+          { id: 'ppjk-ekspor-tracking', label: 'Tracking Ekspor', icon: Truck    },
+        ],
+      },
+      {
+        id: 'ppjk', label: 'Manifest & BCF', icon: ClipboardCheck,
+        children: [
+          { id: 'ppjk-bc11',     label: 'BC 1.1',       icon: FileText   },
+          { id: 'ppjk-manifest', label: 'Manifest List', icon: LayoutList },
+        ],
+      },
+      {
+        id: 'ppjk-trucking', label: 'Jasa Trucking', icon: Truck,
+        children: [
+          { id: 'ppjk-trucking-order',   label: 'Order Trucking',   icon: ShoppingCart },
+          { id: 'ppjk-trucking-jadwal',  label: 'Jadwal Trucking',  icon: Calendar     },
+          { id: 'ppjk-trucking-riwayat', label: 'Riwayat Trucking', icon: Clock        },
+        ],
+      },
+      {
+        id: 'customer-jci', label: 'Customer JCI', icon: Building2,
+        children: [
+          { id: 'customer-jci-daftar',  label: 'Daftar Customer',      icon: Users    },
+          { id: 'customer-jci-kontrak', label: 'Kontrak & Perjanjian', icon: FileText },
+          { id: 'customer-jci-history', label: 'History Transaksi',    icon: Clock    },
+        ],
+      },
     ],
   },
+  // ── PROCUREMENT & VENDOR ──────────────────────────────────────────────────
   {
     label: 'Procurement & Vendor',
     items: [
-      { id: 'procRequest',   label: 'Procurement Request', icon: ClipboardCheck },
-      { id: 'purchaseOrder', label: 'Purchase Order',      icon: ShoppingCart },
-      { id: 'vendors',       label: 'Vendor Management',   icon: Users },
+      { section: 'Direct Procurement' },
+      {
+        id: 'procRequest', label: 'Procurement Request', icon: ClipboardCheck,
+        children: [
+          { id: 'procRequest-semua',   label: 'Semua Request',   icon: LayoutList },
+          { id: 'procRequest-buat',    label: 'Buat Request',    icon: Plus       },
+          { id: 'procRequest-pending', label: 'Pending Approval',icon: Clock      },
+          { id: 'procRequest-arsip',   label: 'Arsip',           icon: Archive    },
+        ],
+      },
+      {
+        id: 'purchaseOrder', label: 'Purchase Order', icon: ShoppingCart,
+        children: [
+          { id: 'purchaseOrder-semua',   label: 'Semua PO',        icon: LayoutList },
+          { id: 'purchaseOrder-buat',    label: 'Buat PO',         icon: Plus       },
+          { id: 'purchaseOrder-pending', label: 'Pending Approval',icon: Clock      },
+          { id: 'purchaseOrder-history', label: 'PO History',      icon: Archive    },
+        ],
+      },
+      { section: 'Indirect Procurement' },
+      {
+        id: 'vendors', label: 'Vendor Management', icon: Users,
+        children: [
+          { id: 'vendors-daftar',    label: 'Daftar Vendor',   icon: Users    },
+          { id: 'vendors-evaluasi',  label: 'Evaluasi Vendor', icon: BarChart2},
+          { id: 'vendors-kontrak',   label: 'Kontrak Vendor',  icon: FileText },
+          { id: 'vendors-blacklist', label: 'Blacklist Vendor',icon: FileX    },
+        ],
+      },
     ],
   },
+  // ── INVENTORY & ASSET ─────────────────────────────────────────────────────
   {
     label: 'Inventory & Asset',
     items: [
-      { id: 'inventory', label: 'Inventory / Warehouse', icon: Boxes },
+      { section: 'Inventory / Warehouse' },
+      {
+        id: 'inventory', label: 'Inventory / Warehouse', icon: Boxes,
+        children: [
+          { id: 'inventory-dashboard',   label: 'Dashboard Inventory',   icon: LayoutDashboard },
+          { id: 'inventory-stok',        label: 'Stok Barang',           icon: Package         },
+          { id: 'inventory-penerimaan',  label: 'Penerimaan Barang',     icon: Download        },
+          { id: 'inventory-pengeluaran', label: 'Pengeluaran Barang',    icon: Upload          },
+          { id: 'inventory-transfer',    label: 'Transfer Stok',         icon: ArrowUpDown     },
+          { id: 'inventory-opname',      label: 'Opname / Adjustment',   icon: ClipboardCheck  },
+          { id: 'inventory-kategori',    label: 'Kategori & Master Item',icon: Tag             },
+        ],
+      },
+      { section: 'Asset Management' },
       {
         id: 'assets', label: 'Asset Management', icon: Package,
         children: [
-          { id: 'assets',           label: 'Dashboard',           icon: LayoutDashboard },
-          { id: 'assets-analytics', label: 'Analytics & Reports', icon: BarChart2 },
+          { id: 'assets',             label: 'Dashboard',           icon: LayoutDashboard },
+          { id: 'assets-analytics',   label: 'Analytics & Reports', icon: BarChart2       },
           { section: 'Assets' },
-          { id: 'assets-kendaraan', label: 'Kendaraan',           icon: Car     },
-          { id: 'assets-it',        label: 'IT Equipment',        icon: Monitor, badge: '128' },
-          { id: 'assets-furniture', label: 'Furniture & Office',  icon: Sofa    },
-          { id: 'assets-properti',  label: 'Properti',            icon: Building2 },
+          { id: 'assets-kendaraan',   label: 'Kendaraan',           icon: Car              },
+          { id: 'assets-it',          label: 'IT Equipment',        icon: Monitor, badge: '128' },
+          { id: 'assets-furniture',   label: 'Furniture & Office',  icon: Sofa             },
+          { id: 'assets-properti',    label: 'Properti',            icon: Building2        },
           { section: 'Maintenance' },
-          { id: 'assets-maint',     label: 'Jadwal Maintenance',  icon: Wrench  },
-          { id: 'assets-hist',      label: 'History Maintenance', icon: Clock   },
-          { id: 'assets-workorders',label: 'Work Orders',         icon: FolderOpen, badge: '6' },
+          { id: 'assets-maint',       label: 'Jadwal Maintenance',  icon: Wrench           },
+          { id: 'assets-hist',        label: 'History Maintenance', icon: Clock            },
+          { id: 'assets-workorders',  label: 'Work Orders',         icon: FolderOpen, badge: '6' },
           { section: 'Dokumen' },
-          { id: 'assets-docs',      label: 'Semua Dokumen',       icon: FolderOpen },
-          { id: 'assets-expiring',  label: 'Akan Expired',        icon: Clock,  badge: '9' },
-          { id: 'assets-expired',   label: 'Sudah Expired',       icon: FileX,  badge: '4' },
+          { id: 'assets-docs',        label: 'Semua Dokumen',       icon: FolderOpen       },
+          { id: 'assets-expiring',    label: 'Akan Expired',        icon: Clock,  badge: '9' },
+          { id: 'assets-expired',     label: 'Sudah Expired',       icon: FileX,  badge: '4' },
           { section: 'Administration' },
-          { id: 'assets-kategori',  label: 'Kategori Aset',       icon: Tag     },
-          { id: 'assets-lokasi',    label: 'Lokasi & Ruangan',    icon: MapPin  },
-          { id: 'assets-vendor',    label: 'Vendor & Supplier',   icon: Truck   },
-          { id: 'assets-settings',  label: 'Settings',            icon: Settings},
+          { id: 'assets-kategori',    label: 'Kategori Aset',       icon: Tag              },
+          { id: 'assets-lokasi',      label: 'Lokasi & Ruangan',    icon: MapPin           },
+          { id: 'assets-vendor',      label: 'Vendor & Supplier',   icon: Truck            },
+          { id: 'assets-settings',    label: 'Settings',            icon: Settings         },
         ],
       },
     ],
   },
+  // ── FINANCE & ACCOUNTING ──────────────────────────────────────────────────
   {
     label: 'Finance & Accounting',
     items: [
-      { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt },
-      { id: 'billing',     label: 'Billing / Invoice',   icon: FileText },
-      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   role: ['super', 'finance'] },
-      { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet },
-      { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark },
-      { id: 'accounting',  label: 'Accounting',          icon: BarChart3 },
-      { id: 'finance',     label: 'Finance Docs',        icon: FileText, role: ['super', 'finance'] },
-      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    role: ['super', 'finance', 'management'] },
+      { section: 'Transaksi' },
+      { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt                                              },
+      { id: 'billing',     label: 'Billing / Invoice',   icon: FileText                                             },
+      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   role: ['super', 'finance']                 },
+      { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet                                               },
+      { section: 'Keuangan' },
+      { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark                                             },
+      { id: 'accounting',  label: 'Accounting',          icon: BarChart3                                            },
+      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    role: ['super', 'finance', 'management']   },
+      { section: 'Dokumen' },
+      { id: 'finance',     label: 'Finance Docs',        icon: FileText, role: ['super', 'finance']                 },
     ],
   },
+  // ── SERVICE MANAGEMENT ────────────────────────────────────────────────────
   {
     label: 'Service Management',
     items: [
+      { section: 'HRGA Request' },
       {
         id: 'hrga', label: 'HRGA Request', icon: UsersRound,
         children: [
-          { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList   },
-          { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus            },
+          { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList        },
+          { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus                 },
           { section: 'Management' },
-          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList      },
-          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock, badge: '' },
-          { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive         },
+          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList           },
+          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock,    badge: '' },
+          { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive              },
         ],
       },
-      { id: 'it',   label: 'IT Service Mgmt',   icon: Laptop },
+      { section: 'IT Service Mgmt' },
+      {
+        id: 'it', label: 'IT Service Mgmt', icon: Laptop,
+        children: [
+          { section: 'Karyawan' },
+          { id: 'it-tickets',  label: 'My Tickets',      icon: ClipboardList },
+          { id: 'it-buat',     label: 'Buat Tiket',      icon: Plus          },
+          { section: 'Management' },
+          { id: 'it-semua',    label: 'Semua Tiket',     icon: LayoutList    },
+          { id: 'it-pending',  label: 'Pending Approval',icon: Clock         },
+          { id: 'it-arsip',    label: 'Arsip',           icon: Archive       },
+          { section: 'Master Data' },
+          { id: 'it-kategori', label: 'Kategori Tiket',  icon: Tag           },
+          { id: 'it-sla',      label: 'SLA & Assignment',icon: Settings      },
+        ],
+      },
     ],
   },
+  // ── WORKFLOW & DOCUMENT ───────────────────────────────────────────────────
   {
     label: 'Workflow & Document',
     items: [
-      { id: 'approvals', label: 'Approval Center',      icon: ClipboardCheck },
-      { id: 'docMgmt',   label: 'Document Management',  icon: FolderOpen },
+      { section: 'Approval' },
+      {
+        id: 'approvals', label: 'Approval Center', icon: ClipboardCheck,
+        children: [
+          { section: 'Approval Center' },
+          { id: 'approvals-pending',       label: 'Pending Approval',  icon: Clock        },
+          { id: 'approvals-processed',     label: 'Sudah Diproses',    icon: CheckCircle2 },
+          { id: 'approvals-delegasi',      label: 'Delegasi Approval', icon: Users        },
+          { section: 'Template' },
+          { id: 'approvals-template',      label: 'Semua Template',    icon: LayoutList   },
+          { id: 'approvals-template-buat', label: 'Buat Template',     icon: Plus         },
+        ],
+      },
+      { section: 'Dokumen' },
+      {
+        id: 'docMgmt', label: 'Document Management', icon: FolderOpen,
+        children: [
+          { id: 'docMgmt-semua',    label: 'Semua Dokumen',   icon: FolderOpen },
+          { id: 'docMgmt-upload',   label: 'Upload Dokumen',  icon: Upload     },
+          { id: 'docMgmt-kategori', label: 'Kategori Dokumen',icon: Tag        },
+          { id: 'docMgmt-arsip',    label: 'Arsip',           icon: Archive    },
+        ],
+      },
     ],
   },
+  // ── PORTAL & INTEGRATION ──────────────────────────────────────────────────
   {
     label: 'Portal & Integration',
     items: [
-      { id: 'apiCenter',      label: 'API & Integration',  icon: Link2 },
-      { id: 'publicTracking', label: 'Public Tracking',    icon: Globe },
-      { id: 'customerPortal', label: 'Customer Portal',    icon: Globe },
-      { id: 'vendorPortal',   label: 'Vendor Portal',      icon: Users },
+      { section: 'Portal' },
+      {
+        id: 'customerPortal', label: 'Customer Portal', icon: Globe,
+        children: [
+          { id: 'customerPortal-dashboard', label: 'Dashboard Customer', icon: LayoutDashboard },
+          { id: 'customerPortal-tracking',  label: 'Tracking Order',     icon: Truck           },
+          { id: 'customerPortal-history',   label: 'History Transaksi',  icon: Clock           },
+        ],
+      },
+      {
+        id: 'vendorPortal', label: 'Vendor Portal', icon: Users,
+        children: [
+          { id: 'vendorPortal-dashboard', label: 'Dashboard Vendor',  icon: LayoutDashboard },
+          { id: 'vendorPortal-po',        label: 'PO Masuk',          icon: ShoppingCart    },
+          { id: 'vendorPortal-invoice',   label: 'Invoice Submission',icon: Receipt         },
+        ],
+      },
+      { section: 'Integration' },
+      {
+        id: 'apiCenter', label: 'API & Integration', icon: Link2,
+        children: [
+          { id: 'apiCenter-keys',    label: 'API Keys',      icon: Settings   },
+          { id: 'apiCenter-webhook', label: 'Webhook',       icon: Zap        },
+          { id: 'apiCenter-log',     label: 'Log Integrasi', icon: ScrollText },
+        ],
+      },
+      {
+        id: 'publicTracking', label: 'Public Tracking', icon: Globe,
+        children: [
+          { id: 'publicTracking-page',     label: 'Tracking Page',     icon: Globe    },
+          { id: 'publicTracking-settings', label: 'Settings Tracking', icon: Settings },
+        ],
+      },
     ],
   },
+  // ── REPORTING & GOVERNANCE ────────────────────────────────────────────────
   {
     label: 'Reporting & Governance',
     items: [
-      { id: 'reports',     label: 'Reporting & Dashboard', icon: BarChart3 },
-      { id: 'performance', label: 'Performance & Cache',   icon: Zap },
-      { id: 'audit',       label: 'Audit & Compliance',    icon: ScrollText },
+      { section: 'Reporting' },
+      {
+        id: 'reports', label: 'Reporting & Dashboard', icon: BarChart3,
+        children: [
+          { id: 'reports-executive',   label: 'Executive Dashboard', icon: LayoutDashboard },
+          { id: 'reports-operasional', label: 'Laporan Operasional', icon: BarChart2       },
+          { id: 'reports-keuangan',    label: 'Laporan Keuangan',    icon: Wallet          },
+          { id: 'reports-custom',      label: 'Custom Report',       icon: FileText        },
+        ],
+      },
+      {
+        id: 'performance', label: 'Performance & Cache', icon: Zap,
+        children: [
+          { id: 'performance-system', label: 'System Performance', icon: Zap      },
+          { id: 'performance-cache',  label: 'Cache Management',   icon: Database },
+        ],
+      },
+      { section: 'Governance' },
+      {
+        id: 'audit', label: 'Audit & Compliance', icon: ScrollText,
+        children: [
+          { id: 'audit-log',        label: 'Audit Log',         icon: ScrollText },
+          { id: 'audit-activity',   label: 'User Activity',     icon: Users      },
+          { id: 'audit-compliance', label: 'Compliance Report', icon: Shield     },
+        ],
+      },
     ],
   },
+  // ── FOUNDATION ────────────────────────────────────────────────────────────
   {
     label: 'Foundation',
     items: [
-      { id: 'admin',         label: 'Master Data',          icon: Database, role: ['super'] },
-      { id: 'adminSettings', label: 'Admin Settings',       icon: Settings, role: ['super'] },
+      { section: 'Master Data' },
+      { id: 'admin',         label: 'Master Data',    icon: Database, role: ['super'] },
+      { section: 'Admin Settings' },
+      { id: 'adminSettings', label: 'Admin Settings', icon: Settings, role: ['super'] },
     ],
   },
 ];
 
-const canSeeMenuItem = (item, role) => !item.role || item.role.includes(role);
+const canSeeMenuItem = (item, role) => item.section || !item.role || item.role.includes(role);
 
 
 // ============================
@@ -555,7 +810,6 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
         {expanded && (
           <div style={{
             marginLeft: 14, paddingLeft: 10,
-            borderLeft: '1px solid rgba(255,255,255,0.10)',
             marginBottom: 4,
           }}>
             {item.children.map((child, ci) => {
@@ -675,14 +929,27 @@ function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role
 
       {/* Module items */}
       <nav className="flex-1 px-3 py-3 overflow-y-auto">
-        {visibleItems.map(item => (
-          <SidebarItem
-            key={item.id}
-            item={item}
-            activeMenu={activeMenu}
-            setActiveMenu={onNavigate}
-          />
-        ))}
+        {visibleItems.map((item, i) => {
+          if (item.section) {
+            return (
+              <div key={`sec-${i}`} style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '.7px',
+                textTransform: 'uppercase', color: 'rgba(248,245,237,0.35)',
+                padding: '10px 8px 4px',
+              }}>
+                {item.section}
+              </div>
+            );
+          }
+          return (
+            <SidebarItem
+              key={item.id}
+              item={item}
+              activeMenu={activeMenu}
+              setActiveMenu={onNavigate}
+            />
+          );
+        })}
       </nav>
     </aside>
   );
@@ -705,6 +972,7 @@ export default function StorbitManifest() {
   const [activeModule, setActiveModule] = useState(null); // null = app launcher
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
+  const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
   const [prevAssetMenu, setPrevAssetMenu] = useState('assets-it'); // where to go back from detail
   const { role: authRole, profile, signOut } = useAuth();
   const role = authRole || 'management';
@@ -712,7 +980,9 @@ export default function StorbitManifest() {
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.
   const navigateTo = useCallback((menuId) => {
-    const group = ERP_MENU_GROUPS.find(g => g.items.some(i => i.id === menuId));
+    const group = ERP_MENU_GROUPS.find(g =>
+      g.items.some(i => i.id === menuId || i.children?.some(c => c.id === menuId))
+    );
     if (group) setActiveModule(group.label);
     setActiveMenu(menuId);
   }, []);
@@ -721,7 +991,10 @@ export default function StorbitManifest() {
   const navigateToAssetDetail = useCallback((assetId) => {
     setPrevAssetMenu(activeMenu);
     setActiveAssetId(assetId);
-    const group = ERP_MENU_GROUPS.find(g => g.items.some(i => i.id.startsWith('assets-')));
+    const group = ERP_MENU_GROUPS.find(g =>
+      g.items.some(i => i.id === 'assets' || i.id?.startsWith('assets-') ||
+        i.children?.some(c => c.id === 'assets' || c.id?.startsWith('assets-')))
+    );
     if (group) setActiveModule(group.label);
     setActiveMenu('assets-detail');
   }, [activeMenu]);
@@ -735,9 +1008,9 @@ export default function StorbitManifest() {
   // Return to app launcher.
   const goToLauncher = useCallback(() => setActiveModule(null), []);
 
-  // Enter a module group — select the first visible item in that group.
+  // Enter a module group — select the first visible non-section item in that group.
   const enterModule = useCallback((group) => {
-    const first = group.items.find(item => canSeeMenuItem(item, role));
+    const first = group.items.find(item => !item.section && canSeeMenuItem(item, role));
     if (!first) return;
     setActiveModule(group.label);
     setActiveMenu(first.id);
@@ -755,12 +1028,19 @@ export default function StorbitManifest() {
   const [showAdd, setShowAdd] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // SP list filters — setters kept for future SP detail / legacy support (SalesOrderPage handles its own state)
+  // eslint-disable-next-line no-unused-vars
   const [search, setSearch] = useState('');
+  // eslint-disable-next-line no-unused-vars
   const [filterStatus, setFilterStatus] = useState('all');
+  // eslint-disable-next-line no-unused-vars
   const [filterDC, setFilterDC] = useState('all');
+  // eslint-disable-next-line no-unused-vars
   const [filterCustomer, setFilterCustomer] = useState('all');
   const [filterMonth, setFilterMonth] = useState('all');
+  // eslint-disable-next-line no-unused-vars
   const [filterOverdue, setFilterOverdue] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [sortBy, setSortBy] = useState({ field: 'spDate', dir: 'desc' });
 
   // AR-specific filters
@@ -801,6 +1081,8 @@ export default function StorbitManifest() {
     return Array.from(set).sort().reverse();
   }, [rows]);
 
+  // filteredSP kept for potential reuse; SalesOrderPage handles its own filtering
+  // eslint-disable-next-line no-unused-vars
   const filteredSP = useMemo(() => {
     let out = groupedSP;
     if (search.trim()) {
@@ -1056,8 +1338,8 @@ export default function StorbitManifest() {
 
   const visibleMenuGroups = ERP_MENU_GROUPS
     .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role)) }))
-    .filter(group => group.items.length > 0);
-  const visibleMenus = visibleMenuGroups.flatMap(group => group.items);
+    .filter(group => group.items.some(i => !i.section));
+  const visibleMenus = visibleMenuGroups.flatMap(group => group.items.filter(i => !i.section));
   const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
   // The group corresponding to the currently active module (null in launcher mode).
   const activeModuleGroup = activeModule
@@ -1358,7 +1640,7 @@ export default function StorbitManifest() {
           <div className={`nexus-main-surface w-full min-w-0 ${(activeMenu === 'assets' || activeMenu?.startsWith('assets-')) ? 'px-5 sm:px-7 xl:px-9 py-6 lg:py-7' : 'px-5 sm:px-7 xl:px-9 py-6 lg:py-7'}`} style={{ display: activeModule ? undefined : 'none' }}>
 
           {/* Page section header with month filter */}
-          {(activeMenu === 'dashboard' || activeMenu === 'manifest') && (
+          {activeMenu === 'dashboard' && (
             <div className="mb-7 flex items-center gap-2 flex-wrap rounded-2xl border px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.58)', borderColor: 'rgba(15,42,35,0.08)' }}>
               <Calendar size={14} style={{ color: PASTEL.inkMute }}/>
               <span className="text-xs uppercase tracking-widest font-medium" style={{ color: PASTEL.inkMute }}>Period:</span>
@@ -1408,21 +1690,60 @@ export default function StorbitManifest() {
               capabilities={PLANNED_MODULES[activeMenu].capabilities}
             />
           )}
-          {activeMenu === 'manifest' && (
-            <Manifest
-              grouped={filteredSP}
-              allCount={groupedSP.length}
-              search={search} setSearch={setSearch}
-              filterStatus={filterStatus} setFilterStatus={setFilterStatus}
-              filterDC={filterDC} setFilterDC={setFilterDC}
-              filterCustomer={filterCustomer} setFilterCustomer={setFilterCustomer}
-              filterOverdue={filterOverdue} setFilterOverdue={setFilterOverdue}
-              dcList={dcList}
-              customers={customers}
-              sortBy={sortBy} setSortBy={setSortBy}
-              onView={(spNo) => setViewingSP(spNo)}
-              onExport={exportCSV}
+          {/* Catch-all for sub-menu items not yet assigned to a page */}
+          {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin'].includes(activeMenu) &&
+           !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') && (
+            <ComingSoonPage
+              title="Coming Soon"
+              description="This section is planned on the Nexus ERP roadmap and will be available in a future phase."
+              capabilities={['Planned for a future ERP phase', 'Part of the Nexus roadmap']}
             />
+          )}
+          {activeMenu === 'manifest' && !selectedSpId && (
+            <ErrorBoundary title="Sales Order section temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <SalesOrderPage
+                  groupedSP={groupedSP}
+                  customers={customers}
+                  dcList={dcList}
+                  role={role}
+                  onSelectSP={(spNo) => setSelectedSpId(spNo)}
+                  onAddSP={() => navigateTo('input')}
+                  onExport={exportCSV}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'manifest' && selectedSpId && (
+            <ErrorBoundary title="SP Detail section temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <SalesOrderDetailPage
+                  spNo={selectedSpId}
+                  items={enrichedRows.filter(r => r.spNo === selectedSpId)}
+                  group={groupedSP.find(g => g.spNo === selectedSpId) || null}
+                  onBack={() => setSelectedSpId(null)}
+                  onSaveItem={dbSaveRow}
+                  onDeleteItem={handleDelete}
+                  onDeleteSP={async (spNo) => {
+                    await dbRemoveRowsBySp(spNo);
+                    setSelectedSpId(null);
+                    showToast(`SP ${spNo} dihapus`);
+                  }}
+                  showToast={showToast}
+                  role={role}
+                />
+              </Suspense>
+            </ErrorBoundary>
           )}
           {activeMenu === 'input' && (
             <InputPage
@@ -1513,8 +1834,8 @@ export default function StorbitManifest() {
         </main>
       </div>
 
-      {/* SIDE PANEL - SP Detail */}
-      {viewingSPGroup && (
+      {/* SIDE PANEL - SP Detail (legacy; suppressed when new SalesOrderDetailPage is open) */}
+      {viewingSPGroup && !selectedSpId && (
         <SPSidePanel
           group={viewingSPGroup}
           onClose={() => setViewingSP(null)}
@@ -1734,6 +2055,8 @@ function SortIcon({ field, sortBy }) {
   return sortBy.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>;
 }
 
+// Manifest kept for backward compatibility — replaced in render by SalesOrderPage.
+// eslint-disable-next-line no-unused-vars
 function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilterStatus, filterDC, setFilterDC, filterCustomer, setFilterCustomer, filterOverdue, setFilterOverdue, dcList, customers, sortBy, setSortBy, onView, onExport }) {
   const toggleSort = (field) => {
     if (sortBy.field === field) setSortBy({ field, dir: sortBy.dir === 'asc' ? 'desc' : 'asc' });
