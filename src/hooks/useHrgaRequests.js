@@ -551,3 +551,163 @@ export async function cancelHrgaRequest(requestId) {
 
   return { error };
 }
+
+// ─────────────────────────────────────────────────────────────
+// useHrgaStats
+// Counts of the current user's requests by status.
+// Returns { total, pending, approved, rejected, loading }
+// ─────────────────────────────────────────────────────────────
+export function useHrgaStats() {
+  const [stats, setStats]   = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    supabase
+      .from('hrga_requests')
+      .select('status')
+      .is('deleted_at', null)
+      .then(({ data: rows }) => {
+        if (cancelled || !rows) return;
+        const total    = rows.length;
+        const pending  = rows.filter(r => r.status === 'submitted' || r.status === 'in_progress').length;
+        const approved = rows.filter(r => r.status === 'approved' || r.status === 'completed').length;
+        const rejected = rows.filter(r => r.status === 'rejected').length;
+        setStats({ total, pending, approved, rejected });
+        setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
+  return { ...stats, loading, refresh };
+}
+
+// ─────────────────────────────────────────────────────────────
+// usePendingApprovals
+// Paginated list of requests currently awaiting approval
+// (status = submitted or in_progress), scoped by company RLS.
+// Used by the Pending Approval page — approvers see requests
+// in their queue.
+// ─────────────────────────────────────────────────────────────
+export function usePendingApprovals({ page = 1, search = '' } = {}) {
+  const [data, setData]       = useState([]);
+  const [total, setTotal]     = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const from = (page - 1) * HRGA_PAGE_SIZE;
+    const to   = from + HRGA_PAGE_SIZE - 1;
+
+    let query = supabase
+      .from('hrga_requests')
+      .select(
+        'id, document_no, subject, status, current_level, total_levels, ' +
+        'amount, requested_date, submitted_at, requester_id, ' +
+        'hrga_request_types(type_code, type_name, category_code, category_name)',
+        { count: 'exact' }
+      )
+      .is('deleted_at', null)
+      .in('status', ['submitted', 'in_progress'])
+      .order('requested_date', { ascending: true })
+      .range(from, to);
+
+    if (search.trim()) {
+      query = query.or(
+        `subject.ilike.%${search.trim()}%,document_no.ilike.%${search.trim()}%`
+      );
+    }
+
+    query.then(({ data: rows, count, error: err }) => {
+      if (cancelled) return;
+      if (err) { setError(err); setLoading(false); return; }
+
+      const list = rows || [];
+      setTotal(count ?? 0);
+      if (list.length === 0) { setData([]); setError(null); setLoading(false); return; }
+
+      const uniqueIds = [...new Set(list.map(r => r.requester_id).filter(Boolean))];
+      supabase.from('profiles').select('id, full_name').in('id', uniqueIds)
+        .then(({ data: profiles }) => {
+          if (cancelled) return;
+          const nameMap = Object.fromEntries((profiles || []).map(p => [p.id, p.full_name]));
+          setData(list.map(r => ({ ...r, requester_name: nameMap[r.requester_id] || null })));
+          setError(null);
+          setLoading(false);
+        });
+    });
+
+    return () => { cancelled = true; };
+  }, [page, search, refreshKey]);
+
+  const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
+  return { data, total, loading, error, refresh };
+}
+
+// ─────────────────────────────────────────────────────────────
+// submitApproval
+// Inserts an approval record and updates the request status.
+// action: 'approved' | 'rejected'
+// ─────────────────────────────────────────────────────────────
+export async function submitApproval({ requestId, action, comment, profile }) {
+  if (!requestId || !profile?.id) return { error: { message: 'Parameter tidak valid.' } };
+
+  // Fetch current request state
+  const { data: req, error: reqErr } = await supabase
+    .from('hrga_requests')
+    .select('id, status, current_level, total_levels, company_id, request_type_id')
+    .eq('id', requestId)
+    .single();
+
+  if (reqErr) return { error: reqErr };
+  if (!['submitted','in_progress'].includes(req.status)) {
+    return { error: { message: 'Request sudah tidak bisa di-approve/reject.' } };
+  }
+
+  // Insert approval record
+  const { error: approvalErr } = await supabase
+    .from('hrga_request_approvals')
+    .insert({
+      request_id:    requestId,
+      level:         req.current_level,
+      approver_id:   profile.id,
+      approver_role: null, // role enriched by trigger if needed
+      action,
+      comment:       comment || null,
+      actioned_at:   new Date().toISOString(),
+    });
+
+  if (approvalErr) return { error: approvalErr };
+
+  // Determine new status
+  let newStatus;
+  if (action === 'rejected') {
+    newStatus = 'rejected';
+  } else if (req.current_level >= req.total_levels) {
+    newStatus = 'approved';
+  } else {
+    newStatus = 'in_progress';
+  }
+
+  const updatePayload = {
+    status:     newStatus,
+    updated_by: profile.id,
+    ...(newStatus === 'approved' ? { approved_at: new Date().toISOString() } : {}),
+    ...(newStatus === 'rejected' ? { rejected_at: new Date().toISOString() } : {}),
+    ...(newStatus === 'in_progress' ? { current_level: req.current_level + 1 } : {}),
+  };
+
+  const { error: updateErr } = await supabase
+    .from('hrga_requests')
+    .update(updatePayload)
+    .eq('id', requestId);
+
+  return { error: updateErr || null };
+}
