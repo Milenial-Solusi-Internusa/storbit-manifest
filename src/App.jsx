@@ -1470,7 +1470,7 @@ export default function StorbitManifest() {
                   src="https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png"
                   height="36"
                   alt="MSI"
-                  style={{ objectFit: 'contain', display: 'block' }}
+                  style={{ height: '36px', width: 'auto', objectFit: 'contain', maxWidth: '120px', display: 'block' }}
                 />
               </div>
 
