@@ -23,6 +23,7 @@ const AssetShell     = lazy(() => import('./modules/assets/AssetShell'));
 const HrgaShell      = lazy(() => import('./modules/hrga/HrgaShell'));
 const SalesOrderPage       = lazy(() => import('./modules/logistics/SalesOrderPage'));
 const SalesOrderDetailPage = lazy(() => import('./modules/logistics/SalesOrderDetailPage'));
+const InputSPPage          = lazy(() => import('./modules/logistics/InputSPPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -973,6 +974,7 @@ export default function StorbitManifest() {
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
+  const [showInputSP,  setShowInputSP]    = useState(false); // Input SP form
   const [prevAssetMenu, setPrevAssetMenu] = useState('assets-it'); // where to go back from detail
   const { role: authRole, profile, signOut } = useAuth();
   const role = authRole || 'management';
@@ -1700,7 +1702,7 @@ export default function StorbitManifest() {
               capabilities={['Planned for a future ERP phase', 'Part of the Nexus roadmap']}
             />
           )}
-          {activeMenu === 'manifest' && !selectedSpId && (
+          {activeMenu === 'manifest' && !selectedSpId && !showInputSP && (
             <ErrorBoundary title="Sales Order section temporarily unavailable">
               <Suspense fallback={
                 <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
@@ -1713,8 +1715,24 @@ export default function StorbitManifest() {
                   dcList={dcList}
                   role={role}
                   onSelectSP={(spNo) => setSelectedSpId(spNo)}
-                  onAddSP={() => navigateTo('input')}
+                  onAddSP={() => setShowInputSP(true)}
                   onExport={exportCSV}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'manifest' && !selectedSpId && showInputSP && (
+            <ErrorBoundary title="Input SP section temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <InputSPPage
+                  onBack={() => setShowInputSP(false)}
+                  customers={customers}
+                  dcList={dcList}
                   showToast={showToast}
                 />
               </Suspense>
