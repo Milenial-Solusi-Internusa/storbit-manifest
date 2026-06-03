@@ -1340,6 +1340,7 @@ export default function StorbitManifest() {
     .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role)) }))
     .filter(group => group.items.some(i => !i.section));
   const visibleMenus = visibleMenuGroups.flatMap(group => group.items.filter(i => !i.section));
+  // eslint-disable-next-line no-unused-vars
   const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
   // The group corresponding to the currently active module (null in launcher mode).
   const activeModuleGroup = activeModule
@@ -1458,20 +1459,19 @@ export default function StorbitManifest() {
         {/* MAIN CONTENT */}
         <main className="nexus-shell-bg flex-1 min-w-0 w-full overflow-x-hidden">
           {/* ── DESKTOP STICKY TOPBAR ── */}
-          <header className="hidden lg:block sticky top-0 z-20 border-b bg-white/90 backdrop-blur-xl"
-            style={{ borderColor: '#E8DED0', boxShadow: '0 1px 4px rgba(20,32,28,0.06)' }}
+          <header className="hidden lg:block sticky top-0 z-20 border-b"
+            style={{ borderColor: '#E8E0D4', background: '#FAFAF8', boxShadow: '0 1px 4px rgba(20,32,28,0.06)' }}
           >
             <div className="flex min-h-[68px] items-center gap-3 px-5 sm:px-7 xl:px-9">
 
-              {/* ── LEFT: workspace identity ── */}
-              <div className="lg:w-[230px] lg:shrink-0 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PASTEL.peachDeep }}/>
-                  <span className="text-[9px] uppercase tracking-[0.18em] font-bold" style={{ color: PASTEL.inkMute }}>Nexus ERP</span>
-                </div>
-                <h2 className="font-display text-[17px] font-semibold tracking-tight truncate leading-tight" style={{ color: PASTEL.ink }}>
-                  {activeModule ? (activeMenuItem?.label || 'Command Center') : 'Nexus by MSI'}
-                </h2>
+              {/* ── LEFT: MSI logo ── */}
+              <div className="lg:shrink-0">
+                <img
+                  src="https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png"
+                  height="36"
+                  alt="MSI"
+                  style={{ objectFit: 'contain', display: 'block' }}
+                />
               </div>
 
               {/* ── CENTER: search ── */}

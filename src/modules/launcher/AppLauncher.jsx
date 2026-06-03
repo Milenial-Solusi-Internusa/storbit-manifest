@@ -59,6 +59,7 @@ function LogisticsCard({ group, cfg, onClick }) {
       type="button"
       onClick={onClick}
       style={{
+        order: -1,
         gridColumn: 'span 2', gridRow: 'span 2',
         position: 'relative',
         background: 'linear-gradient(150deg,#1C2B1E 0%,#244A2C 60%,#2F6B3F 120%)',
