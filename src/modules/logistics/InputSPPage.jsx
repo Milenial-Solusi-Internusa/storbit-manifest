@@ -29,8 +29,8 @@ const C = {
   inkFaint:  '#8A8E7C',
   line:      '#E7DCC8',
   lineSoft:  '#F0E7D6',
-  accent:    '#2F6B3F',
-  accentSoft:'#E7EFE2',
+  accent:    '#E85A1E',
+  accentSoft:'#FEF2EC',
   ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',
   danger:    '#B23227', dangerBg: '#F6E0DB', dangerBd: '#E6BBB2',
   orange:    '#A45A22', orangeBg: '#F6E8D6', orangeBd: '#E7CDA9',
@@ -170,7 +170,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
   );
 
   return (
-    <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: C.ink, maxWidth: 1240 }}>
+    <div style={{ fontFamily: "'Inter', sans-serif", color: C.ink, maxWidth: 1240 }}>
 
       {/* ── Page header ─────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
@@ -404,7 +404,7 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
   const inp = (props) => (
     <input
       {...props}
-      onFocus={e => { e.target.style.borderColor = '#2F6B3F'; e.target.style.boxShadow = '0 0 0 3px rgba(47,107,63,.12)'; }}
+      onFocus={e => { e.target.style.borderColor = '#E85A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(47,107,63,.12)'; }}
       onBlur={e  => { e.target.style.borderColor = '#E7DCC8'; e.target.style.boxShadow = 'none'; }}
       style={{
         width: '100%', height: 38, borderRadius: 8,
@@ -435,7 +435,7 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
       }}>
         <span style={{
           width: 26, height: 26, borderRadius: 7, flexShrink: 0,
-          background: '#E7EFE2', color: '#2F6B3F',
+          background: '#FEF2EC', color: '#E85A1E',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600, fontSize: 12,
         }}>
@@ -444,7 +444,7 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
         <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#23291E' }}>
           {item.productName || 'Item baru'}
         </span>
-        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 700, color: '#2F6B3F' }}>
+        <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 700, color: '#E85A1E' }}>
           {rp(grand)}
         </span>
         {canRemove && (

@@ -30,8 +30,8 @@ const C = {
   inkFaint:  '#8A8E7C',
   line:      '#E7DCC8',
   lineSoft:  '#F0E7D6',
-  accent:    '#2F6B3F',
-  accentSoft:'#E7EFE2',
+  accent:    '#E85A1E',
+  accentSoft:'#FEF2EC',
   ok:        '#2E7D4F', okBg:  '#E4F0E5', okBd:  '#BFDDC4',
   warn:      '#9A6B0E', warnBg:'#F8ECCF', warnBd:'#E6CE94',
   danger:    '#B23227', dangerBg:'#F6E0DB', dangerBd:'#E6BBB2',
@@ -73,7 +73,7 @@ function custColor(name) {
     { bg: '#DCEBEA', ink: '#1F6B6B' },
     { bg: '#ECE3F4', ink: '#6E4B8C' },
     { bg: '#F6E8D6', ink: '#A45A22' },
-    { bg: '#E7EFE2', ink: '#2F6B3F' },
+    { bg: '#FEF2EC', ink: '#E85A1E' },
     { bg: '#ECE1D2', ink: '#6B4A2C' },
     { bg: '#EDE3F0', ink: '#7A4E8C' },
   ];
@@ -636,7 +636,7 @@ export default function SalesOrderDetailPage({
   if (!spNo) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 1240, fontFamily: "'Plus Jakarta Sans', sans-serif", color: C.ink }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 1240, fontFamily: "'Inter', sans-serif", color: C.ink }}>
 
       {/* ── Breadcrumb + title ────────────────────────────────────────── */}
       <div>

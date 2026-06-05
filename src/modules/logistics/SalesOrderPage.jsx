@@ -22,8 +22,8 @@ const C = {
   inkFaint:  '#8A8E7C',
   line:      '#E7DCC8',
   lineSoft:  '#F0E7D6',
-  accent:    '#2F6B3F',
-  accentSoft:'#E7EFE2',
+  accent:    '#E85A1E',
+  accentSoft:'#FEF2EC',
   ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',
   warn:      '#9A6B0E', warnBg: '#F8ECCF', warnBd: '#E6CE94',
   danger:    '#B23227', dangerBg: '#F6E0DB', dangerBd: '#E6BBB2',
@@ -39,7 +39,7 @@ const CUST_PALETTE = [
   { bg: '#DCEBEA', ink: '#1F6B6B' },
   { bg: '#ECE3F4', ink: '#6E4B8C' },
   { bg: '#F6E8D6', ink: '#A45A22' },
-  { bg: '#E7EFE2', ink: '#2F6B3F' },
+  { bg: '#FEF2EC', ink: '#E85A1E' },
   { bg: '#ECE1D2', ink: '#6B4A2C' },
   { bg: '#EDE3F0', ink: '#7A4E8C' },
   { bg: '#DCEAE6', ink: '#3C6E66' },
@@ -162,7 +162,7 @@ function StatCard({ label, value, icon: Icon, tone, sub, badge }) {
         </span>
       </div>
       <div style={{
-        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        fontFamily: "'Inter', sans-serif",
         fontSize: 34, fontWeight: 800, color: C.ink, letterSpacing: '-1px', lineHeight: 1,
       }}>{value}</div>
       <div style={{ fontSize: 12, color: t.lc }}>
@@ -509,7 +509,7 @@ export default function SalesOrderPage({
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, fontFamily: "'Plus Jakarta Sans', sans-serif", color: C.ink }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, fontFamily: "'Inter', sans-serif", color: C.ink }}>
 
       {/* ── Page header ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>

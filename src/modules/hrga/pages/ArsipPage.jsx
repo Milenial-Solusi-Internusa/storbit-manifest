@@ -35,7 +35,7 @@ export default function ArsipPage({ onOpenDetail }) {
   if (statusFilter) rows = rows.filter(r => r.status === statusFilter);
 
   return (
-    <div style={{ fontFamily:"'Plus Jakarta Sans', system-ui, sans-serif", color:D.ink }}>
+    <div style={{ fontFamily:"'Inter', system-ui, sans-serif", color:D.ink }}>
       <style>{HRGA_TABLE_CSS}</style>
 
       <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:16, marginBottom:20, flexWrap:'wrap' }}>

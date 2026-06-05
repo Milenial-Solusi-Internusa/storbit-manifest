@@ -29,16 +29,16 @@ const D = {
   inkFaint:    '#8A8E7C',
   line:        '#E7DCC8',
   lineSoft:    '#F0E7D6',
-  accent:      '#2F6B3F',
+  accent:      '#E85A1E',
   accentInk:   '#235031',
-  accentSoft:  '#E7EFE2',
+  accentSoft:  '#FEF2EC',
   ok:          '#2E7D4F', okBg:  '#E4F0E5', okBd:  '#BFDDC4',
   warn:        '#9A6B0E', warnBg:'#F8ECCF', warnBd:'#E6CE94',
   danger:      '#B23227', dangerBg:'#F6E0DB', dangerBd:'#E6BBB2',
   info:        '#2A5B8C', infoBg:'#E1ECF5', infoBd:'#BAD2E6',
   neutral:     '#6B6F5E', neutralBg:'#EEE9DC', neutralBd:'#DDD3BE',
   purple:      '#6B3FA0', purpleBg:'#F0E8FA', purpleBd:'#CEBAE8',
-  msi:         '#2F6B3F', msiBg:'#E7EFE2',
+  msi:         '#E85A1E', msiBg:'#FEF2EC',
   jci:         '#2A5B8C', jciBg:'#E1ECF5',
   sbi:         '#9A5B2C', sbiBg:'#F4E7D8',
   shadow:      '0 2px 8px rgba(40,34,18,.07), 0 1px 2px rgba(40,34,18,.05)',
@@ -62,7 +62,7 @@ const fmtDateShort = (iso) => {
 };
 const initials = (name) =>
   (name || '??').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-const AV_COLORS = ['#2F6B3F','#2A5B8C','#9A5B2C','#6B6F5E','#7A4E8C','#1F6B6B'];
+const AV_COLORS = ['#E85A1E','#2A5B8C','#9A5B2C','#6B6F5E','#7A4E8C','#1F6B6B'];
 const avatarColor = (name) =>
   AV_COLORS[(initials(name).charCodeAt(0) || 0) % AV_COLORS.length];
 
@@ -456,7 +456,7 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
 
   if (!asset) {
     return (
-      <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+      <div style={{ fontFamily: "'Inter', system-ui, sans-serif",
         padding: '3rem', textAlign: 'center', color: D.danger, fontSize: 14 }}>
         Asset tidak ditemukan.
       </div>
@@ -480,13 +480,13 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
   const lastSeen = network?.last_seen_at;
 
   return (
-    <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: D.ink }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: D.ink }}>
       <style>{`
         .ait-tab { display:inline-flex;align-items:center;gap:7px;padding:10px 14px;border:none;
           background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;
           color:#5E6553;border-bottom:2px solid transparent;transition:color .12s;white-space:nowrap }
         .ait-tab:hover { color:#23291E }
-        .ait-tab.active { color:#2F6B3F;border-bottom-color:#2F6B3F }
+        .ait-tab.active { color:#E85A1E;border-bottom-color:#E85A1E }
         .ait-tbl th { text-align:left;padding:9px 12px;font-size:11.5px;font-weight:700;
           text-transform:uppercase;letter-spacing:.4px;color:#8A8E7C;
           border-bottom:1px solid #E7DCC8;background:#FFFDF8;white-space:nowrap }
@@ -1027,7 +1027,7 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
                                     {revealed ? sw.license_key_masked : sw.license_key_masked.replace(/[A-Z0-9]/g, '·')}
                                     <button onClick={() => toggleKeyReveal(sw.id)} style={{
                                       display: 'inline-flex', alignItems: 'center', gap: 3, background: 'none',
-                                      border: 'none', cursor: 'pointer', color: D.accent, fontFamily: "'Plus Jakarta Sans', sans-serif",
+                                      border: 'none', cursor: 'pointer', color: D.accent, fontFamily: "'Inter', sans-serif",
                                       fontSize: 11.5, fontWeight: 600, padding: 0 }}>
                                       {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
                                     </button>

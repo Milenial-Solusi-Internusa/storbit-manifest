@@ -35,7 +35,7 @@ export default function AllRequestsPage({ onOpenDetail }) {
   const rows = statusFilter ? data.filter(r => r.status === statusFilter) : data;
 
   return (
-    <div style={{ fontFamily:"'Plus Jakarta Sans', system-ui, sans-serif", color:D.ink }}>
+    <div style={{ fontFamily:"'Inter', system-ui, sans-serif", color:D.ink }}>
       <style>{HRGA_TABLE_CSS}</style>
 
       {/* Page header */}

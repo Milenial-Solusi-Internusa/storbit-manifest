@@ -17,13 +17,22 @@ import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
-const AdminShell     = lazy(() => import('./modules/admin/AdminShell'));
+const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
+const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
 const AppLauncher    = lazy(() => import('./modules/launcher/AppLauncher'));
 const AssetShell     = lazy(() => import('./modules/assets/AssetShell'));
 const HrgaShell      = lazy(() => import('./modules/hrga/HrgaShell'));
 const SalesOrderPage       = lazy(() => import('./modules/logistics/SalesOrderPage'));
 const SalesOrderDetailPage = lazy(() => import('./modules/logistics/SalesOrderDetailPage'));
 const InputSPPage          = lazy(() => import('./modules/logistics/InputSPPage'));
+const ProspectListPage     = lazy(() => import('./modules/crm/ProspectListPage'));
+const ProspectFormPage     = lazy(() => import('./modules/crm/ProspectFormPage'));
+const InquiryListPage      = lazy(() => import('./modules/crm/InquiryListPage'));
+const InquiryFormPage      = lazy(() => import('./modules/crm/InquiryFormPage'));
+const QuotationFormPage    = lazy(() => import('./modules/crm/QuotationFormPage'));
+const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'));
+const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
+const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -33,7 +42,7 @@ const PASTEL = {
   peachDeep: '#F5A78F',
   lavender: '#D8C5F0',
   lavenderDeep: '#A98FD8',
-  mint: '#C8EFD9',
+  mint: '#FFB899',
   mintDeep: '#7FC9A0',
   butter: '#FFE9B8',
   butterDeep: '#E8C168',
@@ -765,6 +774,7 @@ const ERP_MENU_GROUPS = [
     items: [
       { section: 'Master Data' },
       { id: 'admin',         label: 'Master Data',    icon: Database, role: ['super'] },
+      { id: 'schema-manager',label: 'Schema Manager', icon: Database, role: ['super', 'super_admin'] },
       { section: 'Admin Settings' },
       { id: 'adminSettings', label: 'Admin Settings', icon: Settings, role: ['super'] },
     ],
@@ -800,7 +810,7 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
           onMouseEnter={(e) => { if (!active && !childActive) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
           onMouseLeave={(e) => { if (!active && !childActive) e.currentTarget.style.background = 'transparent'; }}
         >
-          <Icon size={17} strokeWidth={(active || childActive) ? 2.1 : 1.8} style={{ color: (active || childActive) ? '#C8EFD9' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
+          <Icon size={17} strokeWidth={(active || childActive) ? 2.1 : 1.8} style={{ color: (active || childActive) ? '#FFB899' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
           <span className="flex-1 text-left leading-snug">{item.label}</span>
           <ChevronDown size={13} strokeWidth={2} style={{
             color: 'rgba(248,245,237,0.40)', flexShrink: 0,
@@ -844,7 +854,7 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
                   onMouseLeave={(e) => { if (!childIsActive) e.currentTarget.style.background = 'transparent'; }}
                 >
                   {ChildIcon
-                    ? <ChildIcon size={14} strokeWidth={childIsActive ? 2.1 : 1.7} style={{ color: childIsActive ? '#C8EFD9' : 'rgba(248,245,237,0.45)', flexShrink: 0 }} />
+                    ? <ChildIcon size={14} strokeWidth={childIsActive ? 2.1 : 1.7} style={{ color: childIsActive ? '#FFB899' : 'rgba(248,245,237,0.45)', flexShrink: 0 }} />
                     : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: childIsActive ? 1 : .45, flexShrink: 0 }} />
                   }
                   <span className="flex-1 truncate">{child.label}</span>
@@ -879,7 +889,7 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
     >
-      <Icon size={17} strokeWidth={active ? 2.2 : 1.8} style={{ color: active ? '#C8EFD9' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
+      <Icon size={17} strokeWidth={active ? 2.2 : 1.8} style={{ color: active ? '#FFB899' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
       <span className="flex-1 text-left leading-snug">{item.label}</span>
     </button>
   );
@@ -901,7 +911,7 @@ function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role
     <aside
       className="hidden lg:flex flex-col w-[260px] flex-shrink-0 sticky top-0 h-screen border-r"
       style={{
-        background: 'linear-gradient(165deg, #0F2A23 0%, #173D34 100%)',
+        background: 'linear-gradient(165deg, #144682 0%, #0f3366 100%)',
         borderColor: 'rgba(255,255,255,0.12)',
         color: '#F8F5ED',
       }}
@@ -976,6 +986,13 @@ export default function StorbitManifest() {
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
   const [showInputSP,  setShowInputSP]    = useState(false); // Input SP form
   const [prevAssetMenu, setPrevAssetMenu] = useState('assets-it'); // where to go back from detail
+  // CRM module state
+  const [showProspectForm,  setShowProspectForm]  = useState(false);
+  const [editingProspect,   setEditingProspect]   = useState(null);
+  const [showInquiryForm,   setShowInquiryForm]   = useState(false);
+  const [showQuotationForm,   setShowQuotationForm]   = useState(false);
+  const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
+  const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
   const { role: authRole, profile, signOut } = useAuth();
   const role = authRole || 'management';
 
@@ -987,6 +1004,13 @@ export default function StorbitManifest() {
     );
     if (group) setActiveModule(group.label);
     setActiveMenu(menuId);
+    // Reset CRM sub-page state when navigating to a different menu
+    setShowProspectForm(false);
+    setEditingProspect(null);
+    setShowInquiryForm(false);
+    setShowQuotationForm(false);
+    setCrmQuotationDetail(null);
+    setEditingQuotation(null);
   }, []);
 
   // Navigate to asset detail — called by list pages on row click.
@@ -1351,10 +1375,10 @@ export default function StorbitManifest() {
   const currentRoleLabel = ROLES.find(r => r.id === role)?.label || role;
 
   return (
-    <div className="min-h-screen" style={{ background: PASTEL.cream, color: PASTEL.ink, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
+    <div className="min-h-screen" style={{ background: PASTEL.cream, color: PASTEL.ink, fontFamily: "'Inter', system-ui, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+        body { font-family: 'Inter', system-ui, sans-serif; }
         .font-display { font-family: 'Fraunces', serif; font-feature-settings: 'ss01'; letter-spacing: -0.02em; }
         .font-numeric { font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.025em; font-feature-settings: 'tnum'; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
@@ -1548,7 +1572,7 @@ export default function StorbitManifest() {
                     }}
                   >
                     <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-bold"
-                      style={{ background: 'linear-gradient(135deg, #0F2A23, #1A4A3E)', color: '#C8EFD9' }}>
+                      style={{ background: 'linear-gradient(135deg, #144682, #1a5299)', color: '#FFB899' }}>
                       {(profile?.full_name || 'U')[0].toUpperCase()}
                     </div>
                     <div className="min-w-0 hidden sm:block text-left overflow-hidden">
@@ -1578,7 +1602,7 @@ export default function StorbitManifest() {
                         <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: PASTEL.line }}>
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold"
-                              style={{ background: 'linear-gradient(135deg, #0F2A23, #1A4A3E)', color: '#C8EFD9' }}>
+                              style={{ background: 'linear-gradient(135deg, #144682, #1a5299)', color: '#FFB899' }}>
                               {(profile?.full_name || 'U')[0].toUpperCase()}
                             </div>
                             <div className="min-w-0">
@@ -1694,8 +1718,9 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin'].includes(activeMenu) &&
-           !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') && (
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager'].includes(activeMenu) &&
+           !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
+           !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') && (
             <ComingSoonPage
               title="Coming Soon"
               description="This section is planned on the Nexus ERP roadmap and will be available in a future phase."
@@ -1821,6 +1846,17 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
+          {activeMenu === 'schema-manager' && (role === 'super' || role === 'super_admin') && (
+            <ErrorBoundary title="Schema Manager temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <SchemaManagerPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
           {(activeMenu === 'assets' || activeMenu?.startsWith('assets-')) && (
             <ErrorBoundary title="Asset Management section temporarily unavailable">
               <Suspense fallback={
@@ -1848,6 +1884,100 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
+
+          {/* ── CRM: Prospect List ──────────────────────────────────────────── */}
+          {activeMenu === 'crm-prospects' && !showProspectForm && (
+            <ErrorBoundary title="CRM Prospects temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <ProspectListPage
+                  onAddProspect={() => { setEditingProspect(null); setShowProspectForm(true); }}
+                  onEditProspect={(p) => { setEditingProspect(p); setShowProspectForm(true); }}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'crm-prospects' && showProspectForm && (
+            <ErrorBoundary title="Prospect Form temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <ProspectFormPage
+                  prospect={editingProspect}
+                  onBack={() => { setShowProspectForm(false); setEditingProspect(null); }}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Inquiry List ───────────────────────────────────────────── */}
+          {activeMenu === 'crm-inquiry' && !showInquiryForm && (
+            <ErrorBoundary title="CRM Inquiry temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <InquiryListPage
+                  onAddInquiry={() => setShowInquiryForm(true)}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'crm-inquiry' && showInquiryForm && (
+            <ErrorBoundary title="Inquiry Form temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <InquiryFormPage
+                  onBack={() => setShowInquiryForm(false)}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Pipeline Kanban ────────────────────────────────────────── */}
+          {activeMenu === 'crm-pipeline' && (
+            <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <PipelineKanbanPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Quotation List ─────────────────────────────────────────── */}
+          {activeMenu === 'quotation-draft' && !crmQuotationDetail && !showQuotationForm && (
+            <ErrorBoundary title="Quotation List temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <QuotationListPage
+                  onAddQuotation={() => { setEditingQuotation(null); setShowQuotationForm(true); }}
+                  onSelectQuotation={(q) => setCrmQuotationDetail(q)}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {/* ── CRM: Quotation Detail ───────────────────────────────────────── */}
+          {activeMenu === 'quotation-draft' && crmQuotationDetail && !showQuotationForm && (
+            <ErrorBoundary title="Quotation Detail temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <QuotationDetailPage
+                  quotationId={crmQuotationDetail.id}
+                  onBack={() => setCrmQuotationDetail(null)}
+                  onEdit={(q) => { setEditingQuotation(q); setShowQuotationForm(true); }}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {/* ── CRM: Quotation Form (create + edit) ────────────────────────── */}
+          {activeMenu === 'quotation-draft' && showQuotationForm && (
+            <ErrorBoundary title="Quotation Form temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <QuotationFormPage
+                  quotation={editingQuotation}
+                  onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); }}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
           </div>
         </main>
       </div>
