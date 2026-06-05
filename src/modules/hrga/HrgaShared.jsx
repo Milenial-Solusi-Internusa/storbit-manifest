@@ -94,7 +94,7 @@ export function CoBadge({ code }) {
   );
 }
 
-const AV_COLORS_AVATAR = ['#2F6B3F','#2A5B8C','#9A5B2C','#6B6F5E','#7A4E8C','#1F6B6B','#8C6B1A'];
+const AV_COLORS_AVATAR = ['#E85A1E','#2A5B8C','#9A5B2C','#6B6F5E','#7A4E8C','#1F6B6B','#8C6B1A'];
 export function Avatar({ name, size = 28 }) {
   if (!name) return null;
   const init = (name || '??').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();

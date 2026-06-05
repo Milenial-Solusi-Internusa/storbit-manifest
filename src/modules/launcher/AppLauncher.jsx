@@ -21,9 +21,9 @@ const T = {
   inkFaint:  '#8A8E7C',
   line:      '#E7DCC8',
   lineSoft:  '#F0E7D6',
-  accent:    '#2F6B3F',
+  accent:    '#E85A1E',
   accentInk: '#235031',
-  accentSoft:'#E7EFE2',
+  accentSoft:'#FEF2EC',
   okBd:      '#BFDDC4',
 };
 
@@ -52,7 +52,7 @@ function tint(hex) {
 
 // ─── Card variants ────────────────────────────────────────────────────────
 
-// Logistics — tall dark green card
+// Logistics — tall navy card (MSI Brand Navy #144682)
 function LogisticsCard({ group, cfg, onClick, pos }) {
   return (
     <button
@@ -61,36 +61,36 @@ function LogisticsCard({ group, cfg, onClick, pos }) {
       style={{
         ...pos,
         position: 'relative',
-        background: 'linear-gradient(150deg,#1C2B1E 0%,#244A2C 60%,#2F6B3F 120%)',
-        border: '1px solid #22361F', borderRadius: 16,
+        background: 'linear-gradient(135deg, #144682 0%, #0f3366 100%)',
+        border: '1px solid rgba(255,255,255,.15)', borderRadius: 16,
         padding: 28, cursor: 'pointer',
         display: 'flex', flexDirection: 'column',
         transition: 'transform .16s ease, box-shadow .16s ease, border-color .16s ease',
         textAlign: 'left', overflow: 'hidden',
-        boxShadow: '0 1px 2px rgba(40,34,18,.06)',
+        boxShadow: '0 4px 16px rgba(20,70,130,.25)',
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.borderColor = '#3A6B40';
-        e.currentTarget.style.boxShadow = '0 18px 44px rgba(20,39,26,.34)';
+        e.currentTarget.style.borderColor = 'rgba(232,90,30,.60)';
+        e.currentTarget.style.boxShadow = '0 18px 44px rgba(20,70,130,.40)';
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.borderColor = '#22361F';
-        e.currentTarget.style.boxShadow = '0 1px 2px rgba(40,34,18,.06)';
+        e.currentTarget.style.borderColor = 'rgba(255,255,255,.15)';
+        e.currentTarget.style.boxShadow = '0 4px 16px rgba(20,70,130,.25)';
       }}
     >
-      {/* ACTIVE badge */}
+      {/* ACTIVE badge — orange accent */}
       <span style={{
         position: 'absolute', top: 28, right: 28,
         display: 'inline-flex', alignItems: 'center', gap: 6,
         fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
         fontFamily: "'IBM Plex Mono', monospace",
-        background: 'rgba(143,203,140,.18)', color: '#A9D6A8',
-        border: '1px solid rgba(143,203,140,.32)',
+        background: 'rgba(232,90,30,.20)', color: '#FFB899',
+        border: '1px solid rgba(232,90,30,.40)',
         padding: '4px 10px', borderRadius: 30,
       }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8FCB8C', boxShadow: '0 0 0 3px rgba(143,203,140,.25)', flexShrink: 0 }}/>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E85A1E', boxShadow: '0 0 0 3px rgba(232,90,30,.25)', flexShrink: 0 }}/>
         Active
       </span>
 
@@ -100,31 +100,31 @@ function LogisticsCard({ group, cfg, onClick, pos }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: 'rgba(255,255,255,.12)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.14)',
       }}>
-        {cfg.Icon && <cfg.Icon size={30} strokeWidth={1.8} style={{ color: '#E9F4E6' }}/>}
+        {cfg.Icon && <cfg.Icon size={30} strokeWidth={1.8} style={{ color: '#ffffff' }}/>}
       </span>
 
       {/* Body */}
       <div style={{ marginTop: 'auto' }}>
-        <h3 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-.2px', margin: '18px 0 6px', color: '#F4F8F0' }}>
+        <h3 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-.2px', margin: '18px 0 6px', color: '#ffffff' }}>
           {group.label}
         </h3>
-        <p style={{ fontSize: 14, color: 'rgba(228,240,224,.78)', margin: 0, lineHeight: 1.45 }}>
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,.75)', margin: 0, lineHeight: 1.45 }}>
           {cfg.desc}
         </p>
         {/* Stats row */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 18,
           marginTop: 16, paddingTop: 16,
-          borderTop: '1px solid rgba(255,255,255,.13)',
+          borderTop: '1px solid rgba(255,255,255,.15)',
         }}>
           <div>
-            <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 600, color: '#F2F7EE', letterSpacing: '-.5px' }}>—</div>
-            <div style={{ fontSize: 11, color: 'rgba(228,240,224,.66)', textTransform: 'uppercase', letterSpacing: '.6px', marginTop: 2 }}>SP Aktif</div>
+            <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 600, color: '#ffffff', letterSpacing: '-.5px' }}>—</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.60)', textTransform: 'uppercase', letterSpacing: '.6px', marginTop: 2 }}>SP Aktif</div>
           </div>
-          <div style={{ width: 1, height: 30, background: 'rgba(255,255,255,.14)', flexShrink: 0 }}/>
+          <div style={{ width: 1, height: 30, background: 'rgba(255,255,255,.18)', flexShrink: 0 }}/>
           <div>
-            <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 600, color: '#F2F7EE', letterSpacing: '-.5px' }}>—</div>
-            <div style={{ fontSize: 11, color: 'rgba(228,240,224,.66)', textTransform: 'uppercase', letterSpacing: '.6px', marginTop: 2 }}>Pending</div>
+            <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 600, color: '#ffffff', letterSpacing: '-.5px' }}>—</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.60)', textTransform: 'uppercase', letterSpacing: '.6px', marginTop: 2 }}>Pending</div>
           </div>
         </div>
       </div>

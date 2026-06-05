@@ -562,7 +562,7 @@ export default function BuatRequestPage({ onSuccess }) {
 
   if (saved) {
     return (
-      <div style={{ fontFamily:"'Plus Jakarta Sans', system-ui, sans-serif", color:D.ink }}>
+      <div style={{ fontFamily:"'Inter', system-ui, sans-serif", color:D.ink }}>
         <SuccessState
           documentNo={saved.documentNo}
           onViewDetail={() => onSuccess?.(saved.requestId)}
@@ -575,7 +575,7 @@ export default function BuatRequestPage({ onSuccess }) {
   const stepLabels = ['Pilih Tipe', 'Isi Detail', 'Review & Kirim'];
 
   return (
-    <div style={{ fontFamily:"'Plus Jakarta Sans', system-ui, sans-serif", color:D.ink }}>
+    <div style={{ fontFamily:"'Inter', system-ui, sans-serif", color:D.ink }}>
       {/* Page header */}
       <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:16, marginBottom:20, flexWrap:'wrap' }}>
         <div>

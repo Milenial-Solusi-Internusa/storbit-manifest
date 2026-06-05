@@ -63,7 +63,7 @@ export default function PendingApprovalPage({ onOpenDetail }) {
   }, [confirmId, confirmAction, comment, profile, refresh]);
 
   return (
-    <div style={{ fontFamily:"'Plus Jakarta Sans', system-ui, sans-serif", color:D.ink }}>
+    <div style={{ fontFamily:"'Inter', system-ui, sans-serif", color:D.ink }}>
       <style>{HRGA_TABLE_CSS}</style>
 
       {/* Page header */}

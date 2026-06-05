@@ -1005,4 +1005,99 @@ Always prioritize:
 - Auditability
 - Scalability
 - Maintainability
+
+---
+
+## Brand System — MSI Brand Guideline v1.0 (updated 2026-06-05)
+
+| Token | Hex | Usage |
+|---|---|---|
+| MSI Navy | `#144682` | Sidebar, header, dominant (30% of 60/30/10) |
+| Navy Dark | `#0f3366` | Hover state navy, gradient end |
+| Navy Light | `#1a5299` | Lighter navy variant |
+| MSI Orange | `#E85A1E` | Accent, CTA, active item, highlight (10%) |
+| Orange Dark | `#c44d18` | Hover state orange |
+| White | `#FFFFFF` | Background utama |
+| Light Gray | `#F7F7F8` | Card, secondary bg |
+| Mid Gray | `#D9D9DC` | Border, divider |
+| Dark Gray | `#3A3A3F` | Body text |
+
+Font heading: `Montserrat` (Google Fonts)
+Font body/UI: `Inter` (Google Fonts)
+
+Sidebar: background `linear-gradient(165deg, #144682 0%, #0f3366 100%)`
+Active item: `rgba(255,255,255,0.13)` bg, left-border `rgba(255,212,184,0.7)` (warm orange tint)
+Active icon: `#FFB899` (warm orange tint on dark navy)
+Primary button: `#E85A1E`, hover `#c44d18`
+accentSoft bg (icon containers, hover highlights): `#FEF2EC`
+
+**JANGAN pakai:**
+- `#1a3a2a` (dark green lama) — sudah diganti `#144682`
+- `#2d5a3d`, `#0F2A23`, `#173D34` — semua dark green variants sudah deprecated
+- `#2F6B3F` — accent green lama, diganti `#E85A1E`
+- `#E7EFE2` — accentSoft green lama, diganti `#FEF2EC`
+- `Plus Jakarta Sans` — diganti `Inter` (body) + `Montserrat` (heading)
+
+---
+
+## CRM Module — Schema Notes (updated 2026-06-05)
+
+### Tabel: prospects
+- Gunakan kolom `name` bukan `company_name`
+- Gunakan kolom `payment_terms_id` bukan `payment_term_id`
+- Tidak ada kolom `company_name` — jangan pakai ini di query manapun
+
+### Tabel: inquiries
+- Kolom `deleted_at` sudah ada (ditambah via ALTER TABLE 2026-06-05)
+
+### Tabel: quotations
+- Kolom tambahan: `usd_rate numeric(15,2)` — kurs USD ke IDR, input manual per quotation
+- `route text` — routing info e.g. "CHICAGO > SEMARANG", sudah ada di tabel
+
+### Tabel: quotation_items
+- Kolom lengkap: id, quotation_id, sort_order, description, qty, unit, unit_price, notes, group_name, currency, unit_label, exchange_rate, total
+- Tidak ada kolom `total` yang GENERATED — total dihitung di frontend dan disimpan manual
+
+### RLS & Permissions — PENTING
+- Tabel CRM (prospects, inquiries, quotations, quotation_items) menggunakan GRANT ALL ke role authenticated
+- RLS di-disable untuk keempat tabel ini untuk MVP
+- Jangan tambahkan RLS policy berbasis get_user_company_id() untuk tabel CRM — akan menyebabkan permission denied
+- Tabel baru yang dibuat via SQL Editor harus di-GRANT manual: `GRANT ALL ON TABLE nama_tabel TO anon, authenticated, service_role;`
+
+### quotation_items — tambahan kolom (2026-06-05)
+- `cost_price numeric(15,2)` — harga cost internal, tidak boleh muncul di print/PDF
+- Gunakan CSS class `no-print` untuk semua elemen cost dan profit summary
+- Total IDR di-hitung dari `unit_price × qty` (× kurs kalau USD) — bukan dari cost_price
+- Gross profit = subtotal − total_cost, hanya tampil di sidebar internal (no-print)
+
+### Print/PDF
+- Gunakan class `no-print` untuk elemen yang tidak boleh muncul di PDF (cost price, margin, action buttons, sidebar, topbar)
+- Gunakan class `print-only` untuk elemen yang hanya muncul saat print (logo, header quotation)
+- PDF di-trigger via window.print() atau tombol Download PDF di QuotationDetailPage
+- CSS print diinjeksi via `<style>` tag di dalam komponen (tidak perlu global CSS)
+
+### PDF Generation
+- Library: jspdf + html2canvas (sudah di-install, approval eksplisit 2026-06-05)
+- Trigger: tombol "Download PDF" di QuotationDetailPage
+- Print area: div#quotation-print-area — TIDAK boleh mengandung cost_price atau margin
+- Customer details table: 2 kolom, label cell background #1a3a2a text putih, value cell background #f9f9f7
+- Urutan konten print area: header logo → customer details table → notes → sections → summary → terms → Best Regards → footer
+- creatorProfile di-fetch dari profiles JOIN positions, dipakai untuk nama & jabatan di Best Regards
+- Field `terms` di tabel quotations: diisi sales di QuotationFormPage, muncul sebagai "• Above rates" di PDF
+- Print area di-posisikan off-screen (`position: absolute; left: -9999px`) agar invisible di screen tapi tetap ada di DOM saat html2canvas dipanggil
+- File output: {quotation_no}_rev{revision}.pdf
+- jsPDF handle multi-page otomatis via loop heightLeft
+
+### Schema Manager
+- File: `src/modules/admin/pages/SchemaManagerPage.jsx`
+- Hanya untuk role `'super'` atau `'super_admin'` — dual check karena legacy `'super'` masih di DB
+- Memanggil Edge Function `manage-schema` dengan action `add_column`
+- Fetch kolom existing via RPC `get_table_columns` (fallback dari information_schema view)
+- Menu ID: `schema-manager` di Foundation > Master Data
+
+### Mismatch yang sudah pernah terjadi — jangan ulangi
+- prospects.company_name → SALAH, pakai `name`
+- prospects.payment_term_id → SALAH, pakai `payment_terms_id`
+- quotation_items.total GENERATED → SALAH, kolom ini sudah di-DROP dan diganti plain numeric
+- inquiries.deleted_at → sudah ada, boleh dipakai
 - Business process correctness

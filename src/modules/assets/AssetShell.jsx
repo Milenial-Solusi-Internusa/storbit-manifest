@@ -18,11 +18,11 @@ function ComingSoon({ label }) {
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       justifyContent: 'center', minHeight: 340, gap: 14,
-      fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+      fontFamily: "'Inter', system-ui, sans-serif",
     }}>
       <div style={{
         width: 52, height: 52, borderRadius: 14,
-        background: '#E7EFE2', color: '#2F6B3F',
+        background: '#FEF2EC', color: '#E85A1E',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <LayoutDashboard size={24} strokeWidth={1.5} />

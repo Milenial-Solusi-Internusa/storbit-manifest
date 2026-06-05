@@ -1,8 +1,8 @@
 // src/modules/assets/pages/AssetDashboardPage.jsx
 // Asset Management — Dashboard screen
 // Faithful React implementation of the index.html design.
-// Design system: warm cream (#F6EFE3) + dark green accent (#2F6B3F)
-// Typography: Plus Jakarta Sans + IBM Plex Mono
+// Design system: warm cream (#F6EFE3) + dark green accent (#E85A1E)
+// Typography: Inter + IBM Plex Mono
 
 import { Car, Monitor, Sofa, Building2, CheckCircle2, Wrench, FileX, Package,
          Calendar, Download, Plus, ExternalLink } from 'lucide-react';
@@ -20,15 +20,15 @@ const D = {
   inkFaint:    '#8A8E7C',
   line:        '#E7DCC8',
   lineSoft:    '#F0E7D6',
-  accent:      '#2F6B3F',
+  accent:      '#E85A1E',
   accentInk:   '#235031',
-  accentSoft:  '#E7EFE2',
+  accentSoft:  '#FEF2EC',
   ok:          '#2E7D4F', okBg:  '#E4F0E5', okBd:  '#BFDDC4',
   warn:        '#9A6B0E', warnBg:'#F8ECCF', warnBd:'#E6CE94',
   danger:      '#B23227', dangerBg:'#F6E0DB', dangerBd:'#E6BBB2',
   info:        '#2A5B8C', infoBg:'#E1ECF5',
   neutral:     '#6B6F5E', neutralBg:'#EEE9DC',
-  msi:         '#2F6B3F', msiBg:'#E7EFE2',
+  msi:         '#E85A1E', msiBg:'#FEF2EC',
   jci:         '#2A5B8C', jciBg:'#E1ECF5',
   sbi:         '#9A5B2C', sbiBg:'#F4E7D8',
   shadow:      '0 2px 8px rgba(40,34,18,.07), 0 1px 2px rgba(40,34,18,.05)',
@@ -167,7 +167,7 @@ function DonutChart() {
   const legend = [
     { color: '#9A5B2C', label: 'Furniture',     value: '212 · 50%' },
     { color: '#2A5B8C', label: 'IT Equipment',  value: '128 · 30%' },
-    { color: '#2F6B3F', label: 'Kendaraan',     value: '64 · 15%'  },
+    { color: '#E85A1E', label: 'Kendaraan',     value: '64 · 15%'  },
     { color: '#6B6F5E', label: 'Properti',      value: '18 · 4%'   },
   ];
   return (
@@ -175,7 +175,7 @@ function DonutChart() {
       {/* Donut */}
       <div style={{
         width: 158, height: 158, borderRadius: '50%', flexShrink: 0,
-        background: 'conic-gradient(#2F6B3F 0 54.6deg, #2A5B8C 54.6deg 163.8deg, #9A5B2C 163.8deg 344.5deg, #6B6F5E 344.5deg 360deg)',
+        background: 'conic-gradient(#E85A1E 0 54.6deg, #2A5B8C 54.6deg 163.8deg, #9A5B2C 163.8deg 344.5deg, #6B6F5E 344.5deg 360deg)',
         position: 'relative',
       }}>
         <div style={{
@@ -225,7 +225,7 @@ function ExpiryBarsChart() {
             <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, height: '100%', justifyContent: 'flex-end' }}>
               <span style={{ fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", color: D.inkFaint }}>{tot}</span>
               <div style={{ width: '100%', maxWidth: 42, height: `${h}%`, display: 'flex', flexDirection: 'column-reverse', borderRadius: '6px 6px 0 0', overflow: 'hidden' }}>
-                {a > 0 && <div style={{ height: `${(a / tot) * 100}%`, background: '#2F6B3F' }} />}
+                {a > 0 && <div style={{ height: `${(a / tot) * 100}%`, background: '#E85A1E' }} />}
                 {s > 0 && <div style={{ height: `${(s / tot) * 100}%`, background: '#9A6B0E' }} />}
                 {o > 0 && <div style={{ height: `${(o / tot) * 100}%`, background: '#B23227' }} />}
               </div>
@@ -237,7 +237,7 @@ function ExpiryBarsChart() {
         {months.map(m => <span key={m.label}>{m.label}</span>)}
       </div>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12, fontSize: 11.5 }}>
-        {[['#B23227', 'Overdue / bln ini'], ['#9A6B0E', '< 30 hari'], ['#2F6B3F', 'Aman']].map(([c, l]) => (
+        {[['#B23227', 'Overdue / bln ini'], ['#9A6B0E', '< 30 hari'], ['#E85A1E', 'Aman']].map(([c, l]) => (
           <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, color: D.inkSoft, fontWeight: 600 }}>
             <span style={{ width: 10, height: 10, borderRadius: 3, background: c }} />{l}
           </span>
@@ -252,7 +252,7 @@ function ExpiryBarsChart() {
 // ─────────────────────────────────────────────────────────────
 function CompanyValueChart() {
   const bars = [
-    { co: 'msi', val: '22,6', pct: 100, color: '#2F6B3F' },
+    { co: 'msi', val: '22,6', pct: 100, color: '#E85A1E' },
     { co: 'jci', val: '12,4', pct: 55,  color: '#2A5B8C' },
     { co: 'sbi', val: '7,8',  pct: 35,  color: '#9A5B2C' },
   ];
@@ -312,7 +312,7 @@ export default function AssetDashboardPage() {
   };
 
   return (
-    <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: D.ink }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: D.ink }}>
 
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -368,7 +368,7 @@ export default function AssetDashboardPage() {
             </div>
             <div style={{ borderTop: `1px solid ${D.lineSoft}`, paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 11 }}>
               {[
-                { label: 'Kendaraan', pct: 34, color: '#2F6B3F', amt: 'Rp 14,6 M' },
+                { label: 'Kendaraan', pct: 34, color: '#E85A1E', amt: 'Rp 14,6 M' },
                 { label: 'Properti',  pct: 42, color: '#6B6F5E', amt: 'Rp 17,9 M' },
                 { label: 'IT Equip.', pct: 18, color: '#2A5B8C', amt: 'Rp 7,7 M'  },
                 { label: 'Furniture', pct: 6,  color: '#9A5B2C', amt: 'Rp 2,6 M'  },
@@ -391,7 +391,7 @@ export default function AssetDashboardPage() {
           <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
               {[
-                { co: 'msi', pct: 100, color: '#2F6B3F', amt: 'Rp 22,6 M' },
+                { co: 'msi', pct: 100, color: '#E85A1E', amt: 'Rp 22,6 M' },
                 { co: 'jci', pct: 55,  color: '#2A5B8C', amt: 'Rp 12,4 M' },
                 { co: 'sbi', pct: 35,  color: '#9A5B2C', amt: 'Rp 7,8 M'  },
               ].map(({ co, pct, color, amt }) => (

@@ -1,0 +1,229 @@
+// src/modules/crm/InquiryListPage.jsx
+import { useState, useEffect, useCallback } from 'react';
+import { Search, Plus, ChevronRight, FileText } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/useAuth';
+
+const C = {
+  bg:        '#F6EFE3',
+  surface:   '#FFFDF8',
+  surface2:  '#FBF6EC',
+  ink:       '#23291E',
+  inkSoft:   '#5E6553',
+  inkFaint:  '#8A8E7C',
+  line:      '#E7DCC8',
+  lineSoft:  '#F0E7D6',
+  accent:    '#E85A1E',
+  accentSoft:'#FEF2EC',
+  ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',
+  warn:      '#9A6B0E', warnBg: '#F8ECCF', warnBd: '#E6CE94',
+  danger:    '#B23227', dangerBg: '#F6E0DB', dangerBd: '#E6BBB2',
+  info:      '#2A5B8C', infoBg: '#E1ECF5', infoBd: '#BAD2E6',
+  neutral:   '#6B6F5E', neutralBg: '#EEE9DC', neutralBd: '#DDD3BE',
+  purple:    '#6E4B8C', purpleBg: '#ECE3F4', purpleBd: '#D6C6E4',
+};
+
+const STATUS_META = {
+  OPEN:       { label: 'Open',       bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  IN_REVIEW:  { label: 'In Review',  bg: C.warnBg,    color: C.warn,    bd: C.warnBd    },
+  QUOTED:     { label: 'Quoted',     bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
+  WON:        { label: 'Won',        bg: C.okBg,      color: C.ok,      bd: C.okBd      },
+  LOST:       { label: 'Lost',       bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
+  CANCELLED:  { label: 'Cancelled',  bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
+};
+
+const SERVICE_TYPE_LABELS = {
+  freight_forwarding: 'Freight Forwarding',
+  customs:            'Customs Clearance',
+  trading:            'General Trading',
+};
+
+const PAGE_SIZE = 20;
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function StatusBadge({ status }) {
+  const m = STATUS_META[status] || STATUS_META.OPEN;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700,
+      letterSpacing: '.3px', border: `1px solid ${m.bd}`,
+      background: m.bg, color: m.color,
+    }}>
+      {m.label}
+    </span>
+  );
+}
+
+export default function InquiryListPage({ onAddInquiry, showToast }) {
+  const { profile } = useAuth();
+  const [inquiries, setInquiries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterService, setFilterService] = useState('all');
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+
+  const fetchInquiries = useCallback(async () => {
+    if (!profile?.company_id) return;
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('inquiries')
+        .select(`
+          id, inquiry_no, service_type, route, status, created_at,
+          prospect:prospects!inquiries_prospect_id_fkey(name),
+          customer:customers!inquiries_customer_id_fkey(name)
+        `, { count: 'exact' })
+        .eq('company_id', profile.company_id)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+
+      if (filterStatus !== 'all') query = query.eq('status', filterStatus);
+      if (filterService !== 'all') query = query.eq('service_type', filterService);
+      if (search.trim()) query = query.ilike('inquiry_no', `%${search.trim()}%`);
+
+      const { data, error, count } = await query;
+      if (error) throw error;
+      setInquiries(data || []);
+      setTotal(count || 0);
+    } catch (err) {
+      showToast?.('Gagal memuat inquiry: ' + err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [profile?.company_id, page, filterStatus, filterService, search, showToast]);
+
+  useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
+  useEffect(() => { setPage(0); }, [filterStatus, filterService, search]);
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  const selStyle = {
+    height: 34, borderRadius: 8, border: `1px solid ${C.line}`,
+    background: C.surface, padding: '0 10px', fontSize: 13, color: C.ink,
+    outline: 'none', fontFamily: 'inherit', cursor: 'pointer',
+  };
+
+  return (
+    <div style={{ fontFamily: 'Inter, sans-serif', color: C.ink }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: C.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <FileText size={20} color={C.accent} />
+          </div>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Inquiry List</h1>
+            <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>{total} inquiry terdaftar</p>
+          </div>
+        </div>
+        <button
+          onClick={onAddInquiry}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 7,
+            background: C.accent, color: '#fff', border: 'none',
+            borderRadius: 9, padding: '9px 18px', fontSize: 13.5, fontWeight: 700,
+            cursor: 'pointer', boxShadow: '0 2px 8px rgba(47,107,63,.25)',
+          }}
+        >
+          <Plus size={16} /> Tambah Inquiry
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 220px', minWidth: 180 }}>
+          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.inkFaint }} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Cari nomor inquiry…"
+            style={{
+              width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`,
+              background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13,
+              color: C.ink, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+            }}
+          />
+        </div>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
+          <option value="all">Semua Status</option>
+          {Object.entries(STATUS_META).map(([k, v]) => (
+            <option key={k} value={k}>{v.label}</option>
+          ))}
+        </select>
+        <select value={filterService} onChange={e => setFilterService(e.target.value)} style={selStyle}>
+          <option value="all">Semua Service</option>
+          {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Table */}
+      <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, overflow: 'hidden', boxShadow: '0 1px 6px rgba(35,41,30,.06)' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+          <thead>
+            <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
+              {['Inquiry No', 'Prospect / Customer', 'Service Type', 'Route', 'Status', 'Created At', ''].map(h => (
+                <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+            ) : inquiries.length === 0 ? (
+              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada inquiry</td></tr>
+            ) : inquiries.map((inq, i) => (
+              <tr
+                key={inq.id}
+                style={{
+                  borderBottom: i < inquiries.length - 1 ? `1px solid ${C.lineSoft}` : 'none',
+                  cursor: 'default',
+                }}
+              >
+                <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>{inq.inquiry_no || '—'}</td>
+                <td style={{ padding: '12px 14px', fontWeight: 600, color: C.ink }}>
+                  {inq.prospect?.name || inq.customer?.name || '—'}
+                </td>
+                <td style={{ padding: '12px 14px', color: C.inkSoft, fontSize: 12.5 }}>
+                  {SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—'}
+                </td>
+                <td style={{ padding: '12px 14px', color: C.inkSoft }}>{inq.route || '—'}</td>
+                <td style={{ padding: '12px 14px' }}><StatusBadge status={inq.status} /></td>
+                <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(inq.created_at)}</td>
+                <td style={{ padding: '12px 10px' }}><ChevronRight size={15} color={C.inkFaint} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, fontSize: 13, color: C.inkSoft }}>
+          <span>Halaman {page + 1} dari {totalPages} ({total} total)</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+              style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${C.line}`, background: C.surface, cursor: page === 0 ? 'not-allowed' : 'pointer', color: page === 0 ? C.inkFaint : C.ink, fontSize: 13 }}>
+              ← Prev
+            </button>
+            <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+              style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${C.line}`, background: C.surface, cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', color: page >= totalPages - 1 ? C.inkFaint : C.ink, fontSize: 13 }}>
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
