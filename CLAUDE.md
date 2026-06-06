@@ -1187,6 +1187,9 @@ Same role structure applies across all 3 companies (MSI, JCI, Storbit/SBI).
 - ✅ bod → ceo (CEO / Executive)
 - ✅ supervisor → gm (GM / Senior GM)
 - ✅ logistic — legacy frontend only, not in DB, dual-check added in SalesOrderDetailPage
+- ✅ role_permissions seeded for all 13 roles across 3 companies
+- ✅ Company codes: MSI, JCI, SOA (was SBI)
+- ✅ JCI full name: Jago Custom Indonesia
 - Active roles per company: super_admin, ceo, gm, admin, manager, finance_controller, finance, operations, sales, procurement, hrga, it, viewer (13 roles)
 
 ---
