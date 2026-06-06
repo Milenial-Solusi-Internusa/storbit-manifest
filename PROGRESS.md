@@ -18,6 +18,7 @@
 - [x] Company names updated to PT full names (MSI, JCI, SOA)
 - [x] Departments cleaned and synced with org chart — 9 dept MSI/SOA, 10 dept JCI (+PPJK)
 - [x] Departments cleaned per entity — JCI (2), MSI (9), SOA (3) sesuai org chart
+- [x] Positions cleaned and synced with org chart — MSI (10), JCI (3), SOA (3)
 
 ## 2026-06-05
 ### CRM Module — Initial Implementation

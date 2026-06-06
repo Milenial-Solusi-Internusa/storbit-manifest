@@ -36,6 +36,7 @@ const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'
 const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
+const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -769,8 +770,9 @@ const ERP_MENU_GROUPS = [
     label: 'Foundation',
     items: [
       { section: 'Master Data' },
-      { id: 'admin',         label: 'Master Data',    icon: Database, role: ['super'] },
-      { id: 'schema-manager',label: 'Schema Manager', icon: Database, role: ['super', 'super_admin'] },
+      { id: 'admin',         label: 'Master Data',       icon: Database, role: ['super'] },
+      { id: 'products',      label: 'Products & Services', icon: Package },
+      { id: 'schema-manager',label: 'Schema Manager',    icon: Database, role: ['super', 'super_admin'] },
       { section: 'Admin Settings' },
       { id: 'adminSettings', label: 'Admin Settings', icon: Settings, role: ['super'] },
     ],
@@ -1714,7 +1716,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager'].includes(activeMenu) &&
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') && (
             <ComingSoonPage
@@ -1839,6 +1841,17 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <AdminShell />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'products' && (
+            <ErrorBoundary title="Products & Services temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <ProductsPage />
               </Suspense>
             </ErrorBoundary>
           )}
