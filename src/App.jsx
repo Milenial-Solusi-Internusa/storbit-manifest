@@ -16,6 +16,8 @@ import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
+import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
+import CustomFieldsSection from './components/CustomFieldsSection';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
@@ -33,6 +35,7 @@ const QuotationFormPage    = lazy(() => import('./modules/crm/QuotationFormPage'
 const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'));
 const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
+const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -231,7 +234,7 @@ const calcAR = (ttf) => {
 
 const ROLES = [
   { id: 'super', label: 'Super Admin' },
-  { id: 'logistic', label: 'Admin Logistic' },
+  { id: 'operations', label: 'Operations' },   // renamed from 'logistic'
   { id: 'procurement', label: 'Procurement' },
   { id: 'finance', label: 'Finance' },
   { id: 'management', label: 'Management' },
@@ -240,7 +243,8 @@ const ROLES = [
 const can = (role, action) => {
   const matrix = {
     super: ['view', 'create', 'edit', 'delete', 'shipment', 'finance', 'export', 'import', 'master'],
-    logistic: ['view', 'shipment', 'export', 'create', 'edit'],
+    operations: ['view', 'shipment', 'export', 'create', 'edit'],   // renamed from 'logistic'
+    logistic:   ['view', 'shipment', 'export', 'create', 'edit'],   // legacy alias — keep during transition
     procurement: ['view', 'export', 'edit'],
     finance: ['view', 'finance', 'export'],
     management: ['view', 'export'],
@@ -250,11 +254,8 @@ const can = (role, action) => {
 
 const PLANNED_MODULES = {
   // ── Commercial & CRM ──────────────────────────────────────────────────────
-  crm: {
-    title: 'CRM & Customer Inquiry',
-    description: 'End-to-end customer relationship and inquiry pipeline for MSI, JCI, and Storbit. Capture, qualify, and convert prospects across all business entities.',
-    capabilities: ['Customer inquiry intake', 'Inquiry-to-quotation pipeline', 'Customer activity timeline', 'Multi-entity CRM scope'],
-  },
+  // Note: 'crm' intentionally NOT in PLANNED_MODULES — CRM pages are live (Phase 2.0C+).
+  // Parent click expands the submenu dropdown; no dedicated page for the parent id.
   quotation: {
     title: 'Quotation Management',
     description: 'Build, version, and approve formal quotations with line-item detail, margin visibility, and customer delivery. Linked to inquiry and convertible to Sales Order.',
@@ -421,15 +422,10 @@ const ERP_MENU_GROUPS = [
       {
         id: 'crm', label: 'CRM & Inquiry', icon: Users,
         children: [
-          { section: 'CRM & Inquiry' },
-          { id: 'crm-pipeline',  label: 'Pipeline / Leads',  icon: BarChart2  },
-          { id: 'crm-inquiry',   label: 'Inquiry List',       icon: FileText   },
-          { id: 'crm-followup',  label: 'Follow Up',          icon: Clock      },
-          { id: 'crm-prospects', label: 'Customer Prospect',  icon: Users      },
-          { section: 'Quotation' },
-          { id: 'quotation-draft',   label: 'Draft Quotation',   icon: FileText },
-          { id: 'quotation-sent',    label: 'Sent Quotation',    icon: Receipt  },
-          { id: 'quotation-history', label: 'Quotation History', icon: Clock    },
+          { id: 'crm-dashboard', label: 'Dashboard',      icon: BarChart2 },
+          { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users   },
+          { id: 'crm-inquiry',   label: 'Inquiry',          icon: FileText },
+          { id: 'quotation-draft', label: 'Quotation',      icon: Receipt  },
         ],
       },
     ],
@@ -443,7 +439,7 @@ const ERP_MENU_GROUPS = [
         id: 'manifest', label: 'Sales Order / SP', icon: Receipt,
         children: [
           { id: 'manifest', label: 'SP Manifest', icon: LayoutList },
-          { id: 'input',    label: 'Input SP',    icon: Plus, role: ['super', 'logistic'] },
+          { id: 'input',    label: 'Input SP',    icon: Plus, role: ['super', 'operations', 'logistic'] },
         ],
       },
       {
@@ -480,7 +476,7 @@ const ERP_MENU_GROUPS = [
         ],
       },
       {
-        id: 'shipment', label: 'Shipment Management', icon: Truck, role: ['super', 'logistic'],
+        id: 'shipment', label: 'Shipment Management', icon: Truck, role: ['super', 'operations', 'logistic'],
         children: [
           { id: 'shipment',         label: 'Tracking Aktif',     icon: Truck    },
           { id: 'shipment-jadwal',  label: 'Jadwal Pengiriman',  icon: Calendar },
@@ -1718,7 +1714,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager'].includes(activeMenu) &&
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','crm'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') && (
             <ComingSoonPage
@@ -1927,6 +1923,15 @@ export default function StorbitManifest() {
                   onBack={() => setShowInquiryForm(false)}
                   showToast={showToast}
                 />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Dashboard ──────────────────────────────────────────────── */}
+          {activeMenu === 'crm-dashboard' && (
+            <ErrorBoundary title="CRM Dashboard temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <CRMDashboardPage />
               </Suspense>
             </ErrorBoundary>
           )}
@@ -2948,7 +2953,7 @@ function FormModal({ initial, customers = [], onClose, onSave }) {
   const [data, setData] = useState(initial || {
     spDate: '', spNo: '', customer: '', productName: '', sku: '',
     qty: 0, shippedQty: 0, expDate: '', deadline: '',
-    dc: '', shippingDate: '', btbNo: '',
+    dc: '', shippingDate: '',
     unitPrice: 0, shippingPrice: 0,
     inv: false, fp: false, submit: false, kirim: false,
     submitDate: '', emailStatus: '', notes: ''
@@ -3026,7 +3031,6 @@ function FormModal({ initial, customers = [], onClose, onSave }) {
         <FormSection label="Shipping">
           <div className="grid grid-cols-2 gap-3">
             <Input label="Shipping Date" type="date" value={data.shippingDate} onChange={v=>update('shippingDate',v)}/>
-            <Input label="BTB No" value={data.btbNo} onChange={v=>update('btbNo',v)}/>
           </div>
         </FormSection>
 
@@ -3131,7 +3135,6 @@ function ShipmentModal({ row, onClose, onSave }) {
   const [data, setData] = useState({
     shippedQty: row.shippedQty,
     shippingDate: row.shippingDate || '',
-    btbNo: row.btbNo || '',
     dc: row.dc || '',
     notes: row.notes || ''
   });
@@ -3158,7 +3161,6 @@ function ShipmentModal({ row, onClose, onSave }) {
 
         <Input label="Shipped QTY" type="number" value={data.shippedQty} onChange={v=>setData({...data, shippedQty: Number(v)})}/>
         <Input label="Shipping Date" type="date" value={data.shippingDate} onChange={v=>setData({...data, shippingDate: v})}/>
-        <Input label="BTB No" value={data.btbNo} onChange={v=>setData({...data, btbNo: v})}/>
         <Input label="DC" value={data.dc} onChange={v=>setData({...data, dc: v})}/>
         <div>
           <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Notes</label>
@@ -3385,6 +3387,7 @@ function ImportModal({ onClose, onImport }) {
 // ============================
 function CustomersPage({ customers, rows, onAdd, onEdit, onDelete, role }) {
   const usageCount = (custName) => rows.filter(r => r.customer === custName).length;
+  const { customFields } = useCustomFields('customers');
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -3441,6 +3444,15 @@ function CustomersPage({ customers, rows, onAdd, onEdit, onDelete, role }) {
                 <CustRow label="Used in SP" value={`${usage} ${usage === 1 ? 'item' : 'items'}`} highlight={usage > 0}/>
               </div>
 
+              {/* Read-only custom fields */}
+              {customFields.length > 0 && (
+                <CustomFieldsSection
+                  customFields={customFields}
+                  values={c}
+                  readOnly
+                />
+              )}
+
               {can(role, 'master') && (
                 <div className="flex items-center gap-1.5 pt-3 border-t" style={{ borderColor: PASTEL.line }}>
                   <button onClick={() => onEdit(c)} className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
@@ -3482,6 +3494,20 @@ function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave }) 
   });
   const update = (k, v) => setData({ ...data, [k]: v });
 
+  // ── Custom fields ────────────────────────────────────────────────────────
+  const { customFields } = useCustomFields('customers');
+  const [customValues, setCustomValues] = useState({});
+
+  // Populate custom values from existing customer data (edit mode)
+  useEffect(() => {
+    if (!initial) return;
+    const standard = new Set(STANDARD_COLUMNS.customers);
+    const custom = Object.fromEntries(
+      Object.entries(initial).filter(([k]) => !standard.has(k))
+    );
+    setCustomValues(custom);
+  }, [initial]);
+
   const submit = () => {
     if (!data.code.trim() || !data.name.trim()) {
       alert('Code dan Name wajib diisi');
@@ -3498,7 +3524,13 @@ function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave }) 
       alert(`Code "${data.code}" sudah dipakai customer lain`);
       return;
     }
-    onSave({ ...data, code: data.code.trim().toUpperCase(), name: data.name.trim().toUpperCase() });
+    // Merge standard fields + custom fields into save payload
+    onSave({
+      ...data,
+      ...customValues,
+      code: data.code.trim().toUpperCase(),
+      name: data.name.trim().toUpperCase(),
+    });
   };
 
   return (
@@ -3552,6 +3584,13 @@ function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave }) 
             </button>
           </div>
         </div>
+
+        {/* Custom Fields — dynamic columns added via Schema Manager */}
+        <CustomFieldsSection
+          customFields={customFields}
+          values={customValues}
+          onChange={(key, val) => setCustomValues(prev => ({ ...prev, [key]: val }))}
+        />
 
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>Cancel</button>

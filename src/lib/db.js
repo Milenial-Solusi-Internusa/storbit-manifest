@@ -27,7 +27,10 @@ export function spFromDb(row) {
     deadline: row.deadline || '',
     dc: row.dc || '',
     shippingDate: row.shipping_date || '',
-    btbNo: row.btb_no || '',
+    slaDays: row.sla_days ?? '',
+    estimatedDeliveryDate: row.estimated_delivery_date || '',
+    deliveredDate: row.delivered_date || '',
+    btbNo: '',  // btb_no moved to sp_btbs table (btb_no_deprecated in sp_items)
     unitPrice: Number(row.unit_price ?? 0),
     shippingPrice: Number(row.shipping_price ?? 0),
     inv: !!row.inv,
@@ -58,7 +61,10 @@ export function spToDb(item) {
     deadline: d(item.deadline),
     dc: item.dc || '',
     shipping_date: d(item.shippingDate),
-    btb_no: item.btbNo || '',
+    sla_days: item.slaDays === '' || item.slaDays == null ? null : Number(item.slaDays),
+    estimated_delivery_date: d(item.estimatedDeliveryDate),
+    delivered_date: d(item.deliveredDate),
+    // btb_no removed — column renamed to btb_no_deprecated in sp_items; use sp_btbs table
     unit_price: Number(item.unitPrice) || 0,
     shipping_price: Number(item.shippingPrice) || 0,
     inv: !!item.inv,
@@ -72,28 +78,57 @@ export function spToDb(item) {
 }
 
 // Customer: db → app
+// Standard DB columns — used to separate legacy camelCase mapping from custom fields
+const CUSTOMER_STANDARD_DB_COLS = new Set([
+  'id', 'code', 'name', 'default_dc', 'pic_name', 'pic_email', 'active',
+  'company_id', 'deleted_at', 'created_at', 'updated_at', 'created_by', 'updated_by',
+  'legal_name', 'customer_type', 'tax_id', 'address', 'city', 'country',
+  'phone', 'email', 'payment_terms', 'payment_terms_id', 'credit_limit', 'currency_code', 'notes',
+]);
+
 export function customerFromDb(row) {
   if (!row) return null;
-  return {
-    id: row.id,
-    code: row.code,
-    name: row.name,
-    defaultDc: row.default_dc || '',
-    picName: row.pic_name || '',
-    picEmail: row.pic_email || '',
-    active: !!row.active,
+  // Map standard fields with legacy camelCase aliases kept for backward compat
+  const base = {
+    id:        row.id,
+    code:      row.code,
+    name:      row.name,
+    defaultDC: row.default_dc || '',   // legacy alias used in CustomerModal
+    defaultDc: row.default_dc || '',   // alternative alias
+    picName:   row.pic_name   || '',
+    picEmail:  row.pic_email  || '',
+    active:    !!row.active,
   };
+  // Pass through all custom (non-standard) columns unchanged
+  for (const [k, v] of Object.entries(row)) {
+    if (!CUSTOMER_STANDARD_DB_COLS.has(k) && !(k in base)) {
+      base[k] = v;
+    }
+  }
+  return base;
 }
 
 export function customerToDb(c) {
-  return {
-    code: c.code,
-    name: c.name,
-    default_dc: c.defaultDc || '',
-    pic_name: c.picName || '',
-    pic_email: c.picEmail || '',
-    active: c.active !== false,
+  // Start with the known standard field mapping
+  const payload = {
+    code:      c.code,
+    name:      c.name,
+    default_dc:c.defaultDC || c.defaultDc || '',
+    pic_name:  c.picName   || '',
+    pic_email: c.picEmail  || '',
+    active:    c.active !== false,
   };
+  // Append any custom fields — columns that are not in the standard app-level keys
+  const standardAppKeys = new Set([
+    'id', 'code', 'name', 'defaultDC', 'defaultDc', 'picName', 'picEmail', 'active',
+    'company_id', 'created_at', 'updated_at', 'deleted_at', 'created_by', 'updated_by',
+  ]);
+  for (const [k, v] of Object.entries(c)) {
+    if (!standardAppKeys.has(k) && !(k in payload)) {
+      payload[k] = v;
+    }
+  }
+  return payload;
 }
 
 // AR TTF: db → app (with btbs sub-array)
@@ -387,4 +422,48 @@ export async function getMyProfile() {
 
   if (error) return { data: null, error };
   return { data: data?.[0] || null, error: null };
+}
+
+// ─── sp_btbs — BTB Numbers per SP ────────────────────────────────────────
+// Table: id, sp_no, btb_no, created_at
+// BTB No is now SP-level (not item-level). btb_no in sp_items is deprecated.
+
+/** Fetch all BTB numbers for a given SP */
+export async function listSpBtbs(spNo) {
+  const { data, error } = await supabase
+    .from('sp_btbs')
+    .select('id, sp_no, btb_no, created_at')
+    .eq('sp_no', spNo)
+    .order('created_at', { ascending: true });
+  return { data: data || [], error };
+}
+
+/** Add a BTB number to an SP */
+export async function addSpBtb(spNo, btbNo) {
+  const { data, error } = await supabase
+    .from('sp_btbs')
+    .insert({ sp_no: spNo, btb_no: btbNo.trim() })
+    .select()
+    .single();
+  return { data, error };
+}
+
+/** Delete a BTB number by row id */
+export async function deleteSpBtb(id) {
+  const { error } = await supabase
+    .from('sp_btbs')
+    .delete()
+    .eq('id', id);
+  return { error };
+}
+
+/** Bulk insert BTB numbers for a new SP — used by InputSPPage */
+export async function bulkInsertSpBtbs(spNo, btbNos) {
+  const rows = btbNos
+    .map(n => n.trim())
+    .filter(Boolean)
+    .map(btb_no => ({ sp_no: spNo, btb_no }));
+  if (!rows.length) return { error: null };
+  const { error } = await supabase.from('sp_btbs').insert(rows);
+  return { error };
 }

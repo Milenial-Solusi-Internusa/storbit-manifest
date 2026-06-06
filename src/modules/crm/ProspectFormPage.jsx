@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { ChevronLeft, Save, User } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
+import CustomFieldsSection from '../../components/CustomFieldsSection';
 
 const C = {
   bg:        '#F6EFE3',
@@ -75,6 +77,20 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
 
+  // ── Custom fields ────────────────────────────────────────────────────────
+  const { customFields } = useCustomFields('prospects');
+  const [customValues, setCustomValues] = useState({});
+
+  // Populate custom values from existing prospect data (edit mode)
+  useEffect(() => {
+    if (!isEdit || !prospect) return;
+    const standard = new Set(STANDARD_COLUMNS.prospects);
+    const custom = Object.fromEntries(
+      Object.entries(prospect).filter(([k]) => !standard.has(k))
+    );
+    setCustomValues(custom);
+  }, [isEdit, prospect]);
+
   useEffect(() => {
     if (isEdit && prospect) {
       setForm({
@@ -120,10 +136,11 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     try {
       const payload = {
         ...form,
-        company_id:  profile.company_id,
+        ...customValues,
+        company_id:       profile.company_id,
         assigned_to:      form.assigned_to      || null,
         payment_terms_id: form.payment_terms_id || null,
-        updated_by:  profile.id,
+        updated_by:       profile.id,
       };
 
       let error;
@@ -248,6 +265,13 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
             />
           </Field>
         </div>
+
+        {/* Custom fields — dynamic columns added via Schema Manager */}
+        <CustomFieldsSection
+          customFields={customFields}
+          values={customValues}
+          onChange={(key, val) => setCustomValues(prev => ({ ...prev, [key]: val }))}
+        />
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 28, paddingTop: 20, borderTop: `1px solid ${C.lineSoft}` }}>
           <button

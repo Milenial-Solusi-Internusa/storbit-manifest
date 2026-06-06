@@ -67,7 +67,8 @@ const PASTEL = {
 
 const LEGACY_ROLES = [
   { value: 'super',       label: 'Super Admin' },
-  { value: 'logistic',    label: 'Admin Logistic' },
+  { value: 'operations',  label: 'Operations' },      // renamed from 'logistic'
+  { value: 'logistic',    label: 'Admin Logistic (legacy)' }, // keep during DB transition
   { value: 'procurement', label: 'Procurement' },
   { value: 'finance',     label: 'Finance' },
   { value: 'management',  label: 'Management' },
@@ -75,7 +76,8 @@ const LEGACY_ROLES = [
 
 const LEGACY_ROLE_COLOR = {
   super:       PASTEL.peachDeep,
-  logistic:    PASTEL.skyDeep,
+  operations:  PASTEL.skyDeep,    // renamed from 'logistic'
+  logistic:    PASTEL.skyDeep,    // legacy alias
   procurement: PASTEL.lavenderDeep,
   finance:     PASTEL.mintDeep,
   management:  PASTEL.butterDeep,
@@ -88,7 +90,7 @@ const EMPTY_ADD = {
   full_name:  '',
   email:      '',
   password:   '',
-  role:       'logistic',
+  role:       'operations',   // renamed from 'logistic'
   company_id: '',
 };
 
@@ -343,7 +345,7 @@ export default function UserAccessPage() {
       branch_id:          row.branch_id || '',
       department_id:      row.department_id || '',
       position_id:        row.position_id || '',
-      role:               row.role || 'logistic',
+      role:               row.role || 'operations',  // renamed from 'logistic'
       active:             row.active !== false,
       mfa_required:       !!row.mfa_required,
       erp_role_id:        primary?.role_id || '',

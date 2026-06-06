@@ -433,7 +433,7 @@ export function useHrgaRequestDetail(requestId) {
         const nameMap = Object.fromEntries(
           (profilesRes.data || []).map(p => [p.id, p.full_name])
         );
-        // level_roles: { 1: 'supervisor', 2: 'hrga', 3: 'finance' }
+        // level_roles: { 1: 'gm', 2: 'hrga', 3: 'finance' }  — approver_role comes from DB hrga_approval_configs
         const levelRoles = Object.fromEntries(
           (cfgRes.data || []).map(c => [c.level, c.approver_role])
         );
