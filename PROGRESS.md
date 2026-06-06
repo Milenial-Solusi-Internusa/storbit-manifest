@@ -17,6 +17,7 @@
 - [x] RolesPage updated with editable permission matrix for super_admin
 - [x] Company names updated to PT full names (MSI, JCI, SOA)
 - [x] Departments cleaned and synced with org chart — 9 dept MSI/SOA, 10 dept JCI (+PPJK)
+- [x] Departments cleaned per entity — JCI (2), MSI (9), SOA (3) sesuai org chart
 
 ## 2026-06-05
 ### CRM Module — Initial Implementation

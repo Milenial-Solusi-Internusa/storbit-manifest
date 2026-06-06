@@ -1017,19 +1017,22 @@ Always prioritize:
 | JCI | PT Jago Custom Indonesia | PPJK / Customs Clearance |
 | SOA | PT Stuja Orbit Abadi | General Trading |
 
-### Departments (per company)
-| Code | Name | JCI | MSI | SOA |
+### Departments (per entity — sesuai org chart)
+
+| Code | Name | MSI | JCI | SOA |
 |------|------|-----|-----|-----|
-| BD | Business Development | ✅ | ✅ | ✅ |
-| FIN | Finance | ✅ | ✅ | ✅ |
-| GA | General Affairs | ✅ | ✅ | ✅ |
-| HR | Human Resources | ✅ | ✅ | ✅ |
-| IT | Information Technology | ✅ | ✅ | ✅ |
-| LOG | Logistics / Operations | ✅ | ✅ | ✅ |
+| BD | Business Development | ✅ | — | — |
+| FIN | Finance | ✅ | — | — |
+| GA | General Affairs | ✅ | — | — |
+| HR | Human Resources | ✅ | — | — |
+| IT | Information Technology | ✅ | — | — |
+| LOG | Logistics / Operations | ✅ | — | — |
 | MGMT | Management | ✅ | ✅ | ✅ |
-| PPJK | PPJK / Customs Clearance | ✅ | — | — |
-| PROC | Procurement | ✅ | ✅ | ✅ |
-| SLS | Sales | ✅ | ✅ | ✅ |
+| PPJK | PPJK / Customs Clearance | — | ✅ | — |
+| PROC | Procurement | ✅ | — | ✅ |
+| SLS | Sales | ✅ | — | ✅ |
+
+Note: HR, IT, Finance untuk JCI & SOA dihandle oleh MSI (holding).
 
 ---
 
