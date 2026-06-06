@@ -227,21 +227,22 @@ function TypeChip({ service }) {
 }
 
 /* ── product card ────────────────────────────────────────────────────────── */
-function ProductCard({ p, onAction }) {
+function ProductCard({ p, onAction, onSelect }) {
   const [h, setH] = useState(false);
   const cat = CATEGORIES[p.cat] || CATEGORIES.general;
   const co  = COMPANIES[p.company] || { label: p.company, short: p.company, bg: '#F3F4F6', fg: '#6B7280' };
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ ...P.card, opacity: p.active ? 1 : 0.82,
+      onClick={() => onSelect?.(p)}
+      style={{ ...P.card, opacity: p.active ? 1 : 0.82, cursor: onSelect ? 'pointer' : 'default',
         borderColor: h ? '#D3DEEC' : '#ECEDF1',
         boxShadow: h ? '0 2px 4px rgba(20,40,70,.06), 0 16px 34px rgba(20,40,70,.12)' : '0 1px 2px rgba(20,40,70,.04)',
         transform: h ? 'translateY(-3px)' : 'none' }}>
       <div style={{ ...P.cardStrip, background: cat.strip }}/>
       {!p.active && <span style={P.inactiveTag}>Nonaktif</span>}
       <div style={{ ...P.quickWrap, opacity: h ? 1 : 0, transform: h ? 'translateY(0)' : 'translateY(-4px)', pointerEvents: h ? 'auto' : 'none' }}>
-        <button type="button" title="Edit" style={P.quickBtn} onClick={() => onAction('Edit', p)}><Icon name="pencil" size={15}/></button>
-        <button type="button" title="Detail" style={P.quickBtn} onClick={() => onAction('Detail', p)}><Icon name="eye" size={15}/></button>
+        <button type="button" title="Edit" style={P.quickBtn} onClick={e => { e.stopPropagation(); onAction('Edit', p); }}><Icon name="pencil" size={15}/></button>
+        <button type="button" title="Detail" style={P.quickBtn} onClick={e => { e.stopPropagation(); onSelect?.(p); }}><Icon name="eye" size={15}/></button>
       </div>
       <div style={P.cardBody}>
         <div style={P.cardTopRow}>
@@ -263,13 +264,14 @@ function ProductCard({ p, onAction }) {
 }
 
 /* ── table row ───────────────────────────────────────────────────────────── */
-function TableRow({ p, onAction }) {
+function TableRow({ p, onAction, onSelect }) {
   const [h, setH] = useState(false);
   const cat = CATEGORIES[p.cat] || CATEGORIES.general;
   const co  = COMPANIES[p.company] || { label: p.company, short: p.company, bg: '#F3F4F6', fg: '#6B7280' };
   return (
     <tr onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ background: h ? '#FAFBFC' : 'transparent', transition: 'background .12s ease' }}>
+      onClick={() => onSelect?.(p)}
+      style={{ background: h ? '#FAFBFC' : 'transparent', transition: 'background .12s ease', cursor: onSelect ? 'pointer' : 'default' }}>
       <td style={P.td}><span style={P.skuBadge}>{p.sku}</span></td>
       <td style={{ ...P.td, whiteSpace: 'normal', minWidth: 220 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -286,7 +288,7 @@ function TableRow({ p, onAction }) {
       <td style={P.td}><span style={{ ...P.coBadge, background: co.bg, color: co.fg }}><Icon name="building" size={10}/>{co.short}</span></td>
       <td style={P.td}><StatusPill active={p.active}/></td>
       <td style={{ ...P.td, textAlign: 'right' }}>
-        <button type="button" title="Edit" style={P.quickBtn} onClick={() => onAction('Edit', p)}><Icon name="pencil" size={15}/></button>
+        <button type="button" title="Edit" style={P.quickBtn} onClick={e => { e.stopPropagation(); onAction('Edit', p); }}><Icon name="pencil" size={15}/></button>
       </td>
     </tr>
   );
@@ -306,7 +308,7 @@ function StatCard({ icon, iconBg, iconFg, label, children }) {
 }
 
 /* ── main page ───────────────────────────────────────────────────────────── */
-export default function ProductsPage() {
+export default function ProductsPage({ onSelectProduct }) {
   const [company, setCompany] = useState('all');
   const [searchInput, setSearchInput]   = useState('');
   const search = useDebounce(searchInput, 300);
@@ -564,7 +566,7 @@ export default function ProductsPage() {
         </div>
       ) : view === 'grid' ? (
         <div style={P.grid}>
-          {filtered.map(p => <ProductCard key={p.sku || p.id} p={p} onAction={onAction}/>)}
+          {filtered.map(p => <ProductCard key={p.sku || p.id} p={p} onAction={onAction} onSelect={onSelectProduct}/>)}
         </div>
       ) : (
         <div style={P.tableCard}>
@@ -584,7 +586,7 @@ export default function ProductsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(p => <TableRow key={p.sku || p.id} p={p} onAction={onAction}/>)}
+                {filtered.map(p => <TableRow key={p.sku || p.id} p={p} onAction={onAction} onSelect={onSelectProduct}/>)}
               </tbody>
             </table>
           </div>
