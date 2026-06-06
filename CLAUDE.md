@@ -1034,6 +1034,21 @@ Always prioritize:
 
 Note: HR, IT, Finance untuk JCI & SOA dihandle oleh MSI (holding).
 
+### Positions (per entity)
+
+| Code | Name | Level | MSI | JCI | SOA |
+|------|------|-------|-----|-----|-----|
+| CEO | Chief Executive Officer | Director | ✅ | — | — |
+| GM | General Manager | Director | ✅ | — | — |
+| SR-MGR | Senior Manager | Manager | ✅ | — | — |
+| MGR | Manager | Manager | ✅ | ✅ | ✅ |
+| JR-MGR | Junior Manager | Manager | ✅ | — | — |
+| SR-SPV | Senior Supervisor | Supervisor | ✅ | — | — |
+| SPV | Supervisor | Supervisor | ✅ | — | — |
+| SR-STAFF | Senior Staff | Staff | ✅ | — | — |
+| STAFF | Staff | Staff | ✅ | ✅ | ✅ |
+| OPR | Operator | Staff | ✅ | ✅ | ✅ |
+
 ---
 
 ## Brand System — MSI Brand Guideline v1.0 (updated 2026-06-05)
