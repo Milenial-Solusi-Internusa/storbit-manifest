@@ -12,6 +12,9 @@
 - [x] Roles structure defined — 13 system roles based on official org chart OD/HCGA-MSI/V/2026
 - [x] Permission matrix documented in CLAUDE.md
 - [x] Role migration completed — 7 deprecated soft-deleted, bod→ceo, supervisor→gm, logistic legacy handled
+- [x] Role permissions seeded for all 13 roles (finance, hrga, it, manager, operations, sales, procurement, gm, ceo)
+- [x] Company codes updated: SBI → SOA, JCI name → Jago Custom Indonesia
+- [x] RolesPage updated with editable permission matrix for super_admin
 
 ## 2026-06-05
 ### CRM Module — Initial Implementation
