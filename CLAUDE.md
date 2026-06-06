@@ -1008,6 +1008,31 @@ Always prioritize:
 
 ---
 
+## Company & Department Master Data — 06 Jun 2026
+
+### Companies
+| Code | Name | Business Focus |
+|------|------|----------------|
+| MSI | PT Milenial Solusi Internusa | Freight Forwarding |
+| JCI | PT Jago Custom Indonesia | PPJK / Customs Clearance |
+| SOA | PT Stuja Orbit Abadi | General Trading |
+
+### Departments (per company)
+| Code | Name | JCI | MSI | SOA |
+|------|------|-----|-----|-----|
+| BD | Business Development | ✅ | ✅ | ✅ |
+| FIN | Finance | ✅ | ✅ | ✅ |
+| GA | General Affairs | ✅ | ✅ | ✅ |
+| HR | Human Resources | ✅ | ✅ | ✅ |
+| IT | Information Technology | ✅ | ✅ | ✅ |
+| LOG | Logistics / Operations | ✅ | ✅ | ✅ |
+| MGMT | Management | ✅ | ✅ | ✅ |
+| PPJK | PPJK / Customs Clearance | ✅ | — | — |
+| PROC | Procurement | ✅ | ✅ | ✅ |
+| SLS | Sales | ✅ | ✅ | ✅ |
+
+---
+
 ## Brand System — MSI Brand Guideline v1.0 (updated 2026-06-05)
 
 | Token | Hex | Usage |

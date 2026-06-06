@@ -15,6 +15,8 @@
 - [x] Role permissions seeded for all 13 roles (finance, hrga, it, manager, operations, sales, procurement, gm, ceo)
 - [x] Company codes updated: SBI → SOA, JCI name → Jago Custom Indonesia
 - [x] RolesPage updated with editable permission matrix for super_admin
+- [x] Company names updated to PT full names (MSI, JCI, SOA)
+- [x] Departments cleaned and synced with org chart — 9 dept MSI/SOA, 10 dept JCI (+PPJK)
 
 ## 2026-06-05
 ### CRM Module — Initial Implementation
