@@ -420,12 +420,12 @@ const ERP_MENU_GROUPS = [
     label: 'Commercial & CRM',
     items: [
       {
-        id: 'crm', label: 'CRM & Inquiry', icon: Users,
+        id: 'crm-dashboard', label: 'CRM & Inquiry', icon: Users,
         children: [
-          { id: 'crm-dashboard', label: 'Dashboard',      icon: BarChart2 },
-          { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users   },
-          { id: 'crm-inquiry',   label: 'Inquiry',          icon: FileText },
-          { id: 'quotation-draft', label: 'Quotation',      icon: Receipt  },
+          { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
+          { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
+          { id: 'crm-inquiry',   label: 'Inquiry',          icon: FileText  },
+          { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
         ],
       },
     ],
@@ -1714,7 +1714,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','crm'].includes(activeMenu) &&
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') && (
             <ComingSoonPage
