@@ -13,13 +13,14 @@
 //
 // Shipment / Dokumen / History tabs → empty states (no SP-level tables yet).
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   ChevronRight, ChevronLeft, Pencil, Trash2, Package,
   Calendar, Clock, Wallet, Receipt, FileText, Send, Truck,
   Check, X, Upload, FolderOpen, History, List,
-  AlertTriangle,
+  AlertTriangle, Plus,
 } from 'lucide-react';
+import { listSpBtbs, addSpBtb, deleteSpBtb } from '../../lib/db';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -202,9 +203,11 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
     shippedQty:   item.shippedQty  ?? 0,
     expDate:      item.expDate     || '',
     deadline:     item.deadline    || '',
-    shippingDate: item.shippingDate|| '',
-    btbNo:        item.btbNo       || '',
-    unitPrice:    item.unitPrice   ?? 0,
+    shippingDate:           item.shippingDate          || '',
+    slaDays:                item.slaDays               ?? '',
+    estimatedDeliveryDate:  item.estimatedDeliveryDate || '',
+    deliveredDate:          item.deliveredDate         || '',
+    unitPrice:              item.unitPrice             ?? 0,
     shippingPrice:item.shippingPrice?? 0,
     inv:          !!item.inv,
     fp:           !!item.fp,
@@ -217,6 +220,16 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
+
+  // Auto-calc estimatedDeliveryDate from shippingDate + slaDays
+  useEffect(() => {
+    if (draft.shippingDate && draft.slaDays !== '' && draft.slaDays != null) {
+      const shipping = new Date(draft.shippingDate);
+      shipping.setDate(shipping.getDate() + parseInt(draft.slaDays));
+      setDraft(prev => ({ ...prev, estimatedDeliveryDate: shipping.toISOString().split('T')[0] }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.shippingDate, draft.slaDays]);
 
   // Auto-calculated fields
   const outstanding = Math.max(0, Number(draft.qty) - Number(draft.shippedQty));
@@ -312,7 +325,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
 
           {/* Tanggal */}
           <ModalSect>Tanggal</ModalSect>
-          <ModalGrid cols={4}>
+          <ModalGrid cols={3}>
             <ModalField label="Exp Date">
               <ModalInp type="date" value={draft.expDate} onChange={e => set('expDate', e.target.value)}/>
             </ModalField>
@@ -322,8 +335,16 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
             <ModalField label="Shipping Date">
               <ModalInp type="date" value={draft.shippingDate} onChange={e => set('shippingDate', e.target.value)}/>
             </ModalField>
-            <ModalField label="BTB No">
-              <ModalInp value={draft.btbNo} placeholder="—" onChange={e => set('btbNo', e.target.value)} mono/>
+          </ModalGrid>
+          <ModalGrid cols={3}>
+            <ModalField label="SLA (hari)">
+              <ModalInp type="number" value={draft.slaDays} placeholder="cth: 3" onChange={e => set('slaDays', e.target.value)}/>
+            </ModalField>
+            <ModalField label="Estimated Delivery">
+              <ModalInp type="date" value={draft.estimatedDeliveryDate} onChange={e => set('estimatedDeliveryDate', e.target.value)}/>
+            </ModalField>
+            <ModalField label="Delivered Date">
+              <ModalInp type="date" value={draft.deliveredDate} onChange={e => set('deliveredDate', e.target.value)}/>
             </ModalField>
           </ModalGrid>
 
@@ -554,6 +575,32 @@ export default function SalesOrderDetailPage({
   const [tab,          setTab]          = useState('overview');
   const [editingItem,  setEditingItem]  = useState(null);
   const [showDeleteSP, setShowDeleteSP] = useState(false);
+
+  // ── BTB Numbers (SP-level) ───────────────────────────────────────────────
+  const [btbs,         setBtbs]         = useState([]);
+  const [btbInput,     setBtbInput]     = useState('');
+  const [btbSaving,    setBtbSaving]    = useState(false);
+
+  useEffect(() => {
+    if (!spNo) return;
+    listSpBtbs(spNo).then(({ data }) => setBtbs(data || []));
+  }, [spNo]);
+
+  const handleAddBtb = async () => {
+    if (!btbInput.trim()) return;
+    setBtbSaving(true);
+    const { data, error } = await addSpBtb(spNo, btbInput);
+    setBtbSaving(false);
+    if (error) { showToast?.('Gagal tambah BTB: ' + error.message, 'error'); return; }
+    setBtbs(prev => [...prev, data]);
+    setBtbInput('');
+  };
+
+  const handleDeleteBtb = async (id) => {
+    const { error } = await deleteSpBtb(id);
+    if (error) { showToast?.('Gagal hapus BTB: ' + error.message, 'error'); return; }
+    setBtbs(prev => prev.filter(b => b.id !== id));
+  };
 
   // ── Finance stage stats (computed from items) ──────────────────────────
   const finStages = useMemo(() => {
@@ -839,6 +886,53 @@ export default function SalesOrderDetailPage({
                 </table>
               </div>
             </div>
+            {/* BTB Numbers — SP-level */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden', gridColumn: '1 / -1' }}>
+              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>BTB Numbers</span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: C.inkFaint }}>{btbs.length} nomor BTB</span>
+              </div>
+              <div style={{ padding: '14px 18px' }}>
+                {/* Existing BTBs */}
+                {btbs.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                    {btbs.map(b => (
+                      <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, padding: '4px 10px', borderRadius: 20, background: C.surface2, color: C.ink, border: `1px solid ${C.line}` }}>
+                        {b.btb_no}
+                        <button
+                          onClick={() => handleDeleteBtb(b.id)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.danger, padding: 0, display: 'flex', alignItems: 'center', lineHeight: 1 }}
+                          title="Hapus BTB"
+                        >
+                          <X size={12}/>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {btbs.length === 0 && (
+                  <p style={{ fontSize: 13, color: C.inkFaint, marginBottom: 14 }}>Belum ada nomor BTB untuk SP ini.</p>
+                )}
+                {/* Add BTB input */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    value={btbInput}
+                    onChange={e => setBtbInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddBtb(); }}
+                    placeholder="Masukkan nomor BTB…"
+                    style={{ flex: 1, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 11px', fontSize: 13, fontFamily: "'IBM Plex Mono',monospace", outline: 'none', boxSizing: 'border-box' }}
+                  />
+                  <button
+                    onClick={handleAddBtb}
+                    disabled={!btbInput.trim() || btbSaving}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 36, borderRadius: 8, border: 'none', background: btbInput.trim() ? C.accent : C.lineSoft, color: btbInput.trim() ? '#fff' : C.inkFaint, fontSize: 13, fontWeight: 600, cursor: btbInput.trim() ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', fontFamily: 'inherit' }}
+                  >
+                    <Plus size={13}/> {btbSaving ? 'Menyimpan…' : 'Tambah BTB'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -893,11 +987,23 @@ export default function SalesOrderDetailPage({
                       <FinPill label="FP"  active={!!item.fp}/>
                       <FinPill label="SUB" active={!!item.submit}/>
                       <FinPill label="KRM" active={!!item.kirim}/>
-                      {item.btbNo && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, padding: '3px 8px', borderRadius: 20, background: C.surface2, color: C.inkSoft, border: `1px solid ${C.line}` }}>
-                          BTB: {item.btbNo}
-                        </span>
-                      )}
+                      {/* btbNo display removed — BTB numbers now at SP level */}
+                      {item.deliveredDate ? (
+                        <Badge bg={C.okBg} color={C.ok} bd={C.okBd}>
+                          <StatusDot color={C.ok}/>Delivered: {fmtDate(item.deliveredDate)}
+                        </Badge>
+                      ) : item.estimatedDeliveryDate ? (() => {
+                        const isOverdue = new Date(item.estimatedDeliveryDate) < new Date(new Date().toDateString());
+                        return isOverdue ? (
+                          <Badge bg={C.dangerBg} color={C.danger} bd={C.dangerBd}>
+                            <StatusDot color={C.danger}/>Overdue
+                          </Badge>
+                        ) : (
+                          <Badge bg={C.infoBg} color={C.info} bd={C.infoBd}>
+                            Est. Delivery: {fmtDate(item.estimatedDeliveryDate)}
+                          </Badge>
+                        );
+                      })() : null}
                     </div>
                     <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
                       <button
@@ -912,7 +1018,7 @@ export default function SalesOrderDetailPage({
                       >
                         <Wallet size={13}/> Finance
                       </button>
-                      {(role === 'super' || role === 'logistic') && (
+                      {(role === 'super' || role === 'operations' || role === 'logistic') && (
                         <button
                           onClick={() => setEditingItem(item)}
                           title="Edit item"
@@ -987,7 +1093,7 @@ export default function SalesOrderDetailPage({
       </div>
 
       {/* ── Danger zone ───────────────────────────────────────────────── */}
-      {(role === 'super' || role === 'logistic') && (
+      {(role === 'super' || role === 'operations' || role === 'logistic') && (
         <div style={{
           border: `1px solid ${C.dangerBd}`, borderRadius: 12, background: C.dangerBg,
           padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 4,

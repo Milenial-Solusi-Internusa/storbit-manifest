@@ -1088,6 +1088,20 @@ accentSoft bg (icon containers, hover highlights): `#FEF2EC`
 - File output: {quotation_no}_rev{revision}.pdf
 - jsPDF handle multi-page otomatis via loop heightLeft
 
+### BTB Numbers — sp_btbs table
+- Tabel: `sp_btbs` — id, sp_no, btb_no, created_at
+- BTB No sekarang di SP-level, bukan item-level
+- `btb_no` di `sp_items` sudah di-rename jadi `btb_no_deprecated` — jangan pakai lagi
+- db.js functions: `listSpBtbs(spNo)`, `addSpBtb(spNo, btbNo)`, `deleteSpBtb(id)`, `bulkInsertSpBtbs(spNo, btbNos[])`
+- UI: BTB Numbers section di SalesOrderDetailPage Overview tab + InputSPPage form card
+
+### Dynamic Custom Fields
+- Hook: `src/hooks/useCustomFields.js` — fetch via `get_table_columns` RPC, filter STANDARD_COLUMNS
+- Component: `src/components/CustomFieldsSection.jsx` — renders inputs per data_type, supports readOnly mode
+- STANDARD_COLUMNS exported dari hook — list kolom bawaan per tabel, kolom di luar list = custom field
+- Custom fields di-save langsung ke kolom di tabel yang bersangkutan (tidak ada tabel terpisah)
+- CustomerModal: customValues state, populate dari initial pada edit mode, merged ke save payload
+
 ### Schema Manager
 - File: `src/modules/admin/pages/SchemaManagerPage.jsx`
 - Hanya untuk role `'super'` atau `'super_admin'` — dual check karena legacy `'super'` masih di DB
@@ -1101,3 +1115,87 @@ accentSoft bg (icon containers, hover highlights): `#FEF2EC`
 - quotation_items.total GENERATED → SALAH, kolom ini sudah di-DROP dan diganti plain numeric
 - inquiries.deleted_at → sudah ada, boleh dipakai
 - Business process correctness
+
+---
+
+## Master Data Status — 06 Jun 2026
+
+| Tabel | Rows | UI Page | Status |
+|-------|------|---------|--------|
+| companies | 3 | CompaniesPage.jsx | ✅ Done |
+| branches | 7 | BranchesPage.jsx | ✅ Done |
+| departments | 25 | DepartmentsPage.jsx | ✅ Done |
+| positions | 15 | PositionsPage.jsx | ✅ Done |
+| roles | 48 | RolesPage.jsx | ✅ Done |
+| document_types | 45 | DocumentTypesPage.jsx | ✅ Done |
+| payment_terms | 18 | PaymentTermsPage.jsx | ✅ Done |
+| taxes | 12 | TaxesPage.jsx | ✅ Done |
+| status_catalog | 13 | ❌ No page yet | ⚠️ Needs UI |
+| products | 0 | ❌ No page yet | ⚠️ Needs UI + data |
+| customers | 2 | ProspectFormPage (partial) | ⚠️ Needs dedicated master page |
+| vendors | 0 | ❌ No page yet | ⚠️ Needs UI + data |
+
+---
+
+## Roles & Permission Structure — 06 Jun 2026
+
+Based on official org chart PT. Milenial Solusi Internusa Group (OD/HCGA-MSI/V/2026).
+Same role structure applies across all 3 companies (MSI, JCI, Storbit/SBI).
+
+### Job Levels (from org chart)
+1. Executive — CEO, C-level
+2. GM/Senior GM — General Manager
+3. Senior Manager
+4. Manager
+5. Junior Manager
+6. Supervisor / Senior Supervisor
+7. Staff
+8. Operator — Driver, Office Boy, dll
+
+### System Roles — 13 roles
+
+| Code | Name | Level | Description |
+|------|------|-------|-------------|
+| super_admin | Super Admin | System | IT/Developer, full system access |
+| ceo | CEO / Executive | 1 | Full view + final approve |
+| gm | GM / Senior GM | 2 | Approve + report |
+| manager | Manager | 4 | Manage department + approve |
+| finance_controller | Finance Controller | 4 | Full finance access |
+| finance | Finance Staff | 7 | Finance Jr. Manager + Staff |
+| operations | Operations | 7 | Logistic, Console, Warehouse |
+| sales | Sales / BD | 7 | BD, Sales Forwarding, Account Exec, Digital |
+| procurement | Procurement | 7 | Direct + Indirect Procurement |
+| hrga | HRGA | 7 | HRGA, Personnel, People Dev, GA |
+| it | IT Staff | 7 | IT Developer + Helpdesk |
+| supervisor | Supervisor | 6 | Cross-dept supervisor |
+| viewer | Viewer | - | Read-only all modules |
+
+### Permission Matrix
+
+| Module | super_admin | ceo | gm | manager | finance_controller | finance | operations | sales | procurement | hrga | it | viewer |
+|--------|-------------|-----|----|---------|--------------------|---------|------------|-------|-------------|------|----|--------|
+| Master Data | CRUD | R | R | R | R | R | R | R | R | R | CRUD | - |
+| CRM | CRUD | R | CRUD | CRUD | R | R | R | CRUD | R | - | R | R |
+| Logistics | CRUD | R | CRUD | CRUD | R | R | CRUD | R | R | - | R | R |
+| Finance | CRUD | R | R | R | CRUD | CRUD | R | R | R | - | R | R |
+| HRGA | CRUD | R | R | CRUD | R | R | - | - | - | CRUD | R | R |
+| Assets | CRUD | R | R | R | R | R | R | R | CRUD | R | CRUD | R |
+| Admin | CRUD | - | - | - | - | - | - | - | - | - | CRUD | - |
+
+### Migration Status — COMPLETED 06 Jun 2026
+- ✅ 7 deprecated roles soft-deleted (finance_staff, operations_head, operations_staff, sales_head, sales_staff, procurement_head, procurement_staff)
+- ✅ bod → ceo (CEO / Executive)
+- ✅ supervisor → gm (GM / Senior GM)
+- ✅ logistic — legacy frontend only, not in DB, dual-check added in SalesOrderDetailPage
+- Active roles per company: super_admin, ceo, gm, admin, manager, finance_controller, finance, operations, sales, procurement, hrga, it, viewer (13 roles)
+
+---
+
+## CRM UI Status — 06 Jun 2026
+
+| Page | Source | Status | Notes |
+|------|--------|--------|-------|
+| PipelineKanbanPage.jsx | Lovable JSX port | ✅ Live | Chevron headers (clip-path), MSI Navy, list/kanban toggle, drag-drop fade fix |
+| CRMDashboardPage.jsx | Lovable design bundle | ✅ Live (mock data) | recharts Bar/Pie/Area, 2 tab slots (Summary + Calendar planned), no Supabase yet |
+| InquiryListPage.jsx | Existing (2026-06-05) | ⚠️ Needs visual redesign | Functional, pending Lovable-style port to match MSI brand |
+| ProspectFormPage.jsx | Existing (2026-06-05) | ⚠️ Needs visual redesign | Functional form, no MSI brand styling applied yet |
