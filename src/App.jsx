@@ -37,6 +37,7 @@ const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPag
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
+const ProductDetailPage    = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -991,6 +992,7 @@ export default function StorbitManifest() {
   const [showQuotationForm,   setShowQuotationForm]   = useState(false);
   const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
+  const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
   const { role: authRole, profile, signOut } = useAuth();
   const role = authRole || 'management';
 
@@ -1716,7 +1718,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products'].includes(activeMenu) &&
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') && (
             <ComingSoonPage
@@ -1851,7 +1853,22 @@ export default function StorbitManifest() {
                   Loading...
                 </div>
               }>
-                <ProductsPage />
+                <ProductsPage onSelectProduct={(p) => { setSelectedProduct(p); setActiveMenu('product-detail'); }}/>
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'product-detail' && (
+            <ErrorBoundary title="Product detail temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <ProductDetailPage
+                  selectedProduct={selectedProduct}
+                  setSelectedProduct={setSelectedProduct}
+                  setActiveMenu={setActiveMenu}
+                />
               </Suspense>
             </ErrorBoundary>
           )}

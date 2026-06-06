@@ -17,9 +17,9 @@ The platform must support multi-company and multi-entity operations from the beg
 
 | Entity | Business Focus |
 |---|---|
-| MSI | Freight Forwarding |
-| JCI | PPJK / Customs Clearance |
-| Storbit / SBI | General Trading |
+| MSI (PT Milenial Solusi Internusa) | Freight Forwarding |
+| JCI (PT Jago Custom Indonesia) | PPJK / Customs Clearance |
+| SOA (PT Stuja Orbit Abadi) | General Trading (formerly SBI/Storbit) |
 
 Each entity may have different business processes, but the system must support connected group-level operations and consolidated reporting where permitted.
 
@@ -84,37 +84,41 @@ The project has transitioned from Storbit Manifest (localStorage prototype) into
 - `fix/*` branches for hotfixes if needed, merged immediately to `main`.
 - No long-lived feature branches. All phase-1 and phase-2 feature branches have been merged and deleted.
 
-**Active modules (as of 2026-06-04):**
+**Active modules (as of 2026-06-06):**
 
 | Module | Status | Location |
 |--------|--------|----------|
 | Auth + RLS | ✅ Live | `src/contexts/`, `supabase/migrations/` |
 | Master Data (Admin) | ✅ Live | `src/modules/admin/` |
+| Products & Services | ✅ Live | `src/modules/admin/pages/ProductsPage.jsx` |
 | Dashboard | ✅ Live | `src/modules/dashboard/` |
 | App Launcher | ✅ Live | `src/modules/launcher/` |
 | Asset Management | ✅ Live | `src/modules/assets/` |
 | HRGA Request | ✅ Live | `src/modules/hrga/` |
 | Logistics — Sales Order | ✅ Live | `src/modules/logistics/` |
+| CRM — Pipeline, Inquiry, Quotation | ✅ Live | `src/modules/crm/` |
 
 **Module structure (`src/modules/`):**
 
 ```
 src/modules/
-├── admin/        Master Data CRUD (Companies, Branches, Departments, Positions, Roles, Users)
+├── admin/        Master Data CRUD (Companies, Branches, Departments, Positions, Roles, Users, Products)
 ├── assets/       Asset Management (IT Equipment, Kendaraan, detail pages, useAssets hook)
+├── crm/          CRM (Pipeline/Kanban, Inquiry, Quotation, Dashboard)
 ├── dashboard/    Command Center dashboard
 ├── hrga/         HRGA Request module (submit, approval, management)
 ├── launcher/     App Launcher (Odoo-style module grid)
 └── logistics/    Sales Order list + SP Detail page
 ```
 
-**Migration status (as of 2026-06-04):**
+**Migration status (as of 2026-06-06):**
 
 | Range | Scope | Staging | Production |
 |-------|-------|---------|------------|
 | 000–019 | Foundation, master data, RLS | ✅ Applied | ❌ Blocked |
 | 020–024 | HRGA Request schema + seed | ✅ Applied | ❌ Blocked |
 | 025–027 | Asset Management extensions | ✅ Applied | ❌ Blocked |
+| 028 | New roles seed + role_permissions for all 13 roles | ⏳ Pending | ❌ Blocked |
 
 Production execution is **BLOCKED** — requires explicit written approval from technical lead and product owner before any migration is applied to the production Supabase project.
 
@@ -974,7 +978,47 @@ const { data: types } = useHrgaRequestTypes(profile?.company_id);
 
 ---
 
-#### 5. RLS INSERT policy must match the actual status at insert time
+#### 5. Supabase default query limit is 10 rows
+
+**Symptom:** List page shows only 10 items even though the database has more (e.g. ProductsPage showed 10 MSI products, missing 5 JCI + 63 SOA).
+
+**Root cause:** Supabase's PostgREST default page size is 10 rows. If no `.limit()` is set, the client silently returns the first 10 rows only — no error, no warning.
+
+**Fix:** Always add `.limit(1000)` (or implement proper server-side pagination with `.range()`) on any list query.
+
+```js
+// WRONG — silently returns only 10 rows
+supabase.from('products').select('*').is('deleted_at', null)
+
+// CORRECT — explicit limit for small-medium catalogs
+supabase.from('products').select('*').is('deleted_at', null).limit(1000)
+
+// CORRECT — server-side pagination for large tables
+supabase.from('products').select('*', { count: 'exact' }).range(from, to)
+```
+
+**Rule:** Every `.from().select()` query that doesn't use `.range()` pagination MUST have `.limit(N)` where N is comfortably above the expected maximum row count. For catalog/master data tables, `.limit(1000)` is the safe default.
+
+---
+
+#### 6. Products RLS — super_admin sees all companies
+
+**Symptom:** ProductsPage company tabs showed 0 for JCI and SOA even after fixing the limit.
+
+**Root cause:** Two issues combined:
+1. PostgREST join (`companies(code, name)`) can return null if the FK relationship isn't auto-detected, causing all rows to map to the default company (`'MSI'`).
+2. RLS policy on `products` table may scope by `company_id = get_user_company_id()`, blocking super_admin from seeing other companies' products.
+
+**Fix applied:**
+- Fetched `companies` table separately to build a reliable `{ uuid → code }` map.
+- Used `product.company_id` with the map for lookup instead of relying on join.
+- Verified super_admin RLS policy on `products` allows cross-company reads (`is_super_admin() OR company_id = get_user_company_id()`).
+
+**Rule:** Never rely on PostgREST join (`table(col)`) for critical field mapping. For company code resolution, always fetch the companies table separately and build a UUID→code map.
+
+---
+
+#### 7. RLS INSERT policy must match the actual status at insert time
 
 **Symptom:** 403 on `hrga_request_items` insert immediately after header insert.
 
@@ -1169,12 +1213,12 @@ accentSoft bg (icon containers, hover highlights): `#FEF2EC`
 | branches | 7 | BranchesPage.jsx | ✅ Done |
 | departments | 25 | DepartmentsPage.jsx | ✅ Done |
 | positions | 15 | PositionsPage.jsx | ✅ Done |
-| roles | 48 | RolesPage.jsx | ✅ Done |
+| roles | 48 | RolesPage.jsx | ✅ Done — editable matrix for super_admin |
 | document_types | 45 | DocumentTypesPage.jsx | ✅ Done |
 | payment_terms | 18 | PaymentTermsPage.jsx | ✅ Done |
 | taxes | 12 | TaxesPage.jsx | ✅ Done |
-| status_catalog | 13 | ❌ No page yet | ⚠️ Needs UI |
-| products | 0 | ❌ No page yet | ⚠️ Needs UI + data |
+| status_catalog | 13 | StatusCatalogPage.jsx | ✅ Done |
+| products | 78 (MSI:10, JCI:5, SOA:63) | ProductsPage.jsx | ✅ Done — grid/list, company tabs, Supabase live |
 | customers | 2 | ProspectFormPage (partial) | ⚠️ Needs dedicated master page |
 | vendors | 0 | ❌ No page yet | ⚠️ Needs UI + data |
 
@@ -1183,7 +1227,7 @@ accentSoft bg (icon containers, hover highlights): `#FEF2EC`
 ## Roles & Permission Structure — 06 Jun 2026
 
 Based on official org chart PT. Milenial Solusi Internusa Group (OD/HCGA-MSI/V/2026).
-Same role structure applies across all 3 companies (MSI, JCI, Storbit/SBI).
+Same role structure applies across all 3 companies (MSI, JCI, SOA).
 
 ### Job Levels (from org chart)
 1. Executive — CEO, C-level

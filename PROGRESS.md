@@ -19,6 +19,12 @@
 - [x] Departments cleaned and synced with org chart — 9 dept MSI/SOA, 10 dept JCI (+PPJK)
 - [x] Departments cleaned per entity — JCI (2), MSI (9), SOA (3) sesuai org chart
 - [x] Positions cleaned and synced with org chart — MSI (10), JCI (3), SOA (3)
+- [x] ProductsPage.jsx created — grid/list view, company tabs, Supabase integration, 78 products (MSI:10, JCI:5, SOA:63)
+- [x] Products RLS fixed — super_admin can view all companies; fetch uses id→code map instead of join
+- [x] Supabase default limit 10 discovered — fixed with .limit(1000); rule added to CLAUDE.md Debugging Field Notes
+- [x] InquiryListPage designed in Lovable — pending port to Nexus
+- [x] ProductDetailPage designed in Lovable — pending port to Nexus (adaptive service/product layout)
+- [x] CRM tab navigation designed — pending implementation
 
 ## 2026-06-05
 ### CRM Module — Initial Implementation
