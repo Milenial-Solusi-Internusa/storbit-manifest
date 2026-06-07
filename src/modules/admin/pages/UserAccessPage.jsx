@@ -19,8 +19,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Search, RefreshCw, ChevronLeft, ChevronRight, Check, Plus,
-  RefreshCw as Spinner,
+  RefreshCw as Spinner, ChevronDown, ChevronUp,
 } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 import {
   useUserAccess,
   fetchAllCompanies,
@@ -64,6 +65,9 @@ const PASTEL = {
   butter:       '#FFE9B8',
   butterDeep:   '#E8C168',
 };
+
+const NAVY   = '#144682';
+const ORANGE = '#E85A1E';
 
 const LEGACY_ROLES = [
   { value: 'super',       label: 'Super Admin' },
@@ -267,6 +271,233 @@ function getPrimaryErpRole(userRoles) {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ─────────────────────────────────────────────────────────────
+// Permission Matrix — inline component for Edit User tab
+// ─────────────────────────────────────────────────────────────
+
+const ACTION_ORDER = ['view', 'create', 'edit', 'delete', 'approve', 'export', 'print'];
+
+function PermissionMatrix({ matrixModules, matrixActions, permDraft, onToggle, loading, saving, onSave, onCancel, permError }) {
+  const [collapsed, setCollapsed] = useState({});
+
+  const totalGranted = Object.values(permDraft).filter(Boolean).length;
+
+  const toggleCollapse = (modId) =>
+    setCollapsed(prev => ({ ...prev, [modId]: !prev[modId] }));
+
+  const modAllKeys = (mod) => {
+    const keys = [];
+    (mod.module_actions || []).forEach(a => keys.push(`ma_${a.id}`));
+    (mod.menus || []).forEach(m => (m.menu_actions || []).forEach(a => keys.push(`mea_${a.id}`)));
+    return keys;
+  };
+
+  const isFullySelected = (mod) => {
+    const keys = modAllKeys(mod);
+    return keys.length > 0 && keys.every(k => permDraft[k]);
+  };
+
+  const handleSelectAll = (mod, select) => {
+    const updates = {};
+    modAllKeys(mod).forEach(k => { updates[k] = select; });
+    onToggle(updates);
+  };
+
+  const colW = 52; // px per action column
+
+  const headerStyle = {
+    fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+    letterSpacing: '0.08em', color: PASTEL.inkMute,
+    width: colW, textAlign: 'center',
+  };
+
+  if (loading) {
+    return (
+      <div style={{ padding: '48px 24px', textAlign: 'center', color: PASTEL.inkMute, fontSize: 13 }}>
+        Memuat permission matrix…
+      </div>
+    );
+  }
+
+  if (matrixModules.length === 0) {
+    return (
+      <div style={{ padding: '48px 24px', textAlign: 'center', color: PASTEL.inkMute, fontSize: 13 }}>
+        Belum ada modules. Tambahkan data ke tabel <code>modules</code> terlebih dahulu.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Column header row */}
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        padding: '6px 16px 6px 48px',
+        background: PASTEL.lineSoft,
+        borderRadius: '10px 10px 0 0',
+        border: `1px solid ${PASTEL.line}`,
+        borderBottom: 'none',
+      }}>
+        <span style={{ flex: 1, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', color: PASTEL.inkMute }}>
+          Module / Menu
+        </span>
+        <div style={{ display: 'flex', gap: 0 }}>
+          {matrixActions.map(act => (
+            <span key={act} style={headerStyle}>{act}</span>
+          ))}
+        </div>
+        <span style={{ width: 84 }} />
+      </div>
+
+      {/* Module + menu rows */}
+      <div style={{ border: `1px solid ${PASTEL.line}`, borderRadius: '0 0 10px 10px', overflow: 'hidden' }}>
+        {matrixModules.map((mod, idx) => {
+          const isCollapsed = collapsed[mod.id];
+          const allSelected = isFullySelected(mod);
+          const hasMenus = (mod.menus || []).length > 0;
+
+          return (
+            <div key={mod.id} style={{ borderBottom: idx < matrixModules.length - 1 ? `1px solid ${PASTEL.line}` : 'none' }}>
+              {/* Module row */}
+              <div style={{
+                display: 'flex', alignItems: 'center',
+                padding: '9px 16px',
+                background: '#F0F4FA',
+                borderLeft: `3px solid ${NAVY}`,
+              }}>
+                {/* Chevron */}
+                <button
+                  type="button"
+                  onClick={() => toggleCollapse(mod.id)}
+                  style={{ background: 'none', border: 'none', cursor: hasMenus ? 'pointer' : 'default', padding: '0 6px 0 0', color: PASTEL.inkSoft, display: 'flex', flexShrink: 0, opacity: hasMenus ? 1 : 0 }}
+                  tabIndex={hasMenus ? 0 : -1}
+                >
+                  {isCollapsed ? <ChevronDown size={13}/> : <ChevronUp size={13}/>}
+                </button>
+
+                {/* Module label */}
+                <span style={{ flex: 1, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: NAVY }}>
+                  {mod.label || mod.key}
+                </span>
+
+                {/* Module-level action checkboxes */}
+                <div style={{ display: 'flex', gap: 0 }}>
+                  {matrixActions.map(act => {
+                    const ma = (mod.module_actions || []).find(a => a.action === act);
+                    return (
+                      <div key={act} style={{ width: colW, display: 'flex', justifyContent: 'center' }}>
+                        {ma ? (
+                          <input
+                            type="checkbox"
+                            checked={!!permDraft[`ma_${ma.id}`]}
+                            onChange={e => onToggle({ [`ma_${ma.id}`]: e.target.checked })}
+                            style={{ width: 15, height: 15, cursor: 'pointer', accentColor: ORANGE }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 10, color: PASTEL.line }}>—</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Select / Deselect all */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectAll(mod, !allSelected)}
+                  style={{
+                    width: 84, fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 6,
+                    background: allSelected ? `${NAVY}18` : `${ORANGE}14`,
+                    color: allSelected ? NAVY : ORANGE,
+                    border: 'none', cursor: 'pointer', flexShrink: 0,
+                  }}
+                >
+                  {allSelected ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
+
+              {/* Menu rows */}
+              {!isCollapsed && (mod.menus || []).map(menu => (
+                <div
+                  key={menu.id}
+                  style={{
+                    display: 'flex', alignItems: 'center',
+                    padding: '7px 16px 7px 43px',
+                    background: 'white',
+                    borderTop: `1px solid ${PASTEL.lineSoft}`,
+                    transition: 'background .1s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#F7F7F8'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}
+                >
+                  <span style={{ flex: 1, fontSize: 12.5, color: PASTEL.inkSoft }}>
+                    {menu.label || menu.key}
+                  </span>
+                  <div style={{ display: 'flex', gap: 0 }}>
+                    {matrixActions.map(act => {
+                      const mea = (menu.menu_actions || []).find(a => a.action === act);
+                      return (
+                        <div key={act} style={{ width: colW, display: 'flex', justifyContent: 'center' }}>
+                          {mea ? (
+                            <input
+                              type="checkbox"
+                              checked={!!permDraft[`mea_${mea.id}`]}
+                              onChange={e => onToggle({ [`mea_${mea.id}`]: e.target.checked })}
+                              style={{ width: 15, height: 15, cursor: 'pointer', accentColor: ORANGE }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: 10, color: PASTEL.line }}>—</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <span style={{ width: 84 }} />
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Error */}
+      {permError && (
+        <div style={{ marginTop: 12, padding: '10px 16px', borderRadius: 10, background: PASTEL.rose, border: `1px solid ${PASTEL.roseDeep}`, fontSize: 12, color: PASTEL.inkSoft }}>
+          {permError}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ display: 'flex', alignItems: 'center', marginTop: 20, gap: 10 }}>
+        <span style={{ flex: 1, fontSize: 12, color: PASTEL.inkMute }}>
+          {totalGranted} permission{totalGranted !== 1 ? 's' : ''} granted
+        </span>
+        <button
+          type="button" onClick={onCancel} disabled={saving}
+          style={{
+            padding: '8px 20px', borderRadius: 12,
+            border: `1px solid ${PASTEL.line}`, background: 'white',
+            color: PASTEL.inkSoft, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button" onClick={onSave} disabled={saving}
+          style={{
+            padding: '8px 20px', borderRadius: 12, border: 'none',
+            background: NAVY, color: 'white', fontSize: 13, fontWeight: 600,
+            cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}
+        >
+          {saving ? <><Spinner size={13} className="animate-spin"/> Saving…</> : 'Save Permissions'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Main page component
 // ─────────────────────────────────────────────────────────────
 
@@ -313,6 +544,16 @@ export default function UserAccessPage() {
   const [editError, setEditError] = useState(null);
   const [editUserId, setEditUserId] = useState(null);
   const [editCompanyId, setEditCompanyId] = useState('');
+  const [editTab, setEditTab] = useState('profile'); // 'profile' | 'permissions'
+
+  // Permission matrix state
+  const [matrixModules, setMatrixModules] = useState([]);
+  const [matrixActions, setMatrixActions] = useState([]);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [permDraft, setPermDraft] = useState({});
+  const [originalPerms, setOriginalPerms] = useState([]);
+  const [permSaving, setPermSaving] = useState(false);
+  const [permError, setPermError] = useState(null);
   const [formOptions, setFormOptions] = useState({
     companies: [], branches: [], departments: [], positions: [], erpRoles: [],
   });
@@ -357,6 +598,12 @@ export default function UserAccessPage() {
     setEditUserId(row.id);
     setEditCompanyId(row.company_id || '');
     setEditError(null);
+    setEditTab('profile');
+    setPermDraft({});
+    setOriginalPerms([]);
+    setPermError(null);
+    setMatrixModules([]);
+    setMatrixActions([]);
   }, []);
 
   const closeEdit = useCallback(() => {
@@ -365,6 +612,12 @@ export default function UserAccessPage() {
     setEditCompanyId('');
     setEditError(null);
     setFormOptions({ companies: [], branches: [], departments: [], positions: [], erpRoles: [] });
+    setEditTab('profile');
+    setMatrixModules([]);
+    setMatrixActions([]);
+    setPermDraft({});
+    setOriginalPerms([]);
+    setPermError(null);
   }, []);
 
   const handleEditCompanyChange = useCallback((newCo) => {
@@ -405,6 +658,116 @@ export default function UserAccessPage() {
     refresh();
     showToast('User updated.');
   }, [editDraft, myProfile?.id, closeEdit, refresh, showToast]);
+
+  // ── Permission matrix data ───────────────────────────────────
+  const fetchMatrixData = useCallback(async (userId, companyId) => {
+    setMatrixLoading(true);
+    const [modsRes, menusRes, existingRes] = await Promise.all([
+      supabase.from('modules')
+        .select('id, key, label, sort_order, module_actions(id, action)')
+        .eq('is_active', true).order('sort_order').limit(100),
+      supabase.from('module_menus')
+        .select('id, key, label, sort_order, module_id, menu_actions(id, action)')
+        .eq('is_active', true).order('sort_order').limit(1000),
+      supabase.from('user_menu_permissions')
+        .select('id, module_action_id, menu_action_id')
+        .eq('user_id', userId).eq('company_id', companyId).limit(1000),
+    ]);
+
+    const mods     = modsRes.data  || [];
+    const menus    = menusRes.data || [];
+    const existing = existingRes.data || [];
+
+    // Collect unique action names and sort by preferred order
+    const actionSet = new Set();
+    mods.forEach(m  => (m.module_actions || []).forEach(a => actionSet.add(a.action)));
+    menus.forEach(m => (m.menu_actions   || []).forEach(a => actionSet.add(a.action)));
+    const sorted = ACTION_ORDER.filter(a => actionSet.has(a))
+      .concat([...actionSet].filter(a => !ACTION_ORDER.includes(a)).sort());
+    setMatrixActions(sorted);
+
+    // Group menus by module_id
+    const menusByMod = {};
+    menus.forEach(m => {
+      if (!menusByMod[m.module_id]) menusByMod[m.module_id] = [];
+      menusByMod[m.module_id].push(m);
+    });
+    setMatrixModules(mods.map(mod => ({ ...mod, menus: menusByMod[mod.id] || [] })));
+
+    // Persist original rows for diffing on save
+    setOriginalPerms(existing);
+
+    // Build draft from existing grants
+    const draft = {};
+    existing.forEach(p => {
+      if (p.module_action_id) draft[`ma_${p.module_action_id}`]   = true;
+      if (p.menu_action_id)   draft[`mea_${p.menu_action_id}`]    = true;
+    });
+    setPermDraft(draft);
+    setMatrixLoading(false);
+  }, []);
+
+  // Trigger fetch when switching to Permissions tab
+  useEffect(() => {
+    if (editTab === 'permissions' && editDraft?.id && editDraft?.company_id) {
+      fetchMatrixData(editDraft.id, editDraft.company_id);
+    }
+  }, [editTab, editDraft?.id, editDraft?.company_id, fetchMatrixData]);
+
+  const handlePermToggle = useCallback((updates) => {
+    setPermDraft(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  const handleSavePermissions = useCallback(async () => {
+    if (!editDraft) return;
+    setPermSaving(true);
+    setPermError(null);
+
+    // Build key→id map from original rows
+    const originalKeys = new Set();
+    const keyToRowId = {};
+    originalPerms.forEach(p => {
+      if (p.module_action_id) {
+        const k = `ma_${p.module_action_id}`;
+        originalKeys.add(k);
+        keyToRowId[k] = p.id;
+      }
+      if (p.menu_action_id) {
+        const k = `mea_${p.menu_action_id}`;
+        originalKeys.add(k);
+        keyToRowId[k] = p.id;
+      }
+    });
+
+    const newKeys = new Set(Object.entries(permDraft).filter(([, v]) => v).map(([k]) => k));
+    const addedKeys   = [...newKeys].filter(k => !originalKeys.has(k));
+    const removedKeys = [...originalKeys].filter(k => !newKeys.has(k));
+
+    // DELETE removed
+    if (removedKeys.length) {
+      const ids = removedKeys.map(k => keyToRowId[k]).filter(Boolean);
+      if (ids.length) {
+        const { error: delErr } = await supabase.from('user_menu_permissions').delete().in('id', ids);
+        if (delErr) { setPermError(`Delete failed: ${delErr.message}`); setPermSaving(false); return; }
+      }
+    }
+
+    // INSERT added
+    if (addedKeys.length) {
+      const rows = addedKeys.map(k => {
+        const row = { user_id: editDraft.id, company_id: editDraft.company_id };
+        if (k.startsWith('ma_'))  row.module_action_id = k.slice(3);
+        else                      row.menu_action_id   = k.slice(4);
+        return row;
+      });
+      const { error: insErr } = await supabase.from('user_menu_permissions').insert(rows);
+      if (insErr) { setPermError(`Insert failed: ${insErr.message}`); setPermSaving(false); return; }
+    }
+
+    setPermSaving(false);
+    showToast('Permissions updated.');
+    closeEdit();
+  }, [editDraft, originalPerms, permDraft, showToast, closeEdit]);
 
   // ── Add User modal state ─────────────────────────────────────
   const [addOpen, setAddOpen]           = useState(false);
@@ -505,7 +868,8 @@ export default function UserAccessPage() {
   }, [addDraft, closeAdd, refresh, showToast]);
 
   // ── Modal footers ─────────────────────────────────────────────
-  const editFooter = (
+  // Permissions tab manages its own footer inside PermissionMatrix; pass null here.
+  const editFooter = editTab === 'permissions' ? null : (
     <div className="flex items-center gap-3">
       <div className="flex-1" />
       <button
@@ -728,106 +1092,148 @@ export default function UserAccessPage() {
         subtitle="Update company assignment, role, and access settings."
         onClose={closeEdit}
         footer={editFooter}
-        maxWidth="680px"
+        maxWidth={editTab === 'permissions' ? '960px' : '680px'}
       >
         {editDraft && (
-          <div className="space-y-6">
-
-            {/* Business Identity */}
-            <div>
-              <SectionLabel>Business Identity</SectionLabel>
-              <div className="space-y-4">
-
-                {/* Company */}
-                <div>
-                  <FieldLabel>Company</FieldLabel>
-                  <FieldSelect value={editDraft.company_id} onChange={handleEditCompanyChange} disabled={editSaving}>
-                    <option value="">— Select company —</option>
-                    {formOptions.companies.map((c) => (
-                      <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                    ))}
-                  </FieldSelect>
-                </div>
-
-                {/* Branch + Department — 2 col */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <FieldLabel>Branch</FieldLabel>
-                    <FieldSelect value={editDraft.branch_id} onChange={(v) => setEditDraft((d) => ({ ...d, branch_id: v }))} disabled={editSaving || !editDraft.company_id}>
-                      <option value="">— None —</option>
-                      {formOptions.branches.map((b) => (
-                        <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
-                      ))}
-                    </FieldSelect>
-                  </div>
-                  <div>
-                    <FieldLabel>Department</FieldLabel>
-                    <FieldSelect value={editDraft.department_id} onChange={(v) => setEditDraft((d) => ({ ...d, department_id: v }))} disabled={editSaving || !editDraft.company_id}>
-                      <option value="">— None —</option>
-                      {formOptions.departments.map((dep) => (
-                        <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
-                      ))}
-                    </FieldSelect>
-                  </div>
-                </div>
-
-                {/* Position */}
-                <div>
-                  <FieldLabel>Position</FieldLabel>
-                  <FieldSelect value={editDraft.position_id} onChange={(v) => setEditDraft((d) => ({ ...d, position_id: v }))} disabled={editSaving || !editDraft.company_id}>
-                    <option value="">— None —</option>
-                    {formOptions.positions.map((pos) => (
-                      <option key={pos.id} value={pos.id}>{pos.code} — {pos.name}</option>
-                    ))}
-                  </FieldSelect>
-                </div>
-              </div>
+          <div>
+            {/* ── Tab switcher ── */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: `1px solid ${PASTEL.line}` }}>
+              {['profile', 'permissions'].map(tab => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setEditTab(tab)}
+                  style={{
+                    padding: '8px 18px',
+                    border: 'none', borderBottom: editTab === tab ? `2px solid ${NAVY}` : '2px solid transparent',
+                    background: 'transparent',
+                    color: editTab === tab ? NAVY : PASTEL.inkSoft,
+                    fontSize: 13, fontWeight: editTab === tab ? 700 : 400,
+                    cursor: 'pointer', marginBottom: -1,
+                    transition: 'color .12s',
+                  }}
+                >
+                  {tab === 'profile' ? 'Profile' : 'Permissions'}
+                </button>
+              ))}
             </div>
 
-            <Divider />
+            {/* ── Profile tab ── */}
+            {editTab === 'profile' && (
+              <div className="space-y-6">
 
-            {/* Access Control */}
-            <div>
-              <SectionLabel>Access Control</SectionLabel>
-              <div className="space-y-5">
-
-                {/* ERP Role — full width */}
+                {/* Business Identity */}
                 <div>
-                  <FieldLabel>ERP Role</FieldLabel>
-                  <FieldSelect value={editDraft.erp_role_id} onChange={(v) => setEditDraft((d) => ({ ...d, erp_role_id: v }))} disabled={editSaving || !editDraft.company_id}>
-                    <option value="">— No ERP role —</option>
-                    {formOptions.erpRoles.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
-                    ))}
-                  </FieldSelect>
-                  {!editDraft.company_id && (
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Select a company first.
-                    </p>
-                  )}
+                  <SectionLabel>Business Identity</SectionLabel>
+                  <div className="space-y-4">
+
+                    {/* Company */}
+                    <div>
+                      <FieldLabel>Company</FieldLabel>
+                      <FieldSelect value={editDraft.company_id} onChange={handleEditCompanyChange} disabled={editSaving}>
+                        <option value="">— Select company —</option>
+                        {formOptions.companies.map((c) => (
+                          <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
+                        ))}
+                      </FieldSelect>
+                    </div>
+
+                    {/* Branch + Department — 2 col */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <FieldLabel>Branch</FieldLabel>
+                        <FieldSelect value={editDraft.branch_id} onChange={(v) => setEditDraft((d) => ({ ...d, branch_id: v }))} disabled={editSaving || !editDraft.company_id}>
+                          <option value="">— None —</option>
+                          {formOptions.branches.map((b) => (
+                            <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
+                          ))}
+                        </FieldSelect>
+                      </div>
+                      <div>
+                        <FieldLabel>Department</FieldLabel>
+                        <FieldSelect value={editDraft.department_id} onChange={(v) => setEditDraft((d) => ({ ...d, department_id: v }))} disabled={editSaving || !editDraft.company_id}>
+                          <option value="">— None —</option>
+                          {formOptions.departments.map((dep) => (
+                            <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
+                          ))}
+                        </FieldSelect>
+                      </div>
+                    </div>
+
+                    {/* Position */}
+                    <div>
+                      <FieldLabel>Position</FieldLabel>
+                      <FieldSelect value={editDraft.position_id} onChange={(v) => setEditDraft((d) => ({ ...d, position_id: v }))} disabled={editSaving || !editDraft.company_id}>
+                        <option value="">— None —</option>
+                        {formOptions.positions.map((pos) => (
+                          <option key={pos.id} value={pos.id}>{pos.code} — {pos.name}</option>
+                        ))}
+                      </FieldSelect>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Account Active */}
-                <FieldToggle
-                  label={editDraft.active ? 'Account active' : 'Account inactive'}
-                  checked={editDraft.active}
-                  onChange={(v) => setEditDraft((d) => ({ ...d, active: v }))}
-                  disabled={editSaving || editDraft.id === myProfile?.id}
-                  helpText={editDraft.id === myProfile?.id ? 'You cannot deactivate your own account.' : undefined}
-                />
+                <Divider />
 
-                {/* MFA Required */}
-                <FieldToggle
-                  label={editDraft.mfa_required ? 'MFA required' : 'MFA not required'}
-                  checked={editDraft.mfa_required}
-                  onChange={(v) => setEditDraft((d) => ({ ...d, mfa_required: v }))}
-                  disabled={editSaving}
-                  helpText="Recommended for admin, finance controller, BOD, and head-level roles."
-                />
+                {/* Access Control */}
+                <div>
+                  <SectionLabel>Access Control</SectionLabel>
+                  <div className="space-y-5">
+
+                    {/* ERP Role — full width */}
+                    <div>
+                      <FieldLabel>ERP Role</FieldLabel>
+                      <FieldSelect value={editDraft.erp_role_id} onChange={(v) => setEditDraft((d) => ({ ...d, erp_role_id: v }))} disabled={editSaving || !editDraft.company_id}>
+                        <option value="">— No ERP role —</option>
+                        {formOptions.erpRoles.map((r) => (
+                          <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                        ))}
+                      </FieldSelect>
+                      {!editDraft.company_id && (
+                        <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
+                          Select a company first.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Account Active */}
+                    <FieldToggle
+                      label={editDraft.active ? 'Account active' : 'Account inactive'}
+                      checked={editDraft.active}
+                      onChange={(v) => setEditDraft((d) => ({ ...d, active: v }))}
+                      disabled={editSaving || editDraft.id === myProfile?.id}
+                      helpText={editDraft.id === myProfile?.id ? 'You cannot deactivate your own account.' : undefined}
+                    />
+
+                    {/* MFA Required */}
+                    <FieldToggle
+                      label={editDraft.mfa_required ? 'MFA required' : 'MFA not required'}
+                      checked={editDraft.mfa_required}
+                      onChange={(v) => setEditDraft((d) => ({ ...d, mfa_required: v }))}
+                      disabled={editSaving}
+                      helpText="Recommended for admin, finance controller, BOD, and head-level roles."
+                    />
+                  </div>
+                </div>
+
+                <SaveError message={editError} />
               </div>
-            </div>
+            )}
 
-            <SaveError message={editError} />
+            {/* ── Permissions tab ── */}
+            {editTab === 'permissions' && (
+              <PermissionMatrix
+                matrixModules={matrixModules}
+                matrixActions={matrixActions}
+                permDraft={permDraft}
+                onToggle={handlePermToggle}
+                loading={matrixLoading}
+                saving={permSaving}
+                onSave={handleSavePermissions}
+                onCancel={closeEdit}
+                permError={permError}
+              />
+            )}
           </div>
         )}
       </AdminFormModal>

@@ -446,7 +446,7 @@ const ERP_MENU_GROUPS = [
         children: [
           { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
           { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
-          { id: 'crm-prospects', label: 'Prospects',         icon: Users,    role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
+          { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',   label: 'Inquiry',          icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
         ],
@@ -462,7 +462,7 @@ const ERP_MENU_GROUPS = [
         id: 'manifest', label: 'Sales Order / SP', icon: Receipt,
         children: [
           { id: 'manifest', label: 'SP Manifest', icon: LayoutList },
-          { id: 'input',    label: 'Input SP',    icon: Plus, role: ['super_admin','admin','ceo','gm','manager','operations','sales'] },
+          { id: 'input',    label: 'Input SP',    icon: Plus, module: 'logistics', role: ['super_admin','admin','ceo','gm','manager','operations','sales'] },
         ],
       },
       {
@@ -473,7 +473,7 @@ const ERP_MENU_GROUPS = [
         ],
       },
       {
-        id: 'customers', label: 'Customer Storbit', icon: Building2, role: ['super_admin','admin'],
+        id: 'customers', label: 'Customer Storbit', icon: Building2, module: 'logistics', role: ['super_admin','admin'],
         children: [
           { id: 'customers',                label: 'Daftar Customer',      icon: Users    },
           { id: 'customer-storbit-kontrak', label: 'Kontrak & Perjanjian', icon: FileText },
@@ -499,7 +499,7 @@ const ERP_MENU_GROUPS = [
         ],
       },
       {
-        id: 'shipment', label: 'Shipment Management', icon: Truck, role: ['super_admin','admin','ceo','gm','manager','operations','sales'],
+        id: 'shipment', label: 'Shipment Management', icon: Truck, module: 'logistics', role: ['super_admin','admin','ceo','gm','manager','operations','sales'],
         children: [
           { id: 'shipment',         label: 'Tracking Aktif',     icon: Truck    },
           { id: 'shipment-jadwal',  label: 'Jadwal Pengiriman',  icon: Calendar },
@@ -642,14 +642,14 @@ const ERP_MENU_GROUPS = [
       { section: 'Transaksi' },
       { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt                                              },
       { id: 'billing',     label: 'Billing / Invoice',   icon: FileText                                             },
-      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   role: ['super_admin','admin','ceo','gm','finance_controller','finance']                },
+      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   module: 'finance', role: ['super_admin','admin','ceo','gm','finance_controller','finance']                },
       { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet                                               },
       { section: 'Keuangan' },
       { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark                                             },
       { id: 'accounting',  label: 'Accounting',          icon: BarChart3                                            },
-      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    role: ['super_admin','admin','ceo','gm','manager','finance_controller','finance']      },
+      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    module: 'finance', role: ['super_admin','admin','ceo','gm','manager','finance_controller','finance']      },
       { section: 'Dokumen' },
-      { id: 'finance',     label: 'Finance Docs',        icon: FileText, role: ['super_admin','admin','ceo','gm','finance_controller','finance']                },
+      { id: 'finance',     label: 'Finance Docs',        icon: FileText, module: 'finance', role: ['super_admin','admin','ceo','gm','finance_controller','finance']                },
     ],
   },
   // ── SERVICE MANAGEMENT ────────────────────────────────────────────────────
@@ -791,16 +791,94 @@ const ERP_MENU_GROUPS = [
     label: 'Foundation',
     items: [
       { section: 'Master Data' },
-      { id: 'admin',         label: 'Master Data',       icon: Database, role: ['super_admin','admin','it'] },
+      { id: 'admin',         label: 'Master Data',       icon: Database, module: 'foundation', role: ['super_admin','admin','it'] },
       { id: 'products',      label: 'Products & Services', icon: Package },
-      { id: 'schema-manager',label: 'Schema Manager',    icon: Database, role: ['super_admin'] },
+      { id: 'schema-manager',label: 'Schema Manager',    icon: Database, module: 'admin', role: ['super_admin'] },
       { section: 'Admin Settings' },
-      { id: 'adminSettings', label: 'Admin Settings', icon: Settings, role: ['super_admin','admin'] },
+      { id: 'adminSettings', label: 'Admin Settings', icon: Settings, module: 'admin', role: ['super_admin','admin'] },
     ],
   },
 ];
 
-const canSeeMenuItem = (item, role) => item.section || !item.role || item.role.includes(role);
+// Menu item id → module_menus.key mapping for hasMenuPermission gating
+const MENU_KEY_MAP = {
+  // CRM
+  'crm-dashboard':   'crm_dashboard',
+  'crm-pipeline':    'crm_pipeline',
+  'crm-prospects':   'crm_prospects',
+  'crm-inquiry':     'crm_inquiry',
+  'quotation-draft': 'crm_quotation',
+  // Logistics
+  'manifest':            'logistics_sp',
+  'trading':             'logistics_general_trading',
+  'customers':           'logistics_customer_storbit',
+  'job':                 'logistics_job_management',
+  'freight':             'logistics_freight',
+  'shipment':            'logistics_shipment',
+  'customer-msi':        'logistics_customer_msi',
+  'ppjk-impor':          'logistics_impor',
+  'ppjk-ekspor':         'logistics_ekspor',
+  'ppjk':                'logistics_manifest',
+  'ppjk-trucking':       'logistics_trucking',
+  'customer-jci':        'logistics_customer_jci',
+  // Procurement
+  'procRequest':   'proc_request',
+  'purchaseOrder': 'proc_po',
+  'vendors':       'proc_vendor',
+  // Inventory
+  'inventory-dashboard':  'inv_dashboard',
+  'inventory-stok':       'inv_stok',
+  'inventory-penerimaan': 'inv_penerimaan',
+  'inventory-pengeluaran':'inv_pengeluaran',
+  'inventory-transfer':   'inv_transfer',
+  'inventory-opname':     'inv_opname',
+  'assets':               'inv_asset',
+  // Finance
+  'jobCosting':  'fin_job_costing',
+  'billing':     'fin_invoice',
+  'ar':          'fin_ar',
+  'ap':          'fin_ap',
+  'cashBank':    'fin_cash',
+  'accounting':  'fin_accounting',
+  'outstanding': 'fin_outstanding',
+  'finDocs':     'fin_docs',
+  // HRGA / Service Management
+  'hrga': 'hrga_request',
+  'it':   'hrga_it',
+  // Workflow
+  'approvals': 'wf_pending',
+  'docMgmt':   'wf_docs',
+  // Portal
+  'customerPortal': 'portal_dashboard',
+  'vendorPortal':   'portal_vendor',
+  'apiCenter':      'portal_api',
+  'publicTracking': 'portal_public',
+  // Reporting
+  'reports':     'report_executive',
+  'performance': 'report_performance',
+  'audit':       'report_audit',
+  // Foundation
+  'masterData':    'foundation_master',
+  'products':      'foundation_products',
+  'schema':        'foundation_schema',
+  'adminSettings': 'admin_settings',
+};
+
+// canSeeMenuItem — priority: hasMenuPermission (per-user) → hasPermission (role-based) → item.role array → true.
+const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
+  if (item.section) return true;
+  // Sistema baru: per-user menu permission check
+  if (typeof hasMenuPermission === 'function') {
+    const menuKey = MENU_KEY_MAP[item.id];
+    if (menuKey) return hasMenuPermission(menuKey, 'view');
+  }
+  // Fallback sistema lama: role-based module permission
+  if (item.module && typeof hasPermission === 'function') {
+    return hasPermission(item.module, 'view');
+  }
+  if (!item.role) return true;
+  return item.role.includes(role);
+};
 
 
 // ============================
@@ -922,8 +1000,8 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
 // Replaces the global accordion sidebar. Renders only the active module's items
 // plus a "← Apps" button to return to the launcher.
 // ─────────────────────────────────────────────────────────────────────────────
-function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role }) {
-  const visibleItems = (moduleGroup?.items || []).filter(item => canSeeMenuItem(item, role));
+function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role, hasPermission, hasMenuPermission }) {
+  const visibleItems = (moduleGroup?.items || []).filter(item => canSeeMenuItem(item, role, hasPermission, hasMenuPermission));
   const Icon = moduleGroup?.items[0]?.icon;
 
   return (
@@ -1017,7 +1095,7 @@ export default function StorbitManifest() {
   const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
-  const { role: authRole, profile, signOut } = useAuth();
+  const { role: authRole, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission } = useAuth();
   const role = authRole || 'management';
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
@@ -1060,7 +1138,7 @@ export default function StorbitManifest() {
 
   // Enter a module group — select the first visible non-section item in that group.
   const enterModule = useCallback((group) => {
-    const first = group.items.find(item => !item.section && canSeeMenuItem(item, role));
+    const first = group.items.find(item => !item.section && canSeeMenuItem(item, role, hasPermission, hasMenuPermission));
     if (!first) return;
     setActiveModule(group.label);
     setActiveMenu(first.id);
@@ -1401,8 +1479,9 @@ export default function StorbitManifest() {
     );
   }
 
+  const allMenuGroups = ERP_MENU_GROUPS;
   const visibleMenuGroups = ERP_MENU_GROUPS
-    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role)) }))
+    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role, hasPermission, hasMenuPermission)) }))
     .filter(group => group.items.some(i => !i.section));
   const visibleMenus = visibleMenuGroups.flatMap(group => group.items.filter(i => !i.section));
   // eslint-disable-next-line no-unused-vars
@@ -1475,6 +1554,8 @@ export default function StorbitManifest() {
             onNavigate={navigateTo}
             onBackToApps={goToLauncher}
             role={role}
+            hasPermission={hasPermission}
+            hasMenuPermission={hasMenuPermission}
           />
         )}
 
@@ -1695,9 +1776,11 @@ export default function StorbitManifest() {
           {!activeModule && (
             <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center', color: '#9C948D' }}>Loading…</div>}>
               <AppLauncher
-                moduleGroups={visibleMenuGroups}
+                moduleGroups={allMenuGroups}
                 onSelect={enterModule}
                 profile={profile}
+                hasPermission={hasPermission}
+                hasMenuPermission={hasMenuPermission}
               />
             </Suspense>
           )}
@@ -1905,7 +1988,7 @@ export default function StorbitManifest() {
               onDeactivate={() => { setActiveMenu('products'); setSelectedProduct(null); }}
             />
           </Suspense>
-          {activeMenu === 'schema-manager' && role === 'super_admin' && (
+          {activeMenu === 'schema-manager' && (hasPermission ? hasPermission('admin', 'view') : role === 'super_admin' || role === 'super') && (
             <ErrorBoundary title="Schema Manager temporarily unavailable">
               <Suspense fallback={
                 <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
