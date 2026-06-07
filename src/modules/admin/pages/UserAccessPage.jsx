@@ -87,11 +87,14 @@ const LEGACY_ROLE_COLOR = {
 const GRID = '1fr 80px 180px 80px 148px';
 
 const EMPTY_ADD = {
-  full_name:  '',
-  email:      '',
-  password:   '',
-  role:       'operations',   // renamed from 'logistic'
-  company_id: '',
+  full_name:    '',
+  email:        '',
+  password:     '',
+  company_id:   '',
+  erp_role_id:  '',
+  branch_id:    '',
+  department_id:'',
+  position_id:  '',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -129,7 +132,8 @@ function RoleBadge({ erpRole, legacyRole }) {
     );
   }
   const color = LEGACY_ROLE_COLOR[legacyRole] || PASTEL.inkMute;
-  const label = LEGACY_ROLES.find((r) => r.value === legacyRole)?.label || legacyRole;
+  const baseLabel = LEGACY_ROLES.find((r) => r.value === legacyRole)?.label || legacyRole;
+  const label = legacyRole ? `${baseLabel} (legacy)` : '—';
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-semibold whitespace-nowrap"
@@ -345,7 +349,6 @@ export default function UserAccessPage() {
       branch_id:          row.branch_id || '',
       department_id:      row.department_id || '',
       position_id:        row.position_id || '',
-      role:               row.role || 'operations',  // renamed from 'logistic'
       active:             row.active !== false,
       mfa_required:       !!row.mfa_required,
       erp_role_id:        primary?.role_id || '',
@@ -386,7 +389,6 @@ export default function UserAccessPage() {
         branch_id:     editDraft.branch_id     || null,
         department_id: editDraft.department_id || null,
         position_id:   editDraft.position_id   || null,
-        role:          editDraft.role,
         active:        editDraft.active,
         mfa_required:  editDraft.mfa_required,
       },
@@ -405,20 +407,49 @@ export default function UserAccessPage() {
   }, [editDraft, myProfile?.id, closeEdit, refresh, showToast]);
 
   // ── Add User modal state ─────────────────────────────────────
-  const [addOpen, setAddOpen] = useState(false);
-  const [addDraft, setAddDraft] = useState({ ...EMPTY_ADD });
-  const [addSaving, setAddSaving] = useState(false);
-  const [addError, setAddError] = useState(null);
+  const [addOpen, setAddOpen]           = useState(false);
+  const [addDraft, setAddDraft]         = useState({ ...EMPTY_ADD });
+  const [addSaving, setAddSaving]       = useState(false);
+  const [addError, setAddError]         = useState(null);
   const [addCompanies, setAddCompanies] = useState([]);
+  const [addCompanyId, setAddCompanyId] = useState('');   // tracks cascade source
+  const [addBranches,     setAddBranches]     = useState([]);
+  const [addDepartments,  setAddDepartments]  = useState([]);
+  const [addPositions,    setAddPositions]    = useState([]);
+  const [addErpRoles,     setAddErpRoles]     = useState([]);
 
+  // Fetch companies once when modal opens
   useEffect(() => {
     if (!addOpen) return;
     fetchAllCompanies().then(({ data: cos }) => setAddCompanies(cos || []));
   }, [addOpen]);
 
+  // Cascade: fetch branches / departments / positions / ERP roles when company changes
+  useEffect(() => {
+    if (!addOpen || !addCompanyId) {
+      setAddBranches([]); setAddDepartments([]); setAddPositions([]); setAddErpRoles([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      fetchBranchesForCompany(addCompanyId),
+      fetchDepartmentsForCompany(addCompanyId),
+      fetchPositionsForCompany(addCompanyId),
+      fetchRolesForCompany(addCompanyId),
+    ]).then(([branches, depts, positions, roles]) => {
+      if (cancelled) return;
+      setAddBranches(branches.data || []);
+      setAddDepartments(depts.data || []);
+      setAddPositions(positions.data || []);
+      setAddErpRoles(roles.data || []);
+    });
+    return () => { cancelled = true; };
+  }, [addOpen, addCompanyId]);
+
   const openAdd = useCallback(() => {
     setAddDraft({ ...EMPTY_ADD });
     setAddError(null);
+    setAddCompanyId('');
     setAddOpen(true);
   }, []);
 
@@ -426,27 +457,39 @@ export default function UserAccessPage() {
     setAddOpen(false);
     setAddError(null);
     setAddCompanies([]);
+    setAddCompanyId('');
+    setAddBranches([]); setAddDepartments([]); setAddPositions([]); setAddErpRoles([]);
+  }, []);
+
+  // Reset dependent fields when company changes in add form
+  const handleAddCompanyChange = useCallback((newCoId) => {
+    setAddDraft(d => ({ ...d, company_id: newCoId, branch_id: '', department_id: '', position_id: '', erp_role_id: '' }));
+    setAddCompanyId(newCoId);
   }, []);
 
   const handleAddSave = useCallback(async () => {
-    const { full_name, email, password, role, company_id } = addDraft;
-    if (!full_name.trim())              { setAddError('Full name is required.'); return; }
-    if (!email.trim())                  { setAddError('Email is required.'); return; }
-    if (!EMAIL_RE.test(email.trim()))   { setAddError('Invalid email format.'); return; }
-    if (!password)                      { setAddError('Password is required.'); return; }
-    if (password.length < 8)           { setAddError('Password must be at least 8 characters.'); return; }
-    if (!role)                          { setAddError('Role is required.'); return; }
-    if (!company_id)                    { setAddError('Company is required.'); return; }
+    const { full_name, email, password, company_id, erp_role_id,
+            branch_id, department_id, position_id } = addDraft;
+    if (!full_name.trim())             { setAddError('Full name is required.'); return; }
+    if (!email.trim())                 { setAddError('Email is required.'); return; }
+    if (!EMAIL_RE.test(email.trim()))  { setAddError('Invalid email format.'); return; }
+    if (!password)                     { setAddError('Password is required.'); return; }
+    if (password.length < 8)          { setAddError('Password must be at least 8 characters.'); return; }
+    if (!company_id)                   { setAddError('Company is required.'); return; }
+    if (!erp_role_id)                  { setAddError('ERP Role is required.'); return; }
 
     setAddSaving(true);
     setAddError(null);
 
     const { data: result, error: createErr } = await createUser({
-      email: email.trim(),
+      email:        email.trim(),
       password,
-      full_name: full_name.trim(),
-      role,
+      full_name:    full_name.trim(),
       company_id,
+      erp_role_id,
+      branch_id:    branch_id    || null,
+      department_id:department_id|| null,
+      position_id:  position_id  || null,
     });
 
     setAddSaving(false);
@@ -748,31 +791,20 @@ export default function UserAccessPage() {
               <SectionLabel>Access Control</SectionLabel>
               <div className="space-y-5">
 
-                {/* Legacy Role + ERP Role — 2 col */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <FieldLabel>Legacy Role</FieldLabel>
-                    <FieldSelect value={editDraft.role} onChange={(v) => setEditDraft((d) => ({ ...d, role: v }))} disabled={editSaving}>
-                      {LEGACY_ROLES.map((r) => (
-                        <option key={r.value} value={r.value}>{r.label}</option>
-                      ))}
-                    </FieldSelect>
+                {/* ERP Role — full width */}
+                <div>
+                  <FieldLabel>ERP Role</FieldLabel>
+                  <FieldSelect value={editDraft.erp_role_id} onChange={(v) => setEditDraft((d) => ({ ...d, erp_role_id: v }))} disabled={editSaving || !editDraft.company_id}>
+                    <option value="">— No ERP role —</option>
+                    {formOptions.erpRoles.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                    ))}
+                  </FieldSelect>
+                  {!editDraft.company_id && (
                     <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Coexists with ERP role during transition.
+                      Select a company first.
                     </p>
-                  </div>
-                  <div>
-                    <FieldLabel>ERP Role</FieldLabel>
-                    <FieldSelect value={editDraft.erp_role_id} onChange={(v) => setEditDraft((d) => ({ ...d, erp_role_id: v }))} disabled={editSaving || !editDraft.company_id}>
-                      <option value="">— No ERP role —</option>
-                      {formOptions.erpRoles.map((r) => (
-                        <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
-                      ))}
-                    </FieldSelect>
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                      Scoped to selected company.
-                    </p>
-                  </div>
+                  )}
                 </div>
 
                 {/* Account Active */}
@@ -865,13 +897,13 @@ export default function UserAccessPage() {
             <SectionLabel>Access</SectionLabel>
             <div className="space-y-4">
 
-              {/* Company + Role — 2 col */}
+              {/* Company + ERP Role — 2 col */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <FieldLabel required>Company</FieldLabel>
                   <FieldSelect
                     value={addDraft.company_id}
-                    onChange={(v) => setAddDraft((d) => ({ ...d, company_id: v }))}
+                    onChange={handleAddCompanyChange}
                     disabled={addSaving}
                   >
                     <option value="">— Select company —</option>
@@ -881,20 +913,68 @@ export default function UserAccessPage() {
                   </FieldSelect>
                 </div>
                 <div>
-                  <FieldLabel required>Role</FieldLabel>
+                  <FieldLabel required>ERP Role</FieldLabel>
                   <FieldSelect
-                    value={addDraft.role}
-                    onChange={(v) => setAddDraft((d) => ({ ...d, role: v }))}
-                    disabled={addSaving}
+                    value={addDraft.erp_role_id}
+                    onChange={(v) => setAddDraft((d) => ({ ...d, erp_role_id: v }))}
+                    disabled={addSaving || !addDraft.company_id}
                   >
-                    {LEGACY_ROLES.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
+                    <option value="">— Select role —</option>
+                    {addErpRoles.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
                     ))}
                   </FieldSelect>
-                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                    ERP role can be assigned after creation via Edit.
-                  </p>
+                  {!addDraft.company_id && (
+                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
+                      Select a company first.
+                    </p>
+                  )}
                 </div>
+              </div>
+
+              {/* Branch + Department — 2 col, optional */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel>Branch</FieldLabel>
+                  <FieldSelect
+                    value={addDraft.branch_id}
+                    onChange={(v) => setAddDraft((d) => ({ ...d, branch_id: v }))}
+                    disabled={addSaving || !addDraft.company_id}
+                  >
+                    <option value="">— None —</option>
+                    {addBranches.map((b) => (
+                      <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
+                    ))}
+                  </FieldSelect>
+                </div>
+                <div>
+                  <FieldLabel>Department</FieldLabel>
+                  <FieldSelect
+                    value={addDraft.department_id}
+                    onChange={(v) => setAddDraft((d) => ({ ...d, department_id: v }))}
+                    disabled={addSaving || !addDraft.company_id}
+                  >
+                    <option value="">— None —</option>
+                    {addDepartments.map((dep) => (
+                      <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
+                    ))}
+                  </FieldSelect>
+                </div>
+              </div>
+
+              {/* Position — full width, optional */}
+              <div>
+                <FieldLabel>Position</FieldLabel>
+                <FieldSelect
+                  value={addDraft.position_id}
+                  onChange={(v) => setAddDraft((d) => ({ ...d, position_id: v }))}
+                  disabled={addSaving || !addDraft.company_id}
+                >
+                  <option value="">— None —</option>
+                  {addPositions.map((pos) => (
+                    <option key={pos.id} value={pos.id}>{pos.code} — {pos.name}</option>
+                  ))}
+                </FieldSelect>
               </div>
             </div>
           </div>

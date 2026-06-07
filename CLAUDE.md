@@ -84,19 +84,23 @@ The project has transitioned from Storbit Manifest (localStorage prototype) into
 - `fix/*` branches for hotfixes if needed, merged immediately to `main`.
 - No long-lived feature branches. All phase-1 and phase-2 feature branches have been merged and deleted.
 
-**Active modules (as of 2026-06-06):**
+**Active modules (as of 2026-06-07):**
 
 | Module | Status | Location |
 |--------|--------|----------|
 | Auth + RLS | ✅ Live | `src/contexts/`, `supabase/migrations/` |
 | Master Data (Admin) | ✅ Live | `src/modules/admin/` |
 | Products & Services | ✅ Live | `src/modules/admin/pages/ProductsPage.jsx` |
+| Product Detail Modal | ✅ Live | `src/modules/admin/pages/ProductDetailPage.jsx` |
 | Dashboard | ✅ Live | `src/modules/dashboard/` |
 | App Launcher | ✅ Live | `src/modules/launcher/` |
 | Asset Management | ✅ Live | `src/modules/assets/` |
 | HRGA Request | ✅ Live | `src/modules/hrga/` |
 | Logistics — Sales Order | ✅ Live | `src/modules/logistics/` |
 | CRM — Pipeline, Inquiry, Quotation | ✅ Live | `src/modules/crm/` |
+| CRM — Dashboard | ✅ Live (real Supabase fetch — prospects/inquiries/quotations counts, pipeline stage chart, recent activity) | `src/modules/crm/CRMDashboardPage.jsx` |
+| Inventory / Warehouse | ⚠️ Stok Barang live (fetches stock_summary + products + warehouses) | `src/modules/inventory/pages/StokBarangPage.jsx` |
+| Inventory — Penerimaan Barang | ⚠️ Live (fetches products + warehouses + vendors; saves to stock_ledger) | `src/modules/inventory/pages/PenerimaanBarangPage.jsx` |
 
 **Module structure (`src/modules/`):**
 
@@ -769,18 +773,27 @@ Output:
 | 1.0H | RLS Hardening — Remaining Public Tables | ✅ Staging verified |
 | 1.0I | Master Data CRUD / Vendors / Products screens | ✅ Complete |
 | 1.0J | User Access Management — table layout + Add User + Edge Function | ✅ Complete |
+| 1.0J+ | User Access — Add User form: Branch/Dept/Position/ERP Role fields; EF assigns user_roles with service role (cross-company RLS bypass) | ✅ Complete |
+| 1.0J++ | User Access — Edit modal: remove Legacy Role dropdown, ERP Role only; ERP_CODE_TO_LEGACY map fixed (valid enum values); saveUserAccess auto-derives profiles.role | ✅ Complete |
+| 1.0K+ | Permission migration Phase 2 — AuthContext fetches user_roles; role/erpRole derived from ERP codes; can() and menu guards migrated to 13 ERP roles | ✅ Complete |
+| 1.0K++ | UserAccessPage role column — shows ERP role name from user_roles; legacy fallback shows "(legacy)" suffix | ✅ Complete |
 | 1.0K | App Launcher + vertical sidebar per module (Option B layout) | ✅ Complete |
 | 2.0A | HRGA Request Module — Schema, Seed, UI (ATK form, My Requests, Semua Request, Detail Modal) | ✅ Staging verified |
 | 2.0B | Asset Management — IT Equipment + Kendaraan list/detail, useAssets hook, migrations 025–027 | ✅ Staging verified |
 | 2.0C | Logistics — Sales Order list page + SP Detail page (real data, INV/FP/SUB/KRM) | ✅ Complete |
+| 2.0C+ | Product Detail Modal — overlay modal, inline edit, toggle active, copy SKU, migration 028 | ✅ Complete |
+| 2.0C++ | Inventory navigation — parent redirect to Stok Barang, remove Kategori & Master Item menu item | ✅ Complete |
+| 2.0D | Stok Barang page — product catalog from Supabase, filters, KPI cards, skeleton loading, design from Claude Design handoff | ✅ Complete |
+| 2.0D+ | StokBarangPage real fetch — stock_summary JOIN products + warehouses, group by product_id, qty_semper + qty_others columns | ✅ Complete |
+| 2.0E | Penerimaan Barang page — goods receipt form, Supabase fetch products/vendors/warehouses, saves to stock_ledger, design from Claude Design handoff | ✅ Complete |
 
-Current phase: **Phase 2.0C** ✅ Complete
+Current phase: **Phase 2.0E** ✅ Complete
 
-Next recommended step: **Phase 2.0D — SP Detail mutations (sp_items.status migration for Konfirmasi/Tolak), or Phase 2.0E — Kendaraan list page + Tambah Aset form**
+Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
 ### Production Gate
 
-**Production execution is BLOCKED** for all pending migrations (000–027).
+**Production execution is BLOCKED** for all pending migrations (000–028 + 20260607000001).
 
 All migrations are staging-verified. Production execution requires explicit written approval
 from the technical lead and product owner before any migration is applied to the production
@@ -1201,7 +1214,12 @@ accentSoft bg (icon containers, hover highlights): `#FEF2EC`
 - prospects.payment_term_id → SALAH, pakai `payment_terms_id`
 - quotation_items.total GENERATED → SALAH, kolom ini sudah di-DROP dan diganti plain numeric
 - inquiries.deleted_at → sudah ada, boleh dipakai
+- profiles.is_active → SALAH, kolom namanya `active` (bukan `is_active`) — pakai `.eq('active', true)` saat query profiles
 - Business process correctness
+
+### ProspectFormPage — SOURCE options (updated 2026-06-07)
+10 options: digital_marketing, sales_visit, referral, event, cold_call, exhibition, social_media, website, walk_in, other.
+Assigned To: fetch dari `profiles` dengan filter `active = true` + `company_id` + `.limit(1000)`. Tidak filter by role — semua user aktif bisa di-assign.
 
 ---
 
