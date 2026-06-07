@@ -105,11 +105,26 @@ function ActiveDot({ active }) {
   );
 }
 
+// ─── Module labels (Nexus naming) ─────────────────────────────────────────────
+const MODULE_LABELS = {
+  logistics:   'Logistics',
+  crm:         'Commercial & CRM',
+  procurement: 'Procurement & Vendor',
+  inventory:   'Inventory & Asset',
+  finance:     'Finance & Accounting',
+  hrga:        'Service Management',
+  asset:       'Asset Management',
+  workflow:    'Workflow & Document',
+  reporting:   'Reporting & Governance',
+  foundation:  'Foundation',
+  admin:       'Admin Settings',
+};
+
 // ─── Hook: fetch all permissions + this role's granted set ────────────────────
 function useRolePermissions(roleId) {
   const [allPerms, setAllPerms]     = useState([]);   // { id, module, action }[]
   const [granted, setGranted]       = useState(new Set()); // Set<permission_id>
-  const [rpRows, setRpRows]         = useState([]);   // { id, permission_id }[] for delete
+  const [rpRows, setRpRows]         = useState([]);   // { id, permission_id, is_cross_entity }[] for delete
   const [loading, setLoading]       = useState(false);
 
   const load = useCallback(async (id) => {
@@ -117,7 +132,7 @@ function useRolePermissions(roleId) {
     setLoading(true);
     const [{ data: perms }, { data: rp }] = await Promise.all([
       supabase.from('permissions').select('id, module, action').order('module').order('action'),
-      supabase.from('role_permissions').select('id, permission_id').eq('role_id', id),
+      supabase.from('role_permissions').select('id, permission_id, is_cross_entity').eq('role_id', id),
     ]);
     setAllPerms(perms || []);
     setRpRows(rp || []);
@@ -136,7 +151,17 @@ function PermissionPanel({ role, viewerRole }) {
   const { allPerms, granted, setGranted, rpRows, setRpRows, loading } = useRolePermissions(
     isEditable ? role?.id : null
   );
-  const [savingId, setSavingId] = useState(null); // permission_id currently saving
+  const [savingId, setSavingId]           = useState(null); // permission_id currently saving
+  const [savingCross, setSavingCross]     = useState(null); // module key currently saving cross-entity
+
+  // Derive cross-entity state per module from rpRows
+  // A module is cross-entity if ANY of its granted permissions has is_cross_entity = true
+  const crossEntityByModule = allPerms.reduce((acc, p) => {
+    const rpRow = rpRows.find(r => r.permission_id === p.id);
+    if (rpRow?.is_cross_entity) acc[p.module] = true;
+    else if (!(p.module in acc)) acc[p.module] = false;
+    return acc;
+  }, {});
 
   if (!role) {
     return (
@@ -190,6 +215,29 @@ function PermissionPanel({ role, viewerRole }) {
       }
     }
     setSavingId(null);
+  };
+
+  // Toggle is_cross_entity for all granted permissions of a module
+  const handleCrossEntityToggle = async (mod, currentValue) => {
+    if (!isEditable) return;
+    setSavingCross(mod);
+    const modPerms  = allPerms.filter(p => p.module === mod);
+    const grantedRpRows = rpRows.filter(r => modPerms.some(p => p.id === r.permission_id));
+    const newValue  = !currentValue;
+
+    // Update each granted role_permissions row for this module
+    await Promise.all(
+      grantedRpRows.map(r =>
+        supabase.from('role_permissions').update({ is_cross_entity: newValue }).eq('id', r.id)
+      )
+    );
+
+    setRpRows(prev => prev.map(r =>
+      grantedRpRows.some(gr => gr.id === r.id)
+        ? { ...r, is_cross_entity: newValue }
+        : r
+    ));
+    setSavingCross(null);
   };
 
   const accentColor = roleColor(role.code);
@@ -259,11 +307,11 @@ function PermissionPanel({ role, viewerRole }) {
             {/* Column headers */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: `160px repeat(${allActions.length}, 1fr)`,
+              gridTemplateColumns: `180px repeat(${allActions.length}, 1fr) 90px`,
               padding: '8px 16px',
               background: C.surface2,
               borderBottom: `1px solid ${C.line}`,
-              minWidth: 400,
+              minWidth: 520,
             }}>
               <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkFaint }}>
                 Module / Action
@@ -276,23 +324,32 @@ function PermissionPanel({ role, viewerRole }) {
                   {act}
                 </span>
               ))}
+              <span style={{
+                fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px',
+                color: C.purple, textAlign: 'center',
+              }}>
+                Cross Entity
+              </span>
             </div>
 
             {/* One row per module */}
             {modules.map(mod => {
-              const modPerms = byModule[mod];
-              const hasAny = modPerms.some(p => granted.has(p.id));
+              const modPerms    = byModule[mod];
+              const hasAny      = modPerms.some(p => granted.has(p.id));
+              const isCross     = crossEntityByModule[mod] || false;
+              const isSavingCE  = savingCross === mod;
+              const modLabel    = MODULE_LABELS[mod] || mod;
               return (
                 <div key={mod} style={{
                   display: 'grid',
-                  gridTemplateColumns: `160px repeat(${allActions.length}, 1fr)`,
+                  gridTemplateColumns: `180px repeat(${allActions.length}, 1fr) 90px`,
                   alignItems: 'center',
                   padding: '9px 16px',
                   borderBottom: `1px solid ${C.lineSoft}`,
-                  minWidth: 400,
+                  minWidth: 520,
                 }}>
                   <span style={{ fontSize: 12, fontWeight: hasAny ? 600 : 400, color: hasAny ? C.ink : C.inkFaint }}>
-                    {mod}
+                    {modLabel}
                   </span>
                   {allActions.map(act => {
                     const perm = modPerms.find(p => p.action === act);
@@ -318,12 +375,29 @@ function PermissionPanel({ role, viewerRole }) {
                       </div>
                     );
                   })}
+                  {/* Cross Entity column — only editable for super_admin, only meaningful if any perm granted */}
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    {isSavingCE ? (
+                      <Loader2 size={13} style={{ color: C.purple, animation: 'spin 1s linear infinite' }}/>
+                    ) : hasAny ? (
+                      <input
+                        type="checkbox"
+                        checked={isCross}
+                        onChange={() => handleCrossEntityToggle(mod, isCross)}
+                        disabled={!isEditable}
+                        title={isEditable ? 'Toggle cross-entity access' : 'Read only'}
+                        style={{ width: 15, height: 15, cursor: isEditable ? 'pointer' : 'not-allowed', accentColor: C.purple }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 10, color: C.inkFaint }}>—</span>
+                    )}
+                  </div>
                 </div>
               );
             })}
 
             <div style={{ padding: '10px 16px', background: C.surface2, borderTop: `1px solid ${C.line}`, fontSize: 11, color: C.inkFaint }}>
-              {granted.size} permission{granted.size !== 1 ? 's' : ''} granted · Click checkbox to toggle
+              {granted.size} permission{granted.size !== 1 ? 's' : ''} granted · Click checkbox to toggle · <span style={{ color: C.purple }}>Cross Entity</span> = akses lintas company
             </div>
           </div>
         )

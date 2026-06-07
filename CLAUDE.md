@@ -1237,7 +1237,7 @@ Assigned To: fetch dari `profiles` dengan filter `active = true` + `company_id` 
 | branches | 7 | BranchesPage.jsx | ✅ Done |
 | departments | 25 | DepartmentsPage.jsx | ✅ Done |
 | positions | 15 | PositionsPage.jsx | ✅ Done |
-| roles | 48 | RolesPage.jsx | ✅ Done — editable matrix for super_admin |
+| roles | 48 | RolesPage.jsx | ✅ Done — editable matrix for super_admin, Nexus module labels, is_cross_entity toggle |
 | document_types | 45 | DocumentTypesPage.jsx | ✅ Done |
 | payment_terms | 18 | PaymentTermsPage.jsx | ✅ Done |
 | taxes | 12 | TaxesPage.jsx | ✅ Done |
