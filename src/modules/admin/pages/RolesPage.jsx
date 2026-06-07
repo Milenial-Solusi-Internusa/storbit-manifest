@@ -132,7 +132,7 @@ function useRolePermissions(roleId) {
 
 // ─── Right panel: permission matrix ───────────────────────────────────────────
 function PermissionPanel({ role, viewerRole }) {
-  const isEditable = viewerRole === 'super_admin' || viewerRole === 'super';
+  const isEditable = viewerRole === 'super_admin';
   const { allPerms, granted, setGranted, rpRows, setRpRows, loading } = useRolePermissions(
     isEditable ? role?.id : null
   );
@@ -355,7 +355,7 @@ export default function RolesPage() {
   const handleSearch = (val) => { setSearchInput(val); setPage(1); };
 
   // ── Viewer identity ───────────────────────────────────────────────────────
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
 
   // ── UI-only: selected role for permission panel ────────────────────────────
   const [selectedRole, setSelectedRole] = useState(null);
@@ -525,7 +525,7 @@ export default function RolesPage() {
 
         {/* ── RIGHT: permission matrix panel ── */}
         <div style={{ position: 'sticky', top: 18 }}>
-          <PermissionPanel role={selectedRole} viewerRole={profile?.role}/>
+          <PermissionPanel role={selectedRole} viewerRole={erpRole ?? profile?.role}/>
         </div>
       </div>
     </div>

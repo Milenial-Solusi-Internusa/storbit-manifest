@@ -37,7 +37,9 @@ const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPag
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
-const ProductDetailPage    = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
+const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
+const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
+const PenerimaanBarangPage   = lazy(() => import('./modules/inventory/pages/PenerimaanBarangPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -235,24 +237,46 @@ const calcAR = (ttf) => {
 };
 
 const ROLES = [
-  { id: 'super', label: 'Super Admin' },
-  { id: 'operations', label: 'Operations' },   // renamed from 'logistic'
-  { id: 'procurement', label: 'Procurement' },
-  { id: 'finance', label: 'Finance' },
-  { id: 'management', label: 'Management' },
+  { id: 'super_admin',        label: 'Super Admin'         },
+  { id: 'admin',              label: 'Admin'               },
+  { id: 'ceo',                label: 'CEO / Executive'     },
+  { id: 'gm',                 label: 'GM / Senior GM'      },
+  { id: 'manager',            label: 'Manager'             },
+  { id: 'finance_controller', label: 'Finance Controller'  },
+  { id: 'finance',            label: 'Finance'             },
+  { id: 'operations',         label: 'Operations'          },
+  { id: 'sales',              label: 'Sales'               },
+  { id: 'procurement',        label: 'Procurement'         },
+  { id: 'hrga',               label: 'HRGA'                },
+  { id: 'it',                 label: 'IT'                  },
+  { id: 'viewer',             label: 'Viewer'              },
+  // Legacy values — fallback for users not yet migrated to user_roles
+  { id: 'super',              label: 'Super Admin (legacy)' },
+  { id: 'logistic',           label: 'Operations (legacy)'  },
+  { id: 'management',         label: 'Management (legacy)'  },
 ];
 
-const can = (role, action) => {
-  const matrix = {
-    super: ['view', 'create', 'edit', 'delete', 'shipment', 'finance', 'export', 'import', 'master'],
-    operations: ['view', 'shipment', 'export', 'create', 'edit'],   // renamed from 'logistic'
-    logistic:   ['view', 'shipment', 'export', 'create', 'edit'],   // legacy alias — keep during transition
-    procurement: ['view', 'export', 'edit'],
-    finance: ['view', 'finance', 'export'],
-    management: ['view', 'export'],
-  };
-  return matrix[role]?.includes(action);
+const PERMISSIONS = {
+  super_admin:        ['view','create','edit','delete','shipment','finance','export','import','master'],
+  admin:              ['view','create','edit','delete','shipment','finance','export','import','master'],
+  ceo:                ['view','create','edit','shipment','finance','export','master'],
+  gm:                 ['view','create','edit','shipment','finance','export','master'],
+  manager:            ['view','create','edit','export','master'],
+  finance_controller: ['view','create','edit','finance','export'],
+  finance:            ['view','finance','export'],
+  operations:         ['view','create','edit','shipment','export'],
+  sales:              ['view','create','edit','export'],
+  procurement:        ['view','create','edit','export'],
+  hrga:               ['view','create','edit','export'],
+  it:                 ['view','create','edit','export','master'],
+  viewer:             ['view','export'],
+  // Legacy fallbacks — coexist during migration period
+  super:              ['view','create','edit','delete','shipment','finance','export','import','master'],
+  logistic:           ['view','create','edit','shipment','export'],
+  management:         ['view','export'],
 };
+
+const can = (role, action) => PERMISSIONS[role]?.includes(action) ?? false;
 
 const PLANNED_MODULES = {
   // ── Commercial & CRM ──────────────────────────────────────────────────────
@@ -306,11 +330,7 @@ const PLANNED_MODULES = {
     capabilities: ['Vendor registration and profile', 'Qualification and rating', 'Payment terms per vendor', 'Procurement performance history'],
   },
   // ── Inventory & Asset ─────────────────────────────────────────────────────
-  inventory: {
-    title: 'Inventory / Warehouse',
-    description: 'Stock management and warehouse visibility for Storbit / SBI trading operations. Track stock levels, movements, location mapping, and reorder triggers.',
-    capabilities: ['Stock balance and location', 'Inbound and outbound movements', 'Reorder point alerts', 'Warehouse location mapping'],
-  },
+  // Note: 'inventory' intentionally NOT in PLANNED_MODULES — parent redirects to inventory-stok (Phase 2.0C+).
   // Note: 'assets' intentionally NOT in PLANNED_MODULES — AssetShell is live (Phase 2).
   // ── Finance & Accounting ──────────────────────────────────────────────────
   jobCosting: {
@@ -426,6 +446,7 @@ const ERP_MENU_GROUPS = [
         children: [
           { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
           { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
+          { id: 'crm-prospects', label: 'Prospects',         icon: Users,    role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',   label: 'Inquiry',          icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
         ],
@@ -441,7 +462,7 @@ const ERP_MENU_GROUPS = [
         id: 'manifest', label: 'Sales Order / SP', icon: Receipt,
         children: [
           { id: 'manifest', label: 'SP Manifest', icon: LayoutList },
-          { id: 'input',    label: 'Input SP',    icon: Plus, role: ['super', 'operations', 'logistic'] },
+          { id: 'input',    label: 'Input SP',    icon: Plus, role: ['super_admin','admin','ceo','gm','manager','operations','sales'] },
         ],
       },
       {
@@ -452,7 +473,7 @@ const ERP_MENU_GROUPS = [
         ],
       },
       {
-        id: 'customers', label: 'Customer Storbit', icon: Building2, role: ['super'],
+        id: 'customers', label: 'Customer Storbit', icon: Building2, role: ['super_admin','admin'],
         children: [
           { id: 'customers',                label: 'Daftar Customer',      icon: Users    },
           { id: 'customer-storbit-kontrak', label: 'Kontrak & Perjanjian', icon: FileText },
@@ -478,7 +499,7 @@ const ERP_MENU_GROUPS = [
         ],
       },
       {
-        id: 'shipment', label: 'Shipment Management', icon: Truck, role: ['super', 'operations', 'logistic'],
+        id: 'shipment', label: 'Shipment Management', icon: Truck, role: ['super_admin','admin','ceo','gm','manager','operations','sales'],
         children: [
           { id: 'shipment',         label: 'Tracking Aktif',     icon: Truck    },
           { id: 'shipment-jadwal',  label: 'Jadwal Pengiriman',  icon: Calendar },
@@ -584,7 +605,6 @@ const ERP_MENU_GROUPS = [
           { id: 'inventory-pengeluaran', label: 'Pengeluaran Barang',    icon: Upload          },
           { id: 'inventory-transfer',    label: 'Transfer Stok',         icon: ArrowUpDown     },
           { id: 'inventory-opname',      label: 'Opname / Adjustment',   icon: ClipboardCheck  },
-          { id: 'inventory-kategori',    label: 'Kategori & Master Item',icon: Tag             },
         ],
       },
       { section: 'Asset Management' },
@@ -622,14 +642,14 @@ const ERP_MENU_GROUPS = [
       { section: 'Transaksi' },
       { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt                                              },
       { id: 'billing',     label: 'Billing / Invoice',   icon: FileText                                             },
-      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   role: ['super', 'finance']                 },
+      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   role: ['super_admin','admin','ceo','gm','finance_controller','finance']                },
       { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet                                               },
       { section: 'Keuangan' },
       { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark                                             },
       { id: 'accounting',  label: 'Accounting',          icon: BarChart3                                            },
-      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    role: ['super', 'finance', 'management']   },
+      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    role: ['super_admin','admin','ceo','gm','manager','finance_controller','finance']      },
       { section: 'Dokumen' },
-      { id: 'finance',     label: 'Finance Docs',        icon: FileText, role: ['super', 'finance']                 },
+      { id: 'finance',     label: 'Finance Docs',        icon: FileText, role: ['super_admin','admin','ceo','gm','finance_controller','finance']                },
     ],
   },
   // ── SERVICE MANAGEMENT ────────────────────────────────────────────────────
@@ -771,11 +791,11 @@ const ERP_MENU_GROUPS = [
     label: 'Foundation',
     items: [
       { section: 'Master Data' },
-      { id: 'admin',         label: 'Master Data',       icon: Database, role: ['super'] },
+      { id: 'admin',         label: 'Master Data',       icon: Database, role: ['super_admin','admin','it'] },
       { id: 'products',      label: 'Products & Services', icon: Package },
-      { id: 'schema-manager',label: 'Schema Manager',    icon: Database, role: ['super', 'super_admin'] },
+      { id: 'schema-manager',label: 'Schema Manager',    icon: Database, role: ['super_admin'] },
       { section: 'Admin Settings' },
-      { id: 'adminSettings', label: 'Admin Settings', icon: Settings, role: ['super'] },
+      { id: 'adminSettings', label: 'Admin Settings', icon: Settings, role: ['super_admin','admin'] },
     ],
   },
 ];
@@ -1082,6 +1102,11 @@ export default function StorbitManifest() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [profileDropdownOpen]);
+
+  // Redirect inventory parent → default sub-page (Stok Barang)
+  useEffect(() => {
+    if (activeMenu === 'inventory') setActiveMenu('inventory-stok');
+  }, [activeMenu]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -1718,9 +1743,10 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail'].includes(activeMenu) &&
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
-           !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') && (
+           !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
+           !activeMenu?.startsWith('inventory-') && (
             <ComingSoonPage
               title="Coming Soon"
               description="This section is planned on the Nexus ERP roadmap and will be available in a future phase."
@@ -1846,7 +1872,7 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'products' && (
+          {(activeMenu === 'products' || activeMenu === 'product-detail') && (
             <ErrorBoundary title="Products & Services temporarily unavailable">
               <Suspense fallback={
                 <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
@@ -1857,22 +1883,15 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'product-detail' && (
-            <ErrorBoundary title="Product detail temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <ProductDetailPage
-                  selectedProduct={selectedProduct}
-                  setSelectedProduct={setSelectedProduct}
-                  setActiveMenu={setActiveMenu}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'schema-manager' && (role === 'super' || role === 'super_admin') && (
+          <Suspense fallback={null}>
+            <ProductDetailModal
+              isOpen={activeMenu === 'product-detail'}
+              onClose={() => { setActiveMenu('products'); setSelectedProduct(null); }}
+              selectedProduct={selectedProduct}
+              onDeactivate={() => { setActiveMenu('products'); setSelectedProduct(null); }}
+            />
+          </Suspense>
+          {activeMenu === 'schema-manager' && role === 'super_admin' && (
             <ErrorBoundary title="Schema Manager temporarily unavailable">
               <Suspense fallback={
                 <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
@@ -1907,6 +1926,32 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <HrgaShell activePage={activeMenu} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── Inventory: Stok Barang ─────────────────────────────────────── */}
+          {activeMenu === 'inventory-stok' && (
+            <ErrorBoundary title="Stok Barang temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <StokBarangPage setActiveMenu={setActiveMenu}/>
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── Inventory: Penerimaan Barang ───────────────────────────────── */}
+          {activeMenu === 'inventory-penerimaan' && (
+            <ErrorBoundary title="Penerimaan Barang temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <PenerimaanBarangPage setActiveMenu={setActiveMenu}/>
               </Suspense>
             </ErrorBoundary>
           )}
@@ -1970,7 +2015,12 @@ export default function StorbitManifest() {
           {activeMenu === 'crm-pipeline' && (
             <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <PipelineKanbanPage showToast={showToast} />
+                <PipelineKanbanPage
+                  showToast={showToast}
+                  setActiveMenu={setActiveMenu}
+                  setShowProspectForm={setShowProspectForm}
+                  setEditingProspect={setEditingProspect}
+                />
               </Suspense>
             </ErrorBoundary>
           )}

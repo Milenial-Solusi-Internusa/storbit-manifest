@@ -1,5 +1,7 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, LabelList, AreaChart, Area } from "recharts";
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/useAuth';
 
 /* =========================================================================
    CRMDashboardPage — Nexus by MSI · CRM Sales Dashboard (freight forwarding)
@@ -38,6 +40,8 @@ const ICONS = {
   download:    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
   layoutdashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
   calendar:    '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  receipt:     '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8H8"/><path d="M16 12H8"/><path d="M12 16H8"/>',
+  alert:       '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
 };
 
 function Icon({ name, size = 18, color, style }) {
@@ -284,21 +288,25 @@ const D = {
 /* ---------- KPI card ---------- */
 function KpiCard({ data }) {
   const [h, setH] = useState(false);
-  const up = data.trend.dir === "up";
-  const good = data.trend.good;
+  const hasTrend = !!data.trend;
+  const up   = hasTrend && data.trend.dir === "up";
+  const good = hasTrend && data.trend.good;
   const tone = good ? { fg: "#1F8B4D", bg: "#DEF0E4" } : { fg: "#C0392B", bg: "#F7E1DE" };
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} style={{ ...D.kpiCard, ...(h ? D.kpiCardHover : null) }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "linear-gradient(90deg, " + data.accent + ", " + data.accent + "55)" }} />
       <div style={D.kpiTop}>
         <div style={{ ...D.kpiIco, background: data.accentBg, color: data.accent }}><Icon name={data.icon} size={20} /></div>
-        <span style={{ ...D.kpiTrend, color: tone.fg, background: tone.bg }}>
-          <Icon name={up ? "arrowup" : "arrowdown"} size={12} color={tone.fg} />{data.trend.val}
-        </span>
+        {hasTrend && (
+          <span style={{ ...D.kpiTrend, color: tone.fg, background: tone.bg }}>
+            <Icon name={up ? "arrowup" : "arrowdown"} size={12} color={tone.fg} />{data.trend.val}
+          </span>
+        )}
       </div>
       <div style={D.kpiLabel}>{data.label}</div>
       <div style={D.kpiValue}><span style={{ whiteSpace: "nowrap" }}>{data.value}</span><span style={D.kpiUnit}>{data.unit}</span></div>
-      <div style={D.kpiNote}>{data.trend.note}</div>
+      {hasTrend && <div style={D.kpiNote}>{data.trend.note}</div>}
+      {!hasTrend && <div style={{ ...D.kpiNote, color: "#BCC0C8" }}>Realtime</div>}
     </div>
   );
 }
@@ -389,28 +397,28 @@ function BarTip({ active, payload }) {
         <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flex: "0 0 8px" }} />
         <span style={D.tipTitle}>{d.name}</span>
       </div>
-      <div style={D.tipRow}><b style={{ color: "#fff", fontWeight: 700 }}>{d.count}</b> deal · {rpShort(d.value)}</div>
+      <div style={D.tipRow}><b style={{ color: "#fff", fontWeight: 700 }}>{d.count}</b> prospect{d.value > 0 ? ' · ' + rpShort(d.value) : ''}</div>
     </div>
   );
 }
 
-function PipelineByStage() {
+function PipelineByStage({ stages = STAGES }) {
   const [barRef, barW] = useWidth();
-  const totalCount = STAGES.reduce((a, s) => a + s.count, 0);
-  const totalVal = STAGES.reduce((a, s) => a + s.value, 0);
+  const totalCount = stages.reduce((a, s) => a + s.count, 0);
+  const totalVal   = stages.reduce((a, s) => a + (s.value || 0), 0);
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="bars" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Pipeline by Stage</div>
-          <div style={D.cardSub}>Jumlah deal & nilai per tahap pipeline</div>
+          <div style={D.cardSub}>Jumlah deal per tahap pipeline</div>
         </div>
       </div>
       <div style={{ padding: "14px 14px 4px" }}>
         <div ref={barRef} className="bar-in">
         {barW > 0 && (
-          <BarChart layout="vertical" width={barW} height={300} data={STAGES} margin={{ top: 4, right: 80, left: 6, bottom: 4 }} barCategoryGap={10}>
+          <BarChart layout="vertical" width={barW} height={300} data={stages} margin={{ top: 4, right: 80, left: 6, bottom: 4 }} barCategoryGap={10}>
             <defs>
               <linearGradient id="navyBar" x1="0" y1="0" x2="1" y2="0">
                 <stop offset="0%" stopColor="#2A6FA8" />
@@ -423,21 +431,22 @@ function PipelineByStage() {
               tickFormatter={(v) => v.toUpperCase()}
               tick={{ fontSize: 10.5, fill: "#16243A", fontWeight: 700, letterSpacing: 0.4 }} />
             <Tooltip content={<BarTip />} cursor={{ fill: "rgba(20,70,130,.05)" }} />
-            <Bar dataKey="value" radius={[0, 7, 7, 0]} barSize={22} isAnimationActive={false}>
-              {STAGES.map((s) => (
+            <Bar dataKey="count" radius={[0, 7, 7, 0]} barSize={22} isAnimationActive={false}>
+              {stages.map((s) => (
                 <Cell key={s.id} fill={s.id === "won" ? "#1F8B4D" : s.id === "lost" ? "#C0392B" : "url(#navyBar)"} />
               ))}
-              <LabelList dataKey="count" position="insideRight" fill="#fff" fontSize={11} fontWeight={700} />
-              <LabelList dataKey="value" position="right" formatter={rpShort} fill="#16243A" fontSize={11} fontWeight={700} />
+              <LabelList dataKey="count" position="right" fill="#16243A" fontSize={11} fontWeight={700} />
             </Bar>
           </BarChart>
         )}
         </div>
         <div style={{ ...D.barFoot, margin: "2px 8px 0", padding: "13px 0 14px" }}>
           <span style={{ fontSize: 12, color: "#7A828E", fontWeight: 600 }}>
-            <b style={{ color: NAVY, fontWeight: 800 }}>{totalCount}</b> total deal
+            <b style={{ color: NAVY, fontWeight: 800 }}>{totalCount}</b> total prospect
           </span>
-          <span style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: NAVY, letterSpacing: -0.3 }}>{rpShort(totalVal)}</span>
+          {totalVal > 0 && (
+            <span style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: NAVY, letterSpacing: -0.3 }}>{rpShort(totalVal)}</span>
+          )}
         </div>
       </div>
     </div>
@@ -610,8 +619,9 @@ function LeadsBySource() {
 }
 
 /* ---------- recent activity ---------- */
-function RecentActivity() {
+function RecentActivity({ items = ACTIVITY }) {
   const [hover, setHover] = useState(-1);
+  const list = items.length > 0 ? items : ACTIVITY;
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
@@ -622,9 +632,9 @@ function RecentActivity() {
         </div>
       </div>
       <div style={D.actBody}>
-        {ACTIVITY.map((a, i) => {
-          const m = ACT_META[a.type];
-          const last = i === ACTIVITY.length - 1;
+        {list.map((a, i) => {
+          const m = ACT_META[a.type] || ACT_META.prospect;
+          const last = i === list.length - 1;
           return (
             <div key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
               style={{ ...D.actRow, borderBottom: last ? "none" : D.actRow.borderBottom, marginLeft: -8, marginRight: -8, paddingLeft: 8, paddingRight: 8, borderRadius: 9, background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
@@ -634,10 +644,12 @@ function RecentActivity() {
                 <div style={D.actCo}>{a.co}</div>
               </div>
               <span style={D.actTime}>{a.time}</span>
-              <span style={D.userBadge}>
-                <span style={{ ...D.userBadgeAv, background: avatarColor(a.user) }}>{initials(a.user)}</span>
-                {a.user}
-              </span>
+              {a.user && a.user !== '—' && (
+                <span style={D.userBadge}>
+                  <span style={{ ...D.userBadgeAv, background: avatarColor(a.user) }}>{initials(a.user)}</span>
+                  {a.user}
+                </span>
+              )}
             </div>
           );
         })}
@@ -735,13 +747,34 @@ function DashCalendar() {
   );
 }
 
+/* ── time-ago helper ─────────────────────────────────────────────────────── */
+function fmtTimeAgo(iso) {
+  if (!iso) return '—';
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60)   return `${diff} detik lalu`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} menit lalu`;
+  if (diff < 86400)return `${Math.floor(diff / 3600)} jam lalu`;
+  return `${Math.floor(diff / 86400)} hari lalu`;
+}
+
+/* ── stage order for pipeline chart ─────────────────────────────────────── */
+const STAGE_ORDER = ['new','contacted','qualified','proposal','negotiation','won','lost'];
+const STAGE_COLORS = { won: '#1F8B4D', lost: '#C0392B' };
+const STAGE_LABELS = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', negotiation: 'Negotiation', won: 'Won', lost: 'Lost' };
+
 /* ========================================================================= */
 function CRMDashboardPage() {
+  const { profile } = useAuth();
   const [period, setPeriod] = useState("This Month");
-  const [tab, setTab] = useState("summary");
-  const [toast, setToast] = useState({ msg: "", icon: "check", show: false });
-  const toastTimer = useRef(null);
+  const [tab, setTab]       = useState("summary");
+  const [toast, setToast]   = useState({ msg: "", icon: "check", show: false });
+  const toastTimer          = useRef(null);
   const PERIODS = ["This Month", "This Quarter", "This Year"];
+
+  // ── real data state ──────────────────────────────────────────────────────
+  const [dashData,    setDashData]    = useState(null);
+  const [dashLoading, setDashLoading] = useState(true);
+  const [dashError,   setDashError]   = useState(null);
 
   function showToast(msg, icon) {
     setToast({ msg, icon: icon || "info", show: true });
@@ -749,9 +782,107 @@ function CRMDashboardPage() {
     toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 2200);
   }
 
+  // ── fetch dashboard data from Supabase ───────────────────────────────────
+  const fetchDash = useCallback(async () => {
+    if (!profile?.company_id) return;
+    setDashLoading(true);
+    setDashError(null);
+    try {
+      const cid = profile.company_id;
+
+      const [prospectsRes, inquiriesRes, quotationsRes] = await Promise.all([
+        supabase
+          .from('prospects')
+          .select('pipeline_stage, name, created_at')
+          .eq('company_id', cid)
+          .is('deleted_at', null),
+        supabase
+          .from('inquiries')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', cid)
+          .is('deleted_at', null),
+        supabase
+          .from('quotations')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', cid),
+      ]);
+
+      if (prospectsRes.error) throw prospectsRes.error;
+
+      const prospects       = prospectsRes.data || [];
+      const totalProspects  = prospects.length;
+      const wonCount        = prospects.filter(p => (p.pipeline_stage || '').toUpperCase() === 'WON').length;
+      const winRate         = totalProspects > 0 ? Math.round((wonCount / totalProspects) * 100) : 0;
+      const totalInquiries  = inquiriesRes.count  ?? 0;
+      const totalQuotations = quotationsRes.count ?? 0;
+
+      // Stage breakdown — count client-side (avoids GROUP BY RPC dependency)
+      const stageCounts = {};
+      prospects.forEach(p => {
+        const s = (p.pipeline_stage || 'NEW').toLowerCase();
+        stageCounts[s] = (stageCounts[s] || 0) + 1;
+      });
+      const stagesData = STAGE_ORDER.map(id => ({
+        id,
+        name:  STAGE_LABELS[id] || id,
+        count: stageCounts[id] || 0,
+        value: 0,  // monetary value not stored per prospect — future enhancement
+        color: STAGE_COLORS[id] || NAVY,
+      }));
+
+      // Recent prospects (5 latest)
+      const recentActivity = [...prospects]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 5)
+        .map(p => ({
+          type: 'prospect',
+          text: 'Prospect baru',
+          co:   p.name || '(tanpa nama)',
+          time: fmtTimeAgo(p.created_at),
+          user: '—',
+        }));
+
+      setDashData({ totalProspects, totalInquiries, totalQuotations, winRate, stagesData, recentActivity });
+    } catch (err) {
+      console.error('[CRMDashboardPage] fetch error:', err);
+      setDashError(err.message || 'Gagal memuat data dashboard.');
+    } finally {
+      setDashLoading(false);
+    }
+  }, [profile?.company_id]);
+
+  useEffect(() => { fetchDash(); }, [fetchDash]);
+
+  // ── KPI cards from real data ─────────────────────────────────────────────
+  const kpisReal = dashData ? [
+    { label: "Total Prospects", icon: "users",       value: String(dashData.totalProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
+    { label: "Total Inquiry",   icon: "filetext",    value: String(dashData.totalInquiries), unit: "inquiry",   accent: ORANGE,    accentBg: "#FBE6DA", trend: null },
+    { label: "Total Quotation", icon: "receipt",     value: String(dashData.totalQuotations),unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
+    { label: "Win Rate",        icon: "checkcircle", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
+  ] : KPIS;
+
+  // ── skeleton row ─────────────────────────────────────────────────────────
+  const SkeletonRow = () => (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 16, marginBottom: 16 }}>
+      {[1,2,3,4].map(i => (
+        <div key={i} style={{ height: 130, borderRadius: 14, background: "linear-gradient(90deg,#F2F4F7 25%,#E8EBF0 50%,#F2F4F7 75%)", backgroundSize: "400% 100%", animation: "db-shimmer 1.4s ease infinite" }} />
+      ))}
+    </div>
+  );
+
   return (
     <div style={D.root}>
-      <style>{".om-card{transition:box-shadow .18s ease, transform .18s ease;} .om-card:hover{box-shadow:0 2px 4px rgba(20,40,70,.06), 0 14px 32px rgba(20,40,70,.11);transform:translateY(-3px);} .recharts-surface{outline:none;} @keyframes chartFade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}} @keyframes popIn{from{opacity:0;transform:scale(.86);}to{opacity:1;transform:scale(1);}} .bar-in{animation:chartFade .7s ease-out both;} .donut-in{animation:popIn .7s cubic-bezier(.34,1.2,.5,1) both;} @media (prefers-reduced-motion: reduce){.bar-in,.donut-in{animation:none;}}"}</style>
+      <style>{`
+        .om-card{transition:box-shadow .18s ease, transform .18s ease;}
+        .om-card:hover{box-shadow:0 2px 4px rgba(20,40,70,.06), 0 14px 32px rgba(20,40,70,.11);transform:translateY(-3px);}
+        .recharts-surface{outline:none;}
+        @keyframes chartFade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+        @keyframes popIn{from{opacity:0;transform:scale(.86);}to{opacity:1;transform:scale(1);}}
+        @keyframes db-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+        .bar-in{animation:chartFade .7s ease-out both;}
+        .donut-in{animation:popIn .7s cubic-bezier(.34,1.2,.5,1) both;}
+        @media (prefers-reduced-motion: reduce){.bar-in,.donut-in{animation:none;}}
+      `}</style>
       <div style={D.wrap}>
         {/* header */}
         <div style={D.topRow}>
@@ -776,15 +907,25 @@ function CRMDashboardPage() {
           </div>
         </div>
 
+        {/* error bar */}
+        {dashError && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: 13, marginBottom: 16 }}>
+            <Icon name="alert" size={15} />
+            {dashError}
+          </div>
+        )}
+
         {/* tab navigation */}
         <DashTabs active={tab} onSelect={setTab} />
 
         {tab === "calendar" ? <DashCalendar /> : (
         <React.Fragment>
         {/* row 1 — KPI */}
-        <div style={D.kpiRow}>
-          {KPIS.map((k) => <KpiCard key={k.label} data={k} />)}
-        </div>
+        {dashLoading ? <SkeletonRow /> : (
+          <div style={D.kpiRow}>
+            {kpisReal.map((k) => <KpiCard key={k.label} data={k} />)}
+          </div>
+        )}
 
         {/* row 2 — pipeline value trend */}
         <div style={{ marginBottom: 16 }}>
@@ -793,7 +934,7 @@ function CRMDashboardPage() {
 
         {/* row 3 — charts */}
         <div style={D.chartsRow}>
-          <PipelineByStage />
+          <PipelineByStage stages={dashData?.stagesData} />
           <LeadSourceDonut />
         </div>
 
@@ -804,7 +945,7 @@ function CRMDashboardPage() {
         </div>
 
         {/* row 4 — activity */}
-        <RecentActivity />
+        <RecentActivity items={dashData?.recentActivity} />
         </React.Fragment>
         )}
       </div>

@@ -22,13 +22,30 @@ const C = {
 
 const PIPELINE_STAGES = ['NEW','CONTACTED','QUALIFIED','PROPOSAL','NEGOTIATION','WON','LOST','NURTURE'];
 const CUSTOMER_TYPES  = ['freight','customs','trading','mixed'];
-const SOURCES         = ['digital_marketing','sales_visit','referral','event'];
+const SOURCES = [
+  'digital_marketing',
+  'sales_visit',
+  'referral',
+  'event',
+  'cold_call',
+  'exhibition',
+  'social_media',
+  'website',
+  'walk_in',
+  'other',
+];
 
 const SOURCE_LABELS = {
   digital_marketing: 'Digital Marketing',
   sales_visit:       'Sales Visit',
   referral:          'Referral',
-  event:             'Event',
+  event:             'Event / Pameran',
+  cold_call:         'Cold Call',
+  exhibition:        'Exhibition',
+  social_media:      'Social Media',
+  website:           'Website',
+  walk_in:           'Walk-in',
+  other:             'Lainnya',
 };
 
 const inpStyle = (extra = {}) => ({
@@ -115,7 +132,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   useEffect(() => {
     if (!profile?.company_id) return;
-    supabase.from('profiles').select('id, full_name').eq('company_id', profile.company_id).eq('is_active', true)
+    supabase.from('profiles').select('id, full_name').eq('company_id', profile.company_id).eq('active', true).limit(1000)
       .then(({ data }) => setProfiles(data || []));
     supabase.from('payment_terms').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null)
       .then(({ data }) => setPaymentTerms(data || []));

@@ -18,6 +18,33 @@ import { supabase } from '../lib/supabase';
 
 export const USER_ACCESS_PAGE_SIZE = 20;
 
+// ---------------------------------------------------------------------------
+// ERP role code → legacy profiles.role enum mapping.
+// Must only produce values in user_role_legacy enum:
+//   'super' | 'logistic' | 'procurement' | 'finance' | 'management'
+// Shared with create-user Edge Function (kept in sync manually).
+// ---------------------------------------------------------------------------
+export const ERP_CODE_TO_LEGACY = {
+  super_admin:        'super',
+  ceo:                'management',
+  gm:                 'management',
+  admin:              'management',
+  manager:            'management',
+  hrga:               'management',
+  viewer:             'management',
+  supervisor:         'management',
+  finance_controller: 'finance',
+  finance:            'finance',
+  sales:              'logistic',
+  operations:         'logistic',
+  it:                 'logistic',
+  procurement:        'procurement',
+};
+
+export function erpCodeToLegacy(code) {
+  return ERP_CODE_TO_LEGACY[code] ?? 'management';
+}
+
 export function useUserAccess({ page = 1, search = '' } = {}) {
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
@@ -124,13 +151,21 @@ export async function toggleUserActive(profileId, active) {
 
 // ---------------------------------------------------------------------------
 // createUser — invokes the create-user Edge Function.
-// The Edge Function uses service_role to call auth.admin.createUser(),
-// then updates the profile row with the provided fields.
+// The Edge Function uses service_role to:
+//   - call auth.admin.createUser()
+//   - update the profile row (full_name, company_id, branch_id, dept_id, pos_id, legacy role)
+//   - upsert user_roles (service role bypasses cross-company RLS for super_admin)
 // Returns { data: { id } } on success, { error } on failure.
 // ---------------------------------------------------------------------------
-export async function createUser({ email, password, full_name, role, company_id }) {
+export async function createUser({
+  email, password, full_name, company_id,
+  erp_role_id,
+  branch_id     = null,
+  department_id = null,
+  position_id   = null,
+}) {
   const { data, error } = await supabase.functions.invoke('create-user', {
-    body: { email, password, full_name, role, company_id },
+    body: { email, password, full_name, company_id, erp_role_id, branch_id, department_id, position_id },
   });
 
   if (error) {
@@ -234,10 +269,23 @@ export async function fetchRolesForCompany(companyId) {
 // the error; the user can retry the save or correct the role separately.
 // ---------------------------------------------------------------------------
 export async function saveUserAccess({ profileId, profilePatch, newErpRoleId, companyId }) {
+  // If ERP role changed, resolve its code and derive legacy profiles.role
+  let patchWithRole = { ...profilePatch };
+  if (newErpRoleId) {
+    const { data: roleRow } = await supabase
+      .from('roles')
+      .select('code')
+      .eq('id', newErpRoleId)
+      .single();
+    if (roleRow?.code) {
+      patchWithRole.role = erpCodeToLegacy(roleRow.code);
+    }
+  }
+
   // Step 1: Update the profiles row
   const { error: profileErr } = await supabase
     .from('profiles')
-    .update(profilePatch)
+    .update(patchWithRole)
     .eq('id', profileId);
 
   if (profileErr) return { error: profileErr };

@@ -237,7 +237,7 @@ function ListGroup({ stage, items }) {
 }
 
 /* ========================================================================= */
-export default function PipelineKanbanPage({ showToast }) {
+export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowProspectForm, setEditingProspect }) {
   const { profile } = useAuth();
 
   // ── Existing state — unchanged ─────────────────────────────────────────────
@@ -362,7 +362,11 @@ export default function PipelineKanbanPage({ showToast }) {
       {/* ── Toolbar ── */}
       <div style={S.toolbar}>
         <HoverButton base={S.primary} hover={S.primaryHover}
-          onClick={() => showToast?.('Fitur tambah deal akan segera hadir', 'success')}>
+          onClick={() => {
+            setEditingProspect?.(null);
+            setShowProspectForm?.(true);
+            setActiveMenu?.('crm-prospects');
+          }}>
           <Icon name="plus" size={16} />Tambah Deal
         </HoverButton>
         <HoverButton base={S.drop} hover={S.dropHover}>
