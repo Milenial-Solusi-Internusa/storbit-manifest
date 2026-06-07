@@ -786,10 +786,16 @@ Output:
 | 2.0D | Stok Barang page — product catalog from Supabase, filters, KPI cards, skeleton loading, design from Claude Design handoff | ✅ Complete |
 | 2.0D+ | StokBarangPage real fetch — stock_summary JOIN products + warehouses, group by product_id, qty_semper + qty_others columns | ✅ Complete |
 | 2.0E | Penerimaan Barang page — goods receipt form, Supabase fetch products/vendors/warehouses, saves to stock_ledger, design from Claude Design handoff | ✅ Complete |
+| 2.0E-hotfix | activeMenu persisted to localStorage (`nexus_last_menu`) — survives browser refresh; ProspectFormPage SOURCE options expanded to 10; profiles query fixed to `.eq('active', true)` | ✅ Complete |
 
-Current phase: **Phase 2.0E** ✅ Complete
+Current phase: **Phase 2.0E-hotfix** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
+
+### localStorage keys
+| Key | Value | Written by |
+|-----|-------|------------|
+| `nexus_last_menu` | Last active menu ID (e.g. `dashboard`, `crm-pipeline`) | `App.jsx` useEffect on `activeMenu` change |
 
 ### Production Gate
 

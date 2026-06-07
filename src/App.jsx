@@ -999,8 +999,12 @@ export default function StorbitManifest() {
   } = useSpItems({ customers });
   const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
   const loading = false;
-  const [activeModule, setActiveModule] = useState(null); // null = app launcher
-  const [activeMenu, setActiveMenu] = useState('dashboard');
+  const [activeModule, setActiveModule] = useState(
+    localStorage.getItem('nexus_last_module') || null
+  ); // null = app launcher
+  const [activeMenu, setActiveMenu] = useState(
+    localStorage.getItem('nexus_last_menu') || 'home'
+  );
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
   const [showInputSP,  setShowInputSP]    = useState(false); // Input SP form
@@ -1094,6 +1098,16 @@ export default function StorbitManifest() {
   const [arFilterStatus, setArFilterStatus] = useState('all');
   const [arSearch, setArSearch] = useState('');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+
+  // Persist active menu and module across browser refresh
+  useEffect(() => {
+    localStorage.setItem('nexus_last_menu', activeMenu);
+  }, [activeMenu]);
+  useEffect(() => {
+    if (activeModule) {
+      localStorage.setItem('nexus_last_module', activeModule);
+    }
+  }, [activeModule]);
 
   // Close profile dropdown on Escape
   useEffect(() => {
