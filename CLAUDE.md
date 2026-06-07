@@ -787,8 +787,23 @@ Output:
 | 2.0D+ | StokBarangPage real fetch — stock_summary JOIN products + warehouses, group by product_id, qty_semper + qty_others columns | ✅ Complete |
 | 2.0E | Penerimaan Barang page — goods receipt form, Supabase fetch products/vendors/warehouses, saves to stock_ledger, design from Claude Design handoff | ✅ Complete |
 | 2.0E-hotfix | activeMenu persisted to localStorage (`nexus_last_menu`) — survives browser refresh; ProspectFormPage SOURCE options expanded to 10; profiles query fixed to `.eq('active', true)` | ✅ Complete |
+| 2.0F | DB-driven permission gating — AuthContext fetches `role_permissions` → `hasPermission(module,action)` + `isCrossEntity(module)`; canSeeMenuItem upgraded to use DB permissions with role-array fallback; `module` field added to gated menu items; useAllHrgaRequests accepts `crossEntity` param | ✅ Complete |
+| 2.0F+ | Permission gating fixes — AppLauncher cards filtered by `hasPermission(module,'view')` via `LAUNCHER_MODULE_MAP`; `hasPermission` passed to AppLauncher from App.jsx; AdminShell Sidebar gates Roles (admin/edit) and User Access (admin/view) via `permission` field on nav items | ✅ Complete |
+| 2.0F++ | AppLauncher restricted popup — ganti dari "hide card" ke "show restricted modal"; semua cards tampil; restricted cards: opacity 0.6, cursor not-allowed, lock badge pojok kanan atas; klik restricted → modal "Akses Terbatas" dengan nama modul; fallback true saat permissions loading | ✅ Complete |
+| 2.0F+3 | AuthContext additive — `menuPermissions` state + `fetchMenuPermissions` (fetch `user_menu_permissions` JOIN `menu_actions` JOIN `module_menus`) + `hasMenuPermission(menuKey, action)` exposed di context; super_admin selalu true; tidak mengubah `hasPermission`/`isCrossEntity` | ✅ Complete |
+| 2.0F+5 | Sidebar gating migrasi ke `hasMenuPermission` — `MENU_KEY_MAP` (50+ menu ids → module_menus.key); `canSeeMenuItem` signature tambah `hasMenuPermission` param; priority: hasMenuPermission → hasPermission → item.role → true; `ModuleSidebar` + 3 call sites diupdate | ✅ Complete |
+| 2.0F+4 | AppLauncher migrasi ke `hasMenuPermission` — `canAccess` prioritas `hasMenuPermission(mod,'view')`, fallback `hasPermission`, fallback `true`; `fetchMenuPermissions` query tambah `module_action_id` + `module_actions(modules(key))`; `hasMenuPermission` support module-level check via `module_actions.modules.key` | ✅ Complete |
+| 2.0G | Permission Matrix tab di Edit User modal (UserAccessPage.jsx) — tab switcher Profile/Permissions; PermissionMatrix komponen inline (module rows navy, sub-menu rows white, checkboxes orange, collapsible, select-all per module, fixed action columns); fetch modules+module_menus+user_menu_permissions; diff-based save (DELETE removed, INSERT added); modal melebar ke 960px saat tab Permissions aktif | ✅ Complete |
+| 2.0G-hotfix | fetchMenuPermissions FK hint fix — `module_actions(modules(id, key))` → `module_actions(modules!module_actions_module_id_fkey(id, key))` agar PostgREST resolve FK ambigu ke kolom `module_id` | ✅ Complete |
+| 2.0G-hotfix2 | App.jsx — tambah `allMenuGroups = ERP_MENU_GROUPS` sebelum `visibleMenuGroups`; AppLauncher `moduleGroups` pakai `allMenuGroups` (semua grup, bukan filtered) | ✅ Complete |
+| 2.0H+ | AppLauncher.jsx — GRID_POS update: Foundation melebar ke `gridColumn: '3 / 5'`; Portal & Integration pindah ke row 4 col 1; Reporting & Governance ke row 4 col 2; urutan row 4 sekarang Portal/Reporting/Foundation (wide) | ✅ Complete |
+| 2.0H | AppLauncher.jsx redesign — solid colour cards per group (Logistics #144682, CRM #3B82F6, Procurement #F97316, Inventory #D97706, Finance #059669, HRGA #7C3AED, Workflow #0D9488, Portal #0891B2, Reporting #4F46E5, Foundation #6B7280); unified `ModuleCard` component; white text + icons; hover lift translateY(-4px); restricted overlay rgba(0,0,0,0.28) + LockBadge; Logistics card tall (gridRow 1/3) with ACTIVE badge + stats row; greeting heading MSI Navy; logic/props/LAUNCHER_MODULE_MAP/GRID_POS/canAccess/RestrictedModal unchanged | ✅ Complete |
 
-Current phase: **Phase 2.0E-hotfix** ✅ Complete
+| 2.0H++ | AppLauncher.jsx — GRID_POS fix: Foundation `gridColumn` diubah dari `'3 / 5'` ke `'2 / 4'` (span col 2–3 di row 4) | ✅ Complete |
+
+| 2.0H+3 | AppLauncher.jsx — GRID_POS reset ke layout final 3-kolom: Portal col 1, Reporting col 2, Foundation col 3 di row 4 (tidak ada span); `...pos` spread sudah ada di ModuleCard style, tidak perlu tambahan | ✅ Complete |
+
+Current phase: **Phase 2.0H+3** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

@@ -1,7 +1,7 @@
 // src/contexts/AuthContext.jsx
 // Global auth state — wrap App di main.jsx, akses via useAuth() di mana aja.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { AuthContext } from './authCtx';
 
@@ -46,11 +46,13 @@ async function fetchProfileById(userId) {
 }
 
 export function AuthProvider({ children }) {
-  const [session,   setSession]   = useState(null);
-  const [profile,   setProfile]   = useState(null);
-  const [erpRoles,  setErpRoles]  = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [authError, setAuthError] = useState(null);
+  const [session,          setSession]          = useState(null);
+  const [profile,          setProfile]          = useState(null);
+  const [erpRoles,         setErpRoles]         = useState([]);
+  const [loading,          setLoading]          = useState(true);
+  const [authError,        setAuthError]        = useState(null);
+  const [userPermissions,  setUserPermissions]  = useState([]); // role_permissions rows for primary ERP role
+  const [menuPermissions,  setMenuPermissions]  = useState([]); // user_menu_permissions rows for this user
 
   useEffect(() => {
     let mounted = true;
@@ -143,6 +145,24 @@ export function AuthProvider({ children }) {
     }
   };
 
+  // ── Fetch permissions for the primary ERP role ─────────────────────────────
+  const fetchPermissionsForRoleId = useCallback(async (roleId) => {
+    if (!roleId) { setUserPermissions([]); return; }
+    const { data } = await supabase
+      .from('role_permissions')
+      .select('id, is_cross_entity, permissions(id, module, action)')
+      .eq('role_id', roleId)
+      .limit(1000);
+    setUserPermissions(data || []);
+  }, []);
+
+  // Re-fetch permissions whenever erpRoles changes (login / role change)
+  useEffect(() => {
+    const primary = pickPrimaryErpRole(erpRoles);
+    const roleId  = primary?.role_id;
+    fetchPermissionsForRoleId(roleId);
+  }, [erpRoles, fetchPermissionsForRoleId]);
+
   // Manual refresh (kalau ada admin update profile dari panel lain)
   const refreshProfile = async () => {
     if (!session?.user) return;
@@ -151,10 +171,67 @@ export function AuthProvider({ children }) {
     setErpRoles(roles || []);
   };
 
+  const refreshPermissions = useCallback(() => {
+    const primary = pickPrimaryErpRole(erpRoles);
+    fetchPermissionsForRoleId(primary?.role_id);
+  }, [erpRoles, fetchPermissionsForRoleId]);
+
   // Derive primary ERP role code; fall back to legacy profiles.role for users
   // not yet migrated to user_roles.
   const primaryErpRole = pickPrimaryErpRole(erpRoles);
   const erpRoleCode    = primaryErpRole?.roles?.code || profile?.role || null;
+
+  // hasPermission — returns true if user has the given module+action in their role_permissions.
+  // super_admin always returns true.
+  const hasPermission = useCallback((module, action) => {
+    if (erpRoleCode === 'super_admin' || profile?.role === 'super') return true;
+    return userPermissions.some(p =>
+      p.permissions?.module === module &&
+      p.permissions?.action === action
+    );
+  }, [userPermissions, erpRoleCode, profile?.role]);
+
+  // ── Fetch per-user menu permissions ───────────────────────────────────────
+  const fetchMenuPermissions = useCallback(async (userId) => {
+    if (!userId) { setMenuPermissions([]); return; }
+    const { data } = await supabase
+      .from('user_menu_permissions')
+      .select('id, is_cross_entity, module_action_id, menu_actions(id, action, menu_id, module_menus(id, key)), module_actions(id, action, module_id, modules!module_actions_module_id_fkey(id, key))')
+      .eq('user_id', userId)
+      .limit(1000);
+    setMenuPermissions(data || []);
+  }, []);
+
+  useEffect(() => {
+    if (session?.user?.id) fetchMenuPermissions(session.user.id);
+    else setMenuPermissions([]);
+  }, [session, fetchMenuPermissions]);
+
+  // hasMenuPermission — check per-user menu permission via user_menu_permissions table.
+  // Supports both menu-level (module_menus.key) and module-level (modules.key) checks.
+  // super_admin always returns true.
+  const hasMenuPermission = useCallback((menuKey, action) => {
+    if (erpRoleCode === 'super_admin' || profile?.role === 'super') return true;
+    return menuPermissions.some(p => {
+      // menu-level check
+      if (p.menu_actions?.module_menus?.key === menuKey &&
+          p.menu_actions?.action === action) return true;
+      // module-level check
+      if (p.module_actions?.modules?.key === menuKey &&
+          p.module_actions?.action === action) return true;
+      return false;
+    });
+  }, [menuPermissions, erpRoleCode, profile?.role]);
+
+  // isCrossEntity — returns true if the role has cross-entity access for this module.
+  // super_admin always returns true.
+  const isCrossEntity = useCallback((module) => {
+    if (erpRoleCode === 'super_admin' || profile?.role === 'super') return true;
+    return userPermissions.some(p =>
+      p.permissions?.module === module &&
+      p.is_cross_entity === true
+    );
+  }, [userPermissions, erpRoleCode, profile?.role]);
 
   const value = {
     session,
@@ -169,6 +246,14 @@ export function AuthProvider({ children }) {
     // role: backward-compat alias for erpRole — used throughout App.jsx
     role: erpRoleCode,
     user: session?.user || null,
+    // Permission helpers
+    userPermissions,
+    hasPermission,
+    isCrossEntity,
+    refreshPermissions,
+    // Per-user menu permission helpers
+    menuPermissions,
+    hasMenuPermission,
     signIn,
     signOut,
     refreshProfile,

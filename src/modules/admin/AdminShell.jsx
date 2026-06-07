@@ -5,6 +5,7 @@
 // Phase 1.0J: CRUD on Branches, Departments, Positions; Add User via Edge Function.
 
 import { useState } from 'react';
+import { useAuth } from '../../contexts/useAuth';
 import {
   Building2, MapPin, Network, Briefcase,
   ShieldCheck, Users,
@@ -53,8 +54,8 @@ const NAV_SECTIONS = [
   {
     label: 'Access Control',
     items: [
-      { id: 'roles',       label: 'Roles',       icon: ShieldCheck },
-      { id: 'user-access', label: 'User Access', icon: Users       },
+      { id: 'roles',       label: 'Roles',       icon: ShieldCheck, permission: { module: 'admin', action: 'edit' } },
+      { id: 'user-access', label: 'User Access', icon: Users,       permission: { module: 'admin', action: 'view' } },
     ],
   },
   {
@@ -72,7 +73,7 @@ const NAV_SECTIONS = [
 // Sidebar
 // ─────────────────────────────────────────────────────────────
 
-function Sidebar({ active, onSelect }) {
+function Sidebar({ active, onSelect, hasPermission }) {
   return (
     <aside
       className="flex-shrink-0 flex flex-col"
@@ -113,7 +114,11 @@ function Sidebar({ active, onSelect }) {
           </div>
 
           {/* Items */}
-          {section.items.map((item) => {
+          {section.items.filter(item => {
+            if (!item.permission) return true;
+            if (typeof hasPermission !== 'function') return true;
+            return hasPermission(item.permission.module, item.permission.action);
+          }).map((item) => {
             const isActive = active === item.id;
             const Icon = item.icon;
             return (
@@ -174,10 +179,11 @@ const PAGE_MAP = {
 
 export default function AdminShell() {
   const [activeTab, setActiveTab] = useState('companies');
+  const { hasPermission } = useAuth();
 
   return (
     <div className="flex gap-5 items-start">
-      <Sidebar active={activeTab} onSelect={setActiveTab} />
+      <Sidebar active={activeTab} onSelect={setActiveTab} hasPermission={hasPermission} />
       <div className="flex-1 min-w-0">
         {PAGE_MAP[activeTab] ?? null}
       </div>

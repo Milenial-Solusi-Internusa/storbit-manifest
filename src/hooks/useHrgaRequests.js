@@ -463,8 +463,10 @@ export function useHrgaRequestDetail(requestId) {
 // useAllHrgaRequests
 // Paginated list of ALL requests in the user's company.
 // For HRGA admin / super admin view — read-only.
+// crossEntity: when true (super_admin with is_cross_entity on hrga module),
+// company_id filter is removed so RLS-bypass via is_super_admin() returns all companies.
 // ─────────────────────────────────────────────────────────────
-export function useAllHrgaRequests({ page = 1, search = '' } = {}) {
+export function useAllHrgaRequests({ page = 1, search = '', crossEntity = false } = {}) {
   const [data, setData]       = useState([]);
   const [total, setTotal]     = useState(0);
   const [loading, setLoading] = useState(true);
@@ -528,7 +530,7 @@ export function useAllHrgaRequests({ page = 1, search = '' } = {}) {
     });
 
     return () => { cancelled = true; };
-  }, [page, search, refreshKey]);
+  }, [page, search, refreshKey, crossEntity]);
 
   const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
   return { data, total, loading, error, refresh };
