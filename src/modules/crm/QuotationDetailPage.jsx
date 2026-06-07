@@ -187,26 +187,67 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
       const canvas = await html2canvas(element, {
         scale:           2,
         useCORS:         true,
-        backgroundColor: '#ffffff',
         logging:         false,
+        backgroundColor: '#ffffff',
       });
-      const imgData   = canvas.toDataURL('image/png');
-      const pdf       = new jsPDF('p', 'mm', 'a4');
-      const pageWidth  = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth   = pageWidth;
-      const imgHeight  = (canvas.height * pageWidth) / canvas.width;
-      let heightLeft   = imgHeight;
-      let position     = 0;
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      const pdf           = new jsPDF('p', 'mm', 'a4');
+      const pageWidth     = pdf.internal.pageSize.getWidth();
+      const pageHeight    = pdf.internal.pageSize.getHeight();
+      const margin        = 8;
+      const contentWidth  = pageWidth - margin * 2;
+      const contentHeight = pageHeight - margin * 2;
 
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+      // canvas rendered at scale:2 — logical px = canvas.px / 2
+      const scale         = contentWidth / (canvas.width / 2);
+      const totalHeightMm = (canvas.height / 2) * scale;
+
+      // Collect no-break element positions in mm
+      const noBreakPositions = [];
+      element.querySelectorAll('.pdf-no-break, tr').forEach(el => {
+        const rect    = el.getBoundingClientRect();
+        const elRect  = element.getBoundingClientRect();
+        const topMm    = ((rect.top    - elRect.top) / (canvas.height / 2)) * totalHeightMm;
+        const bottomMm = ((rect.bottom - elRect.top) / (canvas.height / 2)) * totalHeightMm;
+        noBreakPositions.push({ top: topMm, bottom: bottomMm });
+      });
+
+      // Build page breaks — shift up when a break would split a no-break element
+      const pageBreaks   = [0];
+      let currentPageEnd = contentHeight;
+      while (currentPageEnd < totalHeightMm) {
+        let adjustedBreak = currentPageEnd;
+        for (const pos of noBreakPositions) {
+          if (pos.top < currentPageEnd && pos.bottom > currentPageEnd) {
+            adjustedBreak = Math.min(adjustedBreak, pos.top - 2);
+          }
+        }
+        pageBreaks.push(adjustedBreak);
+        currentPageEnd = adjustedBreak + contentHeight;
+      }
+      pageBreaks.push(totalHeightMm);
+
+      // Render each page slice
+      for (let i = 0; i < pageBreaks.length - 1; i++) {
+        const startMm  = pageBreaks[i];
+        const endMm    = pageBreaks[i + 1];
+        const heightMm = endMm - startMm;
+
+        const startPx  = (startMm  / totalHeightMm) * canvas.height;
+        const heightPx = (heightMm / totalHeightMm) * canvas.height;
+
+        const pageCanvas  = document.createElement('canvas');
+        pageCanvas.width  = canvas.width;
+        pageCanvas.height = Math.ceil(heightPx);
+        const ctx         = pageCanvas.getContext('2d');
+        ctx.fillStyle     = '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(canvas, 0, startPx, canvas.width, heightPx,
+                              0, 0,       canvas.width, heightPx);
+
+        if (i > 0) pdf.addPage();
+        pdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.95),
+                     'JPEG', margin, margin, contentWidth, heightMm);
       }
 
       const revision = quot?.revision ?? 1;
@@ -437,7 +478,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           id="quotation-print-area"
           style={{
             position: 'absolute', left: '-9999px', top: 0,
-            background: '#ffffff', padding: '32px',
+            background: '#ffffff', padding: '32px', paddingBottom: '64px',
             width: '794px', fontFamily: 'Arial, sans-serif', color: '#1a1a1a',
           }}
         >
@@ -558,7 +599,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           ))}
 
           {/* Grand summary */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+          <div className="pdf-no-break" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
             <table style={{ fontSize: '12px', minWidth: '280px', borderCollapse: 'collapse' }}>
               <tbody>
                 <tr>
@@ -589,14 +630,14 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
 
           {/* Above rates / Terms (field terms dari quotations) */}
           {quot.terms && (
-            <div style={{ marginTop: '20px', fontSize: '10.5px', color: '#333' }}>
+            <div className="pdf-no-break" style={{ marginTop: '20px', fontSize: '10.5px', color: '#333' }}>
               <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>• Above rates :</div>
               <div style={{ whiteSpace: 'pre-line', paddingLeft: '12px', lineHeight: '1.6' }}>{quot.terms}</div>
             </div>
           )}
 
           {/* Best Regards + Approval Customer — side by side */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '28px', fontSize: '11px' }}>
+          <div className="pdf-no-break" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '28px', fontSize: '11px' }}>
             {/* Kiri — Best Regards */}
             <div>
               <div style={{ fontWeight: 'bold' }}>Best Regards,</div>
@@ -616,10 +657,10 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           </div>
 
           {/* Divider orange-navy */}
-          <div style={{ marginTop: '32px', height: '3px', background: 'linear-gradient(to right, #E85A1E 8%, #144682 8%)' }} />
+          <div className="pdf-no-break" style={{ marginTop: '32px', height: '3px', background: 'linear-gradient(to right, #E85A1E 8%, #144682 8%)' }} />
 
           {/* Footer navy */}
-          <div style={{
+          <div className="pdf-no-break" style={{
             marginTop: '0px',
             background: '#144682',
             color: 'white',
