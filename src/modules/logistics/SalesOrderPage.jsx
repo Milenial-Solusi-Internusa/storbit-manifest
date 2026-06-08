@@ -1,12 +1,13 @@
 // src/modules/logistics/SalesOrderPage.jsx
 // Design source: nexus-by-msi/project/sales-order.html + storbit.css
-// Real data: groupedSP from App.jsx (groupBySP + calcRow over sp_items)
+// Real data: groupedSP from App.jsx (groupBySP + calcItem over sp_items)
 //
 // NOTE — Konfirmasi / Tolak / Manifest mutations currently show toast feedback
 // only. Persisting status requires a schema migration to add sp_items.status
 // (or a new sp_orders header table). Add TODO migration before Phase 2.0B.
 
 import { useState, useMemo, useCallback } from 'react';
+import { calcItem } from '../../lib/spCalc'; // eslint-disable-line no-unused-vars
 import {
   Search, Download, Plus, Check, X, Truck, ChevronRight,
   AlertTriangle, Clock, Receipt, Eye,

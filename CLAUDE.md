@@ -805,7 +805,9 @@ Output:
 
 | 2.0I | SalesOrderDetailPage — rename deadline→expired_date, deliveredDate→arrival_date (draft state + form labels); firstDeadline reads expired_date; BTB remarks: btbRemarks state, remarks input alongside BTB input, remarks shown per BTB row; db.js: spFromDb adds expired_date/arrival_date aliases, spToDb reads new field names with fallback, listSpBtbs+addSpBtb updated for remarks column | ✅ Complete |
 
-Current phase: **Phase 2.0I** ✅ Complete
+| 2.0J | `src/lib/spCalc.js` dibuat sebagai single source of truth kalkulasi SP — `calcItem` + lightweight `groupBySP`; App.jsx: `calcRow` dihapus, import `calcItem`, `enrichedRows` + `groupBySP` pakai `calcItem`, `r.total` → `r.subtotal` di analytics; SalesOrderDetailPage: import `calcItem`, summary SP + `itemGrand` pakai `calcItem`; SalesOrderPage: import `calcItem`; Formula resmi: subtotal=unitPrice×qty, ppn=round(subtotal×0.11) (shipping tidak kena PPN), grandTotal=subtotal+ppn+shippingPrice | ✅ Complete |
+
+Current phase: **Phase 2.0J** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

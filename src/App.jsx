@@ -18,6 +18,7 @@ import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
 import CustomFieldsSection from './components/CustomFieldsSection';
+import { calcItem } from './lib/spCalc';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
@@ -115,34 +116,12 @@ const monthLabelShort = (key) => {
   return date.toLocaleDateString('id-ID', { month: 'short' });
 };
 
-const calcRow = (row) => {
-  const qty = Number(row.qty) || 0;
-  const shippedQty = Number(row.shippedQty) || 0;
-  const unitPrice = Number(row.unitPrice) || 0;
-  const shippingPrice = Number(row.shippingPrice) || 0;
-
-  const outstandingQty = qty - shippedQty;
-  const total = unitPrice * qty + shippingPrice;
-  const ppn = Math.round(total * 0.11);
-  const grandTotal = total + ppn;
-
-  let status = 'Open';
-  if (outstandingQty === 0 && qty > 0) status = 'Closed';
-  else if (shippedQty > 0 && outstandingQty > 0) status = 'Partial';
-
-  const today = new Date();
-  let isOverdue = false;
-  if (row.deadline && status !== 'Closed') {
-    const dl = new Date(row.deadline);
-    if (!isNaN(dl.getTime()) && dl < today) isOverdue = true;
-  }
-
-  return { outstandingQty, total, ppn, grandTotal, status, isOverdue };
-};
+// calcRow removed — use calcItem from lib/spCalc instead.
+// `total` alias kept on enrichedRows for CSV export backward compat (= subtotal, no shipping).
 
 // Group items by SP No → returns 1 SP summary per row
 const groupBySP = (rows) => {
-  const enriched = rows.map(r => ({ ...r, ...calcRow(r) }));
+  const enriched = rows.map(r => { const c = calcItem(r); return { ...r, ...c, total: c.subtotal }; });
   const groups = {};
   enriched.forEach(r => {
     if (!groups[r.spNo]) {
@@ -164,7 +143,7 @@ const groupBySP = (rows) => {
     g.totalQty += r.qty;
     g.totalShipped += r.shippedQty;
     g.totalOutstanding += r.outstandingQty;
-    g.totalAmount += r.total;
+    g.totalAmount += r.subtotal;
     g.totalPPN += r.ppn;
     g.grandTotal += r.grandTotal;
     if (r.inv) g.invDone++;
@@ -1209,7 +1188,7 @@ export default function StorbitManifest() {
   // Derived
   // ============================
   const enrichedRows = useMemo(() =>
-    rows.map(r => ({ ...r, ...calcRow(r) }))
+    rows.map(r => { const c = calcItem(r); return { ...r, ...c, total: c.subtotal }; })
   , [rows]);
 
   const groupedSP = useMemo(() => groupBySP(rows), [rows]);
@@ -1277,7 +1256,7 @@ export default function StorbitManifest() {
       : enrichedRows.filter(r => monthYearKey(r.spDate) === filterMonth);
 
     const outstandingQty = targetRows.reduce((s, r) => s + r.outstandingQty, 0);
-    const totalTrx = targetRows.reduce((s, r) => s + r.total, 0);
+    const totalTrx = targetRows.reduce((s, r) => s + r.subtotal, 0);
     const totalPPN = targetRows.reduce((s, r) => s + r.ppn, 0);
     const grandTotal = targetRows.reduce((s, r) => s + r.grandTotal, 0);
 
@@ -1307,7 +1286,7 @@ export default function StorbitManifest() {
       const k = monthYearKey(r.spDate);
       if (!k) return;
       if (!monthly[k]) monthly[k] = { month: k, transaksi: 0, ppn: 0, grandTotal: 0, count: 0 };
-      monthly[k].transaksi += r.total;
+      monthly[k].transaksi += r.subtotal;
       monthly[k].ppn += r.ppn;
       monthly[k].grandTotal += r.grandTotal;
     });
@@ -3136,7 +3115,7 @@ function FormModal({ initial, customers = [], onClose, onSave }) {
     submitDate: '', emailStatus: '', notes: ''
   });
 
-  const calc = calcRow(data);
+  const calc = calcItem(data);
   const update = (field, val) => setData({ ...data, [field]: val });
 
   // When picking customer, auto-fill DC if customer has a default
@@ -3217,7 +3196,7 @@ function FormModal({ initial, customers = [], onClose, onSave }) {
             <Input label="Shipping Price (Rp)" type="number" value={data.shippingPrice} onChange={v=>update('shippingPrice', Number(v))}/>
           </div>
           <div className="mt-3 p-4 rounded-2xl space-y-1.5" style={{ background: PASTEL.lineSoft }}>
-            <CalcRow label="Total = (Unit Price × QTY) + Shipping" value={calc.total}/>
+            <CalcRow label="Subtotal = Unit Price × QTY" value={calc.subtotal}/>
             <CalcRow label="PPN (11%)" value={calc.ppn}/>
             <CalcRow label="Grand Total" value={calc.grandTotal} highlight/>
             <div className="pt-2 mt-2 border-t flex items-center justify-between text-xs" style={{ borderColor: PASTEL.line }}>
