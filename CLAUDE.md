@@ -803,7 +803,9 @@ Output:
 
 | 2.0H+3 | AppLauncher.jsx — GRID_POS reset ke layout final 3-kolom: Portal col 1, Reporting col 2, Foundation col 3 di row 4 (tidak ada span); `...pos` spread sudah ada di ModuleCard style, tidak perlu tambahan | ✅ Complete |
 
-Current phase: **Phase 2.0H+3** ✅ Complete
+| 2.0I | SalesOrderDetailPage — rename deadline→expired_date, deliveredDate→arrival_date (draft state + form labels); firstDeadline reads expired_date; BTB remarks: btbRemarks state, remarks input alongside BTB input, remarks shown per BTB row; db.js: spFromDb adds expired_date/arrival_date aliases, spToDb reads new field names with fallback, listSpBtbs+addSpBtb updated for remarks column | ✅ Complete |
+
+Current phase: **Phase 2.0I** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
