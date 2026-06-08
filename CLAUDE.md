@@ -809,7 +809,9 @@ Output:
 
 | 2.0K | InputSPPage.jsx: `deadline`→`expired_date` (freshItem, header state, validation, save payload, deps, form label+binding, per-item label+binding); BTB rows: `['']`→`[{btb_no:'',remarks:''}]`, render tambah input remarks per row, counter pakai `r.btb_no?.trim()`, add button pakai object; db.js `bulkInsertSpBtbs`: accept `btbRows` array of string or `{btb_no,remarks}`, forward remarks ke insert | ✅ Complete |
 
-Current phase: **Phase 2.0K** ✅ Complete
+| 2.0L | db.js: `spFromDb` baca `row.expired_date` (bukan `row.deadline`), backward compat alias tetap; App.jsx: `groupBySP` emit `expired_date`+`deadline` alias, `FormModal` state+label+binding→`expired_date`, CSV header+export→`expired_date`, import CSV→`expired_date`, SP list kolom header+cell+sort→`expired_date`, SP side panel label→`Expired Date`; SalesOrderPage: kolom header+cell+sort→`expired_date` | ✅ Complete |
+
+Current phase: **Phase 2.0L** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

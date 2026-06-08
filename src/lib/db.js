@@ -24,8 +24,8 @@ export function spFromDb(row) {
     qty: row.qty ?? 0,
     shippedQty: row.shipped_qty ?? 0,
     expDate: row.exp_date || '',
-    deadline: row.deadline || '',
-    expired_date: row.deadline || '',
+    expired_date: row.expired_date || '',
+    deadline: row.expired_date || '', // backward compat alias
     dc: row.dc || '',
     shippingDate: row.shipping_date || '',
     slaDays: row.sla_days ?? '',
