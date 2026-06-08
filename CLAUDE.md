@@ -807,7 +807,9 @@ Output:
 
 | 2.0J | `src/lib/spCalc.js` dibuat sebagai single source of truth kalkulasi SP — `calcItem` + lightweight `groupBySP`; App.jsx: `calcRow` dihapus, import `calcItem`, `enrichedRows` + `groupBySP` pakai `calcItem`, `r.total` → `r.subtotal` di analytics; SalesOrderDetailPage: import `calcItem`, summary SP + `itemGrand` pakai `calcItem`; SalesOrderPage: import `calcItem`; Formula resmi: subtotal=unitPrice×qty, ppn=round(subtotal×0.11) (shipping tidak kena PPN), grandTotal=subtotal+ppn+shippingPrice | ✅ Complete |
 
-Current phase: **Phase 2.0J** ✅ Complete
+| 2.0K | InputSPPage.jsx: `deadline`→`expired_date` (freshItem, header state, validation, save payload, deps, form label+binding, per-item label+binding); BTB rows: `['']`→`[{btb_no:'',remarks:''}]`, render tambah input remarks per row, counter pakai `r.btb_no?.trim()`, add button pakai object; db.js `bulkInsertSpBtbs`: accept `btbRows` array of string or `{btb_no,remarks}`, forward remarks ke insert | ✅ Complete |
+
+Current phase: **Phase 2.0K** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
