@@ -25,11 +25,13 @@ export function spFromDb(row) {
     shippedQty: row.shipped_qty ?? 0,
     expDate: row.exp_date || '',
     deadline: row.deadline || '',
+    expired_date: row.deadline || '',
     dc: row.dc || '',
     shippingDate: row.shipping_date || '',
     slaDays: row.sla_days ?? '',
     estimatedDeliveryDate: row.estimated_delivery_date || '',
     deliveredDate: row.delivered_date || '',
+    arrival_date: row.delivered_date || '',
     btbNo: '',  // btb_no moved to sp_btbs table (btb_no_deprecated in sp_items)
     unitPrice: Number(row.unit_price ?? 0),
     shippingPrice: Number(row.shipping_price ?? 0),
@@ -58,12 +60,12 @@ export function spToDb(item) {
     qty: Number(item.qty) || 0,
     shipped_qty: Number(item.shippedQty) || 0,
     exp_date: d(item.expDate),
-    deadline: d(item.deadline),
+    deadline: d(item.expired_date ?? item.deadline),
     dc: item.dc || '',
     shipping_date: d(item.shippingDate),
     sla_days: item.slaDays === '' || item.slaDays == null ? null : Number(item.slaDays),
     estimated_delivery_date: d(item.estimatedDeliveryDate),
-    delivered_date: d(item.deliveredDate),
+    delivered_date: d(item.arrival_date ?? item.deliveredDate),
     // btb_no removed — column renamed to btb_no_deprecated in sp_items; use sp_btbs table
     unit_price: Number(item.unitPrice) || 0,
     shipping_price: Number(item.shippingPrice) || 0,
@@ -425,24 +427,26 @@ export async function getMyProfile() {
 }
 
 // ─── sp_btbs — BTB Numbers per SP ────────────────────────────────────────
-// Table: id, sp_no, btb_no, created_at
+// Table: id, sp_no, btb_no, remarks, created_at
 // BTB No is now SP-level (not item-level). btb_no in sp_items is deprecated.
 
 /** Fetch all BTB numbers for a given SP */
 export async function listSpBtbs(spNo) {
   const { data, error } = await supabase
     .from('sp_btbs')
-    .select('id, sp_no, btb_no, created_at')
+    .select('id, sp_no, btb_no, remarks, created_at')
     .eq('sp_no', spNo)
     .order('created_at', { ascending: true });
   return { data: data || [], error };
 }
 
-/** Add a BTB number to an SP */
-export async function addSpBtb(spNo, btbNo) {
+/** Add a BTB number (with optional remarks) to an SP */
+export async function addSpBtb(spNo, btbNo, remarks) {
+  const row = { sp_no: spNo, btb_no: btbNo.trim() };
+  if (remarks && remarks.trim()) row.remarks = remarks.trim();
   const { data, error } = await supabase
     .from('sp_btbs')
-    .insert({ sp_no: spNo, btb_no: btbNo.trim() })
+    .insert(row)
     .select()
     .single();
   return { data, error };

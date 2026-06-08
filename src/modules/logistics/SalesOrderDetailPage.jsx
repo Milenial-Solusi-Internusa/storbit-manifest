@@ -202,11 +202,11 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
     qty:          item.qty         ?? 0,
     shippedQty:   item.shippedQty  ?? 0,
     expDate:      item.expDate     || '',
-    deadline:     item.deadline    || '',
+    expired_date: item.expired_date || '',
     shippingDate:           item.shippingDate          || '',
     slaDays:                item.slaDays               ?? '',
     estimatedDeliveryDate:  item.estimatedDeliveryDate || '',
-    deliveredDate:          item.deliveredDate         || '',
+    arrival_date:           item.arrival_date           || '',
     unitPrice:              item.unitPrice             ?? 0,
     shippingPrice:item.shippingPrice?? 0,
     inv:          !!item.inv,
@@ -329,8 +329,8 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
             <ModalField label="Exp Date">
               <ModalInp type="date" value={draft.expDate} onChange={e => set('expDate', e.target.value)}/>
             </ModalField>
-            <ModalField label="Deadline" req>
-              <ModalInp type="date" value={draft.deadline} onChange={e => set('deadline', e.target.value)}/>
+            <ModalField label="Expired Date" req>
+              <ModalInp type="date" value={draft.expired_date} onChange={e => set('expired_date', e.target.value)}/>
             </ModalField>
             <ModalField label="Shipping Date">
               <ModalInp type="date" value={draft.shippingDate} onChange={e => set('shippingDate', e.target.value)}/>
@@ -343,8 +343,8 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
             <ModalField label="Estimated Delivery">
               <ModalInp type="date" value={draft.estimatedDeliveryDate} onChange={e => set('estimatedDeliveryDate', e.target.value)}/>
             </ModalField>
-            <ModalField label="Delivered Date">
-              <ModalInp type="date" value={draft.deliveredDate} onChange={e => set('deliveredDate', e.target.value)}/>
+            <ModalField label="Arrival Date">
+              <ModalInp type="date" value={draft.arrival_date} onChange={e => set('arrival_date', e.target.value)}/>
             </ModalField>
           </ModalGrid>
 
@@ -579,6 +579,7 @@ export default function SalesOrderDetailPage({
   // ── BTB Numbers (SP-level) ───────────────────────────────────────────────
   const [btbs,         setBtbs]         = useState([]);
   const [btbInput,     setBtbInput]     = useState('');
+  const [btbRemarks,   setBtbRemarks]   = useState('');
   const [btbSaving,    setBtbSaving]    = useState(false);
 
   useEffect(() => {
@@ -589,11 +590,12 @@ export default function SalesOrderDetailPage({
   const handleAddBtb = async () => {
     if (!btbInput.trim()) return;
     setBtbSaving(true);
-    const { data, error } = await addSpBtb(spNo, btbInput);
+    const { data, error } = await addSpBtb(spNo, btbInput, btbRemarks);
     setBtbSaving(false);
     if (error) { showToast?.('Gagal tambah BTB: ' + error.message, 'error'); return; }
     setBtbs(prev => [...prev, data]);
     setBtbInput('');
+    setBtbRemarks('');
   };
 
   const handleDeleteBtb = async (id) => {
@@ -627,7 +629,7 @@ export default function SalesOrderDetailPage({
   const outstandQty = totalQty - shippedQty;
 
   // ── Deadline display ───────────────────────────────────────────────────
-  const firstDeadline = items.find(i => i.deadline)?.deadline || null;
+  const firstDeadline = items.find(i => i.expired_date)?.expired_date || null;
   const days = daysUntil(firstDeadline);
   const deadlineSub = days == null ? '—' : days < 0 ? `${Math.abs(days)} hari lalu · overdue` : days === 0 ? 'Hari ini · urgent' : `${days} hari lagi · on track`;
 
@@ -757,7 +759,7 @@ export default function SalesOrderDetailPage({
         {/* Deadline — yellow */}
         <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBd}`, borderRadius: 12, padding: '16px 18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.yellow, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>Deadline</span>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.yellow, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>Expired Date</span>
             <span style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.55)', color: C.yellow, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Clock size={17} strokeWidth={1.8}/>
             </span>
@@ -895,18 +897,21 @@ export default function SalesOrderDetailPage({
               <div style={{ padding: '14px 18px' }}>
                 {/* Existing BTBs */}
                 {btbs.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
                     {btbs.map(b => (
-                      <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, padding: '4px 10px', borderRadius: 20, background: C.surface2, color: C.ink, border: `1px solid ${C.line}` }}>
-                        {b.btb_no}
+                      <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.line}` }}>
+                        <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, fontWeight: 600, color: C.ink, minWidth: 120 }}>{b.btb_no}</span>
+                        {b.remarks && (
+                          <span style={{ fontSize: 12, color: C.inkFaint, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.remarks}</span>
+                        )}
                         <button
                           onClick={() => handleDeleteBtb(b.id)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.danger, padding: 0, display: 'flex', alignItems: 'center', lineHeight: 1 }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.danger, padding: 0, display: 'flex', alignItems: 'center', lineHeight: 1, flexShrink: 0 }}
                           title="Hapus BTB"
                         >
-                          <X size={12}/>
+                          <X size={13}/>
                         </button>
-                      </span>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -914,21 +919,30 @@ export default function SalesOrderDetailPage({
                   <p style={{ fontSize: 13, color: C.inkFaint, marginBottom: 14 }}>Belum ada nomor BTB untuk SP ini.</p>
                 )}
                 {/* Add BTB input */}
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    value={btbInput}
-                    onChange={e => setBtbInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleAddBtb(); }}
-                    placeholder="Masukkan nomor BTB…"
-                    style={{ flex: 1, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 11px', fontSize: 13, fontFamily: "'IBM Plex Mono',monospace", outline: 'none', boxSizing: 'border-box' }}
-                  />
-                  <button
-                    onClick={handleAddBtb}
-                    disabled={!btbInput.trim() || btbSaving}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 36, borderRadius: 8, border: 'none', background: btbInput.trim() ? C.accent : C.lineSoft, color: btbInput.trim() ? '#fff' : C.inkFaint, fontSize: 13, fontWeight: 600, cursor: btbInput.trim() ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', fontFamily: 'inherit' }}
-                  >
-                    <Plus size={13}/> {btbSaving ? 'Menyimpan…' : 'Tambah BTB'}
-                  </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      value={btbInput}
+                      onChange={e => setBtbInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleAddBtb(); }}
+                      placeholder="Nomor BTB…"
+                      style={{ width: 180, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 11px', fontSize: 13, fontFamily: "'IBM Plex Mono',monospace", outline: 'none', boxSizing: 'border-box', flexShrink: 0 }}
+                    />
+                    <input
+                      value={btbRemarks}
+                      onChange={e => setBtbRemarks(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleAddBtb(); }}
+                      placeholder="Remarks (opsional)…"
+                      style={{ flex: 1, height: 36, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, padding: '0 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                    <button
+                      onClick={handleAddBtb}
+                      disabled={!btbInput.trim() || btbSaving}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 36, borderRadius: 8, border: 'none', background: btbInput.trim() ? C.accent : C.lineSoft, color: btbInput.trim() ? '#fff' : C.inkFaint, fontSize: 13, fontWeight: 600, cursor: btbInput.trim() ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', fontFamily: 'inherit', flexShrink: 0 }}
+                    >
+                      <Plus size={13}/> {btbSaving ? 'Menyimpan…' : 'Tambah BTB'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1018,7 +1032,7 @@ export default function SalesOrderDetailPage({
                       >
                         <Wallet size={13}/> Finance
                       </button>
-                      {(role === 'super' || role === 'operations' || role === 'logistic') && (
+                      {(role === 'super_admin' || role === 'super' || role === 'operations' || role === 'logistic' || role === 'manager' || role === 'gm') && (
                         <button
                           onClick={() => setEditingItem(item)}
                           title="Edit item"
@@ -1027,7 +1041,7 @@ export default function SalesOrderDetailPage({
                           <Pencil size={15}/>
                         </button>
                       )}
-                      {(role === 'super') && (
+                      {(role === 'super_admin' || role === 'super') && (
                         <button
                           onClick={() => handleDeleteItem(item.id)}
                           title="Hapus item"
