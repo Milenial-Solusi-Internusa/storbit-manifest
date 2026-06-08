@@ -68,7 +68,7 @@ const freshItem = () => ({
   unitPrice: 0,
   shippingPrice: 0,
   expDate: '',
-  deadline: '',
+  expired_date: '',
 });
 
 // ─── Shared input style ───────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
   const [spDate,     setSpDate]     = useState(today());
   const [customerId, setCustomerId] = useState('');
   const [dc,         setDc]         = useState('');
-  const [deadline,   setDeadline]   = useState('');
+  const [expiredDate, setExpiredDate] = useState('');
   const [notes,      setNotes]      = useState('');
 
   // Items
@@ -141,7 +141,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
   const [saving,  setSaving]  = useState(false);
 
   // BTB Numbers (SP-level)
-  const [btbRows, setBtbRows] = useState(['']);
+  const [btbRows, setBtbRows] = useState([{ btb_no: '', remarks: '' }]);
 
   const allDcs = useMemo(
     () => [...new Set([...DEFAULT_DCS, ...dcList])].sort(),
@@ -163,7 +163,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
   }, [items]);
 
   // Validation
-  const headerOk = spDate && customerId && deadline;
+  const headerOk = spDate && customerId && expiredDate;
   const itemsOk  = items.length > 0 && items.every(i => i.productName.trim() && Number(i.qty) >= 1 && Number(i.unitPrice) >= 0);
   const isValid  = headerOk && itemsOk;
 
@@ -180,7 +180,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
       qty:           Number(item.qty) || 1,
       unitPrice:     Number(item.unitPrice) || 0,
       shippingPrice: Number(item.shippingPrice) || 0,
-      deadline:      item.deadline || deadline,
+      expired_date:  item.expired_date || expiredDate,
       expDate:       item.expDate || '',
       dc:            dc || '',
       notes:         notes || '',
@@ -196,7 +196,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
     setSaving(false);
     showToast(`${spNo} berhasil dibuat ✓`, 'success');
     return true;
-  }, [items, spDate, customerId, dc, deadline, notes, btbRows, showToast]);
+  }, [items, spDate, customerId, dc, expiredDate, notes, btbRows, showToast]);
 
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;
@@ -320,8 +320,8 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
 
               {/* Row 2: Deadline (alone) */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 16px', marginBottom: 14 }}>
-                <Field label="Deadline" req>
-                  {inp({ type: 'date', value: deadline, min: today(), onChange: e => setDeadline(e.target.value) })}
+                <Field label="Expired Date" req>
+                  {inp({ type: 'date', value: expiredDate, min: today(), onChange: e => setExpiredDate(e.target.value) })}
                 </Field>
               </div>
 
@@ -343,39 +343,46 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
           <Card>
             <CardHeader
               title="BTB Numbers"
-              sub={`Opsional — ${btbRows.filter(b => b.trim()).length} nomor BTB`}
+              sub={`Opsional — ${btbRows.filter(r => r.btb_no?.trim()).length} nomor BTB`}
             />
             <div style={{ padding: '18px 22px' }}>
-              {btbRows.map((val, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              {btbRows.map((row, idx) => (
+                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {inp({
+                      value: row.btb_no,
+                      placeholder: `Nomor BTB ${idx + 1}…`,
+                      style: { fontFamily: "'IBM Plex Mono',monospace", fontSize: 13 },
+                      onChange: e => setBtbRows(prev => prev.map((r, i) => i === idx ? { ...r, btb_no: e.target.value } : r)),
+                    })}
+                    {btbRows.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setBtbRows(prev => prev.filter((_, i) => i !== idx))}
+                        style={{
+                          height: 40, width: 40, borderRadius: 8, flexShrink: 0,
+                          border: `1.5px solid ${C.dangerBd}`, background: C.dangerBg,
+                          color: C.danger, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: '.12s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#FECACA'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = C.dangerBg; }}
+                      >
+                        <Trash2 size={14}/>
+                      </button>
+                    )}
+                  </div>
                   {inp({
-                    value: val,
-                    placeholder: `Nomor BTB ${idx + 1}…`,
-                    style: { fontFamily: "'IBM Plex Mono',monospace", fontSize: 13 },
-                    onChange: e => setBtbRows(prev => prev.map((r, i) => i === idx ? e.target.value : r)),
+                    value: row.remarks,
+                    placeholder: 'Remarks (opsional)…',
+                    onChange: e => setBtbRows(prev => prev.map((r, i) => i === idx ? { ...r, remarks: e.target.value } : r)),
                   })}
-                  {btbRows.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setBtbRows(prev => prev.filter((_, i) => i !== idx))}
-                      style={{
-                        height: 40, width: 40, borderRadius: 8, flexShrink: 0,
-                        border: `1.5px solid ${C.dangerBd}`, background: C.dangerBg,
-                        color: C.danger, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        transition: '.12s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = '#FECACA'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = C.dangerBg; }}
-                    >
-                      <Trash2 size={14}/>
-                    </button>
-                  )}
                 </div>
               ))}
               <button
                 type="button"
-                onClick={() => setBtbRows(prev => [...prev, ''])}
+                onClick={() => setBtbRows(prev => [...prev, { btb_no: '', remarks: '' }])}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, marginTop: 4,
                   padding: '7px 14px', borderRadius: 8,
@@ -689,10 +696,10 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
             })}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {fieldLabel('Deadline Item')}
+            {fieldLabel('Expired Date')}
             {inp({
-              type: 'date', value: item.deadline,
-              onChange: e => onChange(item.id, 'deadline', e.target.value),
+              type: 'date', value: item.expired_date,
+              onChange: e => onChange(item.id, 'expired_date', e.target.value),
             })}
           </div>
         </div>

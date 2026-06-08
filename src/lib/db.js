@@ -461,12 +461,15 @@ export async function deleteSpBtb(id) {
   return { error };
 }
 
-/** Bulk insert BTB numbers for a new SP — used by InputSPPage */
-export async function bulkInsertSpBtbs(spNo, btbNos) {
-  const rows = btbNos
-    .map(n => n.trim())
-    .filter(Boolean)
-    .map(btb_no => ({ sp_no: spNo, btb_no }));
+/** Bulk insert BTB numbers (with optional remarks) for a new SP — used by InputSPPage */
+export async function bulkInsertSpBtbs(spNo, btbRows) {
+  const rows = btbRows
+    .filter(r => (typeof r === 'string' ? r.trim() : r?.btb_no?.trim()))
+    .map(r => {
+      const btb_no  = typeof r === 'string' ? r.trim() : r.btb_no.trim();
+      const remarks = typeof r === 'string' ? null : (r.remarks?.trim() || null);
+      return { sp_no: spNo, btb_no, ...(remarks ? { remarks } : {}) };
+    });
   if (!rows.length) return { error: null };
   const { error } = await supabase.from('sp_btbs').insert(rows);
   return { error };
