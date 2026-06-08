@@ -130,7 +130,8 @@ const groupBySP = (rows) => {
         spDate: r.spDate,
         dc: r.dc,
         customer: r.customer || '',
-        deadline: r.deadline,
+        expired_date: r.expired_date || r.deadline || '',
+        deadline: r.expired_date || r.deadline || '', // backward compat
         items: [],
         totalQty: 0, totalShipped: 0, totalOutstanding: 0,
         totalAmount: 0, totalPPN: 0, grandTotal: 0,
@@ -1421,12 +1422,12 @@ export default function StorbitManifest() {
   };
 
   const exportCSV = () => {
-    const headers = ['SP DATE','SP NO','Product Name','SKU','QTY','SHIPPED QTY','OUTSTANDING QTY','EXP Date','Deadline','STATUS','DC','Shipping Date','BTB NO','Unit Price','Shipping Price','TOTAL','PPN','GRAND TOTAL','INV','FP','SUBMIT','KIRIM','SUBMIT DATE','Email Status','Notes'];
+    const headers = ['SP DATE','SP NO','Product Name','SKU','QTY','SHIPPED QTY','OUTSTANDING QTY','EXP Date','Expired Date','STATUS','DC','Shipping Date','BTB NO','Unit Price','Shipping Price','TOTAL','PPN','GRAND TOTAL','INV','FP','SUBMIT','KIRIM','SUBMIT DATE','Email Status','Notes'];
     const lines = [headers.join(',')];
     enrichedRows.forEach(r => {
       const cells = [
         r.spDate, r.spNo, `"${r.productName||''}"`, r.sku, r.qty, r.shippedQty, r.outstandingQty,
-        r.expDate||'', r.deadline||'', r.status, r.dc||'', r.shippingDate||'', r.btbNo||'',
+        r.expDate||'', r.expired_date || r.deadline||'', r.status, r.dc||'', r.shippingDate||'', r.btbNo||'',
         r.unitPrice, r.shippingPrice, r.total, r.ppn, r.grandTotal,
         r.inv?'TRUE':'FALSE', r.fp?'TRUE':'FALSE', r.submit?'TRUE':'FALSE', r.kirim?'TRUE':'FALSE',
         r.submitDate||'', r.emailStatus||'', `"${(r.notes||'').replace(/"/g,'""')}"`
@@ -2482,8 +2483,8 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
                 <th className="px-5 py-3.5 text-right text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Outstanding</th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Status</th>
                 <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>DC</th>
-                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('deadline')}>
-                  <div className="flex items-center gap-1">Deadline <SortIcon field="deadline" sortBy={sortBy}/></div>
+                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('expired_date')}>
+                  <div className="flex items-center gap-1">Expired Date <SortIcon field="expired_date" sortBy={sortBy}/></div>
                 </th>
                 <th className="px-5 py-3.5 text-right text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('grandTotal')}>
                   <div className="flex items-center justify-end gap-1">Grand Total <SortIcon field="grandTotal" sortBy={sortBy}/></div>
@@ -2528,7 +2529,7 @@ function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilte
                   </td>
                   <td className="px-5 py-4"><StatusBadge status={g.status} overdue={g.isOverdue}/></td>
                   <td className="px-5 py-4 text-xs" style={{ color: PASTEL.inkSoft }}>{g.dc || '-'}</td>
-                  <td className="px-5 py-4 text-xs font-mono whitespace-nowrap" style={{ color: PASTEL.inkSoft }}>{formatDateID(g.deadline)}</td>
+                  <td className="px-5 py-4 text-xs font-mono whitespace-nowrap" style={{ color: PASTEL.inkSoft }}>{formatDateID(g.expired_date || g.deadline)}</td>
                   <td className="px-5 py-4 text-right font-semibold whitespace-nowrap">{formatRupiah(g.grandTotal)}</td>
                   <td className="px-5 py-4">
                     <div className="flex items-center justify-center gap-2">
@@ -2613,7 +2614,7 @@ function SPSidePanel({ group, onClose, onEditItem, onDeleteItem, onDeleteSP, onS
           {/* Summary */}
           <div className="grid grid-cols-3 gap-3">
             <SummaryStat label="SP Date" value={formatDateID(group.spDate)} bg={PASTEL.peach}/>
-            <SummaryStat label="Deadline" value={formatDateID(group.deadline)} bg={PASTEL.butter}/>
+            <SummaryStat label="Expired Date" value={formatDateID(group.expired_date || group.deadline)} bg={PASTEL.butter}/>
             <SummaryStat label="Finance Progress" value={`${Math.round(group.financePct)}%`} bg={group.financePct === 100 ? PASTEL.mint : PASTEL.lavender}/>
           </div>
 
@@ -3108,7 +3109,7 @@ function ModalShell({ title, subtitle, onClose, children, maxWidth = 'max-w-3xl'
 function FormModal({ initial, customers = [], onClose, onSave }) {
   const [data, setData] = useState(initial || {
     spDate: '', spNo: '', customer: '', productName: '', sku: '',
-    qty: 0, shippedQty: 0, expDate: '', deadline: '',
+    qty: 0, shippedQty: 0, expDate: '', expired_date: '',
     dc: '', shippingDate: '',
     unitPrice: 0, shippingPrice: 0,
     inv: false, fp: false, submit: false, kirim: false,
@@ -3180,7 +3181,7 @@ function FormModal({ initial, customers = [], onClose, onSave }) {
           </div>
           <div className="grid grid-cols-2 gap-3 mt-3">
             <Input label="EXP Date" type="date" value={data.expDate} onChange={v=>update('expDate',v)}/>
-            <Input label="Deadline" type="date" value={data.deadline} onChange={v=>update('deadline',v)}/>
+            <Input label="Expired Date" type="date" value={data.expired_date} onChange={v=>update('expired_date',v)}/>
           </div>
         </FormSection>
 
@@ -3439,7 +3440,7 @@ function ImportModal({ onClose, onImport }) {
           qty: parseNumber(obj['qty']),
           shippedQty: parseNumber(obj['shipped qty']),
           expDate: parseDate(obj['exp date']),
-          deadline: parseDate(obj['deadline']),
+          expired_date: parseDate(obj['deadline'] || obj['expired_date']),
           dc: obj['dc'] || '',
           shippingDate: parseDate(obj['shipping date']),
           btbNo: obj['btb no'] || '',

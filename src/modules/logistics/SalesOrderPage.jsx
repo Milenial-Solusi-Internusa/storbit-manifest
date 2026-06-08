@@ -444,7 +444,7 @@ export default function SalesOrderPage({
     const copy = [...filtered];
     copy.sort((a, b) => {
       let av, bv;
-      if      (sortK === 'spDate' || sortK === 'deadline') {
+      if      (sortK === 'spDate' || sortK === 'deadline' || sortK === 'expired_date') {
         av = a[sortK] ? new Date(a[sortK]).getTime() : 0;
         bv = b[sortK] ? new Date(b[sortK]).getTime() : 0;
       }
@@ -701,7 +701,7 @@ export default function SalesOrderPage({
                 <Th k="outstanding" sortK={sortK} sortDir={sortDir} onClick={() => toggleSort('outstanding')} right>Outstanding</Th>
                 <Th>Status</Th>
                 <Th>DC</Th>
-                <Th k="deadline"    sortK={sortK} sortDir={sortDir} onClick={() => toggleSort('deadline')}>Deadline</Th>
+                <Th k="expired_date" sortK={sortK} sortDir={sortDir} onClick={() => toggleSort('expired_date')}>Expired Date</Th>
                 <Th k="grandTotal"  sortK={sortK} sortDir={sortDir} onClick={() => toggleSort('grandTotal')} right>Grand Total</Th>
                 <Th>Finance Progress</Th>
                 <Th sx={{ width: 160, textAlign: 'right' }}>Aksi</Th>
@@ -716,7 +716,7 @@ export default function SalesOrderPage({
                 </tr>
               )}
               {paged.map(g => {
-                const days    = daysFromToday(g.deadline);
+                const days    = daysFromToday(g.expired_date || g.deadline);
                 const dueSoon = days !== null && days < 2;
                 return (
                   <tr
@@ -774,10 +774,10 @@ export default function SalesOrderPage({
                     <td style={{ padding: '12px 14px', fontSize: 12.5, color: C.inkSoft }}>
                       {g.dc || '—'}
                     </td>
-                    {/* Deadline */}
+                    {/* Expired Date */}
                     <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
-                      {g.deadline
-                        ? <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, fontWeight: dueSoon ? 700 : 400, color: dueSoon ? C.danger : C.inkSoft }}>{fmtDate(g.deadline)}</span>
+                      {(g.expired_date || g.deadline)
+                        ? <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, fontWeight: dueSoon ? 700 : 400, color: dueSoon ? C.danger : C.inkSoft }}>{fmtDate(g.expired_date || g.deadline)}</span>
                         : <span style={{ color: C.inkFaint }}>—</span>}
                     </td>
                     {/* Grand Total */}
