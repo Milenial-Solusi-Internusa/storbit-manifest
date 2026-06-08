@@ -21,6 +21,7 @@ import {
   AlertTriangle, Plus,
 } from 'lucide-react';
 import { listSpBtbs, addSpBtb, deleteSpBtb } from '../../lib/db';
+import { calcItem } from '../../lib/spCalc';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -619,10 +620,11 @@ export default function SalesOrderDetailPage({
   const finOverallPct   = finOverallTotal > 0 ? Math.round((finOverallDone / finOverallTotal) * 100) : 0;
   const finOverallColor = finColor(finOverallPct);
 
-  // ── Financial summary numbers ──────────────────────────────────────────
-  const subtotal    = items.reduce((s, i) => s + (Number(i.qty) * Number(i.unitPrice)), 0);
-  const ongkosKirim = items.reduce((s, i) => s + Number(i.shippingPrice), 0);
-  const ppnTotal    = Math.round(subtotal * 0.11);
+  // ── Financial summary numbers (via calcItem — single source of truth) ───
+  const allCalc     = items.map(i => calcItem(i));
+  const subtotal    = allCalc.reduce((s, c) => s + c.subtotal, 0);
+  const ppnTotal    = allCalc.reduce((s, c) => s + c.ppn, 0);
+  const ongkosKirim = items.reduce((s, i) => s + (Number(i.shippingPrice) || 0), 0);
   const grandTotal  = subtotal + ppnTotal + ongkosKirim;
   const totalQty    = items.reduce((s, i) => s + Number(i.qty),       0);
   const shippedQty  = items.reduce((s, i) => s + Number(i.shippedQty), 0);
@@ -958,7 +960,7 @@ export default function SalesOrderDetailPage({
             ) : items.map((item, idx) => {
               const sm = itemStatusMeta(item.status);
               const outQty = Number(item.qty) - Number(item.shippedQty);
-              const itemGrand = Number(item.qty) * Number(item.unitPrice) + Number(item.shippingPrice);
+              const { subtotal: itemSubtotal, ppn: itemPPN, grandTotal: itemGrand } = calcItem(item);
               return (
                 <div key={item.id} style={{ border: `1px solid ${C.line}`, borderRadius: 11, background: C.surface, marginBottom: 12, overflow: 'hidden' }}>
                   {/* it-head */}
