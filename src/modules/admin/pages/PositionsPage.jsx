@@ -18,6 +18,7 @@ import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
+import ConfirmModal from '../../../components/ConfirmModal';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -188,6 +189,9 @@ function Divider() {
 export default function PositionsPage() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
+  const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
+  const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
+  const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
   const search = useDebounce(searchInput, 300);
 
   const { data, total, loading, error, refresh } = usePositions({ page, search });
@@ -269,21 +273,24 @@ export default function PositionsPage() {
     showToast(draft.id ? 'Position updated.' : 'Position created.');
   }, [draft, closeModal, refresh, showToast]);
 
-  const handleArchive = useCallback(async () => {
+  const handleArchive = useCallback(() => {
     if (!draft?.id) return;
-    if (!window.confirm('Archive this position? It will no longer appear in active lists.')) return;
-
-    setArchiving(true);
-    setSaveError(null);
-    const { error: archErr } = await softDeletePosition(draft.id);
-    setArchiving(false);
-
-    if (archErr) { setSaveError(archErr.message || 'Archive failed. Check your permissions.'); return; }
-
-    closeModal();
-    refresh();
-    showToast('Position archived.');
-  }, [draft, closeModal, refresh, showToast]);
+    showConfirm(
+      'Archive Position',
+      'Archive this position? It will no longer appear in active lists.',
+      async () => {
+        closeConfirm();
+        setArchiving(true);
+        setSaveError(null);
+        const { error: archErr } = await softDeletePosition(draft.id);
+        setArchiving(false);
+        if (archErr) { setSaveError(archErr.message || 'Archive failed. Check your permissions.'); return; }
+        closeModal();
+        refresh();
+        showToast('Position archived.');
+      }
+    );
+  }, [draft, closeModal, refresh, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isCreate = !draft?.id;
 
@@ -596,6 +603,17 @@ export default function PositionsPage() {
           {toast.msg}
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel="Ya, Archive"
+        cancelLabel="Batal"
+        variant="warning"
+        onConfirm={confirmState.onConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 }

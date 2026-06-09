@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const C = {
   bg:        '#F6EFE3',
@@ -71,6 +72,9 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const { profile, erpRole } = useAuth();
   const isEdit = !!prospect;
   const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
+  const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
+  const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
+  const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
 
   const [form, setForm] = useState({
     name:             '',
@@ -139,21 +143,27 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       .then(({ data }) => setPaymentTerms(data || []));
   }, [profile?.company_id]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDelete = useCallback(() => {
     if (!prospect?.id) return;
-    if (!window.confirm(`Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`)) return;
-    try {
-      const { error } = await supabase
-        .from('prospects')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', prospect.id);
-      if (error) throw error;
-      showToast?.('Prospect berhasil dihapus.', 'success');
-      onBack?.();
-    } catch (err) {
-      showToast?.('Gagal hapus prospect: ' + err.message, 'error');
-    }
-  }, [prospect?.id, prospect?.name, showToast, onBack]);
+    showConfirm(
+      'Hapus Prospect',
+      `Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`,
+      async () => {
+        closeConfirm();
+        try {
+          const { error } = await supabase
+            .from('prospects')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('id', prospect.id);
+          if (error) throw error;
+          showToast?.('Prospect berhasil dihapus.', 'success');
+          onBack?.();
+        } catch (err) {
+          showToast?.('Gagal hapus prospect: ' + err.message, 'error');
+        }
+      }
+    );
+  }, [prospect?.id, prospect?.name, showToast, onBack]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -332,6 +342,17 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           </button>
         </div>
       </div>
+
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel="Ya, Hapus"
+        cancelLabel="Batal"
+        variant="danger"
+        onConfirm={confirmState.onConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 }

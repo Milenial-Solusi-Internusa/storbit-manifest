@@ -13,6 +13,7 @@ import {
   useMyHrgaRequests, useHrgaStats, cancelHrgaRequest, HRGA_PAGE_SIZE,
 } from '../../../hooks/useHrgaRequests';
 import { useDebounce } from '../../../hooks/useDebounce';
+import ConfirmModal from '../../../components/ConfirmModal';
 
 const STATUS_OPTS = [
   { value: null,          label: 'Semua Status'  },
@@ -25,6 +26,9 @@ const STATUS_OPTS = [
 ];
 
 export default function MyRequestsPage({ onOpenDetail }) {
+  const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
+  const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
+  const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
   const [page,         setPage]         = useState(1);
   const [rawSearch,    setRawSearch]    = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
@@ -45,12 +49,18 @@ export default function MyRequestsPage({ onOpenDetail }) {
     setSelected(prev => prev.size === rows.length ? new Set() : new Set(rows.map(r => r.id)));
   }, [rows]);
 
-  const handleCancel = useCallback(async (id, e) => {
+  const handleCancel = useCallback((id, e) => {
     e.stopPropagation();
-    if (!window.confirm('Batalkan request ini?')) return;
-    const { error: err } = await cancelHrgaRequest(id);
-    if (!err) { refresh(); refreshStats(); }
-  }, [refresh, refreshStats]);
+    showConfirm(
+      'Batalkan Request',
+      'Batalkan request ini? Tindakan ini tidak dapat diubah.',
+      async () => {
+        closeConfirm();
+        const { error: err } = await cancelHrgaRequest(id);
+        if (!err) { refresh(); refreshStats(); }
+      }
+    );
+  }, [refresh, refreshStats]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = useCallback(() => { refresh(); refreshStats(); }, [refresh, refreshStats]);
 
@@ -201,6 +211,17 @@ export default function MyRequestsPage({ onOpenDetail }) {
         <Pager page={page} total={statusFilter ? rows.length : total}
           pageSize={HRGA_PAGE_SIZE} onPage={setPage} />
       </Card>
+
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel="Ya, Batalkan"
+        cancelLabel="Tidak"
+        variant="warning"
+        onConfirm={confirmState.onConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 }

@@ -41,6 +41,7 @@ import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
+import ConfirmModal from '../../../components/ConfirmModal';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -505,6 +506,9 @@ export default function UserAccessPage() {
   const { profile: myProfile } = useAuth();
 
   // ── List state ──────────────────────────────────────────────
+  const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
+  const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
+  const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -524,19 +528,25 @@ export default function UserAccessPage() {
   // ── Row toggle (activate/deactivate) ─────────────────────────
   const [togglingId, setTogglingId] = useState(null);
 
-  const handleToggleActive = useCallback(async (row) => {
+  const handleToggleActive = useCallback((row) => {
     const action = row.active ? 'deactivate' : 'activate';
-    if (!window.confirm(`${action === 'deactivate' ? 'Deactivate' : 'Activate'} ${row.full_name || 'this user'}?`)) return;
-    setTogglingId(row.id);
-    const { error: toggleErr } = await toggleUserActive(row.id, !row.active);
-    setTogglingId(null);
-    if (toggleErr) {
-      showToast(toggleErr.message || `Failed to ${action} user.`, 'error');
-      return;
-    }
-    refresh();
-    showToast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}.`);
-  }, [refresh, showToast]);
+    showConfirm(
+      action === 'deactivate' ? 'Deactivate User' : 'Activate User',
+      `${action === 'deactivate' ? 'Deactivate' : 'Activate'} ${row.full_name || 'this user'}?`,
+      async () => {
+        closeConfirm();
+        setTogglingId(row.id);
+        const { error: toggleErr } = await toggleUserActive(row.id, !row.active);
+        setTogglingId(null);
+        if (toggleErr) {
+          showToast(toggleErr.message || `Failed to ${action} user.`, 'error');
+          return;
+        }
+        refresh();
+        showToast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}.`);
+      }
+    );
+  }, [refresh, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Edit modal state ─────────────────────────────────────────
   const [editDraft, setEditDraft] = useState(null);
@@ -1403,6 +1413,17 @@ export default function UserAccessPage() {
           {toast.msg}
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel="Ya, Lanjutkan"
+        cancelLabel="Batal"
+        variant="warning"
+        onConfirm={confirmState.onConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 }
