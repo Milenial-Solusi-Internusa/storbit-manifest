@@ -1,10 +1,11 @@
 // src/lib/spCalc.js
 // Single source of truth for SP item calculations.
 //
-// Official formula:
+// Official formula (Opsi B — confirmed by Koh Denny):
 //   subtotal  = unitPrice × qty
-//   ppn       = round(subtotal × 0.11)   — shipping is NOT subject to PPN
-//   grandTotal = subtotal + ppn + shippingPrice
+//   ppnBase   = subtotal + shippingPrice  — shipping IS subject to PPN
+//   ppn       = round(ppnBase × 0.11)
+//   grandTotal = subtotal + shippingPrice + ppn
 
 /**
  * Calculate derived fields for a single SP item.
@@ -16,8 +17,9 @@ export function calcItem(item) {
   const unitPrice     = Number(item.unitPrice)     || 0;
   const shippingPrice = Number(item.shippingPrice) || 0;
   const subtotal      = unitPrice * qty;
-  const ppn           = Math.round(subtotal * 0.11);
-  const grandTotal    = subtotal + ppn + shippingPrice;
+  const ppnBase       = subtotal + shippingPrice;
+  const ppn           = Math.round(ppnBase * 0.11);
+  const grandTotal    = subtotal + shippingPrice + ppn;
   const shippedQty    = Number(item.shippedQty)   || 0;
   const outstandingQty = qty - shippedQty;
 
