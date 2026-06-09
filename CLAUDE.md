@@ -815,7 +815,9 @@ Output:
 
 | 2.0N | Delete prospect — soft delete (`deleted_at`) untuk role manager ke atas (super_admin, admin, ceo, gm, manager); ProspectListPage: `erpRole` dari useAuth, `canDelete` check, `handleDelete` callback (soft delete + fetchProspects), tombol "Hapus" per row (e.stopPropagation, hanya tampil jika canDelete); ProspectFormPage: `erpRole` + `canDelete`, `useCallback` ditambah ke import, `handleDelete` (soft delete + onBack), tombol "Hapus Prospect" di footer (marginRight:auto, hanya tampil jika canDelete && isEdit); build clean | ✅ Complete |
 
-Current phase: **Phase 2.0N** ✅ Complete
+| 2.0O | `src/components/ConfirmModal.jsx` — reusable confirm dialog (replaces all `window.confirm`); props: open, title, message, confirmLabel, cancelLabel, variant (danger/warning/info), onConfirm, onCancel; Escape key closes; centered modal, backdrop blur, alert icon, Montserrat title; 7 files updated: ProspectListPage, ProspectFormPage, BranchesPage, PositionsPage, DepartmentsPage, UserAccessPage, MyRequestsPage — each adds confirmState, showConfirm, closeConfirm helpers; handleDelete/handleArchive/handleToggleActive refactored to callback pattern; zero window.confirm remaining; build clean | ✅ Complete |
+
+Current phase: **Phase 2.0O** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, ChevronRight, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const C = {
   bg:        '#F6EFE3',
@@ -81,6 +82,9 @@ function SourceBadge({ source }) {
 export default function ProspectListPage({ onAddProspect, onEditProspect, showToast }) {
   const { profile, erpRole } = useAuth();
   const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
+  const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
+  const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
+  const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -122,20 +126,26 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
 
-  const handleDelete = useCallback(async (prospect) => {
-    if (!window.confirm(`Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`)) return;
-    try {
-      const { error } = await supabase
-        .from('prospects')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', prospect.id);
-      if (error) throw error;
-      showToast?.('Prospect berhasil dihapus.', 'success');
-      fetchProspects();
-    } catch (err) {
-      showToast?.('Gagal hapus prospect: ' + err.message, 'error');
-    }
-  }, [fetchProspects, showToast]);
+  const handleDelete = useCallback((prospect) => {
+    showConfirm(
+      'Hapus Prospect',
+      `Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`,
+      async () => {
+        closeConfirm();
+        try {
+          const { error } = await supabase
+            .from('prospects')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('id', prospect.id);
+          if (error) throw error;
+          showToast?.('Prospect berhasil dihapus.', 'success');
+          fetchProspects();
+        } catch (err) {
+          showToast?.('Gagal hapus prospect: ' + err.message, 'error');
+        }
+      }
+    );
+  }, [fetchProspects, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset page on filter/search change
   useEffect(() => { setPage(0); }, [filterStage, filterSource, search]);
@@ -276,6 +286,17 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel="Ya, Hapus"
+        cancelLabel="Batal"
+        variant="danger"
+        onConfirm={confirmState.onConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 }
