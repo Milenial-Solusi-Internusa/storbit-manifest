@@ -813,7 +813,9 @@ Output:
 
 | 2.0M | CRMDashboardPage fully connected ke Supabase — fetchDash expanded: single prospects query (pipeline_stage, name, created_at, source, assigned_to, profiles join) + lastMonth prospects + sales_visits (graceful fail if table absent) + salesPerf query; computed client-side: trendData (prospect count per week bulan ini vs bulan lalu), leadSourceData (count per source, sorted desc), salesPerfData (per salesperson: prospek/won/convRate), visitsData; PipelineTrend → count-based chart (bulanIni/bulanLalu dataKeys); LeadSourceDonut → accepts leadSourceData, generates colors from palette; SalesPerformance → accepts salesPerfData, status computed from convRate; DashCalendar → real calendar bulan ini, visits grouped by date, today highlight, status badge, "+Tambah Visit" button (disabled); LeadsBySource → uses leadSourceData for volume bars; semua mock constants dihapus (TREND, SOURCE_DIST, SALES, CAL_EVENTS, CAL_MONTH, CAL_SVC); build clean | ✅ Complete |
 
-Current phase: **Phase 2.0M** ✅ Complete
+| 2.0N | Delete prospect — soft delete (`deleted_at`) untuk role manager ke atas (super_admin, admin, ceo, gm, manager); ProspectListPage: `erpRole` dari useAuth, `canDelete` check, `handleDelete` callback (soft delete + fetchProspects), tombol "Hapus" per row (e.stopPropagation, hanya tampil jika canDelete); ProspectFormPage: `erpRole` + `canDelete`, `useCallback` ditambah ke import, `handleDelete` (soft delete + onBack), tombol "Hapus Prospect" di footer (marginRight:auto, hanya tampil jika canDelete && isEdit); build clean | ✅ Complete |
+
+Current phase: **Phase 2.0N** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

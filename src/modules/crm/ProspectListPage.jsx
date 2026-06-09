@@ -79,7 +79,8 @@ function SourceBadge({ source }) {
 }
 
 export default function ProspectListPage({ onAddProspect, onEditProspect, showToast }) {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
+  const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -120,6 +121,21 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
   }, [profile?.company_id, page, filterStage, filterSource, search, showToast]);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
+
+  const handleDelete = useCallback(async (prospect) => {
+    if (!window.confirm(`Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    try {
+      const { error } = await supabase
+        .from('prospects')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', prospect.id);
+      if (error) throw error;
+      showToast?.('Prospect berhasil dihapus.', 'success');
+      fetchProspects();
+    } catch (err) {
+      showToast?.('Gagal hapus prospect: ' + err.message, 'error');
+    }
+  }, [fetchProspects, showToast]);
 
   // Reset page on filter/search change
   useEffect(() => { setPage(0); }, [filterStage, filterSource, search]);
@@ -219,7 +235,19 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
                 <td style={{ padding: '12px 14px' }}><StageBadge stage={p.pipeline_stage} /></td>
                 <td style={{ padding: '12px 14px', color: C.inkSoft }}>{p.assigned_profile?.full_name || '—'}</td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(p.created_at)}</td>
-                <td style={{ padding: '12px 10px' }}><ChevronRight size={15} color={C.inkFaint} /></td>
+                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {canDelete && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
+                        style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: '#FEE2E2', color: '#DC2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Hapus
+                      </button>
+                    )}
+                    <ChevronRight size={15} color={C.inkFaint} />
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
