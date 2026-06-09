@@ -98,7 +98,7 @@ The project has transitioned from Storbit Manifest (localStorage prototype) into
 | HRGA Request | ✅ Live | `src/modules/hrga/` |
 | Logistics — Sales Order | ✅ Live | `src/modules/logistics/` |
 | CRM — Pipeline, Inquiry, Quotation | ✅ Live | `src/modules/crm/` |
-| CRM — Dashboard | ✅ Live (real Supabase fetch — prospects/inquiries/quotations counts, pipeline stage chart, recent activity) | `src/modules/crm/CRMDashboardPage.jsx` |
+| CRM — Dashboard | ✅ Live (fully connected — KPI cards, Pipeline by Stage, Prospect Trend per week vs last month, Lead Source Distribution donut, Sales Performance table, Calendar Jadwal Visit — all from Supabase) | `src/modules/crm/CRMDashboardPage.jsx` |
 | Inventory / Warehouse | ⚠️ Stok Barang live (fetches stock_summary + products + warehouses) | `src/modules/inventory/pages/StokBarangPage.jsx` |
 | Inventory — Penerimaan Barang | ⚠️ Live (fetches products + warehouses + vendors; saves to stock_ledger) | `src/modules/inventory/pages/PenerimaanBarangPage.jsx` |
 
@@ -811,7 +811,9 @@ Output:
 
 | 2.0L | db.js: `spFromDb` baca `row.expired_date` (bukan `row.deadline`), backward compat alias tetap; App.jsx: `groupBySP` emit `expired_date`+`deadline` alias, `FormModal` state+label+binding→`expired_date`, CSV header+export→`expired_date`, import CSV→`expired_date`, SP list kolom header+cell+sort→`expired_date`, SP side panel label→`Expired Date`; SalesOrderPage: kolom header+cell+sort→`expired_date` | ✅ Complete |
 
-Current phase: **Phase 2.0L** ✅ Complete
+| 2.0M | CRMDashboardPage fully connected ke Supabase — fetchDash expanded: single prospects query (pipeline_stage, name, created_at, source, assigned_to, profiles join) + lastMonth prospects + sales_visits (graceful fail if table absent) + salesPerf query; computed client-side: trendData (prospect count per week bulan ini vs bulan lalu), leadSourceData (count per source, sorted desc), salesPerfData (per salesperson: prospek/won/convRate), visitsData; PipelineTrend → count-based chart (bulanIni/bulanLalu dataKeys); LeadSourceDonut → accepts leadSourceData, generates colors from palette; SalesPerformance → accepts salesPerfData, status computed from convRate; DashCalendar → real calendar bulan ini, visits grouped by date, today highlight, status badge, "+Tambah Visit" button (disabled); LeadsBySource → uses leadSourceData for volume bars; semua mock constants dihapus (TREND, SOURCE_DIST, SALES, CAL_EVENTS, CAL_MONTH, CAL_SVC); build clean | ✅ Complete |
+
+Current phase: **Phase 2.0M** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
@@ -1333,6 +1335,6 @@ Same role structure applies across all 3 companies (MSI, JCI, SOA).
 | Page | Source | Status | Notes |
 |------|--------|--------|-------|
 | PipelineKanbanPage.jsx | Lovable JSX port | ✅ Live | Chevron headers (clip-path), MSI Navy, list/kanban toggle, drag-drop fade fix |
-| CRMDashboardPage.jsx | Lovable design bundle | ✅ Live (mock data) | recharts Bar/Pie/Area, 2 tab slots (Summary + Calendar planned), no Supabase yet |
+| CRMDashboardPage.jsx | Lovable design bundle | ✅ Live (fully real) | recharts Area/Bar/Pie all from Supabase; Prospect Trend, Lead Source, Sales Perf, Calendar Jadwal Visit connected; mock constants removed |
 | InquiryListPage.jsx | Existing (2026-06-05) | ⚠️ Needs visual redesign | Functional, pending Lovable-style port to match MSI brand |
 | ProspectFormPage.jsx | Existing (2026-06-05) | ⚠️ Needs visual redesign | Functional form, no MSI brand styling applied yet |
