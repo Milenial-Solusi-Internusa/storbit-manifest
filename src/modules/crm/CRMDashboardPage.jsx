@@ -5,9 +5,8 @@ import { useAuth } from '../../contexts/useAuth';
 
 /* =========================================================================
    CRMDashboardPage — Nexus by MSI · CRM Sales Dashboard (freight forwarding)
-   Self-contained: inline styles only, no external CSS, mock data, no backend.
+   Self-contained: inline styles only, no external CSS, real Supabase data.
    Fonts: 'Montserrat' (headings) + 'Inter' (body) + 'IBM Plex Mono' (figures)
-   — load globally in your app for an exact match.
    ========================================================================= */
 
 /* ---------- brand tokens ---------- */
@@ -42,6 +41,8 @@ const ICONS = {
   calendar:    '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
   receipt:     '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8H8"/><path d="M16 12H8"/><path d="M12 16H8"/>',
   alert:       '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  plus:        '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  mappin:      '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
 };
 
 function Icon({ name, size = 18, color, style }) {
@@ -61,51 +62,22 @@ const rpShort = (n) => {
   return rp(n);
 };
 
-/* ---------- data ---------- */
+/* ---------- static/fallback data ---------- */
 const KPIS = [
-  { label: "Total Prospect Aktif", icon: "users",  value: "58",       unit: "prospect", accent: NAVY,      accentBg: "#EAF0F8", trend: { dir: "up",   good: true, val: "+8",     note: "vs bulan lalu" } },
-  { label: "Total Nilai Pipeline", icon: "wallet", value: "Rp 14,28", unit: "Miliar",   accent: ORANGE,    accentBg: "#FBE6DA", trend: { dir: "up",   good: true, val: "+12,4%", note: "vs bulan lalu" } },
-  { label: "Conversion Rate",      icon: "target", value: "32,4",     unit: "%",        accent: "#1F8B4D", accentBg: "#DEF0E4", trend: { dir: "up",   good: true, val: "+3,1%",  note: "prospect → customer" } },
-  { label: "Avg Deal Cycle",       icon: "clock",  value: "47",       unit: "hari",     accent: "#6E4B8C", accentBg: "#EEE7F4", trend: { dir: "down", good: true, val: "-5 hari", note: "NEW → WON" } },
+  { label: "Total Prospect Aktif", icon: "users",  value: "—", unit: "prospect", accent: NAVY,      accentBg: "#EAF0F8", trend: null },
+  { label: "Total Inquiry",        icon: "filetext",value: "—", unit: "inquiry",  accent: ORANGE,    accentBg: "#FBE6DA", trend: null },
+  { label: "Total Quotation",      icon: "receipt", value: "—", unit: "quotation",accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
+  { label: "Win Rate",             icon: "target",  value: "—", unit: "%",        accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
 ];
 
 const STAGES = [
-  { id: "new",         name: "New",         count: 18, value: 3420000000, color: NAVY },
-  { id: "contacted",   name: "Contacted",   count: 14, value: 2950000000, color: NAVY },
-  { id: "qualified",   name: "Qualified",   count: 11, value: 2680000000, color: NAVY },
-  { id: "proposal",    name: "Proposal",    count: 8,  value: 2400000000, color: NAVY },
-  { id: "negotiation", name: "Negotiation", count: 7,  value: 2830000000, color: NAVY },
-  { id: "won",         name: "Won",         count: 9,  value: 2150000000, color: "#1F8B4D" },
-  { id: "lost",        name: "Lost",        count: 6,  value: 1020000000, color: "#C0392B" },
-];
-
-const TREND = [
-  { week: "Minggu 1", ini: 3200000000,  lalu: 2600000000 },
-  { week: "Minggu 2", ini: 6900000000,  lalu: 5400000000 },
-  { week: "Minggu 3", ini: 10800000000, lalu: 8900000000 },
-  { week: "Minggu 4", ini: 14280000000, lalu: 12100000000 },
-];
-
-const SOURCE_DIST = [
-  { name: "Digital Marketing", count: 22, color: NAVY },
-  { name: "Referral",          count: 18, color: "#1E5894" },
-  { name: "Website",           count: 16, color: "#2A6FA8" },
-  { name: "Existing Network",  count: 14, color: "#3E88C0" },
-  { name: "Instagram",         count: 12, color: "#5BA0D0" },
-  { name: "Cold Call",         count: 11, color: ORANGE },
-  { name: "LinkedIn",          count: 9,  color: "#F0894B" },
-  { name: "Exhibition",        count: 7,  color: "#1F8B4D" },
-  { name: "TikTok",            count: 5,  color: "#2BA866" },
-  { name: "Walk-in",           count: 4,  color: "#6E4B8C" },
-  { name: "Lainnya",           count: 3,  color: "#9AA0AC" },
-];
-
-const SALES = [
-  { name: "Rahmat Adiputra",  prospects: 16, inquiries: 24, quotations: 19, conv: 38, status: "Exceeding" },
-  { name: "Dewi Anggraini",   prospects: 14, inquiries: 20, quotations: 15, conv: 31, status: "On Track" },
-  { name: "Bayu Pratama",     prospects: 12, inquiries: 17, quotations: 11, conv: 27, status: "On Track" },
-  { name: "Sari Melati",      prospects: 9,  inquiries: 11, quotations: 6,  conv: 19, status: "Need Push" },
-  { name: "Fajar Nugroho",    prospects: 7,  inquiries: 8,  quotations: 3,  conv: 12, status: "At Risk" },
+  { id: "new",         name: "New",         count: 0, value: 0, color: NAVY },
+  { id: "contacted",   name: "Contacted",   count: 0, value: 0, color: NAVY },
+  { id: "qualified",   name: "Qualified",   count: 0, value: 0, color: NAVY },
+  { id: "proposal",    name: "Proposal",    count: 0, value: 0, color: NAVY },
+  { id: "negotiation", name: "Negotiation", count: 0, value: 0, color: NAVY },
+  { id: "won",         name: "Won",         count: 0, value: 0, color: "#1F8B4D" },
+  { id: "lost",        name: "Lost",        count: 0, value: 0, color: "#C0392B" },
 ];
 
 const STATUS_BADGE = {
@@ -116,26 +88,13 @@ const STATUS_BADGE = {
 };
 
 const LEADS_BY_SOURCE = [
-  { source: "Referral",          leads: 18, conv: 41, response: "2,4 jam" },
-  { source: "Existing Network",  leads: 14, conv: 38, response: "3,1 jam" },
-  { source: "Exhibition",        leads: 7,  conv: 33, response: "1,9 jam" },
-  { source: "LinkedIn",          leads: 9,  conv: 29, response: "3,7 jam" },
-  { source: "Digital Marketing", leads: 22, conv: 24, response: "5,8 jam" },
-  { source: "Website",           leads: 16, conv: 21, response: "4,2 jam" },
-  { source: "Instagram",         leads: 12, conv: 18, response: "6,5 jam" },
-  { source: "Cold Call",         leads: 11, conv: 15, response: "8,2 jam" },
+  { source: "Referral",          leads: "—", conv: "—", response: "—" },
+  { source: "Existing Network",  leads: "—", conv: "—", response: "—" },
+  { source: "Digital Marketing", leads: "—", conv: "—", response: "—" },
+  { source: "Cold Call",         leads: "—", conv: "—", response: "—" },
 ];
 
-const ACTIVITY = [
-  { type: "quotation", text: "Quotation terkirim",        co: "PT Trans Kontinental",            time: "12 menit lalu",   user: "Rahmat Adiputra" },
-  { type: "prospect",  text: "Prospect baru ditambahkan", co: "PT Sentosa Logistik Nusantara",   time: "38 menit lalu",   user: "Dewi Anggraini" },
-  { type: "won",       text: "Deal dimenangkan (WON)",    co: "PT Cahaya Anugerah Ekspres",      time: "1 jam lalu",      user: "Bayu Pratama" },
-  { type: "inquiry",   text: "Inquiry baru masuk",        co: "PT Global Indo Perkasa",          time: "2 jam lalu",      user: "Sari Melati" },
-  { type: "move",      text: "Dipindah ke Negotiation",   co: "PT Delta Marine Cargo",           time: "3 jam lalu",      user: "Rahmat Adiputra" },
-  { type: "lost",      text: "Prospect ditandai LOST",    co: "PT Prima Cipta Logistik",         time: "5 jam lalu",      user: "Fajar Nugroho" },
-  { type: "quotation", text: "Quotation terkirim",        co: "PT Wira Logistik Utama",          time: "Kemarin, 16:40",  user: "Dewi Anggraini" },
-  { type: "inquiry",   text: "Inquiry baru masuk",        co: "PT Indofresh Distribusi",         time: "Kemarin, 14:12",  user: "Bayu Pratama" },
-];
+const ACTIVITY = [];
 
 const ACT_META = {
   quotation: { icon: "filetext",    bg: "#FBE6DA", fg: "#C8521B" },
@@ -146,10 +105,16 @@ const ACT_META = {
   lost:      { icon: "ban",         bg: "#F7E1DE", fg: "#C0392B" },
 };
 
+/* ---------- lead source color palette ---------- */
+const SOURCE_PALETTE = [
+  NAVY, "#1E5894", "#2A6FA8", "#3E88C0", "#5BA0D0",
+  ORANGE, "#F0894B", "#1F8B4D", "#2BA866", "#6E4B8C", "#9AA0AC",
+];
+
 /* ---------- avatar helper ---------- */
 const AV_COLORS = ["#144682", "#1E5894", "#1F8B4D", "#6E4B8C", "#C8521B", "#1F6B6B"];
-function initials(name) { return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
-function avatarColor(name) { let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return AV_COLORS[h % AV_COLORS.length]; }
+function initials(name) { return (name || '?').split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
+function avatarColor(name) { let h = 0; for (let i = 0; i < (name||'').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return AV_COLORS[h % AV_COLORS.length]; }
 
 /* ---------- hoverable button ---------- */
 function HoverButton({ base, hover, children, ...rest }) {
@@ -207,17 +172,18 @@ const D = {
   tabActive: { color: NAVY },
   tabInd: { position: "absolute", left: 0, right: 0, bottom: -1, height: 2, background: NAVY },
 
-  /* calendar tab */
+  /* calendar */
   calGridHead: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)" },
   calDow: { padding: "9px 10px", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#9AA0AC", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", borderRight: "1px solid #F4F5F7" },
   calGrid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)" },
-  calCell: { minHeight: 118, padding: "7px 8px", borderRight: "1px solid #F4F5F7", borderBottom: "1px solid #F4F5F7" },
+  calCell: { minHeight: 110, padding: "7px 8px", borderRight: "1px solid #F4F5F7", borderBottom: "1px solid #F4F5F7" },
   calCellMuted: { background: "#FBFBFC" },
-  calNum: { fontSize: 12, fontWeight: 700, color: "#48505C", marginBottom: 6 },
-  calEvent: { padding: "7px 8px", borderRadius: 8, marginBottom: 5, lineHeight: 1.3 },
-  calEventCo: { fontSize: 11, fontWeight: 700, color: "#16243A", marginBottom: 5, letterSpacing: -0.1 },
-  calSvc: { display: "inline-block", fontSize: 9, fontWeight: 700, letterSpacing: 0.2, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap" },
-  calVal: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 700, fontSize: 10.5, color: NAVY, marginTop: 5, fontVariantNumeric: "tabular-nums" },
+  calCellToday: { background: "#EAF0F8" },
+  calNum: { fontSize: 12, fontWeight: 700, color: "#48505C", marginBottom: 4 },
+  calNumToday: { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: "50%", background: NAVY, color: "#fff", fontSize: 11, fontWeight: 800, marginBottom: 4 },
+  calEvent: { padding: "5px 7px", borderRadius: 7, marginBottom: 4, lineHeight: 1.3, background: "#EAF0F8", borderLeft: "3px solid " + NAVY },
+  calEventProspect: { fontSize: 11, fontWeight: 700, color: NAVY, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  calEventMeta: { fontSize: 10, color: "#6B7280" },
 
   /* layout rows */
   kpiRow: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 16, marginBottom: 16 },
@@ -311,7 +277,7 @@ function KpiCard({ data }) {
   );
 }
 
-/* ---------- pipeline value trend (recharts area) ---------- */
+/* ---------- pipeline prospect trend (recharts area — count per week) ---------- */
 function AreaTip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   const get = (k) => { const p = payload.find((x) => x.dataKey === k); return p ? p.value : 0; };
@@ -321,56 +287,60 @@ function AreaTip({ active, payload, label }) {
       <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 8, height: 8, borderRadius: 2, background: "#5B8FCB", flex: "0 0 8px" }} />
-          Bulan Ini · <b style={{ color: "#fff", fontWeight: 700 }}>{rpShort(get("ini"))}</b>
+          Bulan Ini · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanIni")} prospect</b>
         </div>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 8, height: 8, borderRadius: 2, background: ORANGE, flex: "0 0 8px" }} />
-          Bulan Lalu · <b style={{ color: "#fff", fontWeight: 700 }}>{rpShort(get("lalu"))}</b>
+          Bulan Lalu · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanLalu")} prospect</b>
         </div>
       </div>
     </div>
   );
 }
 
-function PipelineTrend() {
+function PipelineTrend({ data = [] }) {
   const [areaRef, areaW] = useWidth();
-  const yFmt = (v) => "Rp " + (v / 1e9).toLocaleString("id-ID", { maximumFractionDigits: 0 }) + " M";
+  const isEmpty = data.length === 0;
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="trendup" size={18} /></div>
         <div>
-          <div style={D.cardTitle}>Nilai Pipeline Trend</div>
-          <div style={D.cardSub}>Perbandingan nilai pipeline bulan ini vs bulan lalu</div>
+          <div style={D.cardTitle}>Prospect Trend</div>
+          <div style={D.cardSub}>Jumlah prospect baru per minggu — bulan ini vs bulan lalu</div>
         </div>
       </div>
       <div style={{ padding: "16px 16px 4px" }}>
-        <div ref={areaRef} className="bar-in">
-        {areaW > 0 && (
-          <AreaChart width={areaW} height={240} data={TREND} margin={{ top: 10, right: 22, left: 6, bottom: 0 }}>
-            <defs>
-              <linearGradient id="areaIni" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={NAVY} stopOpacity={0.20} />
-                <stop offset="100%" stopColor={NAVY} stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="areaLalu" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={ORANGE} stopOpacity={0.10} />
-                <stop offset="100%" stopColor={ORANGE} stopOpacity={0.01} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid vertical={false} stroke="#F1F2F5" />
-            <XAxis dataKey="week" axisLine={false} tickLine={false} dy={6}
-              tick={{ fontSize: 11.5, fill: "#7A828E", fontWeight: 600 }} />
-            <YAxis axisLine={false} tickLine={false} width={64} tickFormatter={yFmt}
-              tick={{ fontSize: 11, fill: "#9AA0AC" }} />
-            <Tooltip content={<AreaTip />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
-            <Area type="monotone" dataKey="lalu" stroke={ORANGE} strokeWidth={2} strokeDasharray="6 5"
-              fill="url(#areaLalu)" dot={{ r: 3, fill: ORANGE, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
-            <Area type="monotone" dataKey="ini" stroke={NAVY} strokeWidth={2.5}
-              fill="url(#areaIni)" dot={{ r: 3, fill: NAVY, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
-          </AreaChart>
+        {isEmpty ? (
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#9AA0AC", fontSize: 13 }}>Belum ada data prospect</div>
+        ) : (
+          <div ref={areaRef} className="bar-in">
+          {areaW > 0 && (
+            <AreaChart width={areaW} height={240} data={data} margin={{ top: 10, right: 22, left: -10, bottom: 0 }}>
+              <defs>
+                <linearGradient id="areaIni" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={NAVY} stopOpacity={0.20} />
+                  <stop offset="100%" stopColor={NAVY} stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="areaLalu" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={ORANGE} stopOpacity={0.10} />
+                  <stop offset="100%" stopColor={ORANGE} stopOpacity={0.01} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} stroke="#F1F2F5" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} dy={6}
+                tick={{ fontSize: 11.5, fill: "#7A828E", fontWeight: 600 }} />
+              <YAxis axisLine={false} tickLine={false} width={30} allowDecimals={false}
+                tick={{ fontSize: 11, fill: "#9AA0AC" }} />
+              <Tooltip content={<AreaTip />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
+              <Area type="monotone" dataKey="bulanLalu" stroke={ORANGE} strokeWidth={2} strokeDasharray="6 5"
+                fill="url(#areaLalu)" dot={{ r: 3, fill: ORANGE, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+              <Area type="monotone" dataKey="bulanIni" stroke={NAVY} strokeWidth={2.5}
+                fill="url(#areaIni)" dot={{ r: 3, fill: NAVY, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+            </AreaChart>
+          )}
+          </div>
         )}
-        </div>
         <div style={{ display: "flex", justifyContent: "center", gap: 24, padding: "8px 0 14px" }}>
           <span style={D.legItem}>
             <span style={{ width: 11, height: 11, borderRadius: "50%", background: NAVY, flex: "0 0 11px" }} />
@@ -457,7 +427,7 @@ function PipelineByStage({ stages = STAGES }) {
 function PieTip({ active, payload, total }) {
   if (!active || !payload || !payload.length) return null;
   const d = payload[0].payload;
-  const pct = Math.round((d.count / total) * 100);
+  const pct = total > 0 ? Math.round((d.count / total) * 100) : 0;
   return (
     <div style={D.tip}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
@@ -469,8 +439,15 @@ function PieTip({ active, payload, total }) {
   );
 }
 
-function LeadSourceDonut() {
-  const total = SOURCE_DIST.reduce((a, s) => a + s.count, 0);
+function LeadSourceDonut({ data = [] }) {
+  // Normalise: data has { source, count } — add name + color for chart
+  const normalised = data.map((d, i) => ({
+    name:  d.source || 'Lainnya',
+    count: d.count,
+    color: SOURCE_PALETTE[i % SOURCE_PALETTE.length],
+  }));
+  const total = normalised.reduce((a, s) => a + s.count, 0);
+  const isEmpty = normalised.length === 0;
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
@@ -480,135 +457,155 @@ function LeadSourceDonut() {
           <div style={D.cardSub}>Asal lead sepanjang periode</div>
         </div>
       </div>
-      <div style={D.donutBody}>
-        <div style={D.donutWrap} className="donut-in">
-          <PieChart width={150} height={150}>
-            <Pie data={SOURCE_DIST} dataKey="count" nameKey="name" cx={75} cy={75}
-              innerRadius={48} outerRadius={72} paddingAngle={1.5} stroke="none"
-              startAngle={90} endAngle={-270} isAnimationActive={false}>
-              {SOURCE_DIST.map((s) => <Cell key={s.name} fill={s.color} />)}
-            </Pie>
-            <Tooltip content={<PieTip total={total} />} />
-          </PieChart>
-          <div style={{ ...D.donutCenter, pointerEvents: "none" }}>
-            <div style={D.donutTotal}>{total}</div>
-            <div style={D.donutTotalLbl}>TOTAL LEAD</div>
+      {isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada data lead source</div>
+      ) : (
+        <div style={D.donutBody}>
+          <div style={D.donutWrap} className="donut-in">
+            <PieChart width={150} height={150}>
+              <Pie data={normalised} dataKey="count" nameKey="name" cx={75} cy={75}
+                innerRadius={48} outerRadius={72} paddingAngle={1.5} stroke="none"
+                startAngle={90} endAngle={-270} isAnimationActive={false}>
+                {normalised.map((s) => <Cell key={s.name} fill={s.color} />)}
+              </Pie>
+              <Tooltip content={<PieTip total={total} />} />
+            </PieChart>
+            <div style={{ ...D.donutCenter, pointerEvents: "none" }}>
+              <div style={D.donutTotal}>{total}</div>
+              <div style={D.donutTotalLbl}>TOTAL LEAD</div>
+            </div>
+          </div>
+          <div style={D.legend}>
+            {normalised.map((s) => (
+              <div key={s.name} style={D.legRow}>
+                <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
+                <span style={D.legName}>{s.name}</span>
+                <span style={D.legVal}>{s.count}</span>
+                <span style={D.legPct}>{total > 0 ? Math.round((s.count / total) * 100) : 0}%</span>
+              </div>
+            ))}
           </div>
         </div>
-        <div style={D.legend}>
-          {SOURCE_DIST.map((s) => (
-            <div key={s.name} style={D.legRow}>
-              <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
-              <span style={D.legName}>{s.name}</span>
-              <span style={D.legVal}>{s.count}</span>
-              <span style={D.legPct}>{Math.round((s.count / total) * 100)}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
 /* ---------- sales performance table ---------- */
-function SalesPerformance() {
+function salesStatus(convRate) {
+  if (convRate >= 30) return "Exceeding";
+  if (convRate >= 20) return "On Track";
+  if (convRate >= 10) return "Need Push";
+  return "At Risk";
+}
+
+function SalesPerformance({ data = [] }) {
   const [hover, setHover] = useState(-1);
-  const maxConv = Math.max(...SALES.map((s) => s.conv));
+  const maxConv = data.length > 0 ? Math.max(...data.map((s) => s.convRate || 0)) : 100;
+  const isEmpty = data.length === 0;
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="award" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Sales Performance</div>
-          <div style={D.cardSub}>Performa tim sales bulan ini</div>
+          <div style={D.cardSub}>Performa tim sales berdasarkan prospect</div>
         </div>
       </div>
-      <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 430 }}>
-        <thead>
-          <tr>
-            <th style={D.th}>Salesperson</th>
-            <th style={{ ...D.th, textAlign: "center" }}>Prospek</th>
-            <th style={{ ...D.th, textAlign: "center" }}>Inquiry</th>
-            <th style={{ ...D.th, textAlign: "center" }}>Quotation</th>
-            <th style={{ ...D.th, textAlign: "center" }}>Conv %</th>
-            <th style={{ ...D.th, textAlign: "right" }}>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {SALES.map((s, i) => {
-            const b = STATUS_BADGE[s.status];
-            return (
-              <tr key={s.name} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
-                style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
-                <td style={D.td}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ ...D.avatar, background: avatarColor(s.name) }}>{initials(s.name)}</span>
-                    <span style={{ fontWeight: 600, color: "#16243A" }}>{s.name}</span>
-                  </div>
-                </td>
-                <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.prospects}</span></td>
-                <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.inquiries}</span></td>
-                <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.quotations}</span></td>
-                <td style={{ ...D.td, textAlign: "center" }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-                    <span style={{ ...D.num, fontWeight: 700, color: "#16243A" }}>{s.conv}%</span>
-                    <div style={{ height: 5, width: 60, background: "#F2F3F6", borderRadius: 4, overflow: "hidden" }}>
-                      <span style={{ display: "block", height: "100%", width: (s.conv / maxConv) * 100 + "%", background: b.fg, borderRadius: 4 }} />
+      {isEmpty ? (
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
+          Belum ada data — assign salesperson ke prospects dulu
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 380 }}>
+          <thead>
+            <tr>
+              <th style={D.th}>Salesperson</th>
+              <th style={{ ...D.th, textAlign: "center" }}>Prospek</th>
+              <th style={{ ...D.th, textAlign: "center" }}>Won</th>
+              <th style={{ ...D.th, textAlign: "center" }}>Conv %</th>
+              <th style={{ ...D.th, textAlign: "right" }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((s, i) => {
+              const status = salesStatus(s.convRate || 0);
+              const b = STATUS_BADGE[status];
+              return (
+                <tr key={s.name + i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
+                  style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
+                  <td style={D.td}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ ...D.avatar, background: avatarColor(s.name) }}>{initials(s.name)}</span>
+                      <span style={{ fontWeight: 600, color: "#16243A" }}>{s.name}</span>
                     </div>
-                  </div>
-                </td>
-                <td style={{ ...D.td, textAlign: "right" }}>
-                  <span style={{ ...D.badge, background: b.bg, color: b.fg }}>{s.status}</span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      </div>
+                  </td>
+                  <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.prospek}</span></td>
+                  <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.won}</span></td>
+                  <td style={{ ...D.td, textAlign: "center" }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+                      <span style={{ ...D.num, fontWeight: 700, color: "#16243A" }}>{s.convRate}%</span>
+                      <div style={{ height: 5, width: 60, background: "#F2F3F6", borderRadius: 4, overflow: "hidden" }}>
+                        <span style={{ display: "block", height: "100%", width: (maxConv > 0 ? (s.convRate / maxConv) * 100 : 0) + "%", background: b.fg, borderRadius: 4 }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ ...D.td, textAlign: "right" }}>
+                    <span style={{ ...D.badge, background: b.bg, color: b.fg }}>{status}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ---------- new leads by source table ---------- */
-function LeadsBySource() {
+/* ---------- new leads by source table (static reference data) ---------- */
+function LeadsBySource({ sourceData = [] }) {
   const [hover, setHover] = useState(-1);
-  const maxConv = Math.max(...LEADS_BY_SOURCE.map((l) => l.conv));
+  // Build from real lead source data if available
+  const rows = sourceData.length > 0
+    ? sourceData.slice(0, 8).map(d => ({ source: d.source || d.name || '—', leads: d.count, conv: '—', response: '—' }))
+    : LEADS_BY_SOURCE;
+  const maxLeads = rows.reduce((a, r) => Math.max(a, typeof r.leads === 'number' ? r.leads : 0), 1);
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="inbox" size={18} /></div>
         <div>
           <div style={D.cardTitle}>New Leads by Source</div>
-          <div style={D.cardSub}>Lead baru & efektivitas per kanal</div>
+          <div style={D.cardSub}>Lead baru per kanal</div>
         </div>
       </div>
       <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 430 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 360 }}>
         <thead>
           <tr>
             <th style={D.th}>Source</th>
             <th style={{ ...D.th, textAlign: "center", width: 96 }}>New Leads</th>
-            <th style={{ ...D.th, width: 150 }}>Conversion %</th>
-            <th style={{ ...D.th, textAlign: "right" }}>Avg Response</th>
+            <th style={{ ...D.th, width: 150 }}>Volume</th>
           </tr>
         </thead>
         <tbody>
-          {LEADS_BY_SOURCE.map((l, i) => (
-            <tr key={l.source} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
+          {rows.map((l, i) => (
+            <tr key={l.source + i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
               style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
               <td style={D.td}><span style={{ fontWeight: 600, color: "#16243A" }}>{l.source}</span></td>
-              <td style={{ ...D.td, textAlign: "center" }}><span style={D.countPill}>{l.leads}</span></td>
-              <td style={D.td}>
-                <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <span style={{ ...D.num, fontWeight: 700, color: "#16243A", width: 34, flex: "0 0 34px" }}>{l.conv}%</span>
-                  <div style={{ ...D.miniTrack, marginTop: 0 }}>
-                    <span style={{ display: "block", height: "100%", width: (l.conv / maxConv) * 100 + "%", borderRadius: 4, background: l.conv >= 30 ? ORANGE : NAVY }} />
-                  </div>
-                </div>
+              <td style={{ ...D.td, textAlign: "center" }}>
+                {typeof l.leads === 'number' ? <span style={D.countPill}>{l.leads}</span> : <span style={{ color: "#9AA0AC" }}>—</span>}
               </td>
-              <td style={{ ...D.td, textAlign: "right" }}><span style={{ ...D.num, color: "#6B7280" }}>{l.response}</span></td>
+              <td style={D.td}>
+                {typeof l.leads === 'number' ? (
+                  <div style={{ ...D.miniTrack, marginTop: 0 }}>
+                    <span style={{ display: "block", height: "100%", width: (l.leads / maxLeads) * 100 + "%", borderRadius: 4, background: NAVY }} />
+                  </div>
+                ) : <span style={{ color: "#9AA0AC", fontSize: 12 }}>—</span>}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -621,7 +618,18 @@ function LeadsBySource() {
 /* ---------- recent activity ---------- */
 function RecentActivity({ items = ACTIVITY }) {
   const [hover, setHover] = useState(-1);
-  const list = items.length > 0 ? items : ACTIVITY;
+  const list = items.length > 0 ? items : [];
+  if (list.length === 0) {
+    return (
+      <div className="om-card" style={D.card}>
+        <div style={D.cardHead}>
+          <div style={D.cardIco}><Icon name="activity" size={18} /></div>
+          <div><div style={D.cardTitle}>Recent Activity</div><div style={D.cardSub}>Aktivitas prospect, inquiry & quotation terbaru</div></div>
+        </div>
+        <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada aktivitas</div>
+      </div>
+    );
+  }
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
@@ -658,29 +666,6 @@ function RecentActivity({ items = ACTIVITY }) {
   );
 }
 
-/* ---------- calendar tab (mock data) ---------- */
-const CAL_SVC = {
-  sea:     { label: "Sea Freight",   bg: "#E5EDF7", fg: "#1E5894" },
-  air:     { label: "Air Freight",   bg: "#DCF0F2", fg: "#0E7C8B" },
-  customs: { label: "Customs",       bg: "#EEE7F4", fg: "#6E4B8C" },
-  land:    { label: "Trucking",      bg: "#FBE6DA", fg: "#C8521B" },
-  wh:      { label: "Warehousing",   bg: "#DEF0E4", fg: "#1F8B4D" },
-  project: { label: "Project Cargo", bg: "#E5EDF7", fg: "#234F86" },
-};
-const CAL_MONTH = { label: "Juli 2026", year: 2026, month: 6 };
-const CAL_EVENTS = {
-  2:  [{ co: "PT Samudra Jaya Makmur",   value: 145000000, svc: "sea" }],
-  7:  [{ co: "PT Karya Nusantara Cargo", value: 268000000, svc: "customs" }],
-  9:  [{ co: "PT Global Indo Perkasa",   value: 420000000, svc: "air" }],
-  14: [{ co: "PT Delta Marine Cargo",    value: 720000000, svc: "sea" }],
-  16: [{ co: "CV Berkah Mandiri",        value: 78000000,  svc: "land" }],
-  18: [{ co: "PT Maju Bersama Logistik", value: 185000000, svc: "sea" }],
-  21: [{ co: "PT Wira Logistik Utama",   value: 355000000, svc: "customs" }],
-  24: [{ co: "PT Mitra Sukses Sejahtera",value: 240000000, svc: "air" }],
-  28: [{ co: "PT Indofresh Distribusi",  value: 535000000, svc: "wh" }],
-  30: [{ co: "PT Bintang Timur Niaga",   value: 310000000, svc: "project" }],
-};
-
 /* ---------- tab navigation ---------- */
 const DASH_TABS = [
   { id: "summary",  label: "Summary",  icon: "layoutdashboard" },
@@ -701,48 +686,128 @@ function DashTabs({ active, onSelect }) {
   return <div style={D.tabBar}>{DASH_TABS.map((t) => <DashTab key={t.id} tab={t} active={active === t.id} onSelect={onSelect} />)}</div>;
 }
 
-/* ---------- calendar view ---------- */
-function DashCalendar() {
-  const dow = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
-  const first = new Date(CAL_MONTH.year, CAL_MONTH.month, 1).getDay();
-  const offset = (first + 6) % 7;
-  const days = new Date(CAL_MONTH.year, CAL_MONTH.month + 1, 0).getDate();
+/* ---------- visit status badge ---------- */
+const VISIT_STATUS = {
+  scheduled:  { bg: "#E5EDF7", fg: "#1E5894", label: "Scheduled" },
+  completed:  { bg: "#DEF0E4", fg: "#1F8B4D", label: "Completed" },
+  cancelled:  { bg: "#F7E1DE", fg: "#C0392B", label: "Cancelled" },
+  rescheduled:{ bg: "#FBEFD3", fg: "#9A6B12", label: "Reschedule" },
+};
+
+/* ---------- calendar view — real Supabase data ---------- */
+function DashCalendar({ visits = [] }) {
+  const now = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+  const todayDate = now.getDate();
+
+  const MONTH_LABELS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  const DOW = ["Sen","Sel","Rab","Kam","Jum","Sab","Min"];
+
+  const firstDay = new Date(year, month, 1).getDay();   // 0=Sun
+  const offset   = (firstDay + 6) % 7;                  // Monday-first offset
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Group visits by date string "YYYY-MM-DD"
+  const visitsByDay = {};
+  visits.forEach(v => {
+    if (!v.date) return;
+    const key = v.date.slice(0, 10);
+    if (!visitsByDay[key]) visitsByDay[key] = [];
+    visitsByDay[key].push(v);
+  });
+
+  // Build cell array
   const cells = [];
   for (let i = 0; i < offset; i++) cells.push(null);
-  for (let d = 1; d <= days; d++) cells.push(d);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const totalVisits = visits.length;
+
   return (
     <div className="om-card" style={D.card}>
-      <div style={D.cardHead}>
-        <div style={D.cardIco}><Icon name="calendar" size={18} /></div>
-        <div>
-          <div style={D.cardTitle}>Calendar Prospect</div>
-          <div style={D.cardSub}>Estimasi closing prospect · {CAL_MONTH.label}</div>
+      <div style={{ ...D.cardHead, justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={D.cardIco}><Icon name="calendar" size={18} /></div>
+          <div>
+            <div style={D.cardTitle}>Jadwal Visit Sales</div>
+            <div style={D.cardSub}>Kunjungan tim sales — {MONTH_LABELS[month]} {year}</div>
+          </div>
         </div>
+        <button
+          disabled
+          title="Fitur ini belum tersedia"
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", borderRadius: 8, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "not-allowed", opacity: 0.7 }}>
+          <Icon name="plus" size={14} />
+          Tambah Visit
+        </button>
       </div>
-      <div style={D.calGridHead}>
-        {dow.map((d) => <div key={d} style={D.calDow}>{d}</div>)}
-      </div>
-      <div style={D.calGrid}>
-        {cells.map((d, i) => {
-          const evs = d ? CAL_EVENTS[d] : null;
+
+      {/* stats row */}
+      <div style={{ display: "flex", gap: 20, padding: "10px 16px 0", borderBottom: "1px solid #F0F1F4" }}>
+        <div style={{ padding: "8px 0", fontSize: 12, color: "#7A828E" }}>
+          <b style={{ color: NAVY, fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800 }}>{totalVisits}</b> jadwal bulan ini
+        </div>
+        {Object.entries(VISIT_STATUS).map(([key, meta]) => {
+          const cnt = visits.filter(v => (v.status || 'scheduled') === key).length;
+          if (cnt === 0) return null;
           return (
-            <div key={i} style={{ ...D.calCell, ...(d ? null : D.calCellMuted) }}>
-              {d ? <div style={D.calNum}>{d}</div> : null}
-              {evs ? evs.map((e, j) => {
-                const sv = CAL_SVC[e.svc] || CAL_SVC.sea;
-                return (
-                  <div key={j} style={{ ...D.calEvent, background: sv.bg }}>
-                    <div style={D.calEventCo}>{e.co}</div>
-                    <span style={{ ...D.calSvc, background: "#fff", color: sv.fg }}>{sv.label}</span>
-                    <div style={D.calVal}>{rpShort(e.value)}</div>
-                  </div>
-                );
-              }) : null}
+            <div key={key} style={{ padding: "8px 0", display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ ...D.badge, background: meta.bg, color: meta.fg, padding: "2px 7px", fontSize: 10 }}>{meta.label}</span>
+              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 700, color: "#16243A" }}>{cnt}</span>
             </div>
           );
         })}
       </div>
+
+      {/* day headers */}
+      <div style={D.calGridHead}>
+        {DOW.map((d) => <div key={d} style={D.calDow}>{d}</div>)}
+      </div>
+
+      {/* grid */}
+      <div style={D.calGrid}>
+        {cells.map((d, i) => {
+          const isToday = d === todayDate;
+          const dateKey = d ? `${year}-${pad(month + 1)}-${pad(d)}` : null;
+          const dayVisits = dateKey ? (visitsByDay[dateKey] || []) : [];
+          return (
+            <div key={i} style={{
+              ...D.calCell,
+              ...(d ? null : D.calCellMuted),
+              ...(isToday ? D.calCellToday : null),
+            }}>
+              {d ? (
+                isToday
+                  ? <div style={D.calNumToday}>{d}</div>
+                  : <div style={D.calNum}>{d}</div>
+              ) : null}
+              {dayVisits.slice(0, 3).map((v, j) => {
+                const st = VISIT_STATUS[v.status || 'scheduled'] || VISIT_STATUS.scheduled;
+                return (
+                  <div key={j} style={{ ...D.calEvent, borderLeftColor: st.fg, background: st.bg + "88" }}>
+                    <div style={D.calEventProspect} title={v.prospect}>{v.prospect}</div>
+                    <div style={D.calEventMeta}>
+                      {v.time ? v.time.slice(0, 5) + ' · ' : ''}{v.salesperson !== '—' ? v.salesperson : ''}
+                    </div>
+                  </div>
+                );
+              })}
+              {dayVisits.length > 3 && (
+                <div style={{ fontSize: 10, color: "#9AA0AC", fontWeight: 600, paddingLeft: 2 }}>+{dayVisits.length - 3} lainnya</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {totalVisits === 0 && (
+        <div style={{ padding: "20px", textAlign: "center", color: "#9AA0AC", fontSize: 13, borderTop: "1px solid #F4F5F7" }}>
+          Belum ada jadwal visit bulan ini. Tabel <code style={{ background: "#F2F3F6", padding: "1px 5px", borderRadius: 4 }}>sales_visits</code> mungkin belum tersedia.
+        </div>
+      )}
     </div>
   );
 }
@@ -751,14 +816,14 @@ function DashCalendar() {
 function fmtTimeAgo(iso) {
   if (!iso) return '—';
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)   return `${diff} detik lalu`;
-  if (diff < 3600) return `${Math.floor(diff / 60)} menit lalu`;
-  if (diff < 86400)return `${Math.floor(diff / 3600)} jam lalu`;
+  if (diff < 60)    return `${diff} detik lalu`;
+  if (diff < 3600)  return `${Math.floor(diff / 60)} menit lalu`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} jam lalu`;
   return `${Math.floor(diff / 86400)} hari lalu`;
 }
 
 /* ── stage order for pipeline chart ─────────────────────────────────────── */
-const STAGE_ORDER = ['new','contacted','qualified','proposal','negotiation','won','lost'];
+const STAGE_ORDER  = ['new','contacted','qualified','proposal','negotiation','won','lost'];
 const STAGE_COLORS = { won: '#1F8B4D', lost: '#C0392B' };
 const STAGE_LABELS = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', negotiation: 'Negotiation', won: 'Won', lost: 'Lost' };
 
@@ -790,21 +855,63 @@ function CRMDashboardPage() {
     try {
       const cid = profile.company_id;
 
-      const [prospectsRes, inquiriesRes, quotationsRes] = await Promise.all([
+      const now            = new Date();
+      const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endLastMonth   = new Date(startThisMonth.getTime() - 1);
+      const startOfMonth   = startThisMonth.toISOString().slice(0, 10);
+      const endOfMonth     = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+
+      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes] = await Promise.all([
+        // Full prospects for this company — all fields needed for multiple computations
         supabase
           .from('prospects')
-          .select('pipeline_stage, name, created_at')
+          .select('id, pipeline_stage, name, created_at, source, assigned_to, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
-          .is('deleted_at', null),
+          .is('deleted_at', null)
+          .limit(1000),
+
+        // Inquiry count
         supabase
           .from('inquiries')
           .select('id', { count: 'exact', head: true })
           .eq('company_id', cid)
           .is('deleted_at', null),
+
+        // Quotation count
         supabase
           .from('quotations')
           .select('id', { count: 'exact', head: true })
           .eq('company_id', cid),
+
+        // Last month prospects — for trend comparison
+        supabase
+          .from('prospects')
+          .select('created_at')
+          .eq('company_id', cid)
+          .is('deleted_at', null)
+          .gte('created_at', startLastMonth.toISOString())
+          .lt('created_at', startThisMonth.toISOString())
+          .limit(1000),
+
+        // Sales performance — assigned prospects with pipeline stage
+        supabase
+          .from('prospects')
+          .select('assigned_to, pipeline_stage, profiles!prospects_assigned_to_fkey(full_name)')
+          .eq('company_id', cid)
+          .is('deleted_at', null)
+          .not('assigned_to', 'is', null)
+          .limit(1000),
+
+        // Sales visits calendar — graceful fail if table doesn't exist
+        supabase
+          .from('sales_visits')
+          .select('id, visit_date, visit_time, location, notes, status, prospect_id, salesperson_id, prospects(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
+          .eq('company_id', cid)
+          .gte('visit_date', startOfMonth)
+          .lte('visit_date', endOfMonth)
+          .order('visit_date', { ascending: true })
+          .limit(100),
       ]);
 
       if (prospectsRes.error) throw prospectsRes.error;
@@ -815,22 +922,81 @@ function CRMDashboardPage() {
       const winRate         = totalProspects > 0 ? Math.round((wonCount / totalProspects) * 100) : 0;
       const totalInquiries  = inquiriesRes.count  ?? 0;
       const totalQuotations = quotationsRes.count ?? 0;
+      const lastMonthProspects = lastMonthRes.data || [];
 
-      // Stage breakdown — count client-side (avoids GROUP BY RPC dependency)
+      // ── Stage breakdown ─────────────────────────────────────────────────
       const stageCounts = {};
       prospects.forEach(p => {
-        const s = (p.pipeline_stage || 'NEW').toLowerCase();
+        const s = (p.pipeline_stage || 'new').toLowerCase();
         stageCounts[s] = (stageCounts[s] || 0) + 1;
       });
       const stagesData = STAGE_ORDER.map(id => ({
         id,
         name:  STAGE_LABELS[id] || id,
         count: stageCounts[id] || 0,
-        value: 0,  // monetary value not stored per prospect — future enhancement
+        value: 0,
         color: STAGE_COLORS[id] || NAVY,
       }));
 
-      // Recent prospects (5 latest)
+      // ── Lead source distribution ─────────────────────────────────────────
+      const sourceCounts = {};
+      prospects.forEach(p => {
+        const s = p.source || 'Lainnya';
+        sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+      });
+      const leadSourceData = Object.entries(sourceCounts)
+        .map(([source, count]) => ({ source, count }))
+        .sort((a, b) => b.count - a.count);
+
+      // ── Pipeline trend — prospect count per week (bulan ini vs bulan lalu) ─
+      const trendData = [1, 2, 3, 4].map(week => {
+        const weekStart = new Date(startThisMonth);
+        weekStart.setDate((week - 1) * 7 + 1);
+        const weekEnd = new Date(startThisMonth);
+        weekEnd.setDate(week * 7);
+
+        const thisCount = prospects.filter(p => {
+          const d = new Date(p.created_at);
+          return d >= weekStart && d <= weekEnd;
+        }).length;
+
+        const lmStart = new Date(weekStart); lmStart.setMonth(lmStart.getMonth() - 1);
+        const lmEnd   = new Date(weekEnd);   lmEnd.setMonth(lmEnd.getMonth() - 1);
+        const lastCount = lastMonthProspects.filter(p => {
+          const d = new Date(p.created_at);
+          return d >= lmStart && d <= lmEnd;
+        }).length;
+
+        return { name: `Minggu ${week}`, bulanIni: thisCount, bulanLalu: lastCount };
+      });
+
+      // ── Sales performance ─────────────────────────────────────────────────
+      const salesMap = {};
+      (salesPerfRes.data || []).forEach(p => {
+        const id   = p.assigned_to;
+        const name = p.profiles?.full_name || 'Unknown';
+        if (!salesMap[id]) salesMap[id] = { name, prospek: 0, won: 0 };
+        salesMap[id].prospek++;
+        if ((p.pipeline_stage || '').toLowerCase() === 'won') salesMap[id].won++;
+      });
+      const salesPerfData = Object.values(salesMap)
+        .map(s => ({ ...s, convRate: s.prospek > 0 ? Math.round((s.won / s.prospek) * 100) : 0 }))
+        .sort((a, b) => b.prospek - a.prospek);
+
+      // ── Calendar visits ────────────────────────────────────────────────────
+      // visitsRes.error is acceptable — table may not exist yet
+      const visitsData = (visitsRes.data || []).map(v => ({
+        id:          v.id,
+        date:        v.visit_date,
+        time:        v.visit_time,
+        prospect:    v.prospects?.name   || '—',
+        salesperson: v.profiles?.full_name || '—',
+        location:    v.location || '—',
+        notes:       v.notes   || '',
+        status:      v.status  || 'scheduled',
+      }));
+
+      // ── Recent activity ────────────────────────────────────────────────────
       const recentActivity = [...prospects]
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .slice(0, 5)
@@ -839,10 +1005,14 @@ function CRMDashboardPage() {
           text: 'Prospect baru',
           co:   p.name || '(tanpa nama)',
           time: fmtTimeAgo(p.created_at),
-          user: '—',
+          user: p.profiles?.full_name || '—',
         }));
 
-      setDashData({ totalProspects, totalInquiries, totalQuotations, winRate, stagesData, recentActivity });
+      setDashData({
+        totalProspects, totalInquiries, totalQuotations, winRate,
+        stagesData, recentActivity,
+        trendData, leadSourceData, salesPerfData, visitsData,
+      });
     } catch (err) {
       console.error('[CRMDashboardPage] fetch error:', err);
       setDashError(err.message || 'Gagal memuat data dashboard.');
@@ -918,35 +1088,37 @@ function CRMDashboardPage() {
         {/* tab navigation */}
         <DashTabs active={tab} onSelect={setTab} />
 
-        {tab === "calendar" ? <DashCalendar /> : (
-        <React.Fragment>
-        {/* row 1 — KPI */}
-        {dashLoading ? <SkeletonRow /> : (
-          <div style={D.kpiRow}>
-            {kpisReal.map((k) => <KpiCard key={k.label} data={k} />)}
+        {tab === "calendar" ? (
+          <DashCalendar visits={dashData?.visitsData || []} />
+        ) : (
+          <React.Fragment>
+          {/* row 1 — KPI */}
+          {dashLoading ? <SkeletonRow /> : (
+            <div style={D.kpiRow}>
+              {kpisReal.map((k) => <KpiCard key={k.label} data={k} />)}
+            </div>
+          )}
+
+          {/* row 2 — pipeline trend */}
+          <div style={{ marginBottom: 16 }}>
+            <PipelineTrend data={dashData?.trendData || []} />
           </div>
-        )}
 
-        {/* row 2 — pipeline value trend */}
-        <div style={{ marginBottom: 16 }}>
-          <PipelineTrend />
-        </div>
+          {/* row 3 — charts */}
+          <div style={D.chartsRow}>
+            <PipelineByStage stages={dashData?.stagesData} />
+            <LeadSourceDonut data={dashData?.leadSourceData || []} />
+          </div>
 
-        {/* row 3 — charts */}
-        <div style={D.chartsRow}>
-          <PipelineByStage stages={dashData?.stagesData} />
-          <LeadSourceDonut />
-        </div>
+          {/* row 4 — tables */}
+          <div style={D.tablesRow}>
+            <SalesPerformance data={dashData?.salesPerfData || []} />
+            <LeadsBySource sourceData={dashData?.leadSourceData || []} />
+          </div>
 
-        {/* row 3 — tables */}
-        <div style={D.tablesRow}>
-          <SalesPerformance />
-          <LeadsBySource />
-        </div>
-
-        {/* row 4 — activity */}
-        <RecentActivity items={dashData?.recentActivity} />
-        </React.Fragment>
+          {/* row 5 — activity */}
+          <RecentActivity items={dashData?.recentActivity} />
+          </React.Fragment>
         )}
       </div>
 
