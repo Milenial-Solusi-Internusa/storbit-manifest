@@ -833,7 +833,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
   );
 }
 
-function DashCalendar({ visits = [], onAddVisit }) {
+function DashCalendar({ visits = [], onAddVisit, onDayClick }) {
   const now = new Date();
   const year  = now.getFullYear();
   const month = now.getMonth();
@@ -911,11 +911,16 @@ function DashCalendar({ visits = [], onAddVisit }) {
           const dateKey = d ? `${year}-${pad(month + 1)}-${pad(d)}` : null;
           const dayVisits = dateKey ? (visitsByDay[dateKey] || []) : [];
           return (
-            <div key={i} style={{
-              ...D.calCell,
-              ...(d ? null : D.calCellMuted),
-              ...(isToday ? D.calCellToday : null),
-            }}>
+            <div key={i}
+              onClick={d ? () => onDayClick?.(`${year}-${pad(month + 1)}-${pad(d)}`) : undefined}
+              onMouseEnter={d ? (e) => { if (!isToday) e.currentTarget.style.background = '#F0F4FA'; } : undefined}
+              onMouseLeave={d ? (e) => { if (!isToday) e.currentTarget.style.background = ''; } : undefined}
+              style={{
+                ...D.calCell,
+                ...(d ? null : D.calCellMuted),
+                ...(isToday ? D.calCellToday : null),
+                cursor: d ? 'pointer' : 'default',
+              }}>
               {d ? (
                 isToday
                   ? <div style={D.calNumToday}>{d}</div>
@@ -1334,7 +1339,14 @@ function CRMDashboardPage() {
           <>
             <DashCalendar
               visits={dashData?.visitsData || []}
-              onAddVisit={() => setAddVisitOpen(true)}
+              onAddVisit={() => {
+                setVisitDraft(d => ({ ...d, visit_date: '' }));
+                setAddVisitOpen(true);
+              }}
+              onDayClick={(dateStr) => {
+                setVisitDraft(d => ({ ...d, visit_date: dateStr }));
+                setAddVisitOpen(true);
+              }}
             />
             <AddVisitModal
               open={addVisitOpen}

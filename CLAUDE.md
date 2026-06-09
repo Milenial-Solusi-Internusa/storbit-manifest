@@ -819,7 +819,9 @@ Output:
 
 | 2.0P | CRMDashboardPage — AddVisitModal + Visit List; ICONS tambah `x` key; `AddVisitModal` komponen inline (before DashCalendar): form tanggal+waktu+salesperson+prospect+lokasi+status+notes, validasi client-side, insert ke `sales_visits`, refresh fetchDash setelah save; `DashCalendar` tambah prop `onAddVisit`, tombol Tambah Visit diaktifkan; Visit List section di bawah calendar grid (sorted by date+time, date badge, info row, status badge, past+scheduled highlight kuning); state di CRMDashboardPage: addVisitOpen/visitDraft/visitSaving/visitError/salesProfiles/prospectOptions; useEffect fetch profiles+prospects saat modal buka; handleSaveVisit via useCallback; render updated dengan fragment wrapper; build clean | ✅ Complete |
 
-Current phase: **Phase 2.0P** ✅ Complete
+| 2.0Q | CRMDashboardPage — klik cell kalender pre-fill tanggal; DashCalendar tambah prop `onDayClick`; cell div tambah onClick (memanggil `onDayClick` dengan dateStr `YYYY-MM-DD`), cursor pointer, hover bg #F0F4FA (skip isToday); render DashCalendar: `onAddVisit` reset visit_date ke kosong sebelum buka, `onDayClick` set visit_date ke dateStr lalu buka modal; build clean | ✅ Complete |
+
+Current phase: **Phase 2.0Q** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
