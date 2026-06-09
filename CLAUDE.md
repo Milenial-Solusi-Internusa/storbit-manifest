@@ -817,7 +817,9 @@ Output:
 
 | 2.0O | `src/components/ConfirmModal.jsx` — reusable confirm dialog (replaces all `window.confirm`); props: open, title, message, confirmLabel, cancelLabel, variant (danger/warning/info), onConfirm, onCancel; Escape key closes; centered modal, backdrop blur, alert icon, Montserrat title; 7 files updated: ProspectListPage, ProspectFormPage, BranchesPage, PositionsPage, DepartmentsPage, UserAccessPage, MyRequestsPage — each adds confirmState, showConfirm, closeConfirm helpers; handleDelete/handleArchive/handleToggleActive refactored to callback pattern; zero window.confirm remaining; build clean | ✅ Complete |
 
-Current phase: **Phase 2.0O** ✅ Complete
+| 2.0P | CRMDashboardPage — AddVisitModal + Visit List; ICONS tambah `x` key; `AddVisitModal` komponen inline (before DashCalendar): form tanggal+waktu+salesperson+prospect+lokasi+status+notes, validasi client-side, insert ke `sales_visits`, refresh fetchDash setelah save; `DashCalendar` tambah prop `onAddVisit`, tombol Tambah Visit diaktifkan; Visit List section di bawah calendar grid (sorted by date+time, date badge, info row, status badge, past+scheduled highlight kuning); state di CRMDashboardPage: addVisitOpen/visitDraft/visitSaving/visitError/salesProfiles/prospectOptions; useEffect fetch profiles+prospects saat modal buka; handleSaveVisit via useCallback; render updated dengan fragment wrapper; build clean | ✅ Complete |
+
+Current phase: **Phase 2.0P** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

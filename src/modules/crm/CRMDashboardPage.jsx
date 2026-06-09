@@ -42,6 +42,7 @@ const ICONS = {
   receipt:     '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8H8"/><path d="M16 12H8"/><path d="M12 16H8"/>',
   alert:       '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   plus:        '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  x:           '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   mappin:      '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
 };
 
@@ -695,7 +696,144 @@ const VISIT_STATUS = {
 };
 
 /* ---------- calendar view — real Supabase data ---------- */
-function DashCalendar({ visits = [] }) {
+/* ---------- AddVisitModal ---------- */
+function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, salesProfiles, prospectOptions }) {
+  if (!open) return null;
+  const inp = (props) => (
+    <input {...props} style={{
+      width: '100%', height: 38, borderRadius: 8,
+      border: '1px solid #E5E7EB', padding: '0 12px',
+      fontSize: 13, fontFamily: 'inherit', outline: 'none',
+      boxSizing: 'border-box', background: 'white',
+    }} />
+  );
+  const sel = (props) => (
+    <select {...props} style={{
+      width: '100%', height: 38, borderRadius: 8,
+      border: '1px solid #E5E7EB', padding: '0 12px',
+      fontSize: 13, fontFamily: 'inherit', outline: 'none',
+      boxSizing: 'border-box', background: 'white',
+    }} />
+  );
+  const lbl = (text, req) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
+      {text}{req && <span style={{ color: '#EF4444' }}> *</span>}
+    </div>
+  );
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div style={{
+        background: 'white', borderRadius: 20, padding: 32,
+        maxWidth: 480, width: '100%',
+        boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
+        maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>JADWAL VISIT</div>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>Tambah Kunjungan</h2>
+          </div>
+          <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="x" size={16} color="#6B7280" />
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Tanggal + Waktu */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              {lbl('Tanggal Kunjungan', true)}
+              {inp({ type: 'date', value: draft.visit_date, onChange: e => setDraft(d => ({ ...d, visit_date: e.target.value })) })}
+            </div>
+            <div>
+              {lbl('Waktu')}
+              {inp({ type: 'time', value: draft.visit_time, onChange: e => setDraft(d => ({ ...d, visit_time: e.target.value })) })}
+            </div>
+          </div>
+
+          {/* Salesperson */}
+          <div>
+            {lbl('Salesperson', true)}
+            {sel({
+              value: draft.salesperson_id,
+              onChange: e => setDraft(d => ({ ...d, salesperson_id: e.target.value })),
+              children: [
+                <option key="" value="">— Pilih salesperson —</option>,
+                ...salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>),
+              ],
+            })}
+          </div>
+
+          {/* Prospect */}
+          <div>
+            {lbl('Prospect (Opsional)')}
+            {sel({
+              value: draft.prospect_id,
+              onChange: e => setDraft(d => ({ ...d, prospect_id: e.target.value })),
+              children: [
+                <option key="" value="">— Tidak terkait prospect —</option>,
+                ...prospectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>),
+              ],
+            })}
+          </div>
+
+          {/* Lokasi */}
+          <div>
+            {lbl('Lokasi')}
+            {inp({ type: 'text', placeholder: 'cth: Kantor PT ABC, Jakarta Utara', value: draft.location, onChange: e => setDraft(d => ({ ...d, location: e.target.value })) })}
+          </div>
+
+          {/* Status */}
+          <div>
+            {lbl('Status')}
+            {sel({
+              value: draft.status,
+              onChange: e => setDraft(d => ({ ...d, status: e.target.value })),
+              children: [
+                <option key="scheduled" value="scheduled">Scheduled</option>,
+                <option key="completed" value="completed">Completed</option>,
+                <option key="cancelled" value="cancelled">Cancelled</option>,
+              ],
+            })}
+          </div>
+
+          {/* Notes */}
+          <div>
+            {lbl('Catatan')}
+            <textarea
+              value={draft.notes}
+              onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
+              placeholder="Tujuan kunjungan, agenda, dll..."
+              rows={3}
+              style={{ width: '100%', borderRadius: 8, border: '1px solid #E5E7EB', padding: '8px 12px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* Error */}
+          {error && <div style={{ background: '#FEE2E2', color: '#DC2626', padding: '10px 14px', borderRadius: 8, fontSize: 13 }}>{error}</div>}
+
+          {/* Footer */}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 8 }}>
+            <button onClick={onClose} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Batal
+            </button>
+            <button onClick={onSave} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#144682', color: 'white', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Menyimpan…' : 'Simpan Visit'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashCalendar({ visits = [], onAddVisit }) {
   const now = new Date();
   const year  = now.getFullYear();
   const month = now.getMonth();
@@ -737,9 +875,8 @@ function DashCalendar({ visits = [] }) {
           </div>
         </div>
         <button
-          disabled
-          title="Fitur ini belum tersedia"
-          style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", borderRadius: 8, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "not-allowed", opacity: 0.7 }}>
+          onClick={onAddVisit}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", borderRadius: 8, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
           <Icon name="plus" size={14} />
           Tambah Visit
         </button>
@@ -805,7 +942,60 @@ function DashCalendar({ visits = [] }) {
 
       {totalVisits === 0 && (
         <div style={{ padding: "20px", textAlign: "center", color: "#9AA0AC", fontSize: 13, borderTop: "1px solid #F4F5F7" }}>
-          Belum ada jadwal visit bulan ini. Tabel <code style={{ background: "#F2F3F6", padding: "1px 5px", borderRadius: 4 }}>sales_visits</code> mungkin belum tersedia.
+          Belum ada jadwal visit bulan ini. Klik "+ Tambah Visit" untuk menambah jadwal.
+        </div>
+      )}
+
+      {/* Visit List */}
+      {visits.length > 0 && (
+        <div style={{ borderTop: '1px solid #F0F1F4', padding: '16px 20px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>
+            Daftar Kunjungan Bulan Ini
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {[...visits]
+              .sort((a, b) => (a.date + (a.time || '')) > (b.date + (b.time || '')) ? 1 : -1)
+              .map((v, i) => {
+                const st = VISIT_STATUS[v.status || 'scheduled'] || VISIT_STATUS.scheduled;
+                const dateObj = new Date(v.date + 'T00:00:00');
+                const dayName = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'][dateObj.getDay()];
+                const dayNum  = dateObj.getDate();
+                const isPast  = new Date(v.date) < new Date(new Date().toDateString());
+                return (
+                  <div key={v.id || i} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 14px', borderRadius: 10,
+                    background: isPast && v.status === 'scheduled' ? '#FFFBEB' : '#F9FAFB',
+                    border: '1px solid #F0F1F4',
+                    opacity: v.status === 'cancelled' ? 0.6 : 1,
+                  }}>
+                    {/* Date badge */}
+                    <div style={{ textAlign: 'center', minWidth: 40 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' }}>{dayName}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#144682', fontFamily: "'IBM Plex Mono',monospace", lineHeight: 1.1 }}>{dayNum}</div>
+                    </div>
+                    {/* Divider */}
+                    <div style={{ width: 1, height: 36, background: '#E5E7EB' }} />
+                    {/* Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {v.prospect || 'Kunjungan Umum'}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+                        {v.salesperson !== '—' ? v.salesperson : '—'}
+                        {v.time ? ' · ' + v.time.slice(0, 5) : ''}
+                        {v.location ? ' · ' + v.location : ''}
+                      </div>
+                    </div>
+                    {/* Status badge */}
+                    <span style={{ ...D.badge, background: st.bg, color: st.fg, fontSize: 10, padding: '3px 8px', whiteSpace: 'nowrap' }}>
+                      {st.label}
+                    </span>
+                  </div>
+                );
+              })
+            }
+          </div>
         </div>
       )}
     </div>
@@ -840,6 +1030,17 @@ function CRMDashboardPage() {
   const [dashData,    setDashData]    = useState(null);
   const [dashLoading, setDashLoading] = useState(true);
   const [dashError,   setDashError]   = useState(null);
+
+  // ── add visit modal state ────────────────────────────────────────────────
+  const [addVisitOpen,     setAddVisitOpen]     = useState(false);
+  const [visitDraft,       setVisitDraft]       = useState({
+    visit_date: '', visit_time: '', prospect_id: '',
+    salesperson_id: '', location: '', notes: '', status: 'scheduled',
+  });
+  const [visitSaving,      setVisitSaving]      = useState(false);
+  const [visitError,       setVisitError]       = useState(null);
+  const [salesProfiles,    setSalesProfiles]    = useState([]);
+  const [prospectOptions,  setProspectOptions]  = useState([]);
 
   function showToast(msg, icon) {
     setToast({ msg, icon: icon || "info", show: true });
@@ -1023,6 +1224,47 @@ function CRMDashboardPage() {
 
   useEffect(() => { fetchDash(); }, [fetchDash]);
 
+  // ── fetch options for AddVisitModal ─────────────────────────────────────
+  useEffect(() => {
+    if (!addVisitOpen || !profile?.company_id) return;
+    Promise.all([
+      supabase.from('profiles').select('id, full_name').eq('active', true).limit(100),
+      supabase.from('prospects').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null).order('name').limit(200),
+    ]).then(([profRes, prospRes]) => {
+      setSalesProfiles(profRes.data || []);
+      setProspectOptions(prospRes.data || []);
+    });
+  }, [addVisitOpen, profile?.company_id]);
+
+  // ── save new visit ───────────────────────────────────────────────────────
+  const handleSaveVisit = useCallback(async () => {
+    if (!visitDraft.visit_date) { setVisitError('Tanggal kunjungan wajib diisi.'); return; }
+    if (!visitDraft.salesperson_id) { setVisitError('Salesperson wajib dipilih.'); return; }
+    setVisitSaving(true);
+    setVisitError(null);
+    try {
+      const { error } = await supabase.from('sales_visits').insert({
+        company_id:    profile.company_id,
+        visit_date:    visitDraft.visit_date,
+        visit_time:    visitDraft.visit_time    || null,
+        prospect_id:   visitDraft.prospect_id   || null,
+        salesperson_id: visitDraft.salesperson_id,
+        location:      visitDraft.location      || null,
+        notes:         visitDraft.notes         || null,
+        status:        visitDraft.status,
+        created_by:    profile.id,
+      });
+      if (error) throw error;
+      setAddVisitOpen(false);
+      setVisitDraft({ visit_date: '', visit_time: '', prospect_id: '', salesperson_id: '', location: '', notes: '', status: 'scheduled' });
+      fetchDash();
+    } catch (err) {
+      setVisitError('Gagal simpan: ' + err.message);
+    } finally {
+      setVisitSaving(false);
+    }
+  }, [visitDraft, profile, fetchDash]);
+
   // ── KPI cards from real data ─────────────────────────────────────────────
   const kpisReal = dashData ? [
     { label: "Total Prospects", icon: "users",       value: String(dashData.totalProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
@@ -1089,7 +1331,23 @@ function CRMDashboardPage() {
         <DashTabs active={tab} onSelect={setTab} />
 
         {tab === "calendar" ? (
-          <DashCalendar visits={dashData?.visitsData || []} />
+          <>
+            <DashCalendar
+              visits={dashData?.visitsData || []}
+              onAddVisit={() => setAddVisitOpen(true)}
+            />
+            <AddVisitModal
+              open={addVisitOpen}
+              onClose={() => { setAddVisitOpen(false); setVisitError(null); }}
+              onSave={handleSaveVisit}
+              saving={visitSaving}
+              error={visitError}
+              draft={visitDraft}
+              setDraft={setVisitDraft}
+              salesProfiles={salesProfiles}
+              prospectOptions={prospectOptions}
+            />
+          </>
         ) : (
           <React.Fragment>
           {/* row 1 — KPI */}
