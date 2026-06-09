@@ -1,5 +1,5 @@
 // src/modules/crm/ProspectFormPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, Save, User } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -68,8 +68,9 @@ function Field({ label, req, children, full }) {
 }
 
 export default function ProspectFormPage({ prospect, onBack, showToast }) {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
   const isEdit = !!prospect;
+  const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
 
   const [form, setForm] = useState({
     name:             '',
@@ -137,6 +138,22 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     supabase.from('payment_terms').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null)
       .then(({ data }) => setPaymentTerms(data || []));
   }, [profile?.company_id]);
+
+  const handleDelete = useCallback(async () => {
+    if (!prospect?.id) return;
+    if (!window.confirm(`Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    try {
+      const { error } = await supabase
+        .from('prospects')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', prospect.id);
+      if (error) throw error;
+      showToast?.('Prospect berhasil dihapus.', 'success');
+      onBack?.();
+    } catch (err) {
+      showToast?.('Gagal hapus prospect: ' + err.message, 'error');
+    }
+  }, [prospect?.id, prospect?.name, showToast, onBack]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -291,6 +308,15 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         />
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 28, paddingTop: 20, borderTop: `1px solid ${C.lineSoft}` }}>
+          {canDelete && isEdit && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#FEE2E2', color: '#DC2626', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginRight: 'auto' }}
+            >
+              Hapus Prospect
+            </button>
+          )}
           <button
             onClick={onBack}
             style={{ padding: '10px 20px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}
