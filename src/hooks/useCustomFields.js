@@ -23,6 +23,8 @@ export const STANDARD_COLUMNS = {
     'converted_at', 'converted_to', 'payment_terms_id', 'currency_code',
     'credit_limit', 'notes', 'is_active', 'created_by', 'updated_by',
     'created_at', 'updated_at', 'deleted_at',
+    // join result aliases — not real DB columns, must be excluded from custom fields
+    'assigned_profile',
   ],
 };
 
