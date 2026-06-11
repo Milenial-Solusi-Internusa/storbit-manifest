@@ -61,6 +61,76 @@ function StatusBadge({ status }) {
   );
 }
 
+function InquiryDetailModal({ inquiry, onClose }) {
+  if (!inquiry) return null;
+  const m = STATUS_META[inquiry.status] || STATUS_META.OPEN;
+
+  const Field = ({ label, value, full }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, gridColumn: full ? '1 / -1' : undefined }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
+      <div style={{ fontSize: 13.5, color: value ? C.ink : '#D1D5DB', fontStyle: value ? 'normal' : 'italic' }}>{value || '—'}</div>
+    </div>
+  );
+
+  const Section = ({ title, children }) => (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 6, borderBottom: `1px solid ${C.lineSoft}` }}>{title}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px' }}>{children}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: C.surface, borderRadius: 20, maxWidth: 620, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', border: `1px solid ${C.line}` }}>
+
+        {/* Header */}
+        <div style={{ padding: '24px 28px 20px', borderBottom: `1px solid ${C.line}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 6 }}>DETAIL INQUIRY</div>
+              <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 700, color: C.accent, marginBottom: 10, letterSpacing: -0.5 }}>
+                {inquiry.inquiry_no || '—'}
+              </div>
+              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 12px', borderRadius: 99, fontSize: 11.5, fontWeight: 700, border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
+                {m.label}
+              </span>
+            </div>
+            <button onClick={onClose} style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke={C.inkSoft} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '20px 28px 28px' }}>
+          <Section title="Informasi Inquiry">
+            <Field label="Service Type" value={SERVICE_TYPE_LABELS[inquiry.service_type] || inquiry.service_type} />
+            <Field label="Status"       value={m.label} />
+            <Field label="Route"        value={inquiry.route} />
+            <Field label="Created At"   value={fmtDate(inquiry.created_at)} />
+          </Section>
+
+          <Section title="Customer / Prospect">
+            <Field label="Nama" value={inquiry.prospect?.name || inquiry.customer?.name} full />
+          </Section>
+
+          <Section title="Detail Kargo">
+            <Field label="Commodity"        value={inquiry.commodity} />
+            <Field label="Estimated Volume" value={inquiry.estimated_volume} />
+          </Section>
+
+          {inquiry.notes && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${C.lineSoft}` }}>Notes</div>
+              <div style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, whiteSpace: 'pre-wrap', background: C.surface2, borderRadius: 8, padding: '10px 14px' }}>{inquiry.notes}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function InquiryListPage({ onAddInquiry, showToast }) {
   const { profile } = useAuth();
   const [inquiries, setInquiries] = useState([]);
@@ -70,6 +140,7 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
   const [filterService, setFilterService] = useState('all');
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [detailInquiry, setDetailInquiry] = useState(null);
 
   const fetchInquiries = useCallback(async () => {
     if (!profile?.company_id) return;
@@ -78,7 +149,7 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
       let query = supabase
         .from('inquiries')
         .select(`
-          id, inquiry_no, service_type, route, status, created_at,
+          id, inquiry_no, service_type, route, status, created_at, commodity, estimated_volume, notes,
           prospect:prospects!inquiries_prospect_id_fkey(name),
           customer:customers!inquiries_customer_id_fkey(name)
         `, { count: 'exact' })
@@ -186,9 +257,10 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
             ) : inquiries.map((inq, i) => (
               <tr
                 key={inq.id}
+                onClick={() => setDetailInquiry(inq)}
                 style={{
                   borderBottom: i < inquiries.length - 1 ? `1px solid ${C.lineSoft}` : 'none',
-                  cursor: 'default',
+                  cursor: 'pointer',
                 }}
               >
                 <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>{inq.inquiry_no || '—'}</td>
@@ -207,6 +279,8 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
           </tbody>
         </table>
       </div>
+
+      <InquiryDetailModal inquiry={detailInquiry} onClose={() => setDetailInquiry(null)} />
 
       {/* Pagination */}
       {totalPages > 1 && (
