@@ -829,7 +829,9 @@ Output:
 
 | 2.0S-hotfix | AddVisitModal field structure fix — Stage 1 (scheduled): Agenda/POM textarea editable; Stage 2 (completed) & Stage 3 (cancelled): POM diganti readonly info card abu-abu ("Agenda yang direncanakan", italic jika kosong) + stage-specific fields di bawahnya (MOM+TL untuk completed, Alasan Pembatalan untuk cancelled); build clean | ✅ Complete |
 
-Current phase: **Phase 2.0S-hotfix** ✅ Complete
+| 2.0T | PL1+I1 — Click-to-detail di Pipeline dan Inquiry: (1) PipelineKanbanPage SELECT diperluas (tambah legal_name, customer_type, phone, email, city, address, pic_phone, pic_email, lost_reason, estimated_closing_date, payment_terms_id, notes, assigned_to, assigned_profile join); deal mapping tambah `raw: p`; DealCard+ListRow tambah onClick+onEdit props; isDragging ref agar drag tidak trigger click; `ProspectDetailModal` baru (header+badge stage+customer_type, grid 2-col sections: Informasi Perusahaan, PIC, Pipeline & Sales, Finansial, Notes, tombol Edit→setEditingProspect+setShowProspectForm+setActiveMenu); (2) InquiryListPage SELECT tambah commodity+estimated_volume+notes; row `<tr>` cursor pointer + onClick→setDetailInquiry; `InquiryDetailModal` baru (IBM Plex Mono inquiry_no, status badge, sections: Informasi Inquiry, Customer/Prospect, Detail Kargo, Notes); kolom origin/destination/cargo_type/quantity/weight/assigned_to tidak ada di DB — di-skip; build clean | ✅ Complete |
+
+Current phase: **Phase 2.0T** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
