@@ -823,7 +823,9 @@ Output:
 
 | 2.0Q-hotfix | ProspectFormPage bug fix — `assigned_profile` (join result object dari ProspectListPage select) tidak ada di `STANDARD_COLUMNS.prospects`, menyebabkan object ikut masuk ke `customValues` dan dirender sebagai `[object Object]` di Additional Fields; fix: tambah `assigned_profile` ke STANDARD_COLUMNS.prospects sebagai join alias exclusion; `notes` dan semua field lain sudah masuk payload via `...form` spread — tidak ada bug lain; build clean | ✅ Complete |
 
-Current phase: **Phase 2.0Q-hotfix** ✅ Complete
+| 2.0R | CRM Dashboard — Calendar Visit upgrade: (1) VISIT_STATUS 3 status (scheduled/completed/cancelled) label Bahasa Indonesia (Terjadwal/Selesai/Dibatalkan), hapus rescheduled; (2) AddVisitModal 3 field baru: point_of_meeting, mom, follow_up — masuk ke INSERT + UPDATE payload; (3) Edit mode di AddVisitModal (isEdit prop, title "Edit Kunjungan"); (4) handleSaveVisit handle UPDATE via editVisitId state; (5) VisitDetailModal (read-only): nama prospect, salesperson, tanggal+waktu, lokasi, status badge, notes, POM, MOM, tindak lanjut + tombol Edit; (6) Calendar cell events + visit list rows klik → buka VisitDetailModal; (7) DashCalendar prop onVisitClick; (8) SELECT query tambah point_of_meeting, mom, follow_up; (9) visitsData mapping tambah 3 field + prospect_id + salesperson_id untuk edit; build clean | ✅ Complete |
+
+Current phase: **Phase 2.0R** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
