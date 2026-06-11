@@ -689,15 +689,61 @@ function DashTabs({ active, onSelect }) {
 
 /* ---------- visit status badge ---------- */
 const VISIT_STATUS = {
-  scheduled:  { bg: "#E5EDF7", fg: "#1E5894", label: "Terjadwal" },
-  completed:  { bg: "#DEF0E4", fg: "#1F8B4D", label: "Selesai" },
-  cancelled:  { bg: "#F7E1DE", fg: "#C0392B", label: "Dibatalkan" },
+  scheduled: { bg: "#EFF6FF", fg: "#3B82F6", label: "Terjadwal",  dot: "#3B82F6" },
+  completed: { bg: "#F0FDF4", fg: "#22C55E", label: "Selesai",    dot: "#22C55E" },
+  cancelled: { bg: "#FFF1F2", fg: "#EF4444", label: "Dibatalkan", dot: "#EF4444" },
 };
+const VISIT_STAGES = ['scheduled', 'completed', 'cancelled'];
 
 /* ---------- calendar view — real Supabase data ---------- */
+/* ---------- VisitStepper — shared by form and detail ---------- */
+function VisitStepper({ status, onStageClick }) {
+  const activeIdx = VISIT_STAGES.indexOf(status);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24, userSelect: 'none' }}>
+      {VISIT_STAGES.map((s, i) => {
+        const meta    = VISIT_STATUS[s];
+        const isActive = i === activeIdx;
+        const isDone   = i < activeIdx;
+        const color    = isActive || isDone ? meta.dot : '#D1D5DB';
+        const bgColor  = isActive ? meta.dot : isDone ? meta.dot + '30' : '#F9FAFB';
+        const border   = isActive ? `2px solid ${meta.dot}` : isDone ? `2px solid ${meta.dot}60` : '2px solid #D1D5DB';
+        return (
+          <React.Fragment key={s}>
+            {i > 0 && (
+              <div style={{ flex: 1, height: 2, background: isDone ? VISIT_STATUS[VISIT_STAGES[i-1]].dot + '40' : '#E5E7EB', margin: '0 4px', marginBottom: 18 }} />
+            )}
+            <div
+              onClick={() => onStageClick?.(s)}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: onStageClick ? 'pointer' : 'default' }}
+            >
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%',
+                background: bgColor, border,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 700,
+                color: isActive ? '#fff' : color,
+                transition: 'all .18s',
+              }}>
+                {i + 1}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: isActive ? 700 : 500, color: isActive ? meta.dot : '#9CA3AF', whiteSpace: 'nowrap' }}>
+                {meta.label}
+              </div>
+            </div>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ---------- AddVisitModal ---------- */
 function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, salesProfiles, prospectOptions, isEdit }) {
   if (!open) return null;
+
+  const status = draft.status || 'scheduled';
+
   const inp = (props) => (
     <input {...props} style={{
       width: '100%', height: 38, borderRadius: 8,
@@ -711,7 +757,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
       width: '100%', height: 38, borderRadius: 8,
       border: '1px solid #E5E7EB', padding: '0 12px',
       fontSize: 13, fontFamily: 'inherit', outline: 'none',
-      boxSizing: 'border-box', background: 'white',
+      boxSizing: 'border-box', background: 'white', cursor: 'pointer',
     }} />
   );
   const lbl = (text, req) => (
@@ -720,39 +766,68 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
     </div>
   );
   const ta = (value, onChange, placeholder, rows = 3) => (
-    <textarea
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      rows={rows}
+    <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows}
       style={{ width: '100%', borderRadius: 8, border: '1px solid #E5E7EB', padding: '8px 12px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
     />
   );
 
+  const st = VISIT_STATUS[status];
+
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-    }}>
-      <div style={{
-        background: 'white', borderRadius: 20, padding: 32,
-        maxWidth: 520, width: '100%',
-        boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
-        maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
-      }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'white', borderRadius: 20, padding: 32, maxWidth: 520, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto' }}>
+
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>JADWAL VISIT</div>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>{isEdit ? 'Edit Kunjungan' : 'Tambah Kunjungan'}</h2>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>
+              {isEdit ? 'Edit Kunjungan' : 'Tambah Kunjungan'}
+            </h2>
           </div>
-          <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Icon name="x" size={16} color="#6B7280" />
           </button>
         </div>
 
+        {/* Stepper — klik untuk ganti status */}
+        <VisitStepper status={status} onStageClick={(s) => setDraft(d => ({ ...d, status: s }))} />
+
+        {/* Stage context hint */}
+        <div style={{ background: st.bg, border: `1px solid ${st.dot}30`, borderRadius: 10, padding: '10px 14px', marginBottom: 20, fontSize: 12.5, color: st.fg, fontWeight: 600 }}>
+          {status === 'scheduled' && '📅 Isi agenda kunjungan yang akan dilakukan.'}
+          {status === 'completed' && '✅ Meeting selesai — isi hasil dan tindak lanjut.'}
+          {status === 'cancelled' && '❌ Kunjungan dibatalkan — isi alasan pembatalan.'}
+        </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Prospect + Salesperson */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              {lbl('Prospect')}
+              {sel({
+                value: draft.prospect_id,
+                onChange: e => setDraft(d => ({ ...d, prospect_id: e.target.value })),
+                children: [
+                  <option key="" value="">— Opsional —</option>,
+                  ...prospectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>),
+                ],
+              })}
+            </div>
+            <div>
+              {lbl('Salesperson', true)}
+              {sel({
+                value: draft.salesperson_id,
+                onChange: e => setDraft(d => ({ ...d, salesperson_id: e.target.value })),
+                children: [
+                  <option key="" value="">— Pilih —</option>,
+                  ...salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>),
+                ],
+              })}
+            </div>
+          </div>
+
           {/* Tanggal + Waktu */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
@@ -765,75 +840,39 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
             </div>
           </div>
 
-          {/* Salesperson */}
-          <div>
-            {lbl('Salesperson', true)}
-            {sel({
-              value: draft.salesperson_id,
-              onChange: e => setDraft(d => ({ ...d, salesperson_id: e.target.value })),
-              children: [
-                <option key="" value="">— Pilih salesperson —</option>,
-                ...salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>),
-              ],
-            })}
-          </div>
-
-          {/* Prospect */}
-          <div>
-            {lbl('Prospect (Opsional)')}
-            {sel({
-              value: draft.prospect_id,
-              onChange: e => setDraft(d => ({ ...d, prospect_id: e.target.value })),
-              children: [
-                <option key="" value="">— Tidak terkait prospect —</option>,
-                ...prospectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>),
-              ],
-            })}
-          </div>
-
           {/* Lokasi */}
           <div>
             {lbl('Lokasi')}
             {inp({ type: 'text', placeholder: 'cth: Kantor PT ABC, Jakarta Utara', value: draft.location, onChange: e => setDraft(d => ({ ...d, location: e.target.value })) })}
           </div>
 
-          {/* Status */}
+          {/* Agenda / Point of Meeting — selalu tampil */}
           <div>
-            {lbl('Status')}
-            {sel({
-              value: draft.status,
-              onChange: e => setDraft(d => ({ ...d, status: e.target.value })),
-              children: [
-                <option key="scheduled"  value="scheduled">Terjadwal</option>,
-                <option key="completed"  value="completed">Selesai</option>,
-                <option key="cancelled"  value="cancelled">Dibatalkan</option>,
-              ],
-            })}
+            {lbl('Agenda / Point of Meeting')}
+            {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Poin-poin yang akan / sudah dibahas dalam kunjungan...')}
           </div>
 
-          {/* Notes */}
-          <div>
-            {lbl('Catatan')}
-            {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Tujuan kunjungan, agenda, dll...')}
-          </div>
+          {/* COMPLETED fields */}
+          {status === 'completed' && (
+            <>
+              <div style={{ borderTop: '1px dashed #E5E7EB', paddingTop: 16 }}>
+                {lbl('Minute of Meeting (MOM)')}
+                {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Catatan lengkap hasil meeting...', 4)}
+              </div>
+              <div>
+                {lbl('Tindak Lanjut')}
+                {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up action yang perlu dilakukan...')}
+              </div>
+            </>
+          )}
 
-          {/* Point of Meeting */}
-          <div>
-            {lbl('Point of Meeting')}
-            {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Poin-poin yang dibahas dalam kunjungan...')}
-          </div>
-
-          {/* MOM */}
-          <div>
-            {lbl('Minute of Meeting (MOM)')}
-            {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Catatan lengkap hasil meeting...', 4)}
-          </div>
-
-          {/* Tindak Lanjut */}
-          <div>
-            {lbl('Tindak Lanjut')}
-            {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up action yang perlu dilakukan...')}
-          </div>
+          {/* CANCELLED field */}
+          {status === 'cancelled' && (
+            <div style={{ borderTop: '1px dashed #E5E7EB', paddingTop: 16 }}>
+              {lbl('Alasan Pembatalan', true)}
+              {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Jelaskan alasan pembatalan kunjungan...')}
+            </div>
+          )}
 
           {/* Error */}
           {error && <div style={{ background: '#FEE2E2', color: '#DC2626', padding: '10px 14px', borderRadius: 8, fontSize: 13 }}>{error}</div>}
@@ -843,7 +882,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
             <button onClick={onClose} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               Batal
             </button>
-            <button onClick={onSave} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#144682', color: 'white', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
+            <button onClick={onSave} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: st.dot, color: 'white', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
               {saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Simpan Visit')}
             </button>
           </div>
@@ -855,6 +894,21 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
 
 /* ---------- VisitDetailModal ---------- */
 function VisitDetailModal({ visit, onClose, onEdit }) {
+  const [logs,     setLogs]     = useState([]);
+  const [logsLoad, setLogsLoad] = useState(false);
+
+  useEffect(() => {
+    if (!visit?.id) return;
+    setLogsLoad(true);
+    supabase
+      .from('sales_visit_logs')
+      .select('id, changed_at, from_status, to_status, notes, changed_by, profiles!sales_visit_logs_changed_by_fkey(full_name)')
+      .eq('visit_id', visit.id)
+      .order('changed_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => { setLogs(data || []); setLogsLoad(false); });
+  }, [visit?.id]);
+
   if (!visit) return null;
   const st = VISIT_STATUS[visit.status || 'scheduled'] || VISIT_STATUS.scheduled;
 
@@ -866,43 +920,95 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
   ) : null;
 
   const dateObj = visit.date ? new Date(visit.date + 'T00:00:00') : null;
-  const MONTHS = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
-  const DAYS   = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const MONTHS  = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
+  const DAYS    = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
   const dateStr = dateObj
     ? `${DAYS[dateObj.getDay()]}, ${dateObj.getDate()} ${MONTHS[dateObj.getMonth()]} ${dateObj.getFullYear()}`
     : '—';
 
+  const fmtLogTime = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+
+  const logLabel = (log) => {
+    if (!log.from_status && log.to_status) return `Visit dibuat → ${VISIT_STATUS[log.to_status]?.label || log.to_status}`;
+    if (log.from_status !== log.to_status)
+      return `${VISIT_STATUS[log.from_status]?.label || log.from_status} → ${VISIT_STATUS[log.to_status]?.label || log.to_status}`;
+    return 'Data visit diperbarui';
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.50)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: 'white', borderRadius: 20, padding: 32, maxWidth: 480, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.20)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto' }}>
+      <div style={{ background: 'white', borderRadius: 20, padding: 32, maxWidth: 500, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.20)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto' }}>
+
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
           <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>DETAIL KUNJUNGAN</div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {visit.prospect !== '—' ? visit.prospect : 'Kunjungan Umum'}
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>
+                {visit.prospect !== '—' ? visit.prospect : 'Kunjungan Umum'}
+              </h2>
+              <span style={{ background: st.bg, color: st.fg, padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{st.label}</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <span style={{ background: st.bg, color: st.fg, padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700 }}>{st.label}</span>
-            <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="x" size={16} color="#6B7280" />
-            </button>
-          </div>
+          <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Icon name="x" size={16} color="#6B7280" />
+          </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Stepper — read-only */}
+        <VisitStepper status={visit.status || 'scheduled'} onStageClick={null} />
+
+        {/* Info rows */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
           {row('Tanggal & Waktu', dateStr + (visit.time ? ' · ' + visit.time.slice(0,5) : ''))}
           {row('Salesperson', visit.salesperson !== '—' ? visit.salesperson : null)}
-          {row('Prospect', visit.prospect !== '—' ? visit.prospect : null)}
           {row('Lokasi', visit.location !== '—' ? visit.location : null)}
-          {row('Catatan', visit.notes || null)}
-          {row('Point of Meeting', visit.point_of_meeting || null)}
-          {row('Minute of Meeting (MOM)', visit.mom || null)}
-          {row('Tindak Lanjut', visit.follow_up || null)}
+          {row('Agenda / Point of Meeting', visit.point_of_meeting || null)}
+          {visit.status === 'completed' && row('Minute of Meeting (MOM)', visit.mom || null)}
+          {visit.status === 'completed' && row('Tindak Lanjut', visit.follow_up || null)}
+          {visit.status === 'cancelled' && row('Alasan Pembatalan', visit.notes || null)}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24, paddingTop: 16, borderTop: '1px solid #F3F4F6' }}>
+        {/* History section */}
+        <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>Riwayat Perubahan</div>
+          {logsLoad ? (
+            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>Memuat riwayat…</div>
+          ) : logs.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>Belum ada riwayat perubahan.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {logs.map((log, i) => {
+                const isStatus = log.from_status !== log.to_status || !log.from_status;
+                const dotColor = log.to_status ? (VISIT_STATUS[log.to_status]?.dot || '#9CA3AF') : '#9CA3AF';
+                return (
+                  <div key={log.id || i} style={{ display: 'flex', gap: 12, paddingBottom: 14 }}>
+                    {/* Timeline line + dot */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 16 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: dotColor, border: `2px solid ${dotColor}`, marginTop: 2, flexShrink: 0 }} />
+                      {i < logs.length - 1 && <div style={{ width: 2, flex: 1, background: '#E5E7EB', marginTop: 3 }} />}
+                    </div>
+                    {/* Content */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 2 }}>{logLabel(log)}</div>
+                      <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: log.notes ? 4 : 0 }}>
+                        {log.profiles?.full_name || '—'} · {fmtLogTime(log.changed_at)}
+                      </div>
+                      {log.notes && <div style={{ fontSize: 12, color: '#6B7280', background: '#F9FAFB', borderRadius: 6, padding: '5px 9px', whiteSpace: 'pre-wrap' }}>{log.notes}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8, paddingTop: 16, borderTop: '1px solid #F3F4F6' }}>
           <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 9, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Tutup
           </button>
@@ -1343,6 +1449,9 @@ function CRMDashboardPage() {
   const handleSaveVisit = useCallback(async () => {
     if (!visitDraft.visit_date) { setVisitError('Tanggal kunjungan wajib diisi.'); return; }
     if (!visitDraft.salesperson_id) { setVisitError('Salesperson wajib dipilih.'); return; }
+    if (visitDraft.status === 'cancelled' && !visitDraft.notes?.trim()) {
+      setVisitError('Alasan pembatalan wajib diisi.'); return;
+    }
     setVisitSaving(true);
     setVisitError(null);
     try {
@@ -1358,13 +1467,35 @@ function CRMDashboardPage() {
         mom:              visitDraft.mom              || null,
         follow_up:        visitDraft.follow_up        || null,
       };
+      let visitId = editVisitId;
       let error;
+      // find previous status for log (only relevant in edit mode)
+      const prevVisit = editVisitId ? (dashData?.visitsData || []).find(v => v.id === editVisitId) : null;
+      const prevStatus = prevVisit?.status || null;
+
       if (editVisitId) {
         ({ error } = await supabase.from('sales_visits').update(payload).eq('id', editVisitId));
       } else {
-        ({ error } = await supabase.from('sales_visits').insert({ ...payload, company_id: profile.company_id, created_by: profile.id }));
+        const res = await supabase.from('sales_visits').insert({ ...payload, company_id: profile.company_id, created_by: profile.id }).select('id').single();
+        error = res.error;
+        if (res.data) visitId = res.data.id;
       }
       if (error) throw error;
+
+      // fire-and-forget history log
+      if (visitId) {
+        const logNote = editVisitId
+          ? (prevStatus !== visitDraft.status ? null : 'Data visit diperbarui')
+          : 'Visit dibuat';
+        supabase.from('sales_visit_logs').insert({
+          visit_id:     visitId,
+          changed_by:   profile.id,
+          from_status:  editVisitId ? (prevStatus || null) : null,
+          to_status:    visitDraft.status,
+          notes:        logNote,
+        }).then(() => {});
+      }
+
       setAddVisitOpen(false);
       setEditVisitId(null);
       setVisitDraft(EMPTY_DRAFT);
@@ -1374,7 +1505,7 @@ function CRMDashboardPage() {
     } finally {
       setVisitSaving(false);
     }
-  }, [visitDraft, editVisitId, profile, fetchDash]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visitDraft, editVisitId, dashData, profile, fetchDash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── KPI cards from real data ─────────────────────────────────────────────
   const kpisReal = dashData ? [
