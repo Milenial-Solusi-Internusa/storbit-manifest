@@ -689,15 +689,14 @@ function DashTabs({ active, onSelect }) {
 
 /* ---------- visit status badge ---------- */
 const VISIT_STATUS = {
-  scheduled:  { bg: "#E5EDF7", fg: "#1E5894", label: "Scheduled" },
-  completed:  { bg: "#DEF0E4", fg: "#1F8B4D", label: "Completed" },
-  cancelled:  { bg: "#F7E1DE", fg: "#C0392B", label: "Cancelled" },
-  rescheduled:{ bg: "#FBEFD3", fg: "#9A6B12", label: "Reschedule" },
+  scheduled:  { bg: "#E5EDF7", fg: "#1E5894", label: "Terjadwal" },
+  completed:  { bg: "#DEF0E4", fg: "#1F8B4D", label: "Selesai" },
+  cancelled:  { bg: "#F7E1DE", fg: "#C0392B", label: "Dibatalkan" },
 };
 
 /* ---------- calendar view — real Supabase data ---------- */
 /* ---------- AddVisitModal ---------- */
-function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, salesProfiles, prospectOptions }) {
+function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, salesProfiles, prospectOptions, isEdit }) {
   if (!open) return null;
   const inp = (props) => (
     <input {...props} style={{
@@ -720,6 +719,15 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
       {text}{req && <span style={{ color: '#EF4444' }}> *</span>}
     </div>
   );
+  const ta = (value, onChange, placeholder, rows = 3) => (
+    <textarea
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      rows={rows}
+      style={{ width: '100%', borderRadius: 8, border: '1px solid #E5E7EB', padding: '8px 12px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+    />
+  );
 
   return (
     <div style={{
@@ -729,7 +737,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
     }}>
       <div style={{
         background: 'white', borderRadius: 20, padding: 32,
-        maxWidth: 480, width: '100%',
+        maxWidth: 520, width: '100%',
         boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
         maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
       }}>
@@ -737,7 +745,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>JADWAL VISIT</div>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>Tambah Kunjungan</h2>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>{isEdit ? 'Edit Kunjungan' : 'Tambah Kunjungan'}</h2>
           </div>
           <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="x" size={16} color="#6B7280" />
@@ -796,9 +804,9 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
               value: draft.status,
               onChange: e => setDraft(d => ({ ...d, status: e.target.value })),
               children: [
-                <option key="scheduled" value="scheduled">Scheduled</option>,
-                <option key="completed" value="completed">Completed</option>,
-                <option key="cancelled" value="cancelled">Cancelled</option>,
+                <option key="scheduled"  value="scheduled">Terjadwal</option>,
+                <option key="completed"  value="completed">Selesai</option>,
+                <option key="cancelled"  value="cancelled">Dibatalkan</option>,
               ],
             })}
           </div>
@@ -806,13 +814,25 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
           {/* Notes */}
           <div>
             {lbl('Catatan')}
-            <textarea
-              value={draft.notes}
-              onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
-              placeholder="Tujuan kunjungan, agenda, dll..."
-              rows={3}
-              style={{ width: '100%', borderRadius: 8, border: '1px solid #E5E7EB', padding: '8px 12px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
-            />
+            {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Tujuan kunjungan, agenda, dll...')}
+          </div>
+
+          {/* Point of Meeting */}
+          <div>
+            {lbl('Point of Meeting')}
+            {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Poin-poin yang dibahas dalam kunjungan...')}
+          </div>
+
+          {/* MOM */}
+          <div>
+            {lbl('Minute of Meeting (MOM)')}
+            {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Catatan lengkap hasil meeting...', 4)}
+          </div>
+
+          {/* Tindak Lanjut */}
+          <div>
+            {lbl('Tindak Lanjut')}
+            {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up action yang perlu dilakukan...')}
           </div>
 
           {/* Error */}
@@ -824,7 +844,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
               Batal
             </button>
             <button onClick={onSave} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#144682', color: 'white', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Menyimpan…' : 'Simpan Visit'}
+              {saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Simpan Visit')}
             </button>
           </div>
         </div>
@@ -833,7 +853,69 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
   );
 }
 
-function DashCalendar({ visits = [], onAddVisit, onDayClick }) {
+/* ---------- VisitDetailModal ---------- */
+function VisitDetailModal({ visit, onClose, onEdit }) {
+  if (!visit) return null;
+  const st = VISIT_STATUS[visit.status || 'scheduled'] || VISIT_STATUS.scheduled;
+
+  const row = (label, value) => value ? (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: 14, borderBottom: '1px solid #F3F4F6' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
+      <div style={{ fontSize: 13.5, color: '#111827', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{value}</div>
+    </div>
+  ) : null;
+
+  const dateObj = visit.date ? new Date(visit.date + 'T00:00:00') : null;
+  const MONTHS = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
+  const DAYS   = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const dateStr = dateObj
+    ? `${DAYS[dateObj.getDay()]}, ${dateObj.getDate()} ${MONTHS[dateObj.getMonth()]} ${dateObj.getFullYear()}`
+    : '—';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.50)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'white', borderRadius: 20, padding: 32, maxWidth: 480, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.20)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+          <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>DETAIL KUNJUNGAN</div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {visit.prospect !== '—' ? visit.prospect : 'Kunjungan Umum'}
+            </h2>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <span style={{ background: st.bg, color: st.fg, padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700 }}>{st.label}</span>
+            <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="x" size={16} color="#6B7280" />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {row('Tanggal & Waktu', dateStr + (visit.time ? ' · ' + visit.time.slice(0,5) : ''))}
+          {row('Salesperson', visit.salesperson !== '—' ? visit.salesperson : null)}
+          {row('Prospect', visit.prospect !== '—' ? visit.prospect : null)}
+          {row('Lokasi', visit.location !== '—' ? visit.location : null)}
+          {row('Catatan', visit.notes || null)}
+          {row('Point of Meeting', visit.point_of_meeting || null)}
+          {row('Minute of Meeting (MOM)', visit.mom || null)}
+          {row('Tindak Lanjut', visit.follow_up || null)}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24, paddingTop: 16, borderTop: '1px solid #F3F4F6' }}>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 9, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Tutup
+          </button>
+          <button onClick={onEdit} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#144682', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Edit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
   const now = new Date();
   const year  = now.getFullYear();
   const month = now.getMonth();
@@ -929,7 +1011,9 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick }) {
               {dayVisits.slice(0, 3).map((v, j) => {
                 const st = VISIT_STATUS[v.status || 'scheduled'] || VISIT_STATUS.scheduled;
                 return (
-                  <div key={j} style={{ ...D.calEvent, borderLeftColor: st.fg, background: st.bg + "88" }}>
+                  <div key={j}
+                    onClick={e => { e.stopPropagation(); onVisitClick?.(v); }}
+                    style={{ ...D.calEvent, borderLeftColor: st.fg, background: st.bg + "88", cursor: 'pointer' }}>
                     <div style={D.calEventProspect} title={v.prospect}>{v.prospect}</div>
                     <div style={D.calEventMeta}>
                       {v.time ? v.time.slice(0, 5) + ' · ' : ''}{v.salesperson !== '—' ? v.salesperson : ''}
@@ -967,13 +1051,16 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick }) {
                 const dayNum  = dateObj.getDate();
                 const isPast  = new Date(v.date) < new Date(new Date().toDateString());
                 return (
-                  <div key={v.id || i} style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '10px 14px', borderRadius: 10,
-                    background: isPast && v.status === 'scheduled' ? '#FFFBEB' : '#F9FAFB',
-                    border: '1px solid #F0F1F4',
-                    opacity: v.status === 'cancelled' ? 0.6 : 1,
-                  }}>
+                  <div key={v.id || i}
+                    onClick={() => onVisitClick?.(v)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '10px 14px', borderRadius: 10,
+                      background: isPast && v.status === 'scheduled' ? '#FFFBEB' : '#F9FAFB',
+                      border: '1px solid #F0F1F4',
+                      opacity: v.status === 'cancelled' ? 0.6 : 1,
+                      cursor: 'pointer',
+                    }}>
                     {/* Date badge */}
                     <div style={{ textAlign: 'center', minWidth: 40 }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' }}>{dayName}</div>
@@ -1041,11 +1128,15 @@ function CRMDashboardPage() {
   const [visitDraft,       setVisitDraft]       = useState({
     visit_date: '', visit_time: '', prospect_id: '',
     salesperson_id: '', location: '', notes: '', status: 'scheduled',
+    point_of_meeting: '', mom: '', follow_up: '',
   });
   const [visitSaving,      setVisitSaving]      = useState(false);
   const [visitError,       setVisitError]       = useState(null);
   const [salesProfiles,    setSalesProfiles]    = useState([]);
   const [prospectOptions,  setProspectOptions]  = useState([]);
+  // detail + edit state
+  const [visitDetail,      setVisitDetail]      = useState(null);
+  const [editVisitId,      setEditVisitId]      = useState(null);
 
   function showToast(msg, icon) {
     setToast({ msg, icon: icon || "info", show: true });
@@ -1112,7 +1203,7 @@ function CRMDashboardPage() {
         // Sales visits calendar — graceful fail if table doesn't exist
         supabase
           .from('sales_visits')
-          .select('id, visit_date, visit_time, location, notes, status, prospect_id, salesperson_id, prospects(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
+          .select('id, visit_date, visit_time, location, notes, status, point_of_meeting, mom, follow_up, prospect_id, salesperson_id, prospects(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
           .eq('company_id', cid)
           .gte('visit_date', startOfMonth)
           .lte('visit_date', endOfMonth)
@@ -1192,14 +1283,19 @@ function CRMDashboardPage() {
       // ── Calendar visits ────────────────────────────────────────────────────
       // visitsRes.error is acceptable — table may not exist yet
       const visitsData = (visitsRes.data || []).map(v => ({
-        id:          v.id,
-        date:        v.visit_date,
-        time:        v.visit_time,
-        prospect:    v.prospects?.name   || '—',
-        salesperson: v.profiles?.full_name || '—',
-        location:    v.location || '—',
-        notes:       v.notes   || '',
-        status:      v.status  || 'scheduled',
+        id:               v.id,
+        date:             v.visit_date,
+        time:             v.visit_time,
+        prospect:         v.prospects?.name    || '—',
+        prospect_id:      v.prospect_id        || '',
+        salesperson:      v.profiles?.full_name || '—',
+        salesperson_id:   v.salesperson_id,
+        location:         v.location           || '—',
+        notes:            v.notes              || '',
+        status:           v.status             || 'scheduled',
+        point_of_meeting: v.point_of_meeting   || '',
+        mom:              v.mom                || '',
+        follow_up:        v.follow_up          || '',
       }));
 
       // ── Recent activity ────────────────────────────────────────────────────
@@ -1242,33 +1338,43 @@ function CRMDashboardPage() {
   }, [addVisitOpen, profile?.company_id]);
 
   // ── save new visit ───────────────────────────────────────────────────────
+  const EMPTY_DRAFT = { visit_date: '', visit_time: '', prospect_id: '', salesperson_id: '', location: '', notes: '', status: 'scheduled', point_of_meeting: '', mom: '', follow_up: '' };
+
   const handleSaveVisit = useCallback(async () => {
     if (!visitDraft.visit_date) { setVisitError('Tanggal kunjungan wajib diisi.'); return; }
     if (!visitDraft.salesperson_id) { setVisitError('Salesperson wajib dipilih.'); return; }
     setVisitSaving(true);
     setVisitError(null);
     try {
-      const { error } = await supabase.from('sales_visits').insert({
-        company_id:    profile.company_id,
-        visit_date:    visitDraft.visit_date,
-        visit_time:    visitDraft.visit_time    || null,
-        prospect_id:   visitDraft.prospect_id   || null,
-        salesperson_id: visitDraft.salesperson_id,
-        location:      visitDraft.location      || null,
-        notes:         visitDraft.notes         || null,
-        status:        visitDraft.status,
-        created_by:    profile.id,
-      });
+      const payload = {
+        visit_date:       visitDraft.visit_date,
+        visit_time:       visitDraft.visit_time       || null,
+        prospect_id:      visitDraft.prospect_id      || null,
+        salesperson_id:   visitDraft.salesperson_id,
+        location:         visitDraft.location         || null,
+        notes:            visitDraft.notes            || null,
+        status:           visitDraft.status,
+        point_of_meeting: visitDraft.point_of_meeting || null,
+        mom:              visitDraft.mom              || null,
+        follow_up:        visitDraft.follow_up        || null,
+      };
+      let error;
+      if (editVisitId) {
+        ({ error } = await supabase.from('sales_visits').update(payload).eq('id', editVisitId));
+      } else {
+        ({ error } = await supabase.from('sales_visits').insert({ ...payload, company_id: profile.company_id, created_by: profile.id }));
+      }
       if (error) throw error;
       setAddVisitOpen(false);
-      setVisitDraft({ visit_date: '', visit_time: '', prospect_id: '', salesperson_id: '', location: '', notes: '', status: 'scheduled' });
+      setEditVisitId(null);
+      setVisitDraft(EMPTY_DRAFT);
       fetchDash();
     } catch (err) {
       setVisitError('Gagal simpan: ' + err.message);
     } finally {
       setVisitSaving(false);
     }
-  }, [visitDraft, profile, fetchDash]);
+  }, [visitDraft, editVisitId, profile, fetchDash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── KPI cards from real data ─────────────────────────────────────────────
   const kpisReal = dashData ? [
@@ -1340,17 +1446,20 @@ function CRMDashboardPage() {
             <DashCalendar
               visits={dashData?.visitsData || []}
               onAddVisit={() => {
+                setEditVisitId(null);
                 setVisitDraft(d => ({ ...d, visit_date: '' }));
                 setAddVisitOpen(true);
               }}
               onDayClick={(dateStr) => {
+                setEditVisitId(null);
                 setVisitDraft(d => ({ ...d, visit_date: dateStr }));
                 setAddVisitOpen(true);
               }}
+              onVisitClick={(v) => setVisitDetail(v)}
             />
             <AddVisitModal
               open={addVisitOpen}
-              onClose={() => { setAddVisitOpen(false); setVisitError(null); }}
+              onClose={() => { setAddVisitOpen(false); setEditVisitId(null); setVisitError(null); }}
               onSave={handleSaveVisit}
               saving={visitSaving}
               error={visitError}
@@ -1358,6 +1467,30 @@ function CRMDashboardPage() {
               setDraft={setVisitDraft}
               salesProfiles={salesProfiles}
               prospectOptions={prospectOptions}
+              isEdit={!!editVisitId}
+            />
+            <VisitDetailModal
+              visit={visitDetail}
+              onClose={() => setVisitDetail(null)}
+              onEdit={() => {
+                if (!visitDetail) return;
+                setVisitDraft({
+                  visit_date:       visitDetail.date             || '',
+                  visit_time:       visitDetail.time             || '',
+                  prospect_id:      visitDetail.prospect_id      || '',
+                  salesperson_id:   visitDetail.salesperson_id   || '',
+                  location:         visitDetail.location !== '—' ? visitDetail.location : '',
+                  notes:            visitDetail.notes            || '',
+                  status:           visitDetail.status           || 'scheduled',
+                  point_of_meeting: visitDetail.point_of_meeting || '',
+                  mom:              visitDetail.mom              || '',
+                  follow_up:        visitDetail.follow_up        || '',
+                });
+                setEditVisitId(visitDetail.id);
+                setVisitError(null);
+                setVisitDetail(null);
+                setAddVisitOpen(true);
+              }}
             />
           </>
         ) : (
