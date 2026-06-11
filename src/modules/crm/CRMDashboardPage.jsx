@@ -846,32 +846,47 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
             {inp({ type: 'text', placeholder: 'cth: Kantor PT ABC, Jakarta Utara', value: draft.location, onChange: e => setDraft(d => ({ ...d, location: e.target.value })) })}
           </div>
 
-          {/* Agenda / Point of Meeting — selalu tampil */}
-          <div>
-            {lbl('Agenda / Point of Meeting')}
-            {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Poin-poin yang akan / sudah dibahas dalam kunjungan...')}
-          </div>
-
-          {/* COMPLETED fields */}
-          {status === 'completed' && (
-            <>
-              <div style={{ borderTop: '1px dashed #E5E7EB', paddingTop: 16 }}>
-                {lbl('Minute of Meeting (MOM)')}
-                {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Catatan lengkap hasil meeting...', 4)}
-              </div>
-              <div>
-                {lbl('Tindak Lanjut')}
-                {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up action yang perlu dilakukan...')}
-              </div>
-            </>
+          {/* Stage 1 — Agenda editable */}
+          {status === 'scheduled' && (
+            <div>
+              {lbl('Agenda / Point of Meeting')}
+              {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Poin-poin yang akan dibahas dalam kunjungan...')}
+            </div>
           )}
 
-          {/* CANCELLED field */}
-          {status === 'cancelled' && (
-            <div style={{ borderTop: '1px dashed #E5E7EB', paddingTop: 16 }}>
-              {lbl('Alasan Pembatalan', true)}
-              {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Jelaskan alasan pembatalan kunjungan...')}
-            </div>
+          {/* Stage 2 & 3 — Agenda readonly card + stage-specific fields */}
+          {(status === 'completed' || status === 'cancelled') && (
+            <>
+              {/* Readonly agenda card */}
+              <div style={{ borderTop: '1px dashed #E5E7EB', paddingTop: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Agenda yang direncanakan</div>
+                <div style={{ background: '#F3F4F6', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: draft.point_of_meeting?.trim() ? '#374151' : '#9CA3AF', fontStyle: draft.point_of_meeting?.trim() ? 'normal' : 'italic', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                  {draft.point_of_meeting?.trim() || 'Tidak ada agenda yang dicatat.'}
+                </div>
+              </div>
+
+              {/* COMPLETED extra fields */}
+              {status === 'completed' && (
+                <>
+                  <div>
+                    {lbl('Minute of Meeting (MOM)')}
+                    {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Catatan lengkap hasil meeting...', 4)}
+                  </div>
+                  <div>
+                    {lbl('Tindak Lanjut')}
+                    {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up action yang perlu dilakukan...')}
+                  </div>
+                </>
+              )}
+
+              {/* CANCELLED extra field */}
+              {status === 'cancelled' && (
+                <div>
+                  {lbl('Alasan Pembatalan', true)}
+                  {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Jelaskan alasan pembatalan kunjungan...')}
+                </div>
+              )}
+            </>
           )}
 
           {/* Error */}
