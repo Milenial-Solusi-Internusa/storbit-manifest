@@ -821,7 +821,9 @@ Output:
 
 | 2.0Q | CRMDashboardPage — klik cell kalender pre-fill tanggal; DashCalendar tambah prop `onDayClick`; cell div tambah onClick (memanggil `onDayClick` dengan dateStr `YYYY-MM-DD`), cursor pointer, hover bg #F0F4FA (skip isToday); render DashCalendar: `onAddVisit` reset visit_date ke kosong sebelum buka, `onDayClick` set visit_date ke dateStr lalu buka modal; build clean | ✅ Complete |
 
-Current phase: **Phase 2.0Q** ✅ Complete
+| 2.0Q-hotfix | ProspectFormPage bug fix — `assigned_profile` (join result object dari ProspectListPage select) tidak ada di `STANDARD_COLUMNS.prospects`, menyebabkan object ikut masuk ke `customValues` dan dirender sebagai `[object Object]` di Additional Fields; fix: tambah `assigned_profile` ke STANDARD_COLUMNS.prospects sebagai join alias exclusion; `notes` dan semua field lain sudah masuk payload via `...form` spread — tidak ada bug lain; build clean | ✅ Complete |
+
+Current phase: **Phase 2.0Q-hotfix** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
