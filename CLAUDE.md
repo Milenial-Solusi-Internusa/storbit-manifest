@@ -827,7 +827,9 @@ Output:
 
 | 2.0S | CRM Dashboard — Visit stepper redesign: (1) `VISIT_STATUS` warna update ke spec (scheduled #3B82F6, completed #22C55E, cancelled #EF4444) + tambah `dot` token + `VISIT_STAGES` array; (2) `VisitStepper` komponen shared (3 lingkaran bernomor, garis penghubung, label, klik=ganti status, read-only jika onStageClick=null); (3) `AddVisitModal` redesign — stepper di atas, context hint per stage, field conditional: COMPLETED→mom+follow_up, CANCELLED→notes wajib isi, hapus dropdown status, field diurut ulang (prospect+salesperson grid, tanggal+waktu grid, lokasi, agenda); (4) `VisitDetailModal` redesign — stepper read-only, conditional content per status, history section fetch sales_visit_logs + timeline vertikal + logLabel helper; (5) `handleSaveVisit` — validasi notes wajib saat cancelled, INSERT return id via .select().single(), fire-and-forget log ke sales_visit_logs (from_status/to_status/notes), log null→scheduled saat CREATE; build clean | ✅ Complete |
 
-Current phase: **Phase 2.0S** ✅ Complete
+| 2.0S-hotfix | AddVisitModal field structure fix — Stage 1 (scheduled): Agenda/POM textarea editable; Stage 2 (completed) & Stage 3 (cancelled): POM diganti readonly info card abu-abu ("Agenda yang direncanakan", italic jika kosong) + stage-specific fields di bawahnya (MOM+TL untuk completed, Alasan Pembatalan untuk cancelled); build clean | ✅ Complete |
+
+Current phase: **Phase 2.0S-hotfix** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 
