@@ -482,10 +482,10 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
       {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
         {[
-          { label: 'Total Customer', value: customers.length, icon: Building2, color: D.navy },
-          { label: 'Active',         value: activeCount,       icon: Check,     color: D.ok },
-          { label: 'Inactive',       value: inactiveCount,     icon: X,         color: D.warn },
-          { label: 'Tier A',         value: customers.filter(c => c.tier === 'A').length, icon: CreditCard, color: '#92400E' },
+          { label: 'Total Customer', value: filtered.length, icon: Building2, color: D.navy },
+          { label: 'Active',         value: filtered.filter(c => (c.status || (c.active !== false ? 'active' : 'inactive')) === 'active').length,   icon: Check,     color: D.ok },
+          { label: 'Inactive',       value: filtered.filter(c => (c.status || (c.active !== false ? 'active' : 'inactive')) === 'inactive').length, icon: X,         color: D.warn },
+          { label: 'Tier A',         value: filtered.filter(c => c.tier === 'A').length, icon: CreditCard, color: '#92400E' },
         ].map(s => (
           <div key={s.label} style={{ background: D.surface, border: `1px solid ${D.line}`, borderRadius: 10, padding: '12px 14px', boxShadow: D.shadowSm }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
