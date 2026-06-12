@@ -77,6 +77,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
 
   const [form, setForm] = useState({
+    company_prefix:   '',
     name:             '',
     legal_name:       '',
     customer_type:    'freight',
@@ -116,6 +117,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   useEffect(() => {
     if (isEdit && prospect) {
       setForm({
+        company_prefix:   prospect.company_prefix    || '',
         name:             prospect.name             || '',
         legal_name:       prospect.legal_name       || '',
         customer_type:    prospect.customer_type    || 'freight',
@@ -231,7 +233,26 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px 24px' }}>
 
           <Field label="Nama Perusahaan" req>
-            <input value={form.name} onChange={set('name')} style={inpStyle(errors.name ? { borderColor: C.danger } : {})} placeholder="PT. …" />
+            <div style={{ display: 'flex', gap: 7 }}>
+              <select
+                value={form.company_prefix}
+                onChange={set('company_prefix')}
+                style={{ ...inpStyle({ width: 100, flexShrink: 0, padding: '0 8px', cursor: 'pointer' }), width: 100 }}
+              >
+                <option value="">—</option>
+                <option value="PT">PT</option>
+                <option value="CV">CV</option>
+                <option value="Mr.">Mr.</option>
+                <option value="Mrs.">Mrs.</option>
+                <option value="Ms.">Ms.</option>
+              </select>
+              <input
+                value={form.name}
+                onChange={set('name')}
+                style={{ ...inpStyle(errors.name ? { borderColor: C.danger } : {}), flex: 1 }}
+                placeholder="Nama perusahaan / orang…"
+              />
+            </div>
             {errors.name && <span style={{ fontSize: 11.5, color: C.danger }}>{errors.name}</span>}
           </Field>
 
