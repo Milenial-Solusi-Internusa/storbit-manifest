@@ -9,7 +9,7 @@ import {
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
-  ClipboardList, LayoutList, Archive,
+  ClipboardList, LayoutList, Archive, PhoneCall,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { useCustomers } from './hooks/useCustomers';
@@ -38,6 +38,7 @@ const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPag
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
 const CustomerMasterPage   = lazy(() => import('./modules/crm/CustomerMasterPage'));
+const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
 const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
@@ -431,6 +432,7 @@ const ERP_MENU_GROUPS = [
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
           { id: 'crm-customers',  label: 'Master Customer', icon: Building2 },
+          { id: 'crm-calls',      label: 'Activity & Calls', icon: PhoneCall },
         ],
       },
     ],
@@ -2115,6 +2117,15 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Master Customer temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <CustomerMasterPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Activity & Calls ───────────────────────────────────────── */}
+          {activeMenu === 'crm-calls' && (
+            <ErrorBoundary title="Activity & Calls temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <SalesCallsPage showToast={showToast} profile={profile} />
               </Suspense>
             </ErrorBoundary>
           )}
