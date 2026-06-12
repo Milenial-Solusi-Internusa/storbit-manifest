@@ -29,6 +29,31 @@ const DEFAULT_USD = 16000;
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 const today = () => new Date().toISOString().slice(0, 10);
 
+// ─── Pricing authority matrix (BD-06, SOP Pak Adam slide 12) ────────────────
+// Returns { tone: 'green'|'orange'|'red', text } based on discount % and user role.
+function pricingAuthority(discountPct, erpRole) {
+  const d = Number(discountPct) || 0;
+  if (d <= 0) return { tone: 'green', text: '✓ Tidak perlu approval' };
+  if (d <= 5) return ['sales_spv', 'manager', 'ceo', 'gm', 'admin', 'super_admin'].includes(erpRole)
+    ? { tone: 'green', text: '✓ Dalam wewenang Anda' }
+    : { tone: 'orange', text: '⚠ Perlu approval Sales SPV' };
+  if (d <= 10) return ['manager', 'ceo', 'gm', 'admin', 'super_admin'].includes(erpRole)
+    ? { tone: 'green', text: '✓ Dalam wewenang Anda' }
+    : { tone: 'orange', text: '⚠ Perlu approval Sales Manager' };
+  if (d <= 15) return ['ceo', 'gm', 'admin', 'super_admin'].includes(erpRole)
+    ? { tone: 'green', text: '✓ Dalam wewenang Anda' }
+    : { tone: 'orange', text: '⚠ Perlu approval BD GM / Commercial Director' };
+  if (d <= 20) return ['ceo', 'super_admin'].includes(erpRole)
+    ? { tone: 'green', text: '✓ Dalam wewenang Anda' }
+    : { tone: 'red', text: '✗ Perlu approval CEO' };
+  return { tone: 'red', text: '✗ Perlu approval CEO + Finance Controller + BoD' };
+}
+const AUTHORITY_TONE = {
+  green:  { bg: '#E4F0E5', bd: '#BFDDC4', color: '#2E7D4F' },
+  orange: { bg: '#F6E8D6', bd: '#E7CDA9', color: '#A45A22' },
+  red:    { bg: '#F6E0DB', bd: '#E6BBB2', color: '#B23227' },
+};
+
 const SERVICE_TYPES = [
   { value: 'freight_forwarding', label: 'Freight Forwarding' },
   { value: 'customs',            label: 'Customs Clearance'  },
@@ -231,7 +256,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
 
 // ─── Main component ───────────────────────────────────────────────────────
 export default function QuotationFormPage({ onBack, showToast, quotation = null }) {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
   const isEdit = !!quotation;
 
   const [header, setHeader] = useState({
@@ -239,6 +264,8 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     service_type:     'freight_forwarding',
     route:            '',
     valid_until:      '',
+    pricing_done_at:  '',
+    discount_pct:     0,
     payment_terms_id: '',
     notes:            '',
     terms:            '',
@@ -282,6 +309,8 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
       service_type:     quotation.service_type     || 'freight_forwarding',
       route:            quotation.route             || '',
       valid_until:      quotation.valid_until       || '',
+      pricing_done_at:  quotation.pricing_done_at?.slice(0, 16) || '',
+      discount_pct:     quotation.discount_pct      ?? 0,
       payment_terms_id: quotation.payment_terms_id  || '',
       notes:            quotation.notes             || '',
       terms:            quotation.terms             || '',
@@ -403,9 +432,11 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     total: sec.rows.reduce((s, r) => s + (Number(r.total) || 0), 0),
   })), [sections]);
 
-  const subtotal   = useMemo(() => sectionTotals.reduce((s, sec) => s + sec.total, 0), [sectionTotals]);
-  const tax        = useMemo(() => Math.round(subtotal * VAT_RATE), [subtotal]);
-  const grandTotal = useMemo(() => subtotal + tax, [subtotal, tax]);
+  const subtotal       = useMemo(() => sectionTotals.reduce((s, sec) => s + sec.total, 0), [sectionTotals]);
+  const discountPct    = Number(header.discount_pct) || 0;
+  const discountAmount = useMemo(() => Math.round(subtotal * discountPct / 100), [subtotal, discountPct]);
+  const tax            = useMemo(() => Math.round((subtotal - discountAmount) * VAT_RATE), [subtotal, discountAmount]);
+  const grandTotal     = useMemo(() => (subtotal - discountAmount) + tax, [subtotal, discountAmount, tax]);
 
   // Cost totals — internal only, never printed
   const totalCost = useMemo(() => {
@@ -467,6 +498,8 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
           service_type:     header.service_type,
           route:            header.route             || null,
           valid_until:      header.valid_until        || null,
+          pricing_done_at:  header.pricing_done_at    || null,
+          discount_pct:     Number(header.discount_pct) || 0,
           payment_terms_id: header.payment_terms_id   || null,
           notes:            header.notes              || null,
           terms:            header.terms              || null,
@@ -514,6 +547,8 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
           service_type:     header.service_type,
           route:            header.route                 || null,
           valid_until:      header.valid_until            || null,
+          pricing_done_at:  header.pricing_done_at        || null,
+          discount_pct:     Number(header.discount_pct)   || 0,
           payment_terms_id: header.payment_terms_id       || null,
           notes:            header.notes                  || null,
           terms:            header.terms                  || null,
@@ -617,6 +652,36 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
 
               <Field label="Valid Until">
                 <input type="date" value={header.valid_until} onChange={setH('valid_until')} style={inpStyle()} min={today()} />
+              </Field>
+
+              <Field label="Pricing Selesai">
+                <input
+                  type="datetime-local"
+                  value={header.pricing_done_at}
+                  onChange={setH('pricing_done_at')}
+                  style={inpStyle()}
+                  title="Kapan tim pricing selesai input harga?"
+                />
+              </Field>
+
+              <Field label="Diskon (%)" full>
+                <input
+                  type="number" min="0" max="100" step="0.1"
+                  value={header.discount_pct}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setHeader(h => ({ ...h, discount_pct: e.target.value }))}
+                  style={inpStyle({ textAlign: 'right' })}
+                  placeholder="0"
+                />
+                {(() => {
+                  const a = pricingAuthority(header.discount_pct, erpRole);
+                  const t = AUTHORITY_TONE[a.tone];
+                  return (
+                    <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: t.bg, border: `1px solid ${t.bd}`, color: t.color, fontSize: 12.5, fontWeight: 700 }}>
+                      {a.text}
+                    </div>
+                  );
+                })()}
               </Field>
 
               <Field label="Payment Terms">
@@ -725,6 +790,12 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
                 <span style={{ color: C.inkSoft }}>Subtotal</span>
                 <span style={{ fontWeight: 700 }}>{rp(subtotal)}</span>
               </div>
+              {discountPct > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5 }}>
+                  <span style={{ color: C.orange }}>Diskon ({discountPct}%)</span>
+                  <span style={{ fontWeight: 700, color: C.orange }}>−{rp(discountAmount)}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5 }}>
                 <span style={{ color: C.inkSoft }}>VAT 1.1%</span>
                 <span style={{ fontWeight: 700 }}>{rp(tax)}</span>

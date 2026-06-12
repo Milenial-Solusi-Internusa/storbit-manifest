@@ -37,7 +37,28 @@ const SERVICE_TYPE_LABELS = {
 
 const PAGE_SIZE = 20;
 
+// SLA target hours per service_type (BD-05, SOP MSI)
+const SLA_HOURS = { freight_forwarding: 6, customs: 8, trading: 8 };
+
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
+
+// SLA badge for the list row — On Time / Late / Pending / —
+function SlaBadge({ q }) {
+  const targetMs = (SLA_HOURS[q.service_type] || 6) * 3600000;
+  const sentStatus = q.status === 'SENT' || q.status === 'ACCEPTED' || q.status === 'REJECTED';
+  if (sentStatus && q.pricing_done_at && q.quote_sent_at) {
+    const dur = new Date(q.quote_sent_at).getTime() - new Date(q.pricing_done_at).getTime();
+    const onTime = dur <= targetMs;
+    const m = onTime
+      ? { label: '✓ On Time', bg: C.okBg, color: C.ok, bd: C.okBd }
+      : { label: '✗ Late', bg: C.dangerBg, color: C.danger, bd: C.dangerBd };
+    return <span style={{ display: 'inline-flex', padding: '2px 9px', borderRadius: 99, fontSize: 11, fontWeight: 700, border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>{m.label}</span>;
+  }
+  if (q.status === 'SUBMITTED' && q.pricing_done_at) {
+    return <span style={{ display: 'inline-flex', padding: '2px 9px', borderRadius: 99, fontSize: 11, fontWeight: 700, border: '1px solid #E6CE94', background: '#F8ECCF', color: '#9A6B0E' }}>⏱ Pending</span>;
+  }
+  return <span style={{ color: C.inkFaint }}>—</span>;
+}
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -77,7 +98,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
         .from('quotations')
         .select(`
           id, quotation_no, service_type, route, status,
-          valid_until, total_amount, created_at,
+          valid_until, total_amount, created_at, pricing_done_at, quote_sent_at,
           prospect:prospects!quotations_prospect_id_fkey(name),
           customer:customers!quotations_customer_id_fkey(name)
         `, { count: 'exact' })
@@ -168,16 +189,16 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-              {['Quotation No', 'Prospect / Customer', 'Service', 'Routing', 'Status', 'Valid Until', 'Grand Total', 'Created At', ''].map(h => (
+              {['Quotation No', 'Prospect / Customer', 'Service', 'Routing', 'Status', 'SLA', 'Valid Until', 'Grand Total', 'Created At', ''].map(h => (
                 <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
             ) : quotations.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada quotation</td></tr>
+              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada quotation</td></tr>
             ) : quotations.map((q, i) => (
               <tr
                 key={q.id}
@@ -200,6 +221,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
                   {q.route || '—'}
                 </td>
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={q.status} /></td>
+                <td style={{ padding: '12px 14px' }}><SlaBadge q={q} /></td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(q.valid_until)}</td>
                 <td style={{ padding: '12px 14px', fontWeight: 700, color: C.ink, whiteSpace: 'nowrap' }}>{rp(q.total_amount)}</td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(q.created_at)}</td>

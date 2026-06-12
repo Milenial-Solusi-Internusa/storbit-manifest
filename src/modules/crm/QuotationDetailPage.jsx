@@ -1,11 +1,12 @@
 // src/modules/crm/QuotationDetailPage.jsx
 // Read-only detail view — sectioned table, internal cost/profit (no-print), PDF via jspdf+html2canvas
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, Edit2, Download, Receipt } from 'lucide-react';
+import { ChevronLeft, Edit2, Download, Receipt, Send } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import ConfirmModal from '../../components/ConfirmModal';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -29,6 +30,61 @@ const C = {
 const VAT_RATE = 0.011;
 const rp  = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 const rpN = (n) => (Number(n) || 0).toLocaleString('id-ID'); // no "Rp" prefix — used inside PDF table
+
+// ─── Quote SLA (BD-05) ──────────────────────────────────────────────────────
+const SLA_HOURS = { freight_forwarding: 6, customs: 8, trading: 8 };
+
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function fmtDur(ms) {
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h} jam ${m} menit`;
+}
+
+// SLA indicator card shown below the quotation header.
+function SlaCard({ quot }) {
+  const targetH  = SLA_HOURS[quot.service_type] || 6;
+  const targetMs = targetH * 3600000;
+  const pricing  = quot.pricing_done_at;
+  const sent     = quot.quote_sent_at;
+
+  const card = (bg, bd, color, text, sub) => (
+    <div style={{ marginBottom: 20, padding: '12px 16px', borderRadius: 12, background: bg, border: `1px solid ${bd}` }}>
+      <div style={{ fontSize: 13.5, fontWeight: 700, color }}>{text}</div>
+      {sub && <div style={{ fontSize: 12.5, color, opacity: 0.85, marginTop: 3 }}>{sub}</div>}
+    </div>
+  );
+
+  if (!pricing) {
+    return card('#EEE9DC', '#DDD3BE', '#6B6F5E', 'Belum ada timestamp pricing selesai');
+  }
+  const pricingMs = new Date(pricing).getTime();
+
+  if (!sent) {
+    const elapsed = Date.now() - pricingMs;
+    if (elapsed > targetMs) {
+      return card('#F6E0DB', '#E6BBB2', '#B23227',
+        `⚠️ SLA Terlewat! Target ${targetH} jam, sudah ${fmtDur(elapsed)} sejak pricing selesai`);
+    }
+    return card('#F8ECCF', '#E6CE94', '#9A6B0E',
+      `⏱ Pricing selesai ${fmtDateTime(pricing)}. Belum dikirim ke customer.`,
+      `Sudah ${fmtDur(elapsed)} sejak pricing selesai (target ${targetH} jam)`);
+  }
+
+  const dur = new Date(sent).getTime() - pricingMs;
+  if (dur <= targetMs) {
+    return card('#E4F0E5', '#BFDDC4', '#2E7D4F',
+      `✓ Quote dikirim dalam ${fmtDur(dur)} (target ${targetH} jam)`);
+  }
+  return card('#F6E0DB', '#E6BBB2', '#B23227',
+    `Quote dikirim dalam ${fmtDur(dur)} — melebihi target ${targetH} jam (SLA terlewat)`);
+}
 
 const STATUS_META = {
   DRAFT:     { label: 'Draft',     bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
@@ -92,6 +148,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [generatingPDF,  setGeneratingPDF]  = useState(false);
+  const [confirmSend,    setConfirmSend]    = useState(false);
+  const [sending,        setSending]        = useState(false);
 
   // ── Effect 1: fetch quotation + items (only re-runs when quotationId changes) ──
   useEffect(() => {
@@ -106,6 +164,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           id, quotation_no, revision, status, service_type, route,
           valid_until, created_at, notes, terms, usd_rate,
           subtotal, tax_amount, total_amount, payment_terms_id,
+          pricing_done_at, quote_sent_at, discount_pct,
           prospect:prospects!quotations_prospect_id_fkey(name, address, city, pic_name, pic_email, pic_phone),
           customer:customers!quotations_customer_id_fkey(name, address, city, email, phone)
         `)
@@ -162,9 +221,11 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
     }));
   }, [items]);
 
-  const subtotal   = useMemo(() => items.reduce((s, r) => s + (Number(r.total) || 0), 0), [items]);
-  const tax        = useMemo(() => Math.round(subtotal * VAT_RATE), [subtotal]);
-  const grandTotal = useMemo(() => subtotal + tax, [subtotal, tax]);
+  const subtotal       = useMemo(() => items.reduce((s, r) => s + (Number(r.total) || 0), 0), [items]);
+  const discountPct    = Number(quot?.discount_pct) || 0;
+  const discountAmount = useMemo(() => Math.round(subtotal * discountPct / 100), [subtotal, discountPct]);
+  const tax            = useMemo(() => Math.round((subtotal - discountAmount) * VAT_RATE), [subtotal, discountAmount]);
+  const grandTotal     = useMemo(() => (subtotal - discountAmount) + tax, [subtotal, discountAmount, tax]);
 
   const totalCost = useMemo(() => items.reduce((s, r) => {
     const cost = Number(r.cost_price) || 0;
@@ -177,6 +238,26 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
   const marginPct   = subtotal > 0 ? (grossProfit / subtotal * 100).toFixed(1) : '0.0';
 
   const clientName = quot?.prospect?.name || quot?.customer?.name || '—';
+
+  // ── Kirim ke Customer (BD-05) — set status SENT + quote_sent_at ──────────
+  const handleSendToCustomer = async () => {
+    setSending(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const { error } = await supabase
+        .from('quotations')
+        .update({ status: 'SENT', quote_sent_at: nowIso, updated_by: profile.id })
+        .eq('id', quotationId);
+      if (error) throw error;
+      setQuot(q => q ? { ...q, status: 'SENT', quote_sent_at: nowIso } : q);
+      setConfirmSend(false);
+      showToast?.('Quotation dikirim ke customer ✨');
+    } catch (err) {
+      showToast?.('Gagal mengirim: ' + err.message, 'error');
+    } finally {
+      setSending(false);
+    }
+  };
 
   // ── PDF generator ─────────────────────────────────────────────────────
   const handleDownloadPDF = async () => {
@@ -300,6 +381,14 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           <StatusBadge status={quot.status} />
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
+          {quot.status === 'SUBMITTED' && (
+            <button
+              onClick={() => setConfirmSend(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#144682', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(20,70,130,.22)' }}
+            >
+              <Send size={14} /> Kirim ke Customer
+            </button>
+          )}
           <button
             onClick={() => onEdit(quot)}
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
@@ -315,6 +404,9 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           </button>
         </div>
       </div>
+
+      {/* ── SLA indicator (BD-05) ────────────────────────────────────────── */}
+      <SlaCard quot={quot} />
 
       {/* ── Two-column screen layout ─────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
@@ -333,6 +425,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
               <InfoRow label="Valid Until" value={fmtDate(quot.valid_until)} />
               <InfoRow label="Payment Terms" value={paymentTermName} />
               <InfoRow label="Kurs USD" value={quot.usd_rate ? `Rp ${Number(quot.usd_rate).toLocaleString('id-ID')} / USD` : '—'} />
+              <InfoRow label="Diskon" value={`${discountPct}%`} />
               <InfoRow label="Status" value={<StatusBadge status={quot.status} />} />
               {quot.notes && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Notes" value={quot.notes} /></div>}
             </div>
@@ -448,6 +541,12 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                 <span style={{ color: C.inkSoft }}>Subtotal</span>
                 <span style={{ fontWeight: 700 }}>{rp(subtotal)}</span>
               </div>
+              {discountPct > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: C.orange }}>Diskon ({discountPct}%)</span>
+                  <span style={{ fontWeight: 700, color: C.orange }}>−{rp(discountAmount)}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                 <span style={{ color: C.inkSoft }}>VAT 1.1%</span>
                 <span style={{ fontWeight: 700 }}>{rp(tax)}</span>
@@ -606,6 +705,12 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                   <td style={{ padding: '5px 10px', color: '#555' }}>Subtotal</td>
                   <td style={{ padding: '5px 10px', textAlign: 'right' }}>Rp {rpN(quot.subtotal ?? subtotal)}</td>
                 </tr>
+                {discountPct > 0 && (
+                  <tr>
+                    <td style={{ padding: '5px 10px', color: '#555' }}>Diskon ({discountPct}%)</td>
+                    <td style={{ padding: '5px 10px', textAlign: 'right' }}>−Rp {rpN(discountAmount)}</td>
+                  </tr>
+                )}
                 <tr>
                   <td style={{ padding: '5px 10px', color: '#555' }}>VAT 1.1%</td>
                   <td style={{ padding: '5px 10px', textAlign: 'right' }}>Rp {rpN(quot.tax_amount ?? tax)}</td>
@@ -693,6 +798,17 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmSend}
+        title="Kirim ke Customer?"
+        message={`Quotation ${quot.quotation_no} akan ditandai SENT dan waktu kirim dicatat untuk perhitungan SLA. Lanjutkan?`}
+        confirmLabel={sending ? 'Mengirim…' : 'Ya, Kirim'}
+        cancelLabel="Batal"
+        variant="info"
+        onConfirm={handleSendToCustomer}
+        onCancel={() => setConfirmSend(false)}
+      />
     </div>
   );
 }
