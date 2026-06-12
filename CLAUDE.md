@@ -845,9 +845,39 @@ Output:
 
 | 2.0Y | R1 + BD-01 — (1) **Duplicate check nama prospect (R1)**: ProspectFormPage `nameWarning` state + `checkDuplicateName(val)` dipanggil `onBlur` input nama; query `prospects` `ilike(name)` + `company_id` + `deleted_at IS NULL` `limit(1)`; warning oranye non-blocking di bawah field (tidak block submit); skip saat `isEdit`. (2) **BANT Scorecard (BD-01)**: helper baru `src/modules/crm/bant.js` (BANT_FREQUENCY_OPTIONS, BANT_PAYMENT_OPTIONS, BANT_SCORE_FIELDS, BANT_MAX_SCORE, calcBantScore, bantScoreMeta) + komponen `src/modules/crm/BantScoreBar.jsx` (score bar warna: 0-3 merah / 4-5 oranye / 6-7 hijau). ProspectFormPage: 8 field BANT (bant_commodity/origin/destination/frequency/current_vendor/payment/decision_maker + bant_score) di form state + edit-populate (score di-recompute via calcBantScore); section "BANT Qualification" setelah Notes sebelum Additional Fields (grid 2-kolom, 7 input + score bar); `setBant(k)` handler update field + recompute bant_score sinkron (bukan useEffect → no lint error); payload otomatis via `...form`. PipelineKanbanPage: SELECT tambah 8 kolom bant_*; ProspectDetailModal section "BANT Qualification" (score bar + 7 field read-only) setelah Pipeline & Sales; **refactor sampingan**: `Field`/`Section` di-hoist dari dalam ProspectDetailModal ke module scope (pure presentational, no closure) → hilangkan `react-hooks/static-components` errors. 8 kolom bant_* ditambah ke STANDARD_COLUMNS.prospects (useCustomFields.js). Kolom DB bant_* sudah ada (dikonfirmasi sebelum task). Lint repo 148→128 (net −20). build clean | ✅ Complete |
 
-Current phase: **Phase 2.0Y** ✅ Complete
+| 2.0Z | **Activity & Calls (Sales Calls) page** — file baru `src/modules/crm/SalesCallsPage.jsx` (default export `({ showToast })`, pakai `useAuth()` utk profile). Pattern visual ikut InquiryListPage (C tokens warm-beige, badge maps, detail modal, pagination client-side PAGE_SIZE 20). Header "Activity & Calls" + tombol "Catat Call" navy #144682. 4 stat cards (current month, computed via useMemo): Total Call Bulan Ini, Connected, Follow-up Pending (next_action_date>=today & result≠null), Rata-rata Durasi (menit). Filter bar: search (prospect/contact, client-side), call_type, result, tanggal (Bulan Ini default / Semua). Tabel: Tanggal&Waktu (IBM Plex Mono), Prospect (join), Contact, Type badge, Durasi, BANT x/6, Result badge, Next Action Date, Salesperson (join), eye→detail. Fetch `sales_calls` `.limit(1000)` join `prospects` + `profiles` (FK hint `sales_calls_prospect_id_fkey` / `sales_calls_salesperson_id_fkey`), graceful error via showToast. CallDetailModal (Info Call/Contact/Klasifikasi/Notes/Tindak Lanjut + tombol Edit). CallFormModal add/edit: prospect (opsional), contact_name (req), contact_phone, call_date (req, default today), call_time, duration, call_type, result (req), bant_collected (slider 0-6), notes, next_action, next_action_date, salesperson (default user login). INSERT set company_id+created_by+salesperson_id fallback profile.id. **Badge:** call_type discovery(biru)/follow_up(orange)/closing(hijau); result connected(hijau)/no_answer(abu)/callback(biru)/wrong_number(merah). App.jsx: import `PhoneCall`, lazy `SalesCallsPage`, menu `crm-calls` "Activity & Calls" (icon PhoneCall) setelah Master Customer di grup CRM, routing block `activeMenu==='crm-calls'`. **TIDAK** ditambah ke MENU_KEY_MAP (tanpa role/module → `canSeeMenuItem` fallback true = semua role bisa lihat). Lint: +3 errors di SalesCallsPage (semua mirror pola InquiryListPage: fetch useCallback + fetch effect + setPage(0) effect); App.jsx 0 net-new. **TODO DB (staging — perlu approval, tabel belum ada):** lihat SQL di bawah. build clean | ✅ Complete |
 
-Next recommended step: **Verify Win/Loss + Visit Type (2.0X) end-to-end after `won_reason`/`visit_type` columns ditambahkan di staging, lalu uji BANT scorecard create/edit/detail**
+Current phase: **Phase 2.0Z** ✅ Complete
+
+> **⚠️ DB table required for Phase 2.0Z (`sales_calls` belum ada — buat di staging, butuh approval):**
+> ```sql
+> CREATE TABLE IF NOT EXISTS sales_calls (
+>   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+>   company_id uuid NOT NULL,
+>   prospect_id uuid REFERENCES prospects(id),
+>   salesperson_id uuid REFERENCES profiles(id),
+>   contact_name text NOT NULL,
+>   contact_phone text,
+>   call_date date NOT NULL,
+>   call_time time,
+>   duration integer,                 -- menit
+>   call_type text,                   -- discovery | follow_up | closing
+>   result text,                      -- connected | no_answer | callback | wrong_number
+>   bant_collected integer DEFAULT 0, -- 0..6
+>   notes text,
+>   next_action text,
+>   next_action_date date,
+>   created_by uuid,
+>   created_at timestamptz DEFAULT now(),
+>   updated_at timestamptz DEFAULT now()
+> );
+> GRANT ALL ON TABLE sales_calls TO anon, authenticated, service_role;
+> -- FK names harus cocok dgn PostgREST hint di query:
+> --   sales_calls_prospect_id_fkey, sales_calls_salesperson_id_fkey (default Postgres naming = aman)
+> ```
+> Sampai tabel dibuat, halaman tampil tapi fetch gagal → toast "Gagal memuat data call" + tabel kosong.
+
+Next recommended step: **Buat tabel `sales_calls` di staging (SQL di atas), lalu verify Activity & Calls end-to-end. Masih pending: `won_reason`/`visit_type` columns (2.0X) di staging.**
 
 ### localStorage keys
 | Key | Value | Written by |
