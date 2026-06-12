@@ -1280,8 +1280,11 @@ accentSoft bg (icon containers, hover highlights): `#FEF2EC`
 - profiles.is_active → SALAH, kolom namanya `active` (bukan `is_active`) — pakai `.eq('active', true)` saat query profiles
 - Business process correctness
 
-### ProspectFormPage — SOURCE options (updated 2026-06-07)
-10 options: digital_marketing, sales_visit, referral, event, cold_call, exhibition, social_media, website, walk_in, other.
+### ProspectFormPage — SOURCE options (updated 2026-06-12)
+11 options (value): sales_visit, cold_call, referral, existing_network, exhibition, instagram, linkedin, tiktok, website, walk_in, other. Default `source: 'sales_visit'`.
+Labels: Sales Visit, Cold Call, Referral, Existing Network, Exhibition / Pameran, Instagram, LinkedIn, TikTok, Website, Walk-in, Lainnya.
+**Sync:** `SOURCE_LABELS_KP` di PipelineKanbanPage.jsx harus pakai value yang sama (label boleh beda — KP pakai 'Exhibition' tanpa '/ Pameran'). Removed dari versi lama: digital_marketing, event, social_media (jangan dipakai lagi).
+**`sourceToSvc` (PipelineKanbanPage.jsx) — badge grouping per source (cover 11 value):** sales_visit/cold_call/referral/existing_network/walk_in/other → `'forwarding'`; exhibition → `'trading'`; instagram/linkedin/tiktok/website → `'digital'`. Fallback `'forwarding'`. Map `SVC` (warna badge) punya semua key: `forwarding` (label 'Forwarding', bg #EEF2FF, fg #144682), `trading` (label 'Trading', bg #FEF3EE, fg #E85A1E), `digital`, plus 5 lama (sea/air/land/customs/wh/project). Catatan: entri SVC pakai key `fg` untuk warna teks (bukan `color`) — konsumen baca `svc.fg` di DealCard & ListRow.
 Assigned To: fetch dari `profiles` dengan filter `active = true` + `company_id` + `.limit(1000)`. Tidak filter by role — semua user aktif bisa di-assign.
 
 ---

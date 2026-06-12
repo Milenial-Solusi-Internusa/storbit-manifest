@@ -27,29 +27,31 @@ const C = {
 const PIPELINE_STAGES = ['NEW','CONTACTED','QUALIFIED','PROPOSAL','NEGOTIATION','WON','LOST','NURTURE'];
 const CUSTOMER_TYPES  = ['freight','customs','trading','mixed'];
 const SOURCES = [
-  'digital_marketing',
   'sales_visit',
-  'referral',
-  'event',
   'cold_call',
+  'referral',
+  'existing_network',
   'exhibition',
-  'social_media',
+  'instagram',
+  'linkedin',
+  'tiktok',
   'website',
   'walk_in',
   'other',
 ];
 
 const SOURCE_LABELS = {
-  digital_marketing: 'Digital Marketing',
-  sales_visit:       'Sales Visit',
-  referral:          'Referral',
-  event:             'Event / Pameran',
-  cold_call:         'Cold Call',
-  exhibition:        'Exhibition',
-  social_media:      'Social Media',
-  website:           'Website',
-  walk_in:           'Walk-in',
-  other:             'Lainnya',
+  sales_visit:      'Sales Visit',
+  cold_call:        'Cold Call',
+  referral:         'Referral',
+  existing_network: 'Existing Network',
+  exhibition:       'Exhibition / Pameran',
+  instagram:        'Instagram',
+  linkedin:         'LinkedIn',
+  tiktok:           'TikTok',
+  website:          'Website',
+  walk_in:          'Walk-in',
+  other:            'Lainnya',
 };
 
 const inpStyle = (extra = {}) => ({
