@@ -849,7 +849,18 @@ Output:
 
 | 2.0Z-hotfix | SalesCallsPage.jsx — fix column mismatch `duration` → `duration_minutes` agar match kolom DB `sales_calls.duration_minutes`. Diganti di 7 lokasi: DField detail display, `EMPTY_CALL` state, input form, stats calc (`Number(c.duration_minutes)`), openEdit mapping, payload INSERT/UPDATE, table cell. Audit konfirmasi 12 field lain sudah match nama DB & semua 13 field form sudah masuk payload (tidak ada yang ketinggalan). Local var `durations`/`avgDuration` + label "Durasi" tidak diubah (bukan kolom DB). build clean | ✅ Complete |
 
-Current phase: **Phase 2.0Z-hotfix** ✅ Complete
+| 2.1A | BD-05 + BD-06 (Quotation) — (1) **Quote SLA Indicator (BD-05)**: SLA dihitung `pricing_done_at` → `quote_sent_at`, target per service_type `SLA_HOURS = { freight_forwarding: 6, customs: 8, trading: 8 }` (default 6 jam). QuotationFormPage: field "Pricing Selesai" (datetime-local, `pricing_done_at`) setelah Valid Until + masuk payload INSERT/UPDATE. QuotationDetailPage: tombol **"Kirim ke Customer"** (navy, icon Send, hanya saat status `SUBMITTED`) → ConfirmModal → update status `SENT` + `quote_sent_at=now()` + optimistic `setQuot` refresh; `SlaCard` (module-level) di bawah action bar — 3 state: belum ada pricing (abu) / pricing ada & belum kirim (kuning "⏱…sudah X jam Y menit", merah "⚠️ SLA Terlewat" jika > target) / sudah kirim (hijau "✓ dikirim dalam X (target N jam)", merah jika lewat). QuotationListPage: kolom "SLA" setelah Status (`SlaBadge`: ✓ On Time / ✗ Late untuk SENT/ACCEPTED/REJECTED, ⏱ Pending untuk SUBMITTED) + `pricing_done_at`/`quote_sent_at` di SELECT. (2) **Pricing Authority Matrix (BD-06)**: QuotationFormPage field "Diskon (%)" (number 0-100 step 0.1, `discount_pct`) setelah Pricing Selesai + masuk payload; recalc `discountAmount=round(subtotal×pct/100)`, `tax=round((subtotal−discountAmount)×VAT_RATE)`, `grandTotal=(subtotal−discountAmount)+tax` — **VAT_RATE tetap 0.011 (1.1%, existing); tidak diubah ke 0.11** (formula task "×0.11" ilustratif). `pricingAuthority(pct, erpRole)` indicator non-blocking di bawah field diskon (hijau/orange/merah sesuai matrix: 0%→no approval, ≤5%→Sales SPV, ≤10%→Manager, ≤15%→BD GM, ≤20%→CEO, >20%→CEO+FinCtrl+BoD). Summary form + detail + PDF print-area: baris "Diskon (X%): −Rp X" antara Subtotal & PPN (hanya jika pct>0); InfoRow "Diskon" di header detail. `erpRole` dari useAuth. **TODO DB (staging — perlu approval, 3 kolom belum ada di `quotations`):** `ALTER TABLE quotations ADD COLUMN IF NOT EXISTS pricing_done_at timestamptz, ADD COLUMN IF NOT EXISTS quote_sent_at timestamptz, ADD COLUMN IF NOT EXISTS discount_pct numeric(5,2) DEFAULT 0;` — `valid_until`/`service_type` sudah ada. Sampai kolom dibuat, save quotation & detail fetch akan error "column does not exist". Lint: net-zero new error di 3 file (QuotationDetailPage tetap 1 error pre-existing setLoading-in-effect). build clean | ✅ Complete |
+
+Current phase: **Phase 2.1A** ✅ Complete
+
+> **⚠️ DB columns required for Phase 2.1A (`quotations` — buat di staging, butuh approval):**
+> ```sql
+> ALTER TABLE quotations
+>   ADD COLUMN IF NOT EXISTS pricing_done_at timestamptz,
+>   ADD COLUMN IF NOT EXISTS quote_sent_at   timestamptz,
+>   ADD COLUMN IF NOT EXISTS discount_pct    numeric(5,2) DEFAULT 0;
+> ```
+> Sampai kolom dibuat: simpan quotation (form) & buka detail akan error "column … does not exist".
 
 > **⚠️ DB table for Phase 2.0Z (`sales_calls`) — kolom durasi bernama `duration_minutes` (bukan `duration`). Buat di staging jika belum ada (butuh approval):**
 > ```sql
@@ -879,7 +890,7 @@ Current phase: **Phase 2.0Z-hotfix** ✅ Complete
 > ```
 > Sampai tabel dibuat, halaman tampil tapi fetch gagal → toast "Gagal memuat data call" + tabel kosong.
 
-Next recommended step: **Buat tabel `sales_calls` di staging (SQL di atas), lalu verify Activity & Calls end-to-end. Masih pending: `won_reason`/`visit_type` columns (2.0X) di staging.**
+Next recommended step: **Tambah 3 kolom `quotations` (2.1A: pricing_done_at/quote_sent_at/discount_pct) di staging, lalu verify SLA indicator + Kirim ke Customer + pricing authority + diskon end-to-end. Pending staging lain: tabel `sales_calls` (2.0Z), kolom `won_reason`/`visit_type` (2.0X).**
 
 ### localStorage keys
 | Key | Value | Written by |
