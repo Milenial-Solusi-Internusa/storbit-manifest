@@ -148,7 +148,7 @@ function CallDetailModal({ call, onClose, onEdit }) {
           <DSection title="Info Call">
             <DField label="Tanggal"     value={fmtDate(call.call_date)} mono />
             <DField label="Waktu"       value={fmtTime(call.call_time)} mono />
-            <DField label="Durasi"      value={call.duration != null ? `${call.duration} menit` : null} />
+            <DField label="Durasi"      value={call.duration_minutes != null ? `${call.duration_minutes} menit` : null} />
             <DField label="Salesperson" value={call.salesperson?.full_name} />
           </DSection>
 
@@ -182,7 +182,7 @@ function CallDetailModal({ call, onClose, onEdit }) {
 /* ── Add / Edit form modal ── */
 const EMPTY_CALL = {
   prospect_id: '', contact_name: '', contact_phone: '',
-  call_date: todayStr(), call_time: '', duration: '',
+  call_date: todayStr(), call_time: '', duration_minutes: '',
   call_type: 'discovery', result: 'connected', bant_collected: 0,
   notes: '', next_action: '', next_action_date: '', salesperson_id: '',
 };
@@ -250,7 +250,7 @@ function CallFormModal({ open, isEdit, draft, setDraft, saving, error, prospects
             </div>
             <div>
               {lbl('Durasi (menit)')}
-              <input type="number" min={0} value={draft.duration} onChange={e => upd('duration', e.target.value)} style={inpStyle} placeholder="0" />
+              <input type="number" min={0} value={draft.duration_minutes} onChange={e => upd('duration_minutes', e.target.value)} style={inpStyle} placeholder="0" />
             </div>
           </div>
 
@@ -383,7 +383,7 @@ export default function SalesCallsPage({ showToast }) {
     const { start, end } = monthBounds();
     const today = todayStr();
     const monthCalls = calls.filter(c => c.call_date >= start && c.call_date <= end);
-    const durations = monthCalls.map(c => Number(c.duration)).filter(n => !isNaN(n) && n > 0);
+    const durations = monthCalls.map(c => Number(c.duration_minutes)).filter(n => !isNaN(n) && n > 0);
     return {
       total: monthCalls.length,
       connected: monthCalls.filter(c => c.result === 'connected').length,
@@ -427,7 +427,7 @@ export default function SalesCallsPage({ showToast }) {
       contact_phone:    call.contact_phone    || '',
       call_date:        call.call_date        || todayStr(),
       call_time:        call.call_time ? fmtTime(call.call_time) : '',
-      duration:         call.duration ?? '',
+      duration_minutes: call.duration_minutes ?? '',
       call_type:        call.call_type        || 'discovery',
       result:           call.result           || 'connected',
       bant_collected:   call.bant_collected ?? 0,
@@ -455,7 +455,7 @@ export default function SalesCallsPage({ showToast }) {
         contact_phone:    draft.contact_phone    || null,
         call_date:        draft.call_date,
         call_time:        draft.call_time        || null,
-        duration:         draft.duration !== '' ? Number(draft.duration) : null,
+        duration_minutes: draft.duration_minutes !== '' ? Number(draft.duration_minutes) : null,
         call_type:        draft.call_type        || null,
         result:           draft.result,
         bant_collected:   Number(draft.bant_collected) || 0,
@@ -566,7 +566,7 @@ export default function SalesCallsPage({ showToast }) {
                   <td style={{ padding: '12px 14px', fontWeight: 600, color: C.ink, whiteSpace: 'nowrap' }}>{prospectLabel(c.prospect)}</td>
                   <td style={{ padding: '12px 14px', color: C.inkSoft }}>{c.contact_name || '—'}</td>
                   <td style={{ padding: '12px 14px' }}><Badge meta={CALL_TYPE_META[c.call_type]} /></td>
-                  <td style={{ padding: '12px 14px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.inkSoft }}>{c.duration != null ? `${c.duration}'` : '—'}</td>
+                  <td style={{ padding: '12px 14px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.inkSoft }}>{c.duration_minutes != null ? `${c.duration_minutes}'` : '—'}</td>
                   <td style={{ padding: '12px 14px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.inkSoft }}>{c.bant_collected ?? 0}/6</td>
                   <td style={{ padding: '12px 14px' }}><Badge meta={RESULT_META[c.result]} /></td>
                   <td style={{ padding: '12px 14px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.inkFaint, whiteSpace: 'nowrap' }}>{c.next_action_date ? fmtDate(c.next_action_date) : '—'}</td>
