@@ -23,6 +23,9 @@ export const STANDARD_COLUMNS = {
     'won_reason', 'converted_at', 'converted_to', 'payment_terms_id', 'currency_code',
     'credit_limit', 'notes', 'is_active', 'created_by', 'updated_by',
     'created_at', 'updated_at', 'deleted_at',
+    // BANT qualification scorecard
+    'bant_commodity', 'bant_origin', 'bant_destination', 'bant_frequency',
+    'bant_current_vendor', 'bant_payment', 'bant_decision_maker', 'bant_score',
     // join result aliases — not real DB columns, must be excluded from custom fields
     'assigned_profile',
     // company prefix (PT/CV/Mr./Mrs./Ms.) — stored separately from name

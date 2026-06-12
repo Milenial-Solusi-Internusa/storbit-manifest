@@ -7,6 +7,8 @@ import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
 import WinLossModal from './WinLossModal';
+import { BANT_FREQUENCY_OPTIONS, BANT_PAYMENT_OPTIONS, calcBantScore } from './bant';
+import BantScoreBar from './BantScoreBar';
 
 const C = {
   bg:        '#F6EFE3',
@@ -96,10 +98,22 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     payment_terms_id: '',
     won_reason:       '',
     lost_reason:      '',
+    // BANT qualification scorecard
+    bant_commodity:      '',
+    bant_origin:         '',
+    bant_destination:    '',
+    bant_frequency:      '',
+    bant_current_vendor: '',
+    bant_payment:        '',
+    bant_decision_maker: '',
+    bant_score:          0,
   });
 
   // Win/Loss capture modal — { open, mode } triggered when stage → WON/LOST
   const [winLoss, setWinLoss] = useState({ open: false, mode: 'won' });
+
+  // Duplicate prospect-name warning (non-blocking, ADD mode only)
+  const [nameWarning, setNameWarning] = useState('');
 
   const [profiles, setProfiles] = useState([]);
   const [paymentTerms, setPaymentTerms] = useState([]);
@@ -122,6 +136,15 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   useEffect(() => {
     if (isEdit && prospect) {
+      const bantVals = {
+        bant_commodity:      prospect.bant_commodity      || '',
+        bant_origin:         prospect.bant_origin         || '',
+        bant_destination:    prospect.bant_destination    || '',
+        bant_frequency:      prospect.bant_frequency      || '',
+        bant_current_vendor: prospect.bant_current_vendor || '',
+        bant_payment:        prospect.bant_payment        || '',
+        bant_decision_maker: prospect.bant_decision_maker || '',
+      };
       setForm({
         company_prefix:   prospect.company_prefix    || '',
         name:             prospect.name             || '',
@@ -141,6 +164,8 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         payment_terms_id: prospect.payment_terms_id  || '',
         won_reason:       prospect.won_reason        || '',
         lost_reason:      prospect.lost_reason       || '',
+        ...bantVals,
+        bant_score:       calcBantScore(bantVals),
       });
     }
   }, [isEdit, prospect]);
@@ -176,6 +201,31 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   }, [prospect?.id, prospect?.name, showToast, onBack]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  // BANT scoring fields — update the field and recompute bant_score in one pass,
+  // so the score stays in sync in form state (carried to payload via ...form spread).
+  const setBant = (k) => (e) => setForm(f => {
+    const next = { ...f, [k]: e.target.value };
+    next.bant_score = calcBantScore(next);
+    return next;
+  });
+
+  // Non-blocking duplicate-name check (ADD mode only) — warning, never blocks submit.
+  const checkDuplicateName = async (val) => {
+    if (!val.trim() || isEdit) { setNameWarning(''); return; }
+    const { data } = await supabase
+      .from('prospects')
+      .select('id, name')
+      .ilike('name', val.trim())
+      .is('deleted_at', null)
+      .eq('company_id', profile.company_id)
+      .limit(1);
+    if (data && data.length > 0) {
+      setNameWarning('Prospect dengan nama ini sudah terdaftar. Pastikan tidak duplikat.');
+    } else {
+      setNameWarning('');
+    }
+  };
 
   // Pipeline stage change — WON/LOST open the WinLossModal first.
   // form.pipeline_stage is only updated once the modal is saved, so cancelling
@@ -280,11 +330,17 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
               <input
                 value={form.name}
                 onChange={set('name')}
+                onBlur={e => checkDuplicateName(e.target.value)}
                 style={{ ...inpStyle(errors.name ? { borderColor: C.danger } : {}), flex: 1 }}
                 placeholder="Nama perusahaan / orang…"
               />
             </div>
             {errors.name && <span style={{ fontSize: 11.5, color: C.danger }}>{errors.name}</span>}
+            {nameWarning && (
+              <p style={{ color: '#E85A1E', fontSize: 12, marginTop: 4 }}>
+                ⚠️ {nameWarning}
+              </p>
+            )}
           </Field>
 
           <Field label="Legal Name">
@@ -360,6 +416,52 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
               placeholder="Catatan tambahan…"
             />
           </Field>
+        </div>
+
+        {/* ── BANT Qualification ──────────────────────────────────────────────── */}
+        <div style={{ marginTop: 28, paddingTop: 20, borderTop: `1px solid ${C.lineSoft}` }}>
+          <div style={{ marginBottom: 18 }}>
+            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: '.4px', textTransform: 'uppercase', color: C.ink }}>BANT Qualification</h2>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: C.inkFaint }}>Isi minimal 4 dari 6 poin untuk lanjut ke tahap Qualified</p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px 24px' }}>
+            <Field label="Komoditi / Barang">
+              <input value={form.bant_commodity} onChange={setBant('bant_commodity')} style={inpStyle()} placeholder="cth: Garmen, Electronic, Chemical" />
+            </Field>
+
+            <Field label="Kota/Port Asal (POL)">
+              <input value={form.bant_origin} onChange={setBant('bant_origin')} style={inpStyle()} placeholder="cth: Jakarta, Surabaya" />
+            </Field>
+
+            <Field label="Kota/Port Tujuan (POD)">
+              <input value={form.bant_destination} onChange={setBant('bant_destination')} style={inpStyle()} placeholder="cth: Singapore, Tokyo, Los Angeles" />
+            </Field>
+
+            <Field label="Frekuensi Pengiriman">
+              <select value={form.bant_frequency} onChange={setBant('bant_frequency')} style={selStyle}>
+                {BANT_FREQUENCY_OPTIONS.map(o => <option key={o} value={o}>{o || '—'}</option>)}
+              </select>
+            </Field>
+
+            <Field label="Vendor / Forwarder Saat Ini">
+              <input value={form.bant_current_vendor} onChange={setBant('bant_current_vendor')} style={inpStyle()} placeholder="cth: DHL, Expeditors, atau belum ada" />
+            </Field>
+
+            <Field label="Preferensi Payment">
+              <select value={form.bant_payment} onChange={setBant('bant_payment')} style={selStyle}>
+                {BANT_PAYMENT_OPTIONS.map(o => <option key={o} value={o}>{o || '—'}</option>)}
+              </select>
+            </Field>
+
+            <Field label="Decision Maker" full>
+              <input value={form.bant_decision_maker} onChange={setBant('bant_decision_maker')} style={inpStyle()} placeholder="Nama dan jabatan yang berwenang memutuskan" />
+            </Field>
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <BantScoreBar score={form.bant_score} />
+          </div>
         </div>
 
         {/* Custom fields — dynamic columns added via Schema Manager */}
