@@ -9,7 +9,7 @@ import {
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
-  ClipboardList, LayoutList, Archive, PhoneCall,
+  ClipboardList, LayoutList, Archive, PhoneCall, UserX,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { useCustomers } from './hooks/useCustomers';
@@ -432,7 +432,15 @@ const ERP_MENU_GROUPS = [
           { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
-          { id: 'crm-customers',  label: 'Master Customer', icon: Building2 },
+          {
+            id: 'crm-customers', label: 'Master Customer', icon: Building2,
+            children: [
+              { id: 'crm-customers-msi',  label: 'Customer MSI', icon: Building2 },
+              { id: 'crm-customers-jci',  label: 'Customer JCI', icon: Building2 },
+              { id: 'crm-customers-soa',  label: 'Customer SOA', icon: Building2 },
+              { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX    },
+            ],
+          },
           { id: 'crm-calls',      label: 'Activity & Calls', icon: PhoneCall },
         ],
       },
@@ -770,7 +778,11 @@ const MENU_KEY_MAP = {
   'crm-prospects':   'crm_prospects',
   'crm-inquiry':     'crm_inquiry',
   'quotation-draft': 'crm_quotation',
-  'crm-customers':   'crm_customers',
+  'crm-customers':       'crm_customers',
+  'crm-customers-msi':   'crm_customers',
+  'crm-customers-jci':   'crm_customers',
+  'crm-customers-soa':   'crm_customers',
+  'crm-customers-free':  'crm_customers',
   // Logistics
   'manifest':            'logistics_sp',
   'trading':             'logistics_general_trading',
@@ -850,8 +862,10 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
 function SidebarItem({ item, activeMenu, setActiveMenu }) {
   const Icon = item.icon;
   const active = activeMenu === item.id;
-  // Item is "parent-active" when it has children and any child (or itself) matches
-  const childActive = item.children?.some(c => !c.section && activeMenu === c.id);
+  // Item is "parent-active" when it has children and any child/grandchild (or itself) matches
+  const childActive = item.children?.some(c => !c.section && (
+    activeMenu === c.id || c.children?.some(gc => !gc.section && activeMenu === gc.id)
+  ));
   const expanded = item.children && (active || childActive);
 
   if (item.children) {
@@ -892,6 +906,65 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
                     padding: '10px 8px 4px',
                   }}>
                     {child.section}
+                  </div>
+                );
+              }
+              // Child that itself has children → nested expandable sub-group (3rd level)
+              if (child.children) {
+                const SubIcon = child.icon;
+                const firstGc = child.children.find(gc => !gc.section);
+                const subActive = child.children.some(gc => !gc.section && activeMenu === gc.id);
+                const subExpanded = activeMenu === child.id || subActive;
+                return (
+                  <div key={child.id}>
+                    <button
+                      onClick={() => setActiveMenu(firstGc ? firstGc.id : child.id)}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-xl text-[13px] font-medium mb-[1px] transition-all"
+                      style={{
+                        background: subActive ? 'rgba(255,255,255,0.10)' : 'transparent',
+                        color: subActive ? '#FFFDF7' : 'rgba(248,245,237,0.65)',
+                        fontWeight: subActive ? 600 : 400,
+                        border: '1px solid transparent',
+                        textAlign: 'left',
+                      }}
+                      onMouseEnter={(e) => { if (!subActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                      onMouseLeave={(e) => { if (!subActive) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      {SubIcon && <SubIcon size={14} strokeWidth={subActive ? 2.1 : 1.7} style={{ color: subActive ? '#FFB899' : 'rgba(248,245,237,0.45)', flexShrink: 0 }} />}
+                      <span className="flex-1 truncate">{child.label}</span>
+                      <ChevronDown size={12} strokeWidth={2} style={{ color: 'rgba(248,245,237,0.35)', flexShrink: 0, transform: subExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .15s' }} />
+                    </button>
+                    {subExpanded && (
+                      <div style={{ marginLeft: 12, paddingLeft: 8 }}>
+                        {child.children.filter(gc => !gc.section).map(gc => {
+                          const GcIcon = gc.icon;
+                          const gcActive = activeMenu === gc.id;
+                          return (
+                            <button
+                              key={gc.id}
+                              onClick={() => setActiveMenu(gc.id)}
+                              className="w-full flex items-center gap-2.5 px-2.5 py-[6px] rounded-xl text-[12.5px] font-medium mb-[1px] transition-all"
+                              style={{
+                                background: gcActive ? 'rgba(255,255,255,0.13)' : 'transparent',
+                                color: gcActive ? '#FFFDF7' : 'rgba(248,245,237,0.6)',
+                                fontWeight: gcActive ? 600 : 400,
+                                boxShadow: gcActive ? 'inset 2px 0 0 rgba(255,212,184,0.7)' : 'none',
+                                border: gcActive ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
+                                textAlign: 'left',
+                              }}
+                              onMouseEnter={(e) => { if (!gcActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                              onMouseLeave={(e) => { if (!gcActive) e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              {GcIcon
+                                ? <GcIcon size={13} strokeWidth={gcActive ? 2.1 : 1.7} style={{ color: gcActive ? '#FFB899' : 'rgba(248,245,237,0.4)', flexShrink: 0 }} />
+                                : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: gcActive ? 1 : .45, flexShrink: 0 }} />
+                              }
+                              <span className="flex-1 truncate">{gc.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -1070,7 +1143,8 @@ export default function StorbitManifest() {
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.
   const navigateTo = useCallback((menuId) => {
     const group = ERP_MENU_GROUPS.find(g =>
-      g.items.some(i => i.id === menuId || i.children?.some(c => c.id === menuId))
+      g.items.some(i => i.id === menuId
+        || i.children?.some(c => c.id === menuId || c.children?.some(gc => gc.id === menuId)))
     );
     if (group) setActiveModule(group.label);
     setActiveMenu(menuId);
@@ -2127,10 +2201,39 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
           {/* ── CRM: Master Customer ────────────────────────────────────────── */}
+          {/* Backward-compatible default (no entityFilter) — e.g. stale last-menu */}
           {activeMenu === 'crm-customers' && (
             <ErrorBoundary title="Master Customer temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <CustomerListPage showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'crm-customers-msi' && (
+            <ErrorBoundary title="Master Customer temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <CustomerListPage entityFilter="MSI" showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'crm-customers-jci' && (
+            <ErrorBoundary title="Master Customer temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <CustomerListPage entityFilter="JCI" showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'crm-customers-soa' && (
+            <ErrorBoundary title="Master Customer temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <CustomerListPage entityFilter="SOA" showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'crm-customers-free' && (
+            <ErrorBoundary title="Master Customer temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <CustomerListPage entityFilter="FREE_AGENT" showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
               </Suspense>
             </ErrorBoundary>
           )}
