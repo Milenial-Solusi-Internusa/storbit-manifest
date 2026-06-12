@@ -783,6 +783,7 @@ const MENU_KEY_MAP = {
   'crm-customers-jci':   'crm_customers',
   'crm-customers-soa':   'crm_customers',
   'crm-customers-free':  'crm_customers',
+  'customer-detail':     'crm_customers',
   // Logistics
   'manifest':            'logistics_sp',
   'trading':             'logistics_general_trading',
