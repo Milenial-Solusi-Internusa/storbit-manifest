@@ -32,16 +32,25 @@ const SVC = {
   wh:      { label: 'Warehousing',   bg: '#DCEBEA', fg: '#1F6B6B' },
   project: { label: 'Project Cargo', bg: '#E5EDF7', fg: '#234F86' },
   digital: { label: 'Digital',       bg: '#FBE6DA', fg: '#C8521B' },
+  forwarding: { label: 'Forwarding', bg: '#EEF2FF', fg: '#144682' },
+  trading:    { label: 'Trading',    bg: '#FEF3EE', fg: '#E85A1E' },
 };
 
-// Map prospect.source → SVC key
+// Map prospect.source → service/badge group (covers all 11 current source values)
 const SOURCE_TO_SVC = {
-  digital_marketing: 'digital',
-  sales_visit:       'land',
-  referral:          'sea',
-  event:             'customs',
+  sales_visit:      'forwarding',
+  cold_call:        'forwarding',
+  referral:         'forwarding',
+  existing_network: 'forwarding',
+  exhibition:       'trading',
+  instagram:        'digital',
+  linkedin:         'digital',
+  tiktok:           'digital',
+  website:          'digital',
+  walk_in:          'forwarding',
+  other:            'forwarding',
 };
-const sourceToSvc = src => SOURCE_TO_SVC[src] || 'sea';
+const sourceToSvc = src => SOURCE_TO_SVC[src] || 'forwarding';
 
 const rp = n => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 
@@ -163,9 +172,9 @@ const STAGE_BADGE = {
 };
 const CUSTOMER_TYPE_LABELS = { freight: 'Freight', customs: 'Customs', trading: 'Trading', mixed: 'Mixed' };
 const SOURCE_LABELS_KP = {
-  digital_marketing: 'Digital Marketing', sales_visit: 'Sales Visit', referral: 'Referral',
-  event: 'Event', cold_call: 'Cold Call', exhibition: 'Exhibition',
-  social_media: 'Social Media', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
+  sales_visit: 'Sales Visit', cold_call: 'Cold Call', referral: 'Referral',
+  existing_network: 'Existing Network', exhibition: 'Exhibition', instagram: 'Instagram',
+  linkedin: 'LinkedIn', tiktok: 'TikTok', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
 };
 
 /* ── ProspectDetailModal — presentational sub-components (module scope) ── */
