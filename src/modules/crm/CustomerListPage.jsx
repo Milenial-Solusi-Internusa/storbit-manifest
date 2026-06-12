@@ -372,7 +372,17 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
 }
 
 // ─── Main list page ───────────────────────────────────────────────────────────
-export default function CustomerListPage({ showToast, onSelectCustomer }) {
+// Per-entity header copy (entityFilter locks the list to one entity / free agent)
+const ENTITY_HEADER = {
+  MSI:        { title: 'Customer MSI', sub: 'Customer freight forwarding MSI' },
+  JCI:        { title: 'Customer JCI', sub: 'Customer customs & PPJK JCI' },
+  SOA:        { title: 'Customer SOA', sub: 'Customer trading Storbit' },
+  FREE_AGENT: { title: 'Free Agent',   sub: 'Customer tidak terikat entitas' },
+};
+
+export default function CustomerListPage({ showToast, onSelectCustomer, entityFilter }) {
+  const entityLocked = !!entityFilter;
+  const headerMeta = ENTITY_HEADER[entityFilter] || null;
   const [customers,   setCustomers]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [rawSearch,   setRawSearch]   = useState('');
@@ -424,11 +434,17 @@ export default function CustomerListPage({ showToast, onSelectCustomer }) {
   const filtered = customers.filter(c => {
     const q = search.toLowerCase();
     if (q && !c.name?.toLowerCase().includes(q) && !c.legal_name?.toLowerCase().includes(q) && !c.code?.toLowerCase().includes(q)) return false;
+    // Entity lock (from sub-menu): MSI/JCI/SOA by entitas, FREE_AGENT by status
+    if (entityFilter === 'FREE_AGENT') {
+      if ((c.status || (c.active === false ? 'inactive' : 'active')) !== 'free_agent') return false;
+    } else if (entityFilter) {
+      if (c.source_company?.code !== entityFilter) return false;
+    }
     if (filterStatus !== 'all') {
       const key = c.status || (c.active === false ? 'inactive' : 'active');
       if (key !== filterStatus) return false;
     }
-    if (filterCo !== 'all' && c.source_company?.code !== filterCo) return false;
+    if (!entityLocked && filterCo !== 'all' && c.source_company?.code !== filterCo) return false;
     if (filterTier !== 'all' && c.tier !== filterTier) return false;
     return true;
   });
@@ -449,11 +465,13 @@ export default function CustomerListPage({ showToast, onSelectCustomer }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: D.inkFaint, marginBottom: 8 }}>
-            <span>CRM</span><span>›</span><span style={{ color: D.inkSoft, fontWeight: 600 }}>Master Customer</span>
+            <span>CRM</span><span>›</span><span style={{ color: D.inkSoft, fontWeight: 600 }}>{headerMeta?.title || 'Master Customer'}</span>
           </nav>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: D.ink, fontFamily: "'Montserrat', sans-serif", letterSpacing: -.4 }}>Master Customer</h1>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: D.ink, fontFamily: "'Montserrat', sans-serif", letterSpacing: -.4 }}>{headerMeta?.title || 'Master Customer'}</h1>
           <p style={{ margin: '3px 0 0', fontSize: 13, color: D.inkSoft }}>
-            <b style={{ color: D.navy, fontWeight: 700 }}>{customers.length}</b> customer · {activeCount} aktif · {inactiveCount} tidak aktif
+            {headerMeta?.sub
+              ? <>{headerMeta.sub} · <b style={{ color: D.navy, fontWeight: 700 }}>{filtered.length}</b></>
+              : <><b style={{ color: D.navy, fontWeight: 700 }}>{customers.length}</b> customer · {activeCount} aktif · {inactiveCount} tidak aktif</>}
           </p>
         </div>
         <Btn primary icon={Plus} onClick={() => { setFormCustomer({}); setFormOpen(true); }}>
@@ -492,10 +510,12 @@ export default function CustomerListPage({ showToast, onSelectCustomer }) {
           <option value="all">Semua Status</option>
           {CUST_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
-        <select value={filterCo} onChange={e => setFilterCo(e.target.value)} style={selStyle}>
-          <option value="all">Semua Entitas</option>
-          {['MSI', 'JCI', 'SOA'].map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        {!entityLocked && (
+          <select value={filterCo} onChange={e => setFilterCo(e.target.value)} style={selStyle}>
+            <option value="all">Semua Entitas</option>
+            {['MSI', 'JCI', 'SOA'].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
         <select value={filterTier} onChange={e => setFilterTier(e.target.value)} style={selStyle}>
           <option value="all">Semua Tier</option>
           {TIERS.map(t => <option key={t} value={t}>Tier {t}</option>)}
