@@ -1,25 +1,13 @@
-// src/modules/crm/CustomerMasterPage.jsx
-// Master Customer page — CRM module
-// Pattern: follows AssetITPage (list + detail modal with tabs)
-// DB columns confirmed: name, legal_name, customer_type, tax_id, code,
-//   phone, email, address, city, country, pic_name, pic_phone, pic_email,
-//   active, payment_terms_id, credit_limit, currency_code, notes, company_id
-// Columns NOT yet in DB (silent null): assigned_to, source_company_id, tier, status(text)
-// TODO DB: ALTER TABLE customers ADD COLUMN assigned_to uuid REFERENCES profiles(id);
-// TODO DB: ALTER TABLE customers ADD COLUMN source_company_id uuid REFERENCES companies(id);
-// TODO DB: ALTER TABLE customers ADD COLUMN tier text CHECK (tier IN ('A','B','C'));
-// TODO DB: ALTER TABLE customers ADD COLUMN status text DEFAULT 'active';
-
+// src/modules/crm/CustomerListPage.jsx
+// Master Customer — LIST page (replaces CustomerMasterPage modal-based view).
+// List → detail uses App.jsx state swap (onSelectCustomer → CustomerDetailPage), like AssetITPage.
+// Add/edit still uses CustomerFormModal (exported for reuse by CustomerDetailPage).
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  Search, Plus, Eye, X, Building2, Phone, Mail, MapPin,
-  User, CreditCard, FileText, ChevronLeft, ChevronRight,
-  Calendar, Check, AlertTriangle, Save,
-} from 'lucide-react';
+import { Search, Plus, Eye, X, Building2, CreditCard, Check, AlertTriangle, Save } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 
-// ─── Design tokens (warm cream — matches ITEquipmentPage) ─────────────────────
+// ─── Design tokens (warm cream) ───────────────────────────────────────────────
 const D = {
   bg:         '#F6EFE3',
   surface:    '#FFFDF8',
@@ -50,7 +38,6 @@ const CUST_STATUSES = [
   { value: 'inactive',   label: 'Inactive'    },
   { value: 'free_agent', label: 'Free Agent'  },
 ];
-const CO_CODES = ['MSI', 'JCI', 'SOA'];
 const CURRENCIES = ['IDR', 'USD', 'EUR', 'SGD'];
 
 const TIER_META = {
@@ -64,16 +51,12 @@ const STATUS_META = {
   free_agent: { bg: D.neutralBg, color: D.neutral,  bd: D.neutralBd, label: 'Free Agent'  },
 };
 const CO_META = {
-  MSI: { bg: D.accentSoft, color: D.accent      },
-  JCI: { bg: D.infoBg,     color: D.info        },
-  SOA: { bg: D.okBg,       color: D.ok          },
+  MSI: { bg: D.accentSoft, color: D.accent },
+  JCI: { bg: D.infoBg,     color: D.info   },
+  SOA: { bg: D.okBg,       color: D.ok     },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const fmtRupiah = (n) => {
-  if (!n && n !== 0) return '—';
-  return 'Rp ' + Number(n).toLocaleString('id-ID');
-};
 const fmtDate = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -81,7 +64,7 @@ const fmtDate = (iso) => {
   return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Shared badges ────────────────────────────────────────────────────────────
 function TierBadge({ tier }) {
   if (!tier) return <span style={{ color: D.inkFaint, fontSize: 12 }}>—</span>;
   const m = TIER_META[tier] || TIER_META.C;
@@ -91,9 +74,7 @@ function TierBadge({ tier }) {
     </span>
   );
 }
-
 function StatusBadge({ status, active }) {
-  // Derive from active boolean if status column doesn't exist
   const key = status || (active === false ? 'inactive' : 'active');
   const m = STATUS_META[key] || STATUS_META.active;
   return (
@@ -103,7 +84,6 @@ function StatusBadge({ status, active }) {
     </span>
   );
 }
-
 function CoBadge({ code }) {
   if (!code) return null;
   const m = CO_META[code] || { bg: D.neutralBg, color: D.neutral };
@@ -134,7 +114,7 @@ function Btn({ children, primary, small, onClick, disabled, icon: Icon }) {
   );
 }
 
-// ─── Input helpers ────────────────────────────────────────────────────────────
+// ─── Input styles ─────────────────────────────────────────────────────────────
 const INP_STYLE = {
   width: '100%', height: 36, borderRadius: 8, border: `1px solid ${D.line}`,
   background: D.surface, padding: '0 11px', fontSize: 13, color: D.ink,
@@ -142,212 +122,21 @@ const INP_STYLE = {
 };
 const SEL_STYLE = { ...INP_STYLE, cursor: 'pointer' };
 
-// ─── CustomerDetailModal ──────────────────────────────────────────────────────
-function CustomerDetailModal({ customer, onClose, onEdit }) {
-  const [tab, setTab] = useState('info');
-  const [visits, setVisits] = useState([]);
-  const [visitsLoading, setVisitsLoading] = useState(false);
+// Form field label + group (module scope — pure, props only)
+const FieldLabel = ({ text, req }) => (
+  <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 5 }}>
+    {text}{req && <span style={{ color: D.danger }}> *</span>}
+  </div>
+);
+const FG = ({ children, label, req, full }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gridColumn: full ? '1 / -1' : undefined }}>
+    <FieldLabel text={label} req={req} />
+    {children}
+  </div>
+);
 
-  useEffect(() => {
-    if (tab !== 'visits') return;
-    if (!customer?.prospect_id && !customer?.id) { setVisits([]); return; }
-    setVisitsLoading(true);
-    // Try prospect_id if linked, otherwise skip
-    const pid = customer.prospect_id;
-    if (!pid) { setVisitsLoading(false); setVisits([]); return; }
-    supabase.from('sales_visits')
-      .select('id, visit_date, visit_time, location, status, profiles!sales_visits_salesperson_id_fkey(full_name)')
-      .eq('prospect_id', pid)
-      .is('deleted_at', null)
-      .order('visit_date', { ascending: false })
-      .limit(50)
-      .then(({ data }) => { setVisits(data || []); setVisitsLoading(false); });
-  }, [tab, customer?.prospect_id, customer?.id]);
-
-  if (!customer) return null;
-
-  const VISIT_STATUS_META = {
-    scheduled:  { bg: '#EFF6FF', color: '#3B82F6', label: 'Terjadwal'  },
-    completed:  { bg: '#F0FDF4', color: '#22C55E', label: 'Selesai'    },
-    cancelled:  { bg: '#FFF1F2', color: '#EF4444', label: 'Dibatalkan' },
-  };
-
-  const F = ({ label, value, mono }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: D.inkFaint, textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
-      <div style={{ fontSize: 13.5, color: value ? D.ink : D.inkFaint, fontStyle: value ? 'normal' : 'italic', fontFamily: mono ? "'IBM Plex Mono', monospace" : 'inherit' }}>
-        {value || '—'}
-      </div>
-    </div>
-  );
-
-  const Section = ({ title, children, cols = 2 }) => (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 6, borderBottom: `1px solid ${D.lineSoft}` }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '12px 20px' }}>{children}</div>
-    </div>
-  );
-
-  const TABS = [
-    { id: 'info',      label: 'Info Dasar',  icon: Building2 },
-    { id: 'komersial', label: 'Komersial',   icon: CreditCard },
-    { id: 'visits',    label: 'History Visit', icon: Calendar },
-    { id: 'notes',     label: 'Notes',       icon: FileText  },
-  ];
-
-  const coCode = customer.source_company?.code;
-  const statusKey = customer.status || (customer.active === false ? 'inactive' : 'active');
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: D.surface, borderRadius: 18, maxWidth: 720, width: '100%', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', boxShadow: D.shadow, border: `1px solid ${D.line}`, display: 'flex', flexDirection: 'column' }}>
-
-        {/* Header */}
-        <div style={{ padding: '22px 26px 18px', borderBottom: `1px solid ${D.line}`, flexShrink: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: D.inkFaint, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 5 }}>DETAIL CUSTOMER</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-                {customer.code && (
-                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, fontWeight: 700, color: D.accent, background: D.accentSoft, padding: '2px 8px', borderRadius: 5 }}>{customer.code}</span>
-                )}
-                {coCode && <CoBadge code={coCode} />}
-                {customer.tier && <TierBadge tier={customer.tier} />}
-                <StatusBadge status={statusKey} active={customer.active} />
-              </div>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: D.ink, fontFamily: "'Montserrat', sans-serif", lineHeight: 1.2 }}>{customer.name}</h2>
-              {customer.legal_name && <div style={{ fontSize: 12.5, color: D.inkSoft, marginTop: 3 }}>{customer.legal_name}</div>}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <Btn small onClick={() => onEdit(customer)}>Edit</Btn>
-              <button onClick={onClose} style={{ background: D.surface2, border: `1px solid ${D.line}`, borderRadius: 7, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <X size={15} color={D.inkSoft} />
-              </button>
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: 4, marginTop: 14 }}>
-            {TABS.map(t => {
-              const active = tab === t.id;
-              return (
-                <button key={t.id} onClick={() => setTab(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 13px', borderRadius: 8, border: active ? `1px solid ${D.navy}` : `1px solid transparent`, background: active ? D.navySoft : 'transparent', color: active ? D.navy : D.inkSoft, fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  <t.icon size={13} strokeWidth={active ? 2.2 : 1.7} />
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Tab content */}
-        <div style={{ padding: '20px 26px 26px', flex: 1 }}>
-
-          {/* ── Tab: Info Dasar ── */}
-          {tab === 'info' && (
-            <>
-              <Section title="Identitas">
-                <F label="Nama Perusahaan"  value={customer.name} />
-                <F label="Legal Name"       value={customer.legal_name} />
-                <F label="Customer Type"    value={customer.customer_type} />
-                <F label="Tax ID / NPWP"    value={customer.tax_id} mono />
-                <F label="Customer Code"    value={customer.code} mono />
-              </Section>
-              <Section title="Kontak">
-                <F label="Phone"    value={customer.phone} />
-                <F label="Email"    value={customer.email} />
-                <F label="Kota"     value={customer.city} />
-                <F label="Country"  value={customer.country || 'Indonesia'} />
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <F label="Alamat" value={customer.address} />
-                </div>
-              </Section>
-              <Section title="PIC">
-                <F label="PIC Name"  value={customer.pic_name} />
-                <F label="PIC Phone" value={customer.pic_phone || customer.pic_email} />
-                <F label="PIC Email" value={customer.pic_email} />
-              </Section>
-            </>
-          )}
-
-          {/* ── Tab: Komersial ── */}
-          {tab === 'komersial' && (
-            <>
-              <Section title="Pipeline & Komersial">
-                <F label="Tier"              value={customer.tier} />
-                <F label="Status"            value={STATUS_META[statusKey]?.label} />
-                <F label="Payment Terms"     value={customer.payment_term?.name || customer.payment_terms} />
-                <F label="Credit Limit"      value={customer.credit_limit ? fmtRupiah(customer.credit_limit) : null} />
-                <F label="Currency"          value={customer.currency_code} />
-              </Section>
-              <Section title="Entitas & Salesperson">
-                <F label="Entitas Owner"     value={customer.source_company ? `${customer.source_company.name} (${customer.source_company.code})` : null} />
-                <F label="Assigned Salesperson" value={customer.assigned_profile?.full_name} />
-              </Section>
-            </>
-          )}
-
-          {/* ── Tab: History Visit ── */}
-          {tab === 'visits' && (
-            <div>
-              {!customer.prospect_id ? (
-                <div style={{ textAlign: 'center', padding: '32px 0', color: D.inkFaint, fontSize: 13 }}>
-                  Customer ini belum terhubung ke prospect. Belum ada data visit.
-                </div>
-              ) : visitsLoading ? (
-                <div style={{ textAlign: 'center', padding: '32px 0', color: D.inkFaint, fontSize: 13 }}>Memuat…</div>
-              ) : visits.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '32px 0', color: D.inkFaint, fontSize: 13 }}>Belum ada riwayat kunjungan.</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {visits.map(v => {
-                    const sm = VISIT_STATUS_META[v.status] || VISIT_STATUS_META.scheduled;
-                    return (
-                      <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 9, background: '#F9FAFB', border: '1px solid #F0F1F4' }}>
-                        <div style={{ textAlign: 'center', minWidth: 38 }}>
-                          <div style={{ fontSize: 10, color: D.inkFaint, fontWeight: 600, textTransform: 'uppercase' }}>
-                            {new Date(v.visit_date + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short' })}
-                          </div>
-                          <div style={{ fontSize: 17, fontWeight: 800, color: D.navy, fontFamily: "'IBM Plex Mono', monospace", lineHeight: 1.1 }}>
-                            {new Date(v.visit_date + 'T00:00:00').getDate()}
-                          </div>
-                        </div>
-                        <div style={{ width: 1, height: 32, background: D.line }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: D.ink }}>{v.profiles?.full_name || '—'}</div>
-                          <div style={{ fontSize: 11.5, color: D.inkFaint, marginTop: 1 }}>
-                            {v.visit_time ? v.visit_time.slice(0,5) + ' · ' : ''}{v.location || ''}
-                          </div>
-                        </div>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.color }}>{sm.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Tab: Notes ── */}
-          {tab === 'notes' && (
-            <div>
-              {customer.notes ? (
-                <div style={{ fontSize: 13.5, color: D.ink, lineHeight: 1.8, whiteSpace: 'pre-wrap', background: D.surface2, border: `1px solid ${D.line}`, borderRadius: 9, padding: '14px 16px' }}>
-                  {customer.notes}
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '32px 0', color: D.inkFaint, fontSize: 13 }}>Tidak ada catatan.</div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── CustomerFormModal ────────────────────────────────────────────────────────
-function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
+// ─── CustomerFormModal (add/edit) — exported for reuse by CustomerDetailPage ──
+export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
   const { profile } = useAuth();
   const [form, setForm] = useState({
     name:             initial?.name            || '',
@@ -364,7 +153,7 @@ function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
     pic_phone:        initial?.pic_phone       || '',
     pic_email:        initial?.pic_email       || '',
     tier:             initial?.tier            || '',
-    status:      initial?.status     || 'active',
+    status:           initial?.status          || 'active',
     assigned_to:      initial?.assigned_to     || '',
     payment_terms_id: initial?.payment_terms_id || '',
     credit_limit:     initial?.credit_limit    ?? '',
@@ -435,19 +224,19 @@ function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         notes:            form.notes           || null,
         updated_by:       profile.id,
         // columns that may not exist yet — silently ignored if absent
-        ...(form.tier        && { tier:           form.tier        }),
-        ...(form.status && { status:    form.status }),
-        ...(form.assigned_to && { assigned_to:    form.assigned_to }),
+        ...(form.tier        && { tier:        form.tier        }),
+        ...(form.status      && { status:      form.status      }),
+        ...(form.assigned_to && { assigned_to: form.assigned_to }),
       };
 
       let error;
       if (initial?.id) {
         ({ error } = await supabase.from('customers').update(payload).eq('id', initial.id));
       } else {
-        payload.company_id      = profile.company_id;
+        payload.company_id        = profile.company_id;
         payload.source_company_id = profile.company_id; // may not exist yet — ignored by DB
-        payload.created_by      = profile.id;
-        payload.active          = true;
+        payload.created_by        = profile.id;
+        payload.active            = true;
         ({ error } = await supabase.from('customers').insert(payload));
       }
       if (error) throw error;
@@ -459,19 +248,6 @@ function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       setSaving(false);
     }
   };
-
-  const lbl = (text, req) => (
-    <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 5 }}>
-      {text}{req && <span style={{ color: D.danger }}> *</span>}
-    </div>
-  );
-
-  const FG = ({ children, label, req, full }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gridColumn: full ? '1 / -1' : undefined }}>
-      {lbl(label, req)}
-      {children}
-    </div>
-  );
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 10002, background: 'rgba(0,0,0,0.50)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -492,7 +268,6 @@ function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
 
         {/* Form */}
         <div style={{ padding: '20px 24px 24px' }}>
-
           {/* Identitas */}
           <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 5, borderBottom: `1px solid ${D.lineSoft}` }}>Identitas</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
@@ -596,17 +371,15 @@ function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-export default function CustomerMasterPage({ showToast }) {
-  const { profile } = useAuth();
+// ─── Main list page ───────────────────────────────────────────────────────────
+export default function CustomerListPage({ showToast, onSelectCustomer }) {
   const [customers,   setCustomers]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [rawSearch,   setRawSearch]   = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCo,    setFilterCo]    = useState('all');
   const [filterTier,  setFilterTier]  = useState('all');
-  const [detail,      setDetail]      = useState(null);
-  const [formCustomer, setFormCustomer] = useState(null); // null=closed, {}=new, {...}=edit
+  const [formCustomer, setFormCustomer] = useState(null);
   const [formOpen,    setFormOpen]    = useState(false);
 
   const searchTimer = useRef(null);
@@ -633,8 +406,7 @@ export default function CustomerMasterPage({ showToast }) {
         .limit(1000);
       if (error) throw error;
       setCustomers(data || []);
-    } catch (err) {
-      // Fallback query without joins if FK columns don't exist
+    } catch {
       const { data } = await supabase
         .from('customers')
         .select('*')
@@ -649,7 +421,6 @@ export default function CustomerMasterPage({ showToast }) {
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
-  // ── Client-side filter ────────────────────────────────────────────────────
   const filtered = customers.filter(c => {
     const q = search.toLowerCase();
     if (q && !c.name?.toLowerCase().includes(q) && !c.legal_name?.toLowerCase().includes(q) && !c.code?.toLowerCase().includes(q)) return false;
@@ -657,10 +428,7 @@ export default function CustomerMasterPage({ showToast }) {
       const key = c.status || (c.active === false ? 'inactive' : 'active');
       if (key !== filterStatus) return false;
     }
-    if (filterCo !== 'all') {
-      const co = c.source_company?.code;
-      if (co !== filterCo) return false;
-    }
+    if (filterCo !== 'all' && c.source_company?.code !== filterCo) return false;
     if (filterTier !== 'all' && c.tier !== filterTier) return false;
     return true;
   });
@@ -677,7 +445,7 @@ export default function CustomerMasterPage({ showToast }) {
   return (
     <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: D.ink }}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: D.inkFaint, marginBottom: 8 }}>
@@ -693,13 +461,13 @@ export default function CustomerMasterPage({ showToast }) {
         </Btn>
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
         {[
-          { label: 'Total Customer',  value: customers.length,   icon: Building2, color: D.navy   },
-          { label: 'Active',          value: activeCount,         icon: Check,     color: D.ok     },
-          { label: 'Inactive',        value: inactiveCount,       icon: X,         color: D.warn   },
-          { label: 'Tier A',          value: customers.filter(c => c.tier === 'A').length, icon: CreditCard, color: '#92400E' },
+          { label: 'Total Customer', value: customers.length, icon: Building2, color: D.navy },
+          { label: 'Active',         value: activeCount,       icon: Check,     color: D.ok },
+          { label: 'Inactive',       value: inactiveCount,     icon: X,         color: D.warn },
+          { label: 'Tier A',         value: customers.filter(c => c.tier === 'A').length, icon: CreditCard, color: '#92400E' },
         ].map(s => (
           <div key={s.label} style={{ background: D.surface, border: `1px solid ${D.line}`, borderRadius: 10, padding: '12px 14px', boxShadow: D.shadowSm }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -713,12 +481,12 @@ export default function CustomerMasterPage({ showToast }) {
         ))}
       </div>
 
-      {/* ── Filter bar ── */}
+      {/* Filter bar */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
           <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: D.inkFaint }} />
-          <input value={rawSearch} onChange={e => handleSearch(e.target.value)} placeholder="Cari nama, legal name, kode…"
-            style={{ ...INP_STYLE, height: 34, paddingLeft: 30, paddingRight: 10, fontSize: 13 }} />
+          <input value={rawSearch} onChange={e => handleSearch(e.target.value)} placeholder="Cari nama / legal / code…"
+            style={{ ...INP_STYLE, height: 34, paddingLeft: 30 }} />
         </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
           <option value="all">Semua Status</option>
@@ -726,22 +494,16 @@ export default function CustomerMasterPage({ showToast }) {
         </select>
         <select value={filterCo} onChange={e => setFilterCo(e.target.value)} style={selStyle}>
           <option value="all">Semua Entitas</option>
-          {CO_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+          {['MSI', 'JCI', 'SOA'].map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <select value={filterTier} onChange={e => setFilterTier(e.target.value)} style={selStyle}>
           <option value="all">Semua Tier</option>
           {TIERS.map(t => <option key={t} value={t}>Tier {t}</option>)}
         </select>
-        {(filterStatus !== 'all' || filterCo !== 'all' || filterTier !== 'all' || search) && (
-          <button onClick={() => { setRawSearch(''); setSearch(''); setFilterStatus('all'); setFilterCo('all'); setFilterTier('all'); }}
-            style={{ height: 34, padding: '0 12px', borderRadius: 8, border: `1px solid ${D.line}`, background: D.surface, color: D.inkSoft, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <X size={13} /> Reset
-          </button>
-        )}
         <span style={{ fontSize: 12, color: D.inkFaint, marginLeft: 'auto' }}>{filtered.length} hasil</span>
       </div>
 
-      {/* ── Table ── */}
+      {/* Table */}
       <div style={{ background: D.surface, border: `1px solid ${D.line}`, borderRadius: 12, overflow: 'hidden', boxShadow: D.shadowSm }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -769,7 +531,7 @@ export default function CustomerMasterPage({ showToast }) {
               ) : filtered.map((c, i) => {
                 const statusKey = c.status || (c.active === false ? 'inactive' : 'active');
                 return (
-                  <tr key={c.id} style={{ background: i % 2 === 0 ? D.surface : D.surface2 }}>
+                  <tr key={c.id} onClick={() => onSelectCustomer?.(c.id)} style={{ background: i % 2 === 0 ? D.surface : D.surface2, cursor: 'pointer' }}>
                     <TD>
                       {c.code
                         ? <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, fontWeight: 700, color: D.accent, background: D.accentSoft, padding: '2px 7px', borderRadius: 5 }}>{c.code}</span>
@@ -784,7 +546,7 @@ export default function CustomerMasterPage({ showToast }) {
                     <TD style={{ color: D.inkSoft }}>{c.assigned_profile?.full_name || '—'}</TD>
                     <TD style={{ color: D.inkFaint, fontSize: 12 }}>{fmtDate(c.created_at)}</TD>
                     <TD>
-                      <button onClick={() => setDetail(c)} style={{ background: D.navySoft, border: `1px solid ${D.navy}20`, color: D.navy, borderRadius: 7, width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Lihat detail">
+                      <button onClick={(e) => { e.stopPropagation(); onSelectCustomer?.(c.id); }} style={{ background: D.navySoft, border: `1px solid ${D.navy}20`, color: D.navy, borderRadius: 7, width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Lihat detail">
                         <Eye size={13} strokeWidth={2} />
                       </button>
                     </TD>
@@ -796,12 +558,6 @@ export default function CustomerMasterPage({ showToast }) {
         </div>
       </div>
 
-      {/* ── Modals ── */}
-      <CustomerDetailModal
-        customer={detail}
-        onClose={() => setDetail(null)}
-        onEdit={(c) => { setDetail(null); setFormCustomer(c); setFormOpen(true); }}
-      />
       {formOpen && (
         <CustomerFormModal
           initial={formCustomer}
