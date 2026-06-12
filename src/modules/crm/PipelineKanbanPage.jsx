@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import WinLossModal from './WinLossModal';
 
 /* =========================================================================
    Pipeline config — lowercase ids match Supabase pipeline_stage.toLowerCase()
@@ -242,7 +243,8 @@ function ProspectDetailModal({ deal, onClose, onEdit }) {
             <Field label="Source"                 value={SOURCE_LABELS_KP[raw.source] || raw.source} />
             <Field label="Assigned To"            value={raw.assigned_profile?.full_name} />
             <Field label="Estimated Closing Date" value={raw.estimated_closing_date ? fmtDate(raw.estimated_closing_date) : null} />
-            {deal.stage === 'lost' && <Field label="Lost Reason" value={raw.lost_reason} full />}
+            {deal.stage === 'won'  && <Field label="Alasan Won"  value={raw.won_reason} full />}
+            {deal.stage === 'lost' && <Field label="Alasan Lost" value={raw.lost_reason} full />}
           </Section>
 
           <Section title="Finansial">
@@ -366,6 +368,9 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   const [view,      setView]      = useState('board');
   const [dropStage, setDropStage] = useState(null);
   const [toast,     setToast]     = useState({ msg: '', icon: 'check', show: false });
+  // Win/Loss capture modal — { open, mode, id, prevStage, prospectName }
+  const [winLoss,       setWinLoss]       = useState({ open: false, mode: 'won', id: null, prevStage: 'NEW', prospectName: '' });
+  const [winLossSaving, setWinLossSaving] = useState(false);
   const dragId      = useRef(null);
   const toastTimer  = useRef(null);
 
@@ -383,7 +388,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     try {
       const { data, error } = await supabase
         .from('prospects')
-        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, estimated_closing_date, payment_terms_id, notes, assigned_to, created_at, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
+        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, payment_terms_id, notes, assigned_to, created_at, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
         .eq('company_id', profile.company_id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
@@ -410,6 +415,16 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
       return;
     }
 
+    // WON / LOST require a reason — move card optimistically, then open WinLossModal.
+    // The DB write happens only after the modal is saved (handleWinLossSave).
+    if (newStage === 'WON' || newStage === 'LOST') {
+      const prevStage = prospect.pipeline_stage || 'NEW';
+      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage } : p));
+      setDropStage(null);
+      setWinLoss({ open: true, mode: newStage.toLowerCase(), id, prevStage, prospectName: prospect.name || '' });
+      return;
+    }
+
     // Optimistic update
     setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage } : p));
     setDropStage(null);
@@ -429,6 +444,42 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
       showToast?.('Gagal memindah stage: ' + err.message, 'error');
     }
   }, [prospects, profile?.id, showToast]);
+
+  // ── Win/Loss modal — cancel reverts the optimistic move (no DB write) ───────
+  const handleWinLossCancel = useCallback(() => {
+    setWinLoss(wl => {
+      if (wl.id) {
+        setProspects(prev => prev.map(p => p.id === wl.id ? { ...p, pipeline_stage: wl.prevStage } : p));
+      }
+      return { ...wl, open: false, id: null };
+    });
+  }, []);
+
+  // ── Win/Loss modal — save writes pipeline_stage + reason to DB ──────────────
+  const handleWinLossSave = useCallback(async (values) => {
+    const { id, mode } = winLoss;
+    if (!id) return;
+    const newStage = mode.toUpperCase();           // WON / LOST
+    setWinLossSaving(true);
+    try {
+      const payload = { pipeline_stage: newStage, ...values, updated_by: profile.id };
+      if (mode === 'won') payload.converted_at = new Date().toISOString();
+      const { error } = await supabase.from('prospects').update(payload).eq('id', id);
+      if (error) throw error;
+      // Reflect reason locally so the detail modal shows it without a full refetch
+      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage, ...values } : p));
+      notify((winLoss.prospectName || '') + ' dipindah ke ' + (mode === 'won' ? 'Won' : 'Lost'),
+        mode === 'won' ? 'checkcircle' : 'ban');
+      setWinLoss(wl => ({ ...wl, open: false, id: null }));
+    } catch (err) {
+      // Rollback the optimistic move on failure
+      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: winLoss.prevStage } : p));
+      setWinLoss(wl => ({ ...wl, open: false, id: null }));
+      showToast?.('Gagal menyimpan: ' + err.message, 'error');
+    } finally {
+      setWinLossSaving(false);
+    }
+  }, [winLoss, profile?.id, showToast]);
 
   function onDragStart(e, id) {
     dragId.current = id;
@@ -592,6 +643,17 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         <Icon name={toast.icon} size={17} />
         <span>{toast.msg}</span>
       </div>
+
+      {/* ── Win/Loss capture modal ── */}
+      <WinLossModal
+        key={`${winLoss.mode}-${winLoss.id || 'none'}`}
+        open={winLoss.open}
+        mode={winLoss.mode}
+        prospectName={winLoss.prospectName}
+        saving={winLossSaving}
+        onSave={handleWinLossSave}
+        onCancel={handleWinLossCancel}
+      />
 
       {/* ── Prospect detail modal ── */}
       <ProspectDetailModal

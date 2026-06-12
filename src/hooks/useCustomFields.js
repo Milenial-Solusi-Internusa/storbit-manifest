@@ -20,7 +20,7 @@ export const STANDARD_COLUMNS = {
     'id', 'company_id', 'name', 'legal_name', 'customer_type', 'tax_id',
     'address', 'city', 'country', 'phone', 'email', 'pic_name', 'pic_phone',
     'pic_email', 'source', 'assigned_to', 'pipeline_stage', 'lost_reason',
-    'converted_at', 'converted_to', 'payment_terms_id', 'currency_code',
+    'won_reason', 'converted_at', 'converted_to', 'payment_terms_id', 'currency_code',
     'credit_limit', 'notes', 'is_active', 'created_by', 'updated_by',
     'created_at', 'updated_at', 'deleted_at',
     // join result aliases — not real DB columns, must be excluded from custom fields

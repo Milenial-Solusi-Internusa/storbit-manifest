@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/useAuth';
 import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
+import WinLossModal from './WinLossModal';
 
 const C = {
   bg:        '#F6EFE3',
@@ -93,7 +94,12 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     assigned_to:      '',
     pipeline_stage:   'NEW',
     payment_terms_id: '',
+    won_reason:       '',
+    lost_reason:      '',
   });
+
+  // Win/Loss capture modal — { open, mode } triggered when stage → WON/LOST
+  const [winLoss, setWinLoss] = useState({ open: false, mode: 'won' });
 
   const [profiles, setProfiles] = useState([]);
   const [paymentTerms, setPaymentTerms] = useState([]);
@@ -133,6 +139,8 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         assigned_to:      prospect.assigned_to       || '',
         pipeline_stage:   prospect.pipeline_stage    || 'NEW',
         payment_terms_id: prospect.payment_terms_id  || '',
+        won_reason:       prospect.won_reason        || '',
+        lost_reason:      prospect.lost_reason       || '',
       });
     }
   }, [isEdit, prospect]);
@@ -169,6 +177,24 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
+  // Pipeline stage change — WON/LOST open the WinLossModal first.
+  // form.pipeline_stage is only updated once the modal is saved, so cancelling
+  // leaves the controlled <select> at its previous value automatically.
+  const handleStageChange = (e) => {
+    const v = e.target.value;
+    if (v === 'WON' || v === 'LOST') {
+      setWinLoss({ open: true, mode: v.toLowerCase() });
+    } else {
+      setForm(f => ({ ...f, pipeline_stage: v }));
+    }
+  };
+
+  const handleWinLossSave = (values) => {
+    // values = { won_reason } or { lost_reason }
+    setForm(f => ({ ...f, pipeline_stage: winLoss.mode.toUpperCase(), ...values }));
+    setWinLoss(wl => ({ ...wl, open: false }));
+  };
+
   const validate = () => {
     const e = {};
     if (!form.name.trim()) e.name = 'Wajib diisi';
@@ -188,6 +214,11 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         payment_terms_id: form.payment_terms_id || null,
         updated_by:       profile.id,
       };
+
+      // Stamp converted_at when a deal is won (keep existing timestamp if already set)
+      if (form.pipeline_stage === 'WON') {
+        payload.converted_at = prospect?.converted_at || new Date().toISOString();
+      }
 
       let error;
       if (isEdit) {
@@ -301,7 +332,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           </Field>
 
           <Field label="Pipeline Stage">
-            <select value={form.pipeline_stage} onChange={set('pipeline_stage')} style={selStyle}>
+            <select value={form.pipeline_stage} onChange={handleStageChange} style={selStyle}>
               {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
@@ -363,6 +394,15 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           </button>
         </div>
       </div>
+
+      <WinLossModal
+        key={`${winLoss.mode}-${winLoss.open}`}
+        open={winLoss.open}
+        mode={winLoss.mode}
+        prospectName={form.name}
+        onSave={handleWinLossSave}
+        onCancel={() => setWinLoss(wl => ({ ...wl, open: false }))}
+      />
 
       <ConfirmModal
         open={confirmState.open}
