@@ -273,7 +273,13 @@ function KpiCard({ data }) {
       <div style={D.kpiLabel}>{data.label}</div>
       <div style={D.kpiValue}><span style={{ whiteSpace: "nowrap" }}>{data.value}</span><span style={D.kpiUnit}>{data.unit}</span></div>
       {hasTrend && <div style={D.kpiNote}>{data.trend.note}</div>}
-      {!hasTrend && <div style={{ ...D.kpiNote, color: "#BCC0C8" }}>Realtime</div>}
+      {!hasTrend && data.subtitle && <div style={{ ...D.kpiNote, color: "#6B7280" }}>{data.subtitle}</div>}
+      {!hasTrend && !data.subtitle && <div style={{ ...D.kpiNote, color: "#BCC0C8" }}>Realtime</div>}
+      {data.progress && (
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, background: "#EEF0F3" }}>
+          <div style={{ height: "100%", width: `${data.progress.pct}%`, background: data.progress.color, transition: "width .3s" }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1272,9 +1278,50 @@ const STAGE_COLORS = { won: '#1F8B4D', lost: '#C0392B' };
 const STAGE_LABELS = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', negotiation: 'Negotiation', won: 'Won', lost: 'Lost' };
 
 /* ========================================================================= */
+/* ---------- S2: "Aktivitas Saya" personal target tracker (sales view) ---------- */
+function ActivityItem({ label, value, target, sublabel }) {
+  const ratio = target > 0 ? value / target : 0;
+  const pct   = Math.min(ratio * 100, 100);
+  const color = ratio >= 1 ? '#22C55E' : ratio >= 0.5 ? '#F59E0B' : '#EF4444';
+  const status = ratio >= 1 ? 'On Track' : ratio >= 0.5 ? 'Perlu ditingkatkan' : 'Di bawah target';
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E8EBF0', borderRadius: 12, padding: '16px 18px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, gap: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#1F2430' }}>{label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color, whiteSpace: 'nowrap' }}>{sublabel || status}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 10 }}>
+        <span style={{ fontSize: 22, fontWeight: 800, color: '#1F2430', fontFamily: "'IBM Plex Mono',monospace" }}>{value}</span>
+        <span style={{ fontSize: 13, color: '#9AA0AC' }}>/ {target}</span>
+      </div>
+      <div style={{ height: 6, borderRadius: 99, background: '#EEF0F3', overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99, transition: 'width .3s' }} />
+      </div>
+    </div>
+  );
+}
+
+function ActivitySaya({ data }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 12 }}>
+        Aktivitas Saya — Minggu Ini &amp; Bulan Ini
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
+        <ActivityItem label="Call Minggu Ini"     value={data.callsThisWeek}        target={60} />
+        <ActivityItem label="Visit Minggu Ini"    value={data.visitsThisWeek}       target={5} />
+        <ActivityItem label="Quotation Bulan Ini" value={data.quotationsThisMonth}  target={20} />
+        <ActivityItem label="SQL Baru Bulan Ini"  value={data.sqlThisMonth}         target={15} sublabel="Qualified Lead" />
+      </div>
+    </div>
+  );
+}
+
 function CRMDashboardPage() {
   const { profile, erpRole } = useAuth();
   const canCancel = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
+  // S2 — sales/operations see a personal dashboard; everyone else sees team-wide.
+  const isSalesOnly = ['sales', 'operations'].includes(erpRole);
   const [period, setPeriod] = useState("This Month");
   const [tab, setTab]       = useState("summary");
   const [toast, setToast]   = useState({ msg: "", icon: "check", show: false });
@@ -1322,14 +1369,26 @@ function CRMDashboardPage() {
       const startOfMonth   = startThisMonth.toISOString().slice(0, 10);
       const endOfMonth     = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
 
-      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes] = await Promise.all([
+      // S2 — current ISO week (Monday start) + today, for personal activity KPIs
+      const dow         = (now.getDay() + 6) % 7;          // 0 = Monday … 6 = Sunday
+      const mondayDate  = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+      const startOfWeek = mondayDate.toISOString().slice(0, 10);
+      const todayStr    = now.toISOString().slice(0, 10);
+      const uid         = profile.id;
+
+      // S2 — sales/operations only see their own data
+      const ownProspects = (q) => isSalesOnly ? q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`) : q;
+      const ownBySales   = (q) => isSalesOnly ? q.eq('salesperson_id', uid) : q;
+      const ownByCreator = (q) => isSalesOnly ? q.eq('created_by', uid) : q;
+
+      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes, callsWeekRes, visitsWeekRes, quotMonthRes] = await Promise.all([
         // Full prospects for this company — all fields needed for multiple computations
-        supabase
+        ownProspects(supabase
           .from('prospects')
           .select('id, pipeline_stage, name, created_at, source, assigned_to, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
           .is('deleted_at', null)
-          .limit(1000),
+          .limit(1000)),
 
         // Inquiry count
         supabase
@@ -1345,33 +1404,59 @@ function CRMDashboardPage() {
           .eq('company_id', cid),
 
         // Last month prospects — for trend comparison
-        supabase
+        ownProspects(supabase
           .from('prospects')
           .select('created_at')
           .eq('company_id', cid)
           .is('deleted_at', null)
           .gte('created_at', startLastMonth.toISOString())
           .lt('created_at', startThisMonth.toISOString())
-          .limit(1000),
+          .limit(1000)),
 
         // Sales performance — assigned prospects with pipeline stage
-        supabase
+        ownProspects(supabase
           .from('prospects')
           .select('assigned_to, pipeline_stage, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
           .is('deleted_at', null)
           .not('assigned_to', 'is', null)
-          .limit(1000),
+          .limit(1000)),
 
         // Sales visits calendar — graceful fail if table doesn't exist
-        supabase
+        ownBySales(supabase
           .from('sales_visits')
           .select('id, visit_date, visit_time, location, notes, status, visit_type, point_of_meeting, mom, follow_up, prospect_id, salesperson_id, prospects(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
           .eq('company_id', cid)
           .gte('visit_date', startOfMonth)
           .lte('visit_date', endOfMonth)
           .order('visit_date', { ascending: true })
-          .limit(100),
+          .limit(100)),
+
+        // S2 Query A — calls this week (personal KPI)
+        ownBySales(supabase
+          .from('sales_calls')
+          .select('id, call_date, salesperson_id')
+          .eq('company_id', cid)
+          .gte('call_date', startOfWeek)
+          .lte('call_date', todayStr)
+          .limit(1000)),
+
+        // S2 Query B — visits this week (personal KPI)
+        ownBySales(supabase
+          .from('sales_visits')
+          .select('id, visit_date, salesperson_id')
+          .eq('company_id', cid)
+          .gte('visit_date', startOfWeek)
+          .lte('visit_date', todayStr)
+          .limit(1000)),
+
+        // S2 Query C — quotations this month (personal KPI)
+        ownByCreator(supabase
+          .from('quotations')
+          .select('id, created_at, created_by')
+          .eq('company_id', cid)
+          .gte('created_at', startThisMonth.toISOString())
+          .limit(1000)),
       ]);
 
       if (prospectsRes.error) throw prospectsRes.error;
@@ -1474,10 +1559,21 @@ function CRMDashboardPage() {
           user: p.profiles?.full_name || '—',
         }));
 
+      // ── S2 personal activity KPIs ───────────────────────────────────────────
+      const callsThisWeek       = (callsWeekRes.data  || []).length;
+      const visitsThisWeek      = (visitsWeekRes.data || []).length;
+      const quotationsThisMonth = (quotMonthRes.data  || []).length;
+      const SQL_STAGES = new Set(['QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'WON']);
+      const sqlThisMonth = prospects.filter(p => {
+        const created = new Date(p.created_at);
+        return created >= startThisMonth && SQL_STAGES.has((p.pipeline_stage || '').toUpperCase());
+      }).length;
+
       setDashData({
         totalProspects, totalInquiries, totalQuotations, winRate,
         stagesData, recentActivity,
         trendData, leadSourceData, salesPerfData, visitsData,
+        callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
       });
     } catch (err) {
       console.error('[CRMDashboardPage] fetch error:', err);
@@ -1485,7 +1581,7 @@ function CRMDashboardPage() {
     } finally {
       setDashLoading(false);
     }
-  }, [profile?.company_id]);
+  }, [profile?.company_id, profile?.id, isSalesOnly]);
 
   useEffect(() => { fetchDash(); }, [fetchDash]);
 
@@ -1575,6 +1671,21 @@ function CRMDashboardPage() {
     { label: "Win Rate",        icon: "checkcircle", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
   ] : KPIS;
 
+  // ── S2 — personal KPI cards (sales/operations view) ──────────────────────
+  const progColor = (v, green, yellow) => v >= green ? '#22C55E' : v >= yellow ? '#F59E0B' : '#EF4444';
+  const kpisSales = dashData ? [
+    { label: "Call Minggu Ini",     icon: "target",      value: String(dashData.callsThisWeek),       unit: "call",      accent: NAVY,      accentBg: "#EAF0F8", trend: null,
+      subtitle: `${dashData.callsThisWeek} / 60 target minggu ini`,       progress: { pct: Math.min(dashData.callsThisWeek / 60 * 100, 100),       color: progColor(dashData.callsThisWeek, 60, 30) } },
+    { label: "Visit Minggu Ini",    icon: "calendar",    value: String(dashData.visitsThisWeek),      unit: "visit",     accent: ORANGE,    accentBg: "#FBE6DA", trend: null,
+      subtitle: `${dashData.visitsThisWeek} / 5 target minggu ini`,        progress: { pct: Math.min(dashData.visitsThisWeek / 5 * 100, 100),       color: progColor(dashData.visitsThisWeek, 5, 3) } },
+    { label: "Quotation Bulan Ini", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
+      subtitle: `${dashData.quotationsThisMonth} / 20 target bulan ini`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
+    { label: "Win Rate Personal",   icon: "checkcircle", value: String(dashData.winRate),             unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
+      subtitle: `dari ${dashData.totalProspects} prospect aktif` },
+  ] : KPIS;
+
+  const kpiCards = isSalesOnly ? kpisSales : kpisReal;
+
   // ── skeleton row ─────────────────────────────────────────────────────────
   const SkeletonRow = () => (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 16, marginBottom: 16 }}>
@@ -1609,7 +1720,7 @@ function CRMDashboardPage() {
               <span style={D.crumbCur}>Dashboard</span>
             </nav>
             <h1 style={D.title}>CRM Dashboard</h1>
-            <div style={D.sub}>Overview pipeline, leads, dan performa sales MSI Group</div>
+            <div style={D.sub}>{isSalesOnly ? `Dashboard personal · ${profile?.full_name || ''}` : 'Dashboard tim · semua data'}</div>
           </div>
           <div style={D.seg}>
             {PERIODS.map((p) => (
@@ -1692,9 +1803,12 @@ function CRMDashboardPage() {
           {/* row 1 — KPI */}
           {dashLoading ? <SkeletonRow /> : (
             <div style={D.kpiRow}>
-              {kpisReal.map((k) => <KpiCard key={k.label} data={k} />)}
+              {kpiCards.map((k) => <KpiCard key={k.label} data={k} />)}
             </div>
           )}
+
+          {/* S2 — Aktivitas Saya (sales/operations view only) */}
+          {!dashLoading && isSalesOnly && dashData && <ActivitySaya data={dashData} />}
 
           {/* row 2 — pipeline trend */}
           <div style={{ marginBottom: 16 }}>
@@ -1707,11 +1821,13 @@ function CRMDashboardPage() {
             <LeadSourceDonut data={dashData?.leadSourceData || []} />
           </div>
 
-          {/* row 4 — tables */}
-          <div style={D.tablesRow}>
-            <SalesPerformance data={dashData?.salesPerfData || []} />
-            <LeadsBySource sourceData={dashData?.leadSourceData || []} />
-          </div>
+          {/* row 4 — tables (team view only — hidden for sales/operations) */}
+          {!isSalesOnly && (
+            <div style={D.tablesRow}>
+              <SalesPerformance data={dashData?.salesPerfData || []} />
+              <LeadsBySource sourceData={dashData?.leadSourceData || []} />
+            </div>
+          )}
 
           {/* row 5 — activity */}
           <RecentActivity items={dashData?.recentActivity} />
