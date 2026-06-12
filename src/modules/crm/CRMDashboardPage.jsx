@@ -695,6 +695,16 @@ const VISIT_STATUS = {
 };
 const VISIT_STAGES = ['scheduled', 'completed', 'cancelled'];
 
+/* ---------- visit type (BD-07) ---------- */
+const VISIT_TYPES = [
+  { id: 'discovery',             label: 'Discovery Visit',       desc: 'Gali kebutuhan prospect baru',       output: 'Output: Discovery Notes lengkap + next step jelas' },
+  { id: 'solution_presentation', label: 'Solution Presentation', desc: 'Presentasi solusi',                  output: 'Output: Feedback recorded + komitmen ke RFQ' },
+  { id: 'qbr',                   label: 'QBR Visit',             desc: 'Quarterly Business Review (Tier A)',  output: 'Output: Signed-off action items + JBP refresh' },
+  { id: 'problem_solving',       label: 'Problem Solving',       desc: 'Resolusi complaint/issue',           output: 'Output: SLA improvement plan signed-off' },
+  { id: 'routine_touch',         label: 'Routine Touch',         desc: 'Relationship maintenance Tier B/C',   output: 'Output: Relationship notes updated' },
+];
+const VISIT_TYPE_MAP = Object.fromEntries(VISIT_TYPES.map(t => [t.id, t]));
+
 /* ---------- calendar view — real Supabase data ---------- */
 /* ---------- VisitStepper — shared by form and detail ---------- */
 function VisitStepper({ status, onStageClick }) {
@@ -810,6 +820,24 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Jenis Kunjungan (BD-07) */}
+          <div>
+            {lbl('Jenis Kunjungan', true)}
+            {sel({
+              value: draft.visit_type || '',
+              onChange: e => setDraft(d => ({ ...d, visit_type: e.target.value })),
+              children: [
+                <option key="" value="">— Pilih jenis kunjungan —</option>,
+                ...VISIT_TYPES.map(t => <option key={t.id} value={t.id}>{`${t.label} — ${t.desc}`}</option>),
+              ],
+            })}
+            {draft.visit_type && VISIT_TYPE_MAP[draft.visit_type] && (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#6B7280', fontStyle: 'italic' }}>
+                {VISIT_TYPE_MAP[draft.visit_type].output}
+              </div>
+            )}
+          </div>
 
           {/* Prospect + Salesperson */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -988,6 +1016,10 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
 
         {/* Info rows */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+          {visit.visit_type && VISIT_TYPE_MAP[visit.visit_type] && row(
+            'Jenis Kunjungan',
+            `${VISIT_TYPE_MAP[visit.visit_type].label} — ${VISIT_TYPE_MAP[visit.visit_type].desc}\n${VISIT_TYPE_MAP[visit.visit_type].output}`,
+          )}
           {row('Tanggal & Waktu', dateStr + (visit.time ? ' · ' + visit.time.slice(0,5) : ''))}
           {row('Salesperson', visit.salesperson !== '—' ? visit.salesperson : null)}
           {row('Lokasi', visit.location !== '—' ? visit.location : null)}
@@ -1259,7 +1291,7 @@ function CRMDashboardPage() {
   const [visitDraft,       setVisitDraft]       = useState({
     visit_date: '', visit_time: '', prospect_id: '',
     salesperson_id: '', location: '', notes: '', status: 'scheduled',
-    point_of_meeting: '', mom: '', follow_up: '',
+    visit_type: '', point_of_meeting: '', mom: '', follow_up: '',
   });
   const [visitSaving,      setVisitSaving]      = useState(false);
   const [visitError,       setVisitError]       = useState(null);
@@ -1334,7 +1366,7 @@ function CRMDashboardPage() {
         // Sales visits calendar — graceful fail if table doesn't exist
         supabase
           .from('sales_visits')
-          .select('id, visit_date, visit_time, location, notes, status, point_of_meeting, mom, follow_up, prospect_id, salesperson_id, prospects(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
+          .select('id, visit_date, visit_time, location, notes, status, visit_type, point_of_meeting, mom, follow_up, prospect_id, salesperson_id, prospects(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
           .eq('company_id', cid)
           .gte('visit_date', startOfMonth)
           .lte('visit_date', endOfMonth)
@@ -1424,6 +1456,7 @@ function CRMDashboardPage() {
         location:         v.location           || '—',
         notes:            v.notes              || '',
         status:           v.status             || 'scheduled',
+        visit_type:       v.visit_type         || '',
         point_of_meeting: v.point_of_meeting   || '',
         mom:              v.mom                || '',
         follow_up:        v.follow_up          || '',
@@ -1469,9 +1502,10 @@ function CRMDashboardPage() {
   }, [addVisitOpen, profile?.company_id]);
 
   // ── save new visit ───────────────────────────────────────────────────────
-  const EMPTY_DRAFT = { visit_date: '', visit_time: '', prospect_id: '', salesperson_id: '', location: '', notes: '', status: 'scheduled', point_of_meeting: '', mom: '', follow_up: '' };
+  const EMPTY_DRAFT = { visit_date: '', visit_time: '', prospect_id: '', salesperson_id: '', location: '', notes: '', status: 'scheduled', visit_type: '', point_of_meeting: '', mom: '', follow_up: '' };
 
   const handleSaveVisit = useCallback(async () => {
+    if (!visitDraft.visit_type) { setVisitError('Jenis kunjungan wajib dipilih.'); return; }
     if (!visitDraft.visit_date) { setVisitError('Tanggal kunjungan wajib diisi.'); return; }
     if (!visitDraft.salesperson_id) { setVisitError('Salesperson wajib dipilih.'); return; }
     if (visitDraft.status === 'cancelled' && !visitDraft.notes?.trim()) {
@@ -1488,6 +1522,7 @@ function CRMDashboardPage() {
         location:         visitDraft.location         || null,
         notes:            visitDraft.notes            || null,
         status:           visitDraft.status,
+        visit_type:       visitDraft.visit_type       || null,
         point_of_meeting: visitDraft.point_of_meeting || null,
         mom:              visitDraft.mom              || null,
         follow_up:        visitDraft.follow_up        || null,
@@ -1603,12 +1638,12 @@ function CRMDashboardPage() {
               visits={dashData?.visitsData || []}
               onAddVisit={() => {
                 setEditVisitId(null);
-                setVisitDraft(d => ({ ...d, visit_date: '' }));
+                setVisitDraft({ ...EMPTY_DRAFT, visit_date: '' });
                 setAddVisitOpen(true);
               }}
               onDayClick={(dateStr) => {
                 setEditVisitId(null);
-                setVisitDraft(d => ({ ...d, visit_date: dateStr }));
+                setVisitDraft({ ...EMPTY_DRAFT, visit_date: dateStr });
                 setAddVisitOpen(true);
               }}
               onVisitClick={(v) => setVisitDetail(v)}
@@ -1640,6 +1675,7 @@ function CRMDashboardPage() {
                   location:         visitDetail.location !== '—' ? visitDetail.location : '',
                   notes:            visitDetail.notes            || '',
                   status:           visitDetail.status           || 'scheduled',
+                  visit_type:       visitDetail.visit_type       || '',
                   point_of_meeting: visitDetail.point_of_meeting || '',
                   mom:              visitDetail.mom              || '',
                   follow_up:        visitDetail.follow_up        || '',

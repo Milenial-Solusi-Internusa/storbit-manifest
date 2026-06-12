@@ -841,9 +841,17 @@ Output:
 
 | 2.0W | R2+P1 — (1) Cancel visit role gate: CRMDashboardPage destructure `erpRole` dari useAuth(), `canCancel = ['super_admin','admin','ceo','gm','manager'].includes(erpRole)`; AddVisitModal tambah props `canCancel`+`onCancelBlocked`; VisitStepper onStageClick di AddVisitModal intercept `s==='cancelled' && !canCancel` → fire `onCancelBlocked` (showToast error "Hanya Manager ke atas yang dapat membatalkan kunjungan"); (2) Prospect prefix: `company_prefix` ditambah ke STANDARD_COLUMNS.prospects (useCustomFields.js) agar tidak muncul di Additional Fields; ProspectFormPage state+editMode populate+payload include `company_prefix`; Field "Nama Perusahaan" diganti flex row: select 100px (—/PT/CV/Mr./Mrs./Ms.) + input flex-1; TODO DB: `ALTER TABLE prospects ADD COLUMN company_prefix text;`; build clean | ✅ Complete |
 
-Current phase: **Phase 2.0W** ✅ Complete
+| 2.0X | BD-02 + BD-07 — (1) **Win/Loss capture** (`src/modules/crm/WinLossModal.jsx` baru, shared): modal muncul saat prospect dipindah ke stage WON/LOST. WON → textarea "Alasan Won" wajib + input "Produk/Service yang di-close" opsional (di-append ke won_reason); LOST → dropdown kategori wajib (Harga tidak kompetitif/Kalah dari kompetitor/Customer tidak jadi butuh/Tidak ada response/Budget cut/Lainnya) + textarea detail (wajib jika kategori=Lainnya). Modal hanya collect+compose reason string, caller yang write DB. Reset via remount (`key` prop) bukan useEffect → lint clean. PipelineKanbanPage: import WinLossModal, fetchProspects select tambah `won_reason`, `handleDropStage` intercept WON/LOST (optimistic move + buka modal, tidak langsung update DB), `handleWinLossCancel` (revert optimistic, no DB), `handleWinLossSave` (update pipeline_stage+reason+converted_at utk won, optimistic raw update, rollback on error), ProspectDetailModal tampil "Alasan Won"/"Alasan Lost" di section Pipeline & Sales. ProspectFormPage: import WinLossModal, form tambah won_reason/lost_reason, `handleStageChange` intercept WON/LOST (buka modal, form.pipeline_stage baru di-set saat save → cancel auto-revert via controlled select), `handleWinLossSave` set stage+reason, handleSave stamp `converted_at` saat WON. `won_reason` ditambah ke STANDARD_COLUMNS.prospects (useCustomFields.js). (2) **Visit type** (BD-07): CRMDashboardPage `VISIT_TYPES` (discovery/solution_presentation/qbr/problem_solving/routine_touch) + `VISIT_TYPE_MAP`; AddVisitModal dropdown "Jenis Kunjungan" wajib (setelah stage hint, sebelum Prospect) + deskripsi output di bawah pilihan; `visitDraft`+`EMPTY_DRAFT`+onEdit mapping tambah `visit_type`; handleSaveVisit validasi wajib + payload `visit_type`; fetchDash select + visitsData mapping tambah `visit_type`; VisitDetailModal tampil "Jenis Kunjungan" (label+desc+output); onAddVisit/onDayClick reset ke `{ ...EMPTY_DRAFT }` (fix stale carry-over). **TODO DB (staging, belum dibuat — perlu approval):** `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS won_reason text;` dan `ALTER TABLE sales_visits ADD COLUMN IF NOT EXISTS visit_type text;` — `lost_reason` & `converted_at` sudah ada di prospects. Sampai kolom dibuat, save prospect & save visit akan error "column does not exist". build clean | ✅ Complete |
 
-Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
+Current phase: **Phase 2.0X** ✅ Complete
+
+> **⚠️ DB columns required for Phase 2.0X (run on staging before feature works):**
+> ```sql
+> ALTER TABLE prospects    ADD COLUMN IF NOT EXISTS won_reason text;
+> ALTER TABLE sales_visits ADD COLUMN IF NOT EXISTS visit_type text;
+> ```
+
+Next recommended step: **Add `won_reason` (prospects) + `visit_type` (sales_visits) columns on staging, then verify Win/Loss + Visit Type flows end-to-end**
 
 ### localStorage keys
 | Key | Value | Written by |
