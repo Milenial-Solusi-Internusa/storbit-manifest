@@ -839,7 +839,9 @@ Output:
 
 | 2.0V | Logistics sidebar cleanup — hapus Customer MSI (3 sub-menu) dan Customer JCI (3 sub-menu) total dari sidebar; Customer Storbit diganti jadi item tunggal `id: 'crm-customers'` label "Master Customer" icon Building2 note "Di CRM" (navigateTo('crm-customers') otomatis resolve ke CRM module via ERP_MENU_GROUPS lookup); SidebarItem regular-item render ditambah `item.note` block italic abu-abu; build clean | ✅ Complete |
 
-Current phase: **Phase 2.0V** ✅ Complete
+| 2.0W | R2+P1 — (1) Cancel visit role gate: CRMDashboardPage destructure `erpRole` dari useAuth(), `canCancel = ['super_admin','admin','ceo','gm','manager'].includes(erpRole)`; AddVisitModal tambah props `canCancel`+`onCancelBlocked`; VisitStepper onStageClick di AddVisitModal intercept `s==='cancelled' && !canCancel` → fire `onCancelBlocked` (showToast error "Hanya Manager ke atas yang dapat membatalkan kunjungan"); (2) Prospect prefix: `company_prefix` ditambah ke STANDARD_COLUMNS.prospects (useCustomFields.js) agar tidak muncul di Additional Fields; ProspectFormPage state+editMode populate+payload include `company_prefix`; Field "Nama Perusahaan" diganti flex row: select 100px (—/PT/CV/Mr./Mrs./Ms.) + input flex-1; TODO DB: `ALTER TABLE prospects ADD COLUMN company_prefix text;`; build clean | ✅ Complete |
+
+Current phase: **Phase 2.0W** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

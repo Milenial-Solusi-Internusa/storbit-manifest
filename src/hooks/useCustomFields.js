@@ -25,6 +25,9 @@ export const STANDARD_COLUMNS = {
     'created_at', 'updated_at', 'deleted_at',
     // join result aliases — not real DB columns, must be excluded from custom fields
     'assigned_profile',
+    // company prefix (PT/CV/Mr./Mrs./Ms.) — stored separately from name
+    // TODO DB: ALTER TABLE prospects ADD COLUMN company_prefix text;
+    'company_prefix',
   ],
 };
 

@@ -739,7 +739,7 @@ function VisitStepper({ status, onStageClick }) {
 }
 
 /* ---------- AddVisitModal ---------- */
-function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, salesProfiles, prospectOptions, isEdit }) {
+function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, salesProfiles, prospectOptions, isEdit, canCancel, onCancelBlocked }) {
   if (!open) return null;
 
   const status = draft.status || 'scheduled';
@@ -791,7 +791,16 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
         </div>
 
         {/* Stepper — klik untuk ganti status */}
-        <VisitStepper status={status} onStageClick={(s) => setDraft(d => ({ ...d, status: s }))} />
+        <VisitStepper
+          status={status}
+          onStageClick={(s) => {
+            if (s === 'cancelled' && !canCancel) {
+              onCancelBlocked?.();
+              return;
+            }
+            setDraft(d => ({ ...d, status: s }));
+          }}
+        />
 
         {/* Stage context hint */}
         <div style={{ background: st.bg, border: `1px solid ${st.dot}30`, borderRadius: 10, padding: '10px 14px', marginBottom: 20, fontSize: 12.5, color: st.fg, fontWeight: 600 }}>
@@ -1232,7 +1241,8 @@ const STAGE_LABELS = { new: 'New', contacted: 'Contacted', qualified: 'Qualified
 
 /* ========================================================================= */
 function CRMDashboardPage() {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
+  const canCancel = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
   const [period, setPeriod] = useState("This Month");
   const [tab, setTab]       = useState("summary");
   const [toast, setToast]   = useState({ msg: "", icon: "check", show: false });
@@ -1614,6 +1624,8 @@ function CRMDashboardPage() {
               salesProfiles={salesProfiles}
               prospectOptions={prospectOptions}
               isEdit={!!editVisitId}
+              canCancel={canCancel}
+              onCancelBlocked={() => showToast('Hanya Manager ke atas yang dapat membatalkan kunjungan', 'error')}
             />
             <VisitDetailModal
               visit={visitDetail}
