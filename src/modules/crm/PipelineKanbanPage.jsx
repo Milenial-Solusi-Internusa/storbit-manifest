@@ -5,6 +5,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import WinLossModal from './WinLossModal';
+import { calcBantScore } from './bant';
+import BantScoreBar from './BantScoreBar';
 
 /* =========================================================================
    Pipeline config — lowercase ids match Supabase pipeline_stage.toLowerCase()
@@ -166,26 +168,26 @@ const SOURCE_LABELS_KP = {
   social_media: 'Social Media', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
 };
 
-/* ── ProspectDetailModal ── */
+/* ── ProspectDetailModal — presentational sub-components (module scope) ── */
+const Field = ({ label, value, full }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, gridColumn: full ? '1 / -1' : undefined }}>
+    <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
+    <div style={{ fontSize: 13.5, color: value ? '#111827' : '#D1D5DB', fontStyle: value ? 'normal' : 'italic' }}>{value || '—'}</div>
+  </div>
+);
+
+const Section = ({ title, children }) => (
+  <div style={{ marginBottom: 20 }}>
+    <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 6, borderBottom: '1px solid #F3F4F6' }}>{title}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px' }}>{children}</div>
+  </div>
+);
+
 function ProspectDetailModal({ deal, onClose, onEdit }) {
   if (!deal) return null;
   const raw   = deal.raw || {};
   const stage = STAGES.find(s => s.id === deal.stage) || STAGES[0];
   const badge = STAGE_BADGE[deal.stage] || STAGE_BADGE.new;
-
-  const Field = ({ label, value, full }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, gridColumn: full ? '1 / -1' : undefined }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
-      <div style={{ fontSize: 13.5, color: value ? '#111827' : '#D1D5DB', fontStyle: value ? 'normal' : 'italic' }}>{value || '—'}</div>
-    </div>
-  );
-
-  const Section = ({ title, children }) => (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 6, borderBottom: '1px solid #F3F4F6' }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px' }}>{children}</div>
-    </div>
-  );
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -245,6 +247,19 @@ function ProspectDetailModal({ deal, onClose, onEdit }) {
             <Field label="Estimated Closing Date" value={raw.estimated_closing_date ? fmtDate(raw.estimated_closing_date) : null} />
             {deal.stage === 'won'  && <Field label="Alasan Won"  value={raw.won_reason} full />}
             {deal.stage === 'lost' && <Field label="Alasan Lost" value={raw.lost_reason} full />}
+          </Section>
+
+          <Section title="BANT Qualification">
+            <div style={{ gridColumn: '1 / -1', marginBottom: 4 }}>
+              <BantScoreBar score={raw.bant_score != null ? raw.bant_score : calcBantScore(raw)} />
+            </div>
+            <Field label="Komoditi / Barang"          value={raw.bant_commodity} />
+            <Field label="Kota/Port Asal (POL)"       value={raw.bant_origin} />
+            <Field label="Kota/Port Tujuan (POD)"     value={raw.bant_destination} />
+            <Field label="Frekuensi Pengiriman"       value={raw.bant_frequency} />
+            <Field label="Vendor / Forwarder Saat Ini" value={raw.bant_current_vendor} />
+            <Field label="Preferensi Payment"         value={raw.bant_payment} />
+            <Field label="Decision Maker"             value={raw.bant_decision_maker} full />
           </Section>
 
           <Section title="Finansial">
@@ -388,7 +403,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     try {
       const { data, error } = await supabase
         .from('prospects')
-        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, payment_terms_id, notes, assigned_to, created_at, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
+        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, payment_terms_id, notes, assigned_to, created_at, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
         .eq('company_id', profile.company_id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
