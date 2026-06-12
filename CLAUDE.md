@@ -835,7 +835,9 @@ Output:
 
 | 2.0U | Master Customer page — `src/modules/crm/CustomerMasterPage.jsx` baru; list tabel dengan 10 kolom (code IBM Plex Mono, nama, legal name, entitas badge, PIC, tier badge A/B/C, status badge, assigned to, dibuat, eye button); 4 stat cards; filter bar (search debounce 300ms, status/entitas/tier dropdown, reset button); CustomerDetailModal 4-tab (Info Dasar, Komersial, History Visit, Notes); CustomerFormModal dengan duplicate name check onBlur + warning inline; INSERT payload company_id+source_company_id+created_by; fallback query tanpa join jika FK columns belum ada di DB; CRM sidebar tambah "Master Customer" icon Building2 setelah Quotation; lazy import + ErrorBoundary + MENU_KEY_MAP entry di App.jsx; TODO DB kolom belum ada: assigned_to, source_company_id, tier, cust_status; build clean | ✅ Complete |
 
-Current phase: **Phase 2.0U** ✅ Complete
+| 2.0U-hotfix | CustomerMasterPage.jsx — global rename `cust_status` → `status` (8 lokasi: comment TODO, CustomerDetailModal statusKey, CustomerFormModal state init, payload INSERT/UPDATE, form select binding, filter logic, stat card count, tabel row statusKey); build clean | ✅ Complete |
+
+Current phase: **Phase 2.0U-hotfix** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

@@ -8,7 +8,7 @@
 // TODO DB: ALTER TABLE customers ADD COLUMN assigned_to uuid REFERENCES profiles(id);
 // TODO DB: ALTER TABLE customers ADD COLUMN source_company_id uuid REFERENCES companies(id);
 // TODO DB: ALTER TABLE customers ADD COLUMN tier text CHECK (tier IN ('A','B','C'));
-// TODO DB: ALTER TABLE customers ADD COLUMN cust_status text DEFAULT 'active';
+// TODO DB: ALTER TABLE customers ADD COLUMN status text DEFAULT 'active';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -93,7 +93,7 @@ function TierBadge({ tier }) {
 }
 
 function StatusBadge({ status, active }) {
-  // Derive from active boolean if cust_status column doesn't exist
+  // Derive from active boolean if status column doesn't exist
   const key = status || (active === false ? 'inactive' : 'active');
   const m = STATUS_META[key] || STATUS_META.active;
   return (
@@ -196,7 +196,7 @@ function CustomerDetailModal({ customer, onClose, onEdit }) {
   ];
 
   const coCode = customer.source_company?.code;
-  const statusKey = customer.cust_status || (customer.active === false ? 'inactive' : 'active');
+  const statusKey = customer.status || (customer.active === false ? 'inactive' : 'active');
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -364,7 +364,7 @@ function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
     pic_phone:        initial?.pic_phone       || '',
     pic_email:        initial?.pic_email       || '',
     tier:             initial?.tier            || '',
-    cust_status:      initial?.cust_status     || 'active',
+    status:      initial?.status     || 'active',
     assigned_to:      initial?.assigned_to     || '',
     payment_terms_id: initial?.payment_terms_id || '',
     credit_limit:     initial?.credit_limit    ?? '',
@@ -436,7 +436,7 @@ function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         updated_by:       profile.id,
         // columns that may not exist yet — silently ignored if absent
         ...(form.tier        && { tier:           form.tier        }),
-        ...(form.cust_status && { cust_status:    form.cust_status }),
+        ...(form.status && { status:    form.status }),
         ...(form.assigned_to && { assigned_to:    form.assigned_to }),
       };
 
@@ -553,7 +553,7 @@ function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               </select>
             </FG>
             <FG label="Status">
-              <select value={form.cust_status} onChange={set('cust_status')} style={SEL_STYLE}>
+              <select value={form.status} onChange={set('status')} style={SEL_STYLE}>
                 {CUST_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </FG>
@@ -654,7 +654,7 @@ export default function CustomerMasterPage({ showToast }) {
     const q = search.toLowerCase();
     if (q && !c.name?.toLowerCase().includes(q) && !c.legal_name?.toLowerCase().includes(q) && !c.code?.toLowerCase().includes(q)) return false;
     if (filterStatus !== 'all') {
-      const key = c.cust_status || (c.active === false ? 'inactive' : 'active');
+      const key = c.status || (c.active === false ? 'inactive' : 'active');
       if (key !== filterStatus) return false;
     }
     if (filterCo !== 'all') {
@@ -665,8 +665,8 @@ export default function CustomerMasterPage({ showToast }) {
     return true;
   });
 
-  const activeCount   = customers.filter(c => (c.cust_status || (c.active !== false ? 'active' : 'inactive')) === 'active').length;
-  const inactiveCount = customers.filter(c => (c.cust_status || (c.active !== false ? 'active' : 'inactive')) === 'inactive').length;
+  const activeCount   = customers.filter(c => (c.status || (c.active !== false ? 'active' : 'inactive')) === 'active').length;
+  const inactiveCount = customers.filter(c => (c.status || (c.active !== false ? 'active' : 'inactive')) === 'inactive').length;
 
   const selStyle = {
     height: 34, borderRadius: 8, border: `1px solid ${D.line}`,
@@ -767,7 +767,7 @@ export default function CustomerMasterPage({ showToast }) {
                   {search || filterStatus !== 'all' || filterCo !== 'all' || filterTier !== 'all' ? 'Tidak ada customer yang sesuai filter.' : 'Belum ada data customer.'}
                 </td></tr>
               ) : filtered.map((c, i) => {
-                const statusKey = c.cust_status || (c.active === false ? 'inactive' : 'active');
+                const statusKey = c.status || (c.active === false ? 'inactive' : 'active');
                 return (
                   <tr key={c.id} style={{ background: i % 2 === 0 ? D.surface : D.surface2 }}>
                     <TD>
