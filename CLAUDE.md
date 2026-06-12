@@ -837,7 +837,9 @@ Output:
 
 | 2.0U-hotfix | CustomerMasterPage.jsx — global rename `cust_status` → `status` (8 lokasi: comment TODO, CustomerDetailModal statusKey, CustomerFormModal state init, payload INSERT/UPDATE, form select binding, filter logic, stat card count, tabel row statusKey); build clean | ✅ Complete |
 
-Current phase: **Phase 2.0U-hotfix** ✅ Complete
+| 2.0V | Logistics sidebar cleanup — hapus Customer MSI (3 sub-menu) dan Customer JCI (3 sub-menu) total dari sidebar; Customer Storbit diganti jadi item tunggal `id: 'crm-customers'` label "Master Customer" icon Building2 note "Di CRM" (navigateTo('crm-customers') otomatis resolve ke CRM module via ERP_MENU_GROUPS lookup); SidebarItem regular-item render ditambah `item.note` block italic abu-abu; build clean | ✅ Complete |
+
+Current phase: **Phase 2.0V** ✅ Complete
 
 Next recommended step: **Phase 2.0E+ — create stock_ledger + warehouses migration (staging), wire Stok Barang to real stock data**
 

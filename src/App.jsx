@@ -454,14 +454,7 @@ const ERP_MENU_GROUPS = [
           { id: 'trading-rekap',     label: 'Rekap Trading', icon: BarChart2 },
         ],
       },
-      {
-        id: 'customers', label: 'Customer Storbit', icon: Building2, module: 'logistics', role: ['super_admin','admin'],
-        children: [
-          { id: 'customers',                label: 'Daftar Customer',      icon: Users    },
-          { id: 'customer-storbit-kontrak', label: 'Kontrak & Perjanjian', icon: FileText },
-          { id: 'customer-storbit-history', label: 'History Transaksi',    icon: Clock    },
-        ],
-      },
+      { id: 'crm-customers', label: 'Master Customer', icon: Building2, note: 'Di CRM' },
       { section: 'MSI — Freight Forwarding' },
       {
         id: 'job', label: 'Job Management', icon: BriefcaseBusiness,
@@ -486,14 +479,6 @@ const ERP_MENU_GROUPS = [
           { id: 'shipment',         label: 'Tracking Aktif',     icon: Truck    },
           { id: 'shipment-jadwal',  label: 'Jadwal Pengiriman',  icon: Calendar },
           { id: 'shipment-riwayat', label: 'Riwayat Pengiriman', icon: Clock    },
-        ],
-      },
-      {
-        id: 'customer-msi', label: 'Customer MSI', icon: Building2,
-        children: [
-          { id: 'customer-msi-daftar',  label: 'Daftar Customer',      icon: Users    },
-          { id: 'customer-msi-kontrak', label: 'Kontrak & Perjanjian', icon: FileText },
-          { id: 'customer-msi-history', label: 'History Transaksi',    icon: Clock    },
         ],
       },
       { section: 'JCI — PPJK / Customs' },
@@ -526,14 +511,6 @@ const ERP_MENU_GROUPS = [
           { id: 'ppjk-trucking-order',   label: 'Order Trucking',   icon: ShoppingCart },
           { id: 'ppjk-trucking-jadwal',  label: 'Jadwal Trucking',  icon: Calendar     },
           { id: 'ppjk-trucking-riwayat', label: 'Riwayat Trucking', icon: Clock        },
-        ],
-      },
-      {
-        id: 'customer-jci', label: 'Customer JCI', icon: Building2,
-        children: [
-          { id: 'customer-jci-daftar',  label: 'Daftar Customer',      icon: Users    },
-          { id: 'customer-jci-kontrak', label: 'Kontrak & Perjanjian', icon: FileText },
-          { id: 'customer-jci-history', label: 'History Transaksi',    icon: Clock    },
         ],
       },
     ],
@@ -970,7 +947,10 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
     >
       <Icon size={17} strokeWidth={active ? 2.2 : 1.8} style={{ color: active ? '#FFB899' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
-      <span className="flex-1 text-left leading-snug">{item.label}</span>
+      <span className="flex-1 text-left leading-snug">
+        {item.label}
+        {item.note && <span style={{ display: 'block', fontSize: 10, fontStyle: 'italic', color: 'rgba(248,245,237,0.38)', fontWeight: 400, marginTop: 1 }}>{item.note}</span>}
+      </span>
     </button>
   );
 }
