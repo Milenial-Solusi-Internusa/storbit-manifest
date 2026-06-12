@@ -37,7 +37,8 @@ const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'
 const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
-const CustomerMasterPage   = lazy(() => import('./modules/crm/CustomerMasterPage'));
+const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
+const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
@@ -1049,6 +1050,8 @@ export default function StorbitManifest() {
     localStorage.getItem('nexus_last_menu') || 'home'
   );
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
+  const [activeCustomerId, setActiveCustomerId] = useState(null); // for customer-detail page
+  const [prevCustomerMenu, setPrevCustomerMenu] = useState('crm-customers'); // back target
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
   const [showInputSP,  setShowInputSP]    = useState(false); // Input SP form
   const [prevAssetMenu, setPrevAssetMenu] = useState('assets-it'); // where to go back from detail
@@ -1097,6 +1100,17 @@ export default function StorbitManifest() {
     setActiveAssetId(null);
     setActiveMenu(prevAssetMenu);
   }, [prevAssetMenu]);
+
+  // Customer list → detail page (state swap, mirrors asset pattern).
+  const navigateToCustomerDetail = useCallback((customerId) => {
+    setPrevCustomerMenu(activeMenu);
+    setActiveCustomerId(customerId);
+    setActiveMenu('customer-detail');
+  }, [activeMenu]);
+  const backFromCustomerDetail = useCallback(() => {
+    setActiveCustomerId(null);
+    setActiveMenu(prevCustomerMenu);
+  }, [prevCustomerMenu]);
 
   // Return to app launcher.
   const goToLauncher = useCallback(() => setActiveModule(null), []);
@@ -2116,7 +2130,16 @@ export default function StorbitManifest() {
           {activeMenu === 'crm-customers' && (
             <ErrorBoundary title="Master Customer temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CustomerMasterPage showToast={showToast} />
+                <CustomerListPage showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Customer Detail (full page) ─────────────────────────────── */}
+          {activeMenu === 'customer-detail' && (
+            <ErrorBoundary title="Customer Detail temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <CustomerDetailPage id={activeCustomerId} onBack={backFromCustomerDetail} showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           )}
