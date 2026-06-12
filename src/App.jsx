@@ -37,6 +37,7 @@ const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'
 const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
+const CustomerMasterPage   = lazy(() => import('./modules/crm/CustomerMasterPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
 const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
@@ -427,8 +428,9 @@ const ERP_MENU_GROUPS = [
           { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
           { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
           { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
-          { id: 'crm-inquiry',   label: 'Inquiry',          icon: FileText  },
+          { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
+          { id: 'crm-customers',  label: 'Master Customer', icon: Building2 },
         ],
       },
     ],
@@ -788,6 +790,7 @@ const MENU_KEY_MAP = {
   'crm-prospects':   'crm_prospects',
   'crm-inquiry':     'crm_inquiry',
   'quotation-draft': 'crm_quotation',
+  'crm-customers':   'crm_customers',
   // Logistics
   'manifest':            'logistics_sp',
   'trading':             'logistics_general_trading',
@@ -2127,6 +2130,15 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
+          {/* ── CRM: Master Customer ────────────────────────────────────────── */}
+          {activeMenu === 'crm-customers' && (
+            <ErrorBoundary title="Master Customer temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <CustomerMasterPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
           {/* ── CRM: Quotation Form (create + edit) ────────────────────────── */}
           {activeMenu === 'quotation-draft' && showQuotationForm && (
             <ErrorBoundary title="Quotation Form temporarily unavailable">
