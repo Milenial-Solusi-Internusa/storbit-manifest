@@ -13,9 +13,9 @@
 //
 // All profile/permission save logic is preserved verbatim from the former modal.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  ArrowLeft, ChevronRight, Check, Trash2, KeyRound, X,
+  ArrowLeft, ChevronRight, Check, Trash2, KeyRound, X, Camera,
   RefreshCw as Spinner,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
@@ -42,6 +42,10 @@ import {
 // ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
+
+// Allowed avatar mime types → file extension. Bucket 'avatars': public, max 2MB, image only.
+const AVATAR_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 
 function buildDraft(r) {
   const primary = getPrimaryErpRole(r.user_roles);
@@ -159,13 +163,18 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('profile'); // 'profile' | 'permissions'
 
+  // ── Avatar upload ────────────────────────────────────────────
+  const [avatarUrl, setAvatarUrl] = useState(initialRow?.avatar_url || null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
   // Fallback fetch when no initialRow was passed (e.g. deep navigation)
   useEffect(() => {
     if (initialRow || !userId) return;
     let cancelled = false;
     supabase
       .from('profiles')
-      .select(`id, full_name, role, active, mfa_required,
+      .select(`id, full_name, role, active, mfa_required, avatar_url,
                company_id, branch_id, department_id, position_id,
                companies(id, code, name), branches(id, code, name),
                departments(id, code, name), positions(id, code, name)`)
@@ -183,6 +192,7 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
             setRowMeta(merged);
             setDraft(buildDraft(merged));
             setCompanyId(merged.company_id || '');
+            setAvatarUrl(merged.avatar_url || null);
           });
       });
     return () => { cancelled = true; };
@@ -392,6 +402,66 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
     return true;
   }, [userId, showToast]);
 
+  // ── Avatar upload / remove ───────────────────────────────────
+  const handlePickFile = useCallback(() => {
+    if (!uploading) fileInputRef.current?.click();
+  }, [uploading]);
+
+  const handleFileChange = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // reset so the same file can be re-selected later
+    if (!file) return;
+
+    // Client-side validation: type + size (bucket allows image only, max 2MB)
+    const ext = AVATAR_TYPES[file.type];
+    if (!ext) { showToast?.('Format foto harus PNG, JPEG, atau WEBP.', 'error'); return; }
+    if (file.size > AVATAR_MAX_BYTES) { showToast?.('Ukuran foto maksimal 2MB.', 'error'); return; }
+
+    setUploading(true);
+
+    const fileName = `${userId}-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from('avatars')
+      .upload(fileName, file, { upsert: true, contentType: file.type });
+    if (upErr) {
+      setUploading(false);
+      showToast?.(upErr.message || 'Gagal mengupload foto.', 'error');
+      return;
+    }
+
+    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+    const url = urlData?.publicUrl || null;
+
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({ avatar_url: url })
+      .eq('id', userId);
+    setUploading(false);
+    if (updErr) {
+      showToast?.(updErr.message || 'Gagal menyimpan foto.', 'error');
+      return;
+    }
+
+    setAvatarUrl(url);
+    showToast?.('Foto berhasil diupload.');
+  }, [userId, showToast]);
+
+  const handleRemoveAvatar = useCallback(async () => {
+    if (uploading) return;
+    setUploading(true);
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({ avatar_url: null })
+      .eq('id', userId);
+    setUploading(false);
+    if (updErr) {
+      showToast?.(updErr.message || 'Gagal menghapus foto.', 'error');
+      return;
+    }
+    setAvatarUrl(null);
+    showToast?.('Foto dihapus.');
+  }, [userId, uploading, showToast]);
+
   // ── Render ───────────────────────────────────────────────────
   const userName = draft?.full_name || rowMeta?.full_name || '(unnamed)';
   const primaryErpRole = getPrimaryErpRole(rowMeta?.user_roles);
@@ -453,7 +523,45 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
         className="rounded-2xl border p-5 mb-5 flex items-center gap-4"
         style={{ background: 'white', borderColor: PASTEL.line }}
       >
-        <Avatar name={userName} size={56} />
+        {/* Avatar with upload overlay */}
+        <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+          <button
+            type="button"
+            onClick={handlePickFile}
+            disabled={uploading}
+            title="Ubah Foto"
+            className="group relative rounded-full overflow-hidden disabled:cursor-wait"
+            style={{ width: 56, height: 56 }}
+          >
+            <Avatar name={userName} size={56} avatarUrl={avatarUrl} />
+            <span
+              className={`absolute inset-0 rounded-full flex items-center justify-center transition-opacity ${uploading ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+              style={{ background: 'rgba(20,70,130,0.55)' }}
+            >
+              {uploading
+                ? <Spinner size={18} className="animate-spin" style={{ color: 'white' }} />
+                : <Camera size={18} style={{ color: 'white' }} />}
+            </span>
+          </button>
+          {avatarUrl && !uploading && (
+            <button
+              type="button"
+              onClick={handleRemoveAvatar}
+              className="inline-flex items-center gap-1 text-[10px] font-medium transition-opacity hover:opacity-70"
+              style={{ color: RED }}
+            >
+              <Trash2 size={10} /> Hapus Foto
+            </button>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+        </div>
+
         <div className="min-w-0 flex-1">
           <div className="text-lg font-bold truncate" style={{ color: PASTEL.ink, fontFamily: 'Montserrat, sans-serif' }}>
             {userName}

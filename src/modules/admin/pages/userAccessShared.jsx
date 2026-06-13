@@ -12,7 +12,18 @@ import { PASTEL, NAVY, ORANGE, LEGACY_ROLES, LEGACY_ROLE_COLOR } from './userAcc
 // Small display components
 // ─────────────────────────────────────────────────────────────
 
-export function Avatar({ name, size = 32 }) {
+export function Avatar({ name, size = 32, avatarUrl }) {
+  // Photo when available, initials fallback otherwise.
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name || 'avatar'}
+        className="rounded-full flex-shrink-0 object-cover select-none"
+        style={{ width: size, height: size, background: PASTEL.lineSoft }}
+      />
+    );
+  }
   const initials = (name || '?')
     .trim()
     .split(/\s+/)

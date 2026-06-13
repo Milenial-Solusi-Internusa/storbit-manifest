@@ -62,7 +62,7 @@ export function useUserAccess({ page = 1, search = '' } = {}) {
     let profileQuery = supabase
       .from('profiles')
       .select(
-        `id, full_name, role, active, mfa_required,
+        `id, full_name, role, active, mfa_required, avatar_url,
          company_id, branch_id, department_id, position_id,
          companies(id, code, name),
          branches(id, code, name),
