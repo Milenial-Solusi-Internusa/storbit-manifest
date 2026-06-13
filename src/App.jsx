@@ -869,6 +869,33 @@ function collectMenuIds(nodes, acc) {
   return acc;
 }
 
+// AccessDeniedPage — shown in the content area when the current user has no
+// access to activeMenu (Fix C content-level gate / defense-in-depth).
+function AccessDeniedPage({ onGoHome }) {
+  return (
+    <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem 1rem' }}>
+      <div style={{ maxWidth: 420, width: '100%', textAlign: 'center', background: 'white', border: '1px solid #E5E7EB', borderRadius: 20, padding: '40px 32px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ width: 60, height: 60, borderRadius: 16, background: '#EEF3FB', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+          <Shield size={28} style={{ color: '#144682' }} />
+        </div>
+        <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 21, fontWeight: 800, color: '#144682', margin: '0 0 8px' }}>
+          Akses Ditolak
+        </h2>
+        <p style={{ fontSize: 14, color: '#6B7280', margin: '0 0 24px', lineHeight: 1.5 }}>
+          Anda tidak memiliki izin untuk mengakses halaman ini.
+        </p>
+        <button
+          type="button"
+          onClick={onGoHome}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#144682', color: 'white', border: 'none', borderRadius: 12, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+        >
+          <ChevronLeft size={16} /> Kembali ke Beranda
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 // ============================
 // Sidebar Helper Components
@@ -1630,6 +1657,24 @@ export default function StorbitManifest() {
     : null;
   const currentRoleLabel = ROLES.find(r => r.id === role)?.label || role;
 
+  // Content-level access gate (Fix C / defense-in-depth): only render a module
+  // page if the user can access its menu. The sidebar already gates visibility
+  // (canSeeMenuItem), but the content chain renders purely on activeMenu — this
+  // closes the gap, especially for CRM where RLS is currently disabled.
+  // Plain const (not useMemo) because it sits after the `if (loading) return`
+  // early-return and depends on visibleMenuGroups computed just above.
+  const canAccessActiveMenu = (() => {
+    if (role === 'super_admin' || role === 'super' || profile?.role === 'super') return true;
+    // Synthetic / detail menus are navigated to programmatically from pages that
+    // are themselves already gated — always allow.
+    const SYNTHETIC = ['home', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
+    if (SYNTHETIC.includes(activeMenu)) return true;
+    if (activeMenu?.startsWith('customer-') || activeMenu?.startsWith('assets-') || activeMenu?.startsWith('product-')) return true;
+    const accessibleIds = new Set();
+    for (const group of visibleMenuGroups) collectMenuIds(group.items, accessibleIds);
+    return accessibleIds.has(activeMenu);
+  })();
+
   return (
     <div className="min-h-screen" style={{ background: PASTEL.cream, color: PASTEL.ink, fontFamily: "'Inter', system-ui, sans-serif" }}>
       <style>{`
@@ -1925,6 +1970,13 @@ export default function StorbitManifest() {
           )}
 
           <div className={`nexus-main-surface w-full min-w-0 ${(activeMenu === 'assets' || activeMenu?.startsWith('assets-')) ? 'px-5 sm:px-7 xl:px-9 py-6 lg:py-7' : 'px-5 sm:px-7 xl:px-9 py-6 lg:py-7'}`} style={{ display: activeModule ? undefined : 'none' }}>
+
+          {/* Content-level access gate (Fix C): deny render only once permissions
+              have loaded — never during the loading window. */}
+          {!canAccessActiveMenu && !permissionsLoading ? (
+            <AccessDeniedPage onGoHome={() => { setActiveModule(null); setActiveMenu('home'); }} />
+          ) : (
+          <>
 
           {/* Page section header with month filter */}
           {activeMenu === 'dashboard' && (
@@ -2353,6 +2405,9 @@ export default function StorbitManifest() {
                 />
               </Suspense>
             </ErrorBoundary>
+          )}
+
+          </>
           )}
 
           </div>
