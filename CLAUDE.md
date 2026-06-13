@@ -876,7 +876,9 @@ Output:
 
 | 2.2C-hotfix | CustomerListPage.jsx — fix status filter dropdown agar match `account_status`. Konstanta baru `STATUS_FILTERS` ([{customer,'Customer'},{free_agent,'Free Agent'}]) khusus filter bar (terpisah dari `CUST_STATUSES` yg masih dipakai form add/edit — **form TIDAK diubah**). Dropdown filter: opsi "Semua Status" / Customer / Free Agent (ganti dari active/inactive); pakai `STATUS_FILTERS.map`. Filter logic `statusOf(c) !== filterStatus` sudah baca `account_status` (dari 2.2C) → tidak diubah, sekarang match. Dropdown di-hide saat `entityFilter === 'FREE_AGENT'` (sudah ter-lock). Lint 1→1 (net-zero), build clean. | ✅ Complete |
 
-Current phase: **Phase 2.2C-hotfix** ✅ Complete
+| 2.2C-sidebar | App.jsx — fix sidebar saat `activeMenu==='customer-detail'` (CRM menu collapse + tidak ada highlight). **FIX 1** `navigateToCustomerDetail`: tambah defensif `setActiveModule(group.label)` (cari ERP_MENU_GROUPS yg punya item/child/grandchild `crm-customers`/`crm-customers-*`) sebelum set activeMenu — mirror `navigateToAssetDetail`, robust utk deep-link/refresh. **FIX 2** `SidebarItem`: tambah `isCustomerDetailContext = activeMenu==='customer-detail'` + helper `isCustomersNode(n)` (id `crm-customers` atau punya children `crm-customers-*`); `childActive` parent CRM + `subActive` sub-grup Master Customer dianggap aktif saat customer-detail context → menu "CRM & Inquiry" tetap expanded & "Master Customer" tetap highlight/expand di detail page. Hanya 2 lokasi diubah, tidak menyentuh modul lain (isCustomersNode hanya match node crm-customers). Lint App.jsx 4→4 (net-zero). build clean. | ✅ Complete |
+
+Current phase: **Phase 2.2C-sidebar** ✅ Complete
 
 > **⚠️ DB columns required for Phase 2.1A (`quotations` — buat di staging, butuh approval):**
 > ```sql

@@ -863,9 +863,14 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
 function SidebarItem({ item, activeMenu, setActiveMenu }) {
   const Icon = item.icon;
   const active = activeMenu === item.id;
+  // The synthetic 'customer-detail' menu belongs to the crm-customers subtree.
+  const isCustomerDetailContext = activeMenu === 'customer-detail';
+  const isCustomersNode = (n) => n.id === 'crm-customers' ||
+    n.children?.some(gc => gc.id?.startsWith('crm-customers-'));
   // Item is "parent-active" when it has children and any child/grandchild (or itself) matches
   const childActive = item.children?.some(c => !c.section && (
-    activeMenu === c.id || c.children?.some(gc => !gc.section && activeMenu === gc.id)
+    activeMenu === c.id || c.children?.some(gc => !gc.section && activeMenu === gc.id) ||
+    (isCustomerDetailContext && isCustomersNode(c))
   ));
   const expanded = item.children && (active || childActive);
 
@@ -914,7 +919,8 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
               if (child.children) {
                 const SubIcon = child.icon;
                 const firstGc = child.children.find(gc => !gc.section);
-                const subActive = child.children.some(gc => !gc.section && activeMenu === gc.id);
+                const subActive = child.children.some(gc => !gc.section && activeMenu === gc.id) ||
+                  (isCustomerDetailContext && isCustomersNode(child));
                 const subExpanded = activeMenu === child.id || subActive;
                 return (
                   <div key={child.id}>
@@ -1178,6 +1184,12 @@ export default function StorbitManifest() {
 
   // Customer list → detail page (state swap, mirrors asset pattern).
   const navigateToCustomerDetail = useCallback((customerId) => {
+    // Defensively keep the CRM module active (mirror navigateToAssetDetail).
+    const group = ERP_MENU_GROUPS.find(g =>
+      g.items.some(i => i.id === 'crm-customers' ||
+        i.children?.some(c => c.id === 'crm-customers' ||
+          c.children?.some(gc => gc.id?.startsWith('crm-customers-')))));
+    if (group) setActiveModule(group.label);
     setPrevCustomerMenu(activeMenu);
     setActiveCustomerId(customerId);
     setActiveMenu('customer-detail');
