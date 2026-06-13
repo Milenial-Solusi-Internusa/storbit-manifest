@@ -40,6 +40,7 @@ const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage')
 const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
+const LeadPoolPage         = lazy(() => import('./modules/crm/LeadPoolPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
 const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
@@ -429,6 +430,7 @@ const ERP_MENU_GROUPS = [
         children: [
           { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
           { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
+          { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive   },
           { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
@@ -2390,6 +2392,15 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Activity & Calls temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <SalesCallsPage showToast={showToast} profile={profile} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Lead Pool ──────────────────────────────────────────────── */}
+          {activeMenu === 'crm-lead-pool' && (
+            <ErrorBoundary title="Lead Pool temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <LeadPoolPage showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           )}
