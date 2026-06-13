@@ -139,6 +139,11 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     console.log('[Auth] signOut called');
+    // Clear user-specific app state so the next user in this browser doesn't
+    // inherit the previous user's last menu/module (these keys are not scoped
+    // by user id and survive logout otherwise).
+    localStorage.removeItem('nexus_last_menu');
+    localStorage.removeItem('nexus_last_module');
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error('[Auth] Sign out error:', error);
