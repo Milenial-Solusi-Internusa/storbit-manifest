@@ -123,13 +123,13 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const [errors, setErrors] = useState({});
 
   // ── Custom fields ────────────────────────────────────────────────────────
-  const { customFields } = useCustomFields('prospects');
+  const { customFields } = useCustomFields('accounts');
   const [customValues, setCustomValues] = useState({});
 
   // Populate custom values from existing prospect data (edit mode)
   useEffect(() => {
     if (!isEdit || !prospect) return;
-    const standard = new Set(STANDARD_COLUMNS.prospects);
+    const standard = new Set(STANDARD_COLUMNS.accounts);
     const custom = Object.fromEntries(
       Object.entries(prospect).filter(([k]) => !standard.has(k))
     );
@@ -189,7 +189,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         closeConfirm();
         try {
           const { error } = await supabase
-            .from('prospects')
+            .from('accounts')
             .update({ deleted_at: new Date().toISOString() })
             .eq('id', prospect.id);
           if (error) throw error;
@@ -216,11 +216,12 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const checkDuplicateName = async (val) => {
     if (!val.trim() || isEdit) { setNameWarning(''); return; }
     const { data } = await supabase
-      .from('prospects')
+      .from('accounts')
       .select('id, name')
       .ilike('name', val.trim())
       .is('deleted_at', null)
       .eq('company_id', profile.company_id)
+      .eq('account_status', 'prospect')
       .limit(1);
     if (data && data.length > 0) {
       setNameWarning('Prospect dengan nama ini sudah terdaftar. Pastikan tidak duplikat.');
@@ -274,10 +275,13 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
       let error;
       if (isEdit) {
-        ({ error } = await supabase.from('prospects').update(payload).eq('id', prospect.id));
+        ({ error } = await supabase.from('accounts').update(payload).eq('id', prospect.id));
       } else {
-        payload.created_by = profile.id;
-        ({ error } = await supabase.from('prospects').insert(payload));
+        payload.created_by       = profile.id;
+        payload.account_status   = 'prospect';
+        payload.owner_company_id = profile.company_id;
+        payload.last_activity_at = new Date().toISOString();
+        ({ error } = await supabase.from('accounts').insert(payload));
       }
       if (error) throw error;
       showToast?.(isEdit ? 'Prospect berhasil diupdate ✨' : 'Prospect berhasil ditambahkan ✨');

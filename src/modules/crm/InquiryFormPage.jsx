@@ -83,7 +83,7 @@ export default function InquiryFormPage({ onBack, showToast }) {
 
   useEffect(() => {
     if (!profile?.company_id) return;
-    supabase.from('prospects').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null).order('name')
+    supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name')
       .then(({ data }) => setProspects(data || []));
     supabase.from('customers').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null).order('name')
       .then(({ data }) => setCustomers(data || []));

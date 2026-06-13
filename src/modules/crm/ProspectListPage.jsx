@@ -98,13 +98,14 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
     setLoading(true);
     try {
       let query = supabase
-        .from('prospects')
+        .from('accounts')
         .select(`
           id, name, legal_name, customer_type, source,
           pic_name, pipeline_stage, created_at,
           assigned_profile:profiles!prospects_assigned_to_fkey(full_name)
         `, { count: 'exact' })
         .eq('company_id', profile.company_id)
+        .eq('account_status', 'prospect')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
@@ -134,7 +135,7 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
         closeConfirm();
         try {
           const { error } = await supabase
-            .from('prospects')
+            .from('accounts')
             .update({ deleted_at: new Date().toISOString() })
             .eq('id', prospect.id);
           if (error) throw error;

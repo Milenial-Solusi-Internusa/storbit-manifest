@@ -348,7 +348,7 @@ export default function SalesCallsPage({ showToast }) {
         .from('sales_calls')
         .select(`
           *,
-          prospect:prospects!sales_calls_prospect_id_fkey(name, company_prefix),
+          prospect:accounts!sales_calls_prospect_id_fkey(name, company_prefix),
           salesperson:profiles!sales_calls_salesperson_id_fkey(full_name)
         `)
         .eq('company_id', profile.company_id)
@@ -371,7 +371,7 @@ export default function SalesCallsPage({ showToast }) {
   const loadFormOptions = async () => {
     if (!profile?.company_id) return;
     const [pRes, sRes] = await Promise.all([
-      supabase.from('prospects').select('id, name, company_prefix').eq('company_id', profile.company_id).is('deleted_at', null).order('name').limit(1000),
+      supabase.from('accounts').select('id, name, company_prefix').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(1000),
       supabase.from('profiles').select('id, full_name').eq('company_id', profile.company_id).eq('active', true).order('full_name').limit(1000),
     ]);
     setProspects(pRes.data || []);

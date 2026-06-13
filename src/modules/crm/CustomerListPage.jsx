@@ -44,6 +44,11 @@ const CUST_STATUSES = [
   { value: 'inactive',   label: 'Inactive'    },
   { value: 'free_agent', label: 'Free Agent'  },
 ];
+// Filter-bar options — must match accounts.account_status values
+const STATUS_FILTERS = [
+  { value: 'customer',   label: 'Customer'   },
+  { value: 'free_agent', label: 'Free Agent' },
+];
 const CURRENCIES = ['IDR', 'USD', 'EUR', 'SGD'];
 
 // ─── Lovable inline icons (lucide paths) ────────────────────────────────────────
@@ -77,9 +82,14 @@ const TIER_CFG = {
   C: { label: 'Tier C', bg: '#F1E1D2', fg: '#9A5B2C', dot: '#B0703C' },
 };
 const STATUS_CFG = {
+  // accounts.account_status segments
+  customer:   { label: 'Customer',   bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D' },
+  prospect:   { label: 'Prospect',   bg: '#EAF0F8', fg: '#144682', dot: '#144682' },
+  lost:       { label: 'Lost',       bg: '#FBE3E0', fg: '#B23227', dot: '#C0392B' },
+  free_agent: { label: 'Free Agent', bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E' },
+  // legacy customers.status (fallback)
   active:     { label: 'Active',     bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D' },
   inactive:   { label: 'Inactive',   bg: '#EEF0F3', fg: '#9AA0AC', dot: '#B6BCC6' },
-  free_agent: { label: 'Free Agent', bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E' },
 };
 const PIC_COLORS = ['#2A5B8C', '#2F6B3F', '#9A5B2C', '#6B6F5E', '#7A4E8C', '#1F6B6B', '#A63A6B', '#234F86'];
 
@@ -93,7 +103,8 @@ const fmtDate = (iso) => {
 const initials = (s) =>
   ((s || '?').replace(/^PT\s+|^CV\s+/i, '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) || '?';
 const colorFor = (s) => PIC_COLORS[[...(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % PIC_COLORS.length];
-const statusOf = (c) => c.status || (c.active === false ? 'inactive' : 'active');
+// accounts model: status comes from account_status (legacy customers.status fallback)
+const statusOf = (c) => c.account_status || c.status || 'customer';
 
 // ─── Style tokens (ported from design) ──────────────────────────────────────────
 const P = {
@@ -279,9 +290,10 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       setDupWarning(''); return;
     }
     const { data } = await supabase
-      .from('customers')
+      .from('accounts')
       .select('id, name')
       .ilike('name', nameVal.trim())
+      .eq('account_status', 'customer')
       .is('deleted_at', null)
       .limit(1);
     if (data?.length > 0 && data[0].id !== initial?.id) {
@@ -321,21 +333,22 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         currency_code:    form.currency_code   || 'IDR',
         notes:            form.notes           || null,
         updated_by:       profile.id,
-        // columns that may not exist yet — silently ignored if absent
+        // accounts: status segment lives in account_status (form 'free_agent' → free_agent, else customer)
+        account_status:   form.status === 'free_agent' ? 'free_agent' : 'customer',
         ...(form.tier        && { tier:        form.tier        }),
-        ...(form.status      && { status:      form.status      }),
         ...(form.assigned_to && { assigned_to: form.assigned_to }),
       };
 
       let error;
       if (initial?.id) {
-        ({ error } = await supabase.from('customers').update(payload).eq('id', initial.id));
+        ({ error } = await supabase.from('accounts').update(payload).eq('id', initial.id));
       } else {
-        payload.company_id        = profile.company_id;
-        payload.source_company_id = profile.company_id; // may not exist yet — ignored by DB
-        payload.created_by        = profile.id;
-        payload.active            = true;
-        ({ error } = await supabase.from('customers').insert(payload));
+        payload.company_id         = profile.company_id;
+        payload.owner_company_id   = profile.company_id;
+        payload.created_by         = profile.id;
+        payload.account_status     = 'customer';
+        payload.became_customer_at = new Date().toISOString();
+        ({ error } = await supabase.from('accounts').insert(payload));
       }
       if (error) throw error;
       showToast?.(initial?.id ? 'Customer diperbarui ✨' : 'Customer ditambahkan ✨');
@@ -518,15 +531,18 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
+    // Master Customer = accounts WHERE account_status='customer'; Free Agent view = 'free_agent'
+    const statusFilter = entityFilter === 'FREE_AGENT' ? 'free_agent' : 'customer';
     try {
       const { data, error } = await supabase
-        .from('customers')
+        .from('accounts')
         .select(`
           *,
-          assigned_profile:profiles!customers_assigned_to_fkey(full_name),
-          source_company:companies!customers_source_company_id_fkey(name, code),
-          payment_term:payment_terms!customers_payment_terms_id_fkey(name)
+          assigned_profile:profiles!prospects_assigned_to_fkey(full_name),
+          source_company:companies!prospects_owner_company_id_fkey(name, code),
+          payment_term:payment_terms!prospects_payment_terms_id_fkey(name)
         `)
+        .eq('account_status', statusFilter)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);
@@ -534,8 +550,9 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
       setCustomers(data || []);
     } catch {
       const { data } = await supabase
-        .from('customers')
+        .from('accounts')
         .select('*')
+        .eq('account_status', statusFilter)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);
@@ -543,7 +560,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [entityFilter]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -564,7 +581,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
 
   // Stat cards — computed from the filtered set
   const total      = filtered.length;
-  const activeCnt  = filtered.filter(c => statusOf(c) === 'active').length;
+  const activeCnt  = filtered.filter(c => statusOf(c) === 'customer').length;
   const tierACnt   = filtered.filter(c => c.tier === 'A').length;
   const freeCnt    = filtered.filter(c => statusOf(c) === 'free_agent').length;
 
@@ -629,13 +646,15 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
             </select>
             <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
           </div>
-          <div style={P.selectWrap}>
-            <select className="cl-sel" style={P.select} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-              <option value="all">Status: Semua</option>
-              {CUST_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-            <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
-          </div>
+          {entityFilter !== 'FREE_AGENT' && (
+            <div style={P.selectWrap}>
+              <select className="cl-sel" style={P.select} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                <option value="all">Semua Status</option>
+                {STATUS_FILTERS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+              <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
+            </div>
+          )}
           {!entityLocked && (
             <div style={P.selectWrap}>
               <select className="cl-sel" style={P.select} value={filterCo} onChange={(e) => setFilterCo(e.target.value)}>

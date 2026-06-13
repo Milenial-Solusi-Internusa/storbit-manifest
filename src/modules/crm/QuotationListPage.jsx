@@ -99,7 +99,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
         .select(`
           id, quotation_no, service_type, route, status,
           valid_until, total_amount, created_at, pricing_done_at, quote_sent_at,
-          prospect:prospects!quotations_prospect_id_fkey(name),
+          prospect:accounts!quotations_prospect_id_fkey(name),
           customer:customers!quotations_customer_id_fkey(name)
         `, { count: 'exact' })
         .eq('company_id', profile.company_id)

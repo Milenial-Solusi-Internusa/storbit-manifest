@@ -76,9 +76,14 @@ const TIER_CFG = {
   C: { bg: '#F1E1D2', fg: '#9A5B2C' },
 };
 const STATUS_CFG = {
+  // accounts.account_status segments
+  customer:   { bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D', label: 'Customer'   },
+  prospect:   { bg: '#EAF0F8', fg: '#144682', dot: '#144682', label: 'Prospect'   },
+  lost:       { bg: '#FBE3E0', fg: '#B23227', dot: '#C0392B', label: 'Lost'       },
+  free_agent: { bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E', label: 'Free Agent' },
+  // legacy customers.status (fallback)
   active:     { bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D', label: 'Active'     },
   inactive:   { bg: '#EEF0F3', fg: '#9AA0AC', dot: '#B6BCC6', label: 'Inactive'   },
-  free_agent: { bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E', label: 'Free Agent' },
 };
 const VISIT_TYPE_CFG = {
   discovery:             { label: 'Discovery',    bg: '#EAF0F8', fg: NAVY },
@@ -120,7 +125,7 @@ const txt = (x) => (x == null || x === '') ? '—' : x;
 const initials = (s) => ((s || '?').replace(/^PT\s+|^CV\s+/i, '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) || '?';
 const picInitials = (s) => (s || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
 const colorFor = (s) => PIC_COLORS[[...(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % PIC_COLORS.length];
-const statusOf = (c) => c.status || (c.active === false ? 'inactive' : 'active');
+const statusOf = (c) => c.account_status || c.status || 'customer';
 
 // ─── Style tokens (ported from design) ──────────────────────────────────────────
 const S = {
@@ -403,25 +408,22 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
     if (!id) return;
     setLoading(true);
     try {
+      // accounts model: customer IS the account row → BANT (bant_*, pipeline_stage)
+      // lives directly on the row, no prospect embed needed.
       const { data, error } = await supabase
-        .from('customers')
+        .from('accounts')
         .select(`
           *,
-          assigned_profile:profiles!customers_assigned_to_fkey(full_name),
-          source_company:companies!customers_source_company_id_fkey(name, code),
-          payment_term:payment_terms!customers_payment_terms_id_fkey(name),
-          prospect:prospects!customers_prospect_id_fkey(
-            id, name, pipeline_stage, bant_score,
-            bant_commodity, bant_origin, bant_destination,
-            bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker
-          )
+          assigned_profile:profiles!prospects_assigned_to_fkey(full_name),
+          source_company:companies!prospects_owner_company_id_fkey(name, code),
+          payment_term:payment_terms!prospects_payment_terms_id_fkey(name)
         `)
         .eq('id', id)
         .single();
       if (error) throw error;
       setCustomer(data);
     } catch {
-      const { data } = await supabase.from('customers').select('*').eq('id', id).single();
+      const { data } = await supabase.from('accounts').select('*').eq('id', id).single();
       setCustomer(data || null);
     } finally {
       setLoading(false);
@@ -430,23 +432,25 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
 
   useEffect(() => { fetchCustomer(); }, [fetchCustomer]);
 
-  // ── Fetch sales_visits by prospect_id (serves History Visit + Health Score) ──
+  // ── Fetch sales_visits (serves History Visit + Health Score) ──
+  // account.id IS the sales_visits.prospect_id (the account was a prospect before
+  // conversion), so visits attach directly to this account.
   useEffect(() => {
-    if (!customer?.prospect_id) { setVisits([]); return; }
+    if (!id) { setVisits([]); return; }
     setVisitsLoading(true);
     supabase.from('sales_visits')
       .select('*, salesperson:profiles!sales_visits_salesperson_id_fkey(full_name)')
-      .eq('prospect_id', customer.prospect_id)
+      .eq('prospect_id', id)
       .order('visit_date', { ascending: false })
       .limit(50)
       .then(({ data }) => { setVisits(data || []); setVisitsLoading(false); });
-  }, [customer?.prospect_id]);
+  }, [id]);
 
   const handleDelete = async () => {
     setDeleting(true);
     try {
       const { error } = await supabase
-        .from('customers')
+        .from('accounts')
         .update({ deleted_at: new Date().toISOString(), updated_by: profile.id })
         .eq('id', id);
       if (error) throw error;
@@ -465,7 +469,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
     setSavingNotes(true);
     try {
       const { error } = await supabase
-        .from('customers')
+        .from('accounts')
         .update({ notes: notesDraft || null, updated_by: profile.id })
         .eq('id', id);
       if (error) throw error;
@@ -497,7 +501,10 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
   const statusCfg = STATUS_CFG[statusKey] || STATUS_CFG.active;
   const tierCfg = customer.tier ? (TIER_CFG[customer.tier] || TIER_CFG.B) : null;
   const coCode = customer.source_company?.code;
-  const prospect = customer.prospect || null;
+  // accounts model: BANT / pipeline data lives directly on the account row.
+  const prospect = customer;
+  const hasBant = customer.pipeline_stage || customer.bant_score != null ||
+    BANT_FIELD_DEFS.some(f => customer[f.key]);
   const subLine = (customer.legal_name && customer.legal_name !== customer.name)
     ? customer.legal_name
     : (customer.customer_type || '');
@@ -641,9 +648,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
             <h3 style={S.cardHeadTitle}>History Visit</h3>
             <span style={S.cardHeadSub}>{visits.length} kunjungan tercatat</span>
           </div>
-          {!customer.prospect_id ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Customer belum terhubung ke prospect.</div>
-          ) : visitsLoading ? (
+          {visitsLoading ? (
             <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
           ) : visits.length === 0 ? (
             <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada riwayat kunjungan.</div>
@@ -655,8 +660,8 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
 
       {/* BANT & PIPELINE */}
       {tab === 'bant' && (
-        !customer.prospect_id || !prospect ? (
-          <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada data pipeline.</div></div>
+        !hasBant ? (
+          <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada data BANT / pipeline untuk account ini.</div></div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ ...S.card, padding: '18px 22px' }}>
@@ -692,7 +697,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
                   <span style={{ ...S.bantIco, background: '#DEF0E4', color: '#1F8B4D' }}><Icon name="trophy" size={18} strokeWidth={1.9} /></span>
                   <div>
                     <div style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 14, fontWeight: 700, color: '#16243A' }}>{txt(prospect.pipeline_stage)}</div>
-                    <div style={{ fontSize: 12.5, color: INK_FAINT, marginTop: 2 }}>Prospect: {txt(prospect.name)}</div>
+                    <div style={{ fontSize: 12.5, color: INK_FAINT, marginTop: 2 }}>Account: {txt(prospect.name)}</div>
                   </div>
                 </div>
                 {(prospect.pipeline_stage || '').toUpperCase() === 'WON' && (
