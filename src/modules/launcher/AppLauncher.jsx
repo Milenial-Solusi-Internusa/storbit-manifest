@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import {
   Command, Users, Truck, ShoppingCart, Package, Receipt,
-  Headphones, FileCheck2, Globe, BarChart3, Database, Lock,
+  Headphones, FileCheck2, Globe, BarChart3, Database, Lock, Loader2,
 } from 'lucide-react';
 
 // ─── Per-group config (icon + required solid colour) ──────────────────────
@@ -263,7 +263,7 @@ function RestrictedModal({ moduleName, onClose }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────
-export default function AppLauncher({ moduleGroups, onSelect, profile, hasPermission, hasMenuPermission }) {
+export default function AppLauncher({ moduleGroups, onSelect, profile, hasPermission, hasMenuPermission, permissionsLoading }) {
   // Greeting + first-name logic — unchanged
   const firstName = profile?.full_name?.split(' ')[0] || 'there';
   const hour      = new Date().getHours();
@@ -302,6 +302,7 @@ export default function AppLauncher({ moduleGroups, onSelect, profile, hasPermis
           .bento-grid { grid-template-columns: 1fr; }
           .bento-grid > * { min-height: 150px; }
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
 
       <div style={{
@@ -335,9 +336,19 @@ export default function AppLauncher({ moduleGroups, onSelect, profile, hasPermis
           }}>
             {greeting}, {firstName}.
           </h1>
-          <p style={{ fontSize: 15.5, color: '#4B5563', margin: '11px 0 0' }}>
-            Select a module to get started.
-          </p>
+          {permissionsLoading ? (
+            <p style={{
+              fontSize: 15.5, color: '#4B5563', margin: '11px 0 0',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}>
+              <Loader2 size={15} style={{ color: '#144682', animation: 'spin 1s linear infinite' }} />
+              Memuat izin akses…
+            </p>
+          ) : (
+            <p style={{ fontSize: 15.5, color: '#4B5563', margin: '11px 0 0' }}>
+              Select a module to get started.
+            </p>
+          )}
         </div>
 
         {/* Restricted modal */}
@@ -348,8 +359,15 @@ export default function AppLauncher({ moduleGroups, onSelect, profile, hasPermis
           />
         )}
 
-        {/* Bento grid */}
-        <div className="bento-grid">
+        {/* Bento grid — blocked + dimmed while permissions load so module
+            clicks don't silently no-op before access is known */}
+        <div
+          className="bento-grid"
+          aria-busy={permissionsLoading || undefined}
+          style={permissionsLoading
+            ? { opacity: 0.55, pointerEvents: 'none', transition: 'opacity .2s' }
+            : { transition: 'opacity .2s' }}
+        >
           {moduleGroups.map((group) => {
             const pos = GRID_POS[group.label];
 

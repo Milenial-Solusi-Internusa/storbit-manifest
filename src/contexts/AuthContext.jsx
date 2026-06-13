@@ -53,6 +53,7 @@ export function AuthProvider({ children }) {
   const [authError,        setAuthError]        = useState(null);
   const [userPermissions,  setUserPermissions]  = useState([]); // role_permissions rows for primary ERP role
   const [menuPermissions,  setMenuPermissions]  = useState([]); // user_menu_permissions rows for this user
+  const [permissionsLoading, setPermissionsLoading] = useState(true); // true while per-user menu permissions are loading
 
   useEffect(() => {
     let mounted = true;
@@ -104,6 +105,12 @@ export function AuthProvider({ children }) {
       setSession(s);
 
       if (s?.user) {
+        // On in-tab SIGNED_IN (user B logs in without a refresh), hold `loading`
+        // until the new profile is ready — same gating as the getSession path —
+        // so App doesn't mount/render against the previous user's context.
+        // Only for SIGNED_IN: do NOT toggle loading on TOKEN_REFRESHED /
+        // INITIAL_SESSION / USER_UPDATED (would flash the loading screen).
+        if (event === 'SIGNED_IN') setLoading(true);
         // Defer to next tick supaya gak block listener
         setTimeout(() => {
           if (!mounted) return;
@@ -112,6 +119,10 @@ export function AuthProvider({ children }) {
             if (error) console.error('[Auth] profile error:', error);
             setProfile(data);
             setErpRoles(roles || []);
+            if (event === 'SIGNED_IN') setLoading(false);
+          }).catch((err) => {
+            console.error('[Auth] profile fetch failed:', err);
+            if (mounted && event === 'SIGNED_IN') setLoading(false);
           });
         }, 0);
       } else {
@@ -198,18 +209,25 @@ export function AuthProvider({ children }) {
 
   // ── Fetch per-user menu permissions ───────────────────────────────────────
   const fetchMenuPermissions = useCallback(async (userId) => {
-    if (!userId) { setMenuPermissions([]); return; }
-    const { data } = await supabase
-      .from('user_menu_permissions')
-      .select('id, is_cross_entity, module_action_id, menu_actions(id, action, menu_id, module_menus(id, key)), module_actions(id, action, module_id, modules!module_actions_module_id_fkey(id, key))')
-      .eq('user_id', userId)
-      .limit(1000);
-    setMenuPermissions(data || []);
+    if (!userId) { setMenuPermissions([]); setPermissionsLoading(false); return; }
+    setPermissionsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('user_menu_permissions')
+        .select('id, is_cross_entity, module_action_id, menu_actions(id, action, menu_id, module_menus(id, key)), module_actions(id, action, module_id, modules!module_actions_module_id_fkey(id, key))')
+        .eq('user_id', userId)
+        .limit(1000);
+      setMenuPermissions(data || []);
+    } finally {
+      setPermissionsLoading(false);
+    }
   }, []);
 
+  // Re-fetch per-user menu permissions whenever the session changes.
+  // permissionsLoading is managed inside fetchMenuPermissions (async — not the
+  // effect body) so menu-gated UI can wait for it before allowing clicks.
   useEffect(() => {
-    if (session?.user?.id) fetchMenuPermissions(session.user.id);
-    else setMenuPermissions([]);
+    fetchMenuPermissions(session?.user?.id || null);
   }, [session, fetchMenuPermissions]);
 
   // hasMenuPermission — check per-user menu permission via user_menu_permissions table.
@@ -258,6 +276,7 @@ export function AuthProvider({ children }) {
     refreshPermissions,
     // Per-user menu permission helpers
     menuPermissions,
+    permissionsLoading,
     hasMenuPermission,
     signIn,
     signOut,
