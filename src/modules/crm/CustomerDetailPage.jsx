@@ -1,12 +1,10 @@
 // src/modules/crm/CustomerDetailPage.jsx
-// Master Customer — DETAIL page. Visual structure CLONED from AssetDetailPage
-// (breadcrumb + actions, Card header with avatar + badges + in-card tab bar,
-//  dl/Def section layout, .ad-tab underline tabs) with customer content.
+// Master Customer — DETAIL page. Visual ported from Claude Design (Lovable) handoff
+// (CustomerDetailPage.jsx — asset-detail-it style: header card → underline tabs →
+//  2-col grid sections + Health Score gauge/breakdown/recommendation).
+// Data layer UNCHANGED: real Supabase fetch (customer + joins + prospect for BANT),
+// sales_visits by prospect_id, BantScoreBar, ConfirmModal delete, inline Notes edit.
 import { useState, useEffect, useCallback } from 'react';
-import {
-  ArrowLeft, ChevronRight, Pencil, Trash2,
-  Info, CreditCard, CalendarDays, Target, FileText, Save, X,
-} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import BantScoreBar from './BantScoreBar';
@@ -14,223 +12,380 @@ import { calcBantScore } from './bant';
 import ConfirmModal from '../../components/ConfirmModal';
 import { CustomerFormModal } from './CustomerListPage';
 
-// ─────────────────────────────────────────────────────────────
-// Design tokens — matches AssetDetailPage (warm cream)
-// ─────────────────────────────────────────────────────────────
-const D = {
-  bg:          '#F6EFE3',
-  bgAlt:       '#EFE6D4',
-  surface:     '#FFFDF8',
-  surface2:    '#FBF6EC',
-  ink:         '#23291E',
-  inkSoft:     '#5E6553',
-  inkFaint:    '#8A8E7C',
-  line:        '#E7DCC8',
-  lineSoft:    '#F0E7D6',
-  navy:        '#144682',
-  navySoft:    '#EEF3FB',
-  accent:      '#E85A1E',
-  accentSoft:  '#FEF2EC',
-  ok:          '#2E7D4F', okBg:  '#E4F0E5', okBd:  '#BFDDC4',
-  warn:        '#9A6B0E', warnBg:'#F8ECCF', warnBd:'#E6CE94',
-  danger:      '#B23227', dangerBg:'#F6E0DB', dangerBd:'#E6BBB2',
-  info:        '#2A5B8C', infoBg:'#E1ECF5', infoBd:'#BAD2E6',
-  neutral:     '#6B6F5E', neutralBg:'#EEE9DC', neutralBd:'#DDD3BE',
-  shadow:      '0 2px 8px rgba(40,34,18,.07), 0 1px 2px rgba(40,34,18,.05)',
-  shadowSm:    '0 1px 2px rgba(40,34,18,.06)',
-};
+// ─── Brand tokens ─────────────────────────────────────────────────────────────
+const NAVY = '#144682';
+const ORANGE = '#E85A1E';
+const SURFACE = '#FFFDF8';
+const INK = '#1A2330';
+const INK_SOFT = '#4A5360';
+const INK_FAINT = '#A29684';
+const LINE = '#ECE3D2';
+const LINE_SOFT = '#F2E9D8';
+const GREEN = '#22C55E';
+const YELLOW = '#F59E0B';
+const RED = '#EF4444';
 
-// ─────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────
+// ─── Inline lucide icons (self-contained) ───────────────────────────────────────
+const ICONS = {
+  chevright:  '<path d="m9 18 6-6-6-6"/>',
+  chevdown:   '<path d="m6 9 6 6 6-6"/>',
+  arrowleft:  '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  pencil:     '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+  x:          '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  check:      '<path d="M20 6 9 17l-5-5"/>',
+  save:       '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
+  info:       '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  briefcase:  '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
+  route:      '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+  target:     '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  notebook:   '<path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M16 2v20"/>',
+  building:   '<rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/>',
+  phone:      '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  user:       '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  award:      '<path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/>',
+  creditcard: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
+  calendar:   '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  clock:      '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  mappin:     '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  globe:      '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  package:    '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  truck:      '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+  repeat:     '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  trophy:     '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
+  usercheck:  '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
+  trendingup: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  filecheck:  '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m9 15 2 2 4-4"/>',
+  activity:   '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  alert:      '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
+  heartpulse: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.49 4.04 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
+};
+function Icon({ name, size = 18, color, style, strokeWidth = 1.7 }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color || 'currentColor'}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+      style={{ display: 'block', flex: '0 0 auto', ...style }}
+      dangerouslySetInnerHTML={{ __html: ICONS[name] || ICONS.info }} />
+  );
+}
+
+// ─── Config / helpers ───────────────────────────────────────────────────────────
+const TIER_CFG = {
+  A: { bg: '#F7EAC4', fg: '#8A6A12' },
+  B: { bg: '#ECEDF1', fg: '#6B7280' },
+  C: { bg: '#F1E1D2', fg: '#9A5B2C' },
+};
+const STATUS_CFG = {
+  active:     { bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D', label: 'Active'     },
+  inactive:   { bg: '#EEF0F3', fg: '#9AA0AC', dot: '#B6BCC6', label: 'Inactive'   },
+  free_agent: { bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E', label: 'Free Agent' },
+};
+const VISIT_TYPE_CFG = {
+  discovery:             { label: 'Discovery',    bg: '#EAF0F8', fg: NAVY },
+  solution_presentation: { label: 'Solution',     bg: '#E8F3EC', fg: '#1F8B4D' },
+  qbr:                   { label: 'QBR',          bg: '#EFE8F5', fg: '#6A3D9A' },
+  problem_solving:       { label: 'Problem',      bg: '#FBE6DA', fg: '#C8521B' },
+  routine_touch:         { label: 'Routine',      bg: '#F0EBE0', fg: '#7A6A45' },
+};
+const VISIT_STATUS_CFG = {
+  scheduled: { bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E', label: 'Terjadwal'  },
+  completed: { bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D', label: 'Selesai'    },
+  cancelled: { bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444', label: 'Dibatalkan' },
+};
+const BANT_FIELD_DEFS = [
+  { key: 'bant_commodity',      label: 'Komoditi',        icon: 'package' },
+  { key: 'bant_origin',         label: 'Asal',            icon: 'globe' },
+  { key: 'bant_destination',    label: 'Tujuan',          icon: 'mappin' },
+  { key: 'bant_frequency',      label: 'Frekuensi',       icon: 'repeat' },
+  { key: 'bant_current_vendor', label: 'Vendor Saat Ini', icon: 'truck' },
+  { key: 'bant_payment',        label: 'Payment',         icon: 'creditcard' },
+  { key: 'bant_decision_maker', label: 'Decision Maker',  icon: 'user' },
+];
+const PIC_COLORS = ['#2A5B8C', '#2F6B3F', '#9A5B2C', '#6B6F5E', '#7A4E8C', '#1F6B6B'];
+
 const fmtRupiah = (n) => (n == null || n === '') ? '—' : 'Rp ' + Number(n).toLocaleString('id-ID');
-const fmtDateTime = (iso) => {
+const fmtDate = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '—';
-  return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 };
-const initials = (name) => (name || '??').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const fmtDateShort = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+const txt = (x) => (x == null || x === '') ? '—' : x;
+const initials = (s) => ((s || '?').replace(/^PT\s+|^CV\s+/i, '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) || '?';
+const picInitials = (s) => (s || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+const colorFor = (s) => PIC_COLORS[[...(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % PIC_COLORS.length];
+const statusOf = (c) => c.status || (c.active === false ? 'inactive' : 'active');
 
-// ─────────────────────────────────────────────────────────────
-// Badges
-// ─────────────────────────────────────────────────────────────
-const STATUS_META = {
-  active:     { bg: D.okBg,      color: D.ok,      bd: D.okBd,      label: 'Active'      },
-  inactive:   { bg: D.warnBg,    color: D.warn,    bd: D.warnBd,    label: 'Inactive'    },
-  free_agent: { bg: D.neutralBg, color: D.neutral, bd: D.neutralBd, label: 'Free Agent'  },
-};
-const TIER_META = {
-  A: { bg: '#FEF3C7', color: '#92400E', bd: '#FDE68A' },
-  B: { bg: '#F1F5F9', color: '#475569', bd: '#CBD5E1' },
-  C: { bg: '#FDF4F0', color: '#92400E', bd: '#F3C8BA' },
-};
-const CO_META = {
-  MSI: { bg: D.accentSoft, color: D.accent },
-  JCI: { bg: D.infoBg,     color: D.info   },
-  SOA: { bg: D.okBg,       color: D.ok     },
-};
-const VISIT_STATUS_META = {
-  scheduled: { bg: '#EFF6FF', color: '#3B82F6', label: 'Terjadwal'  },
-  completed: { bg: '#F0FDF4', color: '#22C55E', label: 'Selesai'    },
-  cancelled: { bg: '#FFF1F2', color: '#EF4444', label: 'Dibatalkan' },
-};
-const VISIT_TYPE_LABELS = {
-  discovery: 'Discovery', solution_presentation: 'Solution Presentation',
-  qbr: 'QBR', problem_solving: 'Problem Solving', routine_touch: 'Routine Touch',
-};
-const BANT_FIELDS = [
-  { key: 'bant_commodity',      label: 'Komoditi / Barang' },
-  { key: 'bant_origin',         label: 'Kota/Port Asal (POL)' },
-  { key: 'bant_destination',    label: 'Kota/Port Tujuan (POD)' },
-  { key: 'bant_frequency',      label: 'Frekuensi Pengiriman' },
-  { key: 'bant_current_vendor', label: 'Vendor / Forwarder Saat Ini' },
-  { key: 'bant_payment',        label: 'Preferensi Payment' },
-  { key: 'bant_decision_maker', label: 'Decision Maker' },
-];
+// ─── Style tokens (ported from design) ──────────────────────────────────────────
+const S = {
+  topRow: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, marginBottom: 16, flexWrap: 'wrap' },
+  backRow: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 9 },
+  backBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 11px 0 9px', borderRadius: 9, border: '1px solid ' + LINE, background: SURFACE, color: INK_SOFT, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' },
+  crumbs: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: INK_FAINT, flexWrap: 'wrap' },
+  crumbCur: { color: '#6E6353', fontWeight: 600 },
+  title: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 25, fontWeight: 800, letterSpacing: -0.4, color: '#16243A', margin: 0 },
+  actions: { display: 'flex', alignItems: 'center', gap: 10 },
+  outlineBtn: { display: 'inline-flex', alignItems: 'center', gap: 8, height: 42, padding: '0 16px', borderRadius: 11, border: '1px solid #DED3BF', background: SURFACE, color: INK_SOFT, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
+  dangerBtn: { display: 'inline-flex', alignItems: 'center', gap: 8, height: 42, padding: '0 16px', borderRadius: 11, border: '1px solid #F0CDBE', background: '#FCEEE9', color: '#C0392B', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
 
-function StatusBadge({ statusKey }) {
-  const m = STATUS_META[statusKey] || STATUS_META.active;
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600,
-      padding: '3px 9px', borderRadius: 20, border: `1px solid ${m.bd}`, background: m.bg, color: m.color, whiteSpace: 'nowrap',
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: m.color }} />{m.label}
-    </span>
-  );
-}
-function TierBadge({ tier }) {
-  if (!tier) return null;
-  const m = TIER_META[tier] || TIER_META.C;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
-      Tier {tier}
-    </span>
-  );
-}
-function CoBadge({ code, name }) {
-  if (!code) return null;
-  const m = CO_META[code] || { bg: D.neutralBg, color: D.neutral };
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700,
-      padding: '3px 9px', borderRadius: 6, background: m.bg, color: m.color, fontFamily: "'IBM Plex Mono', monospace",
-    }}>
-      {code}{name ? <span style={{ fontFamily: 'inherit', fontWeight: 500 }}>· {name}</span> : null}
-    </span>
-  );
-}
+  card: { background: SURFACE, border: '1px solid ' + LINE, borderRadius: 14, boxShadow: '0 1px 2px rgba(60,45,20,.04), 0 4px 14px rgba(60,45,20,.03)' },
 
-// ─────────────────────────────────────────────────────────────
-// Card / Btn / Def / SectionLabel (ported from AssetDetailPage)
-// ─────────────────────────────────────────────────────────────
-function Card({ children, style }) {
+  headCard: { background: SURFACE, border: '1px solid ' + LINE, borderRadius: 14, boxShadow: '0 1px 2px rgba(60,45,20,.04), 0 4px 14px rgba(60,45,20,.03)', marginBottom: 16 },
+  headTop: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 22, padding: '22px 24px 20px', alignItems: 'flex-start' },
+  avatar: { width: 76, height: 76, borderRadius: '50%', background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 28, fontWeight: 800, flex: '0 0 76px', boxShadow: '0 6px 18px rgba(20,70,130,.28)' },
+  plate: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5, flexWrap: 'wrap' },
+  code: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 15, fontWeight: 600, color: '#6B7280', letterSpacing: 0.3 },
+  custName: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 23, fontWeight: 800, letterSpacing: -0.5, color: '#16243A', margin: '0 0 3px' },
+  custSub: { fontSize: 13.5, color: '#857A68', marginBottom: 13 },
+  badgeRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  tierValBox: { textAlign: 'right', whiteSpace: 'nowrap' },
+  tierValLbl: { textTransform: 'uppercase', letterSpacing: 0.6, fontSize: 10.5, fontWeight: 700, color: INK_FAINT },
+  tierValNum: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 22, fontWeight: 600, letterSpacing: -0.5, color: '#16243A', marginTop: 3 },
+  tierValSince: { fontSize: 12, color: '#857A68', marginTop: 4 },
+
+  badge: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, padding: '5px 11px 5px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
+  bdot: { width: 6, height: 6, borderRadius: '50%', flex: '0 0 6px' },
+  navyBadge: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 20, background: '#EAF0F8', color: NAVY, whiteSpace: 'nowrap' },
+  picBadge: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11, fontWeight: 600, padding: '4px 12px 4px 5px', borderRadius: 20, background: '#F4EFE5', color: INK_SOFT, whiteSpace: 'nowrap' },
+
+  tabs: { display: 'flex', alignItems: 'stretch', gap: 4, padding: '0 14px', borderTop: '1px solid ' + LINE_SOFT, flexWrap: 'wrap' },
+  tab: { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 14px', border: 0, borderBottomWidth: 2, borderBottomStyle: 'solid', borderBottomColor: 'transparent', background: 'transparent', color: '#857A68', fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: -0.1, cursor: 'pointer', marginBottom: -1, whiteSpace: 'nowrap' },
+  tabActive: { color: ORANGE, borderBottomColor: ORANGE },
+
+  mono: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, color: INK },
+
+  gridSectionCard: { background: SURFACE, border: '1px solid ' + LINE, borderRadius: 14, boxShadow: '0 1px 2px rgba(60,45,20,.04), 0 4px 14px rgba(60,45,20,.03)', marginBottom: 16, overflow: 'hidden' },
+  gridSectionHead: { display: 'flex', alignItems: 'center', gap: 9, padding: '14px 22px', borderBottom: '1px solid ' + LINE_SOFT, fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: 0.7, textTransform: 'uppercase', color: NAVY, background: '#FBF6EC' },
+  gridWrap: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))' },
+  gridField: { padding: '13px 22px' },
+  gridFieldLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: INK_FAINT, marginBottom: 5 },
+  gridFieldValue: { fontSize: 13.5, color: INK, fontWeight: 500, lineHeight: 1.4 },
+
+  healthTop: { display: 'flex', alignItems: 'center', gap: 26, padding: 24, flexWrap: 'wrap' },
+  healthGauge: { position: 'relative', width: 150, height: 150, flex: '0 0 150px' },
+  hgCenter: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
+  hgNum: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 44, fontWeight: 700, letterSpacing: -2, lineHeight: 0.9 },
+  hgOutOf: { fontSize: 12, color: INK_FAINT, fontWeight: 600, marginTop: 2 },
+  healthInfo: { flex: '1 1 260px', minWidth: 220 },
+  healthStatusBadge: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 800, fontFamily: "'Montserrat', system-ui, sans-serif", letterSpacing: 0.6, padding: '6px 14px', borderRadius: 22 },
+  healthTitle: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 18, fontWeight: 800, letterSpacing: -0.4, color: '#16243A', margin: '12px 0 4px' },
+  healthSub: { fontSize: 13, color: '#857A68', lineHeight: 1.5 },
+  hcompRow: { padding: '16px 22px', borderBottom: '1px solid ' + LINE_SOFT },
+  hcompHead: { display: 'flex', alignItems: 'center', gap: 11, marginBottom: 10 },
+  hcompIco: { width: 34, height: 34, borderRadius: 9, flex: '0 0 34px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#EAF0F8', color: NAVY },
+  hcompName: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 13.5, fontWeight: 700, color: '#16243A', flex: 1 },
+  hcompWeight: { fontSize: 11, fontWeight: 600, color: INK_FAINT, background: '#F0E7D6', padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
+  hcompVal: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 15, fontWeight: 700, minWidth: 48, textAlign: 'right' },
+  hcompBar: { height: 9, borderRadius: 6, background: '#EDE4D2', overflow: 'hidden' },
+  hcompBarFill: { display: 'block', height: '100%', borderRadius: 6 },
+  recCard: { display: 'flex', alignItems: 'flex-start', gap: 14, padding: '18px 20px', borderRadius: 12, margin: '18px 22px' },
+  recIco: { width: 40, height: 40, borderRadius: 11, flex: '0 0 40px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  recTitle: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 13.5, fontWeight: 700, marginBottom: 3 },
+  recText: { fontSize: 13, lineHeight: 1.5 },
+
+  cardHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px', borderBottom: '1px solid ' + LINE_SOFT },
+  cardHeadTitle: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 15, fontWeight: 700, color: '#16243A', margin: 0 },
+  cardHeadSub: { fontSize: 12.5, color: INK_FAINT, fontWeight: 500 },
+
+  who: { display: 'inline-flex', alignItems: 'center', gap: 9 },
+  whoAv: { width: 26, height: 26, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flex: '0 0 26px' },
+
+  visitItem: { padding: '18px 22px', borderBottom: '1px solid ' + LINE_SOFT },
+  visitHead: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  visitDate: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, color: '#16243A' },
+  visitMeta: { display: 'flex', alignItems: 'center', gap: 16, marginTop: 10, flexWrap: 'wrap', fontSize: 12.5, color: INK_SOFT },
+  visitMetaItem: { display: 'inline-flex', alignItems: 'center', gap: 7 },
+  visitPoint: { fontSize: 13, color: INK_SOFT, lineHeight: 1.5, marginTop: 11 },
+  expandBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 13, height: 32, padding: '0 13px', borderRadius: 9, border: '1px solid ' + LINE, background: '#FBF6EC', color: NAVY, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  expandBox: { marginTop: 13, background: '#FBF6EC', border: '1px solid ' + LINE_SOFT, borderRadius: 11, padding: '15px 17px' },
+  expandLbl: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: INK_FAINT, marginBottom: 5 },
+  expandText: { fontSize: 12.5, color: INK_SOFT, lineHeight: 1.55 },
+
+  bantField: { display: 'flex', alignItems: 'flex-start', gap: 12, padding: '15px 22px', borderBottom: '1px solid ' + LINE_SOFT },
+  bantIco: { width: 36, height: 36, borderRadius: 10, flex: '0 0 36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#EAF0F8', color: NAVY },
+  bantK: { fontSize: 11, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: INK_FAINT, marginBottom: 3 },
+  bantV: { fontSize: 13, color: INK, fontWeight: 500, lineHeight: 1.4 },
+  bantGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 0 },
+  pipelineRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '18px 22px', flexWrap: 'wrap' },
+
+  notesBox: { margin: '20px 22px', background: '#FBF6EC', border: '1px solid ' + LINE_SOFT, borderRadius: 12, padding: '18px 20px', fontSize: 13.5, color: INK_SOFT, lineHeight: 1.65, whiteSpace: 'pre-wrap' },
+  notesArea: { width: 'calc(100% - 44px)', margin: '16px 22px 0', minHeight: 180, borderRadius: 12, border: '1px solid #E3D8C4', background: '#fff', padding: '16px 18px', fontFamily: 'inherit', fontSize: 13.5, color: INK, lineHeight: 1.65, resize: 'vertical', boxSizing: 'border-box' },
+  banner: { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px', borderRadius: 12, background: '#FEF3C7', border: '1px solid #F6E2A8', color: '#92710A', fontSize: 12.5, lineHeight: 1.5, marginBottom: 16 },
+};
+
+// ─── Sub-components ─────────────────────────────────────────────────────────────
+function Badge({ cfg, children, dot = true }) {
   return (
-    <div style={{ background: D.surface, border: `1px solid ${D.line}`, borderRadius: 10, boxShadow: D.shadowSm, ...style }}>
+    <span style={{ ...S.badge, background: cfg.bg, color: cfg.fg }}>
+      {dot && cfg.dot ? <span style={{ ...S.bdot, background: cfg.dot }} /> : null}
       {children}
-    </div>
+    </span>
   );
 }
-function Btn({ icon: Icon, children, danger, onClick, disabled }) {
-  const [hover, setHover] = useState(false);
-  const base = {
-    display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 14px',
-    borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
-    border: `1px solid ${danger ? D.dangerBd : D.line}`,
-    background: danger ? (hover ? D.dangerBg : D.surface) : (hover ? D.bgAlt : D.surface),
-    color: danger ? D.danger : D.inkSoft, opacity: disabled ? .5 : 1, transition: 'background .12s', fontFamily: 'inherit',
-  };
+function PicAvatar({ name, size = 26 }) {
   return (
-    <button style={base} onClick={onClick} disabled={disabled}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      {Icon && <Icon size={14} strokeWidth={1.8} />}
-      {children}
+    <span style={{ ...S.whoAv, width: size, height: size, flex: `0 0 ${size}px`, fontSize: size * 0.38, background: colorFor(name) }}>
+      {picInitials(name)}
+    </span>
+  );
+}
+function Tab({ id, icon, label, active, onClick, count }) {
+  return (
+    <button type="button" className="cd-tab" onClick={() => onClick(id)} style={active ? { ...S.tab, ...S.tabActive } : S.tab}>
+      <Icon name={icon} size={15} strokeWidth={active ? 2.1 : 1.8} />{label}
+      {count != null ? <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, fontWeight: 700, background: active ? '#FBE6DA' : '#F0E7D6', color: active ? ORANGE : INK_FAINT, borderRadius: 20, padding: '1px 7px', marginLeft: 1 }}>{count}</span> : null}
     </button>
   );
 }
-function Def({ label, value, mono, children }) {
+function GridSection({ label, icon, children }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', padding: '8px 0', borderBottom: `1px solid ${D.lineSoft}`, alignItems: 'start', gap: 12 }}>
-      <dt style={{ fontSize: 12.5, color: D.inkFaint, fontWeight: 600, paddingTop: 1 }}>{label}</dt>
-      <dd style={{ margin: 0, fontSize: 13.5, color: D.ink, fontWeight: 500, fontFamily: mono ? "'IBM Plex Mono', monospace" : undefined }}>
-        {children ?? (value ?? '—')}
-      </dd>
+    <div style={S.gridSectionCard}>
+      <div style={S.gridSectionHead}><Icon name={icon} size={14} color={NAVY} strokeWidth={2} />{label}</div>
+      <div style={S.gridWrap}>{children}</div>
     </div>
   );
 }
-function SectionLabel({ children }) {
+function GridField({ label, children, mono, idx, total }) {
+  const isLeft = idx % 2 === 0;
+  const lastRowStart = total % 2 === 0 ? total - 2 : total - 1;
+  const noBottom = idx >= lastRowStart;
+  const aloneLast = idx === total - 1 && isLeft && total % 2 === 1;
+  const style = {
+    ...S.gridField,
+    borderBottom: noBottom ? 0 : '1px solid ' + LINE_SOFT,
+    ...(isLeft && !aloneLast ? { borderRight: '1px solid ' + LINE_SOFT } : {}),
+  };
   return (
-    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: D.inkFaint, padding: '14px 0 6px' }}>
-      {children}
+    <div style={style}>
+      <div style={S.gridFieldLabel}>{label}</div>
+      <div style={mono ? { ...S.gridFieldValue, ...S.mono } : S.gridFieldValue}>{children}</div>
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────────────────
-// Visit row (expandable) — History Visit tab
-// ─────────────────────────────────────────────────────────────
 function VisitRow({ v }) {
   const [open, setOpen] = useState(false);
-  const sm = VISIT_STATUS_META[v.status] || VISIT_STATUS_META.scheduled;
-  const pom = v.point_of_meeting || '';
-  const pomPreview = pom.length > 100 ? pom.slice(0, 100) + '…' : pom;
-  const d = v.visit_date ? new Date(v.visit_date + 'T00:00:00') : null;
+  const vt = VISIT_TYPE_CFG[v.visit_type] || { label: v.visit_type || 'Visit', bg: '#F0EBE0', fg: '#7A6A45' };
+  const vs = VISIT_STATUS_CFG[v.status] || VISIT_STATUS_CFG.scheduled;
+  const hasDetail = (v.mom && v.mom.trim()) || (v.follow_up && v.follow_up.trim());
   return (
-    <div style={{ borderRadius: 9, background: D.surface2, border: `1px solid ${D.lineSoft}`, overflow: 'hidden' }}>
-      <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer' }}>
-        <div style={{ textAlign: 'center', minWidth: 40 }}>
-          <div style={{ fontSize: 10, color: D.inkFaint, fontWeight: 600, textTransform: 'uppercase' }}>
-            {d ? d.toLocaleDateString('id-ID', { weekday: 'short' }) : '—'}
-          </div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: D.navy, fontFamily: "'IBM Plex Mono', monospace", lineHeight: 1.1 }}>
-            {d ? d.getDate() : '—'}
-          </div>
-        </div>
-        <div style={{ width: 1, height: 34, background: D.line }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 2 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: D.ink }}>{v.salesperson?.full_name || '—'}</span>
-            {v.visit_type && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 5, background: D.navySoft, color: D.navy }}>{VISIT_TYPE_LABELS[v.visit_type] || v.visit_type}</span>}
-          </div>
-          <div style={{ fontSize: 11.5, color: D.inkFaint }}>
-            {v.visit_time ? v.visit_time.slice(0, 5) + ' · ' : ''}{v.location || '—'}{pomPreview ? ' · ' + pomPreview : ''}
-          </div>
-        </div>
-        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.color, whiteSpace: 'nowrap' }}>{sm.label}</span>
+    <div style={S.visitItem}>
+      <div style={S.visitHead}>
+        <span style={S.visitDate}>{fmtDateShort(v.visit_date)}</span>
+        <span style={{ ...S.badge, background: vt.bg, color: vt.fg, padding: '5px 11px' }}>{vt.label}</span>
+        <Badge cfg={vs}>{vs.label}</Badge>
       </div>
-      {open && (
-        <div style={{ padding: '4px 16px 14px', display: 'flex', flexDirection: 'column', gap: 4, borderTop: `1px solid ${D.lineSoft}` }}>
-          <dl style={{ margin: 0 }}>
-            {pom && <Def label="Point of Meeting" value={pom} />}
-            {v.mom && <Def label="Minutes of Meeting" value={v.mom} />}
-            {v.follow_up && <Def label="Tindak Lanjut" value={v.follow_up} />}
-            {v.notes && <Def label="Catatan" value={v.notes} />}
-          </dl>
+      {v.point_of_meeting && <div style={S.visitPoint}>{v.point_of_meeting}</div>}
+      <div style={S.visitMeta}>
+        {v.salesperson?.full_name && <span style={S.visitMetaItem}><PicAvatar name={v.salesperson.full_name} size={22} />{v.salesperson.full_name}</span>}
+        {v.location && <span style={S.visitMetaItem}><Icon name="mappin" size={14} color={INK_FAINT} />{v.location}</span>}
+        {v.visit_time && <span style={S.visitMetaItem}><Icon name="clock" size={14} color={INK_FAINT} />{v.visit_time.slice(0, 5)}</span>}
+      </div>
+      {hasDetail && (
+        <button type="button" className="cd-expand" style={S.expandBtn} onClick={() => setOpen(o => !o)}>
+          <Icon name="chevdown" size={14} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .18s ease' }} />
+          {open ? 'Sembunyikan detail' : 'Lihat MOM & tindak lanjut'}
+        </button>
+      )}
+      {open && hasDetail && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {v.mom && v.mom.trim() && (
+            <div style={S.expandBox}>
+              <div style={S.expandLbl}>Minutes of Meeting</div>
+              <div style={S.expandText}>{v.mom}</div>
+            </div>
+          )}
+          {v.follow_up && v.follow_up.trim() && (
+            <div style={{ ...S.expandBox, background: '#FFF6EE', borderColor: '#F6E2D2' }}>
+              <div style={{ ...S.expandLbl, color: '#C8521B' }}>Tindak Lanjut</div>
+              <div style={S.expandText}>{v.follow_up}</div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
+function HealthGauge({ score, color }) {
+  const r = 64;
+  const circ = 2 * Math.PI * r;
+  const off = circ * (1 - score / 100);
+  return (
+    <div style={S.healthGauge}>
+      <svg viewBox="0 0 160 160" width="150" height="150" style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx="80" cy="80" r={r} fill="none" stroke="#EDE4D2" strokeWidth="13" />
+        <circle cx="80" cy="80" r={r} fill="none" stroke={color} strokeWidth="13" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off} />
+      </svg>
+      <div style={S.hgCenter}>
+        <span style={{ ...S.hgNum, color }}>{score}</span>
+        <span style={S.hgOutOf}>/ 100</span>
+      </div>
+    </div>
+  );
+}
+const healthTone = (v) => (v >= 75 ? GREEN : v >= 60 ? YELLOW : RED);
+function HealthComp({ comp }) {
+  const tone = healthTone(comp.value);
+  return (
+    <div className="cd-hcomp" style={S.hcompRow}>
+      <div style={S.hcompHead}>
+        <span style={S.hcompIco}><Icon name={comp.icon} size={17} strokeWidth={1.9} /></span>
+        <span style={S.hcompName}>{comp.name}</span>
+        <span style={S.hcompWeight}>Bobot {comp.weight}%</span>
+        <span style={{ ...S.hcompVal, color: tone }}>{comp.value}%</span>
+      </div>
+      <div style={S.hcompBar}><i style={{ ...S.hcompBarFill, width: comp.value + '%', background: tone }} /></div>
+    </div>
+  );
+}
+function healthStatus(score) {
+  if (score > 75) return { key: 'HEALTHY', color: GREEN, bg: '#DCFCE7', fg: '#15803D', recIcon: 'check', rec: 'Customer engaged & growing. Lanjutkan cadence normal.' };
+  if (score >= 60) return { key: 'MONITOR', color: YELLOW, bg: '#FEF3C7', fg: '#B45309', recIcon: 'activity', rec: 'Sinyal campuran. Tingkatkan frekuensi touch & investigasi root cause.' };
+  return { key: 'AT-RISK', color: RED, bg: '#FEE2E2', fg: '#B91C1C', recIcon: 'alert', rec: 'Trigger Save Playbook. Jadwalkan visit face-to-face dalam 3 hari kerja.' };
+}
 
-const TABS = [
-  { id: 'info',      label: 'Info Dasar',      icon: Info        },
-  { id: 'komersial', label: 'Komersial',       icon: CreditCard  },
-  { id: 'visits',    label: 'History Visit',   icon: CalendarDays },
-  { id: 'bant',      label: 'BANT & Pipeline', icon: Target      },
-  { id: 'notes',     label: 'Notes',           icon: FileText    },
-];
+// TODO(health-score): replace this heuristic with a real auto-calculated score once
+// transaction/payment/NPS/complaint data exists (server-side or via a DB view).
+// Current score is derived ONLY from available signals — visits, BANT, pipeline,
+// and profile completeness — and is clearly labelled "preliminary". No new DB columns.
+function computeHealth(customer, prospect, visits) {
+  const visitCount = visits.length;
+  const engagement = Math.min(visitCount * 30, 100);
+  const bantPct = prospect
+    ? Math.round(((prospect.bant_score != null ? prospect.bant_score : calcBantScore(prospect)) / 7) * 100)
+    : 0;
+  const stage = (prospect?.pipeline_stage || '').toUpperCase();
+  const pipeline = stage === 'WON' ? 100
+    : (stage === 'NEGOTIATION' || stage === 'PROPOSAL') ? 70
+    : stage === 'QUALIFIED' ? 50
+    : stage ? 30 : 0;
+  const profFields = [customer.phone, customer.email, customer.address, customer.pic_name, customer.tax_id, customer.payment_terms_id, customer.tier];
+  const completeness = Math.round((profFields.filter(Boolean).length / profFields.length) * 100);
+  const contract = (customer.contract_no || customer.payment_term?.name || customer.payment_terms_id) ? 100 : 40;
+  const components = [
+    { name: 'Engagement Visit',   weight: 30, value: engagement,   icon: 'route' },
+    { name: 'BANT Qualification', weight: 30, value: bantPct,      icon: 'target' },
+    { name: 'Pipeline Status',    weight: 20, value: pipeline,     icon: 'trendingup' },
+    { name: 'Kelengkapan Profil', weight: 10, value: completeness, icon: 'usercheck' },
+    { name: 'Status Kontrak',     weight: 10, value: contract,     icon: 'filecheck' },
+  ];
+  const score = Math.round(components.reduce((s, c) => s + (c.value * c.weight) / 100, 0));
+  return { score, components };
+}
 
-// ─────────────────────────────────────────────────────────────
-// Main component
-// ─────────────────────────────────────────────────────────────
+// ─── Main component ─────────────────────────────────────────────────────────────
 export default function CustomerDetailPage({ id, onBack, showToast }) {
   const { profile, erpRole } = useAuth();
   const canDelete = ['super_admin', 'admin', 'manager'].includes(erpRole);
 
   const [customer, setCustomer] = useState(null);
   const [loading,  setLoading]  = useState(true);
-  const [activeTab, setActiveTab] = useState('info');
+  const [tab,      setTab]      = useState('info');
 
   const [visits, setVisits]               = useState([]);
   const [visitsLoading, setVisitsLoading] = useState(false);
@@ -275,9 +430,9 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
 
   useEffect(() => { fetchCustomer(); }, [fetchCustomer]);
 
-  // ── History Visit — fetch sales_visits by prospect_id ──
+  // ── Fetch sales_visits by prospect_id (serves History Visit + Health Score) ──
   useEffect(() => {
-    if (activeTab !== 'visits' || !customer?.prospect_id) { setVisits([]); return; }
+    if (!customer?.prospect_id) { setVisits([]); return; }
     setVisitsLoading(true);
     supabase.from('sales_visits')
       .select('*, salesperson:profiles!sales_visits_salesperson_id_fkey(full_name)')
@@ -285,7 +440,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
       .order('visit_date', { ascending: false })
       .limit(50)
       .then(({ data }) => { setVisits(data || []); setVisitsLoading(false); });
-  }, [activeTab, customer?.prospect_id]);
+  }, [customer?.prospect_id]);
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -324,235 +479,306 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
     }
   };
 
-  // ── Loading / not-found ──
   if (loading) {
-    return <div style={{ fontFamily: "'Inter', system-ui, sans-serif", padding: '4rem', textAlign: 'center', color: D.inkFaint, fontSize: 14 }}>Memuat data customer…</div>;
+    return <div style={{ fontFamily: "'Inter', system-ui, sans-serif", padding: '4rem', textAlign: 'center', color: INK_FAINT, fontSize: 14 }}>Memuat data customer…</div>;
   }
   if (!customer) {
     return (
-      <div style={{ fontFamily: "'Inter', system-ui, sans-serif", padding: '3rem', textAlign: 'center', color: D.danger, fontSize: 14 }}>
+      <div style={{ fontFamily: "'Inter', system-ui, sans-serif", padding: '3rem', textAlign: 'center', color: '#C0392B', fontSize: 14 }}>
         Customer tidak ditemukan.
-        <div style={{ marginTop: 14 }}><Btn icon={ArrowLeft} onClick={onBack}>Kembali</Btn></div>
+        <div style={{ marginTop: 14 }}>
+          <button type="button" style={S.backBtn} onClick={onBack}><Icon name="arrowleft" size={15} />Kembali</button>
+        </div>
       </div>
     );
   }
 
-  const statusKey = customer.status || (customer.active === false ? 'inactive' : 'active');
+  const statusKey = statusOf(customer);
+  const statusCfg = STATUS_CFG[statusKey] || STATUS_CFG.active;
+  const tierCfg = customer.tier ? (TIER_CFG[customer.tier] || TIER_CFG.B) : null;
   const coCode = customer.source_company?.code;
   const prospect = customer.prospect || null;
+  const subLine = (customer.legal_name && customer.legal_name !== customer.name)
+    ? customer.legal_name
+    : (customer.customer_type || '');
+
+  const TABS = [
+    { id: 'info',      icon: 'info',      label: 'Info Dasar' },
+    { id: 'komersial', icon: 'briefcase', label: 'Komersial' },
+    { id: 'visit',     icon: 'route',     label: 'History Visit', count: visits.length || undefined },
+    { id: 'bant',      icon: 'target',    label: 'BANT & Pipeline' },
+    { id: 'health',    icon: 'activity',  label: 'Health Score' },
+    { id: 'notes',     icon: 'notebook',  label: 'Notes' },
+  ];
+
+  // Info Dasar / Komersial — 2-col grid sections
+  const infoSections = [
+    { label: 'Identitas', icon: 'building', fields: [
+      { l: 'Nama Perusahaan', v: txt(customer.name) },
+      { l: 'Legal Name', v: txt(customer.legal_name) },
+      { l: 'Customer Type', v: txt(customer.customer_type) },
+      { l: 'Tax ID / NPWP', v: txt(customer.tax_id), mono: true },
+      { l: 'Customer Code', v: txt(customer.code), mono: true },
+    ]},
+    { label: 'Kontak', icon: 'phone', fields: [
+      { l: 'Phone', v: txt(customer.phone), mono: true },
+      { l: 'Email', v: txt(customer.email), mono: true },
+      { l: 'Address', v: txt(customer.address) },
+      { l: 'City', v: txt(customer.city) },
+      { l: 'Country', v: txt(customer.country || 'Indonesia') },
+    ]},
+    { label: 'PIC', icon: 'user', fields: [
+      { l: 'PIC Name', v: customer.pic_name ? <span style={S.who}><PicAvatar name={customer.pic_name} />{customer.pic_name}</span> : '—' },
+      { l: 'PIC Phone', v: txt(customer.pic_phone), mono: true },
+      { l: 'PIC Email', v: txt(customer.pic_email), mono: true },
+    ]},
+  ];
+  const komSections = [
+    { label: 'Klasifikasi & Kepemilikan', icon: 'briefcase', fields: [
+      { l: 'Tier', v: tierCfg ? <span style={{ ...S.badge, background: tierCfg.bg, color: tierCfg.fg }}><Icon name="award" size={13} strokeWidth={2} />Tier {customer.tier}</span> : '—' },
+      { l: 'Status', v: <Badge cfg={statusCfg}>{statusCfg.label}</Badge> },
+      { l: 'Entitas Owner', v: customer.source_company?.name ? <span style={S.who}><Icon name="building" size={16} color={NAVY} />{customer.source_company.name}</span> : '—' },
+      { l: 'Assigned Salesperson', v: customer.assigned_profile?.full_name ? <span style={S.who}><PicAvatar name={customer.assigned_profile.full_name} />{customer.assigned_profile.full_name}</span> : '—' },
+    ]},
+    { label: 'Ketentuan Komersial', icon: 'creditcard', fields: [
+      { l: 'Payment Terms', v: txt(customer.payment_term?.name || customer.payment_terms), mono: true },
+      { l: 'Credit Limit', v: fmtRupiah(customer.credit_limit), mono: true },
+      { l: 'Currency', v: txt(customer.currency_code), mono: true },
+      { l: 'Nomor Kontrak', v: txt(customer.contract_no), mono: true },
+      { l: 'Last Activity', v: <span style={S.who}><Icon name="clock" size={15} color={INK_FAINT} />{fmtDate(customer.last_activity_at || customer.updated_at || customer.created_at)}</span> },
+    ]},
+  ];
+  const renderSections = (secs) => (
+    <div>
+      {secs.map((sec) => (
+        <GridSection key={sec.label} label={sec.label} icon={sec.icon}>
+          {sec.fields.map((f, i) => (
+            <GridField key={f.l} label={f.l} mono={f.mono} idx={i} total={sec.fields.length}>{f.v}</GridField>
+          ))}
+        </GridSection>
+      ))}
+    </div>
+  );
 
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: D.ink }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", color: INK }}>
       <style>{`
-        .ad-tab{display:inline-flex;align-items:center;gap:7px;padding:10px 14px;border:none;
-          background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;
-          color:#5E6553;border-bottom:2px solid transparent;transition:color .12s;white-space:nowrap}
-        .ad-tab:hover{color:#23291E}
-        .ad-tab.active{color:#E85A1E;border-bottom-color:#E85A1E}
+        .cd-outline:hover{border-color:#C9BCA2;background:#FCF7EC;}
+        .cd-danger:hover{border-color:#E6B5A4;background:#FBE3DA;}
+        .cd-back:hover{border-color:#C9BCA2;background:#FCF7EC;}
+        .cd-tab:hover{color:${NAVY};}
+        .cd-expand:hover{border-color:#C9BCA2;background:#FBF1DF;}
+        .cd-hcomp:last-child{border-bottom:0;}
+        textarea:focus{outline:none;border-color:${NAVY};box-shadow:0 0 0 3px rgba(20,70,130,.10);}
+        @media (max-width:760px){
+          .cd-headtop{grid-template-columns:1fr !important;}
+          .cd-tierval{text-align:left !important;}
+        }
       `}</style>
 
-      {/* ── Breadcrumb + actions ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
+      {/* page head */}
+      <div style={S.topRow}>
         <div>
-          <nav style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: D.inkFaint, marginBottom: 8 }}>
-            {onBack && (
-              <button onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: D.inkFaint, fontFamily: 'inherit', fontSize: 12.5, padding: 0 }}>
-                <ArrowLeft size={13} /> Kembali
-              </button>
-            )}
-            <ChevronRight size={12} />
-            <span style={{ color: D.inkFaint }}>CRM</span>
-            <ChevronRight size={12} />
-            <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, color: D.inkFaint, fontFamily: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>Master Customer</button>
-            <ChevronRight size={12} />
-            <span style={{ color: D.inkSoft, fontWeight: 600 }}>{customer.name}</span>
-          </nav>
-          <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px', margin: 0, lineHeight: 1.1 }}>Detail Customer</h1>
+          <div style={S.backRow}>
+            <button type="button" className="cd-back" style={S.backBtn} onClick={onBack}><Icon name="arrowleft" size={15} />Kembali</button>
+            <nav style={S.crumbs}>
+              <span>CRM</span><Icon name="chevright" size={13} />
+              <span>Master Customer</span><Icon name="chevright" size={13} />
+              <span style={S.crumbCur}>{customer.name}</span>
+            </nav>
+          </div>
+          <h1 style={S.title}>Detail Customer</h1>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Btn icon={Pencil} onClick={() => setEditing(true)}>Edit</Btn>
-          {canDelete && <Btn icon={Trash2} danger onClick={() => setConfirmDel(true)}>Hapus</Btn>}
+        <div style={S.actions}>
+          <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setEditing(true)}><Icon name="pencil" size={16} />Edit</button>
+          {canDelete && <button type="button" className="cd-danger" style={S.dangerBtn} onClick={() => setConfirmDel(true)}><Icon name="trash" size={16} />Hapus</button>}
         </div>
       </div>
 
-      {/* ── Header card (with in-card tab bar) ── */}
-      <Card style={{ marginBottom: 14, overflow: 'hidden' }}>
-        <div style={{ padding: '18px 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 18, flexWrap: 'wrap' }}>
-            {/* Avatar — navy circle initials */}
-            <div style={{
-              width: 64, height: 64, borderRadius: '50%', flexShrink: 0,
-              background: D.navy, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 22, fontWeight: 800, fontFamily: "'Montserrat', sans-serif",
-            }}>
-              {initials(customer.name)}
+      {/* header card */}
+      <div style={S.headCard}>
+        <div style={S.headTop} className="cd-headtop">
+          <div style={S.avatar}>{initials(customer.name)}</div>
+          <div>
+            <div style={S.plate}>
+              {customer.code && <span style={S.code}>{customer.code}</span>}
+              <Badge cfg={statusCfg}>{statusCfg.label}</Badge>
             </div>
-
-            <div style={{ flex: 1, minWidth: 220 }}>
-              {/* Name + code */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
-                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: D.ink, fontFamily: "'Montserrat', sans-serif", letterSpacing: '-.3px' }}>
-                  {customer.name}
-                </h2>
-                {customer.code && (
-                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, fontWeight: 700, color: D.accent, background: D.accentSoft, padding: '2px 8px', borderRadius: 5 }}>{customer.code}</span>
-                )}
-              </div>
-
-              {/* Legal name */}
-              {customer.legal_name && (
-                <div style={{ fontSize: 13, color: D.inkSoft, marginBottom: 10 }}>{customer.legal_name}</div>
+            <h2 style={S.custName}>{customer.name}</h2>
+            {subLine && <div style={S.custSub}>{subLine}</div>}
+            <div style={S.badgeRow}>
+              {customer.source_company?.name && (
+                <span style={S.navyBadge}><Icon name="building" size={13} strokeWidth={2} />{coCode ? coCode + ' · ' : ''}{customer.source_company.name}</span>
               )}
-
-              {/* Badges row */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                {coCode && <CoBadge code={coCode} name={customer.source_company?.name} />}
-                <TierBadge tier={customer.tier} />
-                <StatusBadge statusKey={statusKey} />
-              </div>
+              {tierCfg && <span style={{ ...S.badge, background: tierCfg.bg, color: tierCfg.fg }}><Icon name="award" size={13} strokeWidth={2} />Tier {customer.tier}</span>}
+              {customer.pic_name && <span style={S.picBadge}><PicAvatar name={customer.pic_name} size={20} />PIC {customer.pic_name}</span>}
             </div>
           </div>
-        </div>
-
-        {/* Tab bar */}
-        <div style={{ borderTop: `1px solid ${D.lineSoft}`, overflowX: 'auto' }}>
-          <div style={{ display: 'flex', padding: '0 20px', gap: 2 }}>
-            {TABS.map(t => {
-              const Icon = t.icon;
-              return (
-                <button key={t.id} className={`ad-tab${activeTab === t.id ? ' active' : ''}`} onClick={() => setActiveTab(t.id)}>
-                  <Icon size={14} strokeWidth={1.8} />{t.label}
-                </button>
-              );
-            })}
+          <div style={S.tierValBox} className="cd-tierval">
+            <div style={S.tierValLbl}>Credit Limit</div>
+            <div style={S.tierValNum}>{fmtRupiah(customer.credit_limit)}</div>
+            <div style={S.tierValSince}>Customer sejak {fmtDate(customer.created_at)}</div>
           </div>
         </div>
-      </Card>
 
-      {/* ── Tab panels ── */}
+        {/* tabs */}
+        <div style={S.tabs}>
+          {TABS.map((t) => (
+            <Tab key={t.id} id={t.id} icon={t.icon} label={t.label} count={t.count} active={tab === t.id} onClick={setTab} />
+          ))}
+        </div>
+      </div>
 
-      {/* INFO DASAR */}
-      {activeTab === 'info' && (
-        <Card style={{ padding: '4px 20px 16px' }}>
-          <dl style={{ margin: 0 }}>
-            <SectionLabel>Identitas</SectionLabel>
-            <Def label="Nama Perusahaan" value={customer.name} />
-            <Def label="Legal Name"      value={customer.legal_name} />
-            <Def label="Customer Type"   value={customer.customer_type} />
-            <Def label="Tax ID / NPWP"   value={customer.tax_id} mono />
-            <Def label="Customer Code"   value={customer.code} mono />
+      {/* ============ TAB PANELS ============ */}
 
-            <SectionLabel>Kontak</SectionLabel>
-            <Def label="Phone"   value={customer.phone} />
-            <Def label="Email"   value={customer.email} />
-            <Def label="Address" value={customer.address} />
-            <Def label="City"    value={customer.city} />
-            <Def label="Country" value={customer.country || 'Indonesia'} />
-
-            <SectionLabel>PIC</SectionLabel>
-            <Def label="PIC Name"  value={customer.pic_name} />
-            <Def label="PIC Phone" value={customer.pic_phone} mono />
-            <Def label="PIC Email" value={customer.pic_email} />
-          </dl>
-        </Card>
-      )}
-
-      {/* KOMERSIAL */}
-      {activeTab === 'komersial' && (
-        <Card style={{ padding: '4px 20px 16px' }}>
-          <dl style={{ margin: 0 }}>
-            <SectionLabel>Komersial</SectionLabel>
-            <Def label="Tier">{customer.tier ? <TierBadge tier={customer.tier} /> : '—'}</Def>
-            <Def label="Status"><StatusBadge statusKey={statusKey} /></Def>
-            <Def label="Entitas Owner"        value={customer.source_company?.name} />
-            <Def label="Assigned Salesperson" value={customer.assigned_profile?.full_name} />
-            <Def label="Payment Terms"        value={customer.payment_term?.name || customer.payment_terms} />
-            <Def label="Credit Limit"         value={fmtRupiah(customer.credit_limit)} mono />
-            <Def label="Currency"             value={customer.currency_code} />
-            <Def label="Nomor Kontrak"        value={customer.contract_no} mono />
-            <Def label="Last Activity At"     value={customer.last_activity_at ? fmtDateTime(customer.last_activity_at) : '—'} />
-          </dl>
-        </Card>
-      )}
+      {tab === 'info' && renderSections(infoSections)}
+      {tab === 'komersial' && renderSections(komSections)}
 
       {/* HISTORY VISIT */}
-      {activeTab === 'visits' && (
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${D.lineSoft}` }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>Riwayat Kunjungan</span>
-            <span style={{ fontSize: 12.5, color: D.inkFaint }}>{prospect?.name ? `Prospect: ${prospect.name}` : 'Dari prospect terkait'}</span>
+      {tab === 'visit' && (
+        <div style={S.card}>
+          <div style={S.cardHead}>
+            <h3 style={S.cardHeadTitle}>History Visit</h3>
+            <span style={S.cardHeadSub}>{visits.length} kunjungan tercatat</span>
           </div>
-          <div style={{ padding: '14px 16px' }}>
-            {!customer.prospect_id ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: D.inkFaint, fontSize: 13 }}>Customer belum terhubung ke prospect.</div>
-            ) : visitsLoading ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: D.inkFaint, fontSize: 13 }}>Memuat…</div>
-            ) : visits.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: D.inkFaint, fontSize: 13 }}>Belum ada riwayat kunjungan.</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {visits.map(v => <VisitRow key={v.id} v={v} />)}
-              </div>
-            )}
-          </div>
-        </Card>
+          {!customer.prospect_id ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Customer belum terhubung ke prospect.</div>
+          ) : visitsLoading ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
+          ) : visits.length === 0 ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada riwayat kunjungan.</div>
+          ) : (
+            <div>{visits.map((v) => <VisitRow key={v.id} v={v} />)}</div>
+          )}
+        </div>
       )}
 
       {/* BANT & PIPELINE */}
-      {activeTab === 'bant' && (
-        <Card style={{ padding: '4px 20px 16px' }}>
-          {!customer.prospect_id || !prospect ? (
-            <div style={{ textAlign: 'center', padding: '32px 0', color: D.inkFaint, fontSize: 13 }}>Belum ada data pipeline.</div>
-          ) : (
-            <>
-              <div style={{ padding: '14px 0 4px' }}>
-                <BantScoreBar score={prospect.bant_score != null ? prospect.bant_score : calcBantScore(prospect)} />
+      {tab === 'bant' && (
+        !customer.prospect_id || !prospect ? (
+          <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada data pipeline.</div></div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ ...S.card, padding: '18px 22px' }}>
+              <BantScoreBar score={prospect.bant_score != null ? prospect.bant_score : calcBantScore(prospect)} />
+            </div>
+            <div style={S.card}>
+              <div style={S.cardHead}>
+                <h3 style={S.cardHeadTitle}>Kriteria BANT</h3>
+                <span style={S.cardHeadSub}>Budget · Authority · Need · Timeline</span>
               </div>
-              <dl style={{ margin: 0 }}>
-                <SectionLabel>BANT Qualification</SectionLabel>
-                {BANT_FIELDS.map(f => <Def key={f.key} label={f.label} value={prospect[f.key]} />)}
-                <SectionLabel>Pipeline</SectionLabel>
-                <Def label="Pipeline Stage Terakhir" value={prospect.pipeline_stage} />
-              </dl>
-            </>
-          )}
-        </Card>
+              <div style={S.bantGrid}>
+                {BANT_FIELD_DEFS.map((f, i) => {
+                  const lastRowStart = BANT_FIELD_DEFS.length % 2 === 0 ? BANT_FIELD_DEFS.length - 2 : BANT_FIELD_DEFS.length - 1;
+                  return (
+                    <div key={f.key} style={i >= lastRowStart ? { ...S.bantField, borderBottom: 0 } : S.bantField}>
+                      <span style={S.bantIco}><Icon name={f.icon} size={18} strokeWidth={1.9} /></span>
+                      <div>
+                        <div style={S.bantK}>{f.label}</div>
+                        <div style={S.bantV}>{txt(prospect[f.key])}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={S.card}>
+              <div style={S.cardHead}>
+                <h3 style={S.cardHeadTitle}>Pipeline Stage</h3>
+                <span style={S.cardHeadSub}>Status terakhir prospect</span>
+              </div>
+              <div style={S.pipelineRow}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                  <span style={{ ...S.bantIco, background: '#DEF0E4', color: '#1F8B4D' }}><Icon name="trophy" size={18} strokeWidth={1.9} /></span>
+                  <div>
+                    <div style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 14, fontWeight: 700, color: '#16243A' }}>{txt(prospect.pipeline_stage)}</div>
+                    <div style={{ fontSize: 12.5, color: INK_FAINT, marginTop: 2 }}>Prospect: {txt(prospect.name)}</div>
+                  </div>
+                </div>
+                {(prospect.pipeline_stage || '').toUpperCase() === 'WON' && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 800, fontFamily: "'Montserrat', system-ui, sans-serif", letterSpacing: 0.5, padding: '8px 16px', borderRadius: 22, background: '#DEF0E4', color: '#1F8B4D' }}>
+                    <Icon name="check" size={15} strokeWidth={2.6} />WON
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )
       )}
 
-      {/* NOTES */}
-      {activeTab === 'notes' && (
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${D.lineSoft}` }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>Notes</span>
-            {!editNotes && <Btn icon={Pencil} onClick={startEditNotes}>Edit Notes</Btn>}
+      {/* HEALTH SCORE */}
+      {tab === 'health' && (() => {
+        const { score, components } = computeHealth(customer, prospect, visits);
+        const st = healthStatus(score);
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={S.banner}>
+              <Icon name="alert" size={16} color="#B45309" strokeWidth={2} style={{ marginTop: 1 }} />
+              <span>Skor sementara (heuristik) — dihitung dari sinyal yang tersedia: visit, BANT, pipeline & kelengkapan profil. Parameter SOP penuh (Volume Trend, Payment Behavior, NPS, Complaint) menunggu data transaksi & survey. <b>TODO: auto-calculate.</b></span>
+            </div>
+            <div style={S.card}>
+              <div style={S.healthTop}>
+                <HealthGauge score={score} color={st.color} />
+                <div style={S.healthInfo}>
+                  <span style={{ ...S.healthStatusBadge, background: st.bg, color: st.fg }}><Icon name="heartpulse" size={14} strokeWidth={2.2} />{st.key}</span>
+                  <h3 style={S.healthTitle}>Customer Health Score</h3>
+                  <div style={S.healthSub}>Skor komposit dari sinyal CRM yang tersedia · {txt(customer.code)} · diperbarui {fmtDate(customer.updated_at || customer.created_at)}</div>
+                </div>
+              </div>
+            </div>
+            <div style={S.card}>
+              <div style={S.cardHead}>
+                <h3 style={S.cardHeadTitle}>Breakdown Komponen</h3>
+                <span style={S.cardHeadSub}>{components.length} parameter berbobot</span>
+              </div>
+              <div>{components.map((cp) => <HealthComp key={cp.name} comp={cp} />)}</div>
+            </div>
+            <div style={S.card}>
+              <div style={S.cardHead}>
+                <h3 style={S.cardHeadTitle}>Rekomendasi Aksi</h3>
+                <span style={S.cardHeadSub}>Berdasarkan status {st.key}</span>
+              </div>
+              <div style={{ ...S.recCard, background: st.bg }}>
+                <span style={{ ...S.recIco, background: '#fff', color: st.color }}><Icon name={st.recIcon} size={20} strokeWidth={2} /></span>
+                <div>
+                  <div style={{ ...S.recTitle, color: st.fg }}>Status {st.key}</div>
+                  <div style={{ ...S.recText, color: st.fg }}>{st.rec}</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div style={{ padding: '16px' }}>
-            {!editNotes ? (
-              customer.notes ? (
-                <div style={{ fontSize: 13.5, color: D.ink, lineHeight: 1.8, whiteSpace: 'pre-wrap', background: D.surface2, border: `1px solid ${D.line}`, borderRadius: 9, padding: '14px 16px' }}>
-                  {customer.notes}
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '24px 0', color: D.inkFaint, fontSize: 13 }}>Tidak ada catatan.</div>
-              )
-            ) : (
-              <>
-                <textarea value={notesDraft} onChange={e => setNotesDraft(e.target.value)} rows={6} placeholder="Catatan tambahan…"
-                  style={{ width: '100%', borderRadius: 9, border: `1px solid ${D.line}`, background: D.surface, padding: '12px 14px', fontSize: 13.5, color: D.ink, outline: 'none', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
-                  <Btn icon={X} onClick={() => setEditNotes(false)} disabled={savingNotes}>Batal</Btn>
-                  <button onClick={saveNotes} disabled={savingNotes} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 16px', borderRadius: 8,
-                    background: D.navy, color: '#fff', border: 'none', cursor: savingNotes ? 'not-allowed' : 'pointer',
-                    fontSize: 13, fontWeight: 600, fontFamily: 'inherit', opacity: savingNotes ? .6 : 1,
-                  }}>
-                    <Save size={14} /> {savingNotes ? 'Menyimpan…' : 'Simpan Notes'}
-                  </button>
-                </div>
-              </>
+        );
+      })()}
+
+      {/* NOTES */}
+      {tab === 'notes' && (
+        <div style={S.card}>
+          <div style={S.cardHead}>
+            <h3 style={S.cardHeadTitle}>Catatan Customer</h3>
+            {!editNotes && (
+              <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5 }} onClick={startEditNotes}>
+                <Icon name="pencil" size={14} />Edit Notes
+              </button>
             )}
           </div>
-        </Card>
+          {!editNotes ? (
+            customer.notes
+              ? <div style={S.notesBox}>{customer.notes}</div>
+              : <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Tidak ada catatan.</div>
+          ) : (
+            <>
+              <textarea style={S.notesArea} value={notesDraft} onChange={e => setNotesDraft(e.target.value)} placeholder="Catatan tambahan…" />
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '12px 22px 20px' }}>
+                <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 38 }} onClick={() => setEditNotes(false)} disabled={savingNotes}>
+                  <Icon name="x" size={14} />Batal
+                </button>
+                <button type="button" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 11, border: 'none', background: NAVY, color: '#fff', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: savingNotes ? 'not-allowed' : 'pointer', opacity: savingNotes ? 0.6 : 1 }} onClick={saveNotes} disabled={savingNotes}>
+                  <Icon name="save" size={15} color="#fff" />{savingNotes ? 'Menyimpan…' : 'Simpan Notes'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* Edit modal */}
