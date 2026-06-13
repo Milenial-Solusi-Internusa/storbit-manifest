@@ -1,31 +1,11 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const ALLOWED_TABLES = ['customers','vendors','prospects','products','branches','departments','positions','assets','inquiries','quotations']
 const ALLOWED_TYPES = ['text','integer','numeric','boolean','date','timestamptz','jsonb']
 const BLOCKED_COLUMN_NAMES = ['id','created_at','updated_at','deleted_at','created_by','updated_by','company_id','password','secret','token','key','hash']
 const COLUMN_NAME_REGEX = /^[a-z][a-z0-9_]{1,50}$/
-const SUPER_ADMIN_ROLES = ['super', 'super_admin']
-
-function decodeJwtPayload(jwt: string): any {
-  try {
-    const parts = jwt.split('.')
-    if (parts.length !== 3) return null
-    const payload = parts[1]
-    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
-    return JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')))
-  } catch { return null }
-}
-
-async function dbSelect(url: string, serviceRoleKey: string, table: string, filter: string) {
-  const res = await fetch(`${url}/rest/v1/${table}?${filter}&select=*`, {
-    headers: {
-      'Authorization': `Bearer ${serviceRoleKey}`,
-      'apikey': serviceRoleKey,
-    }
-  })
-  return res.json()
-}
 
 async function dbExecSql(url: string, serviceRoleKey: string, sql: string) {
   const res = await fetch(`${url}/rest/v1/rpc/exec_sql`, {
@@ -60,22 +40,20 @@ export default {
       const authHeader = req.headers.get('Authorization')
       if (!authHeader) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-      const jwt = authHeader.replace('Bearer ', '')
-      const payload = decodeJwtPayload(jwt)
-      if (!payload?.sub) return Response.json({ error: 'Invalid token' }, { status: 401 })
-      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return Response.json({ error: 'Token expired' }, { status: 401 })
-
-      const userId = payload.sub
       const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
       const serviceKey = Deno.env.get('MSI_DB_KEY') ?? ''
 
-      const profiles = await dbSelect(supabaseUrl, serviceKey, 'profiles', `id=eq.${userId}`)
-      if (!Array.isArray(profiles) || profiles.length === 0) {
-        return Response.json({ error: 'Profile not found', debug: profiles }, { status: 403 })
-      }
-
-      const profile = profiles[0]
-      if (!SUPER_ADMIN_ROLES.includes(profile.role)) {
+      // Super-admin gate via is_super_admin() RPC, evaluated as the CALLING user
+      // (anon key + the user's JWT) — NOT the service role, so auth.uid() inside
+      // the function resolves to the real caller. Replaces the old profiles.role
+      // check (that column is being dropped).
+      const callerClient = createClient(
+        supabaseUrl,
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: authHeader } } }
+      )
+      const { data: isSuper, error: roleErr } = await callerClient.rpc('is_super_admin')
+      if (roleErr || !isSuper) {
         return Response.json({ error: 'Forbidden — super admin only' }, { status: 403 })
       }
 

@@ -13,15 +13,15 @@
 //   1. Parse + validate input fields
 //   2. Verify caller is super_admin via is_super_admin() RPC
 //   3. auth.admin.createUser() → handle_new_user() trigger auto-inserts profiles row
-//   4. UPDATE profiles SET full_name, role, company_id, branch_id, department_id, position_id
+//   4. UPDATE profiles SET full_name, company_id, branch_id, department_id, position_id
 //   5. INSERT user_roles (service role — bypasses RLS cross-company restriction)
 //   6. Return { id: uuid } on success, { error: string } on failure
 //
 // Email confirmation: email_confirm: true — user can log in immediately.
 // Password: enforced min 8 chars at caller side; raw value passed to Supabase Auth.
 //
-// legacy `role` field: derived from erp_role code if possible, else defaults to 'operations'.
-// This field coexists with user_roles during the ERP role transition period.
+// Role: stored solely in user_roles (step 5). The legacy profiles.role column is
+// no longer written here — it is being deprecated.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -36,26 +36,6 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
-}
-
-// Map ERP role code → legacy profiles.role enum value.
-// Must only produce values in user_role_legacy enum:
-//   'super' | 'logistic' | 'procurement' | 'finance' | 'management'
-const ERP_CODE_TO_LEGACY: Record<string, string> = {
-  super_admin:        'super',
-  ceo:                'management',
-  gm:                 'management',
-  admin:              'management',
-  manager:            'management',
-  hrga:               'management',
-  viewer:             'management',
-  supervisor:         'management',
-  finance_controller: 'finance',
-  finance:            'finance',
-  sales:              'logistic',
-  operations:         'logistic',
-  it:                 'logistic',
-  procurement:        'procurement',
 }
 
 serve(async (req) => {
@@ -122,19 +102,11 @@ serve(async (req) => {
 
     const userId = created.user.id
 
-    // ── 4. Resolve ERP role code for legacy field mapping ──────────────────
-    const { data: roleRow } = await adminClient
-      .from('roles')
-      .select('code')
-      .eq('id', erp_role_id)
-      .single()
-
-    const legacyRole = ERP_CODE_TO_LEGACY[roleRow?.code ?? ''] ?? 'management'
-
-    // ── 5. Update the profile row inserted by handle_new_user() trigger ────
+    // ── 4. Update the profile row inserted by handle_new_user() trigger ────
+    // Legacy profiles.role is NOT written here anymore — the role lives solely
+    // in user_roles (assigned in step 5). profiles.role is being deprecated.
     const profilePatch: Record<string, unknown> = {
       full_name:  full_name.trim(),
-      role:       legacyRole,
       company_id,
     }
     if (branch_id)     profilePatch.branch_id     = branch_id
@@ -154,7 +126,7 @@ serve(async (req) => {
       }, 201)
     }
 
-    // ── 6. Insert user_roles (service role bypasses cross-company RLS) ─────
+    // ── 5. Insert user_roles (service role bypasses cross-company RLS) ─────
     const now = new Date().toISOString()
     const { data: { user: callerUser } } = await callerClient.auth.getUser()
     const grantedBy = callerUser?.id ?? null
