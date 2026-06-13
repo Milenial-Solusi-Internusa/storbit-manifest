@@ -856,6 +856,19 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
   return item.role.includes(role);
 };
 
+// collectMenuIds — collect every navigable menu id within a node list
+// (items → children → grandchildren), skipping section headers. Used to
+// validate the restored activeMenu against the full permission-filtered menu
+// tree, since the flat visibleMenus only covers the top level.
+function collectMenuIds(nodes, acc) {
+  (nodes || []).forEach(n => {
+    if (n.section) return;
+    if (n.id) acc.add(n.id);
+    if (n.children) collectMenuIds(n.children, acc);
+  });
+  return acc;
+}
+
 
 // ============================
 // Sidebar Helper Components
@@ -1143,7 +1156,7 @@ export default function StorbitManifest() {
   const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
-  const { role: authRole, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission } = useAuth();
+  const { role: authRole, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions } = useAuth();
   const role = authRole || 'management';
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
@@ -1252,6 +1265,47 @@ export default function StorbitManifest() {
       localStorage.setItem('nexus_last_module', activeModule);
     }
   }, [activeModule]);
+
+  // FIX B — Validate the restored activeMenu against the current user's access.
+  // activeMenu is initialised from localStorage, which may belong to a previous
+  // user in this browser. If the restored menu isn't permitted for this user,
+  // redirect to the first visible menu so they don't land on an inaccessible page.
+  useEffect(() => {
+    if (!profile) return;
+
+    // Only validate once permissions have loaded — otherwise a genuinely-allowed
+    // gated menu would be wrongly redirected during the brief post-login fetch
+    // window (e.g. refreshing while on a gated page). This only times the
+    // redirect; it does not gate rendering.
+    const permsLoaded =
+      role === 'super_admin' || profile.role === 'super' ||
+      userPermissions.length > 0 || menuPermissions.length > 0;
+    if (!permsLoaded) return;
+
+    // Synthetic / detail pages are navigated to programmatically (not from the
+    // sidebar) and are always valid — skip them.
+    const SYNTHETIC = ['home', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
+    if (SYNTHETIC.includes(activeMenu)) return;
+    if (activeMenu?.startsWith('customer-') ||
+        activeMenu?.startsWith('assets-') ||
+        activeMenu?.startsWith('product-')) return;
+
+    // Build the permission-filtered menu tree, then collect every navigable id
+    // (top-level items + nested children + grandchildren).
+    const visGroups = ERP_MENU_GROUPS
+      .map(g => ({ ...g, items: g.items.filter(it => canSeeMenuItem(it, role, hasPermission, hasMenuPermission)) }))
+      .filter(g => g.items.some(i => !i.section));
+    const visFlat = visGroups.flatMap(g => g.items.filter(i => !i.section));
+    if (visFlat.length === 0) return;
+
+    const accessibleIds = collectMenuIds(visGroups.flatMap(g => g.items), new Set());
+    if (!accessibleIds.has(activeMenu)) {
+      // Intentional, self-terminating redirect: after switching to a valid menu
+      // the condition is false on the next run, so this does not loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveMenu(visFlat[0]?.id || 'home');
+    }
+  }, [profile, role, hasPermission, hasMenuPermission, userPermissions, menuPermissions, activeMenu]);
 
   // Close profile dropdown on Escape
   useEffect(() => {
