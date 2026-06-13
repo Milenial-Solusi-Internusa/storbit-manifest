@@ -1156,7 +1156,7 @@ export default function StorbitManifest() {
   const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
-  const { role: authRole, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions } = useAuth();
+  const { role: authRole, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading } = useAuth();
   const role = authRole || 'management';
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
@@ -1215,13 +1215,31 @@ export default function StorbitManifest() {
   // Return to app launcher.
   const goToLauncher = useCallback(() => setActiveModule(null), []);
 
-  // Enter a module group — select the first visible non-section item in that group.
+  // Enter a module group — select the first visible leaf in that group.
+  // Traverses children/grandchildren because some groups (e.g. CRM) wrap their
+  // pages inside a single parent item. Deps include hasPermission/hasMenuPermission
+  // so the closure refreshes once permissions load (otherwise the click stays a
+  // no-op after an in-tab login until a refresh).
   const enterModule = useCallback((group) => {
-    const first = group.items.find(item => !item.section && canSeeMenuItem(item, role, hasPermission, hasMenuPermission));
+    const findFirstVisible = (items) => {
+      for (const item of items || []) {
+        if (item.section) continue;
+        if (canSeeMenuItem(item, role, hasPermission, hasMenuPermission)) {
+          if (item.children) {
+            const leaf = findFirstVisible(item.children);
+            if (leaf) return leaf;
+            // parent visible but no visible child leaf — fall back to the parent
+          }
+          return item;
+        }
+      }
+      return null;
+    };
+    const first = findFirstVisible(group.items);
     if (!first) return;
     setActiveModule(group.label);
     setActiveMenu(first.id);
-  }, [role]);
+  }, [role, hasPermission, hasMenuPermission]);
   const [editingRow, setEditingRow] = useState(null);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editingAR, setEditingAR] = useState(null);
@@ -1901,6 +1919,7 @@ export default function StorbitManifest() {
                 profile={profile}
                 hasPermission={hasPermission}
                 hasMenuPermission={hasMenuPermission}
+                permissionsLoading={permissionsLoading && !(role === 'super_admin' || profile?.role === 'super')}
               />
             </Suspense>
           )}
