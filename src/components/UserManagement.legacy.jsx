@@ -1,4 +1,9 @@
-// src/components/UserManagement.jsx
+// LEGACY — not imported/routed anywhere. Superseded by UserAccessPage +
+// UserEditPage (Admin → User Access). Still reads/writes the deprecated
+// legacy profiles.role column (p.role, updateProfile({ role })) — kept only as
+// reference; do NOT wire this back in. Role management now lives in user_roles.
+//
+// src/components/UserManagement.legacy.jsx (was UserManagement.jsx)
 // Admin-only page: list semua users, edit role, toggle active status.
 // Invite user baru = manual via Supabase Dashboard (Pendekatan A).
 

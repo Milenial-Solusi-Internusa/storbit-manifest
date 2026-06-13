@@ -18,33 +18,6 @@ import { supabase } from '../lib/supabase';
 
 export const USER_ACCESS_PAGE_SIZE = 20;
 
-// ---------------------------------------------------------------------------
-// ERP role code → legacy profiles.role enum mapping.
-// Must only produce values in user_role_legacy enum:
-//   'super' | 'logistic' | 'procurement' | 'finance' | 'management'
-// Shared with create-user Edge Function (kept in sync manually).
-// ---------------------------------------------------------------------------
-export const ERP_CODE_TO_LEGACY = {
-  super_admin:        'super',
-  ceo:                'management',
-  gm:                 'management',
-  admin:              'management',
-  manager:            'management',
-  hrga:               'management',
-  viewer:             'management',
-  supervisor:         'management',
-  finance_controller: 'finance',
-  finance:            'finance',
-  sales:              'logistic',
-  operations:         'logistic',
-  it:                 'logistic',
-  procurement:        'procurement',
-};
-
-export function erpCodeToLegacy(code) {
-  return ERP_CODE_TO_LEGACY[code] ?? 'management';
-}
-
 export function useUserAccess({ page = 1, search = '' } = {}) {
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
@@ -62,7 +35,7 @@ export function useUserAccess({ page = 1, search = '' } = {}) {
     let profileQuery = supabase
       .from('profiles')
       .select(
-        `id, full_name, role, active, mfa_required, avatar_url,
+        `id, full_name, active, mfa_required, avatar_url,
          company_id, branch_id, department_id, position_id,
          companies(id, code, name),
          branches(id, code, name),
@@ -324,23 +297,13 @@ export async function fetchRolesForCompany(companyId) {
 // the error; the user can retry the save or correct the role separately.
 // ---------------------------------------------------------------------------
 export async function saveUserAccess({ profileId, profilePatch, newErpRoleId, companyId }) {
-  // If ERP role changed, resolve its code and derive legacy profiles.role
-  let patchWithRole = { ...profilePatch };
-  if (newErpRoleId) {
-    const { data: roleRow } = await supabase
-      .from('roles')
-      .select('code')
-      .eq('id', newErpRoleId)
-      .single();
-    if (roleRow?.code) {
-      patchWithRole.role = erpCodeToLegacy(roleRow.code);
-    }
-  }
+  // Legacy profiles.role is no longer written — the role lives solely in
+  // user_roles (Step 2). profilePatch updates only non-role profile fields.
 
   // Step 1: Update the profiles row
   const { error: profileErr } = await supabase
     .from('profiles')
-    .update(patchWithRole)
+    .update(profilePatch)
     .eq('id', profileId);
 
   if (profileErr) return { error: profileErr };

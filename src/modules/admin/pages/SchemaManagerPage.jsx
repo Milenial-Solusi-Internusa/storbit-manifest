@@ -124,8 +124,8 @@ function ColTable({ columns, loading }) {
 
 // ─── Main component ───────────────────────────────────────────────────────
 export default function SchemaManagerPage({ showToast }) {
-  const { profile, user, erpRole } = useAuth();
-  const role = erpRole ?? profile?.role;
+  const { erpRole } = useAuth();
+  const role = erpRole;
 
   // Guard — only super_admin
   const isAllowed = role === 'super_admin';

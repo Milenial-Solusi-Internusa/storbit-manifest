@@ -192,20 +192,20 @@ export function AuthProvider({ children }) {
     fetchPermissionsForRoleId(primary?.role_id);
   }, [erpRoles, fetchPermissionsForRoleId]);
 
-  // Derive primary ERP role code; fall back to legacy profiles.role for users
-  // not yet migrated to user_roles.
+  // Primary ERP role code, sourced solely from user_roles (legacy profiles.role
+  // fallback removed — that column is being deprecated).
   const primaryErpRole = pickPrimaryErpRole(erpRoles);
-  const erpRoleCode    = primaryErpRole?.roles?.code || profile?.role || null;
+  const erpRoleCode    = primaryErpRole?.roles?.code || null;
 
   // hasPermission — returns true if user has the given module+action in their role_permissions.
   // super_admin always returns true.
   const hasPermission = useCallback((module, action) => {
-    if (erpRoleCode === 'super_admin' || profile?.role === 'super') return true;
+    if (erpRoleCode === 'super_admin') return true;
     return userPermissions.some(p =>
       p.permissions?.module === module &&
       p.permissions?.action === action
     );
-  }, [userPermissions, erpRoleCode, profile?.role]);
+  }, [userPermissions, erpRoleCode]);
 
   // ── Fetch per-user menu permissions ───────────────────────────────────────
   const fetchMenuPermissions = useCallback(async (userId) => {
@@ -234,7 +234,7 @@ export function AuthProvider({ children }) {
   // Supports both menu-level (module_menus.key) and module-level (modules.key) checks.
   // super_admin always returns true.
   const hasMenuPermission = useCallback((menuKey, action) => {
-    if (erpRoleCode === 'super_admin' || profile?.role === 'super') return true;
+    if (erpRoleCode === 'super_admin') return true;
     return menuPermissions.some(p => {
       // menu-level check
       if (p.menu_actions?.module_menus?.key === menuKey &&
@@ -244,17 +244,17 @@ export function AuthProvider({ children }) {
           p.module_actions?.action === action) return true;
       return false;
     });
-  }, [menuPermissions, erpRoleCode, profile?.role]);
+  }, [menuPermissions, erpRoleCode]);
 
   // isCrossEntity — returns true if the role has cross-entity access for this module.
   // super_admin always returns true.
   const isCrossEntity = useCallback((module) => {
-    if (erpRoleCode === 'super_admin' || profile?.role === 'super') return true;
+    if (erpRoleCode === 'super_admin') return true;
     return userPermissions.some(p =>
       p.permissions?.module === module &&
       p.is_cross_entity === true
     );
-  }, [userPermissions, erpRoleCode, profile?.role]);
+  }, [userPermissions, erpRoleCode]);
 
   const value = {
     session,

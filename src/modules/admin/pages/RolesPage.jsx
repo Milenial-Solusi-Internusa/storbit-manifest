@@ -429,7 +429,7 @@ export default function RolesPage() {
   const handleSearch = (val) => { setSearchInput(val); setPage(1); };
 
   // ── Viewer identity ───────────────────────────────────────────────────────
-  const { profile, erpRole } = useAuth();
+  const { erpRole } = useAuth();
 
   // ── UI-only: selected role for permission panel ────────────────────────────
   const [selectedRole, setSelectedRole] = useState(null);
@@ -599,7 +599,7 @@ export default function RolesPage() {
 
         {/* ── RIGHT: permission matrix panel ── */}
         <div style={{ position: 'sticky', top: 18 }}>
-          <PermissionPanel role={selectedRole} viewerRole={erpRole ?? profile?.role}/>
+          <PermissionPanel role={selectedRole} viewerRole={erpRole}/>
         </div>
       </div>
     </div>

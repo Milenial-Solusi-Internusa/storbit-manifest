@@ -152,7 +152,7 @@ function ChangePasswordModal({ open, userName, onClose, onSubmit }) {
 
 export default function UserEditPage({ userId, initialRow, onBack, showToast }) {
   const { profile: myProfile, erpRole } = useAuth();
-  const isSuperAdmin = erpRole === 'super_admin' || myProfile?.role === 'super';
+  const isSuperAdmin = erpRole === 'super_admin';
   const isSelf = userId === myProfile?.id;
 
   // ── Draft + load state ───────────────────────────────────────
@@ -174,7 +174,7 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
     let cancelled = false;
     supabase
       .from('profiles')
-      .select(`id, full_name, role, active, mfa_required, avatar_url,
+      .select(`id, full_name, active, mfa_required, avatar_url,
                company_id, branch_id, department_id, position_id,
                companies(id, code, name), branches(id, code, name),
                departments(id, code, name), positions(id, code, name)`)
@@ -570,7 +570,7 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
             {rowMeta?.email || userId}
           </div>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <RoleBadge erpRole={primaryErpRole} legacyRole={rowMeta?.role || draft?.role} />
+            <RoleBadge erpRole={primaryErpRole} legacyRole={null} />
             <StatusBadge active={draft?.active !== false} />
             {rowMeta?.companies && (
               <span
