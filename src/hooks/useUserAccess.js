@@ -186,6 +186,61 @@ export async function createUser({
 }
 
 // ---------------------------------------------------------------------------
+// deleteUser — invokes the delete-user Edge Function.
+// The Edge Function uses service_role to:
+//   - verify caller is super_admin and reject self-deletion
+//   - delete user_roles, profile row, then the auth user
+// Returns { data: { success } } on success, { error } on failure.
+// ---------------------------------------------------------------------------
+export async function deleteUser(userId) {
+  const { data, error } = await supabase.functions.invoke('delete-user', {
+    body: { user_id: userId },
+  });
+
+  if (error) {
+    // supabase.functions.invoke wraps non-2xx responses in a FunctionsHttpError.
+    // error.message is always the generic "Edge Function returned a non-2xx status code".
+    // The actual error body from our function is in error.context (the raw Response).
+    let message = error.message;
+    try {
+      const body = await error.context?.json?.();
+      if (body?.error) message = body.error;
+    } catch { /* response body not JSON-parseable — keep generic message */ }
+    return { error: { message } };
+  }
+
+  if (data?.error) return { error: { message: data.error } };
+  return { data };
+}
+
+// ---------------------------------------------------------------------------
+// resetUserPassword — invokes the reset-password Edge Function.
+// The Edge Function uses service_role to:
+//   - verify caller is super_admin
+//   - call auth.admin.updateUserById() to set the new password
+// Returns { data: { success } } on success, { error } on failure.
+// ---------------------------------------------------------------------------
+export async function resetUserPassword(userId, newPassword) {
+  const { data, error } = await supabase.functions.invoke('reset-password', {
+    body: { user_id: userId, new_password: newPassword },
+  });
+
+  if (error) {
+    // supabase.functions.invoke wraps non-2xx responses in a FunctionsHttpError.
+    // The actual error body from our function is in error.context (the raw Response).
+    let message = error.message;
+    try {
+      const body = await error.context?.json?.();
+      if (body?.error) message = body.error;
+    } catch { /* response body not JSON-parseable — keep generic message */ }
+    return { error: { message } };
+  }
+
+  if (data?.error) return { error: { message: data.error } };
+  return { data };
+}
+
+// ---------------------------------------------------------------------------
 // Edit form dropdown helpers — one-shot async fetchers (not hooks).
 // Called on drawer open and on company change; never on every render.
 // ---------------------------------------------------------------------------
