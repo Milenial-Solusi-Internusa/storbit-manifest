@@ -411,9 +411,10 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('prospects')
+        .from('accounts')
         .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, payment_terms_id, notes, assigned_to, created_at, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
         .eq('company_id', profile.company_id)
+        .eq('account_status', 'prospect')
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -455,7 +456,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
 
     try {
       const { error } = await supabase
-        .from('prospects')
+        .from('accounts')
         .update({ pipeline_stage: newStage, updated_by: profile.id })
         .eq('id', id);
       if (error) throw error;
@@ -487,8 +488,15 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     setWinLossSaving(true);
     try {
       const payload = { pipeline_stage: newStage, ...values, updated_by: profile.id };
-      if (mode === 'won') payload.converted_at = new Date().toISOString();
-      const { error } = await supabase.from('prospects').update(payload).eq('id', id);
+      if (mode === 'won') {
+        // WON → auto-convert account to customer
+        payload.converted_at       = new Date().toISOString();
+        payload.account_status     = 'customer';
+        payload.became_customer_at = new Date().toISOString();
+      } else if (mode === 'lost') {
+        payload.account_status = 'lost';
+      }
+      const { error } = await supabase.from('accounts').update(payload).eq('id', id);
       if (error) throw error;
       // Reflect reason locally so the detail modal shows it without a full refetch
       setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage, ...values } : p));

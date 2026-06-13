@@ -1384,9 +1384,10 @@ function CRMDashboardPage() {
       const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes, callsWeekRes, visitsWeekRes, quotMonthRes] = await Promise.all([
         // Full prospects for this company — all fields needed for multiple computations
         ownProspects(supabase
-          .from('prospects')
+          .from('accounts')
           .select('id, pipeline_stage, name, created_at, source, assigned_to, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
+          .eq('account_status', 'prospect')
           .is('deleted_at', null)
           .limit(1000)),
 
@@ -1405,9 +1406,10 @@ function CRMDashboardPage() {
 
         // Last month prospects — for trend comparison
         ownProspects(supabase
-          .from('prospects')
+          .from('accounts')
           .select('created_at')
           .eq('company_id', cid)
+          .eq('account_status', 'prospect')
           .is('deleted_at', null)
           .gte('created_at', startLastMonth.toISOString())
           .lt('created_at', startThisMonth.toISOString())
@@ -1415,9 +1417,10 @@ function CRMDashboardPage() {
 
         // Sales performance — assigned prospects with pipeline stage
         ownProspects(supabase
-          .from('prospects')
+          .from('accounts')
           .select('assigned_to, pipeline_stage, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
+          .eq('account_status', 'prospect')
           .is('deleted_at', null)
           .not('assigned_to', 'is', null)
           .limit(1000)),
@@ -1425,7 +1428,7 @@ function CRMDashboardPage() {
         // Sales visits calendar — graceful fail if table doesn't exist
         ownBySales(supabase
           .from('sales_visits')
-          .select('id, visit_date, visit_time, location, notes, status, visit_type, point_of_meeting, mom, follow_up, prospect_id, salesperson_id, prospects(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
+          .select('id, visit_date, visit_time, location, notes, status, visit_type, point_of_meeting, mom, follow_up, prospect_id, salesperson_id, prospects:accounts(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
           .eq('company_id', cid)
           .gte('visit_date', startOfMonth)
           .lte('visit_date', endOfMonth)
@@ -1590,7 +1593,7 @@ function CRMDashboardPage() {
     if (!addVisitOpen || !profile?.company_id) return;
     Promise.all([
       supabase.from('profiles').select('id, full_name').eq('active', true).limit(100),
-      supabase.from('prospects').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null).order('name').limit(200),
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(200),
     ]).then(([profRes, prospRes]) => {
       setSalesProfiles(profRes.data || []);
       setProspectOptions(prospRes.data || []);

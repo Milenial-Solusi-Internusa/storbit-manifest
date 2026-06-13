@@ -16,7 +16,9 @@ export const STANDARD_COLUMNS = {
     // legacy app aliases used in the modal
     'defaultDC', 'picName', 'picEmail',
   ],
-  prospects: [
+  // `prospects` table renamed → `accounts` (Batch 1). account_status segments
+  // prospect / customer / lost / free_agent within one table.
+  accounts: [
     'id', 'company_id', 'name', 'legal_name', 'customer_type', 'tax_id',
     'address', 'city', 'country', 'phone', 'email', 'pic_name', 'pic_phone',
     'pic_email', 'source', 'assigned_to', 'pipeline_stage', 'lost_reason',
@@ -26,10 +28,12 @@ export const STANDARD_COLUMNS = {
     // BANT qualification scorecard
     'bant_commodity', 'bant_origin', 'bant_destination', 'bant_frequency',
     'bant_current_vendor', 'bant_payment', 'bant_decision_maker', 'bant_score',
+    // accounts model columns (rename batch)
+    'account_status', 'owner_company_id', 'tier', 'code', 'nomor_kontrak',
+    'default_dc', 'last_activity_at', 'became_customer_at',
     // join result aliases — not real DB columns, must be excluded from custom fields
     'assigned_profile',
     // company prefix (PT/CV/Mr./Mrs./Ms.) — stored separately from name
-    // TODO DB: ALTER TABLE prospects ADD COLUMN company_prefix text;
     'company_prefix',
   ],
 };

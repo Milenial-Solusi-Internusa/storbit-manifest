@@ -150,7 +150,7 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
         .from('inquiries')
         .select(`
           id, inquiry_no, service_type, route, status, created_at, commodity, estimated_volume, notes,
-          prospect:prospects!inquiries_prospect_id_fkey(name),
+          prospect:accounts!inquiries_prospect_id_fkey(name),
           customer:customers!inquiries_customer_id_fkey(name)
         `, { count: 'exact' })
         .eq('company_id', profile.company_id)

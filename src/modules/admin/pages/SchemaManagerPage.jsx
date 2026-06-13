@@ -33,7 +33,7 @@ const TABLE_GROUPS = [
   },
   {
     section: 'CRM',
-    tables: ['prospects', 'inquiries', 'quotations'],
+    tables: ['accounts', 'inquiries', 'quotations'],
   },
   {
     section: 'ASSETS',

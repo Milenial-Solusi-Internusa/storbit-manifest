@@ -288,7 +288,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     if (!profile?.company_id) return;
     supabase
       .from('inquiries')
-      .select('id, inquiry_no, service_type, route, prospect:prospects!inquiries_prospect_id_fkey(id, name), customer:customers!inquiries_customer_id_fkey(id, name)')
+      .select('id, inquiry_no, service_type, route, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:customers!inquiries_customer_id_fkey(id, name)')
       .eq('company_id', profile.company_id)
       .eq('status', 'OPEN')
       .is('deleted_at', null)
