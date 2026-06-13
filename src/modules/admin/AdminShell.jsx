@@ -4,7 +4,8 @@
 // Sidebar has three section groups: Organization, Access Control, Configuration.
 // Phase 1.0J: CRUD on Branches, Departments, Positions; Add User via Edge Function.
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { Check } from 'lucide-react';
 import { useAuth } from '../../contexts/useAuth';
 import {
   Building2, MapPin, Network, Briefcase,
@@ -22,6 +23,7 @@ import StatusCatalogPage from './pages/StatusCatalogPage';
 import TaxesPage from './pages/TaxesPage';
 import PaymentTermsPage from './pages/PaymentTermsPage';
 import UserAccessPage from './pages/UserAccessPage';
+import UserEditPage from './pages/UserEditPage';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -35,6 +37,10 @@ const PASTEL = {
   lineSoft:     '#F5EFE5',
   lavender:     '#D8C5F0',
   lavenderDeep: '#A98FD8',
+  mint:         '#C8EFD9',
+  mintDeep:     '#7FC9A0',
+  rose:         '#F5C8D5',
+  roseDeep:     '#D89AB0',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -166,7 +172,6 @@ const PAGE_MAP = {
   'departments':    <ErrorBoundary title="Departments unavailable"><DepartmentsPage /></ErrorBoundary>,
   'positions':      <ErrorBoundary title="Positions unavailable"><PositionsPage /></ErrorBoundary>,
   'roles':          <ErrorBoundary title="Roles unavailable"><RolesPage /></ErrorBoundary>,
-  'user-access':    <ErrorBoundary title="User Access unavailable"><UserAccessPage /></ErrorBoundary>,
   'document-types': <ErrorBoundary title="Document Types unavailable"><DocumentTypesPage /></ErrorBoundary>,
   'status-catalog': <ErrorBoundary title="Status Catalog unavailable"><StatusCatalogPage /></ErrorBoundary>,
   'taxes':          <ErrorBoundary title="Taxes unavailable"><TaxesPage /></ErrorBoundary>,
@@ -181,12 +186,77 @@ export default function AdminShell() {
   const [activeTab, setActiveTab] = useState('companies');
   const { hasPermission } = useAuth();
 
+  // User Access full-page edit — state-swap (mirror of AssetDetailPage pattern)
+  const [editUserId, setEditUserId] = useState(null);
+  const [editUserRow, setEditUserRow] = useState(null);
+
+  // Shell-level toast (shared by UserAccessPage + UserEditPage so it survives
+  // the state-swap navigation, e.g. "User deleted" shown after returning to list)
+  const [toast, setToast] = useState(null);
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  const openUserEdit = useCallback((row) => {
+    setEditUserRow(row);
+    setEditUserId(row?.id || null);
+  }, []);
+  const closeUserEdit = useCallback(() => {
+    setEditUserId(null);
+    setEditUserRow(null);
+  }, []);
+
+  // Switching sidebar tabs always exits the user-edit sub-page
+  const handleSelect = useCallback((id) => {
+    setEditUserId(null);
+    setEditUserRow(null);
+    setActiveTab(id);
+  }, []);
+
+  let content;
+  if (editUserId) {
+    content = (
+      <ErrorBoundary title="User Edit unavailable">
+        <UserEditPage
+          userId={editUserId}
+          initialRow={editUserRow}
+          onBack={closeUserEdit}
+          showToast={showToast}
+        />
+      </ErrorBoundary>
+    );
+  } else if (activeTab === 'user-access') {
+    content = (
+      <ErrorBoundary title="User Access unavailable">
+        <UserAccessPage showToast={showToast} onEditUser={openUserEdit} />
+      </ErrorBoundary>
+    );
+  } else {
+    content = PAGE_MAP[activeTab] ?? null;
+  }
+
   return (
     <div className="flex gap-5 items-start">
-      <Sidebar active={activeTab} onSelect={setActiveTab} hasPermission={hasPermission} />
+      <Sidebar active={activeTab} onSelect={handleSelect} hasPermission={hasPermission} />
       <div className="flex-1 min-w-0">
-        {PAGE_MAP[activeTab] ?? null}
+        {content}
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 rounded-2xl px-4 py-3 text-sm font-semibold shadow-lg flex items-center gap-2 z-[60]"
+          style={{
+            background: toast.type === 'error' ? PASTEL.rose : PASTEL.mint,
+            color: PASTEL.ink,
+            border: `1px solid ${toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep}`,
+          }}
+        >
+          <Check size={14} />
+          {toast.msg}
+        </div>
+      )}
     </div>
   );
 }
