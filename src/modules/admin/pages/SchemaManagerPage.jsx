@@ -146,31 +146,21 @@ export default function SchemaManagerPage({ showToast }) {
     setFieldKey(toSnakeCase(fieldLabel));
   }, [fieldLabel]);
 
-  // Fetch columns whenever selectedTable changes
+  // Fetch columns whenever selectedTable changes.
+  // Uses the get_table_columns RPC directly (same as useCustomFields) — returns
+  // rows of { column_name, data_type, ... }. The old information_schema view
+  // probe was removed: that view doesn't exist in the DB and always 404'd.
   const fetchColumns = useCallback(async (table) => {
     if (!table) return;
     setColLoading(true);
     try {
       const { data, error } = await supabase
-        .from('information_schema_columns_view')   // use RPC below if view not available
-        .select('column_name, data_type, ordinal_position')
-        .eq('table_name', table)
-        .eq('table_schema', 'public')
-        .order('ordinal_position', { ascending: true });
-
+        .rpc('get_table_columns', { p_table: table });
       if (error) throw error;
       setColumns(data || []);
-    } catch {
-      // Fallback: use RPC that wraps the information_schema query
-      try {
-        const { data: rpcData, error: rpcErr } = await supabase
-          .rpc('get_table_columns', { p_table: table });
-        if (rpcErr) throw rpcErr;
-        setColumns(rpcData || []);
-      } catch (rpcFallbackErr) {
-        showToast?.('Gagal fetch kolom: ' + rpcFallbackErr.message, 'error');
-        setColumns([]);
-      }
+    } catch (err) {
+      showToast?.('Gagal fetch kolom: ' + err.message, 'error');
+      setColumns([]);
     } finally {
       setColLoading(false);
     }
