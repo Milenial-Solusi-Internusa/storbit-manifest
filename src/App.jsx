@@ -1323,7 +1323,7 @@ export default function StorbitManifest() {
     // window (e.g. refreshing while on a gated page). This only times the
     // redirect; it does not gate rendering.
     const permsLoaded =
-      role === 'super_admin' || profile.role === 'super' ||
+      role === 'super_admin' ||
       userPermissions.length > 0 || menuPermissions.length > 0;
     if (!permsLoaded) return;
 
@@ -1664,7 +1664,7 @@ export default function StorbitManifest() {
   // Plain const (not useMemo) because it sits after the `if (loading) return`
   // early-return and depends on visibleMenuGroups computed just above.
   const canAccessActiveMenu = (() => {
-    if (role === 'super_admin' || role === 'super' || profile?.role === 'super') return true;
+    if (role === 'super_admin' || role === 'super') return true;
     // Synthetic / detail menus are navigated to programmatically from pages that
     // are themselves already gated — always allow.
     const SYNTHETIC = ['home', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
@@ -1964,7 +1964,7 @@ export default function StorbitManifest() {
                 profile={profile}
                 hasPermission={hasPermission}
                 hasMenuPermission={hasMenuPermission}
-                permissionsLoading={permissionsLoading && !(role === 'super_admin' || profile?.role === 'super')}
+                permissionsLoading={permissionsLoading && !(role === 'super_admin')}
               />
             </Suspense>
           )}
