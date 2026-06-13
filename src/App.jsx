@@ -1897,7 +1897,7 @@ export default function StorbitManifest() {
            !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
-           !activeMenu?.startsWith('inventory-') && (
+           !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') && (
             <ComingSoonPage
               title="Coming Soon"
               description="This section is planned on the Nexus ERP roadmap and will be available in a future phase."
