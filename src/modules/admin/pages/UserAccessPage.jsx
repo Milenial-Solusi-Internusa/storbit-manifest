@@ -315,7 +315,7 @@ export default function UserAccessPage({ showToast, onEditUser }) {
               >
                 {/* Avatar + Name */}
                 <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                  <Avatar name={row.full_name} />
+                  <Avatar name={row.full_name} avatarUrl={row.avatar_url} />
                   <div className="min-w-0">
                     <div className="font-medium truncate" style={{ color: PASTEL.ink }}>
                       {row.full_name || <span style={{ color: PASTEL.inkMute }}>(unnamed)</span>}
