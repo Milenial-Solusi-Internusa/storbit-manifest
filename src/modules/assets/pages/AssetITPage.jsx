@@ -262,7 +262,7 @@ const CATEGORY_META = {
   },
 };
 
-export default function AssetITPage({ onSelectAsset, categoryCode = 'IT-EQP' }) {
+export default function AssetITPage({ onSelectAsset, onAddAsset, categoryCode = 'IT-EQP' }) {
   useAuth();
 
   const [rawSearch, setRawSearch]         = useState('');
@@ -328,7 +328,7 @@ export default function AssetITPage({ onSelectAsset, categoryCode = 'IT-EQP' }) 
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
           <Btn icon={Download}>Export</Btn>
-          <Btn icon={Plus} primary>Tambah Aset</Btn>
+          <Btn icon={Plus} primary onClick={onAddAsset}>Tambah Aset</Btn>
         </div>
       </div>
 

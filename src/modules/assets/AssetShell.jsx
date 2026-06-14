@@ -4,11 +4,13 @@
 // This component receives activePage + assetId from App.jsx and renders the matching page.
 // No secondary sidebar here.
 
+import { useState, useEffect } from 'react';
 import { LayoutDashboard } from 'lucide-react';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import AssetDashboardPage from './pages/AssetDashboardPage';
 import AssetITPage from './pages/AssetITPage';
 import AssetDetailPage from './pages/AssetDetailPage';
+import AddAssetPage from './pages/AddAssetPage';
 
 // ─────────────────────────────────────────────────────────────
 // Coming-soon stub
@@ -71,12 +73,18 @@ const PAGE_CATEGORY = {
   'assets-properti':  'BLDG',
 };
 
-function renderPage({ activePage, assetId, onSelectAsset, onBack }) {
+function renderPage({ activePage, assetId, onSelectAsset, onBack, onAddAsset }) {
   if (!activePage || activePage === 'assets') return <AssetDashboardPage />;
 
   const categoryCode = PAGE_CATEGORY[activePage];
   if (categoryCode) {
-    return <AssetITPage categoryCode={categoryCode} onSelectAsset={onSelectAsset} />;
+    return (
+      <AssetITPage
+        categoryCode={categoryCode}
+        onSelectAsset={onSelectAsset}
+        onAddAsset={() => onAddAsset(categoryCode)}
+      />
+    );
   }
 
   if (activePage === 'assets-detail') {
@@ -94,11 +102,32 @@ function renderPage({ activePage, assetId, onSelectAsset, onBack }) {
 
 // ─────────────────────────────────────────────────────────────
 // Shell — content only, no sidebar
+//   addCategory : local state for the "Tambah Aset" wizard overlay.
+//     Opened from a list page's "+ Tambah Aset" → AddAssetPage(categoryCode).
+//     Reset whenever the sidebar (activePage) changes, on cancel, or on save.
 // ─────────────────────────────────────────────────────────────
 export default function AssetShell({ activePage, assetId, onSelectAsset, onBack }) {
+  const [addCategory, setAddCategory] = useState(null);
+
+  // Close the add-asset overlay if the user navigates via the sidebar.
+  useEffect(() => { setAddCategory(null); }, [activePage]);
+
+  let content;
+  if (addCategory) {
+    content = (
+      <AddAssetPage
+        categoryCode={addCategory}
+        onBack={() => setAddCategory(null)}
+        onSuccess={() => setAddCategory(null)}
+      />
+    );
+  } else {
+    content = renderPage({ activePage, assetId, onSelectAsset, onBack, onAddAsset: setAddCategory });
+  }
+
   return (
     <ErrorBoundary title="Asset Management section temporarily unavailable">
-      {renderPage({ activePage, assetId, onSelectAsset, onBack })}
+      {content}
     </ErrorBoundary>
   );
 }
