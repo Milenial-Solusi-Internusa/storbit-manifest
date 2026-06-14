@@ -3,18 +3,26 @@
    Entity switcher + 2 tabs:
      A. Numbering Schemes  — table w/ in-place inline edit + live preview
      B. Document Templates — accordion, auto-resize textareas, per-item save
-   Mock data, no backend (Supabase wiring to follow separately).
+   Data layer: Supabase (document_numbering, document_templates).
    ========================================================================= */
 
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "../../../lib/supabase";
 import {
   Icon, PageHeader, EntitySwitcher, Tabs, Toggle, SaveButton, Segmented,
-  Skel, Card, KitStyles, useToast,
+  OutlineBtn, Skel, Card, KitStyles, useToast,
 } from "./kit";
 import {
   NAVY, CREAM, SURFACE, LINE, LINE_SOFT, ROW_HOVER, INK, INK_SOFT, MUTED,
-  FAINT, GREEN, FONT_HEAD, FONT_BODY, FONT_MONO,
+  FAINT, GREEN, DANGER, FONT_HEAD, FONT_BODY, FONT_MONO,
 } from "./tokens";
+
+/* ---------- entity code → companies.id ---------- */
+const ENTITY_IDS = {
+  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
+  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
+  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
+};
 
 const DOC_META = {
   SP:        { icon: "filetext",     label: "Surat Penawaran",  tint: "#EAF0F8", fg: NAVY },
@@ -24,19 +32,37 @@ const DOC_META = {
   ARTTF:     { icon: "banknote",     label: "AR-TTF",           tint: "#DEF0E4", fg: GREEN },
   PO:        { icon: "shoppingcart", label: "Purchase Order",   tint: "#FBEFD3", fg: "#9A6B12" },
 };
-
-const NUM_SEED = [
-  { id: "SP",        prefix: "SP",     suffix: "",    padding: 4, separator: "/", reset: "Tahunan", lastSeq: 142, active: true },
-  { id: "Inquiry",   prefix: "INQ",    suffix: "",    padding: 4, separator: "/", reset: "Tahunan", lastSeq: 318, active: true },
-  { id: "Quotation", prefix: "QTN",    suffix: "",    padding: 4, separator: "/", reset: "Tahunan", lastSeq: 97,  active: true },
-  { id: "Invoice",   prefix: "INV",    suffix: "",    padding: 5, separator: "/", reset: "Bulanan", lastSeq: 2051, active: true },
-  { id: "ARTTF",     prefix: "TTF",    suffix: "AR",  padding: 4, separator: "/", reset: "Tahunan", lastSeq: 64,  active: true },
-  { id: "PO",        prefix: "PO",     suffix: "",    padding: 4, separator: "/", reset: "Tahunan", lastSeq: 205, active: false },
-];
+const FALLBACK_META = { icon: "filetext", label: "—", tint: "#EAF0F8", fg: NAVY };
 
 const RESET_OPTS = ["Tahunan", "Bulanan", "Tidak Pernah"];
 const SEP_OPTS = ["/", "-", "."];
 const YEAR = "2026";
+
+/* ---------- document_numbering row → UI row ---------- */
+const numToRow = (r) => ({
+  dbId:      r.id,
+  id:        r.document_type,
+  prefix:    r.prefix || "",
+  suffix:    r.suffix || "",
+  padding:   r.padding_digits ?? 4,
+  separator: r.separator || "/",
+  reset:     r.reset_cadence || "Tahunan",
+  lastSeq:   r.last_sequence ?? r.current_sequence ?? r.current_number ?? 0,
+  active:    !!r.is_active,
+});
+
+/* ---------- document_templates row → UI data ---------- */
+const BLANK_TPL = { header: "", footer: "", tc: "", footnote: "", logoPos: "left", stamp: false, sign: false, saved: "—" };
+const tplToData = (r) => ({
+  header:   r.header_text || "",
+  footer:   r.footer_text || "",
+  tc:       r.terms_and_conditions || "",
+  footnote: r.footnote || "",
+  logoPos:  r.logo_position || "left",
+  stamp:    !!r.show_stamp,
+  sign:     !!r.show_signature,
+  saved:    r.updated_at ? new Date(r.updated_at).toLocaleString("id-ID") : "tersimpan",
+});
 
 function buildPreview(s, entity) {
   const seq = String((Number(s.lastSeq) || 0) + 1).padStart(Math.max(1, Number(s.padding) || 1), "0");
@@ -52,7 +78,7 @@ function AnimatedCode({ value, size = 14 }) {
     <span style={{ fontFamily: FONT_MONO, fontSize: size, fontWeight: 700, color: NAVY, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
       {value.split("").map((ch, i) => (
         <span key={i + ":" + ch} style={{ display: "inline-block", animation: "ak-charin .26s cubic-bezier(.22,1,.36,1) both" }}>
-          {ch === " " ? " " : ch}
+          {ch === " " ? " " : ch}
         </span>
       ))}
     </span>
@@ -84,8 +110,31 @@ const dThStyle = { padding: "12px 14px", textAlign: "left", fontFamily: FONT_BOD
 const dTdStyle = { padding: "12px 14px", borderBottom: "1px solid " + LINE_SOFT, verticalAlign: "middle", whiteSpace: "nowrap" };
 const codeChip = { fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: NAVY };
 
+/* ---------- empty state ---------- */
+function EmptyState({ icon, title, desc }) {
+  return (
+    <Card style={{ textAlign: "center", padding: "48px 32px" }}>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: CREAM, border: "1px solid " + LINE, display: "flex", alignItems: "center", justifyContent: "center", color: NAVY, margin: "0 auto 18px" }}><Icon name={icon} size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>{title}</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 0", lineHeight: 1.55, textWrap: "pretty" }}>{desc}</div>
+    </Card>
+  );
+}
+
+/* ---------- error state (fetch failed) ---------- */
+function ErrorState({ msg, onRetry }) {
+  return (
+    <Card style={{ textAlign: "center", padding: "48px 32px" }}>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+      <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
+    </Card>
+  );
+}
+
 function NumberingRow({ row, entity, editing, onEdit, onSave, onChange, onToggle, hovered, onHover }) {
-  const meta = DOC_META[row.id];
+  const meta = DOC_META[row.id] || FALLBACK_META;
   const preview = buildPreview(row, entity);
   return (
     <tr onMouseEnter={() => onHover(row.id)} onMouseLeave={() => onHover(null)}
@@ -122,13 +171,46 @@ function NumberingRow({ row, entity, editing, onEdit, onSave, onChange, onToggle
 }
 
 function NumberingTab({ entity, fireToast }) {
-  const [rows, setRows] = useState(NUM_SEED);
+  const [rows, setRows] = useState([]);
   const [editId, setEditId] = useState(null);
   const [hover, setHover] = useState(null);
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
 
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading"); setEditId(null);
+    supabase.from("document_numbering").select("*").eq("company_id", ENTITY_IDS[entity]).limit(1000)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setErrMsg(error.message); setState("error"); return; }
+        setRows((data || []).map(numToRow)); setState("ready");
+      });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
+  const refetch = () => setReload((n) => n + 1);
   const change = (key, val) => setRows((r) => r.map((x) => x.id === editId ? { ...x, [key]: val } : x));
-  const toggle = (id) => setRows((r) => r.map((x) => x.id === id ? { ...x, active: !x.active } : x));
-  const save = (id) => { setEditId(null); fireToast("Skema penomoran " + DOC_META[id].label + " disimpan"); };
+  const toggle = async (id) => {
+    const row = rows.find((x) => x.id === id);
+    if (!row) return;
+    const { error } = await supabase.from("document_numbering").update({ is_active: !row.active }).eq("id", row.dbId);
+    if (error) { fireToast("Gagal memperbarui: " + error.message, "alert"); return; }
+    refetch();
+  };
+  const save = async (id) => {
+    const row = rows.find((x) => x.id === id);
+    if (!row) return;
+    const { error } = await supabase.from("document_numbering").update({
+      prefix: row.prefix, suffix: row.suffix, padding_digits: Number(row.padding) || 1,
+      separator: row.separator, reset_cadence: row.reset, is_active: row.active,
+    }).eq("id", row.dbId);
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    setEditId(null);
+    fireToast("Skema penomoran " + (DOC_META[id]?.label || id) + " disimpan");
+    refetch();
+  };
 
   return (
     <div>
@@ -136,29 +218,38 @@ function NumberingTab({ entity, fireToast }) {
         <Icon name="info" size={17} color={NAVY} />
         <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>Live preview diperbarui real-time saat Anda mengubah prefix, suffix, atau padding. Format: <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: NAVY }}>PREFIX/ENTITAS/TAHUN/URUTAN</span></span>
       </div>
-      <Card pad={0} style={{ overflow: "hidden" }}>
-        <div className="ak-scroll" style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
-            <thead>
-              <tr style={{ background: CREAM }}>
-                <th style={dThStyle}>Jenis Dokumen</th>
-                <th style={dThStyle}>Prefix</th>
-                <th style={dThStyle}>Suffix</th>
-                <th style={{ ...dThStyle, textAlign: "center" }}>Padding</th>
-                <th style={{ ...dThStyle, textAlign: "center" }}>Pemisah</th>
-                <th style={dThStyle}>Reset</th>
-                <th style={{ ...dThStyle, textAlign: "right" }}>Urutan Terakhir</th>
-                <th style={dThStyle}>Live Preview</th>
-                <th style={{ ...dThStyle, textAlign: "center" }}>Aktif</th>
-                <th style={{ ...dThStyle, textAlign: "right" }}>Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => <NumberingRow key={r.id} row={r} entity={entity} editing={editId === r.id} onEdit={setEditId} onSave={save} onChange={change} onToggle={toggle} hovered={hover === r.id} onHover={setHover} />)}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+
+      {state === "loading" ? (
+        <TableSkeleton />
+      ) : state === "error" ? (
+        <ErrorState msg={errMsg} onRetry={refetch} />
+      ) : rows.length === 0 ? (
+        <EmptyState icon="hash" title="Belum ada skema penomoran" desc="Skema penomoran untuk entitas ini belum dikonfigurasi. Hubungi admin untuk menyiapkan jenis dokumen." />
+      ) : (
+        <Card pad={0} style={{ overflow: "hidden" }}>
+          <div className="ak-scroll" style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+              <thead>
+                <tr style={{ background: CREAM }}>
+                  <th style={dThStyle}>Jenis Dokumen</th>
+                  <th style={dThStyle}>Prefix</th>
+                  <th style={dThStyle}>Suffix</th>
+                  <th style={{ ...dThStyle, textAlign: "center" }}>Padding</th>
+                  <th style={{ ...dThStyle, textAlign: "center" }}>Pemisah</th>
+                  <th style={dThStyle}>Reset</th>
+                  <th style={{ ...dThStyle, textAlign: "right" }}>Urutan Terakhir</th>
+                  <th style={dThStyle}>Live Preview</th>
+                  <th style={{ ...dThStyle, textAlign: "center" }}>Aktif</th>
+                  <th style={{ ...dThStyle, textAlign: "right" }}>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => <NumberingRow key={r.id} row={r} entity={entity} editing={editId === r.id} onEdit={setEditId} onSave={save} onChange={change} onToggle={toggle} hovered={hover === r.id} onHover={setHover} />)}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -175,15 +266,6 @@ function AutoTextarea({ value, onChange, placeholder, minH = 70 }) {
   );
 }
 
-const TPL_SEED = {
-  SP:        { header: "PT Milenial Solusi Internusa — Freight Forwarding & Trading", footer: "Dokumen ini diterbitkan secara elektronik dan sah tanpa tanda tangan basah.", tc: "1. Harga belum termasuk PPN.\n2. Penawaran berlaku 14 hari sejak tanggal terbit.\n3. Pembayaran sesuai termin yang disepakati.", footnote: "Hal. {page} dari {total}", logoPos: "left", stamp: true, sign: true, saved: "—" },
-  Inquiry:   { header: "PT Milenial Solusi Internusa", footer: "Terima kasih atas inquiry Anda.", tc: "", footnote: "", logoPos: "left", stamp: false, sign: false, saved: "—" },
-  Quotation: { header: "PT Milenial Solusi Internusa — Quotation", footer: "Berlaku sesuai validitas tercantum.", tc: "1. Harga dalam mata uang tercantum.\n2. Subject to space & equipment availability.", footnote: "Hal. {page}", logoPos: "center", stamp: true, sign: true, saved: "—" },
-  Invoice:   { header: "PT Milenial Solusi Internusa", footer: "Mohon transfer ke rekening yang tertera.", tc: "Pembayaran jatuh tempo sesuai termin. Keterlambatan dikenakan denda 2%/bulan.", footnote: "Hal. {page} dari {total}", logoPos: "left", stamp: true, sign: true, saved: "—" },
-  ARTTF:     { header: "PT Milenial Solusi Internusa — Tanda Terima Faktur", footer: "", tc: "", footnote: "", logoPos: "left", stamp: false, sign: true, saved: "—" },
-  PO:        { header: "PT Milenial Solusi Internusa — Purchase Order", footer: "Konfirmasi penerimaan PO dalam 2x24 jam.", tc: "Barang/jasa sesuai spesifikasi PO.", footnote: "Hal. {page}", logoPos: "right", stamp: true, sign: true, saved: "—" },
-};
-
 function Field({ label, children }) {
   return <div><div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 8 }}>{label}</div>{children}</div>;
 }
@@ -191,8 +273,8 @@ function ToggleField({ label, on, onChange }) {
   return <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Toggle on={on} onChange={onChange} /><span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: INK_SOFT }}>{label}</span></div>;
 }
 
-function TemplateAccordion({ id, data, open, onToggle, onChange, fireToast }) {
-  const meta = DOC_META[id];
+function TemplateAccordion({ id, data, open, onToggle, onChange, onSave }) {
+  const meta = DOC_META[id] || FALLBACK_META;
   return (
     <div style={{ background: SURFACE, border: "1px solid " + (open ? "#C9D8EC" : LINE), borderRadius: 14, overflow: "hidden", transition: "border-color .2s" }}>
       <button type="button" onClick={onToggle}
@@ -223,7 +305,7 @@ function TemplateAccordion({ id, data, open, onToggle, onChange, fireToast }) {
                 <ToggleField label="Tampilkan Tanda Tangan" on={data.sign} onChange={(v) => onChange("sign", v)} />
               </div>
               <span style={{ flex: 1 }} />
-              <SaveButton label="Simpan Template" variant="primary" onSave={() => { onChange("saved", "baru saja"); fireToast("Template " + meta.label + " disimpan"); }} />
+              <SaveButton label="Simpan Template" variant="primary" onSave={onSave} />
             </div>
           </div>
         </div>
@@ -232,14 +314,66 @@ function TemplateAccordion({ id, data, open, onToggle, onChange, fireToast }) {
   );
 }
 
-function TemplatesTab({ fireToast }) {
-  const [tpl, setTpl] = useState(TPL_SEED);
+function TemplatesSkeleton() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {[0, 1, 2].map((i) => (
+        <Card key={i} pad={0} style={{ overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px" }}>
+            <Skel w={40} h={40} r={11} />
+            <div style={{ flex: 1 }}><Skel w={150} h={14} style={{ marginBottom: 8 }} /><Skel w={100} h={10} /></div>
+            <Skel w={20} h={20} r={6} />
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function TemplatesTab({ entity, fireToast }) {
+  const [tpl, setTpl] = useState({});
   const [open, setOpen] = useState("SP");
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    supabase.from("document_templates").select("*").eq("company_id", ENTITY_IDS[entity]).limit(1000)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setErrMsg(error.message); setState("error"); return; }
+        const byType = {};
+        (data || []).forEach((r) => { byType[r.document_type] = tplToData(r); });
+        const next = {};
+        Object.keys(DOC_META).forEach((k) => { next[k] = byType[k] || { ...BLANK_TPL }; });
+        setTpl(next); setState("ready");
+      });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
+  const refetch = () => setReload((n) => n + 1);
   const change = (id) => (key, val) => setTpl((t) => ({ ...t, [id]: { ...t[id], [key]: val } }));
+  const saveTpl = (id) => async () => {
+    const d = tpl[id] || BLANK_TPL;
+    const { error } = await supabase.from("document_templates").upsert({
+      company_id: ENTITY_IDS[entity], document_type: id,
+      header_text: d.header, footer_text: d.footer, terms_and_conditions: d.tc,
+      footnote: d.footnote, logo_position: d.logoPos, show_stamp: d.stamp, show_signature: d.sign,
+    }, { onConflict: "company_id,document_type" });
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    fireToast("Template " + (DOC_META[id]?.label || id) + " disimpan");
+    refetch();
+  };
+
+  if (state === "loading") return <TemplatesSkeleton />;
+  if (state === "error") return <ErrorState msg={errMsg} onRetry={refetch} />;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {Object.keys(DOC_META).map((id) => (
-        <TemplateAccordion key={id} id={id} data={tpl[id]} open={open === id} onToggle={() => setOpen(open === id ? null : id)} onChange={change(id)} fireToast={fireToast} />
+        <TemplateAccordion key={id} id={id} data={tpl[id] || BLANK_TPL} open={open === id} onToggle={() => setOpen(open === id ? null : id)} onChange={change(id)} onSave={saveTpl(id)} />
       ))}
     </div>
   );
@@ -288,7 +422,7 @@ export default function DocumentSettingsPage({ onHome }) {
       {loading ? <TableSkeleton /> : (
         <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
           {tab === "numbering" && <NumberingTab entity={entity} fireToast={fireToast} />}
-          {tab === "templates" && <TemplatesTab fireToast={fireToast} />}
+          {tab === "templates" && <TemplatesTab entity={entity} fireToast={fireToast} />}
         </div>
       )}
       {toastNode}
