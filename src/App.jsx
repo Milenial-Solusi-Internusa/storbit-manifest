@@ -49,6 +49,8 @@ const AdminSettingsHub       = lazy(() => import('./pages/foundation/admin-setti
 const EntitySettingsPage     = lazy(() => import('./pages/foundation/admin-settings/EntitySettingsPage'));
 const DocumentSettingsPage   = lazy(() => import('./pages/foundation/admin-settings/DocumentSettingsPage'));
 const FinanceDefaultsPage    = lazy(() => import('./pages/foundation/admin-settings/FinanceDefaultsPage'));
+const ApprovalWorkflowsPage  = lazy(() => import('./pages/foundation/admin-settings/ApprovalWorkflowsPage'));
+const NotificationsPage      = lazy(() => import('./pages/foundation/admin-settings/NotificationsPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -2424,6 +2426,8 @@ export default function StorbitManifest() {
                   id === 'entity' ? 'admin-settings-entity'
                     : id === 'document' ? 'admin-settings-documents'
                     : id === 'finance' ? 'admin-settings-finance'
+                    : id === 'approval' ? 'admin-settings-approvals'
+                    : id === 'notif' ? 'admin-settings-notifications'
                     : 'admin-settings'
                 )} />
               </Suspense>
@@ -2447,6 +2451,20 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Finance Defaults temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <FinanceDefaultsPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-approvals' && (
+            <ErrorBoundary title="Approval Workflows temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <ApprovalWorkflowsPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-notifications' && (
+            <ErrorBoundary title="Notifications temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <NotificationsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}

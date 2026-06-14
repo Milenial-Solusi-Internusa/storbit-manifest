@@ -16,13 +16,13 @@ const HUB_GROUPS = [
       { id: "entity",   icon: "building2", name: "Entity Settings",     desc: "Profil perusahaan, rekening bank, penanda tangan.", status: "available" },
       { id: "document", icon: "filetext",  name: "Document Settings",   desc: "Skema penomoran & template dokumen.",              status: "available" },
       { id: "finance",  icon: "coins",     name: "Finance Defaults",    desc: "Konfigurasi pajak, mata uang, termin pembayaran.", status: "available" },
+      { id: "approval", icon: "gitbranch", name: "Approval Workflows",  desc: "Rantai persetujuan per jenis dokumen & HRGA.",     status: "available" },
+      { id: "notif",    icon: "bell",      name: "Notifications",       desc: "Aturan notifikasi in-app & email.",                status: "available" },
     ],
   },
   {
     title: "Roadmap",
     cards: [
-      { id: "approval",  icon: "gitbranch",  name: "Approval Workflows",   desc: "Rantai persetujuan per jenis dokumen.",   status: "roadmap" },
-      { id: "notif",     icon: "bell",       name: "Notifications",        desc: "Aturan notifikasi dalam aplikasi.",       status: "roadmap" },
       { id: "security",  icon: "shield",     name: "Security Policy",      desc: "Pengaturan kata sandi & sesi.",           status: "roadmap" },
       { id: "audit",     icon: "clipboard",  name: "Audit Log",            desc: "Riwayat aktivitas sistem.",               status: "roadmap" },
       { id: "general",   icon: "settings",   name: "General Preferences",  desc: "Lokalisasi & tampilan.",                  status: "roadmap" },
