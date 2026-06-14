@@ -3,21 +3,30 @@
    Entity switcher + 2 tabs:
      A. In-App — notification rules grouped by event scope; edit via modal
      B. Email  — same layout, locked behind a "Coming Soon" overlay (SMTP)
-   Data dummy/statis (Supabase wiring to follow separately).
+   Data layer: Supabase (notification_rules). In-App tab is live; Email tab
+   stays a "Coming Soon" overlay (no DB).
    Note: glyphs not in kit's Icon registry (user, users, external-link) are
    pulled directly from lucide-react — kit.jsx is not modified.
    ========================================================================= */
 
 import { useState, useEffect, useRef } from "react";
 import { User, Users, ExternalLink } from "lucide-react";
+import { supabase } from "../../../lib/supabase";
 import {
   Icon, PageHeader, EntitySwitcher, Tabs, Toggle, PrimaryBtn, OutlineBtn,
   Modal, useToast, Skel, KitStyles,
 } from "./kit";
 import {
   NAVY, ORANGE, CREAM, SURFACE, LINE, LINE_SOFT, ROW_HOVER, INK, INK_SOFT,
-  MUTED, FAINT, GREEN, FONT_HEAD, FONT_BODY, FONT_MONO,
+  MUTED, FAINT, GREEN, DANGER, FONT_HEAD, FONT_BODY, FONT_MONO,
 } from "./tokens";
+
+/* ---------- entity code → companies.id ---------- */
+const ENTITY_IDS = {
+  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
+  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
+  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
+};
 
 const NOTIF_ROLES = [
   { value: "super_admin", label: "Super Admin" },
@@ -48,51 +57,38 @@ const CH_KINDS = [
 ];
 const channelText = (c) => c === "inapp" ? "In-App" : c === "email" ? "Email" : "Keduanya";
 
-/* ---------- seed rules, grouped ---------- */
-const NOTIF_GROUPS = [
-  {
-    id: "sp", name: "SP & Dokumen", icon: "filetext",
-    rules: [
-      { id: "sp.created",  label: "SP Baru Dibuat",  channel: "both",  recipient: "role", role: "manager", active: true,
-        subject: "SP baru menunggu tindakan Anda", body: "Halo {recipient}, SP {doc_number} baru saja dibuat oleh {actor} dan menunggu tindakan Anda." },
-      { id: "sp.approved", label: "SP Disetujui",    channel: "inapp", recipient: "created_by", role: "", active: true,
-        subject: "SP Anda telah disetujui", body: "SP {doc_number} yang Anda buat telah disetujui oleh {approver}." },
-      { id: "sp.rejected", label: "SP Ditolak",      channel: "inapp", recipient: "created_by", role: "", active: true,
-        subject: "SP Anda ditolak", body: "SP {doc_number} ditolak. Alasan: {reason}." },
-    ],
-  },
-  {
-    id: "approval", name: "Approval", icon: "gitbranch",
-    rules: [
-      { id: "approval.pending",  label: "Persetujuan Menunggu", channel: "both",  recipient: "role", role: "manager", active: true,
-        subject: "Ada dokumen menunggu persetujuan", body: "Halo {recipient}, dokumen {doc_number} menunggu persetujuan Anda." },
-      { id: "approval.approved", label: "Persetujuan Disetujui", channel: "inapp", recipient: "created_by", role: "", active: true,
-        subject: "Dokumen Anda disetujui", body: "Dokumen {doc_number} telah disetujui pada langkah {step}." },
-      { id: "approval.rejected", label: "Persetujuan Ditolak", channel: "inapp", recipient: "created_by", role: "", active: false,
-        subject: "Dokumen Anda ditolak", body: "Dokumen {doc_number} ditolak oleh {approver}." },
-    ],
-  },
-  {
-    id: "crm", name: "CRM", icon: "users",
-    rules: [
-      { id: "crm.deal_won",  label: "Deal Dimenangkan", channel: "both",  recipient: "role", role: "manager", active: true,
-        subject: "Deal baru dimenangkan", body: "Selamat! Deal {deal_name} senilai {amount} berhasil dimenangkan oleh {actor}." },
-      { id: "crm.lead_idle", label: "Lead Tidak Aktif",  channel: "inapp", recipient: "assigned_to", role: "", active: true,
-        subject: "Lead Anda tidak aktif", body: "Lead {lead_name} belum ada aktivitas selama {idle_days} hari." },
-    ],
-  },
-  {
-    id: "hrga", name: "HRGA", icon: "clipboard",
-    rules: [
-      { id: "hrga.request_submitted", label: "Request HRGA Diajukan", channel: "both",  recipient: "role", role: "hrga", active: true,
-        subject: "Request HRGA baru diajukan", body: "Request {request_code} diajukan oleh {actor} dan menunggu peninjauan tim HRGA." },
-      { id: "hrga.request_approved",  label: "Request HRGA Disetujui", channel: "inapp", recipient: "created_by", role: "", active: true,
-        subject: "Request HRGA Anda disetujui", body: "Request {request_code} Anda telah disetujui." },
-      { id: "hrga.request_rejected",  label: "Request HRGA Ditolak", channel: "inapp", recipient: "created_by", role: "", active: true,
-        subject: "Request HRGA Anda ditolak", body: "Request {request_code} ditolak. Alasan: {reason}." },
-    ],
-  },
+/* ---------- group metadata (event_scope → UI group). DB scope 'general' = Approval ---------- */
+const GROUP_META = [
+  { id: "sp",       scope: "sp",      name: "SP & Dokumen", icon: "filetext" },
+  { id: "approval", scope: "general", name: "Approval",     icon: "gitbranch" },
+  { id: "crm",      scope: "crm",     name: "CRM",          icon: "users" },
+  { id: "hrga",     scope: "hrga",    name: "HRGA",         icon: "clipboard" },
 ];
+const scopeOf = (gid) => (GROUP_META.find((g) => g.id === gid) || {}).scope || gid;
+const groupIdForScope = (scope) => (GROUP_META.find((g) => g.scope === scope) || {}).id || scope;
+
+/* friendly labels for known event types (DB has no label column) */
+const EVENT_LABELS = {
+  "sp.created": "SP Baru Dibuat", "sp.approved": "SP Disetujui", "sp.rejected": "SP Ditolak",
+  "approval.pending": "Persetujuan Menunggu", "approval.approved": "Persetujuan Disetujui", "approval.rejected": "Persetujuan Ditolak",
+  "crm.deal_won": "Deal Dimenangkan", "crm.lead_idle": "Lead Tidak Aktif",
+  "hrga.request_submitted": "Request HRGA Diajukan", "hrga.request_approved": "Request HRGA Disetujui", "hrga.request_rejected": "Request HRGA Ditolak",
+};
+
+/* ---------- notification_rules row → UI rule ---------- */
+function ruleToUi(r) {
+  return {
+    id: r.id,
+    code: r.event_type,
+    label: EVENT_LABELS[r.event_type] || r.event_type,
+    channel: r.channel || "inapp",
+    recipient: r.recipient_type || "role",
+    role: r.recipient_role || "",
+    subject: r.template_subject || "",
+    body: r.template_body || "",
+    active: !!r.is_active,
+  };
+}
 
 /* group icon — 'users' isn't in kit's Icon registry, render via lucide directly */
 function GroupIcon({ name, size }) {
@@ -140,7 +136,7 @@ function NRuleRow({ rule, zebra, onToggle, onEdit, locked }) {
       style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", background: hover && !locked ? ROW_HOVER : zebra ? "rgba(246,239,227,.5)" : "transparent", borderBottom: "1px solid " + LINE_SOFT, transition: "background .15s", opacity: rule.active ? 1 : 0.62 }}>
       <div style={{ flex: "1 1 220px", minWidth: 180 }}>
         <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: INK, marginBottom: 5 }}>{rule.label}</div>
-        <NCodeBadge code={rule.id} />
+        <NCodeBadge code={rule.code} />
       </div>
       <div style={{ flex: "0 0 auto" }}><NChannelBadge channel={rule.channel} /></div>
       <div style={{ flex: "0 0 auto", minWidth: 120 }}><NRecipientBadge rule={rule} /></div>
@@ -257,7 +253,7 @@ function NRuleModal({ open, draft, onClose, onSave }) {
       ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 11, background: CREAM, border: "1px solid " + LINE }}>
           <span style={{ fontFamily: FONT_BODY, fontSize: 14, fontWeight: 600, color: INK }}>{form.label}</span>
-          <NCodeBadge code={form.id} />
+          <NCodeBadge code={form.code} />
           <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, fontFamily: FONT_BODY, fontSize: 11.5, color: FAINT }}><Icon name="lock" size={12} />Tidak dapat diubah</span>
         </div>
       )}
@@ -333,8 +329,8 @@ function NSelect({ value, onChange, options }) {
 function NRulesBoard({ groups, onToggle, onEdit, onAdd, locked }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {NOTIF_GROUPS.map((g) => (
-        <NGroupCard key={g.id} group={g} rules={groups[g.id]} onToggle={onToggle} onEdit={onEdit} onAdd={onAdd} locked={locked} />
+      {GROUP_META.map((g) => (
+        <NGroupCard key={g.id} group={g} rules={groups[g.id] || []} onToggle={onToggle} onEdit={onEdit} onAdd={onAdd} locked={locked} />
       ))}
     </div>
   );
@@ -366,12 +362,18 @@ function NEmailLock() {
 /* =========================================================================
    PAGE SHELL
    ========================================================================= */
-function buildGroupState() {
-  const out = {};
-  NOTIF_GROUPS.forEach((g) => { out[g.id] = g.rules.map((r) => ({ ...r })); });
-  return out;
-}
 let N_RULE_SEQ = 100;
+
+function NErrorState({ msg, onRetry }) {
+  return (
+    <div style={{ background: SURFACE, border: "1px solid " + LINE, borderRadius: 16, textAlign: "center", padding: "48px 32px" }}>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+      <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
+    </div>
+  );
+}
 
 function NSkeleton() {
   return (
@@ -397,36 +399,89 @@ export default function NotificationsPage({ onHome }) {
   const [entity, setEntity] = useState("MSI");
   const [tab, setTab] = useState("inapp");
   const [fade, setFade] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(buildGroupState);
+  const [data, setData] = useState({});
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState(null);
   const [draftGroup, setDraftGroup] = useState(null);
   const [fireToast, toastNode] = useToast();
 
-  useEffect(() => { const t = setTimeout(() => setLoading(false), 750); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    supabase.from("notification_rules").select("*").eq("company_id", ENTITY_IDS[entity]).order("event_scope", { ascending: true }).order("event_type", { ascending: true }).limit(1000)
+      .then(({ data: rows, error }) => {
+        if (cancelled) return;
+        if (error) { setErrMsg(error.message); setState("error"); return; }
+        const grouped = {};
+        GROUP_META.forEach((g) => { grouped[g.id] = []; });
+        (rows || []).forEach((r) => {
+          const gid = groupIdForScope(r.event_scope);
+          if (!grouped[gid]) grouped[gid] = [];
+          grouped[gid].push(ruleToUi(r));
+        });
+        setData(grouped); setState("ready");
+      });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
+  const refetch = () => setReload((n) => n + 1);
   function switchEntity(id) { if (id === entity) return; setFade(true); setTimeout(() => { setEntity(id); setFade(false); }, 200); }
 
-  const findGroup = (ruleId) => NOTIF_GROUPS.find((g) => data[g.id].some((r) => r.id === ruleId)).id;
-  const toggle = (ruleId) => {
+  const findGroup = (ruleId) => {
+    for (const g of GROUP_META) { if ((data[g.id] || []).some((r) => r.id === ruleId)) return g.id; }
+    return null;
+  };
+  const toggle = async (ruleId) => {
     const gid = findGroup(ruleId);
-    setData((d) => ({ ...d, [gid]: d[gid].map((r) => r.id === ruleId ? { ...r, active: !r.active } : r) }));
+    const rule = gid ? data[gid].find((r) => r.id === ruleId) : null;
+    if (!rule) return;
+    const { error } = await supabase.from("notification_rules").update({ is_active: !rule.active }).eq("id", ruleId);
+    if (error) { fireToast("Gagal memperbarui: " + error.message, "alert"); return; }
+    refetch();
   };
   const openEdit = (rule) => { setDraftGroup(findGroup(rule.id)); setDraft({ ...rule }); setModalOpen(true); };
   const openAdd = (gid) => {
     setDraftGroup(gid);
-    setDraft({ id: gid + ".custom_" + (++N_RULE_SEQ), _isNew: true, label: "", channel: "inapp", recipient: "role", role: "manager", active: true, subject: "", body: "" });
+    setDraft({ id: null, _isNew: true, code: gid + ".custom_" + (++N_RULE_SEQ), label: "", channel: "inapp", recipient: "role", role: "manager", active: true, subject: "", body: "" });
     setModalOpen(true);
   };
-  const save = (form) => {
+  const save = async (form) => {
     const gid = draftGroup;
-    setData((d) => {
-      const exists = d[gid].some((r) => r.id === form.id);
-      const rest = { ...form }; delete rest._isNew;
-      return { ...d, [gid]: exists ? d[gid].map((r) => r.id === form.id ? rest : r) : [...d[gid], rest] };
-    });
-    setModalOpen(false);
-    fireToast("Rule \"" + (form.label || form.id) + "\" disimpan");
+    try {
+      if (form._isNew) {
+        const { error } = await supabase.from("notification_rules").insert({
+          company_id: ENTITY_IDS[entity],
+          event_type: form.code,
+          event_scope: scopeOf(gid),
+          channel: form.channel,
+          recipient_type: form.recipient,
+          recipient_role: form.recipient === "role" ? (form.role || null) : null,
+          template_subject: form.subject || null,
+          template_body: form.body || null,
+          is_active: !!form.active,
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("notification_rules").update({
+          channel: form.channel,
+          recipient_type: form.recipient,
+          recipient_role: form.recipient === "role" ? (form.role || null) : null,
+          recipient_user_id: null,
+          template_subject: form.subject || null,
+          template_body: form.body || null,
+          is_active: !!form.active,
+        }).eq("id", form.id);
+        if (error) throw error;
+      }
+      setModalOpen(false);
+      fireToast("Rule \"" + (form.label || form.code) + "\" disimpan");
+      refetch();
+    } catch (e) {
+      fireToast("Gagal menyimpan: " + e.message, "alert");
+    }
   };
 
   const tabs = [
@@ -445,7 +500,7 @@ export default function NotificationsPage({ onHome }) {
         right={<EntitySwitcher value={entity} onChange={switchEntity} />}
       />
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
-      {loading ? <NSkeleton /> : (
+      {state === "loading" ? <NSkeleton /> : state === "error" ? <NErrorState msg={errMsg} onRetry={refetch} /> : (
         <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
           {tab === "inapp" ? (
             <NRulesBoard groups={data} onToggle={toggle} onEdit={openEdit} onAdd={openAdd} locked={false} />
