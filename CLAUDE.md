@@ -920,7 +920,58 @@ Output:
 
 | 2.7A-fix | **AppLauncher.jsx — rename key `'Inventory & Asset'` → `'Inventory'` (follow-up 2.7A side effect).** Tiga map yg di-key by label grup: `MODULE_CFG` (L21, Icon Package/warna #D97706/desc), `LAUNCHER_MODULE_MAP` (L179, → 'inventory' gating), `GRID_POS` (L194, col2/row2). Setelah grup ERP_MENU_GROUPS di-rename ke 'Inventory' (2.7A), ketiga lookup `group.label` cocok lagi → card launcher "Inventory" balik pakai icon/warna/grid-pos/gating yg benar (bukan fallback abu Database). Hanya key string yg diubah (3 occurrence, value/whitespace lain tidak disentuh). 0 ref `'Inventory & Asset'` tersisa. build clean. Tidak ada file lain diubah. | ✅ Complete |
 
-Current phase: **Phase 2.7A** ✅ Complete
+| 2.7B | **AssetDashboardPage — wire ke Supabase (hapus semua dummy).** Hanya `src/modules/assets/pages/AssetDashboardPage.jsx` diubah (useAssets.js/AssetShell/App.jsx/sidebar TIDAK disentuh). Import `supabase` dari `../../../lib/supabase` + react hooks. **`fetchDashboardStats()`** (module-scope, async): `Promise.all([asset_categories select id,code (deleted_at null, limit 1000); assets select category_id,company_id,status,purchase_price (deleted_at null, limit 5000)])` → agregasi client-side (13–422 row, ringan). Const `COMPANIES` (3 id→{key,label,sub,color}: MSI/JCI/SOA; 'soa' ditambah ke `CoBadge` cfg reuse warna sbi) + `CATS` (VEH/IT-EQP/FURN/BLDG → label/warna/icon). **Data nyata:** Row1 stat (count per kategori VEH/IT-EQP/FURN/BLDG), Row2 (active/in_repair/disposed + Dokumen Expired=0 hardcoded krn `asset_documents` belum ada, delta "Modul dokumen belum aktif"; Dalam Maintenance delta "0 work order aktif"), Total Nilai (SUM purchase_price + breakdown per kategori %+amount), Nilai per Company (SUM+count group company_id, bar relatif ke max), Donut Aset per Kategori (count per code, conic-gradient dinamis), CompanyValueChart (Miliar per company). Helper format `fmtShortRp` (M/Jt) + `fmtBigRp` (Miliar/Juta) lokal (tak ada shared util di module). **Komponen UI dipertahankan:** Card/CardHead/StatCard/CoBadge/Badge/Btn; `DonutChart`+`CompanyValueChart` di-parameterize (terima props, bukan const internal). **Loading** → `DashboardSkeleton` (grey block sesuai tema warm); **Error** → card + tombol "Coba Lagi" (retry `load()`). **Empty state "Fitur segera hadir":** Timeline Expiry Dokumen + tabel Dokumen Akan Expired (krn `asset_documents` belum ada) — `ExpiryBarsChart`/`EXPIRY_ROWS`/`URGENCY_LABEL` dummy dihapus. Header subtitle fake-timestamp "Per 2 Juni 2026" → "semua entitas"; tombol header (Periode/Export/Tambah Aset) tetap (UI statis). build clean. Lint: 1 error baseline `set-state-in-effect` (`load()` set state saat dipanggil di effect — pola sama semua fetch page repo). | ✅ Complete |
+
+Current phase: **Phase 2.7B** ✅ Complete
+
+---
+
+## Asset Management — Deep Audit (15 Jun 2026, audit-only, 0 file diubah)
+
+Audit modul `src/modules/assets/` + hook `src/hooks/useAssets.js` vs DB.
+
+### FILES AUDIT
+| File | Status | Tabel / sumber |
+|------|--------|----------------|
+| `hooks/useAssets.js` | ✅ Supabase | `assets` (+join `companies`,`asset_locations`,`asset_categories`), `asset_categories`, `asset_specifications`, `asset_network`, `asset_software_licenses`, `asset_maintenance_records`, `asset_fuel_logs`. 4 hook: useITAssets (list paginated), useAssetDetail, useFuelLogs, useITAssetDetail. Query rapi (deleted_at IS NULL, no SELECT *, graceful 42P01). |
+| `AssetShell.jsx` | ✅ Router | Routing only; non-implemented page → `<ComingSoon>` stub. |
+| `AssetITPage.jsx` | ✅ Supabase | `useITAssets({ categoryCode })` — dipakai utk **IT-EQP / VEH / FURN / BLDG** (4 list page generik). Real data, server pagination, filter, search debounce. |
+| `AssetDetailPage.jsx` | ⚠️ Partial | `useAssetDetail`+`useFuelLogs`. Tab **Info Dasar** & **BBM** = real. Tab **Dokumen/Maintenance/Rute/History** = placeholder ("akan tampil setelah modul … diimplementasi"). IT-EQP didelegasikan ke AssetDetailITPage. Tab spec/network/software di file ini = dead-code placeholder (tak terjangkau krn IT delegate). |
+| `AssetDetailITPage.jsx` | ✅ Supabase | `useITAssetDetail` — specs/network/software/maintenance semua real; Health Score dihitung client-side dari data real. |
+| `AssetDashboardPage.jsx` | ✅ Supabase (Phase 2.7B) | `assets` + `asset_categories` (aggregate client-side). Dulu 100% dummy → sekarang real. |
+
+### TABEL MISSING (dibutuhkan UI, BELUM ada di DB)
+1. **`asset_documents`** (+ expiry) — KRITIS. Dipakai: tab Dokumen (STNK/BPKB/KIR/Asuransi di AssetDetailPage), sidebar `assets-docs`/`assets-expiring`/`assets-expired`, dashboard expiry chart + tabel. Semua placeholder/dummy krn tak ada tabel.
+2. **`asset_work_orders`** — sidebar `assets-workorders` + dashboard "6 work order aktif" (badge dummy).
+3. **`asset_routes`/`asset_trips`** — tab Rute kendaraan (placeholder).
+   (Vendor & Supplier: tabel global `vendors` SUDAH ADA (migration 009) tapi belum ada page/link aset; `asset_categories` & `asset_locations` SUDAH ADA tapi belum ada management page.)
+
+### FIELD MISMATCHES
+**TIDAK ADA.** Semua kolom yg di-query terverifikasi ada di DB: `assets` (012 base + 025 IT cols: asset_code/serial_number/model/asset_subtype/assigned_to_name/vendor_name/purchase_invoice_no + 026 vehicle cols: plate_number/color/manufacture_year/fuel_type/vin/engine_number/km_odometer), serta kolom eksplisit di software_licenses/maintenance_records/fuel_logs/specifications/network semua cocok. Hook pakai graceful 42P01 → tabel absen tidak crash.
+
+### DUMMY DATA INVENTORY (semua di `AssetDashboardPage.jsx`)
+- StatCards baris 1: Total Kendaraan `64`, IT `128`, Furniture `212`, Properti `18` (hardcoded).
+- StatCards baris 2: Total Aktif `384`, Dalam Maintenance `21`, Dokumen Expired `4`, Disposed `13`.
+- `DonutChart` — legend Furniture/IT/Kendaraan/Properti + center `422`.
+- Total Nilai `Rp 42,82 Miliar` + breakdown per kelas; `CompanyValueChart` bars (msi/jci/sbi).
+- `ExpiryBarsChart` — `months` array hardcoded.
+- `EXPIRY_ROWS` — 7 baris dokumen expiry hardcoded; `URGENCY_LABEL`.
+- Header "Per 2 Juni 2026, 09:14 WIB" statis.
+- **Plus badge sidebar hardcoded di App.jsx ERP_MENU_GROUPS:** `assets-it` badge `128`, `assets-workorders` `6`, `assets-expiring` `9`, `assets-expired` `4`.
+- Placeholder (bukan dummy data, tapi tab belum tersambung) di AssetDetailPage: Dokumen, Rute, History (parsial), **Maintenance** (catatan: tabel `asset_maintenance_records` SUDAH ADA & sudah dipakai AssetDetailITPage — tab Maintenance kendaraan tinggal di-wire, low-hanging fruit).
+
+### MISSING PAGES (sidebar → ComingSoon stub di AssetShell)
+11 item belum ada implementasi (render `<ComingSoon>` "sedang dalam pengembangan"): `assets-analytics`, `assets-maint` (Jadwal Maintenance), `assets-hist` (History Maintenance), `assets-workorders`, `assets-docs`, `assets-expiring`, `assets-expired`, `assets-kategori`, `assets-lokasi`, `assets-vendor`, `assets-settings`.
+Sudah ada page: `assets` (Dashboard — dummy), `assets-it`/`-kendaraan`/`-furniture`/`-properti` (AssetITPage — real), `assets-detail` (AssetDetailPage/AssetDetailITPage — real/partial).
+
+### REKOMENDASI PRIORITAS
+1. **Wire AssetDashboardPage ke Supabase** (aggregate dari `assets`: count per kategori, per status, total book_value, per company) — ganti semua dummy. Badge sidebar idealnya dinamis (tapi itu App.jsx).
+2. **Wire tab Maintenance kendaraan** di AssetDetailPage ke `asset_maintenance_records` (tabel sudah ada, pola sudah dipakai di AssetDetailITPage).
+3. **Buat `asset_documents`** (+ expiry) → aktifkan tab Dokumen, page Semua/Akan/Sudah Expired, dashboard expiry. (perlu approval skema)
+4. Page management `assets-kategori` & `assets-lokasi` (tabel sudah ada), `assets-vendor` (pakai `vendors`).
+5. `asset_work_orders` + page Work Orders; `asset_routes` + tab Rute (perlu approval skema).
+
+---
 
 > **⚠️ DB columns required for Phase 2.1A (`quotations` — buat di staging, butuh approval):**
 > ```sql
