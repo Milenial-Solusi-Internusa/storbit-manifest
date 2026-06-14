@@ -1,5 +1,66 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-06-14
+### Accounts Unification — Single Master Customer
+- [x] Tabel `prospects` → di-rename jadi `accounts` (master customer tunggal); kolom baru: `account_status` (prospect/customer/lost/free_agent/lead_pool), `owner_company_id`, `tier`, `code`, `nomor_kontrak`, `default_dc`, `last_activity_at`, `became_customer_at`
+- [x] CRM migrasi penuh ke `accounts` (Batch 1–3): Pipeline/Prospect/Dashboard, Inquiry/Calls/Quotation embeds, Master Customer list+detail — `.eq('account_status', ...)` filter pipeline vs customer
+- [x] WON di pipeline → auto-convert `account_status='customer'` + `became_customer_at`
+- [x] Customer unification: tabel `customers` → `accounts` (single master); 5 FK di-repoint (sp_items, ar_ttfs, inquiries, quotations, accounts.converted_to); INDOMARCO pindah, id sama; tabel `customers` lama dipensiunkan (tidak dihapus)
+- [x] db.js (Storbit SP/AR): listCustomers/upsertCustomer/deleteCustomer → `.from('accounts')`; embed pakai alias `customers:accounts!<constraint>(name)` agar mapper tidak berubah
+- [x] CRM InquiryFormPage dropdown → accounts WHERE account_status='customer', simpan ke prospect_id; embed `customer:accounts!*_customer_id_fkey` di Inquiry/Quotation
+
+### Master Customer — Sub-menu per Entitas + Detail Page
+- [x] Master Customer 4 sub-menu per entitas: MSI / JCI / SOA / Free Agent (entityFilter)
+- [x] CustomerListPage + CustomerDetailPage (dedicated page, state-swap mirror AssetDetailPage); CustomerFormModal named export untuk reuse
+- [x] CustomerDetailPage: 6 tab (Info Dasar, Komersial, History Visit, BANT & Pipeline, Health Score, Notes); visual port dari Lovable handoff
+- [x] Health Score tab — heuristik dari sinyal real (engagement visit, BANT, pipeline stage, kelengkapan profil, status kontrak); gauge SVG + breakdown; banner "skor sementara"
+
+### User Access Management
+- [x] Edge Functions baru: `delete-user` (gate super_admin, blokir hapus akun sendiri) + `reset-password` (min 8 char); pola two-client (caller ANON + admin SERVICE_ROLE)
+- [x] Edit User: modal → full page (UserEditPage, state-swap); tab Profile/Permissions; Hapus User + Ubah Password (super_admin only, self-protection)
+- [x] Avatar upload — bucket Storage `avatars`, kolom `profiles.avatar_url`, validasi tipe+2MB, overlay kamera + Hapus Foto
+
+### Hierarchical RBAC
+- [x] Permission model hierarki: 6 tabel (modules, module_menus, module_actions/menu_actions, user_menu_permissions, dst.) — 9 modules / 57 menus / 399 actions
+- [x] AuthContext: `hasMenuPermission(menuKey, action)` + `menuPermissions` state; gating Sidebar + AppLauncher migrasi ke hasMenuPermission (fallback hasPermission → role → true)
+- [x] Permission Matrix tab di Edit User (collapsible per module, select-all, diff-based save)
+
+### Drop Legacy profiles.role
+- [x] Deprecate `profiles.role` — role sekarang MURNI dari `user_roles` (erpRole/role di context)
+- [x] Tahap 1–3 selesai (kode): DB functions dibersihkan, Edge Functions (manage-schema/create-user) pakai `is_super_admin()` RPC bukan profiles.role, frontend `src/` 0 ref profiles.role
+- [ ] Tahap 4 — drop kolom `profiles.role` + type `user_role_legacy` (pending approval; verifikasi semua super_admin ada di user_roles dulu)
+
+### Auth Lifecycle Hardening
+- [x] Fix A — logout bersihkan `nexus_last_menu`/`nexus_last_module` di localStorage
+- [x] Fix B — validasi restored activeMenu (redirect kalau user baru warisi menu yg tak punya akses)
+- [x] Fix C — content-level access gate (AccessDeniedPage, defense-in-depth selain sidebar gating)
+- [x] Fix D — `permissionsLoading` flag; AppLauncher dim+blocked "Memuat izin akses…" saat permission belum load; fix klik modul no-op setelah login user baru
+- [x] Fix enterModule stale closure + auth listener setLoading(true) saat SIGNED_IN
+
+### Lead Pool
+- [x] Import 506 lead (arsip, ter-assign ke sales) → `account_status='lead_pool'`
+- [x] LeadPoolPage — list/tabel (pagination client-side 25), filter source/type/search, 2 stat card; aksi "Tarik ke Pipeline" per row (account_status → prospect)
+- [x] RLS aktif di `accounts`: sales lihat assigned_to=dia, manager se-entitas, super semua
+
+## 2026-06-12
+- [x] activeMenu di-persist ke localStorage (`nexus_last_menu`) — survive browser refresh
+- [x] ProspectFormPage SOURCE options diperluas jadi 11 (sales_visit, cold_call, referral, existing_network, exhibition, instagram, linkedin, tiktok, website, walk_in, other); sinkron `SOURCE_LABELS_KP` + `sourceToSvc` di PipelineKanbanPage
+- [x] Fix profiles query → `.eq('active', true)` (kolom `active`, bukan `is_active`)
+
+## 2026-06-07
+### Modules Live — HRGA, Assets, Logistics, Inventory, CRM Dashboard
+- [x] HRGA Request module — schema 9 tabel + RLS + GRANT, 20 request types × 3 company, approval matrix; My Requests / Semua Request / detail modal; form ATK line items (migrations 020–024)
+- [x] Asset Management — IT Equipment + Kendaraan list/detail (useAssets hook, server-side pagination); migrations 025–027 (specs, network, software licenses, maintenance, fuel logs)
+- [x] Logistics Sales Order — SP list page (KPI cards, tabs, filter, bulk, pagination) + SP Detail page (5 tab, Finance Status INV/FP/SUB/KRM per-stage, Edit Item modal, Delete SP type-to-confirm)
+- [x] Product Detail Modal — overlay modal, inline edit, toggle active, copy SKU (migration 028)
+- [x] Inventory — Stok Barang (stock_summary JOIN products+warehouses) + Penerimaan Barang (goods receipt → stock_ledger)
+- [x] App Launcher (Odoo-style grid, solid colour cards per group) + vertical sidebar per module
+- [x] CRM Dashboard fully connected ke Supabase — KPI, Pipeline by Stage, Prospect Trend, Lead Source donut, Sales Performance, Calendar Jadwal Visit (semua real, mock dihapus)
+- [x] CRM enhancements — Visit stepper (scheduled/completed/cancelled) + visit type + log history; BANT Scorecard; Sales Calls page; Win/Loss capture; Pricing Authority + Quote SLA; dashboard per-role
+- [x] `src/lib/spCalc.js` — single source of truth kalkulasi SP (calcItem/groupBySP)
+- [x] `src/components/ConfirmModal.jsx` — reusable confirm dialog (ganti semua window.confirm)
+- [x] Permission gating DB-driven — role_permissions → hasPermission(module, action) + isCrossEntity
+
 ## 2026-06-06
 ### CRM UI — Visual Redesigns & New Pages
 - [x] PipelineKanbanPage.jsx — full visual redesign: Lovable JSX port, chevron/arrow stage headers (clip-path), MSI Navy #144682, list/kanban toggle, drag-drop fade fix (draggingId reset on drop)
