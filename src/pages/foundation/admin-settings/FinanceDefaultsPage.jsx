@@ -3,18 +3,26 @@
    Two-column: form (left) + sticky live-calculation summary (right).
    Sections: Tax Configuration · Currency & Exchange · Terms & Defaults.
    Sticky bottom save bar appears when the form is dirty.
-   Mock data, no backend (Supabase wiring to follow separately).
+   Data layer: Supabase (entity_finance_settings, upsert per company).
    ========================================================================= */
 
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "../../../lib/supabase";
 import {
   Icon, PageHeader, EntitySwitcher, NumberStepper, Segmented, OutlineBtn,
   SaveButton, Tooltip, PillToggle, useToast, Skel, Card, KitStyles,
 } from "./kit";
 import {
   NAVY, ORANGE, CREAM, SURFACE, LINE, LINE_SOFT, INK, INK_SOFT, MUTED,
-  FAINT, FONT_HEAD, FONT_BODY, FONT_MONO, fmtRp,
+  FAINT, DANGER, FONT_HEAD, FONT_BODY, FONT_MONO, fmtRp,
 } from "./tokens";
+
+/* ---------- entity code → companies.id ---------- */
+const ENTITY_IDS = {
+  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
+  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
+  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
+};
 
 const FIN_SEED = {
   ppnRate: 11,
@@ -28,6 +36,38 @@ const FIN_SEED = {
   incoterm: "FOB",
   rounding: "round",
 };
+
+/* ---------- entity_finance_settings row ⇄ form ---------- */
+function finToForm(row) {
+  if (!row) return { ...FIN_SEED };
+  return {
+    ppnRate:           row.ppn_rate ?? FIN_SEED.ppnRate,
+    ppnFormula:        row.ppn_formula === "opsi_b" ? "B" : "A",
+    pphRate:           row.pph_rate ?? FIN_SEED.pphRate,
+    taxMode:           row.tax_mode || FIN_SEED.taxMode,
+    currencies:        Array.isArray(row.supported_currencies) && row.supported_currencies.length ? row.supported_currencies : FIN_SEED.currencies,
+    rateMode:          row.rate_input_mode || FIN_SEED.rateMode,
+    paymentTerms:      row.default_payment_terms ?? FIN_SEED.paymentTerms,
+    quotationValidity: row.quotation_validity_days ?? FIN_SEED.quotationValidity,
+    incoterm:          row.default_incoterm || FIN_SEED.incoterm,
+    rounding:          row.rounding_mode || FIN_SEED.rounding,
+  };
+}
+function formToFin(form, companyId) {
+  return {
+    company_id:              companyId,
+    ppn_rate:                Number(form.ppnRate) || 0,
+    ppn_formula:             form.ppnFormula === "B" ? "opsi_b" : "opsi_a",
+    pph_rate:                Number(form.pphRate) || 0,
+    tax_mode:                form.taxMode,
+    supported_currencies:    form.currencies,
+    rate_input_mode:         form.rateMode,
+    default_payment_terms:   Number(form.paymentTerms) || 0,
+    quotation_validity_days: Number(form.quotationValidity) || 0,
+    default_incoterm:        form.incoterm,
+    rounding_mode:           form.rounding,
+  };
+}
 
 const CURRENCY_TAGS = [
   { id: "IDR", label: "IDR", locked: true },
@@ -221,23 +261,56 @@ function FinSkeleton() {
   );
 }
 
+/* ---------- error state (fetch failed) ---------- */
+function ErrorState({ msg, onRetry }) {
+  return (
+    <Card style={{ textAlign: "center", padding: "48px 32px" }}>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+      <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
+    </Card>
+  );
+}
+
 /* ===================== PAGE SHELL ===================== */
 export default function FinanceDefaultsPage({ onHome }) {
   const [entity, setEntity] = useState("MSI");
   const [form, setForm] = useState(FIN_SEED);
+  const [pristine, setPristine] = useState(FIN_SEED);
   const [dirty, setDirty] = useState(false);
   const [fade, setFade] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
   const [fireToast, toastNode] = useToast();
 
-  useEffect(() => { const t = setTimeout(() => setLoading(false), 800); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading"); setDirty(false);
+    supabase.from("entity_finance_settings").select("*").eq("company_id", ENTITY_IDS[entity]).limit(1000).maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setErrMsg(error.message); setState("error"); return; }
+        const mapped = finToForm(data); // data null (first time) → FIN_SEED fallback
+        setForm(mapped); setPristine(mapped); setState("ready");
+      });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
   const set = (k) => (v) => { setForm((f) => ({ ...f, [k]: v })); setDirty(true); };
-  function switchEntity(id) { if (id === entity) return; setFade(true); setTimeout(() => { setEntity(id); setForm(FIN_SEED); setDirty(false); setFade(false); }, 200); }
+  function switchEntity(id) { if (id === entity) return; setFade(true); setTimeout(() => { setEntity(id); setFade(false); }, 200); }
   function toggleCurrency(id) {
     if (id === "IDR") return;
     setForm((f) => ({ ...f, currencies: f.currencies.includes(id) ? f.currencies.filter((c) => c !== id) : [...f.currencies, id] }));
     setDirty(true);
   }
+  const save = async () => {
+    const { error } = await supabase.from("entity_finance_settings").upsert(formToFin(form, ENTITY_IDS[entity]), { onConflict: "company_id" });
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    setPristine(form); setDirty(false);
+    fireToast("Finance defaults " + entity + " tersimpan");
+  };
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
@@ -249,7 +322,7 @@ export default function FinanceDefaultsPage({ onHome }) {
         right={<EntitySwitcher value={entity} onChange={switchEntity} />}
       />
 
-      {loading ? <FinSkeleton /> : (
+      {state === "loading" ? <FinSkeleton /> : state === "error" ? <ErrorState msg={errMsg} onRetry={() => setReload((n) => n + 1)} /> : (
         <div key={entity} className={fade ? "" : "ak-rise"} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease", display: "grid", gridTemplateColumns: "minmax(0,1fr) 360px", gap: 22, alignItems: "start" }}>
           {/* LEFT — form */}
           <div>
@@ -341,8 +414,8 @@ export default function FinanceDefaultsPage({ onHome }) {
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: ORANGE }} />Ada perubahan belum disimpan
           </span>
           <span style={{ flex: 1 }} />
-          <OutlineBtn onClick={() => { setForm(FIN_SEED); setDirty(false); }}>Buang</OutlineBtn>
-          <SaveButton label="Simpan Perubahan" onSave={() => { setDirty(false); fireToast("Finance defaults " + entity + " tersimpan"); }} />
+          <OutlineBtn onClick={() => { setForm(pristine); setDirty(false); }}>Buang</OutlineBtn>
+          <SaveButton label="Simpan Perubahan" onSave={save} />
         </div>
       </div>
       {toastNode}
