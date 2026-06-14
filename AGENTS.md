@@ -15,11 +15,11 @@ Nexus by MSI is designed to become the unified internal business platform for MS
 
 The platform must support multi-company and multi-entity operations from the beginning.
 
-| Entity | Business Focus |
-|---|---|
-| MSI | Freight Forwarding |
-| JCI | PPJK / Customs Clearance |
-| Storbit / SBI | General Trading |
+| Entity | Name | Business Focus |
+|---|---|---|
+| MSI | PT Milenial Solusi Internusa | Freight Forwarding |
+| JCI | PT Jago Custom Indonesia | PPJK / Customs Clearance |
+| SOA | PT Stuja Orbit Abadi | General Trading (formerly SBI/Storbit) |
 
 Each entity may have different business processes, but the system must support connected group-level operations and consolidated reporting where permitted.
 
@@ -67,39 +67,42 @@ The first foundation module to prioritize is Master Data.
 
 ## Current Project Context
 
-The existing application started as Storbit Manifest.
+The project has transitioned from Storbit Manifest (localStorage prototype) into Nexus by MSI ERP.
 
-Current assumed stack:
+Confirmed stack:
 
-- React
-- Vite
-- TailwindCSS
-- Supabase
-- Supabase Auth
-- Supabase RLS
-- Vercel deployment
-- GitHub source control
+- React 19 + Vite 8
+- TailwindCSS 3
+- Supabase (PostgreSQL + Auth + RLS + Edge Functions + Storage)
+- Vercel — auto-deploys from `main` → production at `nexus.dli.my.id`
+- GitHub — `main` is the single integration + production branch (solo-developer workflow; `fix/*` for hotfixes)
 
-Existing project may already include modules such as:
+Live modules:
 
-- Dashboard
-- Manifest / SP
-- Shipment
-- Finance
-- Outstanding
-- AR Tracker
-- Customer
-- User Management
+- Auth + RLS, Master Data (admin)
+- CRM — Pipeline, Inquiry, Quotation, Dashboard, Master Customer, Lead Pool, Sales Calls
+- Logistics — Sales Order / SP (list + detail)
+- Inventory — Stok Barang, Penerimaan Barang
+- Asset Management, HRGA Request, App Launcher
 
-Important existing risks:
+Ongoing tech debt:
 
-- App.jsx may still be monolithic.
-- Current data layer may not yet be fully modular.
-- Current documentation may be incomplete.
-- Audit log may exist but may not be fully implemented.
-- Testing and deployment readiness may still need improvement.
+- `src/App.jsx` is large (3,900+ lines) with many inline components — decompose incrementally, never in one big change.
+- `PASTEL` design tokens duplicated across many files — pending a single `src/lib/tokens.js`.
 
 Do not perform a big-bang rewrite.
+
+---
+
+## Current Technical Conventions (authoritative: `CLAUDE.md`)
+
+These reflect the current state of the codebase. When in doubt, defer to `CLAUDE.md`.
+
+- **`accounts` is the single master customer.** Both CRM and Storbit (SP/AR) read customers from `accounts`, filtered by `account_status` (`prospect` / `customer` / `lost` / `free_agent` / `lead_pool`). A WON prospect auto-converts to `customer`. The legacy `prospects` and `customers` tables are retired (the `customers` table is kept but pensioned-off, not dropped).
+- **Roles come purely from `user_roles`** (13 ERP roles) plus a hierarchical RBAC model (modules → menus → actions → `user_menu_permissions`). The legacy `profiles.role` column is deprecated — the frontend and Edge Functions no longer read it; super-admin gating uses the `is_super_admin()` RPC. Dropping the physical `profiles.role` column and the `user_role_legacy` enum is the final pending step (needs approval).
+- **RLS is active on `accounts`** and on master/org tables, company- and role-scoped (sales see their own assigned rows, manager sees their entity, super_admin reads all via a top-level `is_super_admin()` bypass — never nested inside the `company_id` filter).
+- **PostgREST embed alias pattern** — when an FK is repointed to a new table but the constraint name is unchanged, embed with an alias so consumers/mappers stay untouched, e.g. `customers:accounts!sp_items_customer_id_fkey(name)` keeps `row.customers?.name` working while actually reading from `accounts`. If a DBA renames the constraint, update the `!constraint` part of the embed.
+- **Deploy before dropping a DB column.** Push and deploy the code that stops reading/writing a column (and verify in production) *before* dropping it. The `profiles.role` removal followed staged tahap: clean DB functions → Edge Functions → frontend → drop column last.
 
 ---
 
@@ -697,42 +700,30 @@ Output:
 
 ## Current Phase
 
-Current branch: `docs/nexus-erp-foundation`
-Latest committed phase: **Phase 0.5A — Stability, Lint, and Technical Debt Audit**
-Latest commit: `9a96d4c docs: add stability and technical debt audit`
-Current phase: **Phase 0.5B — Remove Production Console Logs**
-GitHub push/deploy status: skipped due prior network/GitHub connection issue.
+Current branch: `main` (production).
+Current phase: **Phase 2.5A — Customers → accounts migration (single master customer)** ✅ Complete.
+
+> **`CLAUDE.md` is the authoritative source** for the full phase history, sub-phase
+> details, and decision log. The summary below covers major milestones only — defer to
+> `CLAUDE.md` and `docs/architecture/implementation-roadmap.md` for the complete record.
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 0.0 | Initial Project Instructions | ✅ Complete |
-| 0.1 | Documentation Foundation | ✅ Complete |
-| 0.2 | Final AGENTS.md | ✅ Complete |
-| 0.3 | Codex Agents | ✅ Complete |
-| 0.4A | Bundle Size Audit | ✅ Complete |
-| 0.4B | Bundle Split and Lazy Loading | ✅ Complete |
-| 0.5A | Stability, Lint, and Technical Debt Audit | ✅ Complete |
-| 0.5B | Remove Production Console Logs | 🔜 Current |
-| 1.0 | Master Data Foundation | Planned |
+| 0.x | Documentation, agents, bundle split, stability/lint audit | ✅ Complete |
+| 1.0 | Master Data Foundation (companies, branches, departments, positions, roles, users, products) | ✅ Complete |
+| 2.0A–E | HRGA Request · Asset Management · Logistics SP · Inventory · Product Detail | ✅ Complete |
+| 2.0F–2.1G | DB-driven permission gating · CRM dashboard/visits/BANT/calls · Master Customer | ✅ Complete |
+| 2.2A–C | Accounts rename (prospects → accounts) — CRM batches 1–3 | ✅ Complete |
+| 2.3A–I | User Access EFs · full-page edit · avatar · auth lifecycle hardening · drop legacy `profiles.role` (code) | ✅ Complete |
+| 2.4A | CRM Lead Pool (506 imported leads) | ✅ Complete |
+| 2.5A | Customers → accounts (single master, 5 FK repointed) | ✅ Complete |
 
-Completed performance work:
-- Vendor chunk split via Vite 8 / Rolldown `codeSplitting` groups
-- `UserManagement` lazy loaded
-- Dashboard extracted to `src/modules/dashboard/Dashboard.jsx`
-- Dashboard lazy loaded
-- Recharts deferred
-- No 500 kB build warning
+Pending / next:
+- **Tahap 4** — drop physical `profiles.role` column + `user_role_legacy` enum (needs approval; verify all super_admins exist in `user_roles` first).
+- Runtime-verify the accounts migration on staging (SP/AR + CRM); if a DBA renames any FK constraint, update the `!constraint` part of affected embeds.
+- Drop the retired `customers` table after staging verification (needs approval).
 
-Known issue:
-- `npm run lint` has 42 pre-existing errors.
-- Do not fix unrelated lint issues yet.
-
-P0 blocker:
-- Unsafe `console.log` statements in `src/lib/db.js` around lines 324, 328, 333, and 338 may leak session/user/profile data.
-
-Next task:
-- Phase 0.5B should remove unsafe production console logs only.
-- During Phase 0.5B, only `src/lib/db.js` and `docs/operations/stability-and-tech-debt-audit.md` should be changed.
+Production migration gate: all pending Supabase migrations remain **BLOCKED** for production until explicit written approval from the technical lead and product owner.
 
 ---
 

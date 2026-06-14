@@ -14,11 +14,11 @@ Nexus by MSI is the unified internal business platform covering master data, tra
 
 ## Business Entities
 
-| Entity | Business Focus |
-|--------|---------------|
-| MSI | Freight Forwarding |
-| JCI | PPJK / Customs Clearance |
-| Storbit / SBI | General Trading |
+| Entity | Name | Business Focus |
+|--------|------|---------------|
+| MSI | PT Milenial Solusi Internusa | Freight Forwarding |
+| JCI | PT Jago Custom Indonesia | PPJK / Customs Clearance |
+| SOA | PT Stuja Orbit Abadi | General Trading (formerly SBI/Storbit) |
 
 ---
 
@@ -34,8 +34,23 @@ Nexus by MSI is the unified internal business platform covering master data, tra
 | Backend / Database | Supabase (PostgreSQL) | 2.x |
 | Auth | Supabase Auth | — |
 | RLS | Supabase Row Level Security | — |
-| Hosting | Vercel | — |
-| Source Control | GitHub | — |
+| Server logic | Supabase Edge Functions (Deno) | — |
+| File storage | Supabase Storage (private + avatars) | — |
+| Hosting | Vercel — auto-deploy from `main` → `nexus.dli.my.id` | — |
+| Source Control | GitHub (`main` = production) | — |
+
+---
+
+## Architecture Highlights
+
+- **Single master customer** — `accounts` is the unified master for both CRM and Storbit (SP/AR). Rows carry `account_status` (`prospect` / `customer` / `lost` / `free_agent` / `lead_pool`); a WON prospect auto-converts to `customer`. The legacy `prospects` and `customers` tables are retired.
+- **Role via `user_roles`** — permissions are sourced purely from `user_roles` (13 ERP roles) and a hierarchical RBAC model (modules → menus → actions → `user_menu_permissions`). The legacy `profiles.role` column is deprecated and no longer read by the app.
+- **Modular frontend** — feature modules under `src/modules/` (admin, assets, crm, dashboard, hrga, inventory, launcher, logistics); data-access layer in `src/lib/db.js`; lazy-loaded module shells.
+- **RLS** — active and company/role-scoped on `accounts` and master/org tables; super_admin reads cross-company via top-level `is_super_admin()` bypass.
+
+## Active Modules
+
+Auth + RLS · Master Data (Companies, Branches, Departments, Positions, Roles, Users, Products) · CRM (Pipeline, Inquiry, Quotation, Dashboard, Master Customer, Lead Pool, Sales Calls) · Logistics (Sales Order / SP) · Inventory (Stok Barang, Penerimaan) · Asset Management · HRGA Request · App Launcher.
 
 ---
 
@@ -100,16 +115,15 @@ Follow this workflow for every task:
 4. **Verify fourth** — run `npm run build` and `npm run lint`
 5. **Summarize fifth** — list files changed, risk level, and next step
 
-### Branch Strategy
+### Branch Strategy (updated 2026-06-04)
 
 ```
-main          ← production-ready
-  └─ staging  ← QA / UAT
-       └─ dev ← active development
-            └─ feature/{name}
-            └─ fix/{name}
-            └─ docs/{name}
+main          ← production (Vercel auto-deploys from here)
+  └─ fix/{name}   ← hotfixes, merged immediately to main
 ```
+
+Solo-developer workflow: feature work is committed directly to `main`. No long-lived
+feature branches — all phase-1 / phase-2 feature branches have been merged and deleted.
 
 ---
 
@@ -176,8 +190,9 @@ See `docs/performance/performance-baseline.md` for full requirements.
 ## Security Requirements
 
 - All business tables must have **Supabase RLS** enabled
-- **Never expose the Supabase service role key** in frontend code
-- MFA is required for Admin, BOD, Finance Controller, and Head Level roles
+- **Never expose the Supabase service role key** in frontend code (service-role logic lives in Edge Functions only)
+- Permissions are enforced via `user_roles` + hierarchical RBAC — never rely on frontend checks alone
+- MFA is required for Admin, CEO/Executive, Finance Controller, and Head Level roles
 - All important actions must be logged in the audit log
 - Use **soft delete** — never hard-delete business data
 - Use **private storage buckets** with signed URLs for attachments
@@ -198,8 +213,9 @@ See `docs/security/security-baseline.md` for full requirements.
 
 ## Current Phase
 
-**Phase 0.1 — Documentation Foundation** (In Progress)
+**Phase 2.5A — Customers → accounts migration (single master customer)** ✅ Complete
 
+`CLAUDE.md` is the authoritative source for phase history and detailed decision log.
 See `docs/architecture/implementation-roadmap.md` for the full roadmap.
 
 ---
