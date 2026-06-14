@@ -202,9 +202,14 @@ async function getCurrentUserCompanyId() {
 }
 
 export async function listCustomers() {
+  // Migrated to `accounts` (Phase 2.5A). Storbit SP/AR only picks rows that are
+  // already customers — filter by account_status. accounts has every customers
+  // column plus extras (account_status, owner_company_id, …) which customerFromDb
+  // passes through harmlessly as custom fields.
   const { data, error } = await supabase
-    .from('customers')
+    .from('accounts')
     .select('*')
+    .eq('account_status', 'customer')
     .is('deleted_at', null)
     .order('name');
   return { data: (data || []).map(customerFromDb), error };
@@ -214,11 +219,10 @@ export async function upsertCustomer(c) {
   const payload = customerToDb(c);
 
   if (c.id) {
-    // UPDATE — customerToDb() does not include company_id, so the existing
-    // row value is preserved. RLS customers_update USING checks the row's
-    // existing company_id against get_user_company_id().
+    // UPDATE — customerToDb() does not include company_id/account_status, so the
+    // existing row values are preserved. Migrated to `accounts` (Phase 2.5A).
     const { data, error } = await supabase
-      .from('customers')
+      .from('accounts')
       .update(payload)
       .eq('id', c.id)
       .select()
@@ -226,9 +230,8 @@ export async function upsertCustomer(c) {
     return { data: customerFromDb(data), error };
   }
 
-  // INSERT — customers_insert RLS WITH CHECK requires
-  // company_id = get_user_company_id(). customerToDb() does not produce
-  // company_id, so we resolve it here.
+  // INSERT — resolve company_id (RLS WITH CHECK requires it). customerToDb()
+  // does not produce company_id, so we resolve it here.
   // Honor an explicit company_id on the input object (forward-compatibility);
   // otherwise fetch from the current user's profile.
   if (c.company_id) {
@@ -241,8 +244,15 @@ export async function upsertCustomer(c) {
     }
   }
 
+  // Storbit can create a customer directly into `accounts`. Such a row is born
+  // a customer (not a prospect): stamp account_status, owner entity, and the
+  // became_customer_at timestamp.
+  payload.account_status = 'customer';
+  payload.owner_company_id = payload.company_id;
+  payload.became_customer_at = new Date().toISOString();
+
   const { data, error } = await supabase
-    .from('customers')
+    .from('accounts')
     .insert(payload)
     .select()
     .single();
@@ -250,12 +260,12 @@ export async function upsertCustomer(c) {
 }
 
 export async function deleteCustomer(id) {
-  // Soft delete: customers RLS has no DELETE policy (by design).
-  // Set deleted_at to exclude the row from all future reads,
-  // and active = false so legacy active-filter logic is consistent.
+  // Soft delete on `accounts` (Phase 2.5A): set deleted_at to exclude the row
+  // from all future reads. `active` is not set here — accounts uses
+  // account_status, not the legacy `active` flag.
   const { error } = await supabase
-    .from('customers')
-    .update({ deleted_at: new Date().toISOString(), active: false })
+    .from('accounts')
+    .update({ deleted_at: new Date().toISOString() })
     .eq('id', id);
   return { error };
 }
@@ -266,7 +276,7 @@ export async function deleteCustomer(id) {
 export async function listSpItems() {
   const { data, error } = await supabase
     .from('sp_items')
-    .select('*, customers(name)')
+    .select('*, customers:accounts!sp_items_customer_id_fkey(name)')
     .order('sp_date', { ascending: false, nullsFirst: false });
   return { data: (data || []).map(spFromDb), error };
 }
@@ -276,7 +286,7 @@ export async function insertSpItem(item) {
   const { data, error } = await supabase
     .from('sp_items')
     .insert(payload)
-    .select('*, customers(name)')
+    .select('*, customers:accounts!sp_items_customer_id_fkey(name)')
     .single();
   return { data: spFromDb(data), error };
 }
@@ -286,7 +296,7 @@ export async function bulkInsertSpItems(items) {
   const { data, error } = await supabase
     .from('sp_items')
     .insert(payload)
-    .select('*, customers(name)');
+    .select('*, customers:accounts!sp_items_customer_id_fkey(name)');
   return { data: (data || []).map(spFromDb), error };
 }
 
@@ -296,7 +306,7 @@ export async function updateSpItem(id, item) {
     .from('sp_items')
     .update(payload)
     .eq('id', id)
-    .select('*, customers(name)')
+    .select('*, customers:accounts!sp_items_customer_id_fkey(name)')
     .single();
   return { data: spFromDb(data), error };
 }
@@ -312,7 +322,7 @@ export async function deleteSpItem(id) {
 export async function listTtfs() {
   const { data, error } = await supabase
     .from('ar_ttfs')
-    .select('*, customers(name), ar_btbs(*)')
+    .select('*, customers:accounts!ar_ttfs_customer_id_fkey(name), ar_btbs(*)')
     .order('tanggal_ttf', { ascending: false, nullsFirst: false });
   return { data: (data || []).map(ttfFromDb), error };
 }
@@ -343,7 +353,7 @@ export async function insertTtf(t) {
   // Re-fetch with joins
   const { data: full, error: fetchErr } = await supabase
     .from('ar_ttfs')
-    .select('*, customers(name), ar_btbs(*)')
+    .select('*, customers:accounts!ar_ttfs_customer_id_fkey(name), ar_btbs(*)')
     .eq('id', header.id)
     .single();
   return { data: ttfFromDb(full), error: fetchErr };
@@ -376,7 +386,7 @@ export async function updateTtf(id, t) {
 
   const { data: full, error: fetchErr } = await supabase
     .from('ar_ttfs')
-    .select('*, customers(name), ar_btbs(*)')
+    .select('*, customers:accounts!ar_ttfs_customer_id_fkey(name), ar_btbs(*)')
     .eq('id', id)
     .single();
   return { data: ttfFromDb(full), error: fetchErr };

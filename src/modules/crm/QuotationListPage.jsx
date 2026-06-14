@@ -100,7 +100,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
           id, quotation_no, service_type, route, status,
           valid_until, total_amount, created_at, pricing_done_at, quote_sent_at,
           prospect:accounts!quotations_prospect_id_fkey(name),
-          customer:customers!quotations_customer_id_fkey(name)
+          customer:accounts!quotations_customer_id_fkey(name)
         `, { count: 'exact' })
         .eq('company_id', profile.company_id)
         .order('created_at', { ascending: false })
