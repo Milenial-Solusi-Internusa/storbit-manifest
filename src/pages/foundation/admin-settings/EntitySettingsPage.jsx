@@ -4,10 +4,11 @@
      A. Company Profile  — floating-label form, logo drop zone, dirty banner
      B. Bank Accounts    — table, inline delete confirm, slide-over add form
      C. Signatories      — premium card grid, upload boxes, modal add/edit
-   Mock data, no backend (Supabase wiring to follow separately).
+   Data layer: Supabase (companies, entity_bank_accounts, entity_signatories).
    ========================================================================= */
 
 import { useState, useEffect } from "react";
+import { supabase } from "../../../lib/supabase";
 import {
   Icon, PageHeader, SectionLabel, EntitySwitcher, Tabs, FloatingInput,
   FloatingSelect, Toggle, PrimaryBtn, OutlineBtn, SaveButton, SlideOver,
@@ -18,24 +19,11 @@ import {
   MUTED, FAINT, DANGER, GREEN, FONT_HEAD, FONT_BODY, FONT_MONO,
 } from "./tokens";
 
-/* ---------- mock seed per entity ---------- */
-const ENTITY_PROFILE = {
-  MSI: { legal: "PT Milenial Solusi Internusa", brand: "Nexus Logistics", npwp: "01.234.567.8-014.000", nib: "9120004567890", website: "www.milenialsolusi.co.id", addr1: "Gedung Cyber 2 Lt. 18, Jl. H.R. Rasuna Said", addr2: "Blok X-5 Kav. 13, Kuningan", city: "Jakarta Selatan", province: "DKI Jakarta", postal: "12950", country: "Indonesia", phone: "+62 21 2553 4100", email: "corporate@milenialsolusi.co.id", currency: "IDR", fiscal: "Januari", tz: "Asia/Jakarta (WIB · GMT+7)" },
-  JCI: { legal: "PT Jago Custom Indonesia", brand: "Jago Customs", npwp: "02.876.543.2-021.000", nib: "8120009876540", website: "www.jagocustom.co.id", addr1: "Jl. Yos Sudarso No. 88, Tanjung Priok", addr2: "Komplek Pergudangan Blok C-12", city: "Jakarta Utara", province: "DKI Jakarta", postal: "14320", country: "Indonesia", phone: "+62 21 4390 7720", email: "ops@jagocustom.co.id", currency: "IDR", fiscal: "Januari", tz: "Asia/Jakarta (WIB · GMT+7)" },
-  SOA: { legal: "PT Stuja Orbit Abadi", brand: "Storbit Trading", npwp: "03.445.221.9-031.000", nib: "7120003344550", website: "www.stujaorbit.co.id", addr1: "Jl. Perak Timur No. 210, Pabean Cantian", addr2: "Lantai 4, Surabaya Maritime Tower", city: "Surabaya", province: "Jawa Timur", postal: "60165", country: "Indonesia", phone: "+62 31 3520 8800", email: "info@stujaorbit.co.id", currency: "IDR", fiscal: "Januari", tz: "Asia/Jakarta (WIB · GMT+7)" },
-};
-
-const ENTITY_BANKS = {
-  MSI: [
-    { id: "b1", bank: "Bank Central Asia (BCA)", acc: "0123456789", holder: "PT Milenial Solusi Internusa", branch: "KCU Kuningan", currency: "IDR", isDefault: true, active: true },
-    { id: "b2", bank: "Bank Mandiri", acc: "1230009876543", holder: "PT Milenial Solusi Internusa", branch: "KCP Rasuna Said", currency: "USD", isDefault: false, active: true },
-  ],
-  JCI: [
-    { id: "b1", bank: "Bank Negara Indonesia (BNI)", acc: "0445678123", holder: "PT Jago Custom Indonesia", branch: "KCU Tanjung Priok", currency: "IDR", isDefault: true, active: true },
-  ],
-  SOA: [
-    { id: "b1", bank: "Bank Rakyat Indonesia (BRI)", acc: "0098123455", holder: "PT Stuja Orbit Abadi", branch: "KCU Perak", currency: "IDR", isDefault: true, active: true },
-  ],
+/* ---------- entity code → companies.id ---------- */
+const ENTITY_IDS = {
+  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
+  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
+  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
 };
 
 const DOC_TYPES = [
@@ -45,15 +33,68 @@ const DOC_TYPES = [
   { id: "PO", label: "PO" },
 ];
 
-const ENTITY_SIGNERS = {
-  MSI: [{ id: "s1", name: "Ir. Bambang Wijaya", title: "Direktur Utama", types: ["SP", "Invoice", "Quotation", "PO"], sig: null, stamp: null, active: true }],
-  JCI: [{ id: "s1", name: "Hendra Gunawan, S.E.", title: "Direktur Operasional", types: ["SP", "Quotation"], sig: null, stamp: null, active: true }],
-  SOA: [{ id: "s1", name: "Drs. Agus Salim", title: "Direktur Utama", types: ["Invoice", "PO"], sig: null, stamp: null, active: true }],
-};
-
 const MONTHS = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 const CURRENCIES = ["IDR", "USD", "EUR", "SGD", "CNY"];
 const TIMEZONES = ["Asia/Jakarta (WIB · GMT+7)", "Asia/Makassar (WITA · GMT+8)", "Asia/Jayapura (WIT · GMT+9)"];
+
+/* ---------- companies row ⇄ profile form ---------- */
+function companyToForm(row) {
+  const fy = Number(row.fiscal_year_start);
+  return {
+    legal:    row.legal_name || "",
+    brand:    row.name || "",
+    npwp:     row.tax_id || "",
+    nib:      row.nib || "",
+    website:  row.website || "",
+    addr1:    row.address || "",
+    addr2:    row.address_2 || "",
+    city:     row.city || "",
+    province: row.province || "",
+    postal:   row.postal_code || "",
+    country:  row.country || "",
+    phone:    row.phone || "",
+    email:    row.email || "",
+    currency: row.default_currency || "IDR",
+    fiscal:   MONTHS[(fy >= 1 && fy <= 12 ? fy : 1) - 1],
+    tz:       row.timezone || TIMEZONES[0],
+  };
+}
+function formToCompany(form) {
+  const fyIdx = MONTHS.indexOf(form.fiscal);
+  return {
+    legal_name:        form.legal,
+    name:              form.brand,
+    tax_id:            form.npwp,
+    nib:               form.nib,
+    website:           form.website,
+    address:           form.addr1,
+    address_2:         form.addr2,
+    city:              form.city,
+    province:          form.province,
+    postal_code:       form.postal,
+    country:           form.country,
+    phone:             form.phone,
+    email:             form.email,
+    default_currency:  form.currency,
+    fiscal_year_start: fyIdx >= 0 ? fyIdx + 1 : 1,
+    timezone:          form.tz,
+  };
+}
+
+/* ---------- bank / signatory row mappers ---------- */
+const bankToRow = (r) => ({ id: r.id, bank: r.bank_name || "", acc: r.account_number || "", holder: r.account_holder || "", branch: r.branch || "", currency: r.currency || "IDR", isDefault: !!r.is_default, active: !!r.is_active });
+const signerToRow = (r) => ({ id: r.id, name: r.name || "", title: r.title || "", types: r.document_types || [], sig: r.signature_url || null, stamp: r.stamp_url || null, active: !!r.is_active });
+
+/* ---------- data-URL → Supabase Storage (bucket 'assets'), returns public URL ---------- */
+async function uploadSignerAsset(companyId, signerId, kind, dataUrl) {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const path = `signatories/${companyId}/${signerId}-${kind}.png`;
+  const { error } = await supabase.storage.from("assets").upload(path, blob, { upsert: true, contentType: "image/png" });
+  if (error) throw error;
+  const { data } = supabase.storage.from("assets").getPublicUrl(path);
+  return data.publicUrl;
+}
 
 const tdStyle = { padding: "13px 16px", borderBottom: "1px solid " + LINE_SOFT, verticalAlign: "middle" };
 const thStyle = { padding: "12px 16px", textAlign: "left", fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.7, color: MUTED, whiteSpace: "nowrap" };
@@ -82,17 +123,56 @@ function EmptyState({ icon, title, desc, cta, onCta }) {
   );
 }
 
+/* ---------- error state (fetch failed) ---------- */
+function ErrorState({ msg, onRetry }) {
+  return (
+    <Card style={{ textAlign: "center", padding: "48px 32px" }}>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+      <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
+    </Card>
+  );
+}
+
 /* ===================== TAB A — COMPANY PROFILE ===================== */
 function CompanyProfileTab({ entity, onDirtyChange, fireToast }) {
-  const [form, setForm] = useState(ENTITY_PROFILE[entity]);
+  const [form, setForm] = useState(null);
+  const [pristine, setPristine] = useState(null);
   const [logo, setLogo] = useState(null);
   const [dirty, setDirty] = useState(false);
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
 
-  useEffect(() => { setForm(ENTITY_PROFILE[entity]); setLogo(null); setDirty(false); }, [entity]);
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading"); setDirty(false); setLogo(null);
+    supabase.from("companies").select("*").eq("id", ENTITY_IDS[entity]).single()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) { setErrMsg(error?.message || "Data perusahaan tidak ditemukan."); setState("error"); return; }
+        const mapped = companyToForm(data);
+        setForm(mapped); setPristine(mapped); setState("ready");
+      });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
   useEffect(() => { onDirtyChange(dirty); }, [dirty]);
 
   const set = (k) => (v) => { setForm((f) => ({ ...f, [k]: v })); setDirty(true); };
   const setLogoD = (v) => { setLogo(v); setDirty(true); };
+  const discard = () => { setForm(pristine); setLogo(null); setDirty(false); };
+
+  const save = async () => {
+    const { error } = await supabase.from("companies").update(formToCompany(form)).eq("id", ENTITY_IDS[entity]);
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    setPristine(form); setDirty(false);
+    fireToast("Profil " + entity + " tersimpan");
+  };
+
+  if (state === "loading") return <ProfileSkeleton />;
+  if (state === "error") return <ErrorState msg={errMsg} onRetry={() => setReload((n) => n + 1)} />;
 
   return (
     <div>
@@ -144,9 +224,9 @@ function CompanyProfileTab({ entity, onDirtyChange, fireToast }) {
             Ada perubahan belum disimpan
           </span>
           <div style={{ display: "flex", gap: 9 }}>
-            <button type="button" onClick={() => { setForm(ENTITY_PROFILE[entity]); setLogo(null); setDirty(false); }}
+            <button type="button" onClick={discard}
               style={{ height: 40, padding: "0 16px", borderRadius: 10, border: "1.5px solid rgba(255,255,255,.3)", background: "transparent", color: "#fff", fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Buang</button>
-            <SaveButton label="Simpan" onSave={() => { setDirty(false); fireToast("Profil " + entity + " tersimpan"); }} />
+            <SaveButton label="Simpan" onSave={save} />
           </div>
         </div>
       </div>
@@ -192,20 +272,73 @@ function BankRow({ row, onToggle, onDefault, onDelete }) {
   );
 }
 
+function ListSkeleton() {
+  return (
+    <Card pad={0} style={{ overflow: "hidden" }}>
+      <div style={{ background: CREAM, height: 44 }} />
+      {[0, 1, 2].map((i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderBottom: "1px solid " + LINE_SOFT }}>
+          <Skel w={34} h={34} r={9} /><Skel w={150} h={14} /><span style={{ flex: 1 }} /><Skel w={90} h={14} /><Skel w={120} h={24} r={20} />
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 function BankAccountsTab({ entity, fireToast }) {
-  const [rows, setRows] = useState(ENTITY_BANKS[entity]);
+  const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ bank: "", acc: "", holder: "", branch: "", currency: "IDR" });
-  useEffect(() => { setRows(ENTITY_BANKS[entity]); }, [entity]);
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
 
-  const toggle = (id) => setRows((r) => r.map((x) => x.id === id ? { ...x, active: !x.active } : x));
-  const setDefault = (id) => setRows((r) => r.map((x) => ({ ...x, isDefault: x.id === id })));
-  const del = (id) => { setRows((r) => r.filter((x) => x.id !== id)); fireToast("Rekening dihapus", "trash"); };
-  const add = () => {
-    setRows((r) => [...r, { ...draft, id: "b" + Date.now(), isDefault: r.length === 0, active: true }]);
-    setOpen(false); setDraft({ bank: "", acc: "", holder: "", branch: "", currency: "IDR" });
-    fireToast("Rekening bank ditambahkan");
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    supabase.from("entity_bank_accounts").select("*").eq("company_id", ENTITY_IDS[entity]).order("created_at", { ascending: true }).limit(1000)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setErrMsg(error.message); setState("error"); return; }
+        setRows((data || []).map(bankToRow)); setState("ready");
+      });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
+  const refetch = () => setReload((n) => n + 1);
+
+  const toggle = async (id) => {
+    const row = rows.find((r) => r.id === id);
+    if (!row) return;
+    const { error } = await supabase.from("entity_bank_accounts").update({ is_active: !row.active }).eq("id", id);
+    if (error) { fireToast("Gagal memperbarui: " + error.message, "alert"); return; }
+    refetch();
   };
+  const setDefault = async (id) => {
+    const row = rows.find((r) => r.id === id);
+    if (!row) return;
+    await supabase.from("entity_bank_accounts").update({ is_default: false }).eq("company_id", ENTITY_IDS[entity]).eq("currency", row.currency);
+    const { error } = await supabase.from("entity_bank_accounts").update({ is_default: true }).eq("id", id);
+    if (error) { fireToast("Gagal memperbarui: " + error.message, "alert"); return; }
+    refetch();
+  };
+  const del = async (id) => {
+    const { error } = await supabase.from("entity_bank_accounts").delete().eq("id", id);
+    if (error) { fireToast("Gagal menghapus: " + error.message, "alert"); return; }
+    fireToast("Rekening dihapus", "trash"); refetch();
+  };
+  const add = async () => {
+    const { error } = await supabase.from("entity_bank_accounts").insert({
+      company_id: ENTITY_IDS[entity], bank_name: draft.bank, account_number: draft.acc,
+      account_holder: draft.holder, branch: draft.branch, currency: draft.currency,
+      is_default: rows.length === 0, is_active: true,
+    });
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    setOpen(false); setDraft({ bank: "", acc: "", holder: "", branch: "", currency: "IDR" });
+    fireToast("Rekening bank ditambahkan"); refetch();
+  };
+
+  if (state === "error") return <ErrorState msg={errMsg} onRetry={refetch} />;
 
   return (
     <div>
@@ -214,7 +347,9 @@ function BankAccountsTab({ entity, fireToast }) {
         <PrimaryBtn icon="plus" onClick={() => setOpen(true)}>Tambah Rekening Bank</PrimaryBtn>
       </div>
 
-      {rows.length === 0 ? (
+      {state === "loading" ? (
+        <ListSkeleton />
+      ) : rows.length === 0 ? (
         <EmptyState icon="bank" title="Belum ada rekening bank" desc="Tambahkan rekening bank entitas untuk dipakai pada invoice & dokumen pembayaran." cta="Tambah Rekening Bank" onCta={() => setOpen(true)} />
       ) : (
         <Card pad={0} style={{ overflow: "hidden" }}>
@@ -288,23 +423,77 @@ function SignerCard({ signer, onToggle, onEdit, onDelete, onUpload }) {
 }
 
 function SignatoriesTab({ entity, fireToast }) {
-  const [signers, setSigners] = useState(ENTITY_SIGNERS[entity]);
+  const [signers, setSigners] = useState([]);
   const [modal, setModal] = useState(null); // null | {mode, data}
-  useEffect(() => { setSigners(ENTITY_SIGNERS[entity]); }, [entity]);
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
 
-  const toggle = (id) => setSigners((s) => s.map((x) => x.id === id ? { ...x, active: !x.active } : x));
-  const del = (id) => { setSigners((s) => s.filter((x) => x.id !== id)); fireToast("Penanda tangan dihapus", "trash"); };
-  const upload = (id, key, val) => setSigners((s) => s.map((x) => x.id === id ? { ...x, [key]: val } : x));
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    supabase.from("entity_signatories").select("*").eq("company_id", ENTITY_IDS[entity]).order("created_at", { ascending: true }).limit(1000)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setErrMsg(error.message); setState("error"); return; }
+        setSigners((data || []).map(signerToRow)); setState("ready");
+      });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
+  const refetch = () => setReload((n) => n + 1);
+
+  const toggle = async (id) => {
+    const s = signers.find((x) => x.id === id);
+    if (!s) return;
+    const { error } = await supabase.from("entity_signatories").update({ is_active: !s.active }).eq("id", id);
+    if (error) { fireToast("Gagal memperbarui: " + error.message, "alert"); return; }
+    refetch();
+  };
+  const del = async (id) => {
+    const { error } = await supabase.from("entity_signatories").delete().eq("id", id);
+    if (error) { fireToast("Gagal menghapus: " + error.message, "alert"); return; }
+    fireToast("Penanda tangan dihapus", "trash"); refetch();
+  };
+  const upload = async (id, key, val) => {
+    if (!val) return;
+    try {
+      const kind = key === "sig" ? "signature" : "stamp";
+      const col = key === "sig" ? "signature_url" : "stamp_url";
+      const url = await uploadSignerAsset(ENTITY_IDS[entity], id, kind, val);
+      const { error } = await supabase.from("entity_signatories").update({ [col]: url }).eq("id", id);
+      if (error) throw error;
+      fireToast(key === "sig" ? "Tanda tangan diunggah" : "Stempel diunggah");
+      refetch();
+    } catch (e) { fireToast("Gagal mengunggah: " + e.message, "alert"); }
+  };
 
   const openAdd = () => setModal({ mode: "add", data: { name: "", title: "", types: [], sig: null, stamp: null, active: true } });
   const openEdit = (signer) => setModal({ mode: "edit", data: { ...signer } });
 
-  const save = () => {
+  const save = async () => {
     const d = modal.data;
-    if (modal.mode === "add") setSigners((s) => [...s, { ...d, id: "s" + Date.now() }]);
-    else setSigners((s) => s.map((x) => x.id === d.id ? d : x));
-    setModal(null);
-    fireToast(modal.mode === "add" ? "Penanda tangan ditambahkan" : "Penanda tangan diperbarui");
+    try {
+      if (modal.mode === "add") {
+        const { data: ins, error } = await supabase.from("entity_signatories")
+          .insert({ company_id: ENTITY_IDS[entity], name: d.name, title: d.title, document_types: d.types, is_active: d.active })
+          .select().single();
+        if (error) throw error;
+        const patch = {};
+        if (d.sig && String(d.sig).startsWith("data:")) patch.signature_url = await uploadSignerAsset(ENTITY_IDS[entity], ins.id, "signature", d.sig);
+        if (d.stamp && String(d.stamp).startsWith("data:")) patch.stamp_url = await uploadSignerAsset(ENTITY_IDS[entity], ins.id, "stamp", d.stamp);
+        if (Object.keys(patch).length) await supabase.from("entity_signatories").update(patch).eq("id", ins.id);
+      } else {
+        const patch = { name: d.name, title: d.title, document_types: d.types, is_active: d.active };
+        if (d.sig && String(d.sig).startsWith("data:")) patch.signature_url = await uploadSignerAsset(ENTITY_IDS[entity], d.id, "signature", d.sig);
+        if (d.stamp && String(d.stamp).startsWith("data:")) patch.stamp_url = await uploadSignerAsset(ENTITY_IDS[entity], d.id, "stamp", d.stamp);
+        const { error } = await supabase.from("entity_signatories").update(patch).eq("id", d.id);
+        if (error) throw error;
+      }
+      const mode = modal.mode;
+      setModal(null); refetch();
+      fireToast(mode === "add" ? "Penanda tangan ditambahkan" : "Penanda tangan diperbarui");
+    } catch (e) { fireToast("Gagal menyimpan: " + e.message, "alert"); }
   };
   const toggleType = (t) => setModal((m) => ({ ...m, data: { ...m.data, types: m.data.types.includes(t) ? m.data.types.filter((x) => x !== t) : [...m.data.types, t] } }));
 
@@ -315,7 +504,13 @@ function SignatoriesTab({ entity, fireToast }) {
         <PrimaryBtn icon="plus" onClick={openAdd}>Tambah Penanda Tangan</PrimaryBtn>
       </div>
 
-      {signers.length === 0 ? (
+      {state === "error" ? (
+        <ErrorState msg={errMsg} onRetry={refetch} />
+      ) : state === "loading" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 16 }}>
+          {[0, 1].map((i) => <Card key={i}><Skel w={180} h={16} style={{ marginBottom: 14 }} /><Skel w={120} h={12} style={{ marginBottom: 18 }} /><div style={{ display: "flex", gap: 12 }}><Skel h={96} r={11} style={{ flex: 1 }} /><Skel h={96} r={11} style={{ flex: 1 }} /></div></Card>)}
+        </div>
+      ) : signers.length === 0 ? (
         <EmptyState icon="pen" title="Belum ada penanda tangan" desc="Tambahkan penanda tangan beserta spesimen tanda tangan & stempel untuk dipakai pada dokumen resmi." cta="Tambah Penanda Tangan" onCta={openAdd} />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 16 }}>
