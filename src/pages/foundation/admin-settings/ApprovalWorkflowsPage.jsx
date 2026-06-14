@@ -4,13 +4,15 @@
      A. Dokumen Bisnis — workflow cards (numbered approval steps, threshold,
         slide-over editor with reorderable steps)
      B. HRGA Request   — approver matrix grouped by category (accordion)
-   Data dummy/statis (Supabase wiring to follow separately).
+   Data layer: Supabase (approval_workflows + approval_workflow_steps,
+   hrga_request_types + hrga_approval_configs).
    Note: glyphs not in kit's Icon registry (user, arrow up/down) are pulled
    directly from lucide-react — kit.jsx is not modified.
    ========================================================================= */
 
 import { useState, useEffect } from "react";
 import { User, ArrowUp, ArrowDown } from "lucide-react";
+import { supabase } from "../../../lib/supabase";
 import {
   Icon, PageHeader, EntitySwitcher, Tabs, Toggle, PrimaryBtn, OutlineBtn,
   SaveButton, SlideOver, useToast, Skel, FloatingInput, FloatingSelect,
@@ -20,6 +22,72 @@ import {
   NAVY, CREAM, SURFACE, LINE, LINE_SOFT, ROW_HOVER, INK, INK_SOFT, MUTED,
   FAINT, DANGER, GREEN, FONT_HEAD, FONT_BODY, FONT_MONO, fmtRp,
 } from "./tokens";
+
+/* ---------- entity code → companies.id ---------- */
+const ENTITY_IDS = {
+  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
+  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
+  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
+};
+
+/* ---------- approval_workflows (+ steps) row → UI workflow ---------- */
+function wfToUi(row) {
+  const steps = (row.approval_workflow_steps || [])
+    .slice().sort((a, b) => (a.step_order || 0) - (b.step_order || 0))
+    .map((s) => ({
+      id: s.id,
+      type: s.approver_type || "role",
+      role: s.approver_role || "manager",
+      user: s.approver_user_id || "",
+      timeout: s.timeout_hours == null ? "" : s.timeout_hours,
+      required: !!s.is_required,
+    }));
+  return {
+    id: row.id,
+    doc: row.document_type,
+    name: row.name || "",
+    min: row.amount_threshold_min == null ? "" : String(row.amount_threshold_min),
+    max: row.amount_threshold_max == null ? "" : String(row.amount_threshold_max),
+    active: !!row.is_active,
+    steps,
+  };
+}
+
+/* ---------- shared error state (fetch failed) ---------- */
+function ErrorState({ msg, onRetry }) {
+  return (
+    <div style={{ background: SURFACE, border: "1px solid " + LINE, borderRadius: 16, textAlign: "center", padding: "48px 32px" }}>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+      <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
+    </div>
+  );
+}
+function CardsSkeleton() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 16 }}>
+      {[0, 1, 2].map((i) => (
+        <div key={i} style={{ background: SURFACE, border: "1px solid " + LINE, borderRadius: 16, padding: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}><Skel w={54} h={26} r={8} /><Skel w={150} h={16} /><span style={{ flex: 1 }} /><Skel w={44} h={24} r={20} /></div>
+          <Skel w={160} h={30} r={8} style={{ marginBottom: 18 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{[0, 1].map((j) => <div key={j} style={{ display: "flex", gap: 12, alignItems: "center" }}><Skel w={30} h={30} r={15} /><Skel w={180} h={14} /></div>)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function HrgaSkeleton() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {[0, 1, 2].map((i) => (
+        <div key={i} style={{ background: SURFACE, border: "1px solid " + LINE, borderRadius: 14, padding: "15px 18px", display: "flex", alignItems: "center", gap: 13 }}>
+          <Skel w={38} h={38} r={10} /><Skel w={160} h={16} /><span style={{ flex: 1 }} /><Skel w={90} h={20} r={11} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /* ---------- role catalogue ---------- */
 const APPR_ROLES = [
@@ -51,30 +119,6 @@ const WF_DOCS = {
   PO:        { label: "PO",        full: "Purchase Order",  tint: "#FBEFD3", fg: "#9A6B12" },
 };
 const DOC_FILTERS = ["Semua", "SP", "Invoice", "Quotation", "PO"];
-
-/* ---------- seed workflows ---------- */
-const WF_SEED = [
-  {
-    id: "wf1", doc: "SP", name: "Approval SP Standar", min: "", max: "", active: true,
-    steps: [
-      { id: "s1", type: "role", role: "manager", user: "", timeout: 48, required: true },
-      { id: "s2", type: "role", role: "ceo", user: "", timeout: "", required: true },
-    ],
-  },
-  {
-    id: "wf2", doc: "Invoice", name: "Approval Invoice > 50jt", min: "50000000", max: "", active: true,
-    steps: [
-      { id: "s1", type: "role", role: "finance", user: "", timeout: 24, required: true },
-      { id: "s2", type: "role", role: "gm", user: "", timeout: "", required: true },
-    ],
-  },
-  {
-    id: "wf3", doc: "Quotation", name: "Approval Quotation", min: "", max: "", active: true,
-    steps: [
-      { id: "s1", type: "role", role: "manager", user: "", timeout: "", required: true },
-    ],
-  },
-];
 
 /* ---------- info banner ---------- */
 function InfoBanner({ children }) {
@@ -366,28 +410,88 @@ function newWorkflow() {
     steps: [{ id: "n" + (++WF_STEP_SEQ), type: "role", role: "manager", user: "", timeout: "", required: true }] };
 }
 
-function DokumenBisnisTab({ fireToast }) {
-  const [workflows, setWorkflows] = useState(WF_SEED);
+function DokumenBisnisTab({ entity, fireToast }) {
+  const [workflows, setWorkflows] = useState([]);
   const [filter, setFilter] = useState("Semua");
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(null);
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
 
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    supabase.from("approval_workflows")
+      .select("*, approval_workflow_steps(*)")
+      .eq("company_id", ENTITY_IDS[entity])
+      .order("document_type", { ascending: true })
+      .limit(1000)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setErrMsg(error.message); setState("error"); return; }
+        setWorkflows((data || []).map(wfToUi)); setState("ready");
+      });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
+  const refetch = () => setReload((n) => n + 1);
   const shown = filter === "Semua" ? workflows : workflows.filter((w) => w.doc === filter);
 
-  const toggle = (id) => setWorkflows((w) => w.map((x) => x.id === id ? { ...x, active: !x.active } : x));
-  const del = (id) => { setWorkflows((w) => w.filter((x) => x.id !== id)); fireToast("Workflow dihapus", "trash"); };
+  const toggle = async (id) => {
+    const wf = workflows.find((x) => x.id === id);
+    if (!wf) return;
+    const { error } = await supabase.from("approval_workflows").update({ is_active: !wf.active }).eq("id", id);
+    if (error) { fireToast("Gagal memperbarui: " + error.message, "alert"); return; }
+    refetch();
+  };
+  const del = async (id) => {
+    const { error } = await supabase.from("approval_workflows").delete().eq("id", id);
+    if (error) { fireToast("Gagal menghapus: " + error.message, "alert"); return; }
+    fireToast("Workflow dihapus", "trash"); refetch();
+  };
   const openAdd = () => { setDraft(newWorkflow()); setOpen(true); };
   const openEdit = (wf) => { setDraft({ ...wf, steps: wf.steps.map((s) => ({ ...s })) }); setOpen(true); };
-  const save = (form) => {
-    setWorkflows((w) => {
+  const save = async (form) => {
+    try {
+      const wfPayload = {
+        company_id: ENTITY_IDS[entity],
+        document_type: form.doc,
+        name: form.name || "",
+        amount_threshold_min: form.min === "" || form.min == null ? null : Number(form.min),
+        amount_threshold_max: form.max === "" || form.max == null ? null : Number(form.max),
+        is_active: !!form.active,
+      };
+      let wfId = form.id;
       if (form._isNew || form.id === "new") {
-        const rest = { ...form }; delete rest._isNew;
-        return [...w, { ...rest, id: "wf" + Date.now() }];
+        const { data: ins, error } = await supabase.from("approval_workflows").insert(wfPayload).select().single();
+        if (error) throw error;
+        wfId = ins.id;
+      } else {
+        const { error } = await supabase.from("approval_workflows").update(wfPayload).eq("id", wfId);
+        if (error) throw error;
+        const { error: delErr } = await supabase.from("approval_workflow_steps").delete().eq("workflow_id", wfId);
+        if (delErr) throw delErr;
       }
-      return w.map((x) => x.id === form.id ? { ...form } : x);
-    });
-    setOpen(false);
-    fireToast("Workflow \"" + (form.name || "Tanpa nama") + "\" disimpan");
+      const stepsPayload = form.steps.map((s, i) => ({
+        workflow_id: wfId,
+        step_order: i + 1,
+        approver_type: s.type,
+        approver_role: s.type === "role" ? (s.role || null) : null,
+        approver_user_id: s.type === "user" ? (s.user || null) : null,
+        is_required: !!s.required,
+        timeout_hours: s.timeout === "" || s.timeout == null ? null : Number(s.timeout),
+      }));
+      if (stepsPayload.length) {
+        const { error: stErr } = await supabase.from("approval_workflow_steps").insert(stepsPayload);
+        if (stErr) throw stErr;
+      }
+      setOpen(false);
+      fireToast("Workflow \"" + (form.name || "Tanpa nama") + "\" disimpan");
+      refetch();
+    } catch (e) {
+      fireToast("Gagal menyimpan: " + e.message, "alert");
+    }
   };
 
   return (
@@ -422,7 +526,11 @@ function DokumenBisnisTab({ fireToast }) {
       </div>
 
       {/* cards */}
-      {shown.length === 0 ? (
+      {state === "loading" ? (
+        <CardsSkeleton />
+      ) : state === "error" ? (
+        <ErrorState msg={errMsg} onRetry={refetch} />
+      ) : shown.length === 0 ? (
         <WfEmptyState filter={filter} onAdd={openAdd} />
       ) : (
         <div key={filter} className="ak-rise" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 16 }}>
@@ -453,55 +561,6 @@ function WfEmptyState({ filter, onAdd }) {
 /* =========================================================================
    TAB B — HRGA REQUEST APPROVER MATRIX
    ========================================================================= */
-const HRGA_CATS = [
-  { code: "ADM", name: "Administrasi", types: [
-    { code: "SKK", name: "Surat Keterangan Kerja",       levels: 1 },
-    { code: "SKP", name: "Surat Keterangan Penghasilan",  levels: 1 },
-    { code: "SKR", name: "Surat Keterangan Resign",       levels: 1 },
-    { code: "SLIP", name: "Slip Gaji",                    levels: 1 },
-    { code: "LEG", name: "Legalisir Dokumen",             levels: 1 },
-  ]},
-  { code: "AST", name: "Aset & Perlengkapan", types: [
-    { code: "ATK", name: "Alat Tulis Kantor",     levels: 2 },
-    { code: "UNF", name: "Seragam Kerja",          levels: 1 },
-    { code: "CARD", name: "Kartu Akses / ID Card", levels: 1 },
-    { code: "LAPP", name: "Laptop / Perangkat",    levels: 2 },
-    { code: "VHCL", name: "Kendaraan Operasional", levels: 1 },
-    { code: "SIM", name: "Kartu SIM / Pulsa",      levels: 2 },
-  ]},
-  { code: "FAC", name: "Fasilitas", types: [
-    { code: "ACC", name: "Akomodasi",            levels: 2 },
-    { code: "MEET", name: "Ruang Meeting",       levels: 1 },
-    { code: "REP", name: "Perbaikan Fasilitas",  levels: 2 },
-  ]},
-  { code: "FIN", name: "Keuangan", types: [
-    { code: "ROPS", name: "Reimburse Operasional", levels: 3 },
-    { code: "RMED", name: "Reimburse Medis",       levels: 3 },
-    { code: "CASH", name: "Cash Advance",          levels: 2 },
-  ]},
-  { code: "OFF", name: "Offboarding", types: [
-    { code: "EXIT", name: "Exit Clearance", levels: 3 },
-  ]},
-  { code: "TRV", name: "Perjalanan", types: [
-    { code: "TRIP", name: "Perjalanan Dinas",     levels: 3 },
-    { code: "REIM", name: "Reimburse Perjalanan", levels: 3 },
-  ]},
-];
-
-function defaultRows() {
-  const out = {};
-  HRGA_CATS.forEach((cat) => {
-    out[cat.code] = cat.types.map((t) => ({
-      ...t,
-      l1: "hrga",
-      l2: t.levels >= 2 ? "manager" : "",
-      l3: t.levels >= 3 ? "ceo" : "",
-      active: true,
-    }));
-  });
-  return out;
-}
-
 const hThStyle = { padding: "11px 14px", textAlign: "left", fontFamily: FONT_BODY, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, color: MUTED, whiteSpace: "nowrap" };
 const hTdStyle = { padding: "10px 14px", borderBottom: "1px solid " + LINE_SOFT, verticalAlign: "middle" };
 
@@ -540,7 +599,7 @@ function DisabledCell() {
   );
 }
 
-function CategoryAccordion({ cat, rows, open, onToggle, onChange, fireToast }) {
+function CategoryAccordion({ cat, rows, open, onToggle, onChange, onSave }) {
   const activeCount = rows.filter((r) => r.active).length;
   return (
     <div style={{ background: SURFACE, border: "1px solid " + (open ? "#C9D8EC" : LINE), borderRadius: 14, overflow: "hidden", transition: "border-color .2s" }}>
@@ -576,7 +635,7 @@ function CategoryAccordion({ cat, rows, open, onToggle, onChange, fireToast }) {
               </table>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", padding: "14px 18px", borderTop: "1px solid " + LINE_SOFT }}>
-              <SaveButton label="Simpan Semua" variant="primary" onSave={() => fireToast("Approver " + cat.name + " disimpan")} />
+              <SaveButton label="Simpan Semua" variant="primary" onSave={onSave} />
             </div>
           </div>
         </div>
@@ -585,24 +644,94 @@ function CategoryAccordion({ cat, rows, open, onToggle, onChange, fireToast }) {
   );
 }
 
-function HrgaRequestTab({ fireToast }) {
-  const [data, setData] = useState(defaultRows);
-  const [open, setOpen] = useState(() => HRGA_CATS.reduce((a, c) => ({ ...a, [c.code]: true }), {}));
+function HrgaRequestTab({ entity, fireToast }) {
+  const [cats, setCats] = useState([]);   // [{ code, name, types: [request_type rows] }]
+  const [data, setData] = useState({});   // { catCode: [{ id, code, name, levels, l1, l2, l3, active }] }
+  const [open, setOpen] = useState({});
+  const [state, setState] = useState("loading"); // loading | ready | error
+  const [errMsg, setErrMsg] = useState("");
+  const [reload, setReload] = useState(0);
 
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    Promise.all([
+      supabase.from("hrga_request_types").select("*").eq("company_id", ENTITY_IDS[entity]).is("deleted_at", null).order("category_code", { ascending: true }).order("sort_order", { ascending: true }).limit(1000),
+      supabase.from("hrga_approval_configs").select("*").eq("company_id", ENTITY_IDS[entity]).eq("is_active", true).limit(1000),
+    ]).then(([typesRes, cfgRes]) => {
+      if (cancelled) return;
+      if (typesRes.error) { setErrMsg(typesRes.error.message); setState("error"); return; }
+      if (cfgRes.error) { setErrMsg(cfgRes.error.message); setState("error"); return; }
+      const cfgByKey = {};
+      (cfgRes.data || []).forEach((c) => { cfgByKey[c.request_type_id + ":" + c.level] = c; });
+      const catMap = {}; const order = [];
+      (typesRes.data || []).forEach((t) => {
+        if (!catMap[t.category_code]) { catMap[t.category_code] = { code: t.category_code, name: t.category_name, types: [] }; order.push(t.category_code); }
+        catMap[t.category_code].types.push(t);
+      });
+      const nextCats = order.map((c) => catMap[c]);
+      const nextData = {};
+      nextCats.forEach((cat) => {
+        nextData[cat.code] = cat.types.map((t) => {
+          const lv = t.approval_levels || 1;
+          const c1 = cfgByKey[t.id + ":1"], c2 = cfgByKey[t.id + ":2"], c3 = cfgByKey[t.id + ":3"];
+          return {
+            id: t.id, code: t.type_code, name: t.type_name, levels: lv,
+            l1: c1 ? c1.approver_role : "hrga",
+            l2: lv >= 2 ? (c2 ? c2.approver_role : "manager") : "",
+            l3: lv >= 3 ? (c3 ? c3.approver_role : "ceo") : "",
+            active: true,
+          };
+        });
+      });
+      setCats(nextCats); setData(nextData); setState("ready");
+    });
+    return () => { cancelled = true; };
+  }, [entity, reload]);
+
+  const refetch = () => setReload((n) => n + 1);
   const change = (catCode) => (rowCode, key, val) =>
     setData((d) => ({ ...d, [catCode]: d[catCode].map((r) => r.code === rowCode ? { ...r, [key]: val } : r) }));
+
+  const saveCategory = (catCode) => async () => {
+    const rows = data[catCode] || [];
+    const payload = [];
+    rows.forEach((r) => {
+      for (let lv = 1; lv <= (r.levels || 1); lv++) {
+        const role = r["l" + lv];
+        if (role) payload.push({ company_id: ENTITY_IDS[entity], request_type_id: r.id, level: lv, approver_role: role, is_active: r.active !== false });
+      }
+    });
+    const cat = cats.find((c) => c.code === catCode);
+    if (!payload.length) { fireToast("Tidak ada approver untuk disimpan", "alert"); return; }
+    const { error } = await supabase.from("hrga_approval_configs").upsert(payload, { onConflict: "request_type_id,level" });
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    fireToast("Approver " + (cat ? cat.name : catCode) + " disimpan");
+    refetch();
+  };
+
+  if (state === "loading") return <HrgaSkeleton />;
+  if (state === "error") return <ErrorState msg={errMsg} onRetry={refetch} />;
 
   return (
     <div>
       <SectionLabel style={{ marginBottom: 14 }}>Konfigurasi Approver HRGA</SectionLabel>
       <InfoBanner>Approver dikonfigurasi per jenis request HRGA. <strong style={{ color: NAVY }}>Urutan level</strong> menentukan urutan persetujuan.</InfoBanner>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {HRGA_CATS.map((cat) => (
-          <CategoryAccordion key={cat.code} cat={cat} rows={data[cat.code]}
-            open={!!open[cat.code]} onToggle={() => setOpen((o) => ({ ...o, [cat.code]: !o[cat.code] }))}
-            onChange={change(cat.code)} fireToast={fireToast} />
-        ))}
-      </div>
+      {cats.length === 0 ? (
+        <div style={{ background: SURFACE, border: "1px dashed " + LINE, borderRadius: 16, textAlign: "center", padding: "48px 32px" }}>
+          <div style={{ width: 60, height: 60, borderRadius: 16, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}><Icon name="clipboard" size={28} /></div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 700, color: NAVY }}>Belum ada jenis request HRGA</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: MUTED, marginTop: 6, maxWidth: 340, margin: "6px auto 0", textWrap: "pretty" }}>Jenis request HRGA untuk entitas ini belum dikonfigurasi.</div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {cats.map((cat) => (
+            <CategoryAccordion key={cat.code} cat={cat} rows={data[cat.code] || []}
+              open={open[cat.code] ?? true} onToggle={() => setOpen((o) => ({ ...o, [cat.code]: !(o[cat.code] ?? true) }))}
+              onChange={change(cat.code)} onSave={saveCategory(cat.code)} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -655,8 +784,8 @@ export default function ApprovalWorkflowsPage({ onHome }) {
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {loading ? <WfSkeleton /> : (
         <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
-          {tab === "dokumen" && <DokumenBisnisTab fireToast={fireToast} />}
-          {tab === "hrga" && <HrgaRequestTab fireToast={fireToast} />}
+          {tab === "dokumen" && <DokumenBisnisTab entity={entity} fireToast={fireToast} />}
+          {tab === "hrga" && <HrgaRequestTab entity={entity} fireToast={fireToast} />}
         </div>
       )}
       {toastNode}
