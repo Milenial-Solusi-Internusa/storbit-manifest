@@ -151,7 +151,7 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
         .select(`
           id, inquiry_no, service_type, route, status, created_at, commodity, estimated_volume, notes,
           prospect:accounts!inquiries_prospect_id_fkey(name),
-          customer:customers!inquiries_customer_id_fkey(name)
+          customer:accounts!inquiries_customer_id_fkey(name)
         `, { count: 'exact' })
         .eq('company_id', profile.company_id)
         .is('deleted_at', null)

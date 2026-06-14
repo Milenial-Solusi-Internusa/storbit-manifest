@@ -166,7 +166,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           subtotal, tax_amount, total_amount, payment_terms_id,
           pricing_done_at, quote_sent_at, discount_pct,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city, pic_name, pic_email, pic_phone),
-          customer:customers!quotations_customer_id_fkey(name, address, city, email, phone)
+          customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone)
         `)
         .eq('id', quotationId)
         .single(),

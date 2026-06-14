@@ -85,7 +85,7 @@ export default function InquiryFormPage({ onBack, showToast }) {
     if (!profile?.company_id) return;
     supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name')
       .then(({ data }) => setProspects(data || []));
-    supabase.from('customers').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null).order('name')
+    supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'customer').is('deleted_at', null).order('name')
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
 
@@ -111,8 +111,10 @@ export default function InquiryFormPage({ onBack, showToast }) {
       const payload = {
         inquiry_no,
         company_id:       profile.company_id,
-        prospect_id:      sourceType === 'prospect' ? (form.prospect_id || null) : null,
-        customer_id:      sourceType === 'customer' ? (form.customer_id || null) : null,
+        // Both prospect & customer are `accounts` rows now — link via prospect_id
+        // consistently for all CRM records; customer_id is left NULL.
+        prospect_id:      sourceType === 'prospect' ? (form.prospect_id || null) : (form.customer_id || null),
+        customer_id:      null,
         service_type:     form.service_type,
         route:            form.route || null,
         commodity:        form.commodity || null,
