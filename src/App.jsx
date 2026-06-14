@@ -50,6 +50,7 @@ const EntitySettingsPage     = lazy(() => import('./pages/foundation/admin-setti
 const DocumentSettingsPage   = lazy(() => import('./pages/foundation/admin-settings/DocumentSettingsPage'));
 const FinanceDefaultsPage    = lazy(() => import('./pages/foundation/admin-settings/FinanceDefaultsPage'));
 const ApprovalWorkflowsPage  = lazy(() => import('./pages/foundation/admin-settings/ApprovalWorkflowsPage'));
+const MyProfilePage          = lazy(() => import('./pages/profile/MyProfilePage'));
 const NotificationsPage      = lazy(() => import('./pages/foundation/admin-settings/NotificationsPage'));
 
 // ============================
@@ -1308,6 +1309,7 @@ export default function StorbitManifest() {
   const [arFilterStatus, setArFilterStatus] = useState('all');
   const [arSearch, setArSearch] = useState('');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
   // Persist active menu and module across browser refresh
   useEffect(() => {
@@ -1930,7 +1932,7 @@ export default function StorbitManifest() {
                         </div>
                         <div className="p-1.5">
                           {[
-                            { label: 'My Profile',       icon: User,     action: () => setProfileDropdownOpen(false) },
+                            { label: 'My Profile',       icon: User,     action: () => { setProfileDropdownOpen(false); setShowProfile(true); } },
                             { label: 'Account Settings', icon: Settings, action: () => setProfileDropdownOpen(false) },
                             { label: 'Admin Settings',   icon: Shield,   action: () => { navigateTo('adminSettings'); setProfileDropdownOpen(false); } },
                           ].map(({ label, icon: Icon, action }) => (
@@ -1963,6 +1965,17 @@ export default function StorbitManifest() {
               </div>
             </div>
           </header>
+
+          {/* ── MY PROFILE (full-page overlay) ── */}
+          {showProfile && (
+            <ErrorBoundary title="Profil tidak tersedia">
+              <Suspense fallback={<div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#F6EFE3', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9C948D' }}>Loading…</div>}>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9999, overflowY: 'auto', background: '#F6EFE3' }}>
+                  <MyProfilePage onClose={() => setShowProfile(false)} />
+                </div>
+              </Suspense>
+            </ErrorBoundary>
+          )}
 
           {/* ── APP LAUNCHER (no sidebar, full width) ── */}
           {!activeModule && (
