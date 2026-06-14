@@ -45,6 +45,10 @@ const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPa
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
 const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
 const PenerimaanBarangPage   = lazy(() => import('./modules/inventory/pages/PenerimaanBarangPage'));
+const AdminSettingsHub       = lazy(() => import('./pages/foundation/admin-settings/AdminSettingsHub'));
+const EntitySettingsPage     = lazy(() => import('./pages/foundation/admin-settings/EntitySettingsPage'));
+const DocumentSettingsPage   = lazy(() => import('./pages/foundation/admin-settings/DocumentSettingsPage'));
+const FinanceDefaultsPage    = lazy(() => import('./pages/foundation/admin-settings/FinanceDefaultsPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -767,7 +771,7 @@ const ERP_MENU_GROUPS = [
       { id: 'products',      label: 'Products & Services', icon: Package },
       { id: 'schema-manager',label: 'Schema Manager',    icon: Database, module: 'admin', role: ['super_admin'] },
       { section: 'Admin Settings' },
-      { id: 'adminSettings', label: 'Admin Settings', icon: Settings, module: 'admin', role: ['super_admin','admin'] },
+      { id: 'admin-settings', label: 'Admin Settings', icon: Settings, module: 'admin', role: ['super_admin','admin'] },
     ],
   },
 ];
@@ -1335,7 +1339,8 @@ export default function StorbitManifest() {
     if (SYNTHETIC.includes(activeMenu)) return;
     if (activeMenu?.startsWith('customer-') ||
         activeMenu?.startsWith('assets-') ||
-        activeMenu?.startsWith('product-')) return;
+        activeMenu?.startsWith('product-') ||
+        activeMenu?.startsWith('admin-settings-')) return;
 
     // Build the permission-filtered menu tree, then collect every navigable id
     // (top-level items + nested children + grandchildren).
@@ -1671,7 +1676,7 @@ export default function StorbitManifest() {
     // are themselves already gated — always allow.
     const SYNTHETIC = ['home', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
     if (SYNTHETIC.includes(activeMenu)) return true;
-    if (activeMenu?.startsWith('customer-') || activeMenu?.startsWith('assets-') || activeMenu?.startsWith('product-')) return true;
+    if (activeMenu?.startsWith('customer-') || activeMenu?.startsWith('assets-') || activeMenu?.startsWith('product-') || activeMenu?.startsWith('admin-settings-')) return true;
     const accessibleIds = new Set();
     for (const group of visibleMenuGroups) collectMenuIds(group.items, accessibleIds);
     return accessibleIds.has(activeMenu);
@@ -2036,7 +2041,8 @@ export default function StorbitManifest() {
            !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
-           !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') && (
+           !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
+           !activeMenu?.startsWith('admin-settings') && (
             <ComingSoonPage
               title="Coming Soon"
               description="This section is planned on the Nexus ERP roadmap and will be available in a future phase."
@@ -2401,6 +2407,46 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Lead Pool temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <LeadPoolPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── Foundation: Admin Settings ──────────────────────────────────── */}
+          {/* Routes (activeMenu-based, no react-router in this app):
+                admin-settings           → /foundation/admin-settings           (hub)
+                admin-settings-entity    → /foundation/admin-settings/entity
+                admin-settings-documents → /foundation/admin-settings/documents
+                admin-settings-finance   → /foundation/admin-settings/finance     */}
+          {activeMenu === 'admin-settings' && (
+            <ErrorBoundary title="Admin Settings temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <AdminSettingsHub onOpen={(id) => setActiveMenu(
+                  id === 'entity' ? 'admin-settings-entity'
+                    : id === 'document' ? 'admin-settings-documents'
+                    : id === 'finance' ? 'admin-settings-finance'
+                    : 'admin-settings'
+                )} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-entity' && (
+            <ErrorBoundary title="Entity Settings temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <EntitySettingsPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-documents' && (
+            <ErrorBoundary title="Document Settings temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <DocumentSettingsPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-finance' && (
+            <ErrorBoundary title="Finance Defaults temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <FinanceDefaultsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
