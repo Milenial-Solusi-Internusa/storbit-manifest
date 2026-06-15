@@ -77,6 +77,9 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const { profile, erpRole } = useAuth();
   const isEdit = !!prospect;
   const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
+  // Sales / operations creating a prospect → auto-assign to themselves.
+  // Managers / admin / super pick the assignee in the form (may be left empty).
+  const isSalesCreator = ['sales', 'operations'].includes(erpRole);
   const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
   const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
   const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
@@ -259,11 +262,17 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     if (!validate()) return;
     setSaving(true);
     try {
+      // Auto-assign to the creating sales user on create; otherwise use the
+      // form selection (managers/admin/super may leave it empty).
+      const effectiveAssignedTo = (!isEdit && isSalesCreator)
+        ? profile.id
+        : (form.assigned_to || null);
+
       const payload = {
         ...form,
         ...customValues,
         company_id:       profile.company_id,
-        assigned_to:      form.assigned_to      || null,
+        assigned_to:      effectiveAssignedTo,
         payment_terms_id: form.payment_terms_id || null,
         updated_by:       profile.id,
       };
@@ -400,10 +409,23 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           </Field>
 
           <Field label="Assigned To">
-            <select value={form.assigned_to} onChange={set('assigned_to')} style={selStyle}>
-              <option value="">— Pilih sales —</option>
-              {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-            </select>
+            {!isEdit && isSalesCreator ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, padding: '0 12px', borderRadius: 8, background: C.accentSoft, color: C.accent, fontSize: 13, fontWeight: 600 }}>
+                Otomatis di-assign ke Anda{profile?.full_name ? ` — ${profile.full_name}` : ''}
+              </div>
+            ) : (
+              <>
+                <select value={form.assigned_to} onChange={set('assigned_to')} style={selStyle}>
+                  <option value="">— Pilih sales —</option>
+                  {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                </select>
+                {!isEdit && !isSalesCreator && !form.assigned_to && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: C.accent, fontWeight: 500 }}>
+                    ⚠ Prospect belum di-assign ke sales.
+                  </div>
+                )}
+              </>
+            )}
           </Field>
 
           <Field label="Payment Terms">

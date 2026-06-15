@@ -77,6 +77,7 @@ const ICONS = {
   ban:         '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
   info:        '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   users:       '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  user:        '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
 };
 
 function Icon({ name, size = 18, color, style }) {
@@ -311,6 +312,12 @@ function DealCard({ deal, stColor, onDragStart, onDragEnd, dragging, onClick }) 
         <span style={S.dDate}><Icon name="calendar" size={13} color="#A6ABB5" />{deal.date}</span>
         <span style={{ ...S.svc, background: svc.bg, color: svc.fg }}>{svc.label}</span>
       </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 8, fontSize: 11.5 }}>
+        <Icon name="user" size={12} color="#A6ABB5" />
+        {deal.assigned
+          ? <span style={{ color: '#6B7280', fontWeight: 500 }}>{deal.assigned}</span>
+          : <span style={{ color: '#C2410C', fontWeight: 600 }}>Belum di-assign</span>}
+      </div>
     </div>
   );
 }
@@ -329,6 +336,11 @@ function ListRow({ deal, onClick }) {
       <div>
         <div style={S.lrCo}>{deal.co}</div>
         {deal.contact && <div style={S.lrContact}>{deal.contact}</div>}
+        <div style={{ fontSize: 11, marginTop: 2 }}>
+          {deal.assigned
+            ? <span style={{ color: '#9AA0AA' }}>{deal.assigned}</span>
+            : <span style={{ color: '#C2410C', fontWeight: 600 }}>Belum di-assign</span>}
+        </div>
       </div>
       <div><span style={{ ...S.svc, background: svc.bg, color: svc.fg }}>{svc.label}</span></div>
       <div style={S.lrDate}><Icon name="calendar" size={13} color="#A6ABB5" />{deal.date}</div>
@@ -380,7 +392,13 @@ function ListGroup({ stage, items }) {
 
 /* ========================================================================= */
 export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowProspectForm, setEditingProspect }) {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
+  // Visibility scope by role (mirrors RLS on `accounts` + CRMDashboard):
+  //  • super_admin / admin → all entities (no company filter)
+  //  • sales / operations  → only prospects assigned to / created by them
+  //  • everyone else (manager, ceo, gm, …) → their own entity
+  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
 
   // ── Existing state — unchanged ─────────────────────────────────────────────
   const [prospects,    setProspects]    = useState([]);
@@ -407,16 +425,21 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
 
   // ── Data fetching — unchanged ──────────────────────────────────────────────
   const fetchProspects = useCallback(async () => {
-    if (!profile?.company_id) return;
+    if (!profile?.id) return;
+    if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('accounts')
         .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, payment_terms_id, notes, assigned_to, created_at, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
-        .eq('company_id', profile.company_id)
         .eq('account_status', 'prospect')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
+        .is('deleted_at', null);
+
+      // Role-aware scope (see flags above)
+      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+      if (isSalesOnly)    query = query.or(`assigned_to.eq.${profile.id},created_by.eq.${profile.id}`);
+
+      const { data, error } = await query.order('created_at', { ascending: false });
       if (error) throw error;
       setProspects(data || []);
     } catch (err) {
@@ -424,7 +447,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     } finally {
       setLoading(false);
     }
-  }, [profile?.company_id, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, showToast]);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
 
@@ -534,6 +557,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     date:    fmtDate(p.created_at),
     svc:     sourceToSvc(p.source),
     stage:   (p.pipeline_stage || 'NEW').toLowerCase(),
+    assigned: p.assigned_profile?.full_name || null,
     raw:     p,
   }));
 
