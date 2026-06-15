@@ -1381,7 +1381,7 @@ function CRMDashboardPage() {
       const ownBySales   = (q) => isSalesOnly ? q.eq('salesperson_id', uid) : q;
       const ownByCreator = (q) => isSalesOnly ? q.eq('created_by', uid) : q;
 
-      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes, callsWeekRes, visitsWeekRes, quotMonthRes] = await Promise.all([
+      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes] = await Promise.all([
         // Full prospects for this company — all fields needed for multiple computations
         ownProspects(supabase
           .from('accounts')
@@ -1460,14 +1460,35 @@ function CRMDashboardPage() {
           .eq('company_id', cid)
           .gte('created_at', startThisMonth.toISOString())
           .limit(1000)),
+
+        // Won deals that already auto-converted to customer (account_status='customer'
+        // + pipeline_stage='WON' + became_customer_at set). These leave the prospect
+        // query, so without this they vanish from WON count / win rate / sales perf.
+        // Same company + role scope as the prospect queries.
+        ownProspects(supabase
+          .from('accounts')
+          .select('id, pipeline_stage, assigned_to, created_at, account_status, became_customer_at, profiles!prospects_assigned_to_fkey(full_name)')
+          .eq('company_id', cid)
+          .eq('account_status', 'customer')
+          .eq('pipeline_stage', 'WON')
+          .not('became_customer_at', 'is', null)
+          .is('deleted_at', null)
+          .limit(1000)),
       ]);
 
       if (prospectsRes.error) throw prospectsRes.error;
 
       const prospects       = prospectsRes.data || [];
-      const totalProspects  = prospects.length;
-      const wonCount        = prospects.filter(p => (p.pipeline_stage || '').toUpperCase() === 'WON').length;
-      const winRate         = totalProspects > 0 ? Math.round((wonCount / totalProspects) * 100) : 0;
+      const totalProspects  = prospects.length; // active prospects only — drives the "Total Prospects" card (unchanged)
+
+      // Won deals = active prospects still at stage WON (rare) + customers that
+      // auto-converted from a WON deal. Win rate is over all deals that ever
+      // entered the pipeline: active prospects + those converted WON customers.
+      const wonCustomers    = wonCustomersRes.data || [];
+      const wonProspects    = prospects.filter(p => (p.pipeline_stage || '').toUpperCase() === 'WON').length;
+      const wonCount        = wonProspects + wonCustomers.length;
+      const totalDeals      = totalProspects + wonCustomers.length;
+      const winRate         = totalDeals > 0 ? Math.round((wonCount / totalDeals) * 100) : 0;
       const totalInquiries  = inquiriesRes.count  ?? 0;
       const totalQuotations = quotationsRes.count ?? 0;
       const lastMonthProspects = lastMonthRes.data || [];
@@ -1519,16 +1540,30 @@ function CRMDashboardPage() {
       });
 
       // ── Sales performance ─────────────────────────────────────────────────
+      // prospek = active prospects assigned to the sales; won = active WON
+      // prospects + converted WON customers assigned to them. convRate uses the
+      // same "all deals" denominator as the global win rate (prospek + wonCust).
       const salesMap = {};
       (salesPerfRes.data || []).forEach(p => {
         const id   = p.assigned_to;
         const name = p.profiles?.full_name || 'Unknown';
-        if (!salesMap[id]) salesMap[id] = { name, prospek: 0, won: 0 };
+        if (!salesMap[id]) salesMap[id] = { name, prospek: 0, won: 0, wonCust: 0 };
         salesMap[id].prospek++;
         if ((p.pipeline_stage || '').toLowerCase() === 'won') salesMap[id].won++;
       });
+      wonCustomers.forEach(c => {
+        const id = c.assigned_to;
+        if (!id) return;
+        const name = c.profiles?.full_name || 'Unknown';
+        if (!salesMap[id]) salesMap[id] = { name, prospek: 0, won: 0, wonCust: 0 };
+        salesMap[id].won++;
+        salesMap[id].wonCust++;
+      });
       const salesPerfData = Object.values(salesMap)
-        .map(s => ({ ...s, convRate: s.prospek > 0 ? Math.round((s.won / s.prospek) * 100) : 0 }))
+        .map(s => {
+          const deals = s.prospek + s.wonCust; // all deals that entered the pipeline
+          return { name: s.name, prospek: s.prospek, won: s.won, convRate: deals > 0 ? Math.round((s.won / deals) * 100) : 0 };
+        })
         .sort((a, b) => b.prospek - a.prospek);
 
       // ── Calendar visits ────────────────────────────────────────────────────
