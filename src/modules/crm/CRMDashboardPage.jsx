@@ -107,9 +107,9 @@ const ACT_META = {
 };
 
 /* ---------- lead source color palette ---------- */
+// Pastel ungu/pink/biru — selaras dengan gradient line "Bulan Ini" (pie only)
 const SOURCE_PALETTE = [
-  NAVY, "#1E5894", "#2A6FA8", "#3E88C0", "#5BA0D0",
-  ORANGE, "#F0894B", "#1F8B4D", "#2BA866", "#6E4B8C", "#9AA0AC",
+  "#8B7DD8", "#E89BC4", "#7FB5E6", "#A8C5E0", "#C9B8E0",
 ];
 
 /* ---------- avatar helper ---------- */
@@ -223,7 +223,7 @@ const D = {
 
   /* donut */
   donutBody: { padding: "18px 18px 20px", display: "flex", alignItems: "center", gap: 16 },
-  donutWrap: { position: "relative", flex: "0 0 150px", width: 150, height: 150 },
+  donutWrap: { position: "relative", flex: "0 0 150px", width: 150, height: 160 },
   donutCenter: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
   donutTotal: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 26, color: "#16243A", letterSpacing: -0.6, lineHeight: 1 },
   donutTotalLbl: { fontSize: 10.5, color: "#9AA0AC", fontWeight: 600, marginTop: 3, letterSpacing: 0.3 },
@@ -300,11 +300,11 @@ function AreaTip({ active, payload, label }) {
       <div style={D.tipTitle}>{label}</div>
       <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#5B8FCB", flex: "0 0 8px" }} />
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#8B5CF6", flex: "0 0 8px" }} />
           Bulan Ini · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanIni")} prospect</b>
         </div>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: ORANGE, flex: "0 0 8px" }} />
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#CBD5E1", flex: "0 0 8px" }} />
           Bulan Lalu · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanLalu")} prospect</b>
         </div>
       </div>
@@ -332,13 +332,20 @@ function PipelineTrend({ data = [] }) {
           {areaW > 0 && (
             <AreaChart width={areaW} height={240} data={data} margin={{ top: 10, right: 22, left: -10, bottom: 0 }}>
               <defs>
+                {/* Horizontal (kiri→kanan) gradient untuk garis "Bulan Ini" */}
+                <linearGradient id="lineGradIni" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%"   stopColor="#7C3AED" />
+                  <stop offset="35%"  stopColor="#D946A6" />
+                  <stop offset="70%"  stopColor="#3B82F6" />
+                  <stop offset="100%" stopColor="#60A5FA" />
+                </linearGradient>
                 <linearGradient id="areaIni" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={NAVY} stopOpacity={0.20} />
-                  <stop offset="100%" stopColor={NAVY} stopOpacity={0.02} />
+                  <stop offset="0%"   stopColor="#8B5CF6" stopOpacity={0.18} />
+                  <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0.02} />
                 </linearGradient>
                 <linearGradient id="areaLalu" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={ORANGE} stopOpacity={0.10} />
-                  <stop offset="100%" stopColor={ORANGE} stopOpacity={0.01} />
+                  <stop offset="0%"   stopColor="#CBD5E1" stopOpacity={0.08} />
+                  <stop offset="100%" stopColor="#CBD5E1" stopOpacity={0.01} />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} stroke="#F1F2F5" />
@@ -347,21 +354,21 @@ function PipelineTrend({ data = [] }) {
               <YAxis axisLine={false} tickLine={false} width={30} allowDecimals={false}
                 tick={{ fontSize: 11, fill: "#9AA0AC" }} />
               <Tooltip content={<AreaTip />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
-              <Area type="monotone" dataKey="bulanLalu" stroke={ORANGE} strokeWidth={2} strokeDasharray="6 5"
-                fill="url(#areaLalu)" dot={{ r: 3, fill: ORANGE, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
-              <Area type="monotone" dataKey="bulanIni" stroke={NAVY} strokeWidth={2.5}
-                fill="url(#areaIni)" dot={{ r: 3, fill: NAVY, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+              <Area type="monotone" dataKey="bulanLalu" stroke="#CBD5E1" strokeWidth={2} strokeDasharray="6 5"
+                fill="url(#areaLalu)" dot={{ r: 3, fill: "#CBD5E1", strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+              <Area type="monotone" dataKey="bulanIni" stroke="url(#lineGradIni)" strokeWidth={2.5}
+                fill="url(#areaIni)" dot={{ r: 3, fill: "#8B5CF6", strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
             </AreaChart>
           )}
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "center", gap: 24, padding: "8px 0 14px" }}>
           <span style={D.legItem}>
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: NAVY, flex: "0 0 11px" }} />
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#8B5CF6", flex: "0 0 11px" }} />
             Bulan Ini
           </span>
           <span style={D.legItem}>
-            <span style={{ width: 14, height: 0, borderTop: "2.5px dashed " + ORANGE, flex: "0 0 14px" }} />
+            <span style={{ width: 14, height: 0, borderTop: "2.5px dashed #CBD5E1", flex: "0 0 14px" }} />
             Bulan Lalu
           </span>
         </div>
@@ -476,9 +483,9 @@ function LeadSourceDonut({ data = [] }) {
       ) : (
         <div style={D.donutBody}>
           <div style={D.donutWrap} className="donut-in">
-            <PieChart width={150} height={150}>
-              <Pie data={normalised} dataKey="count" nameKey="name" cx={75} cy={75}
-                innerRadius={48} outerRadius={72} paddingAngle={1.5} stroke="none"
+            <PieChart width={150} height={160}>
+              <Pie data={normalised} dataKey="count" nameKey="name" cx={75} cy={80}
+                innerRadius={46} outerRadius={70} paddingAngle={1.5} stroke="none"
                 startAngle={90} endAngle={-270} isAnimationActive={false}>
                 {normalised.map((s) => <Cell key={s.name} fill={s.color} />)}
               </Pie>
