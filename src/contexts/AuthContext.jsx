@@ -1,7 +1,7 @@
 // src/contexts/AuthContext.jsx
 // Global auth state — wrap App di main.jsx, akses via useAuth() di mana aja.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { AuthContext } from './authCtx';
 
@@ -55,6 +55,14 @@ export function AuthProvider({ children }) {
   const [menuPermissions,  setMenuPermissions]  = useState([]); // user_menu_permissions rows for this user
   const [permissionsLoading, setPermissionsLoading] = useState(true); // true while per-user menu permissions are loading
 
+  // Tracks the last authenticated user id. Distinguishes a genuine user change
+  // (first sign-in, or user B replacing user A) from a redundant 'SIGNED_IN' /
+  // 'TOKEN_REFRESHED' re-emit that Supabase fires on every tab refocus, token
+  // refresh, and cross-tab BroadcastChannel message. Only a genuine change may
+  // setLoading(true) — that unmounts <App/> via AuthGate and wipes in-progress
+  // form state (local useState).
+  const previousUserIdRef = useRef(null);
+
   useEffect(() => {
     let mounted = true;
     console.log('[Auth] useEffect start');
@@ -74,6 +82,7 @@ export function AuthProvider({ children }) {
       setSession(s);
 
       if (s?.user) {
+        previousUserIdRef.current = s.user.id;
         // Defer profile fetch ke next tick (avoid deadlock with onAuthStateChange)
         setTimeout(() => {
           if (!mounted) return;
@@ -87,6 +96,7 @@ export function AuthProvider({ children }) {
           });
         }, 0);
       } else {
+        previousUserIdRef.current = null;
         setLoading(false);
         clearTimeout(safetyTimeout);
       }
@@ -102,33 +112,54 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       console.log('[Auth] onAuthStateChange:', event, s ? 'with session' : 'no session');
       if (!mounted) return;
-      setSession(s);
 
-      if (s?.user) {
-        // On in-tab SIGNED_IN (user B logs in without a refresh), hold `loading`
-        // until the new profile is ready — same gating as the getSession path —
-        // so App doesn't mount/render against the previous user's context.
-        // Only for SIGNED_IN: do NOT toggle loading on TOKEN_REFRESHED /
-        // INITIAL_SESSION / USER_UPDATED (would flash the loading screen).
-        if (event === 'SIGNED_IN') setLoading(true);
-        // Defer to next tick supaya gak block listener
-        setTimeout(() => {
-          if (!mounted) return;
-          fetchProfileById(s.user.id).then(({ data, erpRoles: roles, error }) => {
-            if (!mounted) return;
-            if (error) console.error('[Auth] profile error:', error);
-            setProfile(data);
-            setErpRoles(roles || []);
-            if (event === 'SIGNED_IN') setLoading(false);
-          }).catch((err) => {
-            console.error('[Auth] profile fetch failed:', err);
-            if (mounted && event === 'SIGNED_IN') setLoading(false);
-          });
-        }, 0);
-      } else {
+      const newUserId = s?.user?.id ?? null;
+
+      // ── No session (SIGNED_OUT / session expired) → clear everything ─────────
+      if (!newUserId) {
+        previousUserIdRef.current = null;
+        setSession(s);
         setProfile(null);
         setErpRoles([]);
+        return;
       }
+
+      // ── Same-user re-emit (tab refocus / token refresh / cross-tab broadcast) ─
+      // Supabase re-emits 'SIGNED_IN' every time the tab regains visibility
+      // (internal visibilitychange + BroadcastChannel) and 'TOKEN_REFRESHED' on
+      // background refresh. These are NOT real logins. Skip setLoading(true) and
+      // the profile re-fetch — otherwise AuthGate unmounts <App/> and wipes any
+      // in-progress form (local useState). Keep the token fresh, but only swap
+      // the session reference when access_token actually changed, to avoid
+      // needlessly re-running useEffect([session]) → fetchMenuPermissions.
+      if (newUserId === previousUserIdRef.current) {
+        setSession(prev => (prev?.access_token === s?.access_token ? prev : s));
+        return;
+      }
+
+      // ── Genuine user change: first sign-in this tab, or user B replacing A ───
+      previousUserIdRef.current = newUserId;
+      setSession(s);
+      // On in-tab SIGNED_IN (user B logs in without a refresh), hold `loading`
+      // until the new profile is ready — same gating as the getSession path —
+      // so App doesn't render against the previous user's context (Fix 2.3E).
+      // Only for SIGNED_IN: do NOT toggle loading on INITIAL_SESSION /
+      // USER_UPDATED (would flash the loading screen).
+      if (event === 'SIGNED_IN') setLoading(true);
+      // Defer to next tick supaya gak block listener
+      setTimeout(() => {
+        if (!mounted) return;
+        fetchProfileById(s.user.id).then(({ data, erpRoles: roles, error }) => {
+          if (!mounted) return;
+          if (error) console.error('[Auth] profile error:', error);
+          setProfile(data);
+          setErpRoles(roles || []);
+          if (event === 'SIGNED_IN') setLoading(false);
+        }).catch((err) => {
+          console.error('[Auth] profile fetch failed:', err);
+          if (mounted && event === 'SIGNED_IN') setLoading(false);
+        });
+      }, 0);
     });
 
     return () => {
