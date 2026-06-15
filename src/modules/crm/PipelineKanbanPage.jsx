@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import WinLossModal from './WinLossModal';
+import ConfirmModal from '../../components/ConfirmModal';
 import { calcBantScore } from './bant';
 import BantScoreBar from './BantScoreBar';
 
@@ -413,6 +414,8 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   // Win/Loss capture modal — { open, mode, id, prevStage, prospectName }
   const [winLoss,       setWinLoss]       = useState({ open: false, mode: 'won', id: null, prevStage: 'NEW', prospectName: '' });
   const [winLossSaving, setWinLossSaving] = useState(false);
+  // Soft stage gating — confirm (not block) when prerequisites are missing.
+  const [stageGate,     setStageGate]     = useState({ open: false, stageId: null, id: null, type: null, prospectName: '' });
   const dragId      = useRef(null);
   const toastTimer  = useRef(null);
 
@@ -453,29 +456,22 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
 
   // ── Drag-and-drop handler — Supabase logic unchanged, adapted for new design ─
   // New design calls handleDrop(stageId) with lowercase id; DB needs uppercase.
-  const handleDropStage = useCallback(async (stageId) => {
-    const id = dragId.current;
-    setDraggingId(null);                              // always clear fade immediately
+  // Perform the actual stage move. Shared by handleDropStage (no gating needed)
+  // and the soft-gate confirm handler (user chose "Ya, Lanjut").
+  const applyStageMove = useCallback(async (stageId, id, prospect) => {
     const newStage = stageId.toUpperCase();           // DB stores uppercase
-    const prospect = prospects.find(p => p.id === id);
-    if (!prospect || (prospect.pipeline_stage || 'NEW') === newStage) {
-      setDropStage(null);
-      return;
-    }
 
     // WON / LOST require a reason — move card optimistically, then open WinLossModal.
     // The DB write happens only after the modal is saved (handleWinLossSave).
     if (newStage === 'WON' || newStage === 'LOST') {
       const prevStage = prospect.pipeline_stage || 'NEW';
       setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage } : p));
-      setDropStage(null);
       setWinLoss({ open: true, mode: newStage.toLowerCase(), id, prevStage, prospectName: prospect.name || '' });
       return;
     }
 
     // Optimistic update
     setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage } : p));
-    setDropStage(null);
 
     try {
       const { error } = await supabase
@@ -491,7 +487,58 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
       setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: prospect.pipeline_stage } : p));
       showToast?.('Gagal memindah stage: ' + err.message, 'error');
     }
-  }, [prospects, profile?.id, showToast]);
+  }, [profile?.id, showToast]);
+
+  const handleDropStage = useCallback(async (stageId) => {
+    const id = dragId.current;
+    setDraggingId(null);                              // always clear fade immediately
+    const newStage = stageId.toUpperCase();           // DB stores uppercase
+    const prospect = prospects.find(p => p.id === id);
+    setDropStage(null);
+    if (!prospect || (prospect.pipeline_stage || 'NEW') === newStage) {
+      return;
+    }
+
+    // ── Soft stage gating ──────────────────────────────────────────────────
+    // PROPOSAL without an Inquiry, or WON without a Quotation → ask first
+    // (lightweight COUNT). User can always proceed. On confirm, the move
+    // resumes via handleStageGateConfirm → applyStageMove.
+    if (newStage === 'PROPOSAL') {
+      const { count } = await supabase
+        .from('inquiries')
+        .select('id', { count: 'exact', head: true })
+        .eq('prospect_id', id);
+      if (!count) {
+        setStageGate({ open: true, stageId, id, type: 'proposal', prospectName: prospect.name || '' });
+        return;
+      }
+    } else if (newStage === 'WON') {
+      const { count } = await supabase
+        .from('quotations')
+        .select('id', { count: 'exact', head: true })
+        .eq('prospect_id', id);
+      if (!count) {
+        setStageGate({ open: true, stageId, id, type: 'won', prospectName: prospect.name || '' });
+        return;
+      }
+    }
+
+    applyStageMove(stageId, id, prospect);
+  }, [prospects, applyStageMove]);
+
+  // ── Soft gate — "Ya, Lanjut" resumes the held move; "Batal" leaves card put ─
+  const handleStageGateConfirm = useCallback(() => {
+    const { stageId, id, open } = stageGate;
+    setStageGate(g => ({ ...g, open: false }));
+    if (!open || !id) return;
+    const prospect = prospects.find(p => p.id === id);
+    if (prospect) applyStageMove(stageId, id, prospect);
+  }, [stageGate, prospects, applyStageMove]);
+
+  const handleStageGateCancel = useCallback(() => {
+    // No optimistic update happened yet, so the card simply stays in place.
+    setStageGate(g => ({ ...g, open: false }));
+  }, []);
 
   // ── Win/Loss modal — cancel reverts the optimistic move (no DB write) ───────
   const handleWinLossCancel = useCallback(() => {
@@ -709,6 +756,20 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         saving={winLossSaving}
         onSave={handleWinLossSave}
         onCancel={handleWinLossCancel}
+      />
+
+      {/* ── Soft stage gating confirmation ── */}
+      <ConfirmModal
+        open={stageGate.open}
+        variant="warning"
+        title={stageGate.type === 'won' ? 'Belum Ada Quotation' : 'Belum Ada Inquiry'}
+        message={stageGate.type === 'won'
+          ? 'Prospect ini belum punya Quotation. Biasanya deal ditandai WON setelah ada Quotation yang disetujui. Tetap tandai sebagai WON?'
+          : 'Prospect ini belum punya Inquiry. Biasanya Proposal dibuat setelah ada Inquiry. Tetap lanjut ke Proposal?'}
+        confirmLabel={stageGate.type === 'won' ? 'Ya, Tandai WON' : 'Ya, Lanjut'}
+        cancelLabel="Batal"
+        onConfirm={handleStageGateConfirm}
+        onCancel={handleStageGateCancel}
       />
 
       {/* ── Prospect detail modal ── */}
