@@ -61,8 +61,9 @@ const SERVICE_TYPES = [
 ];
 
 const UNIT_LABELS = [
-  'Per 20Ft', 'Per 40Ft', 'Per Day', 'Per Document',
-  'Per Receipt', 'Per BL', 'Per Container', 'Lumpsum',
+  'Per CBM', 'Per KG', 'Per Ton', 'Per 20Ft', 'Per 40Ft',
+  'Per Container', 'Per BL', 'Per Shipment', 'Per Trip',
+  'Per Day', 'Per Document', 'Per Receipt', 'Lumpsum',
 ];
 
 const CURRENCIES = ['IDR', 'USD'];

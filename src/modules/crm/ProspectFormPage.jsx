@@ -1,5 +1,5 @@
 // src/modules/crm/ProspectFormPage.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Save, User } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -121,6 +121,10 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const [nameWarning, setNameWarning] = useState('');
 
   const [profiles, setProfiles] = useState([]);
+  // Assignee resolved by fetching the account row — only needed when the passed
+  // prospect lacks the assigned_to UUID (the list page select omits it). Set
+  // only inside the async fetch callback (no synchronous setState in effect).
+  const [fetchedAssignee, setFetchedAssignee] = useState(null); // { id, full_name } | null
   const [paymentTerms, setPaymentTerms] = useState([]);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -174,6 +178,42 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       });
     }
   }, [isEdit, prospect]);
+
+  // On edit, the list page select omits the assigned_to UUID (only the joined
+  // name), so prospect.assigned_to can be undefined → fetch it by id. setState
+  // happens only inside the async callback (no synchronous setState in body).
+  useEffect(() => {
+    if (!isEdit || !prospect?.id || prospect.assigned_to) return; // nothing to fetch
+    let cancelled = false;
+    supabase.from('accounts')
+      .select('assigned_to, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
+      .eq('id', prospect.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data?.assigned_to) return;
+        // Don't clobber a selection the user may have made during the fetch.
+        setForm(f => f.assigned_to ? f : { ...f, assigned_to: data.assigned_to });
+        setFetchedAssignee({
+          id: data.assigned_to,
+          full_name: data.assigned_profile?.full_name || prospect.assigned_profile?.full_name || 'Sales ter-assign',
+        });
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, prospect]);
+
+  // Dropdown options = company sales list, plus a guaranteed option for the
+  // currently-selected assignee when it's outside that list (e.g. cross-entity
+  // for super_admin/admin) — otherwise the value wouldn't match any <option>
+  // and the dropdown would render empty on edit.
+  const assigneeOptions = useMemo(() => {
+    const selId = form.assigned_to;
+    if (!selId || profiles.some(p => p.id === selId)) return profiles;
+    const name =
+      (isEdit && prospect?.assigned_to === selId && prospect?.assigned_profile?.full_name) ||
+      (fetchedAssignee?.id === selId && fetchedAssignee?.full_name) ||
+      'Sales ter-assign';
+    return [...profiles, { id: selId, full_name: name }];
+  }, [profiles, form.assigned_to, isEdit, prospect, fetchedAssignee]);
 
   useEffect(() => {
     if (!profile?.company_id) return;
@@ -417,7 +457,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
               <>
                 <select value={form.assigned_to} onChange={set('assigned_to')} style={selStyle}>
                   <option value="">— Pilih sales —</option>
-                  {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                  {assigneeOptions.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
                 </select>
                 {!isEdit && !isSalesCreator && !form.assigned_to && (
                   <div style={{ marginTop: 6, fontSize: 12, color: C.accent, fontWeight: 500 }}>
