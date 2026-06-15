@@ -945,8 +945,65 @@ Output:
 | 2.8H | **CRMDashboard — fix chart kosong (Prospect Trend + bar chart) karena `useWidth` race.** `CRMDashboardPage.jsx` saja, hook `useWidth` (~L132). Bug: hook lama pakai `useRef` + `useEffect([])` → effect jalan sekali di first render saat container chart masih conditional (`!isEmpty`/belum ada data) → `ref.current` null → `return` tanpa observe; ketika data datang & div muncul, effect TIDAK jalan lagi (deps `[]`) → ResizeObserver tak terpasang → `w` tetap 0 → chart di-skip oleh guard `areaW > 0` (hanya legend tampil). **Fix:** ganti ke **callback ref** — `const ref = useCallback((node) => {...}, [])`: disconnect observer lama (`roRef`), jika `node` null (unmount) return, else `setW(node.clientWidth)` + pasang `ResizeObserver(update)` + simpan di `roRef`. Callback ref dipanggil React tiap elemen mount/unmount → pengukuran selalu terjadi saat div benar-benar ada (termasuk muncul belakangan pasca data-load). Return signature TETAP `[ref, w]` → call sites `PipelineTrend` (L309) & bar chart (L383) `const [areaRef, areaW] = useWidth()` + `<div ref={areaRef}>` tidak diubah (callback ref kompatibel dgn prop `ref`). ResizeObserver tetap utk responsif resize. `useRef`/`useCallback` sudah ter-import; `useRef` masih dipakai di tempat lain (L1328) → import tak berubah. Verifikasi mental: data load → div muncul → callback ref → width>0 → chart render; resize → observer → width update; unmount → disconnect (no leak). Lint 7→7 (net-zero baseline). build clean. | ✅ Complete |
 
 | 2.8I | **CRMDashboard — polish visual chart (styling only, data/perhitungan TIDAK disentuh).** `CRMDashboardPage.jsx` saja. **(1) PipelineTrend (AreaChart) garis "Bulan Ini" jadi gradient horizontal:** `<defs>` tambah `<linearGradient id="lineGradIni" x1=0 y1=0 x2=1 y2=0>` (kiri→kanan) stops `#7C3AED`(0%)→`#D946A6`(35%)→`#3B82F6`(70%)→`#60A5FA`(100%); `<Area dataKey="bulanIni">` `stroke="url(#lineGradIni)"`, dot `#8B5CF6`; fill `areaIni` diselaraskan jadi ungu `#8B5CF6` opacity 0.18→0.02 (sebelumnya NAVY). **(2) Garis "Bulan Lalu" jadi abu netral:** stroke+dot `ORANGE`→`#CBD5E1` (tetap `strokeDasharray="6 5"`); fill `areaLalu` jadi abu `#CBD5E1` opacity 0.08→0.01 (sebelumnya ORANGE). Legend swatch + tooltip `AreaTip` swatch (dot Bulan Ini→`#8B5CF6`, Bulan Lalu→`#CBD5E1`) diselaraskan (warna TEKS tidak diubah). **(3) Pie Lead Source — fix crop + pastel:** crop bawah diperbaiki dgn beri ruang vertikal: `D.donutWrap` height 150→160, `PieChart height` 150→160, `Pie cy` 75→80, `outerRadius` 72→70, `innerRadius` 48→46 (donut UTUH, margin atas/bawah ~10px simetris); `SOURCE_PALETTE` (HANYA dipakai pie ini, terverifikasi 1 konsumen) diganti palet pastel `#8B7DD8`/`#E89BC4`/`#7FB5E6`/`#A8C5E0`/`#C9B8E0` (cycle `i % len`); legend pie pakai `s.color` → ikut pastel, teks/angka tidak diubah. **TIDAK disentuh:** bar "Pipeline by Stage" (tetap `url(#navyBar)`/won-hijau/lost-merah — `NAVY`/`ORANGE` masih dipakai di sana, tidak di-rename), `LeadsBySource`, chart lain, semua query/agregasi. Lint 7→7 (net-zero baseline). build clean. | ✅ Complete |
+| 2.8J | **Fix quotation duplikat — ROOT CAUSE: RLS policy DELETE hilang di `quotation_items` (DB/RLS, bukan kode).** QuotationFormPage edit pakai pola delete-then-insert (`.from('quotation_items').delete().eq('quotation_id', …)` lalu `.insert`); TANPA policy `FOR DELETE`, `.delete()` "sukses" **0-row tanpa error** (RLS filter senyap) → item lama tak terhapus → insert numpuk → item & total DOBEL. **Solusi:** `CREATE POLICY quotation_items_delete ON quotation_items FOR DELETE …` (scope company, samakan pola INSERT/UPDATE existing). Kode QuotationFormPage TIDAK diubah (pola delete-then-insert sudah benar — yang kurang policy DB-nya). **Pelajaran:** RLS-missing-DELETE = silent 0-row, tak terdeteksi `error`-check; verifikasi via `count` atau pastikan CRUD policy lengkap. Lihat juga **Roadmap → audit DELETE policy SEMUA tabel**. | ✅ Complete |
+| 2.8K | **Data cleanup sesi 15 Jun (DB, bukan kode).** (1) **Indochem dedup:** 2 record — HAPUS `64ee0492…` (account_status=customer, stage NEW, kosong, tanpa inquiry/quotation), PERTAHANKAN `79c3562b…` (stage WON, ada inquiry+quotation). (2) **Indochem konversi customer:** `account_status='customer'`, `code='IJL'`, `became_customer_at` di-stamp. (3) **Konfirmasi auto-convert WON→customer SUDAH ADA** di `PipelineKanbanPage` (`became_customer_at`); Indochem cuma korban timing (di-WON sebelum logika konversi jalan). (4) **Payment term baru** "Cash Before Delivery" (`code='CBD'`) ditambah ke 3 entity (MSI/JCI/SOA). | ✅ Complete |
+| 2.8L | **Security — cabut GRANT `anon` di 29 tabel sensitif (DB, defense-in-depth).** `REVOKE` akses `anon` di **3 tabel finansial** (`accounts`, `quotations`, `quotation_items`) + **26 tabel** (finance / RBAC / user / CRM / inventory). RLS tetap aktif sbg lapisan kedua → anon ke-block di level **GRANT DAN RLS**. GRANT `authenticated` diverifikasi **lengkap SEBELUM** revoke (app tidak putus). **Belum dicabut (backlog, tidak urgent):** tabel kategori REFERENCES/TRIGGER/TRUNCATE-only (`companies`, `payment_terms`, `assets`, dll) — tidak beri akses baca/tulis data. Detail di section **Security Hardening — 15 Jun 2026**. | ✅ Complete |
 
-Current phase: **Phase 2.8I** ✅ Complete
+Current phase: **Phase 2.8L** ✅ Complete
+
+---
+
+## Security Hardening — 15 Jun 2026
+
+> Defense-in-depth: cabut akses `anon` di tabel sensitif. RLS tetap lapisan kedua.
+
+**Dikerjakan (DB — sudah dieksekusi):**
+- `REVOKE` privilege `anon` di **29 tabel sensitif**:
+  - **3 tabel finansial:** `accounts`, `quotations`, `quotation_items`
+  - **26 tabel:** finance / RBAC / user / CRM / inventory
+- RLS tetap aktif → anon ke-block di **dua lapis** (level GRANT **dan** RLS).
+- GRANT `authenticated` diverifikasi **lengkap sebelum** revoke → app tidak putus.
+
+**Belum dicabut (backlog kebersihan, tidak urgent):**
+- Tabel kategori **REFERENCES / TRIGGER / TRUNCATE only** (`companies`, `payment_terms`, `assets`, dll) — privilege ini tidak memberi akses baca/tulis data, jadi bukan risiko eksposur. Masuk backlog.
+
+---
+
+## Roadmap Menuju Production-Grade (hasil audit 15 Jun 2026)
+
+> Dari audit menyeluruh aplikasi (arsitektur / keamanan / maintainability / reliability / performance), 15 Jun 2026. Dikelompokkan 3 tier; `[x]` = selesai.
+
+### 🔴 SEGERA (keamanan & integritas data)
+- [x] Cabut akses `anon` tabel sensitif (29 tabel) — lihat **Security Hardening — 15 Jun 2026** (Phase 2.8L)
+- [ ] `supabase db pull` → bawa **~18 tabel inti** ke migrasi (`accounts`, `quotations`, `quotation_items`, `inquiries`, `sales_*`, RBAC tables, `stock_*`) — saat ini **di luar version control**
+- [ ] Audit DELETE policy **SEMUA tabel** (hanya ~4 dari ~50 punya; cari yang bolong seperti `quotation_items` — sudah di-fix di Phase 2.8J)
+- [ ] Write quotation **atomik** (bungkus update→delete→insert ke RPC transaksi tunggal)
+
+### 🟡 JANGKA PENDEK
+- [ ] Setup **Vitest + RTL** (mulai dari util murni: `spCalc`, `bant`, format)
+- [ ] Pasang **Sentry** + ErrorBoundary report
+- [ ] Implement **`audit_logs` + `logAudit()`** (AGENTS.md wajibkan 19 event; saat ini 0 call di kode)
+- [ ] Total quotation via **DB trigger** (hapus ketergantungan hitung di frontend)
+- [ ] `.single()` → `.maybeSingle()` di tempat bisa 0-row
+- [ ] Tambah `.limit()` ke **~97 query** tanpa limit
+- [ ] Refactor **LOW-risk App.jsx**: ekstrak `PASTEL`→`lib/tokens.js`, `ENTITY_IDS`→`config/entities.js`, helper `isSuperAdmin()`; hapus **1.206 baris dead code** (`*.legacy.jsx`)
+- [ ] Ganti **5 hijau terlarang** + emoji UI ke token brand + ikon Lucide
+
+### 🟢 JANGKA PANJANG
+- [ ] Pecah **`App.jsx`** (4.618 baris god-file) — **SETELAH ada test**. Urutan aman: konstanta → komponen presentasional → modul Storbit → layout → registry routing
+- [ ] Pecah file **>1.000 baris** (`CRMDashboardPage` 1.850, `AssetDetailITPage`, `SalesOrderDetailPage`)
+- [ ] Ekstrak shared: `useRoleScopedQuery`, `DataTablePage`, `Badge`, `Modal`, `lib/format.js`
+- [ ] Satukan paradigma styling (**75 inline vs 50 Tailwind**)
+- [ ] **Field Registry Level 1** (custom field via JSONB — nunggu keputusan desain: struktur metadata, field core 2a/2b, pilot form)
+- [ ] **CI pipeline** (build + lint + test gate sebelum deploy `main`)
+
+---
+
+## Status Nggantung (per 15 Jun 2026)
+
+- **Quotation Hisaka (`QUO/MSI/2026/004`):** items sudah di-wipe bersih, total di-reset 0 → **PERLU input ulang via UI**.
+- **Field Registry Level 1:** disepakati, nunggu **4 keputusan desain** (struktur metadata, field core 2a/2b, custom field JSONB, pilot form Prospect).
+- **Tabel kategori A (REFERENCES/TRIGGER/TRUNCATE only):** backlog cabut `anon` untuk kebersihan (tidak urgent — lihat Security Hardening).
 
 ---
 
