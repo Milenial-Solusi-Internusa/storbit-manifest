@@ -648,13 +648,16 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
 
           {/* Sections — NO cost_price column */}
           {sections.map((sec, si) => (
-            <div key={si} style={{ marginBottom: '16px' }}>
-              {/* Section header */}
-              <div style={{ background: '#144682', color: 'white', padding: '6px 12px', fontSize: '11px', fontWeight: 'bold', letterSpacing: '.5px' }}>
-                {sec.name}
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+            <table key={si} style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', marginBottom: '16px' }}>
                 <thead>
+                  {/* Section header — now a protected row INSIDE the table thead so it
+                      can never be sliced in half, and the tr-cascade in the page-break
+                      engine keeps it attached to the column header + first data row. */}
+                  <tr className="pdf-no-break">
+                    <th colSpan={6} style={{ background: '#144682', color: 'white', padding: '6px 12px', fontSize: '11px', fontWeight: 'bold', letterSpacing: '.5px', textAlign: 'left', border: '1px solid #144682' }}>
+                      {sec.name}
+                    </th>
+                  </tr>
                   <tr style={{ background: '#f0f0eb' }}>
                     <th style={{ padding: '6px 8px', textAlign: 'left',   border: '1px solid #ddd', fontWeight: 700 }}>DESCRIPTION</th>
                     <th style={{ padding: '6px 8px', textAlign: 'center', border: '1px solid #ddd', fontWeight: 700, width: 50 }}>CUR</th>
@@ -693,8 +696,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                     </td>
                   </tr>
                 </tfoot>
-              </table>
-            </div>
+            </table>
           ))}
 
           {/* Grand summary */}
@@ -725,18 +727,26 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
             </table>
           </div>
 
-          {/* Notes (if any) */}
+          {/* Notes (if any) — boxed, navy left accent */}
           {quot.notes && (
-            <div style={{ marginTop: '20px', fontSize: '11px' }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#333' }}>NOTES:</div>
-              <div style={{ color: '#555', lineHeight: '1.6' }}>{quot.notes}</div>
+            <div className="pdf-no-break" style={{
+              marginTop: '20px', fontSize: '11px',
+              border: '1px solid #E5E7EB', borderLeft: '4px solid #144682',
+              background: '#F8FAFC', borderRadius: '4px', padding: '10px 12px',
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#144682' }}>Notes</div>
+              <div style={{ color: '#555', lineHeight: '1.6', whiteSpace: 'pre-line' }}>{quot.notes}</div>
             </div>
           )}
 
-          {/* Above rates / Terms (field terms dari quotations) */}
+          {/* Above rates / Terms (field terms dari quotations) — boxed, orange left accent */}
           {quot.terms && (
-            <div className="pdf-no-break" style={{ marginTop: '20px', fontSize: '10.5px', color: '#333' }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>• Above rates :</div>
+            <div className="pdf-no-break" style={{
+              marginTop: '20px', fontSize: '10.5px', color: '#333',
+              border: '1px solid #E5E7EB', borderLeft: '4px solid #E85A1E',
+              background: '#FBF8F2', borderRadius: '4px', padding: '10px 12px',
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '6px', color: '#E85A1E' }}>Above rates :</div>
               <div style={{ whiteSpace: 'pre-line', paddingLeft: '12px', lineHeight: '1.6' }}>{quot.terms}</div>
             </div>
           )}
