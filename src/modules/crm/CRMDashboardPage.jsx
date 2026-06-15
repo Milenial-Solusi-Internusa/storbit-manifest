@@ -128,17 +128,24 @@ function HoverButton({ base, hover, children, ...rest }) {
 }
 
 /* Measure a container's width so charts mount at a real (non-zero) size —
-   avoids the ResponsiveContainer + animation race that can collapse marks to 0. */
+   avoids the ResponsiveContainer + animation race that can collapse marks to 0.
+   Uses a CALLBACK REF (not useRef + useEffect([])) so the measurement runs
+   whenever the element actually mounts — including when the chart container
+   appears later, after data loads. A plain effect with [] deps would run once
+   on first render when the (conditional) element isn't in the DOM yet, never
+   re-running once it appears → width stays 0 and the chart is skipped. */
 function useWidth() {
-  const ref = useRef(null);
   const [w, setW] = useState(0);
-  useEffect(() => {
-    if (!ref.current) return;
-    const update = () => { if (ref.current) setW(ref.current.clientWidth); };
+  const roRef = useRef(null);
+  const ref = useCallback((node) => {
+    // Tear down any observer attached to a previous node.
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!node) return; // unmount
+    const update = () => setW(node.clientWidth);
     update();
     const ro = new ResizeObserver(update);
-    ro.observe(ref.current);
-    return () => ro.disconnect();
+    ro.observe(node);
+    roRef.current = ro;
   }, []);
   return [ref, w];
 }
