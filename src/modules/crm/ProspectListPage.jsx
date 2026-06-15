@@ -82,6 +82,12 @@ function SourceBadge({ source }) {
 export default function ProspectListPage({ onAddProspect, onEditProspect, showToast }) {
   const { profile, erpRole } = useAuth();
   const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
+  // Visibility scope by role (mirrors RLS on `accounts` + CRMDashboard):
+  //  • super_admin / admin → all entities (no company filter)
+  //  • sales / operations  → only prospects assigned to / created by them
+  //  • everyone else (manager, ceo, gm, …) → their own entity
+  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
   const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
   const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
@@ -94,7 +100,8 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
   const [total, setTotal] = useState(0);
 
   const fetchProspects = useCallback(async () => {
-    if (!profile?.company_id) return;
+    if (!profile?.id) return;
+    if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
       let query = supabase
@@ -104,9 +111,14 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
           pic_name, pipeline_stage, created_at,
           assigned_profile:profiles!prospects_assigned_to_fkey(full_name)
         `, { count: 'exact' })
-        .eq('company_id', profile.company_id)
         .eq('account_status', 'prospect')
-        .is('deleted_at', null)
+        .is('deleted_at', null);
+
+      // Role-aware scope (see flags above)
+      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+      if (isSalesOnly)    query = query.or(`assigned_to.eq.${profile.id},created_by.eq.${profile.id}`);
+
+      query = query
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
@@ -123,7 +135,7 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
     } finally {
       setLoading(false);
     }
-  }, [profile?.company_id, page, filterStage, filterSource, search, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, page, filterStage, filterSource, search, showToast]);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
 
@@ -244,7 +256,11 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
                 <td style={{ padding: '12px 14px', color: C.inkSoft }}>{p.pic_name || '—'}</td>
                 <td style={{ padding: '12px 14px' }}><SourceBadge source={p.source} /></td>
                 <td style={{ padding: '12px 14px' }}><StageBadge stage={p.pipeline_stage} /></td>
-                <td style={{ padding: '12px 14px', color: C.inkSoft }}>{p.assigned_profile?.full_name || '—'}</td>
+                <td style={{ padding: '12px 14px' }}>
+                  {p.assigned_profile?.full_name
+                    ? <span style={{ color: C.inkSoft }}>{p.assigned_profile.full_name}</span>
+                    : <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: C.accentSoft, color: C.accent }}>Belum di-assign</span>}
+                </td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(p.created_at)}</td>
                 <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
