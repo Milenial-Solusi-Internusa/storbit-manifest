@@ -190,6 +190,7 @@ See `docs/performance/performance-baseline.md` for full requirements.
 ## Security Requirements
 
 - All business tables must have **Supabase RLS** enabled
+- The `anon` role has **no access** to sensitive tables (financial / RBAC / user / CRM / inventory) — `anon` GRANT revoked as defense-in-depth alongside RLS (2026-06-15)
 - **Never expose the Supabase service role key** in frontend code (service-role logic lives in Edge Functions only)
 - Permissions are enforced via `user_roles` + hierarchical RBAC — never rely on frontend checks alone
 - MFA is required for Admin, CEO/Executive, Finance Controller, and Head Level roles

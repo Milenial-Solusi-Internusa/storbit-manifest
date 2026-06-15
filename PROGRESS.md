@@ -1,5 +1,37 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-06-15
+
+### Security Hardening (milestone)
+- [x] Cabut GRANT `anon` di **29 tabel sensitif** — 3 finansial (accounts/quotations/quotation_items) + 26 (finance/RBAC/user/CRM/inventory); RLS tetap lapisan kedua (defense-in-depth, anon ke-block di GRANT DAN RLS); GRANT `authenticated` diverifikasi lengkap sebelum revoke
+- [ ] Backlog: tabel kategori REFERENCES/TRIGGER/TRUNCATE-only (companies/payment_terms/assets dll) belum dicabut — tidak urgent (tidak beri akses baca/tulis data)
+
+### Bug Fixes — CRM & Auth (Phase 2.8B–2.8I, kode)
+- [x] 2.8B — Form state hilang saat tab-switching (AuthContext Opsi A: `previousUserIdRef`, skip `setLoading` saat same-user re-emit SIGNED_IN/TOKEN_REFRESHED)
+- [x] 2.8C — Prospect visibility role-aware (super_admin/admin semua entitas, manager se-entitas, sales own) + badge "Belum di-assign" + auto-assign saat sales create prospect
+- [x] 2.8D — Dropdown Assigned To kosong di Edit Prospect (list select tak ikut `assigned_to` UUID; synthetic option utk cross-entity assignee)
+- [x] 2.8E — `UNIT_LABELS` quotation jadi 13 (tambah Per CBM/KG/Ton/Container/Shipment/Trip di depan)
+- [x] 2.8F — Soft stage gating (PROPOSAL butuh inquiry, WON butuh quotation — konfirmasi via ConfirmModal, bisa di-bypass)
+- [x] 2.8G — Dashboard WON/Win Rate/Sales Performance hitung deal WON termasuk yang auto-convert jadi customer (`became_customer_at`); Total Prospects tetap prospect aktif saja
+- [x] 2.8H — Chart Prospect Trend kosong → `useWidth` pakai callback ref (terukur saat container mount setelah data load)
+- [x] 2.8I — Polish CRM Dashboard: gradient horizontal line (ungu→pink→biru), Bulan Lalu jadi abu, pie Lead Source pastel + fix crop
+
+### Bug Fix — Quotation Duplikat (Phase 2.8J, DB/RLS)
+- [x] ROOT CAUSE: RLS policy DELETE hilang di `quotation_items` → `.delete()` "sukses" 0-row tanpa error → insert numpuk → item+total dobel; Solusi: `CREATE POLICY quotation_items_delete` (kode tidak diubah)
+
+### Data Cleanup (Phase 2.8K, DB)
+- [x] Indochem dedup: hapus `64ee0492` (customer/NEW kosong), pertahankan `79c3562b` (prospect/WON + inquiry+quotation)
+- [x] Indochem → customer (`account_status=customer`, `code=IJL`, `became_customer_at` stamped)
+- [x] Konfirmasi auto-convert WON→customer SUDAH ADA di PipelineKanbanPage; Indochem hanya korban timing
+- [x] Payment term "Cash Before Delivery" (`CBD`) ditambah ke MSI/JCI/SOA
+
+### Audit Menyeluruh + Roadmap
+- [x] Audit aplikasi menyeluruh (arsitektur/keamanan/maintainability/reliability/performance) → section **ROADMAP MENUJU PRODUCTION-GRADE** di CLAUDE.md (3 tier: SEGERA / JANGKA PENDEK / JANGKA PANJANG)
+
+### Status Nggantung
+- [ ] Quotation Hisaka (`QUO/MSI/2026/004`) — items di-wipe, total reset 0, **perlu input ulang via UI**
+- [ ] Field Registry Level 1 — disepakati, nunggu 4 keputusan desain (struktur metadata, core 2a/2b, custom field JSONB, pilot form Prospect)
+
 ## 2026-06-14
 ### Accounts Unification — Single Master Customer
 - [x] Tabel `prospects` → di-rename jadi `accounts` (master customer tunggal); kolom baru: `account_status` (prospect/customer/lost/free_agent/lead_pool), `owner_company_id`, `tier`, `code`, `nomor_kontrak`, `default_dc`, `last_activity_at`, `became_customer_at`
