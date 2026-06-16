@@ -1,5 +1,32 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-06-16
+
+### Quotation
+- [x] Fix PDF quotation (Phase 2.8M): section header dipindah ke `<thead>` sebagai `<tr className="pdf-no-break">` (anti ke-potong antar halaman) + box Notes (border kiri navy `#144682`) & Above rates/Terms (border kiri orange `#E85A1E`)
+- [x] Fix RLS `quotations_update` (Phase 2.8Q, DB via SQL Editor): policy lama `is_admin_or_above()` → sales ke-block edit quotation sendiri. Diubah `(company_id=get_user_company_id() AND (is_manager_or_above() OR created_by=auth.uid())) OR is_super_admin()` + `WITH CHECK` sama. Sales kini bisa edit quotation miliknya
+
+### Inventory
+- [x] Dashboard Inventory baru (Phase 2.8N): `InventoryDashboardPage.jsx`, accent **TEAL #0D9488** (pembeda dari navy CRM), data Supabase asli (role-aware, company-scoped, `.limit(1000)`, `useWidth` callback ref). KPI: Total SKU, Total Nilai Inventory, Total On-Hand, Stok Menipis (<10). Charts: tren pergerakan (`stock_ledger`), stok per kategori, top 10 by nilai, per gudang
+- [x] Fix nilai inventory (Phase 2.8N-fix): `unit_cost` semua NULL → pakai `default_price` (harga jual); subtitle "Berdasarkan harga jual"
+
+### CRM
+- [x] Fix visit dropdown (Phase 2.8O, CRMDashboard AddVisitModal): `.eq('account_status','prospect')` → `.in('account_status',['prospect','customer'])` supaya customer (mantan WON spt Indochem) muncul; label "Prospect" → "Prospect / Customer". Query KPI/salesPerf tetap prospect-only
+
+### Asset Management
+- [x] Inline edit semua tab `AssetDetailITPage` (Phase 2.8P): tombol Edit global → field Info/Spesifikasi/Network jadi input in-place (bukan modal/route), Save/Cancel, save lintas 3 tabel via UPSERT + error handling per-tabel + refetch tanpa reload. Assigned To = dropdown user (pilih → checked_out, kosong → available). Dropdown bernilai-valid utk field ber-constraint (status/asset_subtype/storage_type/depreciation_method). Health/Software/Maintenance read-only (TODO per-row)
+- [x] Aktifkan brand/condition/department_id/assignment_status (Phase 2.8P-fix): keempat kolom ADA di DB (via SQL Editor, belum di migrasi). Edit form + view mode + save; fix `useAssetDetail` select tak ambil `assigned_to_user_id` (dropdown assignee kini pre-fill benar)
+- [x] Schema (DB via SQL Editor, Phase 2.8R): `assets` ALTER ADD `condition`/`department_id`(FK departments)/`brand`/`assignment_status`(default 'available')
+- [x] Master data (DB via SQL Editor): `asset_locations` "Head Office BSD" (branch_id MSI HO, NOT NULL); `departments` MSI +3 (HCGA/PPJK/CONSOLE); bulk insert **24 laptop MSI** ke `assets`+`asset_specifications`+`asset_network` (assigned_to kosong, assignment_status 'available')
+
+### Catatan / Backlog
+- [ ] ⬆️ **`supabase db pull`** NAIK PRIORITAS — 2× jadi penghambat hari ini (4 kolom `assets` + `unit_cost` via SQL Editor tak terlihat di file migrasi → sempat skip field)
+- [ ] Audit CRUD policy lintas tabel — pola berulang "UPDATE admin-only" (`quotations_update`) + over-filter `account_status` (dashboard/visit/visibility)
+- [ ] Update `assigned_to` 24 laptop MSI setelah re-audit
+- [ ] Office "Semper": 2 branch duplikat di JCI (SEMPER + HO SEMP) — office asli MSI Group (hampir salah hapus), perlu dedup + ownership
+- [ ] Inline edit tab Software & Lisensi + Maintenance (per-row terpisah, ada TODO)
+- [ ] UI list Asset tampilkan field baru (condition/brand/department/assignment_status)
+
 ## 2026-06-15
 
 ### Security Hardening (milestone)

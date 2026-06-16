@@ -961,7 +961,11 @@ Output:
 
 | 2.8P-fix | **AssetDetailITPage — aktifkan 4 field yg sebelumnya di-skip (brand/condition/department_id/assignment_status).** KOREKSI 2.8P: keempat kolom TERNYATA ADA di tabel `assets` (ditambah via SQL Editor ALTER TABLE, belum ter-pull ke migrasi — diverifikasi via information_schema: `assignment_status` varchar, `brand` varchar, `condition` varchar, `department_id` uuid FK departments). Backlog `db pull` terpisah. **(1) Info edit form:** `brand` (text bebas), `condition` (input + `<datalist id=ait-condition-list>` saran `CONDITION_OPTS=['Baik','Tidak Baik','Tidak Diketahui']` tapi free-text — tak ada CHECK), `department_id` (ESelect dari `opts.departments`, label `"{code} - {name}"`). enterEdit fetch `departments` (id,code,name; `.eq('company_id',cid)`, deleted_at null, order code, limit 1000) → `opts.departments`; snapshot form.asset tambah brand/condition/department_id; `opts` init tambah `departments:[]`. **(2) Assignment status logic (handleSave):** `assignmentStatus = assignedId ? 'checked_out' : 'available'`; assetsPatch tambah `assignment_status` + `brand`/`condition` (txtOrNull) + `department_id` (|| null). **(3) View mode Info Dasar:** Brand (Identitas), Kondisi (badge neutral), Status Assignment (badge: checked_out=info "Checked out" / available=ok "Available"), Department (`{code} - {name}` dari embed). **(4) `useAssets.js` `useAssetDetail` select:** tambah `brand, condition, assignment_status, department_id` + embed `departments(code, name)` + **`assigned_to_user_id`** (sebelumnya TAK di-select → edit dropdown Assigned To tak pre-fill assignee; sekarang ter-fix). Shared dgn vehicle detail — kolom null-safe, embed FK departments unambiguous (1 FK). **Files:** AssetDetailITPage.jsx + useAssets.js (select). build clean; lint ITPage/useAssets/AssetDetailPage semua clean (net-zero). | ✅ Complete |
 
-Current phase: **Phase 2.8P-fix** ✅ Complete
+| 2.8Q | **Fix RLS `quotations_update` — sales tak bisa edit quotation sendiri (DB/RLS via SQL Editor).** Policy lama `USING is_admin_or_above()` → sales (creator) ke-block saat edit/submit quotation miliknya. Diubah: `USING ((company_id = get_user_company_id() AND (is_manager_or_above() OR created_by = auth.uid())) OR is_super_admin())` + `WITH CHECK` sama. Sekarang sales bisa edit quotation miliknya (`created_by`), manager se-entitas, super semua. Kode TIDAK diubah. **Pola berulang** (lihat Roadmap → audit CRUD policy): UPDATE admin-only nyangkut owner-edit. | ✅ Complete |
+
+| 2.8R | **Asset MSI — schema + master data + bulk 24 laptop (DB via SQL Editor; detail di section khusus).** (1) **`assets` ALTER ADD 4 kolom:** `condition` varchar, `department_id` uuid FK departments, `brand` varchar, `assignment_status` varchar DEFAULT 'available' (dipakai inline edit 2.8P-fix). (2) **Master data seed:** `asset_locations` "Head Office BSD" (`341d9dda…`, branch_id MSI HO `ef2594db…` — kolom `branch_id` NOT NULL); `departments` MSI 3 baru HCGA (`a4d59e17…`), PPJK (`cb4f6190…`), CONSOLE (`9c7fb915…`). (3) **Bulk insert 24 laptop MSI** (IT-EQP) ke 3 tabel `assets` + `asset_specifications` + `asset_network`; `assigned_to` dikosongkan (data lama, di-update setelah re-audit), `assignment_status` all 'available'. ⚠️ **Kolom & schema via SQL Editor BELUM ter-pull migrasi** — 2× jadi penghambat hari ini (Claude Code sempat skip 4 assets cols & `unit_cost` karena tak terlihat di file migrasi). Detail + check-constraint reference di section **Master Data & Schema Changes via SQL Editor — 16 Jun 2026**. | ✅ Complete |
+
+Current phase: **Phase 2.8R** ✅ Complete
 
 ---
 
@@ -981,14 +985,37 @@ Current phase: **Phase 2.8P-fix** ✅ Complete
 
 ---
 
+## Master Data & Schema Changes via SQL Editor — 16 Jun 2026
+
+> Perubahan DB dijalankan via Supabase SQL Editor — **BELUM ter-pull ke file migrasi**.
+> 2× jadi penghambat hari ini (4 kolom `assets` baru + `products.unit_cost` tak terlihat
+> Claude Code di file migrasi → sempat skip field) → mempertegas urgensi `supabase db pull` (Roadmap 🔴).
+
+**Schema (DDL):**
+- `assets` ALTER ADD: `condition` varchar, `department_id` uuid (FK → `departments`), `brand` varchar, `assignment_status` varchar DEFAULT 'available'.
+
+**Master data (seed):**
+- `asset_locations`: "Head Office BSD" (`341d9dda-9ef1-48ad-b59d-51ae7f35941a`), `branch_id` = MSI HO (`ef2594db…`). Catatan: `asset_locations.branch_id` **NOT NULL**.
+- `departments` MSI: 3 baru — HCGA (`a4d59e17…`), PPJK (`cb4f6190…`), CONSOLE (`9c7fb915…`).
+- `assets`: bulk insert **24 laptop MSI** (IT-EQP) + baris terkait di `asset_specifications` + `asset_network`; `assigned_to` kosong (di-update setelah re-audit), `assignment_status` all 'available'.
+
+**Check constraints `assets`/`asset_specifications` (referensi insert/edit — value PERSIS):**
+- `asset_subtype`: `laptop`, `desktop`, `server`, `printer`, `network`, `peripheral`, `other` (lowercase)
+- `storage_type`: `SSD`, `HDD`, `NVMe`, `eMMC`, `other`
+- `status`: `active`, `disposed`, `in_repair`, `retired`, `transferred`
+- `depreciation_method`: `straight_line`, `double_declining`, `none`
+- `condition` & `ram_type` → **tidak ada CHECK** (free text).
+
+---
+
 ## Roadmap Menuju Production-Grade (hasil audit 15 Jun 2026)
 
 > Dari audit menyeluruh aplikasi (arsitektur / keamanan / maintainability / reliability / performance), 15 Jun 2026. Dikelompokkan 3 tier; `[x]` = selesai.
 
 ### 🔴 SEGERA (keamanan & integritas data)
 - [x] Cabut akses `anon` tabel sensitif (29 tabel) — lihat **Security Hardening — 15 Jun 2026** (Phase 2.8L)
-- [ ] `supabase db pull` → bawa **~18 tabel inti** ke migrasi (`accounts`, `quotations`, `quotation_items`, `inquiries`, `sales_*`, RBAC tables, `stock_*`) — saat ini **di luar version control**
-- [ ] Audit DELETE policy **SEMUA tabel** (hanya ~4 dari ~50 punya; cari yang bolong seperti `quotation_items` — sudah di-fix di Phase 2.8J)
+- [ ] **⬆️ NAIK PRIORITAS (2× penghambat 16 Jun)** `supabase db pull` → bawa **~18+ tabel & kolom** ke migrasi (`accounts`, `quotations`, `quotation_items`, `inquiries`, `sales_*`, RBAC tables, `stock_*`, **4 kolom `assets` baru** [condition/department_id/brand/assignment_status], **`products.unit_cost`**, dll) — schema via SQL Editor tak terlihat Claude Code → 2× sempat skip field hari ini (lihat **Master Data & Schema Changes — 16 Jun 2026**)
+- [ ] Audit **CRUD policy lintas tabel** — pola BERULANG: (a) "UPDATE admin-only" nyangkut owner-edit (`quotations_update` → fixed Phase 2.8Q), (b) over-filter `account_status` (dashboard/visit dropdown/visibility). Sisir `.from('accounts').eq('account_status', …)` + policy UPDATE/DELETE **semua tabel** (DELETE: hanya ~4 dari ~50 punya — `quotation_items` fixed Phase 2.8J)
 - [ ] Write quotation **atomik** (bungkus update→delete→insert ke RPC transaksi tunggal)
 
 ### 🟡 JANGKA PENDEK
@@ -1011,8 +1038,12 @@ Current phase: **Phase 2.8P-fix** ✅ Complete
 
 ---
 
-## Status Nggantung (per 15 Jun 2026)
+## Status Nggantung (per 16 Jun 2026)
 
+- **24 laptop MSI — `assigned_to` kosong:** di-update setelah re-audit (bulk insert 2.8R sengaja tanpa assignee, `assignment_status` all 'available').
+- **Office "Semper" — 2 branch duplikat di JCI** (`SEMPER` + `HO SEMP`): **BUKAN sampah, office asli MSI Group** (hampir salah hapus) → perlu **dedup + tentukan ownership** entitas.
+- **Inline edit tab Software & Lisensi + Maintenance (AssetDetailITPage):** sengaja di-skip (list multi-row, edit per-row terpisah) — ada `TODO(asset-edit)` comment di kode.
+- **UI list Asset:** pastikan menampilkan field baru (`condition`, `brand`, `department`, `assignment_status`) bila belum.
 - **Quotation Hisaka (`QUO/MSI/2026/004`):** items sudah di-wipe bersih, total di-reset 0 → **PERLU input ulang via UI**.
 - **Field Registry Level 1:** disepakati, nunggu **4 keputusan desain** (struktur metadata, field core 2a/2b, custom field JSONB, pilot form Prospect).
 - **Tabel kategori A (REFERENCES/TRIGGER/TRUNCATE only):** backlog cabut `anon` untuk kebersihan (tidak urgent — lihat Security Hardening).
