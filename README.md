@@ -50,7 +50,7 @@ Nexus by MSI is the unified internal business platform covering master data, tra
 
 ## Active Modules
 
-Auth + RLS · Master Data (Companies, Branches, Departments, Positions, Roles, Users, Products) · CRM (Pipeline, Inquiry, Quotation, Dashboard, Master Customer, Lead Pool, Sales Calls) · Logistics (Sales Order / SP) · Inventory (Stok Barang, Penerimaan) · Asset Management · HRGA Request · App Launcher.
+Auth + RLS · Master Data (Companies, Branches, Departments, Positions, Roles, Users, Products) · CRM (Pipeline, Inquiry, Quotation, Dashboard, Master Customer, Lead Pool, Sales Calls) · Logistics (Sales Order / SP) · Inventory (Dashboard, Stok Barang, Penerimaan) · Asset Management (IT/Kendaraan detail + inline edit) · HRGA Request · App Launcher.
 
 ---
 
