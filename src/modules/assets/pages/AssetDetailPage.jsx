@@ -466,7 +466,7 @@ export default function AssetDetailPage({ id, onBack }) {
   const [activeTab, setActiveTab] = useState('info');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
-  const { data: asset, loading, error, softDelete } = useAssetDetail({ id });
+  const { data: asset, loading, error, softDelete, refresh } = useAssetDetail({ id });
   const { data: fuelLogs, loading: fuelLoading } = useFuelLogs({ assetId: id });
 
   // Derive tab set from asset's category code; reset to 'info' when asset changes.
@@ -530,7 +530,7 @@ export default function AssetDetailPage({ id, onBack }) {
       <Suspense fallback={
         <div style={{ padding: '3rem', textAlign: 'center', color: '#9C948D', fontSize: 13 }}>Loading…</div>
       }>
-        <AssetDetailITPage id={id} asset={asset} onBack={onBack} />
+        <AssetDetailITPage id={id} asset={asset} onBack={onBack} onSaved={refresh} />
       </Suspense>
     );
   }

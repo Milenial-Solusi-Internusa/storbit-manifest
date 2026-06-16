@@ -12,9 +12,11 @@ import {
   AlertTriangle, CheckCircle2, XCircle, ArrowLeft,
   Laptop, Monitor, Server, Printer, Plug,
   HardDrive, MemoryStick, Globe, Shield, Clock,
-  Eye, EyeOff, Plus, Download,
+  Eye, EyeOff, Plus, Download, Save, X,
 } from 'lucide-react';
 import { useITAssetDetail, ASSET_STATUS_CONFIG } from '../../../hooks/useAssets';
+import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../contexts/useAuth';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -216,6 +218,92 @@ function SectionLabel({ children }) {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────
+// Inline-edit primitives (match Def grid / brand style)
+// ─────────────────────────────────────────────────────────────
+const editInpStyle = {
+  width: '100%', height: 34, padding: '0 10px', borderRadius: 7,
+  border: `1px solid ${D.line}`, background: D.surface, color: D.ink,
+  fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
+};
+
+// Field row — label (180px) + control, mirrors <Def>
+function ERow({ label, children }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', padding: '7px 0',
+      borderBottom: `1px solid ${D.lineSoft}`, alignItems: 'center', gap: 12 }}>
+      <label style={{ fontSize: 12.5, color: D.inkFaint, fontWeight: 600 }}>{label}</label>
+      <div>{children}</div>
+    </div>
+  );
+}
+function EText({ value, onChange, mono, placeholder, type = 'text' }) {
+  return (
+    <input type={type} value={value ?? ''} placeholder={placeholder}
+      onChange={e => onChange(e.target.value)}
+      style={{ ...editInpStyle, fontFamily: mono ? "'IBM Plex Mono', monospace" : 'inherit' }} />
+  );
+}
+function ENum({ value, onChange, step }) {
+  return (
+    <input type="number" value={value ?? ''} step={step || 'any'}
+      onChange={e => onChange(e.target.value)}
+      style={{ ...editInpStyle, fontFamily: "'IBM Plex Mono', monospace" }} />
+  );
+}
+function ESelect({ value, onChange, options, placeholder = '— Pilih —' }) {
+  return (
+    <select value={value ?? ''} onChange={e => onChange(e.target.value)}
+      style={{ ...editInpStyle, cursor: 'pointer' }}>
+      <option value="">{placeholder}</option>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+function EArea({ value, onChange, placeholder }) {
+  return (
+    <textarea value={value ?? ''} placeholder={placeholder} rows={3}
+      onChange={e => onChange(e.target.value)}
+      style={{ ...editInpStyle, height: 'auto', minHeight: 64, padding: '8px 10px', resize: 'vertical', lineHeight: 1.5 }} />
+  );
+}
+
+// Constraint-bound option sets (labels cakep, value PERSIS sesuai CHECK constraint DB)
+const STATUS_OPTS = [
+  { value: 'active',      label: 'Aktif' },
+  { value: 'in_repair',   label: 'Dalam Perbaikan' },
+  { value: 'retired',     label: 'Rusak / Retired' },
+  { value: 'disposed',    label: 'Disposed' },
+  { value: 'transferred', label: 'Dialihkan' },
+];
+const SUBTYPE_OPTS = [
+  { value: 'laptop', label: 'Laptop' }, { value: 'desktop', label: 'Desktop' },
+  { value: 'server', label: 'Server' }, { value: 'printer', label: 'Printer' },
+  { value: 'network', label: 'Network Device' }, { value: 'peripheral', label: 'Peripheral' },
+  { value: 'other', label: 'Other' },
+];
+const STORAGE_TYPE_OPTS = [
+  { value: 'SSD', label: 'SSD' }, { value: 'HDD', label: 'HDD' },
+  { value: 'NVMe', label: 'NVMe' }, { value: 'eMMC', label: 'eMMC' }, { value: 'other', label: 'Other' },
+];
+const DEPR_OPTS = [
+  { value: 'straight_line', label: 'Garis Lurus' },
+  { value: 'double_declining', label: 'Saldo Menurun Ganda' },
+  { value: 'none', label: 'Tidak Disusutkan' },
+];
+const ONLINE_OPTS = [
+  { value: 'true', label: 'Online' },
+  { value: 'false', label: 'Offline' },
+];
+// Condition — saran (datalist), tapi fleksibel (tidak ada CHECK constraint di DB)
+const CONDITION_OPTS = ['Baik', 'Tidak Baik', 'Tidak Diketahui'];
+
+// '' / null → NULL; otherwise Number(...) (kosong tidak disimpan 0 / '')
+const numOrNull = (v) => (v === '' || v == null) ? null : Number(v);
+const txtOrNull = (v) => { const s = (v ?? '').toString().trim(); return s === '' ? null : s; };
+// true if any value in an object is meaningfully filled
+const hasAnyValue = (obj) => Object.values(obj).some(v => v !== '' && v != null && v !== false);
 
 function Banner({ tone = 'warn', icon: Icon = AlertTriangle, children }) {
   const map = {
@@ -436,15 +524,176 @@ const IT_TABS = [
 // ─────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────
-export default function AssetDetailITPage({ id, asset, onBack }) {
+export default function AssetDetailITPage({ id, asset, onBack, onSaved }) {
+  const { profile } = useAuth();
   const [activeTab,      setActiveTab]      = useState('info');
   const [deleteConfirm,  setDeleteConfirm]  = useState(false);
   const [revealedKeys,   setRevealedKeys]   = useState(new Set());
 
-  const { specs, network, software, maintenance, loading: itLoading } = useITAssetDetail({ assetId: id });
+  // ── Inline-edit state (cross-tab: one Edit toggles editing on all 3 tabs) ──
+  const [editing,   setEditing]   = useState(false);
+  const [saving,    setSaving]    = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [form,      setForm]      = useState(null);  // { asset, spec, net } snapshot
+  const [opts,      setOpts]      = useState({ categories: [], locations: [], users: [], departments: [] });
+  const [toast,     setToast]     = useState({ show: false, msg: '', tone: 'ok' });
 
-  // Reset tab when asset changes
-  useEffect(() => { Promise.resolve().then(() => setActiveTab('info')); }, [id]);
+  const { specs, network, software, maintenance, loading: itLoading, refresh: refreshIT } = useITAssetDetail({ assetId: id });
+
+  // Reset tab + exit edit when asset changes
+  useEffect(() => { Promise.resolve().then(() => { setActiveTab('info'); setEditing(false); setForm(null); setSaveError(null); }); }, [id]);
+
+  const showToast = useCallback((msg, tone = 'ok') => {
+    setToast({ show: true, msg, tone });
+    setTimeout(() => setToast(t => ({ ...t, show: false })), 2600);
+  }, []);
+
+  // Field setters per table-group
+  const setA = useCallback((k, v) => setForm(f => ({ ...f, asset: { ...f.asset, [k]: v } })), []);
+  const setS = useCallback((k, v) => setForm(f => ({ ...f, spec:  { ...f.spec,  [k]: v } })), []);
+  const setN = useCallback((k, v) => setForm(f => ({ ...f, net:   { ...f.net,   [k]: v } })), []);
+
+  // Enter edit mode — snapshot current data into form + fetch dropdown options
+  const enterEdit = useCallback(async () => {
+    if (!asset) return;
+    const dateOnly = (d) => (d ? String(d).slice(0, 10) : '');
+    setForm({
+      asset: {
+        name: asset.name ?? '', model: asset.model ?? '', serial_number: asset.serial_number ?? '',
+        asset_subtype: asset.asset_subtype ?? '', status: asset.status ?? 'active',
+        description: asset.description ?? '', purchase_price: asset.purchase_price ?? '',
+        purchase_date: dateOnly(asset.purchase_date), vendor_name: asset.vendor_name ?? '',
+        purchase_invoice_no: asset.purchase_invoice_no ?? '', useful_life_years: asset.useful_life_years ?? '',
+        depreciation_method: asset.depreciation_method ?? '', category_id: asset.category_id ?? '',
+        location_id: asset.location_id ?? '', assigned_to_user_id: asset.assigned_to_user_id ?? '',
+        brand: asset.brand ?? '', condition: asset.condition ?? '', department_id: asset.department_id ?? '',
+      },
+      spec: {
+        cpu_model: specs?.cpu_model ?? '', cpu_cores: specs?.cpu_cores ?? '', cpu_threads: specs?.cpu_threads ?? '',
+        cpu_base_ghz: specs?.cpu_base_ghz ?? '', cpu_turbo_ghz: specs?.cpu_turbo_ghz ?? '', cpu_cache_mb: specs?.cpu_cache_mb ?? '',
+        ram_gb: specs?.ram_gb ?? '', ram_type: specs?.ram_type ?? '', ram_slots_used: specs?.ram_slots_used ?? '', ram_slots_total: specs?.ram_slots_total ?? '',
+        storage_gb: specs?.storage_gb ?? '', storage_type: specs?.storage_type ?? '', storage_interface: specs?.storage_interface ?? '', storage_used_pct: specs?.storage_used_pct ?? '',
+        display_size_inch: specs?.display_size_inch ?? '', display_resolution: specs?.display_resolution ?? '', display_refresh_hz: specs?.display_refresh_hz ?? '', gpu_model: specs?.gpu_model ?? '',
+        os_name: specs?.os_name ?? '', os_version: specs?.os_version ?? '', os_build: specs?.os_build ?? '', os_arch: specs?.os_arch ?? '', os_license_type: specs?.os_license_type ?? '',
+        battery_capacity_wh: specs?.battery_capacity_wh ?? '', battery_health_pct: specs?.battery_health_pct ?? '', battery_cycle_count: specs?.battery_cycle_count ?? '',
+        webcam_desc: specs?.webcam_desc ?? '', keyboard_desc: specs?.keyboard_desc ?? '', ports_desc: specs?.ports_desc ?? '', wireless_desc: specs?.wireless_desc ?? '',
+        weight_kg: specs?.weight_kg ?? '', color: specs?.color ?? '',
+      },
+      net: {
+        ip_address: network?.ip_address ?? '', ipv6_address: network?.ipv6_address ?? '',
+        mac_wifi: network?.mac_wifi ?? '', mac_lan: network?.mac_lan ?? '', hostname: network?.hostname ?? '',
+        gateway: network?.gateway ?? '', dns_primary: network?.dns_primary ?? '', dns_secondary: network?.dns_secondary ?? '',
+        vlan: network?.vlan ?? '', domain_workgroup: network?.domain_workgroup ?? '',
+        is_online: network?.is_online ? 'true' : 'false',
+      },
+    });
+    setSaveError(null);
+    setEditing(true);
+
+    // Dropdown options (category list global; location/user/department scoped to asset company)
+    const cid = asset.company_id;
+    const [catRes, locRes, usrRes, deptRes] = await Promise.all([
+      supabase.from('asset_categories').select('id, name, code').is('deleted_at', null).order('name').limit(1000),
+      supabase.from('asset_locations').select('id, name').eq('company_id', cid).is('deleted_at', null).order('name').limit(1000),
+      supabase.from('profiles').select('id, full_name').eq('company_id', cid).eq('active', true).order('full_name').limit(1000),
+      supabase.from('departments').select('id, code, name').eq('company_id', cid).is('deleted_at', null).order('code').limit(1000),
+    ]);
+    setOpts({ categories: catRes.data || [], locations: locRes.data || [], users: usrRes.data || [], departments: deptRes.data || [] });
+  }, [asset, specs, network]);
+
+  const cancelEdit = useCallback(() => { setEditing(false); setForm(null); setSaveError(null); }, []);
+
+  // Save across 3 tables: update assets → upsert specs → upsert network.
+  // Plain function (only used as an onClick) — avoids a React-compiler
+  // "memoization could not be preserved" on this large async closure.
+  const handleSave = async () => {
+    if (!form || !asset) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const a = form.asset;
+      // assets — name/category_id are NOT NULL → keep existing if blank.
+      // Assignment: pick a user → checked_out + name; clear → available + null.
+      const assignedId = a.assigned_to_user_id || null;
+      const assignedName = assignedId
+        ? (opts.users.find(u => u.id === assignedId)?.full_name || asset.assigned_to_name || null)
+        : null;
+      const assignmentStatus = assignedId ? 'checked_out' : 'available';
+      const assetsPatch = {
+        name: (a.name ?? '').trim() || asset.name,
+        model: txtOrNull(a.model),
+        serial_number: txtOrNull(a.serial_number),
+        asset_subtype: txtOrNull(a.asset_subtype),
+        status: a.status || 'active',
+        description: txtOrNull(a.description),
+        brand: txtOrNull(a.brand),
+        condition: txtOrNull(a.condition),
+        department_id: a.department_id || null,
+        purchase_price: numOrNull(a.purchase_price),
+        purchase_date: txtOrNull(a.purchase_date),
+        vendor_name: txtOrNull(a.vendor_name),
+        purchase_invoice_no: txtOrNull(a.purchase_invoice_no),
+        useful_life_years: numOrNull(a.useful_life_years),
+        depreciation_method: txtOrNull(a.depreciation_method),
+        category_id: a.category_id || asset.category_id,
+        location_id: a.location_id || null,
+        assigned_to_user_id: assignedId,
+        assigned_to_name: assignedName,
+        assignment_status: assignmentStatus,
+        updated_by: profile?.id || null,
+        updated_at: new Date().toISOString(),
+      };
+      const { error: aErr } = await supabase.from('assets').update(assetsPatch).eq('id', id);
+      if (aErr) throw new Error(`Info Dasar (assets) gagal: ${aErr.message}`);
+
+      // asset_specifications — upsert by asset_id (skip when nothing to write)
+      const s = form.spec;
+      if (specs || hasAnyValue(s)) {
+        const specPatch = {
+          asset_id: id, company_id: asset.company_id,
+          cpu_model: txtOrNull(s.cpu_model), cpu_cores: numOrNull(s.cpu_cores), cpu_threads: numOrNull(s.cpu_threads),
+          cpu_base_ghz: numOrNull(s.cpu_base_ghz), cpu_turbo_ghz: numOrNull(s.cpu_turbo_ghz), cpu_cache_mb: numOrNull(s.cpu_cache_mb),
+          ram_gb: numOrNull(s.ram_gb), ram_type: txtOrNull(s.ram_type), ram_slots_used: numOrNull(s.ram_slots_used), ram_slots_total: numOrNull(s.ram_slots_total),
+          storage_gb: numOrNull(s.storage_gb), storage_type: txtOrNull(s.storage_type), storage_interface: txtOrNull(s.storage_interface), storage_used_pct: numOrNull(s.storage_used_pct),
+          display_size_inch: numOrNull(s.display_size_inch), display_resolution: txtOrNull(s.display_resolution), display_refresh_hz: numOrNull(s.display_refresh_hz), gpu_model: txtOrNull(s.gpu_model),
+          os_name: txtOrNull(s.os_name), os_version: txtOrNull(s.os_version), os_build: txtOrNull(s.os_build), os_arch: txtOrNull(s.os_arch), os_license_type: txtOrNull(s.os_license_type),
+          battery_capacity_wh: numOrNull(s.battery_capacity_wh), battery_health_pct: numOrNull(s.battery_health_pct), battery_cycle_count: numOrNull(s.battery_cycle_count),
+          webcam_desc: txtOrNull(s.webcam_desc), keyboard_desc: txtOrNull(s.keyboard_desc), ports_desc: txtOrNull(s.ports_desc), wireless_desc: txtOrNull(s.wireless_desc),
+          weight_kg: numOrNull(s.weight_kg), color: txtOrNull(s.color),
+          updated_at: new Date().toISOString(),
+        };
+        const { error: sErr } = await supabase.from('asset_specifications').upsert(specPatch, { onConflict: 'asset_id' });
+        if (sErr) throw new Error(`Spesifikasi gagal: ${sErr.message}`);
+      }
+
+      // asset_network — upsert by asset_id (skip when nothing to write)
+      const n = form.net;
+      if (network || hasAnyValue({ ...n, is_online: n.is_online === 'true' })) {
+        const netPatch = {
+          asset_id: id, company_id: asset.company_id,
+          ip_address: txtOrNull(n.ip_address), ipv6_address: txtOrNull(n.ipv6_address),
+          mac_wifi: txtOrNull(n.mac_wifi), mac_lan: txtOrNull(n.mac_lan), hostname: txtOrNull(n.hostname),
+          gateway: txtOrNull(n.gateway), dns_primary: txtOrNull(n.dns_primary), dns_secondary: txtOrNull(n.dns_secondary),
+          vlan: txtOrNull(n.vlan), domain_workgroup: txtOrNull(n.domain_workgroup),
+          is_online: n.is_online === 'true',
+          updated_at: new Date().toISOString(),
+        };
+        const { error: nErr } = await supabase.from('asset_network').upsert(netPatch, { onConflict: 'asset_id' });
+        if (nErr) throw new Error(`Network gagal: ${nErr.message}`);
+      }
+
+      // All good — refetch both layers, exit edit
+      refreshIT();
+      onSaved?.();
+      setEditing(false);
+      setForm(null);
+      showToast('Perubahan tersimpan', 'ok');
+    } catch (e) {
+      setSaveError(e.message || 'Gagal menyimpan perubahan.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const toggleKeyReveal = useCallback((swId) => {
     setRevealedKeys(prev => {
@@ -525,19 +774,44 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
           </h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Btn icon={Pencil}>Edit</Btn>
-          <Btn icon={Copy}>Clone</Btn>
-          <Btn icon={Trash2} danger onClick={() => setDeleteConfirm(v => !v)}>
-            {deleteConfirm ? 'Yakin hapus?' : 'Delete'}
-          </Btn>
-          {deleteConfirm && (
-            <button onClick={() => setDeleteConfirm(false)} style={{
-              height: 36, padding: '0 12px', borderRadius: 8, border: `1px solid ${D.line}`,
-              background: D.surface, cursor: 'pointer', fontSize: 12, color: D.inkSoft, fontFamily: 'inherit',
-            }}>Batal</button>
+          {editing ? (
+            <>
+              <Btn icon={Save} primary onClick={handleSave} disabled={saving}>
+                {saving ? 'Menyimpan…' : 'Save'}
+              </Btn>
+              <Btn icon={X} onClick={cancelEdit} disabled={saving}>Cancel</Btn>
+            </>
+          ) : (
+            <>
+              <Btn icon={Pencil} onClick={enterEdit} disabled={itLoading}>Edit</Btn>
+              <Btn icon={Copy}>Clone</Btn>
+              <Btn icon={Trash2} danger onClick={() => setDeleteConfirm(v => !v)}>
+                {deleteConfirm ? 'Yakin hapus?' : 'Delete'}
+              </Btn>
+              {deleteConfirm && (
+                <button onClick={() => setDeleteConfirm(false)} style={{
+                  height: 36, padding: '0 12px', borderRadius: 8, border: `1px solid ${D.line}`,
+                  background: D.surface, cursor: 'pointer', fontSize: 12, color: D.inkSoft, fontFamily: 'inherit',
+                }}>Batal</button>
+              )}
+            </>
           )}
         </div>
       </div>
+
+      {/* Save error / edit-mode banner */}
+      {editing && saveError && (
+        <div style={{ marginBottom: 14 }}>
+          <Banner tone="danger" icon={AlertTriangle}>{saveError}</Banner>
+        </div>
+      )}
+      {editing && !saveError && (
+        <div style={{ marginBottom: 14 }}>
+          <Banner tone="info" icon={Pencil}>
+            Mode edit aktif — ubah field di tab Info Dasar, Spesifikasi, dan Network. Pindah tab tidak menghilangkan perubahan. Health Score, Software, dan Maintenance tidak diedit di sini.
+          </Banner>
+        </div>
+      )}
 
       {/* ── Header card ── */}
       <Card style={{ marginBottom: 14, overflow: 'hidden' }}>
@@ -634,17 +908,24 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
           TAB PANELS
       ════════════════════════════════════ */}
 
-      {/* INFO DASAR */}
-      {activeTab === 'info' && (
+      {/* INFO DASAR — view */}
+      {activeTab === 'info' && !editing && (
         <Card style={{ padding: '4px 20px 16px' }}>
           <dl style={{ margin: 0 }}>
             <SectionLabel>Identitas</SectionLabel>
             <Def label="Nama Aset"     value={asset.name} />
             <Def label="Asset Code"    value={asset.asset_code || asset.asset_no} mono />
             <Def label="Serial Number" value={asset.serial_number || '—'} mono />
+            <Def label="Brand"         value={asset.brand || '—'} />
             <Def label="Model"         value={asset.model || '—'} />
             <Def label="Subtype"       value={asset.asset_subtype ? subtypeLabel(asset.asset_subtype) : '—'} />
             <Def label="Status">       <StatusBadge status={asset.status} /></Def>
+            <Def label="Kondisi">
+              {asset.condition
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 600,
+                    padding: '3px 9px', borderRadius: 20, border: `1px solid ${D.neutralBd}`, background: D.neutralBg, color: D.neutral }}>{asset.condition}</span>
+                : '—'}
+            </Def>
             {asset.manufacture_year && <Def label="Tahun Pembuatan" value={asset.manufacture_year} />}
 
             <SectionLabel>Penugasan &amp; Lokasi</SectionLabel>
@@ -659,6 +940,19 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
                 </span>
               </Def>
             ) : <Def label="Assigned To" value="—" />}
+            <Def label="Status Assignment">
+              {(() => {
+                const cs = asset.assignment_status;
+                const isOut = cs === 'checked_out';
+                const lbl = isOut ? 'Checked out' : cs === 'available' ? 'Available' : (cs || '—');
+                if (!cs) return '—';
+                const tone = isOut ? { bg: D.infoBg, color: D.info, bd: D.infoBd } : { bg: D.okBg, color: D.ok, bd: D.okBd };
+                return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600,
+                  padding: '3px 9px', borderRadius: 20, border: `1px solid ${tone.bd}`, background: tone.bg, color: tone.color }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.color }} />{lbl}</span>;
+              })()}
+            </Def>
+            <Def label="Department"     value={asset.departments ? `${asset.departments.code} - ${asset.departments.name}` : '—'} />
             <Def label="Lokasi"         value={asset.asset_locations?.name || '—'} />
             <Def label="Company">       {coCode ? <CoBadge code={coCode} /> : '—'}</Def>
             <Def label="Kategori"       value={asset.asset_categories?.name || '—'} />
@@ -700,8 +994,56 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
         </Card>
       )}
 
-      {/* SPESIFIKASI */}
-      {activeTab === 'spec' && (
+      {/* INFO DASAR — edit */}
+      {activeTab === 'info' && editing && form && (
+        <Card style={{ padding: '4px 20px 16px' }}>
+          <SectionLabel>Identitas</SectionLabel>
+          <ERow label="Nama Aset"><EText value={form.asset.name} onChange={v => setA('name', v)} /></ERow>
+          <ERow label="Serial Number"><EText value={form.asset.serial_number} onChange={v => setA('serial_number', v)} mono /></ERow>
+          <ERow label="Brand"><EText value={form.asset.brand} onChange={v => setA('brand', v)} placeholder="mis. Dell, HP, Lenovo" /></ERow>
+          <ERow label="Model"><EText value={form.asset.model} onChange={v => setA('model', v)} /></ERow>
+          <ERow label="Subtype"><ESelect value={form.asset.asset_subtype} onChange={v => setA('asset_subtype', v)} options={SUBTYPE_OPTS} /></ERow>
+          <ERow label="Status"><ESelect value={form.asset.status} onChange={v => setA('status', v)} options={STATUS_OPTS} placeholder="— Pilih status —" /></ERow>
+          <ERow label="Kondisi">
+            {/* flexible: datalist suggestions, but free text (no DB constraint) */}
+            <input list="ait-condition-list" value={form.asset.condition ?? ''} onChange={e => setA('condition', e.target.value)}
+              placeholder="mis. Baik" style={editInpStyle} />
+            <datalist id="ait-condition-list">
+              {CONDITION_OPTS.map(c => <option key={c} value={c} />)}
+            </datalist>
+          </ERow>
+          <ERow label="Deskripsi"><EArea value={form.asset.description} onChange={v => setA('description', v)} /></ERow>
+
+          <SectionLabel>Penugasan &amp; Lokasi</SectionLabel>
+          <ERow label="Assigned To">
+            <ESelect value={form.asset.assigned_to_user_id} onChange={v => setA('assigned_to_user_id', v)}
+              options={opts.users.map(u => ({ value: u.id, label: u.full_name }))} placeholder="— Belum di-assign —" />
+          </ERow>
+          <ERow label="Department">
+            <ESelect value={form.asset.department_id} onChange={v => setA('department_id', v)}
+              options={opts.departments.map(d => ({ value: d.id, label: `${d.code} - ${d.name}` }))} placeholder="— Tidak ada department —" />
+          </ERow>
+          <ERow label="Lokasi">
+            <ESelect value={form.asset.location_id} onChange={v => setA('location_id', v)}
+              options={opts.locations.map(l => ({ value: l.id, label: l.name }))} placeholder="— Tidak ada lokasi —" />
+          </ERow>
+          <ERow label="Kategori">
+            <ESelect value={form.asset.category_id} onChange={v => setA('category_id', v)}
+              options={opts.categories.map(c => ({ value: c.id, label: c.name }))} placeholder="— Pilih kategori —" />
+          </ERow>
+
+          <SectionLabel>Pengadaan</SectionLabel>
+          <ERow label="Nilai Perolehan (Rp)"><ENum value={form.asset.purchase_price} onChange={v => setA('purchase_price', v)} /></ERow>
+          <ERow label="Tanggal Perolehan"><EText type="date" value={form.asset.purchase_date} onChange={v => setA('purchase_date', v)} mono /></ERow>
+          <ERow label="Vendor / Supplier"><EText value={form.asset.vendor_name} onChange={v => setA('vendor_name', v)} /></ERow>
+          <ERow label="Nomor PO / Faktur"><EText value={form.asset.purchase_invoice_no} onChange={v => setA('purchase_invoice_no', v)} mono /></ERow>
+          <ERow label="Umur Manfaat (tahun)"><ENum value={form.asset.useful_life_years} onChange={v => setA('useful_life_years', v)} step="1" /></ERow>
+          <ERow label="Metode Penyusutan"><ESelect value={form.asset.depreciation_method} onChange={v => setA('depreciation_method', v)} options={DEPR_OPTS} placeholder="— Tidak diset —" /></ERow>
+        </Card>
+      )}
+
+      {/* SPESIFIKASI — view */}
+      {activeTab === 'spec' && !editing && (
         <div>
           {itLoading && (
             <div style={{ padding: '2rem', textAlign: 'center', color: D.inkFaint, fontSize: 13 }}>Memuat spesifikasi…</div>
@@ -799,8 +1141,59 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
         </div>
       )}
 
-      {/* NETWORK */}
-      {activeTab === 'net' && (
+      {/* SPESIFIKASI — edit */}
+      {activeTab === 'spec' && editing && form && (
+        <Card style={{ padding: '4px 20px 16px' }}>
+          <SectionLabel>Processor</SectionLabel>
+          <ERow label="CPU Model"><EText value={form.spec.cpu_model} onChange={v => setS('cpu_model', v)} /></ERow>
+          <ERow label="Cores"><ENum value={form.spec.cpu_cores} onChange={v => setS('cpu_cores', v)} step="1" /></ERow>
+          <ERow label="Threads"><ENum value={form.spec.cpu_threads} onChange={v => setS('cpu_threads', v)} step="1" /></ERow>
+          <ERow label="Base Clock (GHz)"><ENum value={form.spec.cpu_base_ghz} onChange={v => setS('cpu_base_ghz', v)} /></ERow>
+          <ERow label="Turbo Clock (GHz)"><ENum value={form.spec.cpu_turbo_ghz} onChange={v => setS('cpu_turbo_ghz', v)} /></ERow>
+          <ERow label="Cache (MB)"><ENum value={form.spec.cpu_cache_mb} onChange={v => setS('cpu_cache_mb', v)} step="1" /></ERow>
+
+          <SectionLabel>Memory (RAM)</SectionLabel>
+          <ERow label="RAM (GB)"><ENum value={form.spec.ram_gb} onChange={v => setS('ram_gb', v)} step="1" /></ERow>
+          <ERow label="Tipe RAM"><EText value={form.spec.ram_type} onChange={v => setS('ram_type', v)} placeholder="mis. DDR4, DDR5" /></ERow>
+          <ERow label="Slot Terpakai"><ENum value={form.spec.ram_slots_used} onChange={v => setS('ram_slots_used', v)} step="1" /></ERow>
+          <ERow label="Total Slot"><ENum value={form.spec.ram_slots_total} onChange={v => setS('ram_slots_total', v)} step="1" /></ERow>
+
+          <SectionLabel>Storage</SectionLabel>
+          <ERow label="Kapasitas (GB)"><ENum value={form.spec.storage_gb} onChange={v => setS('storage_gb', v)} step="1" /></ERow>
+          <ERow label="Tipe Storage"><ESelect value={form.spec.storage_type} onChange={v => setS('storage_type', v)} options={STORAGE_TYPE_OPTS} /></ERow>
+          <ERow label="Interface"><EText value={form.spec.storage_interface} onChange={v => setS('storage_interface', v)} placeholder="mis. PCIe 4.0, SATA III" /></ERow>
+          <ERow label="Terpakai (%)"><ENum value={form.spec.storage_used_pct} onChange={v => setS('storage_used_pct', v)} step="1" /></ERow>
+
+          <SectionLabel>Display &amp; GPU</SectionLabel>
+          <ERow label="Ukuran Layar (inch)"><ENum value={form.spec.display_size_inch} onChange={v => setS('display_size_inch', v)} /></ERow>
+          <ERow label="Resolusi"><EText value={form.spec.display_resolution} onChange={v => setS('display_resolution', v)} placeholder="mis. 1920x1080" /></ERow>
+          <ERow label="Refresh Rate (Hz)"><ENum value={form.spec.display_refresh_hz} onChange={v => setS('display_refresh_hz', v)} step="1" /></ERow>
+          <ERow label="GPU Model"><EText value={form.spec.gpu_model} onChange={v => setS('gpu_model', v)} /></ERow>
+
+          <SectionLabel>Operating System</SectionLabel>
+          <ERow label="Nama OS"><EText value={form.spec.os_name} onChange={v => setS('os_name', v)} /></ERow>
+          <ERow label="Versi"><EText value={form.spec.os_version} onChange={v => setS('os_version', v)} /></ERow>
+          <ERow label="Build"><EText value={form.spec.os_build} onChange={v => setS('os_build', v)} mono /></ERow>
+          <ERow label="Arsitektur"><EText value={form.spec.os_arch} onChange={v => setS('os_arch', v)} placeholder="mis. x64, ARM64" /></ERow>
+          <ERow label="Tipe Lisensi"><EText value={form.spec.os_license_type} onChange={v => setS('os_license_type', v)} /></ERow>
+
+          <SectionLabel>Battery</SectionLabel>
+          <ERow label="Kapasitas (Wh)"><ENum value={form.spec.battery_capacity_wh} onChange={v => setS('battery_capacity_wh', v)} /></ERow>
+          <ERow label="Health (%)"><ENum value={form.spec.battery_health_pct} onChange={v => setS('battery_health_pct', v)} step="1" /></ERow>
+          <ERow label="Cycle Count"><ENum value={form.spec.battery_cycle_count} onChange={v => setS('battery_cycle_count', v)} step="1" /></ERow>
+
+          <SectionLabel>Spesifikasi Tambahan</SectionLabel>
+          <ERow label="Webcam"><EText value={form.spec.webcam_desc} onChange={v => setS('webcam_desc', v)} /></ERow>
+          <ERow label="Keyboard"><EText value={form.spec.keyboard_desc} onChange={v => setS('keyboard_desc', v)} /></ERow>
+          <ERow label="Port"><EText value={form.spec.ports_desc} onChange={v => setS('ports_desc', v)} /></ERow>
+          <ERow label="Wireless"><EText value={form.spec.wireless_desc} onChange={v => setS('wireless_desc', v)} /></ERow>
+          <ERow label="Berat (kg)"><ENum value={form.spec.weight_kg} onChange={v => setS('weight_kg', v)} /></ERow>
+          <ERow label="Warna"><EText value={form.spec.color} onChange={v => setS('color', v)} /></ERow>
+        </Card>
+      )}
+
+      {/* NETWORK — view */}
+      {activeTab === 'net' && !editing && (
         <div>
           {itLoading && <div style={{ padding: '2rem', textAlign: 'center', color: D.inkFaint, fontSize: 13 }}>Memuat…</div>}
           {!itLoading && !network && (
@@ -897,6 +1290,24 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
         </div>
       )}
 
+      {/* NETWORK — edit */}
+      {activeTab === 'net' && editing && form && (
+        <Card style={{ padding: '4px 20px 16px' }}>
+          <SectionLabel>Identitas Jaringan</SectionLabel>
+          <ERow label="IPv4 Address"><EText value={form.net.ip_address} onChange={v => setN('ip_address', v)} mono placeholder="mis. 192.168.1.20" /></ERow>
+          <ERow label="IPv6 Address"><EText value={form.net.ipv6_address} onChange={v => setN('ipv6_address', v)} mono /></ERow>
+          <ERow label="MAC Address (Wi-Fi)"><EText value={form.net.mac_wifi} onChange={v => setN('mac_wifi', v)} mono /></ERow>
+          <ERow label="MAC Address (LAN)"><EText value={form.net.mac_lan} onChange={v => setN('mac_lan', v)} mono /></ERow>
+          <ERow label="Hostname"><EText value={form.net.hostname} onChange={v => setN('hostname', v)} mono /></ERow>
+          <ERow label="Gateway"><EText value={form.net.gateway} onChange={v => setN('gateway', v)} mono /></ERow>
+          <ERow label="DNS Primary"><EText value={form.net.dns_primary} onChange={v => setN('dns_primary', v)} mono /></ERow>
+          <ERow label="DNS Secondary"><EText value={form.net.dns_secondary} onChange={v => setN('dns_secondary', v)} mono /></ERow>
+          <ERow label="VLAN"><EText value={form.net.vlan} onChange={v => setN('vlan', v)} mono /></ERow>
+          <ERow label="Domain / Workgroup"><EText value={form.net.domain_workgroup} onChange={v => setN('domain_workgroup', v)} /></ERow>
+          <ERow label="Status Jaringan"><ESelect value={form.net.is_online} onChange={v => setN('is_online', v)} options={ONLINE_OPTS} placeholder="— Pilih —" /></ERow>
+        </Card>
+      )}
+
       {/* HEALTH SCORE */}
       {activeTab === 'health' && (
         <div>
@@ -968,6 +1379,9 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
       )}
 
       {/* SOFTWARE & LISENSI */}
+      {/* TODO(asset-edit): Software & Lisensi + Maintenance adalah list multi-row —
+          inline-edit per baris (add/edit/delete) dikerjakan terpisah, di luar scope
+          inline-edit Info/Spec/Network ini. Tab ini tetap read-only saat edit mode. */}
       {activeTab === 'sw' && (
         <div>
           {itLoading && <div style={{ padding: '2rem', textAlign: 'center', color: D.inkFaint, fontSize: 13 }}>Memuat…</div>}
@@ -1154,6 +1568,20 @@ export default function AssetDetailITPage({ id, asset, onBack }) {
             </div>
           </div>
         </Card>
+      )}
+
+      {/* Save feedback toast */}
+      {toast.show && (
+        <div style={{
+          position: 'fixed', right: 24, bottom: 24, zIndex: 200,
+          display: 'flex', alignItems: 'center', gap: 9,
+          background: toast.tone === 'ok' ? '#144682' : D.danger, color: '#fff',
+          padding: '11px 15px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+          boxShadow: '0 12px 30px rgba(10,20,40,.28)',
+        }}>
+          {toast.tone === 'ok' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+          {toast.msg}
+        </div>
       )}
     </div>
   );

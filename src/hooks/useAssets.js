@@ -186,14 +186,17 @@ export function useAssetDetail({ id } = {}) {
       .select(
         'id, asset_code, asset_no, name, description, model, asset_subtype, ' +
         'status, purchase_price, purchase_date, useful_life_years, depreciation_method, ' +
-        'accumulated_depreciation, book_value, assigned_to_name, vendor_name, ' +
+        'accumulated_depreciation, book_value, assigned_to_name, assigned_to_user_id, vendor_name, ' +
         'purchase_invoice_no, is_active, created_at, updated_at, ' +
+        // IT extras added via SQL Editor (not in migrations yet) — null-safe
+        'brand, condition, assignment_status, department_id, ' +
         // vehicle-specific (migration 026) — null-safe
         'plate_number, color, manufacture_year, fuel_type, vin, engine_number, km_odometer, ' +
         'company_id, location_id, category_id, ' +
         'companies(code, name), ' +
         'asset_locations(name, code), ' +
-        'asset_categories(name, code)'
+        'asset_categories(name, code), ' +
+        'departments(code, name)'
       )
       .eq('id', id)
       .is('deleted_at', null)
