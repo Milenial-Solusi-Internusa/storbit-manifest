@@ -955,7 +955,9 @@ Output:
 
 | 2.8N-fix | **InventoryDashboardPage — ganti basis harga nilai inventory dari `unit_cost` → `default_price` (harga jual).** Alasan: `products.unit_cost` semua NULL, `default_price` ada isi. `InventoryDashboardPage.jsx` saja. (1) Query `stock_summary→products` select: `unit_cost, default_price` → **`default_price`** (drop unit_cost). (2) `prodMap.cost = Number(row.products?.default_price) || 0` (was `unit_cost`); `Number(...)||0` = COALESCE(default_price,0) → no NaN utk produk tanpa harga. (3) KPI "Total Nilai Inventory" note `"On-hand × harga modal"` → **`"Berdasarkan harga jual"`** (jujur ke user). (4) Top 10 subtitle `(on-hand × harga modal)` → `(on-hand × harga jual)` utk konsistensi. **TIDAK diubah:** Total On-Hand/SKU/Stok Menipis (qty), chart kategori (qty-based), tren pergerakan, low stock table. `totalValue` + `topByValue` otomatis pakai `default_price` via `p.cost`. Lint 2→2 (baseline), build clean. | ✅ Complete |
 
-Current phase: **Phase 2.8N-fix** ✅ Complete
+| 2.8O | **CRMDashboard — AddVisitModal dropdown Prospect ikut tampilkan customer (mantan WON).** `CRMDashboardPage.jsx` saja. Bug: dropdown opsi visit hanya `.eq('account_status','prospect')` → customer hasil konversi WON (mis. Indochem) tak muncul, sales tak bisa jadwalkan visit ke customer existing. **Fix:** (1) query opsi dropdown (useEffect "fetch options for AddVisitModal", ~L1645): `.eq('account_status','prospect')` → **`.in('account_status', ['prospect','customer'])`** (filter `company_id`/`deleted_at`/`order('name')`/`limit(200)` tetap). (2) Label field di AddVisitModal (~L865): `lbl('Prospect')` → `lbl('Prospect / Customer')` + comment diselaraskan. **TIDAK diubah:** 3 query KPI/salesPerf (`prospectsRes`/lastMonth/salesPerf, L1404/1426/1437) TETAP `account_status='prospect'` (basis pipeline/win rate harus prospect-only). Lint 7→7 (net-zero baseline). build clean. | ✅ Complete |
+
+Current phase: **Phase 2.8O** ✅ Complete
 
 ---
 

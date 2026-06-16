@@ -859,10 +859,10 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
             )}
           </div>
 
-          {/* Prospect + Salesperson */}
+          {/* Prospect / Customer + Salesperson */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              {lbl('Prospect')}
+              {lbl('Prospect / Customer')}
               {sel({
                 value: draft.prospect_id,
                 onChange: e => setDraft(d => ({ ...d, prospect_id: e.target.value })),
@@ -1642,7 +1642,7 @@ function CRMDashboardPage() {
     if (!addVisitOpen || !profile?.company_id) return;
     Promise.all([
       supabase.from('profiles').select('id, full_name').eq('active', true).limit(100),
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(200),
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['prospect', 'customer']).is('deleted_at', null).order('name').limit(200),
     ]).then(([profRes, prospRes]) => {
       setSalesProfiles(profRes.data || []);
       setProspectOptions(prospRes.data || []);
