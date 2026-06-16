@@ -43,6 +43,7 @@ const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
 const LeadPoolPage         = lazy(() => import('./modules/crm/LeadPoolPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
+const InventoryDashboardPage = lazy(() => import('./modules/inventory/pages/InventoryDashboardPage'));
 const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
 const PenerimaanBarangPage   = lazy(() => import('./modules/inventory/pages/PenerimaanBarangPage'));
 const AdminSettingsHub       = lazy(() => import('./pages/foundation/admin-settings/AdminSettingsHub'));
@@ -2237,6 +2238,19 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <HrgaShell activePage={activeMenu} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── Inventory: Dashboard ───────────────────────────────────────── */}
+          {activeMenu === 'inventory-dashboard' && (
+            <ErrorBoundary title="Dashboard Inventory temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <InventoryDashboardPage />
               </Suspense>
             </ErrorBoundary>
           )}
