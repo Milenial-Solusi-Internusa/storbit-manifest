@@ -1,10 +1,10 @@
 // src/modules/crm/ActivitiesPage.jsx
-// Activities — single entry point for all sales activities (call / visit / meeting /
-// prospecting / follow-up) on the `activities` table. Replaces SalesCallsPage as the
+// Activities — single entry point for all sales activities (call / whatsapp / visit /
+// meeting / email / follow-up) on the `activities` table. Replaces SalesCallsPage as the
 // component for the crm-calls route. Visual pattern follows SalesCallsPage.jsx
 // (warm-beige C tokens, badge maps, detail modal, client-side pagination).
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Search, Plus, Eye, Check, Activity, X, Pencil } from 'lucide-react';
+import { Search, Plus, Eye, Check, Activity, X, Pencil, UserPlus, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -49,21 +49,23 @@ const C = {
   neutral:   '#6B6F5E', neutralBg: '#EEE9DC', neutralBd: '#DDD3BE',
 };
 
-// Activity type — badge colours per brief: call=biru, visit=ungu, meeting=navy,
-// prospecting=orange, followup=amber.
+// Activity type — badge colours: call=biru, whatsapp=hijau, visit=ungu,
+// meeting=navy, email=amber, followup=slate. (no dark green)
 const TYPE_META = {
-  call:        { label: 'Call',        bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
-  visit:       { label: 'Visit',       bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
-  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#144682', bd: '#BAD2E6' },
-  prospecting: { label: 'Prospecting', bg: '#FBE6DA', color: '#C8521B', bd: '#F0C3A8' },
-  followup:    { label: 'Follow-up',   bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
+  call:     { label: 'Call',      bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
+  whatsapp: { label: 'WhatsApp',  bg: '#E4F0E5', color: '#2E7D4F', bd: '#BFDDC4' },
+  visit:    { label: 'Visit',     bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
+  meeting:  { label: 'Meeting',   bg: '#E1ECF5', color: '#144682', bd: '#BAD2E6' },
+  email:    { label: 'Email',     bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
+  followup: { label: 'Follow-up', bg: '#EEF0F3', color: '#51607A', bd: '#CDD5E1' },
 };
 const TYPE_FORM = [
-  { value: 'call',        label: 'Call' },
-  { value: 'visit',       label: 'Visit' },
-  { value: 'meeting',     label: 'Meeting' },
-  { value: 'prospecting', label: 'Prospecting' },
-  { value: 'followup',    label: 'Follow-up' },
+  { value: 'call',     label: 'Call' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'visit',    label: 'Visit' },
+  { value: 'meeting',  label: 'Meeting' },
+  { value: 'email',    label: 'Email' },
+  { value: 'followup', label: 'Follow-up' },
 ];
 
 // Status — todo (abu outline), done (hijau), cancelled (merah outline).
@@ -156,7 +158,6 @@ function actToDraft(act) {
     activity_time:    act.activity_time ? String(act.activity_time).slice(0, 5) : '',
     assigned_to:      act.assigned_to || '',
     account_id:       act.account_id || '',
-    prospect_name:    act.prospect_name || '',
     contact_name:     act.contact_name || '',
     contact_phone:    act.contact_phone || '',
     outcome:          act.outcome || '',
@@ -196,8 +197,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
   );
 
   const isEdit = mode === 'edit' && draft;
-  const needContact = isEdit && ['call', 'prospecting'].includes(draft.type);
-  const needProspectName = isEdit && draft.type === 'prospecting';
+  const needContact = isEdit && ['call', 'whatsapp'].includes(draft.type);
   const needLocation = isEdit && ['visit', 'meeting'].includes(draft.type);
 
   return (
@@ -251,17 +251,19 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
               <DField label="Next Action"      value={act.next_action} full />
               <DField label="Next Action Date" value={act.next_action_date ? fmtDate(act.next_action_date) : null} mono />
             </DSection>
-            {act.status === 'todo' && (
+            {(act.status === 'todo' || isSuperAdmin) && (
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 16, marginTop: 4, borderTop: `1px solid ${C.lineSoft}` }}>
                 {isSuperAdmin && (
                   <button onClick={onDelete} style={{ marginRight: 'auto', padding: '10px 20px', borderRadius: 10, border: `1px solid ${C.dangerBd}`, background: 'transparent', color: C.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                     Hapus
                   </button>
                 )}
-                <button onClick={onMarkDone} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  <Check size={15} /> Tandai Selesai
-                </button>
-                {canEdit && (
+                {act.status === 'todo' && (
+                  <button onClick={onMarkDone} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <Check size={15} /> Tandai Selesai
+                  </button>
+                )}
+                {act.status === 'todo' && canEdit && (
                   <button onClick={onCancel} style={{ padding: '10px 20px', borderRadius: 10, border: `1px solid ${C.dangerBd}`, background: 'transparent', color: C.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                     Batalkan Aktivitas
                   </button>
@@ -305,13 +307,6 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
-
-            {needProspectName && (
-              <div>
-                {lbl('Nama Calon Customer (Prospek)')}
-                <input value={draft.prospect_name} onChange={e => upd('prospect_name', e.target.value)} style={inpStyle} placeholder="Nama perusahaan yang akan diprospek" />
-              </div>
-            )}
 
             {needContact && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -373,14 +368,13 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
 /* ── Add task modal ── */
 const EMPTY_TASK = {
   type: 'call', scheduled_for: todayStr(), activity_time: '', assigned_to: '',
-  account_id: '', prospect_name: '', contact_name: '', contact_phone: '',
+  account_id: '', contact_name: '', contact_phone: '',
   location: '', notes: '', next_action: '', next_action_date: '',
 };
 
 function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesProfiles, onClose, onSave }) {
   if (!open) return null;
-  const needContact = ['call', 'prospecting'].includes(draft.type);
-  const needProspectName = draft.type === 'prospecting';
+  const needContact = ['call', 'whatsapp'].includes(draft.type);
   const needLocation = ['visit', 'meeting'].includes(draft.type);
 
   const inpStyle = {
@@ -445,13 +439,6 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
-
-          {needProspectName && (
-            <div>
-              {lbl('Nama Calon Customer (Prospek)')}
-              <input value={draft.prospect_name} onChange={e => upd('prospect_name', e.target.value)} style={inpStyle} placeholder="Nama perusahaan yang akan diprospek" />
-            </div>
-          )}
 
           {needContact && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -677,7 +664,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     setSaving(true);
     setFormError(null);
     try {
-      const needContact = ['call', 'prospecting'].includes(draft.type);
+      const needContact = ['call', 'whatsapp'].includes(draft.type);
       const needLocation = ['visit', 'meeting'].includes(draft.type);
       const payload = {
         type:             draft.type,
@@ -686,7 +673,6 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         activity_time:    draft.activity_time     || null,
         assigned_to:      draft.assigned_to,
         account_id:       draft.account_id        || null,
-        prospect_name:    draft.type === 'prospecting' ? (draft.prospect_name || null) : null,
         contact_name:     needContact ? (draft.contact_name  || null) : null,
         contact_phone:    needContact ? (draft.contact_phone || null) : null,
         notes:            draft.notes             || null,
@@ -708,7 +694,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     }
   }, [draft, profile, fetchActivities, showToast]);
 
-  // ── mark done (+ prospecting → prospek prompt) ──────────────────────────────
+  // ── mark done ───────────────────────────────────────────────────────────────
   const handleCheck = useCallback(async (row) => {
     const { error } = await supabase
       .from('activities')
@@ -717,10 +703,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     if (error) { showToast?.('Gagal menandai selesai: ' + error.message, 'error'); return; }
     showToast?.('Aktivitas ditandai selesai');
     fetchActivities();
-    // Open the prospek prompt BEFORE closing the detail modal so the ConfirmModal
-    // (driven by confirmProspect) is set first; setDetail(null) closes the detail
-    // modal last (no-op when invoked from a list row — detail already null).
-    if (row.type === 'prospecting') setConfirmProspect(row);
+    // Close the detail modal if open (no-op when invoked from a list row).
     setDetail(null);
   }, [fetchActivities, showToast]);
 
@@ -760,7 +743,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     setDetailSaving(true);
     setDetailError(null);
     try {
-      const needContact = ['call', 'prospecting'].includes(draft.type);
+      const needContact = ['call', 'whatsapp'].includes(draft.type);
       const needLocation = ['visit', 'meeting'].includes(draft.type);
       const prevDetails = detail.details || {};
       const payload = {
@@ -769,7 +752,6 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         activity_time:    draft.activity_time     || null,
         assigned_to:      draft.assigned_to,
         account_id:       draft.account_id        || null,
-        prospect_name:    draft.type === 'prospecting' ? (draft.prospect_name || null) : null,
         contact_name:     needContact ? (draft.contact_name  || null) : null,
         contact_phone:    needContact ? (draft.contact_phone || null) : null,
         outcome:          draft.outcome           || null,
@@ -794,8 +776,10 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   // Open the existing ProspectFormPage in CREATE mode, prefilled from the
   // activity (Option A: ProspectFormPage treats an id-less object as create).
   const openProspectFromActivity = (row) => {
+    // Activity has no separate company name → use contact_name as the prospect
+    // name (best available); user can refine company name in the form.
     setEditingProspect?.({
-      name:      row.prospect_name || row.account?.name || '',
+      name:      row.contact_name  || '',
       pic_name:  row.contact_name  || '',
       pic_phone: row.contact_phone || '',
     });
@@ -819,7 +803,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Activities</h1>
-            <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>Catat dan pantau semua aktivitas sales — call, visit, meeting, prospecting, follow-up</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>Catat dan pantau semua aktivitas sales — call, whatsapp, visit, meeting, email, follow-up</p>
           </div>
         </div>
         <button
@@ -917,6 +901,16 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
                       <button title="Detail" onClick={(e) => { e.stopPropagation(); setDetail(r); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
                         <Eye size={16} color={C.inkFaint} />
                       </button>
+                      {!r.account_id && (
+                        <button title="Jadikan Prospek" onClick={(e) => { e.stopPropagation(); setConfirmProspect(r); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+                          <UserPlus size={16} color={C.navy} />
+                        </button>
+                      )}
+                      {erpRole === 'super_admin' && (
+                        <button title="Hapus" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(r); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+                          <Trash2 size={16} color={C.danger} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -974,10 +968,10 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       <ConfirmModal
         open={!!confirmProspect}
         variant="info"
-        title="Buat Prospek?"
-        message="Buat prospek dari aktivitas ini? Form prospek akan terbuka dengan data yang sudah terisi."
-        confirmLabel="Ya, Buat Prospek"
-        cancelLabel="Nanti saja"
+        title="Jadikan Prospek?"
+        message="Buat prospek baru dari kontak aktivitas ini?"
+        confirmLabel="Ya, Jadikan Prospek"
+        cancelLabel="Batal"
         onConfirm={() => { const r = confirmProspect; setConfirmProspect(null); openProspectFromActivity(r); }}
         onCancel={() => setConfirmProspect(null)}
       />

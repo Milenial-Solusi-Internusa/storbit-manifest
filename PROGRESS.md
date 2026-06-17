@@ -2,6 +2,22 @@
 
 ## 2026-06-18
 
+### ActivitiesPage — tipe final (6) + convert-to-prospect aksi list + delete list (Phase 2.9K)
+- [x] **Tipe (6):** TYPE_META/TYPE_FORM hapus `prospecting` → call(biru)/whatsapp(hijau)/visit(ungu)/meeting(navy)/email(amber)/followup(slate), no dark green. `activities.type` tanpa CHECK → aman tanpa ubah DB. Field kondisional: contact utk call|whatsapp, location utk visit|meeting, email/followup notes saja. **Field `prospect_name` dihapus dari form** (input/EMPTY_TASK/actToDraft/payload); legacy read dipertahankan
+- [x] **Hapus flow prospecting dari centang:** handleCheck tak lagi `setConfirmProspect` saat type prospecting → centang selesai tak munculkan popup
+- [x] **Convert-to-Prospect = aksi LIST:** icon UserPlus di kolom Aksi, muncul jika `!row.account_id` → ConfirmModal "Jadikan Prospek?" (reuse confirmProspect, wording baru) → openProspectFromActivity prefill `{name:contact_name, pic_name:contact_name, pic_phone:contact_phone}`. Activity tak berubah saat convert
+- [x] **Delete LIST (super_admin):** icon Trash2 danger di kolom Aksi, muncul jika `erpRole==='super_admin'` (status apapun) → reuse deleteConfirm + ConfirmModal danger (2.9I) → handleDeleteActivity soft delete. Footer modal Hapus tetap ada
+- [x] **Build clean** — 2630 modules, 1.16s; lint 5→5 (net-zero baseline)
+- [ ] **DB migrasi (BELUM — manual):** `SELECT count(*) FROM activities WHERE type='prospecting';` lalu `UPDATE activities SET type='whatsapp'|'followup' WHERE type='prospecting';` (pilih satu). Detail di CLAUDE.md Phase 2.9K
+- [ ] **Tes manual (belum — runtime):** form tipe = 6 baru (no prospecting) · call/whatsapp→contact, visit/meeting→location, email/followup→notes · list tanpa account → Convert muncul, dengan account → tidak · Convert → form prospek prefilled dari contact · centang → tak ada popup prospek · super_admin → icon Hapus tiap row, role lain tak ada · Hapus list → konfirmasi → soft delete
+
+### ActivitiesPage — footer modal gate per-tombol (Phase 2.9J)
+> Fix: tombol Hapus (super_admin) & Edit/Batalkan tertutup gate `status==='todo'` tunggal → dipisah per tombol.
+- [x] Wrapper footer view-mode: `{act.status === 'todo' && …}` → `{(act.status === 'todo' || isSuperAdmin) && …}` (render hanya jika ada ≥1 tombol visible → no empty bar)
+- [x] Gate per tombol: **Tandai Selesai** = `status==='todo'`; **Batalkan Aktivitas** = `status==='todo' && canEdit`; **Hapus** = `isSuperAdmin` (apapun status, paling kiri)
+- [x] Handler (handleCheck/handleCancelActivity/handleDeleteActivity) tidak diubah. Build clean — 2630 modules, 1.13s; lint 5→5 (net-zero)
+- [ ] **Tes manual (belum — runtime):** todo → Tandai Selesai (+Batalkan jk canEdit) · done+super_admin → tombol Hapus muncul (tanpa Tandai/Batalkan) · done+non-super → footer tak render (no empty bar) · klik Hapus di done → konfirmasi → soft delete
+
 ### ActivitiesPage — delete (super_admin) + fix popup "Buat Prospek?" (Phase 2.9I)
 - [x] **Delete activity (super_admin)** — tombol "Hapus" (outline danger, paling kiri) di footer view-mode modal, muncul hanya jika `isSuperAdmin`. `handleDeleteActivity` = soft delete (`deleted_at=now()`) + toast + setDetail(null) + setDeleteConfirm(null) + fetchActivities(). Flow: Hapus → tutup modal + `ConfirmModal` variant=danger "Hapus Aktivitas?" → confirm → soft delete. Role non-super: tombol tak muncul
 - [x] **Fix popup "Buat Prospek?"** — `handleCheck` urutan: UPDATE → fetchActivities() → setConfirmProspect(row) → setDetail(null) TERAKHIR (sebelumnya setConfirmProspect sebelum fetch/setDetail). ConfirmModal prospek `open={!!confirmProspect}` dikonfirmasi benar. Popup kini muncul saat "Tandai Selesai" prospecting dari modal
