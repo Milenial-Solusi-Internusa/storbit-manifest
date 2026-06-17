@@ -446,7 +446,7 @@ export default function AssetDashboardPage() {
       {header}
 
       {/* Row 1: Asset class counts */}
-      <div style={gridStyle(4)}>
+      <div className="nx-grid-kpi" style={gridStyle(4)}>
         <StatCard label="Total Kendaraan"     value={s.catCounts['VEH']}    icon={Car}       />
         <StatCard label="Total IT Equipment"  value={s.catCounts['IT-EQP']} icon={Monitor}   />
         <StatCard label="Total Furniture"     value={s.catCounts['FURN']}   icon={Sofa}      />
@@ -454,7 +454,7 @@ export default function AssetDashboardPage() {
       </div>
 
       {/* Row 2: Lifecycle status */}
-      <div style={gridStyle(4)}>
+      <div className="nx-grid-kpi" style={gridStyle(4)}>
         <StatCard label="Total Aktif"        value={s.statusCounts.active}    icon={CheckCircle2} delta={`${activePct}% dari total aset`} deltaType="flat" tone="ok" />
         <StatCard label="Dalam Maintenance"  value={s.statusCounts.in_repair} icon={Wrench}       delta="0 work order aktif"           deltaType="flat" tone="warn" />
         <StatCard label="Dokumen Expired"    value={0}                        icon={FileX}        delta="Modul dokumen belum aktif"    deltaType="flat" tone="danger" />
@@ -462,7 +462,7 @@ export default function AssetDashboardPage() {
       </div>
 
       {/* Row 3: Value cards */}
-      <div style={gridStyle(2)}>
+      <div className="nx-grid-2" style={gridStyle(2)}>
         {/* Total nilai */}
         <Card>
           <CardHead title="Total Nilai Aset Keseluruhan" sub="Nilai perolehan · grup" />

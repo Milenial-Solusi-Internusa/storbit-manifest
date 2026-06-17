@@ -409,14 +409,14 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
       <SlaCard quot={quot} />
 
       {/* ── Two-column screen layout ─────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      <div className="nx-stack" style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* LEFT — header info + sectioned items */}
         <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
           {/* Header info card */}
           <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: 24, boxShadow: '0 1px 6px rgba(35,41,30,.06)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px 24px' }}>
+            <div className="nx-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px 24px' }}>
               <InfoRow label="Prospect / Customer" value={clientName} />
               <InfoRow label="Service Type" value={SERVICE_TYPE_LABELS[quot.service_type] || quot.service_type} />
               <InfoRow label="Routing" value={quot.route} />

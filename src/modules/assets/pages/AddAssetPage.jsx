@@ -481,7 +481,7 @@ function AAReview({ cat, form, onEditStep, visibleSections }) {
         const fields = secs.reduce((acc, sec) => acc.concat(sec.fields), []);
         return (
           <AAReviewSection key={s.id} title={s.title} icon={s.sections[0].icon} onEdit={() => onEditStep(i)}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderBottom: 'none' }}>
+            <div className="nx-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderBottom: 'none' }}>
               {fields.map((f) => <AAReviewRow key={f.k} field={f} val={form[f.k]} />)}
             </div>
           </AAReviewSection>

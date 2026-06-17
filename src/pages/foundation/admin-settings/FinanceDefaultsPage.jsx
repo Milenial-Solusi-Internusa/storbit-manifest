@@ -250,7 +250,7 @@ function LiveSummary({ form }) {
 /* ---------- finance skeleton ---------- */
 function FinSkeleton() {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 360px", gap: 22, alignItems: "start" }}>
+    <div className="nx-grid-2" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 360px", gap: 22, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {[0, 1, 2].map((i) => (
           <Card key={i}><Skel w={180} h={14} style={{ marginBottom: 20 }} /><div style={{ display: "flex", gap: 16 }}><Skel w={150} h={46} r={11} /><Skel w={150} h={46} r={11} /></div><div style={{ display: "flex", gap: 12, marginTop: 20 }}><Skel h={70} r={13} style={{ flex: 1 }} /><Skel h={70} r={13} style={{ flex: 1 }} /></div></Card>
@@ -323,7 +323,7 @@ export default function FinanceDefaultsPage({ onHome }) {
       />
 
       {state === "loading" ? <FinSkeleton /> : state === "error" ? <ErrorState msg={errMsg} onRetry={() => setReload((n) => n + 1)} /> : (
-        <div key={entity} className={fade ? "" : "ak-rise"} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease", display: "grid", gridTemplateColumns: "minmax(0,1fr) 360px", gap: 22, alignItems: "start" }}>
+        <div key={entity} className={`nx-grid-2 ${fade ? "" : "ak-rise"}`} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease", display: "grid", gridTemplateColumns: "minmax(0,1fr) 360px", gap: 22, alignItems: "start" }}>
           {/* LEFT — form */}
           <div>
             <FinSection icon="percent" title="Konfigurasi Pajak">

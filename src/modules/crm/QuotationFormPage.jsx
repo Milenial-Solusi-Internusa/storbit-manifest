@@ -608,7 +608,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
       </div>
 
       {/* Two-column layout */}
-      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      <div className="nx-stack" style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
         {/* ── LEFT — form (60%) ──────────────────────────────────────────── */}
         <div style={{ flex: '0 0 60%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>

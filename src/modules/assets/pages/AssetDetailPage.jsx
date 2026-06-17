@@ -880,7 +880,7 @@ export default function AssetDetailPage({ id, onBack }) {
       {activeTab === 'bbm' && (
         <div>
           {/* Stat cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
+          <div className="nx-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
             <StatCard
               label="Konsumsi Rata-rata"
               icon={Fuel}
