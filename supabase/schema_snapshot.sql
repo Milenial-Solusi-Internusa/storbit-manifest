@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict bjXEvkuFLTNfbBbF8GwGx7GSMI0dGcwEnNmdXsMWNtr1O7yT93VhgzB7jDjGAAW
+\restrict yaplHxZlIlRLMmSNaP8bevFHUhEOCGg0VA2O4bqY4CcjH9cLG1IyCW37a3xjDuc
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -350,6 +350,24 @@ COMMENT ON FUNCTION public.is_super_admin() IS 'True if the current user holds s
 
 
 --
+-- Name: set_customer_on_won(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_customer_on_won() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.pipeline_stage = 'WON' AND COALESCE(NEW.account_status,'') <> 'customer' THEN
+    NEW.account_status     := 'customer';
+    NEW.became_customer_at := COALESCE(NEW.became_customer_at, now());
+    NEW.converted_at       := COALESCE(NEW.converted_at, now());
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -430,6 +448,38 @@ CREATE TABLE public.accounts (
     last_activity_at timestamp with time zone DEFAULT now(),
     became_customer_at timestamp with time zone,
     CONSTRAINT prospects_source_check CHECK (((source)::text = ANY (ARRAY['sales_visit'::text, 'cold_call'::text, 'referral'::text, 'existing_network'::text, 'exhibition'::text, 'instagram'::text, 'linkedin'::text, 'tiktok'::text, 'website'::text, 'walk_in'::text, 'other'::text])))
+);
+
+
+--
+-- Name: activities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.activities (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    account_id uuid,
+    inquiry_id uuid,
+    quotation_id uuid,
+    assigned_to uuid,
+    type text NOT NULL,
+    status text DEFAULT 'todo'::text NOT NULL,
+    scheduled_for date,
+    activity_time time without time zone,
+    completed_at timestamp with time zone,
+    prospect_name text,
+    contact_name text,
+    contact_phone text,
+    outcome text,
+    notes text,
+    next_action text,
+    next_action_date date,
+    details jsonb DEFAULT '{}'::jsonb,
+    migrated_from text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    deleted_at timestamp with time zone
 );
 
 
@@ -2965,6 +3015,14 @@ CREATE TABLE public.warehouses (
 
 
 --
+-- Name: activities activities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT activities_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: approval_delegations approval_delegations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3826,6 +3884,48 @@ ALTER TABLE ONLY public.warehouses
 
 ALTER TABLE ONLY public.warehouses
     ADD CONSTRAINT warehouses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_activities_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_activities_account ON public.activities USING btree (account_id);
+
+
+--
+-- Name: idx_activities_assigned; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_activities_assigned ON public.activities USING btree (assigned_to);
+
+
+--
+-- Name: idx_activities_company; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_activities_company ON public.activities USING btree (company_id);
+
+
+--
+-- Name: idx_activities_sched; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_activities_sched ON public.activities USING btree (scheduled_for);
+
+
+--
+-- Name: idx_activities_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_activities_status ON public.activities USING btree (status);
+
+
+--
+-- Name: idx_activities_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_activities_type ON public.activities USING btree (type);
 
 
 --
@@ -4893,6 +4993,13 @@ CREATE TRIGGER trg_roles_updated_at BEFORE UPDATE ON public.roles FOR EACH ROW E
 
 
 --
+-- Name: accounts trg_set_customer_on_won; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_set_customer_on_won BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.set_customer_on_won();
+
+
+--
 -- Name: sp_items trg_sp_items_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -4925,6 +5032,38 @@ CREATE TRIGGER trg_vendors_updated_at BEFORE UPDATE ON public.vendors FOR EACH R
 --
 
 CREATE TRIGGER trg_warehouses_updated_at BEFORE UPDATE ON public.warehouses FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: activities activities_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT activities_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: activities activities_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT activities_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: activities activities_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT activities_inquiry_id_fkey FOREIGN KEY (inquiry_id) REFERENCES public.inquiries(id);
+
+
+--
+-- Name: activities activities_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT activities_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotations(id);
 
 
 --
@@ -6510,6 +6649,40 @@ ALTER TABLE ONLY public.warehouses
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: activities; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: activities activities_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY activities_delete ON public.activities FOR DELETE TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
+
+
+--
+-- Name: activities activities_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY activities_insert ON public.activities FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
+
+
+--
+-- Name: activities activities_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY activities_select ON public.activities FOR SELECT TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
+
+
+--
+-- Name: activities activities_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY activities_update ON public.activities FOR UPDATE TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
+
+
+--
 -- Name: approval_delegations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7570,7 +7743,7 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 -- Name: profiles profiles_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY profiles_read ON public.profiles FOR SELECT TO authenticated USING (((id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
+CREATE POLICY profiles_read ON public.profiles FOR SELECT TO authenticated USING (true);
 
 
 --
@@ -8136,5 +8309,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict bjXEvkuFLTNfbBbF8GwGx7GSMI0dGcwEnNmdXsMWNtr1O7yT93VhgzB7jDjGAAW
+\unrestrict yaplHxZlIlRLMmSNaP8bevFHUhEOCGg0VA2O4bqY4CcjH9cLG1IyCW37a3xjDuc
 
