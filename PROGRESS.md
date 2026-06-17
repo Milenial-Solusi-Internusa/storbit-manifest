@@ -1,5 +1,19 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-06-18
+
+### Activity module Phase 2B — ActivitiesPage gantikan SalesCallsPage (Phase 2.9E)
+> Halaman aktivitas terpadu (semua tipe) di route `crm-calls`. SalesCallsPage tidak dihapus.
+- [x] **`src/modules/crm/ActivitiesPage.jsx` (BARU)** — list semua activity (call/visit/meeting/prospecting/followup) dari `activities`, role-aware (sales→assigned_to/created_by, manager+→se-entitas, super/admin→semua), embed account name + nama sales via client map. Kolom: Tanggal/Tipe/Status/Customer-Prospek/Sales/Catatan-Outcome/Aksi. Visual mirror SalesCallsPage (tokens C, pagination 20)
+- [x] **Filter bar** — tipe, status (todo/done/cancelled), tanggal (hari ini/minggu ini/bulan ini/custom/semua), sales dropdown (RBAC `fetchSalesProfiles` sales-only)
+- [x] **Tambah Task modal** — wajib: tipe+tanggal+salesperson; kondisional per tipe (call/prospecting→contact; prospecting→prospect_name; visit/meeting→location→details.location); notes/next_action/next_action_date/account_id opsional; `status='todo'` default
+- [x] **Centang selesai** — todo row → `status='done'`+`completed_at`; `type='prospecting'` → ConfirmModal "Buat Prospek?" [Ya]→ProspectFormPage CREATE prefilled {name,pic_name,pic_phone} (pola PipelineKanban: setActiveMenu+setShowProspectForm+setEditingProspect), [Nanti saja]→mark done saja
+- [x] **Badge** — status todo(abu outline)/done(hijau)/cancelled(merah outline); tipe call(biru)/visit(ungu)/meeting(navy)/prospecting(orange)/followup(amber). No emoji, brand MSI
+- [x] **Option A — ProspectFormPage.jsx tweak** — `isEdit = !!prospect` → `!!prospect?.id` (prefill object tanpa id = CREATE, handleSave tetap INSERT) + effect seed name/pic_name/pic_phone dari prefill
+- [x] **App.jsx** — lazy import ActivitiesPage; menu `crm-calls` label→'Activities' icon `PhoneCall`→`Activity` (PhoneCall dihapus dari import krn unused); route render → ActivitiesPage + 3 props; menu key `crm-calls` TIDAK diubah; SalesCallsPage import dibiarkan (per instruksi, 1 lint unused-var diterima)
+- [x] **Build clean** — 2630 modules, 1.00s; chunk `ActivitiesPage` ter-emit (code-split). Lint baseline-category (set-state-in-effect/memoization-skip, sama pola SalesCallsPage)
+- [ ] **Tes manual (belum dijalankan — runtime):** buka menu Activities (list muncul/kosong OK) · filter tipe/status/tanggal/sales · Tambah Task (field kondisional muncul per tipe) · simpan → status todo · centang biasa → done · centang prospecting → popup konfirmasi · login sales → cuma lihat task sendiri
+
 ## 2026-06-17
 
 ### Activity cutover Phase 2A — frontend call/visit → `activities`/`activity_logs` (Phase 2.9D)

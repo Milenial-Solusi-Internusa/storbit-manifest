@@ -9,7 +9,7 @@ import {
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
-  ClipboardList, LayoutList, Archive, PhoneCall, UserX,
+  ClipboardList, LayoutList, Archive, UserX, Activity,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { useCustomers } from './hooks/useCustomers';
@@ -40,6 +40,7 @@ const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage')
 const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
+const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
 const LeadPoolPage         = lazy(() => import('./modules/crm/LeadPoolPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
@@ -451,7 +452,7 @@ const ERP_MENU_GROUPS = [
               { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX    },
             ],
           },
-          { id: 'crm-calls',      label: 'Activity & Calls', icon: PhoneCall },
+          { id: 'crm-calls',      label: 'Activities', icon: Activity },
         ],
       },
     ],
@@ -2457,11 +2458,16 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── CRM: Activity & Calls ───────────────────────────────────────── */}
+          {/* ── CRM: Activities ─────────────────────────────────────────────── */}
           {activeMenu === 'crm-calls' && (
-            <ErrorBoundary title="Activity & Calls temporarily unavailable">
+            <ErrorBoundary title="Activities temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <SalesCallsPage showToast={showToast} profile={profile} />
+                <ActivitiesPage
+                  showToast={showToast}
+                  setActiveMenu={setActiveMenu}
+                  setShowProspectForm={setShowProspectForm}
+                  setEditingProspect={setEditingProspect}
+                />
               </Suspense>
             </ErrorBoundary>
           )}

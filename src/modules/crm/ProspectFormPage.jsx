@@ -75,7 +75,10 @@ function Field({ label, req, children, full }) {
 
 export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const { profile, erpRole } = useAuth();
-  const isEdit = !!prospect;
+  // Edit only when the passed prospect has a real id. A prefill object without
+  // an id (e.g. opened from ActivitiesPage prospecting flow) stays CREATE mode
+  // so handleSave INSERTs — see the prefill effect below.
+  const isEdit = !!prospect?.id;
   const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
   // Sales / operations creating a prospect → auto-assign to themselves.
   // Managers / admin / super pick the assignee in the form (may be left empty).
@@ -177,6 +180,19 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         bant_score:       calcBantScore(bantVals),
       });
     }
+  }, [isEdit, prospect]);
+
+  // Prefill-on-create: a partial prospect object (no id) opened in CREATE mode
+  // from another module (ActivitiesPage prospecting → prospek) seeds a few
+  // fields. isEdit is false so handleSave still INSERTs.
+  useEffect(() => {
+    if (isEdit || !prospect) return;
+    setForm(f => ({
+      ...f,
+      name:      prospect.name      || f.name,
+      pic_name:  prospect.pic_name  || f.pic_name,
+      pic_phone: prospect.pic_phone || f.pic_phone,
+    }));
   }, [isEdit, prospect]);
 
   // On edit, the list page select omits the assigned_to UUID (only the joined
