@@ -2,6 +2,18 @@
 
 ## 2026-06-17
 
+### Activity cutover Phase 2A — frontend call/visit → `activities`/`activity_logs` (Phase 2.9D)
+> Cutover **data-layer only** — tampilan/UX tidak berubah. Setelah ini TIDAK ada kode menyentuh `sales_calls`/`sales_visits`/`sales_visit_logs`. Plan: `ACTIVITY_UI_MAP.md`.
+- [x] **SalesCallsPage.jsx** — CRUD call → `activities` (type='call', status='done'). Read remap activities→bentuk call lama (UI tak diubah); write payload + `details jsonb` (call_type/duration_minutes/bant_collected); account name embed `accounts!activities_account_id_fkey`
+- [x] **CRMDashboardPage.jsx** — kalender visit + 2 KPI mingguan (call/visit) read → `activities`; `handleSaveVisit` write → `activities` (type='visit', `details` visit_type/location/point_of_meeting/mom, `follow_up`→`next_action`); log write + VisitDetailModal timeline read → `activity_logs` (`activity_id`); `ownBySales` pakai `assigned_to`
+- [x] **CustomerDetailPage.jsx** — History Visit + Health Score read → `activities` `.eq('account_id',id).eq('type','visit')` (**visit only**, call tidak digabung — keputusan disetujui)
+- [x] **Mapping status** scheduled/completed/cancelled ⇄ todo/done/cancelled (`VISIT_TO_ACT_STATUS`/`ACT_TO_VISIT_STATUS`); `activity_logs` simpan vocab visit agar konsisten dgn data migrasi + lookup `VISIT_STATUS`
+- [x] **Nama sales/log-author via client-side map** — `activities.assigned_to` & `activity_logs.changed_by` tak punya FK ke `profiles` (DB tak diubah) → fetch profiles by id (TANPA filter active, biar sales nonaktif/lama tetap kebaca) & map di JS. Account name tetap embed (FK ada)
+- [x] **Fix #3 dropdown sales** — helper `fetchSalesProfiles(companyId)` (RBAC: `roles.code='sales'` per-company → `user_roles` is_active+revoked_at IS NULL+company_id → profiles active), **tanpa hardcode role_id**; ganti query bocor CRMDashboard (tanpa company filter) + konsistenkan SalesCallsPage. Default salesperson = user login dibiarkan
+- [x] **Verifikasi:** `grep sales_calls|sales_visits|sales_visit_logs` di `src/` = **0 di luar `*.legacy`**; `npm run build` clean (**2629 modules, 886ms**)
+- [ ] **Checklist tes manual (belum dijalankan — runtime):** log call baru muncul di list · tambah visit dari kalender → muncul di kalender+detail+timeline · detail customer tampil history visit · login sales → dropdown cuma sales se-entitas · KPI call/visit wajar
+- [ ] **(Backlog) drop `sales_calls`/`sales_visits`/`sales_visit_logs`** setelah tes manual lolos (masih DORMANT)
+
 ### DB Changes via SQL Editor (Phase 2.9B/2.9C — dokumentasi, sudah masuk schema_snapshot.sql refresh: 71 tabel, ~8.395 baris)
 > Tidak ada kode/DB diubah dari sesi dokumentasi ini. Detail lengkap: CLAUDE.md section **DB Changes via SQL Editor — 17 Jun 2026** + audit `CRM_FLOW.md` & `ACTIVITY_UI_MAP.md`.
 - [x] **(2.9B) WON → customer (fix konversi).** Masalah: deal `pipeline_stage='WON'` tidak selalu jadi `account_status='customer'` — cuma jalur drag+`WinLossModal` yang konversi; form-edit ([ProspectFormPage.jsx:320-323](src/modules/crm/ProspectFormPage.jsx#L320)) & import TIDAK (gejala: TOKO DAMRAH, `created_by` null = jejak import). Fix: (1) backfill record WON yang masih `prospect`; (2) trigger `trg_set_customer_on_won` (function `set_customer_on_won`, `BEFORE INSERT OR UPDATE ON accounts`) set `account_status='customer'` + `became_customer_at`/`converted_at` saat `pipeline_stage='WON'`. **Menutup SEMUA jalur → DB jadi sumber kebenaran tunggal**; frontend `WinLossModal` jadi redundan (dibiarkan, tak dicabut)

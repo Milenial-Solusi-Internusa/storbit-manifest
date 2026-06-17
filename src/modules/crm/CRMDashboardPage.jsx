@@ -745,6 +745,32 @@ const VISIT_STATUS = {
 };
 const VISIT_STAGES = ['scheduled', 'completed', 'cancelled'];
 
+/* Visits live in `activities` (status: todo/done/cancelled). The visit UI keeps
+   its own vocabulary (scheduled/completed/cancelled) — map between the two on
+   read/write. activity_logs keep the visit vocabulary (matches migrated rows). */
+const ACT_TO_VISIT_STATUS = { todo: 'scheduled', done: 'completed', cancelled: 'cancelled' };
+const VISIT_TO_ACT_STATUS = { scheduled: 'todo', completed: 'done', cancelled: 'cancelled' };
+
+/* Resolve active 'sales' users for a company via RBAC (roles.code='sales'),
+   never a hardcoded role_id. Conditions: same company, user_roles active +
+   not revoked. Returns [{ id, full_name }] (active profiles only). */
+async function fetchSalesProfiles(companyId) {
+  const { data: roleRows } = await supabase
+    .from('roles').select('id').eq('company_id', companyId).eq('code', 'sales');
+  const roleIds = (roleRows || []).map(r => r.id);
+  if (!roleIds.length) return [];
+  const { data: urs } = await supabase
+    .from('user_roles').select('user_id')
+    .eq('company_id', companyId).in('role_id', roleIds)
+    .eq('is_active', true).is('revoked_at', null);
+  const userIds = [...new Set((urs || []).map(u => u.user_id).filter(Boolean))];
+  if (!userIds.length) return [];
+  const { data: profs } = await supabase
+    .from('profiles').select('id, full_name').in('id', userIds)
+    .eq('active', true).order('full_name').limit(1000);
+  return profs || [];
+}
+
 /* ---------- visit type (BD-07) ---------- */
 const VISIT_TYPES = [
   { id: 'discovery',             label: 'Discovery Visit',       desc: 'Gali kebutuhan prospect baru',       output: 'Output: Discovery Notes lengkap + next step jelas' },
@@ -1002,13 +1028,25 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
   useEffect(() => {
     if (!visit?.id) return;
     setLogsLoad(true);
+    // activity_logs (replaces the old visit-logs table). changed_by has no profiles FK →
+    // resolve author names client-side (all profiles, no active filter).
     supabase
-      .from('sales_visit_logs')
-      .select('id, changed_at, from_status, to_status, notes, changed_by, profiles!sales_visit_logs_changed_by_fkey(full_name)')
-      .eq('visit_id', visit.id)
+      .from('activity_logs')
+      .select('id, changed_at, from_status, to_status, notes, changed_by')
+      .eq('activity_id', visit.id)
       .order('changed_at', { ascending: false })
       .limit(50)
-      .then(({ data }) => { setLogs(data || []); setLogsLoad(false); });
+      .then(async ({ data }) => {
+        const rows = data || [];
+        const ids = [...new Set(rows.map(l => l.changed_by).filter(Boolean))];
+        const nm = {};
+        if (ids.length) {
+          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+          (profs || []).forEach(p => { nm[p.id] = p.full_name; });
+        }
+        setLogs(rows.map(l => ({ ...l, profiles: { full_name: l.changed_by ? (nm[l.changed_by] || null) : null } })));
+        setLogsLoad(false);
+      });
   }, [visit?.id]);
 
   if (!visit) return null;
@@ -1489,7 +1527,7 @@ function CRMDashboardPage() {
 
       // S2 — sales/operations only see their own data
       const ownProspects = (q) => isSalesOnly ? q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`) : q;
-      const ownBySales   = (q) => isSalesOnly ? q.eq('salesperson_id', uid) : q;
+      const ownBySales   = (q) => isSalesOnly ? q.eq('assigned_to', uid) : q;  // activities use assigned_to
       const ownByCreator = (q) => isSalesOnly ? q.eq('created_by', uid) : q;
 
       const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes] = await Promise.all([
@@ -1536,32 +1574,39 @@ function CRMDashboardPage() {
           .not('assigned_to', 'is', null)
           .limit(1000)),
 
-        // Sales visits calendar — graceful fail if table doesn't exist
+        // Sales visits calendar — activities (type='visit'). account name embeds via
+        // FK; salesperson name resolved by client map after fetch (no profiles FK).
         ownBySales(supabase
-          .from('sales_visits')
-          .select('id, visit_date, visit_time, location, notes, status, visit_type, point_of_meeting, mom, follow_up, prospect_id, salesperson_id, prospects:accounts(name), profiles!sales_visits_salesperson_id_fkey(full_name)')
+          .from('activities')
+          .select('id, scheduled_for, activity_time, status, notes, next_action, account_id, assigned_to, details, prospects:accounts!activities_account_id_fkey(name)')
           .eq('company_id', cid)
-          .gte('visit_date', startOfMonth)
-          .lte('visit_date', endOfMonth)
-          .order('visit_date', { ascending: true })
+          .eq('type', 'visit')
+          .is('deleted_at', null)
+          .gte('scheduled_for', startOfMonth)
+          .lte('scheduled_for', endOfMonth)
+          .order('scheduled_for', { ascending: true })
           .limit(100)),
 
-        // S2 Query A — calls this week (personal KPI)
+        // S2 Query A — calls this week (personal KPI) — activities type='call'
         ownBySales(supabase
-          .from('sales_calls')
-          .select('id, call_date, salesperson_id')
+          .from('activities')
+          .select('id, scheduled_for, assigned_to')
           .eq('company_id', cid)
-          .gte('call_date', startOfWeek)
-          .lte('call_date', todayStr)
+          .eq('type', 'call')
+          .is('deleted_at', null)
+          .gte('scheduled_for', startOfWeek)
+          .lte('scheduled_for', todayStr)
           .limit(1000)),
 
-        // S2 Query B — visits this week (personal KPI)
+        // S2 Query B — visits this week (personal KPI) — activities type='visit'
         ownBySales(supabase
-          .from('sales_visits')
-          .select('id, visit_date, salesperson_id')
+          .from('activities')
+          .select('id, scheduled_for, assigned_to')
           .eq('company_id', cid)
-          .gte('visit_date', startOfWeek)
-          .lte('visit_date', todayStr)
+          .eq('type', 'visit')
+          .is('deleted_at', null)
+          .gte('scheduled_for', startOfWeek)
+          .lte('scheduled_for', todayStr)
           .limit(1000)),
 
         // S2 Query C — quotations this month (personal KPI)
@@ -1678,22 +1723,32 @@ function CRMDashboardPage() {
         .sort((a, b) => b.prospek - a.prospek);
 
       // ── Calendar visits ────────────────────────────────────────────────────
-      // visitsRes.error is acceptable — table may not exist yet
-      const visitsData = (visitsRes.data || []).map(v => ({
+      // From activities (type='visit'). Resolve salesperson names via client map
+      // (no profiles FK on assigned_to) — all profiles, no active filter so
+      // inactive/legacy sales still resolve.
+      const visitRows = visitsRes.data || [];
+      const visitSalesIds = [...new Set(visitRows.map(v => v.assigned_to).filter(Boolean))];
+      const visitNameMap = {};
+      if (visitSalesIds.length) {
+        const { data: vProfs } = await supabase
+          .from('profiles').select('id, full_name').in('id', visitSalesIds);
+        (vProfs || []).forEach(p => { visitNameMap[p.id] = p.full_name; });
+      }
+      const visitsData = visitRows.map(v => ({
         id:               v.id,
-        date:             v.visit_date,
-        time:             v.visit_time,
+        date:             v.scheduled_for,
+        time:             v.activity_time,
         prospect:         v.prospects?.name    || '—',
-        prospect_id:      v.prospect_id        || '',
-        salesperson:      v.profiles?.full_name || '—',
-        salesperson_id:   v.salesperson_id,
-        location:         v.location           || '—',
+        prospect_id:      v.account_id         || '',
+        salesperson:      (v.assigned_to && visitNameMap[v.assigned_to]) || '—',
+        salesperson_id:   v.assigned_to,
+        location:         v.details?.location  || '—',
         notes:            v.notes              || '',
-        status:           v.status             || 'scheduled',
-        visit_type:       v.visit_type         || '',
-        point_of_meeting: v.point_of_meeting   || '',
-        mom:              v.mom                || '',
-        follow_up:        v.follow_up          || '',
+        status:           ACT_TO_VISIT_STATUS[v.status] || 'scheduled',
+        visit_type:       v.details?.visit_type        || '',
+        point_of_meeting: v.details?.point_of_meeting   || '',
+        mom:              v.details?.mom               || '',
+        follow_up:        v.next_action               || '',
       }));
 
       // ── Recent activity ────────────────────────────────────────────────────
@@ -1735,13 +1790,15 @@ function CRMDashboardPage() {
   useEffect(() => { fetchDash(); }, [fetchDash]);
 
   // ── fetch options for AddVisitModal ─────────────────────────────────────
+  // Salesperson dropdown = active 'sales' users in the current entity only
+  // (RBAC role code, scoped by company_id — see fetchSalesProfiles).
   useEffect(() => {
     if (!addVisitOpen || !profile?.company_id) return;
     Promise.all([
-      supabase.from('profiles').select('id, full_name').eq('active', true).limit(100),
+      fetchSalesProfiles(profile.company_id),
       supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['prospect', 'customer']).is('deleted_at', null).order('name').limit(200),
-    ]).then(([profRes, prospRes]) => {
-      setSalesProfiles(profRes.data || []);
+    ]).then(([sales, prospRes]) => {
+      setSalesProfiles(sales);
       setProspectOptions(prospRes.data || []);
     });
   }, [addVisitOpen, profile?.company_id]);
@@ -1759,18 +1816,23 @@ function CRMDashboardPage() {
     setVisitSaving(true);
     setVisitError(null);
     try {
+      // Write to `activities` (type='visit'). Visit-specific fields live in
+      // details jsonb; follow_up → next_action; status mapped to activity vocab.
       const payload = {
-        visit_date:       visitDraft.visit_date,
-        visit_time:       visitDraft.visit_time       || null,
-        prospect_id:      visitDraft.prospect_id      || null,
-        salesperson_id:   visitDraft.salesperson_id,
-        location:         visitDraft.location         || null,
+        type:             'visit',
+        scheduled_for:    visitDraft.visit_date,
+        activity_time:    visitDraft.visit_time       || null,
+        account_id:       visitDraft.prospect_id      || null,
+        assigned_to:      visitDraft.salesperson_id,
         notes:            visitDraft.notes            || null,
-        status:           visitDraft.status,
-        visit_type:       visitDraft.visit_type       || null,
-        point_of_meeting: visitDraft.point_of_meeting || null,
-        mom:              visitDraft.mom              || null,
-        follow_up:        visitDraft.follow_up        || null,
+        status:           VISIT_TO_ACT_STATUS[visitDraft.status] || 'todo',
+        next_action:      visitDraft.follow_up        || null,
+        details: {
+          visit_type:       visitDraft.visit_type       || null,
+          location:         visitDraft.location         || null,
+          point_of_meeting: visitDraft.point_of_meeting || null,
+          mom:              visitDraft.mom              || null,
+        },
       };
       let visitId = editVisitId;
       let error;
@@ -1779,21 +1841,23 @@ function CRMDashboardPage() {
       const prevStatus = prevVisit?.status || null;
 
       if (editVisitId) {
-        ({ error } = await supabase.from('sales_visits').update(payload).eq('id', editVisitId));
+        ({ error } = await supabase.from('activities').update(payload).eq('id', editVisitId));
       } else {
-        const res = await supabase.from('sales_visits').insert({ ...payload, company_id: profile.company_id, created_by: profile.id }).select('id').single();
+        const res = await supabase.from('activities').insert({ ...payload, company_id: profile.company_id, created_by: profile.id }).select('id').single();
         error = res.error;
         if (res.data) visitId = res.data.id;
       }
       if (error) throw error;
 
-      // fire-and-forget history log
+      // fire-and-forget history log → activity_logs. Keep the visit-status
+      // vocabulary (scheduled/completed/cancelled) so VisitDetailModal's
+      // VISIT_STATUS lookup + the migrated logs stay consistent.
       if (visitId) {
         const logNote = editVisitId
           ? (prevStatus !== visitDraft.status ? null : 'Data visit diperbarui')
           : 'Visit dibuat';
-        supabase.from('sales_visit_logs').insert({
-          visit_id:     visitId,
+        supabase.from('activity_logs').insert({
+          activity_id:  visitId,
           changed_by:   profile.id,
           from_status:  editVisitId ? (prevStatus || null) : null,
           to_status:    visitDraft.status,

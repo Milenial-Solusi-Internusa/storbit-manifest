@@ -3,7 +3,7 @@
 // (CustomerDetailPage.jsx — asset-detail-it style: header card → underline tabs →
 //  2-col grid sections + Health Score gauge/breakdown/recommendation).
 // Data layer UNCHANGED: real Supabase fetch (customer + joins + prospect for BANT),
-// sales_visits by prospect_id, BantScoreBar, ConfirmModal delete, inline Notes edit.
+// visit history from activities (account_id), BantScoreBar, ConfirmModal delete, inline Notes edit.
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -436,18 +436,45 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
 
   useEffect(() => { fetchCustomer(); }, [fetchCustomer]);
 
-  // ── Fetch sales_visits (serves History Visit + Health Score) ──
-  // account.id IS the sales_visits.prospect_id (the account was a prospect before
-  // conversion), so visits attach directly to this account.
+  // ── Fetch visits from `activities` (serves History Visit + Health Score) ──
+  // Visits are activities with type='visit' and account_id = this account.
+  // type='visit' only (calls excluded) to keep this tab/health identical.
+  // Salesperson name resolved via client map (no profiles FK on assigned_to);
+  // all profiles, no active filter, so inactive/legacy sales still resolve.
   useEffect(() => {
     if (!id) { setVisits([]); return; }
     setVisitsLoading(true);
-    supabase.from('sales_visits')
-      .select('*, salesperson:profiles!sales_visits_salesperson_id_fkey(full_name)')
-      .eq('prospect_id', id)
-      .order('visit_date', { ascending: false })
+    const ACT_TO_VISIT = { todo: 'scheduled', done: 'completed', cancelled: 'cancelled' };
+    supabase.from('activities')
+      .select('id, scheduled_for, activity_time, status, notes, next_action, assigned_to, details')
+      .eq('account_id', id)
+      .eq('type', 'visit')
+      .is('deleted_at', null)
+      .order('scheduled_for', { ascending: false })
       .limit(50)
-      .then(({ data }) => { setVisits(data || []); setVisitsLoading(false); });
+      .then(async ({ data }) => {
+        const rows = data || [];
+        const ids = [...new Set(rows.map(a => a.assigned_to).filter(Boolean))];
+        const nm = {};
+        if (ids.length) {
+          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+          (profs || []).forEach(p => { nm[p.id] = p.full_name; });
+        }
+        setVisits(rows.map(a => ({
+          id:               a.id,
+          visit_date:       a.scheduled_for,
+          visit_time:       a.activity_time,
+          status:           ACT_TO_VISIT[a.status] || 'scheduled',
+          notes:            a.notes,
+          visit_type:       a.details?.visit_type       || '',
+          location:         a.details?.location         || '',
+          point_of_meeting: a.details?.point_of_meeting || '',
+          mom:              a.details?.mom              || '',
+          follow_up:        a.next_action              || '',
+          salesperson:      a.assigned_to ? { full_name: nm[a.assigned_to] || null } : null,
+        })));
+        setVisitsLoading(false);
+      });
   }, [id]);
 
   const handleDelete = async () => {
