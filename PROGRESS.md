@@ -14,6 +14,15 @@
 - [x] **2.8V→2.8W** — Kalender mobile: scroll horizontal (2.8V, sempat dibuat) → **diganti** pola dot + tap-for-detail (2.8W). Mobile <1024px cell mengecil (7 kolom muat tanpa scroll), event jadi DOT PASTEL (sky `#A5C8E8`/teal `#7FD8C4`/peach `#F5C9A8`, maks 3 + "+N"); tap tanggal ber-visit → bottom-sheet detail + Tambah Visit; desktop tetap event-text. Hybrid: visual CSS (`hidden`/`lg:`), tap via `useIsMobile` (matchMedia). `.nx-cal-scroll` dihapus total. CRMDashboardPage.jsx + index.css
 - [x] **2.8X** — Recent Activity reflow mobile: timestamp+badge dibungkus `nx-act-meta`, di mobile pindah ke bawah nama (stack, tak overlap); desktop tetap horizontal. CRMDashboardPage.jsx + index.css
 
+### CEO Unblock (Phase 2.8Y — DB change via SQL Editor, BUKAN di repo)
+- [x] `profiles_read` di-DROP & dibuat ulang `USING (true)` → semua `authenticated` bisa baca `profiles`; `profiles_update` TIDAK disentuh. Akar masalah: `is_admin_or_above()` tak kenal role `ceo` → CEO ke-block baca nama assignee/sales
+- [x] Aman sekarang (`profiles` bukan HRIS, tak ada data sensitif). **⚠️ WAJIB diperketat saat modul HRIS masuk**
+
+### RLS Migration Backlog (planned — BESAR, risiko tinggi, sesi fresh)
+- [ ] Migrasi RLS proper (RBAC-driven): ganti cek role hardcode → RBAC granular + entity boundary; prasyarat HRIS
+- [ ] Audit 173 policy: ~51 `is_admin_or_above` (target migrasi), 70 `super_admin` (OK), 130 `company_id` (OK); `has_permission()` BROKEN (query tabel `permissions`/`role_permissions` yg tak ada)
+- [ ] Cross-entity (`is_cross_entity`) sudah ada strukturnya di `role_permission_templates` & `user_menu_permissions`; rencana 4 fase — detail di CLAUDE.md section **Backlog — Migrasi RLS Proper (RBAC-driven)**
+
 ### Backlog (update)
 - [ ] Mobile polish — verifikasi visual per-halaman (Inventory/Asset/Logistics/Quotation) di <1024px
 - [ ] Warning React "form field value without onChange handler" di input read-only — bersihkan

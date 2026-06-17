@@ -977,7 +977,9 @@ Output:
 
 | 2.8X | **Recent Activity CRM Dashboard — reflow mobile (timestamp+badge pindah ke bawah nama).** `RecentActivity` (CRMDashboardPage.jsx). Bug: tiap `actRow` flex-row 4 sibling sejajar [icon][teks flex:1][actTime][userBadge] → di <1024px nama panjang (mis. "SINAR METRINDO PERKASA") wrap & timestamp/badge overlap teks. **Fix (struktur + @media, desktop tak berubah):** (1) bungkus [text-block + meta] dalam satu `<div className="nx-act-content" style={flex:1,minWidth:0,display:flex,align:center,gap:14}>`, dan [actTime + userBadge] dalam `<div className="nx-act-meta" style={display:flex,align:center,gap:14,flexShrink:0}>`. Spasi desktop IDENTIK (semua gap 14: icon↔content, text↔meta, time↔badge sama spt sebelumnya icon↔text↔time↔badge). (2) `nx-act-row` ditambah ke outer div. (3) **`index.css` `@media(max-width:1023px)`:** `.nx-act-row{align-items:flex-start}` (icon ke atas), `.nx-act-content{flex-direction:column;align-items:stretch;gap:3px}` (text di atas, meta turun ke bawah), `.nx-act-meta{flex-wrap:wrap;margin-top:2px}` (time·badge satu baris kecil, boleh wrap, tak overlap nama). **Desktop ≥1024px:** tak ada @media match → inline style `nx-act-content`/`nx-act-meta` (row, gap14) menang → **semua sejajar horizontal persis seperti sekarang** (icon|teks|timestamp|badge). Pola @media konsisten dgn util responsive lain (nx-cal-cell dst). Brand tetap, no emoji. Lint CRMDashboard 7→7 (net-zero; restructure JSX + className lint-neutral). build clean. | ✅ Complete |
 
-Current phase: **Phase 2.8X** ✅ Complete
+| 2.8Y | **CEO unblock — `profiles_read` RLS dilonggarkan (DB change via SQL Editor, BUKAN di repo).** Akar masalah: fungsi `is_admin_or_above()` TIDAK mengenal role `ceo` → CEO ke-block baca `profiles` (nama assignee/sales muncul kosong di banyak page). **Fix DB:** policy `profiles_read` di-DROP & dibuat ulang `USING (true)` → semua `authenticated` bisa baca `profiles`; `profiles_update` **TIDAK disentuh** (tetap ketat). **Aman untuk sekarang:** `profiles` tidak menyimpan data sensitif (bukan HRIS — hanya nama/role/avatar/company). **⚠️ WAJIB ditinjau ulang saat modul HRIS masuk** (kalau ada gaji/data pribadi, `USING(true)` jadi tidak aman). Bagian dari masalah lebih besar (RLS role hardcode tak sinkron RBAC) → lihat section **Backlog — Migrasi RLS Proper (RBAC-driven)**. Tidak ada kode/repo diubah — catat sebagai known DB change. | ✅ Complete (DB) |
+
+Current phase: **Phase 2.8Y** ✅ Complete
 
 ---
 
@@ -1046,6 +1048,7 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 - [x] Cabut akses `anon` tabel sensitif (29 tabel) — lihat **Security Hardening — 15 Jun 2026** (Phase 2.8L)
 - [x] **Schema ke version control (via `pg_dump` snapshot, 17 Jun)** — `supabase/schema_snapshot.sql` (full dump, **69 tabel**) jadi sumber kebenaran struktur terkini; mencakup ~18+ tabel & kolom yg sebelumnya cuma di SQL Editor (4 kolom `assets` baru [condition/department_id/brand/assignment_status], `accounts` unified, RBAC, **`products.unit_cost`**, dll). Pakai `pg_dump` langsung — bukan `supabase db pull` (Docker belum terinstall). Lihat **DB Schema Reference**. _(Pending: jadikan migrasi formal kalau Docker tersedia.)_
 - [ ] Audit **CRUD policy lintas tabel** — pola BERULANG: (a) "UPDATE admin-only" nyangkut owner-edit (`quotations_update` → fixed Phase 2.8Q), (b) over-filter `account_status` (dashboard/visit dropdown/visibility). Sisir `.from('accounts').eq('account_status', …)` + policy UPDATE/DELETE **semua tabel** (DELETE: hanya ~4 dari ~50 punya — `quotation_items` fixed Phase 2.8J)
+- [ ] **Migrasi RLS proper (RBAC-driven)** — RLS pakai cek role hardcode (`is_admin_or_above()`, ~51 policy) yg tak sinkron RBAC granular UI & tak kenal sebagian role (mis. `ceo` → memicu Phase 2.8Y CEO unblock); `has_permission()` BROKEN. **BESAR + risiko tinggi, eksekusi sesi fresh, prasyarat HRIS** — detail & rencana 4 fase di section **Backlog — Migrasi RLS Proper (RBAC-driven)**
 - [ ] Write quotation **atomik** (bungkus update→delete→insert ke RPC transaksi tunggal)
 
 ### 🟡 JANGKA PENDEK
@@ -1070,6 +1073,8 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 
 ## Status Nggantung (per 17 Jun 2026)
 
+- **Migrasi RLS proper (RBAC-driven) — BESAR, risiko tinggi:** RLS role hardcode tak sinkron RBAC; `has_permission()` broken; prasyarat HRIS. Eksekusi **sesi fresh** — lihat section **Backlog — Migrasi RLS Proper (RBAC-driven)**.
+- **CEO unblock review (Phase 2.8Y):** `profiles_read` di-set `USING(true)` agar CEO bisa baca `profiles`. Aman sekarang (bukan HRIS), tapi **WAJIB diperketat ulang saat modul HRIS masuk** (data pribadi/gaji).
 - **Mobile polish — verifikasi visual per-halaman:** util responsive (2.8T) + nav drawer (2.8U) sudah diterapkan, tapi halaman selain CRM Dashboard (Inventory / Asset / Logistics / Quotation) **belum dicek satu-satu di mobile** → backlog: sisir visual tiap halaman di <1024px.
 - **Warning React minor:** beberapa input read-only tampil "form field value without onChange handler" (terpisah dari responsive) — bisa dibersihkan (tambah `readOnly` atau `onChange` no-op).
 - **24 laptop MSI — `assigned_to` kosong:** di-update setelah re-audit (bulk insert 2.8R sengaja tanpa assignee, `assignment_status` all 'available').
@@ -1079,6 +1084,30 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 - **Quotation Hisaka (`QUO/MSI/2026/004`):** items sudah di-wipe bersih, total di-reset 0 → **PERLU input ulang via UI**.
 - **Field Registry Level 1:** disepakati, nunggu **4 keputusan desain** (struktur metadata, field core 2a/2b, custom field JSONB, pilot form Prospect).
 - **Tabel kategori A (REFERENCES/TRIGGER/TRUNCATE only):** backlog cabut `anon` untuk kebersihan (tidak urgent — lihat Security Hardening).
+
+---
+
+## Backlog — Migrasi RLS Proper (RBAC-driven) — direncanakan 17 Jun 2026
+
+> Item **BESAR & berisiko tinggi**. **Eksekusi harus sesi fresh** (jangan disambi). Disiapkan sebagai prasyarat modul **HRIS**.
+
+**Masalah:** RLS saat ini pakai cek role **hardcode** (mis. `is_admin_or_above()`), TIDAK sinkron dengan RBAC granular yang dipakai UI (modules → menus → actions → `user_menu_permissions`). Fungsi role-check juga tak kenal sebagian role — mis. `ceo` ke-block baca `profiles` (lihat Phase 2.8Y CEO unblock).
+
+**Audit policy (173 total):**
+- **~51** pakai `is_admin_or_above()` → **target migrasi utama**.
+- **70** pakai `super_admin` (bypass top-level — OK, dipertahankan).
+- **130** pakai `company_id` (entity scope — OK, dipertahankan).
+- Fungsi `has_permission()` **BROKEN** — query tabel `permissions`/`role_permissions` yang TIDAK ADA di DB sekarang.
+
+**Struktur cross-entity sudah ada:** kolom `is_cross_entity` di `role_permission_templates` & `user_menu_permissions`.
+
+**Rencana 4 fase** (level enforcement = **entity boundary + RBAC-driven**):
+1. Perbaiki/relink `has_permission()` ke tabel RBAC yang benar (atau fungsi baru yang baca `user_menu_permissions`).
+2. Ganti `is_admin_or_above()` (~51 policy) → cek RBAC granular + entity boundary.
+3. Verifikasi cross-entity (`is_cross_entity`) per role/menu.
+4. Test lintas role (super/ceo/gm/manager/sales/finance/hrga) sebelum staging → produksi.
+
+**Pemicu nyata:** CEO ke-block baca `profiles` (Phase 2.8Y), dan pola berulang "UPDATE admin-only nyangkut owner-edit" (Phase 2.8Q `quotations_update`).
 
 ---
 
