@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict yaplHxZlIlRLMmSNaP8bevFHUhEOCGg0VA2O4bqY4CcjH9cLG1IyCW37a3xjDuc
+\restrict zrqHqKKRTzK5u8zFOCZP5lTWmflBHQLe4wbOJ4TtdLAkYOhMn56zj8NuwhL5XuD
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -480,6 +480,21 @@ CREATE TABLE public.activities (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     deleted_at timestamp with time zone
+);
+
+
+--
+-- Name: activity_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.activity_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    activity_id uuid NOT NULL,
+    changed_by uuid,
+    changed_at timestamp with time zone DEFAULT now(),
+    from_status text,
+    to_status text,
+    notes text
 );
 
 
@@ -3023,6 +3038,14 @@ ALTER TABLE ONLY public.activities
 
 
 --
+-- Name: activity_logs activity_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activity_logs
+    ADD CONSTRAINT activity_logs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: approval_delegations approval_delegations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3926,6 +3949,13 @@ CREATE INDEX idx_activities_status ON public.activities USING btree (status);
 --
 
 CREATE INDEX idx_activities_type ON public.activities USING btree (type);
+
+
+--
+-- Name: idx_activity_logs_activity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_activity_logs_activity ON public.activity_logs USING btree (activity_id);
 
 
 --
@@ -5064,6 +5094,14 @@ ALTER TABLE ONLY public.activities
 
 ALTER TABLE ONLY public.activities
     ADD CONSTRAINT activities_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotations(id);
+
+
+--
+-- Name: activity_logs activity_logs_activity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activity_logs
+    ADD CONSTRAINT activity_logs_activity_id_fkey FOREIGN KEY (activity_id) REFERENCES public.activities(id) ON DELETE CASCADE;
 
 
 --
@@ -6680,6 +6718,50 @@ CREATE POLICY activities_select ON public.activities FOR SELECT TO authenticated
 --
 
 CREATE POLICY activities_update ON public.activities FOR UPDATE TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
+
+
+--
+-- Name: activity_logs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: activity_logs activity_logs_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY activity_logs_delete ON public.activity_logs FOR DELETE TO authenticated USING (((EXISTS ( SELECT 1
+   FROM public.activities a
+  WHERE (a.id = activity_logs.activity_id))) OR public.is_super_admin()));
+
+
+--
+-- Name: activity_logs activity_logs_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY activity_logs_insert ON public.activity_logs FOR INSERT TO authenticated WITH CHECK (((EXISTS ( SELECT 1
+   FROM public.activities a
+  WHERE (a.id = activity_logs.activity_id))) OR public.is_super_admin()));
+
+
+--
+-- Name: activity_logs activity_logs_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY activity_logs_select ON public.activity_logs FOR SELECT TO authenticated USING (((EXISTS ( SELECT 1
+   FROM public.activities a
+  WHERE (a.id = activity_logs.activity_id))) OR public.is_super_admin()));
+
+
+--
+-- Name: activity_logs activity_logs_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY activity_logs_update ON public.activity_logs FOR UPDATE TO authenticated USING (((EXISTS ( SELECT 1
+   FROM public.activities a
+  WHERE (a.id = activity_logs.activity_id))) OR public.is_super_admin())) WITH CHECK (((EXISTS ( SELECT 1
+   FROM public.activities a
+  WHERE (a.id = activity_logs.activity_id))) OR public.is_super_admin()));
 
 
 --
@@ -8309,5 +8391,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict yaplHxZlIlRLMmSNaP8bevFHUhEOCGg0VA2O4bqY4CcjH9cLG1IyCW37a3xjDuc
+\unrestrict zrqHqKKRTzK5u8zFOCZP5lTWmflBHQLe4wbOJ4TtdLAkYOhMn56zj8NuwhL5XuD
 
