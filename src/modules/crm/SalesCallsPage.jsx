@@ -345,7 +345,7 @@ export default function SalesCallsPage({ showToast }) {
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only calls where they are the salesperson or creator
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isAllEntities = ['super_admin'].includes(erpRole);
   const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);

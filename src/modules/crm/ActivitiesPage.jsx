@@ -338,7 +338,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only activities assigned to or created by them
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isAllEntities = ['super_admin'].includes(erpRole);
   const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
 
   const [rows, setRows] = useState([]);

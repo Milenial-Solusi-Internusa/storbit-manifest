@@ -87,7 +87,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only quotations they created
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isAllEntities = ['super_admin'].includes(erpRole);
   const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [quotations, setQuotations] = useState([]);
   const [loading,    setLoading]    = useState(true);
