@@ -51,3 +51,11 @@ h1, h2, h3, h4, h5, h6 {
   .nx-cal-cell { min-height: 50px !important; padding: 4px 2px !important; }
   .nx-cal-dow  { padding: 6px 2px !important; font-size: 9.5px !important; }
 }
+/* Recent Activity rows — on mobile the timestamp + sales badge drop BELOW the
+   name (stacked) instead of sitting inline (where they overlap long names).
+   Icon stays top-left. Desktop (≥1024px) unchanged (inline-style row wins). */
+@media (max-width: 1023px) {
+  .nx-act-row     { align-items: flex-start !important; }
+  .nx-act-content { flex-direction: column !important; align-items: stretch !important; gap: 3px !important; }
+  .nx-act-meta    { flex-wrap: wrap !important; margin-top: 2px; }
+}
