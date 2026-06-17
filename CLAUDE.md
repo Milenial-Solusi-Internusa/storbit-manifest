@@ -1068,8 +1068,10 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 
 ---
 
-## Status Nggantung (per 16 Jun 2026)
+## Status Nggantung (per 17 Jun 2026)
 
+- **Mobile polish — verifikasi visual per-halaman:** util responsive (2.8T) + nav drawer (2.8U) sudah diterapkan, tapi halaman selain CRM Dashboard (Inventory / Asset / Logistics / Quotation) **belum dicek satu-satu di mobile** → backlog: sisir visual tiap halaman di <1024px.
+- **Warning React minor:** beberapa input read-only tampil "form field value without onChange handler" (terpisah dari responsive) — bisa dibersihkan (tambah `readOnly` atau `onChange` no-op).
 - **24 laptop MSI — `assigned_to` kosong:** di-update setelah re-audit (bulk insert 2.8R sengaja tanpa assignee, `assignment_status` all 'available').
 - **Office "Semper" — 2 branch duplikat di JCI** (`SEMPER` + `HO SEMP`): **BUKAN sampah, office asli MSI Group** (hampir salah hapus) → perlu **dedup + tentukan ownership** entitas.
 - **Inline edit tab Software & Lisensi + Maintenance (AssetDetailITPage):** sengaja di-skip (list multi-row, edit per-row terpisah) — ada `TODO(asset-edit)` comment di kode.
