@@ -1,5 +1,24 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-06-17
+
+### DB Schema Snapshot
+- [x] `pg_dump --schema-only --schema=public` → `supabase/schema_snapshot.sql` (**69 tabel, ~8.140 baris**); pakai `pg_dump` (libpq), BUKAN `supabase db pull` (Docker tak terinstall). Menangkap semua perubahan SQL-Editor (4 kolom `assets`, `accounts` unified, RBAC 6 tabel, dll)
+- [x] Roadmap 🔴 "schema ke version control" = **DONE**; cara refresh + instruksi "baca snapshot, bukan migrasi" dicatat di section **DB Schema Reference** (CLAUDE.md)
+
+### Mobile Responsive Overhaul (Phase 2.8S–2.8X)
+> Prinsip: SEMUA perilaku mobile di-gate breakpoint (`@media max-width:1023px` / Tailwind `lg:`) → **desktop ≥1024px tidak berubah sama sekali**.
+- [x] **2.8S** — Fix layout BLANK di mobile: container utama `flex min-h-screen` → `flex flex-col lg:flex-row` (flex-row bikin mobile topbar ke-stretch ~2389px menutupi konten). App.jsx
+- [x] **2.8T** — Responsive grids semua halaman utama: util opt-in di `index.css` (`.nx-grid-kpi`/`.nx-grid-3`/`.nx-grid-2`/`.nx-page-pad`/`.nx-stack`) aktif HANYA `@media(max-width:1023px)` + `!important` → desktop ≥1024 pixel-identik (inline style menang). Diterapkan: CRM/Inventory Dashboard, Asset (IT/detail/dashboard), Logistics (InputSP/SalesOrderDetail), Quotation detail/form (`nx-stack`), Finance Defaults. Tabel lebar pakai `overflow-x-auto`
+- [x] **2.8U** — Navigasi mobile: hamburger drawer + App Launcher. `ModuleSidebar` prop `asDrawer`/`isOpen`/`onClose` (reuse, DRY); desktop sidebar static (`hidden lg:flex`), mobile drawer slide-in + overlay; hamburger (lucide `Menu`) muncul saat in-module; nav pills flat dihapus; App Launcher kini tampil di mobile; state `mobileDrawerOpen`. App.jsx
+- [x] **2.8V→2.8W** — Kalender mobile: scroll horizontal (2.8V, sempat dibuat) → **diganti** pola dot + tap-for-detail (2.8W). Mobile <1024px cell mengecil (7 kolom muat tanpa scroll), event jadi DOT PASTEL (sky `#A5C8E8`/teal `#7FD8C4`/peach `#F5C9A8`, maks 3 + "+N"); tap tanggal ber-visit → bottom-sheet detail + Tambah Visit; desktop tetap event-text. Hybrid: visual CSS (`hidden`/`lg:`), tap via `useIsMobile` (matchMedia). `.nx-cal-scroll` dihapus total. CRMDashboardPage.jsx + index.css
+- [x] **2.8X** — Recent Activity reflow mobile: timestamp+badge dibungkus `nx-act-meta`, di mobile pindah ke bawah nama (stack, tak overlap); desktop tetap horizontal. CRMDashboardPage.jsx + index.css
+
+### Backlog (update)
+- [ ] Mobile polish — verifikasi visual per-halaman (Inventory/Asset/Logistics/Quotation) di <1024px
+- [ ] Warning React "form field value without onChange handler" di input read-only — bersihkan
+- [ ] (lanjut) audit CRUD policy lintas tabel · update `assigned_to` 24 laptop · cleanup office Semper · Software/Maintenance inline edit
+
 ## 2026-06-16
 
 ### Quotation

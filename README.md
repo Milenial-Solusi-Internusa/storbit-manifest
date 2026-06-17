@@ -47,6 +47,7 @@ Nexus by MSI is the unified internal business platform covering master data, tra
 - **Role via `user_roles`** — permissions are sourced purely from `user_roles` (13 ERP roles) and a hierarchical RBAC model (modules → menus → actions → `user_menu_permissions`). The legacy `profiles.role` column is deprecated and no longer read by the app.
 - **Modular frontend** — feature modules under `src/modules/` (admin, assets, crm, dashboard, hrga, inventory, launcher, logistics); data-access layer in `src/lib/db.js`; lazy-loaded module shells.
 - **RLS** — active and company/role-scoped on `accounts` and master/org tables; super_admin reads cross-company via top-level `is_super_admin()` bypass.
+- **Responsive (mobile/desktop)** — below 1024px the shell stacks (mobile topbar + hamburger drawer for the module menu, App Launcher full-width), and dashboards/grids reflow via opt-in `@media (max-width: 1023px)` helpers in `index.css`. Desktop (≥1024px) is unchanged. DB schema source of truth: `supabase/schema_snapshot.sql` (see `CLAUDE.md` → DB Schema Reference).
 
 ## Active Modules
 
