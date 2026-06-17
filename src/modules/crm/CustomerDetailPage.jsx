@@ -97,6 +97,28 @@ const VISIT_STATUS_CFG = {
   completed: { bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D', label: 'Selesai'    },
   cancelled: { bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444', label: 'Dibatalkan' },
 };
+
+// Activity type/status badge metas — copied from ActivitiesPage (same colours).
+const ACT_TYPE_META = {
+  call:        { label: 'Call',        bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
+  visit:       { label: 'Visit',       bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
+  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#144682', bd: '#BAD2E6' },
+  prospecting: { label: 'Prospecting', bg: '#FBE6DA', color: '#C8521B', bd: '#F0C3A8' },
+  followup:    { label: 'Follow-up',   bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
+};
+const ACT_STATUS_META = {
+  todo:      { label: 'To Do',      bg: 'transparent', color: '#5E6553', bd: '#DDD3BE' },
+  done:      { label: 'Selesai',    bg: '#E4F0E5',     color: '#2E7D4F', bd: '#BFDDC4' },
+  cancelled: { label: 'Dibatalkan', bg: 'transparent', color: '#B23227', bd: '#E6BBB2' },
+};
+function ActBadge({ meta }) {
+  if (!meta) return <span style={{ color: '#D1D5DB' }}>—</span>;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700, letterSpacing: '.3px', border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color }}>
+      {meta.label}
+    </span>
+  );
+}
 const BANT_FIELD_DEFS = [
   { key: 'bant_commodity',      label: 'Komoditi',        icon: 'package' },
   { key: 'bant_origin',         label: 'Asal',            icon: 'globe' },
@@ -394,6 +416,8 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
 
   const [visits, setVisits]               = useState([]);
   const [visitsLoading, setVisitsLoading] = useState(false);
+  const [activities, setActivities]             = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
 
   const [editing,    setEditing]    = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -477,6 +501,40 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
       });
   }, [id]);
 
+  // ── Fetch ALL activities (every type) for this account — tab 'Aktivitas' ──
+  // Same pattern as the visit fetch but without the type filter. Salesperson
+  // name via client-side nameMap (no profiles FK on assigned_to).
+  useEffect(() => {
+    if (!id) { setActivities([]); return; }
+    setActivitiesLoading(true);
+    supabase.from('activities')
+      .select('id, type, status, scheduled_for, activity_time, outcome, notes, assigned_to')
+      .eq('account_id', id)
+      .is('deleted_at', null)
+      .order('scheduled_for', { ascending: false })
+      .limit(200)
+      .then(async ({ data }) => {
+        const rows = data || [];
+        const ids = [...new Set(rows.map(a => a.assigned_to).filter(Boolean))];
+        const nm = {};
+        if (ids.length) {
+          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+          (profs || []).forEach(p => { nm[p.id] = p.full_name; });
+        }
+        setActivities(rows.map(a => ({
+          id:               a.id,
+          type:             a.type,
+          status:           a.status,
+          scheduled_for:    a.scheduled_for,
+          activity_time:    a.activity_time,
+          outcome:          a.outcome,
+          notes:            a.notes,
+          salesperson_name: a.assigned_to ? (nm[a.assigned_to] || null) : null,
+        })));
+        setActivitiesLoading(false);
+      });
+  }, [id]);
+
   const handleDelete = async () => {
     setDeleting(true);
     try {
@@ -544,6 +602,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
     { id: 'info',      icon: 'info',      label: 'Info Dasar' },
     { id: 'komersial', icon: 'briefcase', label: 'Komersial' },
     { id: 'visit',     icon: 'route',     label: 'History Visit', count: visits.length || undefined },
+    { id: 'aktivitas', icon: 'activity',  label: 'Aktivitas',     count: activities.length || undefined },
     { id: 'bant',      icon: 'target',    label: 'BANT & Pipeline' },
     { id: 'health',    icon: 'activity',  label: 'Health Score' },
     { id: 'notes',     icon: 'notebook',  label: 'Notes' },
@@ -685,6 +744,46 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
             <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada riwayat kunjungan.</div>
           ) : (
             <div>{visits.map((v) => <VisitRow key={v.id} v={v} />)}</div>
+          )}
+        </div>
+      )}
+
+      {/* AKTIVITAS — all activity types for this account */}
+      {tab === 'aktivitas' && (
+        <div style={S.card}>
+          <div style={S.cardHead}>
+            <h3 style={S.cardHeadTitle}>Aktivitas</h3>
+            <span style={S.cardHeadSub}>{activities.length} aktivitas tercatat</span>
+          </div>
+          {activitiesLoading ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
+          ) : activities.length === 0 ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada aktivitas tercatat.</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #EFE6D8' }}>
+                    {['Tanggal', 'Tipe', 'Status', 'Sales', 'Catatan / Outcome'].map(h => (
+                      <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activities.map((a, i) => (
+                    <tr key={a.id} style={{ borderBottom: i < activities.length - 1 ? '1px solid #F3ECDF' : 'none' }}>
+                      <td style={{ padding: '11px 16px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: INK, whiteSpace: 'nowrap' }}>
+                        {fmtDateShort(a.scheduled_for)}{a.activity_time ? ` · ${String(a.activity_time).slice(0, 5)}` : ''}
+                      </td>
+                      <td style={{ padding: '11px 16px' }}><ActBadge meta={ACT_TYPE_META[a.type]} /></td>
+                      <td style={{ padding: '11px 16px' }}><ActBadge meta={ACT_STATUS_META[a.status]} /></td>
+                      <td style={{ padding: '11px 16px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{a.salesperson_name || '—'}</td>
+                      <td style={{ padding: '11px 16px', color: INK_SOFT, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.outcome || a.notes || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

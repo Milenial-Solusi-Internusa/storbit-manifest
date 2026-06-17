@@ -4,7 +4,7 @@
 // component for the crm-calls route. Visual pattern follows SalesCallsPage.jsx
 // (warm-beige C tokens, badge maps, detail modal, client-side pagination).
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Search, Plus, Eye, Check, Activity, X } from 'lucide-react';
+import { Search, Plus, Eye, Check, Activity, X, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -148,15 +148,65 @@ const DSection = ({ title, children }) => (
   </div>
 );
 
-function ActivityDetailModal({ act, onClose }) {
+// Build an edit draft from a mapped activity row (reverse of the list mapping).
+function actToDraft(act) {
+  return {
+    type:             act.type || 'call',
+    scheduled_for:    act.scheduled_for || '',
+    activity_time:    act.activity_time ? String(act.activity_time).slice(0, 5) : '',
+    assigned_to:      act.assigned_to || '',
+    account_id:       act.account_id || '',
+    prospect_name:    act.prospect_name || '',
+    contact_name:     act.contact_name || '',
+    contact_phone:    act.contact_phone || '',
+    outcome:          act.outcome || '',
+    notes:            act.notes || '',
+    next_action:      act.next_action || '',
+    next_action_date: act.next_action_date || '',
+    location:         act.details?.location || '',
+  };
+}
+
+function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accounts, saving, error, onEnterEdit, onSave, onCancel, onMarkDone, onDelete, onClose }) {
+  const [mode, setMode] = useState('view');
+  const [draft, setDraft] = useState(null);
+
+  // Reset to view whenever a different activity is opened.
+  useEffect(() => { setMode('view'); setDraft(null); }, [act?.id]);
+
   if (!act) return null;
+
+  const startEdit = () => { setDraft(actToDraft(act)); setMode('edit'); onEnterEdit?.(); };
+  const upd = (k, v) => setDraft(d => ({ ...d, [k]: v }));
+
+  const inpStyle = {
+    width: '100%', height: 38, borderRadius: 8, border: `1px solid ${C.line}`,
+    padding: '0 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+    boxSizing: 'border-box', background: C.surface,
+  };
+  const selStyle = { ...inpStyle, cursor: 'pointer' };
+  const taStyle = {
+    width: '100%', borderRadius: 8, border: `1px solid ${C.line}`, padding: '8px 12px',
+    fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box', background: C.surface,
+  };
+  const lbl = (text, req) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>
+      {text}{req && <span style={{ color: C.danger }}> *</span>}
+    </div>
+  );
+
+  const isEdit = mode === 'edit' && draft;
+  const needContact = isEdit && ['call', 'prospecting'].includes(draft.type);
+  const needProspectName = isEdit && draft.type === 'prospecting';
+  const needLocation = isEdit && ['visit', 'meeting'].includes(draft.type);
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ background: C.surface, borderRadius: 20, maxWidth: 620, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', border: `1px solid ${C.line}` }}>
         <div style={{ padding: '24px 28px 20px', borderBottom: `1px solid ${C.line}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 6 }}>DETAIL AKTIVITAS</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 6 }}>{isEdit ? 'EDIT AKTIVITAS' : 'DETAIL AKTIVITAS'}</div>
               <h2 style={{ margin: '0 0 10px', fontSize: 20, fontWeight: 800, color: C.ink, fontFamily: "'Montserrat',sans-serif", lineHeight: 1.2 }}>
                 {accountLabel(act.account, act.prospect_name)}
               </h2>
@@ -165,34 +215,156 @@ function ActivityDetailModal({ act, onClose }) {
                 <Badge meta={STATUS_META[act.status]} />
               </div>
             </div>
-            <button onClick={onClose} style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <X size={16} color={C.inkSoft} />
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              {!isEdit && canEdit && (
+                <button onClick={startEdit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', background: C.navy, color: 'white', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <Pencil size={13} /> Edit
+                </button>
+              )}
+              <button onClick={onClose} style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <X size={16} color={C.inkSoft} />
+              </button>
+            </div>
           </div>
         </div>
-        <div style={{ padding: '20px 28px 28px' }}>
-          <DSection title="Info Aktivitas">
-            <DField label="Tanggal"     value={fmtDate(act.scheduled_for)} mono />
-            <DField label="Waktu"       value={fmtTime(act.activity_time)} mono />
-            <DField label="Salesperson" value={act.salesperson_name} />
-            <DField label="Lokasi"      value={act.details?.location} />
-          </DSection>
-          <DSection title="Kontak">
-            <DField label="Prospect Name" value={act.prospect_name} />
-            <DField label="Contact Name"  value={act.contact_name} />
-            <DField label="Contact Phone" value={act.contact_phone} mono />
-          </DSection>
-          {(act.notes || act.outcome) && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${C.lineSoft}` }}>Catatan / Outcome</div>
-              <div style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, whiteSpace: 'pre-wrap', background: C.surface2, borderRadius: 8, padding: '10px 14px' }}>{act.outcome || act.notes}</div>
+
+        {!isEdit ? (
+          <div style={{ padding: '20px 28px 28px' }}>
+            <DSection title="Info Aktivitas">
+              <DField label="Tanggal"     value={fmtDate(act.scheduled_for)} mono />
+              <DField label="Waktu"       value={fmtTime(act.activity_time)} mono />
+              <DField label="Salesperson" value={act.salesperson_name} />
+              <DField label="Lokasi"      value={act.details?.location} />
+            </DSection>
+            <DSection title="Kontak">
+              <DField label="Prospect Name" value={act.prospect_name} />
+              <DField label="Contact Name"  value={act.contact_name} />
+              <DField label="Contact Phone" value={act.contact_phone} mono />
+            </DSection>
+            {(act.notes || act.outcome) && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${C.lineSoft}` }}>Catatan / Outcome</div>
+                <div style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, whiteSpace: 'pre-wrap', background: C.surface2, borderRadius: 8, padding: '10px 14px' }}>{act.outcome || act.notes}</div>
+              </div>
+            )}
+            <DSection title="Tindak Lanjut">
+              <DField label="Next Action"      value={act.next_action} full />
+              <DField label="Next Action Date" value={act.next_action_date ? fmtDate(act.next_action_date) : null} mono />
+            </DSection>
+            {act.status === 'todo' && (
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 16, marginTop: 4, borderTop: `1px solid ${C.lineSoft}` }}>
+                {isSuperAdmin && (
+                  <button onClick={onDelete} style={{ marginRight: 'auto', padding: '10px 20px', borderRadius: 10, border: `1px solid ${C.dangerBd}`, background: 'transparent', color: C.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Hapus
+                  </button>
+                )}
+                <button onClick={onMarkDone} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <Check size={15} /> Tandai Selesai
+                </button>
+                {canEdit && (
+                  <button onClick={onCancel} style={{ padding: '10px 20px', borderRadius: 10, border: `1px solid ${C.dangerBd}`, background: 'transparent', color: C.danger, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Batalkan Aktivitas
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ padding: '20px 28px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                {lbl('Tipe', true)}
+                <select value={draft.type} onChange={e => upd('type', e.target.value)} style={selStyle}>
+                  {TYPE_FORM.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Salesperson', true)}
+                <select value={draft.assigned_to} onChange={e => upd('assigned_to', e.target.value)} style={selStyle}>
+                  <option value="">— Pilih sales —</option>
+                  {salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                </select>
+              </div>
             </div>
-          )}
-          <DSection title="Tindak Lanjut">
-            <DField label="Next Action"      value={act.next_action} full />
-            <DField label="Next Action Date" value={act.next_action_date ? fmtDate(act.next_action_date) : null} mono />
-          </DSection>
-        </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                {lbl('Tanggal', true)}
+                <input type="date" value={draft.scheduled_for} onChange={e => upd('scheduled_for', e.target.value)} style={inpStyle} />
+              </div>
+              <div>
+                {lbl('Waktu')}
+                <input type="time" value={draft.activity_time} onChange={e => upd('activity_time', e.target.value)} style={inpStyle} />
+              </div>
+            </div>
+
+            <div>
+              {lbl('Account (Customer / Prospek)')}
+              <select value={draft.account_id} onChange={e => upd('account_id', e.target.value)} style={selStyle}>
+                <option value="">— Opsional —</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+
+            {needProspectName && (
+              <div>
+                {lbl('Nama Calon Customer (Prospek)')}
+                <input value={draft.prospect_name} onChange={e => upd('prospect_name', e.target.value)} style={inpStyle} placeholder="Nama perusahaan yang akan diprospek" />
+              </div>
+            )}
+
+            {needContact && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  {lbl('Contact Name')}
+                  <input value={draft.contact_name} onChange={e => upd('contact_name', e.target.value)} style={inpStyle} placeholder="Nama kontak" />
+                </div>
+                <div>
+                  {lbl('Contact Phone')}
+                  <input value={draft.contact_phone} onChange={e => upd('contact_phone', e.target.value)} style={inpStyle} placeholder="08xx…" />
+                </div>
+              </div>
+            )}
+
+            {needLocation && (
+              <div>
+                {lbl('Lokasi')}
+                <input value={draft.location} onChange={e => upd('location', e.target.value)} style={inpStyle} placeholder="Lokasi visit / meeting" />
+              </div>
+            )}
+
+            <div>
+              {lbl('Catatan')}
+              <textarea value={draft.notes} onChange={e => upd('notes', e.target.value)} rows={3} style={taStyle} placeholder="Catatan / agenda…" />
+            </div>
+
+            <div>
+              {lbl('Outcome')}
+              <textarea value={draft.outcome} onChange={e => upd('outcome', e.target.value)} rows={2} style={taStyle} placeholder="Hasil aktivitas…" />
+            </div>
+
+            <div>
+              {lbl('Next Action')}
+              <textarea value={draft.next_action} onChange={e => upd('next_action', e.target.value)} rows={2} style={taStyle} placeholder="Tindak lanjut berikutnya…" />
+            </div>
+
+            <div>
+              {lbl('Next Action Date')}
+              <input type="date" value={draft.next_action_date} onChange={e => upd('next_action_date', e.target.value)} style={inpStyle} />
+            </div>
+
+            {error && <div style={{ background: C.dangerBg, color: C.danger, padding: '9px 13px', borderRadius: 8, fontSize: 13 }}>{error}</div>}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4 }}>
+              <button onClick={() => setMode('view')} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Batal
+              </button>
+              <button onClick={() => onSave?.(draft)} disabled={saving} style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
+                {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -340,6 +512,9 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   //  • everyone else (manager, ceo, gm, …) → their own entity
   const isAllEntities = ['super_admin'].includes(erpRole);
   const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
+  // Mirrors DB is_manager_or_above() (incl. sales_head). Edit allowed for
+  // manager+ or the activity's own assignee.
+  const isManagerOrAbove = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'sales_head'].includes(erpRole);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -353,7 +528,10 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   const [page, setPage] = useState(0);
 
   const [detail, setDetail] = useState(null);
+  const [detailSaving, setDetailSaving] = useState(false);
+  const [detailError, setDetailError] = useState(null);
   const [confirmProspect, setConfirmProspect] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   // form modal
   const [formOpen, setFormOpen] = useState(false);
@@ -538,9 +716,80 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .eq('id', row.id);
     if (error) { showToast?.('Gagal menandai selesai: ' + error.message, 'error'); return; }
     showToast?.('Aktivitas ditandai selesai');
+    fetchActivities();
+    // Open the prospek prompt BEFORE closing the detail modal so the ConfirmModal
+    // (driven by confirmProspect) is set first; setDetail(null) closes the detail
+    // modal last (no-op when invoked from a list row — detail already null).
     if (row.type === 'prospecting') setConfirmProspect(row);
+    setDetail(null);
+  }, [fetchActivities, showToast]);
+
+  // ── cancel activity (from detail modal, todo only) ──────────────────────────
+  const handleCancelActivity = useCallback(async (id) => {
+    const { error } = await supabase
+      .from('activities')
+      .update({ status: 'cancelled' })
+      .eq('id', id);
+    if (error) { showToast?.('Gagal membatalkan: ' + error.message, 'error'); return; }
+    showToast?.('Aktivitas dibatalkan');
+    setDetail(null);
     fetchActivities();
   }, [fetchActivities, showToast]);
+
+  // ── delete activity (super_admin only, soft delete) ─────────────────────────
+  const handleDeleteActivity = useCallback(async (id) => {
+    const { error } = await supabase
+      .from('activities')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) { showToast?.('Gagal menghapus: ' + error.message, 'error'); return; }
+    showToast?.('Aktivitas dihapus');
+    setDetail(null);
+    setDeleteConfirm(null);
+    fetchActivities();
+  }, [fetchActivities, showToast]);
+
+  // ── edit activity (via ActivityDetailModal edit mode) ───────────────────────
+  // Same payload shape as handleSave minus status/company_id/created_by. details
+  // is merge-preserved so hidden jsonb keys (call_type/visit_type/mom/…) survive.
+  const handleEditSave = useCallback(async (draft) => {
+    if (!detail) return;
+    if (!draft.type)          { setDetailError('Tipe wajib dipilih.'); return; }
+    if (!draft.scheduled_for) { setDetailError('Tanggal wajib diisi.'); return; }
+    if (!draft.assigned_to)   { setDetailError('Salesperson wajib dipilih.'); return; }
+    setDetailSaving(true);
+    setDetailError(null);
+    try {
+      const needContact = ['call', 'prospecting'].includes(draft.type);
+      const needLocation = ['visit', 'meeting'].includes(draft.type);
+      const prevDetails = detail.details || {};
+      const payload = {
+        type:             draft.type,
+        scheduled_for:    draft.scheduled_for,
+        activity_time:    draft.activity_time     || null,
+        assigned_to:      draft.assigned_to,
+        account_id:       draft.account_id        || null,
+        prospect_name:    draft.type === 'prospecting' ? (draft.prospect_name || null) : null,
+        contact_name:     needContact ? (draft.contact_name  || null) : null,
+        contact_phone:    needContact ? (draft.contact_phone || null) : null,
+        outcome:          draft.outcome           || null,
+        notes:            draft.notes             || null,
+        next_action:      draft.next_action       || null,
+        next_action_date: draft.next_action_date  || null,
+        // Merge-preserve existing details; only touch location for visit/meeting.
+        details:          needLocation ? { ...prevDetails, location: draft.location || null } : prevDetails,
+      };
+      const { error } = await supabase.from('activities').update(payload).eq('id', detail.id);
+      if (error) throw error;
+      showToast?.('Aktivitas berhasil diperbarui');
+      setDetail(null);
+      fetchActivities();
+    } catch (err) {
+      setDetailError('Gagal menyimpan: ' + err.message);
+    } finally {
+      setDetailSaving(false);
+    }
+  }, [detail, fetchActivities, showToast]);
 
   // Open the existing ProspectFormPage in CREATE mode, prefilled from the
   // activity (Option A: ProspectFormPage treats an id-less object as create).
@@ -694,7 +943,21 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         </div>
       )}
 
-      <ActivityDetailModal act={detail} onClose={() => setDetail(null)} />
+      <ActivityDetailModal
+        act={detail}
+        canEdit={!!detail && (isManagerOrAbove || detail.assigned_to === profile?.id)}
+        salesProfiles={salesProfiles}
+        accounts={accounts}
+        saving={detailSaving}
+        error={detailError}
+        onEnterEdit={() => { setDetailError(null); loadFormOptions(); }}
+        onSave={handleEditSave}
+        onCancel={() => detail && handleCancelActivity(detail.id)}
+        onMarkDone={() => detail && handleCheck(detail)}
+        isSuperAdmin={erpRole === 'super_admin'}
+        onDelete={() => { setDeleteConfirm(detail); setDetail(null); }}
+        onClose={() => { setDetail(null); setDetailError(null); }}
+      />
 
       <TaskFormModal
         open={formOpen}
@@ -717,6 +980,17 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         cancelLabel="Nanti saja"
         onConfirm={() => { const r = confirmProspect; setConfirmProspect(null); openProspectFromActivity(r); }}
         onCancel={() => setConfirmProspect(null)}
+      />
+
+      <ConfirmModal
+        open={!!deleteConfirm}
+        variant="danger"
+        title="Hapus Aktivitas?"
+        message="Aktivitas ini akan dihapus permanen."
+        confirmLabel="Ya, Hapus"
+        cancelLabel="Batal"
+        onConfirm={() => deleteConfirm && handleDeleteActivity(deleteConfirm.id)}
+        onCancel={() => setDeleteConfirm(null)}
       />
     </div>
   );
