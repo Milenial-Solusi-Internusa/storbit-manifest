@@ -965,7 +965,9 @@ Output:
 
 | 2.8R | **Asset MSI — schema + master data + bulk 24 laptop (DB via SQL Editor; detail di section khusus).** (1) **`assets` ALTER ADD 4 kolom:** `condition` varchar, `department_id` uuid FK departments, `brand` varchar, `assignment_status` varchar DEFAULT 'available' (dipakai inline edit 2.8P-fix). (2) **Master data seed:** `asset_locations` "Head Office BSD" (`341d9dda…`, branch_id MSI HO `ef2594db…` — kolom `branch_id` NOT NULL); `departments` MSI 3 baru HCGA (`a4d59e17…`), PPJK (`cb4f6190…`), CONSOLE (`9c7fb915…`). (3) **Bulk insert 24 laptop MSI** (IT-EQP) ke 3 tabel `assets` + `asset_specifications` + `asset_network`; `assigned_to` dikosongkan (data lama, di-update setelah re-audit), `assignment_status` all 'available'. ⚠️ **Kolom & schema via SQL Editor BELUM ter-pull migrasi** — 2× jadi penghambat hari ini (Claude Code sempat skip 4 assets cols & `unit_cost` karena tak terlihat di file migrasi). Detail + check-constraint reference di section **Master Data & Schema Changes via SQL Editor — 16 Jun 2026**. | ✅ Complete |
 
-Current phase: **Phase 2.8R** ✅ Complete
+| 2.8S | **Fix bug layout mobile — konten BLANK di mobile (App.jsx, 1 baris).** Container layout utama `<div className="flex min-h-screen">` (L1743) bikin konten blank di mobile. Akar masalah: `flex` (row) + `min-h-screen` → mobile topbar (`header lg:hidden`) ke-stretch tingginya mengikuti main content (`align-items:stretch` default) sampai ~2389px → menutupi seluruh konten di belakangnya. Sidebar sudah `hidden lg:flex` (benar), tapi flex row tak pernah jadi column di mobile → header & main berdampingan + ke-stretch. **Fix:** class jadi `flex flex-col lg:flex-row min-h-screen` — mobile (flex-col) header+main bertumpuk vertikal normal; desktop (lg:flex-row) sidebar+konten berdampingan (tidak berubah). Hanya 1 baris diubah, tidak ada perubahan lain. build clean. | ✅ Complete |
+
+Current phase: **Phase 2.8S** ✅ Complete
 
 ---
 
