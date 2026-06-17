@@ -118,19 +118,18 @@ function Field({ label, req, children, full }) {
 // ─── Document number generator ────────────────────────────────────────────
 async function generateQuotationNo(companyId, companyCode) {
   const year = new Date().getFullYear();
-  try {
-    const { data, error } = await supabase.rpc('increment_document_sequence', {
-      p_company_id:     companyId,
-      p_document_type:  'QUO',
-      p_department_code:'CRM',
-      p_year:           year,
-      p_month:          0,
-    });
-    if (error) throw error;
-    return `QUO/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
-  } catch {
-    return `QUO/${companyCode || 'MSI'}/${year}/${Date.now().toString().slice(-4)}`;
-  }
+  const { data, error } = await supabase.rpc('increment_document_sequence', {
+    p_company_id:     companyId,
+    p_document_type:  'QUO',
+    p_department_code:'CRM',
+    p_year:           year,
+    p_month:          0,
+  });
+  // No silent fallback: a non-sequential number (e.g. timestamp) risks duplicate /
+  // garbage document numbers. Surface the failure so the caller's try/catch aborts
+  // the save and shows an error instead of generating a bad number.
+  if (error) throw new Error('Gagal generate nomor dokumen, coba lagi.');
+  return `QUO/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
 }
 
 // ─── Section component ────────────────────────────────────────────────────
@@ -535,7 +534,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
       } else {
         // ── INSERT new quotation ───────────────────────────────────────
         const { data: companyRow } = await supabase
-          .from('companies').select('code').eq('id', profile.company_id).single();
+          .from('companies').select('code').eq('id', profile.company_id).maybeSingle();
         const companyCode  = companyRow?.code || 'MSI';
         const quotation_no = await generateQuotationNo(profile.company_id, companyCode);
 

@@ -28,6 +28,14 @@
 - [x] `PipelineKanbanPage.jsx` empty `catch (_) {}` (drag `setData`) → `console.warn` + komentar (operasi opsional, non-fatal, tak di-surface); lint `no-empty` + `_` unused hilang (5→3)
 - [x] Refresh angka basi CLAUDE.md Roadmap: App.jsx 4.618→4.667, CRMDashboardPage 1.850→1.996 (aktual `wc -l`)
 
+### CRM Batch 1 — fix correctness frontend (Phase 2.9A, hasil AUDIT_CRM.md)
+- [x] Nomor dokumen: hapus fallback `Date.now().slice(-4)` di InquiryForm/QuotationForm `generateXNo` → RPC gagal = throw → save dibatalkan + toast error (tak ada nomor non-sekuensial)
+- [x] InquiryForm dropdown account tambah `.limit(1000)` (default-10 → account ke-11+ tak kepilih); QuotationList tambah `.is('deleted_at', null)`
+- [x] Role-aware visibility (tiru pola ProspectListPage) di InquiryList/QuotationList/SalesCalls — super_admin lihat semua entitas, sales hanya miliknya; sales-own ikut kolom RLS (inquiries/quotations=created_by, sales_calls=salesperson_id/created_by)
+- [x] `.single()`→`.maybeSingle()`: QuotationDetail (3×), CustomerDetail (2×), QuotationForm, InquiryForm — aman saat data minim (mis. payment_terms null)
+- [x] `catch {}` CustomerDetail/CustomerList → `console.error` + cek error query fallback (tak senyap)
+- [ ] (Batch DB terpisah — belum) RLS `inquiries_update` admin-only, UNIQUE accounts (dedup), write quotation atomik
+
 ### Backlog (update)
 - [ ] Mobile polish — verifikasi visual per-halaman (Inventory/Asset/Logistics/Quotation) di <1024px
 - [ ] Warning React "form field value without onChange handler" di input read-only — bersihkan

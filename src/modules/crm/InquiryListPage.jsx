@@ -132,7 +132,13 @@ function InquiryDetailModal({ inquiry, onClose }) {
 }
 
 export default function InquiryListPage({ onAddInquiry, showToast }) {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
+  // Visibility scope by role (mirrors RLS on `inquiries`):
+  //  • super_admin / admin → all entities (no company filter)
+  //  • sales / operations  → only inquiries they created
+  //  • everyone else (manager, ceo, gm, …) → their own entity
+  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -143,7 +149,8 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
   const [detailInquiry, setDetailInquiry] = useState(null);
 
   const fetchInquiries = useCallback(async () => {
-    if (!profile?.company_id) return;
+    if (!profile?.id) return;
+    if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
       let query = supabase
@@ -153,8 +160,13 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
           prospect:accounts!inquiries_prospect_id_fkey(name),
           customer:accounts!inquiries_customer_id_fkey(name)
         `, { count: 'exact' })
-        .eq('company_id', profile.company_id)
-        .is('deleted_at', null)
+        .is('deleted_at', null);
+
+      // Role-aware scope (see flags above)
+      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+      if (isSalesOnly)    query = query.eq('created_by', profile.id);
+
+      query = query
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
@@ -171,7 +183,7 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
     } finally {
       setLoading(false);
     }
-  }, [profile?.company_id, page, filterStatus, filterService, search, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, page, filterStatus, filterService, search, showToast]);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
   useEffect(() => { setPage(0); }, [filterStatus, filterService, search]);

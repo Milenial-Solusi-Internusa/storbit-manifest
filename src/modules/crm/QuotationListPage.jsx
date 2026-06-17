@@ -82,7 +82,13 @@ function StatusBadge({ status }) {
 }
 
 export default function QuotationListPage({ onAddQuotation, onSelectQuotation, showToast }) {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
+  // Visibility scope by role (mirrors RLS on `quotations`):
+  //  • super_admin / admin → all entities (no company filter)
+  //  • sales / operations  → only quotations they created
+  //  • everyone else (manager, ceo, gm, …) → their own entity
+  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [quotations, setQuotations] = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState('');
@@ -91,7 +97,8 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
   const [total,      setTotal]      = useState(0);
 
   const fetchQuotations = useCallback(async () => {
-    if (!profile?.company_id) return;
+    if (!profile?.id) return;
+    if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
       let query = supabase
@@ -102,7 +109,13 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
           prospect:accounts!quotations_prospect_id_fkey(name),
           customer:accounts!quotations_customer_id_fkey(name)
         `, { count: 'exact' })
-        .eq('company_id', profile.company_id)
+        .is('deleted_at', null);
+
+      // Role-aware scope (see flags above)
+      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+      if (isSalesOnly)    query = query.eq('created_by', profile.id);
+
+      query = query
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
@@ -122,7 +135,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
     } finally {
       setLoading(false);
     }
-  }, [profile?.company_id, page, filterStatus, search, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, page, filterStatus, search, showToast]);
 
   useEffect(() => { fetchQuotations(); }, [fetchQuotations]);
   useEffect(() => { setPage(0); }, [filterStatus, search]);
