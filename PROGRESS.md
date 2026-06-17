@@ -2,6 +2,13 @@
 
 ## 2026-06-17
 
+### DB Changes via SQL Editor (Phase 2.9B — dokumentasi, sudah masuk schema_snapshot.sql refresh: 70 tabel, ~8.313 baris)
+> Dua perubahan DB. Tidak ada kode/DB diubah dari sesi dokumentasi ini. Detail lengkap: CLAUDE.md section **DB Changes via SQL Editor — 17 Jun 2026** + audit `CRM_FLOW.md`.
+- [x] **WON → customer (fix konversi).** Masalah: deal `pipeline_stage='WON'` tidak selalu jadi `account_status='customer'` — cuma jalur drag+`WinLossModal` yang konversi; form-edit ([ProspectFormPage.jsx:320-323](src/modules/crm/ProspectFormPage.jsx#L320)) & import TIDAK (gejala: TOKO DAMRAH, `created_by` null = jejak import). Fix: (1) backfill record WON yang masih `prospect`; (2) trigger `trg_set_customer_on_won` (function `set_customer_on_won`, `BEFORE INSERT OR UPDATE ON accounts`) set `account_status='customer'` + `became_customer_at`/`converted_at` saat `pipeline_stage='WON'`. **Menutup SEMUA jalur → DB jadi sumber kebenaran tunggal**; frontend `WinLossModal` jadi redundan (dibiarkan, tak dicabut)
+- [x] **Tabel `public.activities` (Phase 1 modul Activity/Task).** Tabel baru yang menyatukan & akan menggantikan `sales_calls`+`sales_visits`: multi-tipe (`type` call/visit/meeting/prospecting/followup), `status` todo/done/cancelled, anchor `account_id`/`inquiry_id`/`quotation_id` (FK lengkap → menjawab titik-putus `CRM_FLOW.md`), `details jsonb` per-tipe, `migrated_from`, RLS role-aware niru `accounts`, 6 index. Data lama dimigrasi (0 calls + 2 visits)
+- [ ] **(Backlog) repoint frontend call/visit → `activities`:** `SalesCallsPage.jsx` + `CRMDashboardPage` AddVisitModal/fetch masih pakai tabel lama
+- [ ] **(Backlog) drop `sales_calls` + `sales_visits`** — HANYA setelah frontend dipindah & diverifikasi (saat ini DORMANT, jangan drop dulu)
+
 ### DB Schema Snapshot
 - [x] `pg_dump --schema-only --schema=public` → `supabase/schema_snapshot.sql` (**69 tabel, ~8.140 baris**); pakai `pg_dump` (libpq), BUKAN `supabase db pull` (Docker tak terinstall). Menangkap semua perubahan SQL-Editor (4 kolom `assets`, `accounts` unified, RBAC 6 tabel, dll)
 - [x] Roadmap 🔴 "schema ke version control" = **DONE**; cara refresh + instruksi "baca snapshot, bukan migrasi" dicatat di section **DB Schema Reference** (CLAUDE.md)

@@ -983,7 +983,9 @@ Output:
 
 | 2.9A | **CRM Batch 1 — fix correctness frontend (hasil AUDIT_CRM.md, 8 file, niru pola existing).** **TASK 1 (nomor dokumen):** `InquiryFormPage.generateInquiryNo` & `QuotationFormPage.generateQuotationNo` — HAPUS fallback diam-diam `Date.now().slice(-4)` (rawan tabrakan/non-sekuensial); RPC gagal → `throw new Error('Gagal generate nomor dokumen, coba lagi.')`. `generateXNo` di-await SEBELUM insert di dalam `handleSave` try/catch existing → throw otomatis batalkan simpan + `showToast(err.message,'error')`. TIDAK ada nomor non-sekuensial ter-generate. **TASK 2:** `InquiryFormPage` dropdown account (prospect+customer) tambah `.limit(1000)` (sebelumnya default-10 → account ke-11+ tak bisa dipilih); `QuotationListPage` fetch tambah `.is('deleted_at', null)` (sebelumnya quotation soft-deleted muncul). **TASK 3 (role-aware visibility — TIRU PERSIS pola `ProspectListPage.jsx:89-90,103-104,118-119`):** `InquiryListPage`/`QuotationListPage`/`SalesCallsPage` tambah `isAllEntities=['super_admin','admin']` + `isSalesOnly=['sales','operations']`; guard `if(!profile?.id)return; if(!isAllEntities&&!profile?.company_id)return;`; `if(!isAllEntities) .eq('company_id',…)`; sales-own filter MENGIKUTI kolom RLS tiap tabel (bukan copy `assigned_to` buta — inquiries/quotations TAK punya assigned_to): inquiries/quotations `.eq('created_by',profile.id)`, sales_calls `.or('salesperson_id.eq.{id},created_by.eq.{id}')`; deps useCallback tambah `profile?.id,isAllEntities,isSalesOnly`. Super_admin kini lihat SEMUA entitas; sales hanya miliknya (RLS lapis kedua). **TASK 4 (`.single()`→`.maybeSingle()`):** `QuotationDetailPage` (3×: quotation by id [render sudah guard `if(!quot)` → "Quotation tidak ditemukan", lebih bersih dari toast coerce], payment_terms, creator profile), `CustomerDetailPage` (2×: join + fallback), `QuotationFormPage` (companies, `companyRow?.code||'MSI'` null-safe), `InquiryFormPage` (companies, null-safe). **TASK 5 (catch jangan nelan):** `CustomerDetailPage:425` & `CustomerListPage:551` — `catch {}` → `catch(err)` + `console.error` konteks + cek `fbErr` query fallback (`if(fbErr) console.error`). **DB TIDAK disentuh** (fix RLS `inquiries_update` admin-only & UNIQUE accounts = batch DB terpisah). build clean (2629 modules, 1.46s); lint **net-zero per file** (8 file baseline==after). Catatan: build clean ≠ jaminan fitur jalan (perlu tes manual: inquiry nomor sekuensial, dropdown >10, quotation deleted hilang, super_admin lihat MSI+JCI+SOA, sales tak bocor, detail data minim tak crash). | ✅ Complete |
 
-Current phase: **Phase 2.9A** ✅ Complete
+| 2.9B | **DB-only (via SQL Editor, dokumentasi) — WON→customer trigger + tabel `activities`.** Tidak ada kode/DB diubah dari sesi ini; mencatat 2 perubahan DB 17 Jun yang sudah masuk `schema_snapshot.sql` (refresh → **70 tabel, ~8.313 baris**). **(1) Fix WON→customer:** backfill record `pipeline_stage='WON' AND account_status<>'customer'` + trigger `trg_set_customer_on_won` (function `set_customer_on_won`, `BEFORE INSERT OR UPDATE ON accounts`) → menutup SEMUA jalur (drag/edit-form/import), DB jadi sumber kebenaran tunggal (frontend `WinLossModal` jadi redundan, dibiarkan). Akar masalah & jalur lihat `CRM_FLOW.md` + audit TOKO DAMRAH. **(2) Tabel `public.activities`:** menyatukan & akan menggantikan `sales_calls`+`sales_visits` — multi-tipe (`type` call/visit/meeting/prospecting/followup), `status` todo/done/cancelled, anchor `account_id`/`inquiry_id`/`quotation_id` (FK lengkap), `details jsonb` per-tipe, `migrated_from`, RLS role-aware niru accounts, 6 index. Data lama dimigrasi (0 calls + 2 visits). **`sales_calls`/`sales_visits` DORMANT (belum di-drop)** — frontend masih pakai tabel lama. Detail di section **DB Changes via SQL Editor — 17 Jun 2026**. Backlog: repoint frontend call/visit → activities, lalu drop tabel lama. | ✅ Complete |
+
+Current phase: **Phase 2.9B** ✅ Complete
 
 ---
 
@@ -1026,11 +1028,53 @@ Current phase: **Phase 2.9A** ✅ Complete
 
 ---
 
+## DB Changes via SQL Editor — 17 Jun 2026
+
+> Dua perubahan DB dijalankan via Supabase SQL Editor. **Sudah masuk `supabase/schema_snapshot.sql`** (di-refresh 17 Jun → **70 tabel, ~8.313 baris**). Belum ter-pull ke file migrasi formal.
+
+### 1. WON → customer — fix konversi (trigger DB = sumber kebenaran tunggal)
+
+**Masalah (hasil audit, lihat `CRM_FLOW.md`):** deal yang pindah ke `pipeline_stage='WON'` **tidak selalu** jadi `account_status='customer'`. Konversi cuma jalan di **satu jalur** (drag Kanban → `WinLossModal` → `handleWinLossSave`, [PipelineKanbanPage.jsx:561-568](src/modules/crm/PipelineKanbanPage.jsx#L561)). Jalur **edit form manual** ([ProspectFormPage.jsx:320-323](src/modules/crm/ProspectFormPage.jsx#L320)) & **import/seed** TIDAK mengkonversi → muncul account `pipeline_stage='WON'` tapi `account_status='prospect'` (gejala nyata: TOKO DAMRAH, `created_by` null = jejak import).
+
+**Fix DB (2 langkah):**
+1. **Backfill:** semua account `pipeline_stage='WON' AND account_status<>'customer'` di-set `account_status='customer'` + stamp `became_customer_at`/`converted_at`.
+2. **Trigger `trg_set_customer_on_won`** — `BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW` (snapshot baris 4999), function `public.set_customer_on_won()` (baris 356):
+   ```sql
+   IF NEW.pipeline_stage = 'WON' AND COALESCE(NEW.account_status,'') <> 'customer' THEN
+     NEW.account_status     := 'customer';
+     NEW.became_customer_at := COALESCE(NEW.became_customer_at, now());
+     NEW.converted_at       := COALESCE(NEW.converted_at, now());
+   END IF;
+   ```
+
+**Dampak:** trigger menutup **SEMUA jalur** (drag, edit form, import, RPC apa pun) → DB jadi **sumber kebenaran tunggal** untuk konversi WON→customer. Logika frontend di `WinLossModal`/`PipelineKanban` jadi redundan (tidak salah, hanya tak lagi satu-satunya) — tetap dibiarkan, tidak perlu dicabut. `set_customer_on_won` ber-LANGUAGE plpgsql, **bukan** SECURITY DEFINER (jalan dalam konteks user, aman karena hanya menulis kolom di NEW row yang sama).
+
+### 2. Tabel `public.activities` — Phase 1 modul Activity/Task
+
+Tabel baru yang **menyatukan & akan menggantikan** `sales_calls` + `sales_visits`. Anchor lengkap ke seluruh CRM (menjawab titik-putus di `CRM_FLOW.md`: aktivitas kini bisa nempel ke account/inquiry/quotation, bukan cuma `prospect_id` opsional).
+
+**Struktur (snapshot — CREATE TABLE public.activities):**
+- **Anchor (semua FK ada):** `account_id` → accounts (`activities_account_id_fkey`, baris 5042), `inquiry_id` → inquiries (5058), `quotation_id` → quotations (5066), `company_id` → companies (5050), `assigned_to`/`created_by` (profiles).
+- **Multi-tipe:** `type text NOT NULL` (call / visit / meeting / prospecting / followup), `status text DEFAULT 'todo'` (todo / done / cancelled).
+- **Jadwal:** `scheduled_for date`, `activity_time time`, `completed_at`.
+- **Konten:** `prospect_name`, `contact_name`, `contact_phone`, `outcome`, `notes`, `next_action`, `next_action_date`.
+- **`details jsonb DEFAULT '{}'`** — data khas per tipe (mis. `duration_minutes`/`bant_collected` utk call; `point_of_meeting`/`mom`/`follow_up` utk visit).
+- **`migrated_from text`** — jejak asal data lama (`sales_calls`/`sales_visits`).
+- Standard: `created_at`/`updated_at`/`deleted_at`.
+- **Index:** account, assigned, company, scheduled_for, status, type (baris 3890-3928).
+- **RLS role-aware** (niru `accounts`): SELECT/UPDATE/DELETE = `company_id = get_user_company_id() AND (is_manager_or_above() OR assigned_to = auth.uid() OR created_by = auth.uid()) OR is_super_admin()`; INSERT = `company_id = get_user_company_id() OR is_super_admin()` (baris 6658-6682).
+
+**Migrasi data lama:** 0 `sales_calls` + 2 `sales_visits` → dipindah ke `activities` (`migrated_from` di-set).
+
+**⚠️ `sales_calls` & `sales_visits` DIBIARKAN DORMANT (belum di-drop).** Frontend (`SalesCallsPage`, `CRMDashboardPage` AddVisitModal) **masih** menulis/membaca ke tabel lama. Penggantian → lihat **Backlog**.
+
+---
+
 ## DB Schema Reference
 
 > **Sumber kebenaran terkini untuk struktur DB = `supabase/schema_snapshot.sql`** (bukan file migrasi).
 
-**File:** `supabase/schema_snapshot.sql` — full schema dump (`pg_dump --schema-only --schema=public`), **69 tabel, ~8.140 baris**, merefleksikan kondisi DB **ASLI per 17 Jun 2026**, termasuk SEMUA perubahan via SQL Editor yang TIDAK masuk file migrasi: 4 kolom `assets` baru (`condition`/`department_id`/`brand`/`assignment_status`), `accounts` unified (master customer tunggal), RBAC 6 tabel (`modules`/`module_menus`/`module_actions`/`menu_actions`/`user_menu_permissions`/dst.), RLS `quotations`, dll.
+**File:** `supabase/schema_snapshot.sql` — full schema dump (`pg_dump --schema-only --schema=public`), **70 tabel, ~8.313 baris** (refresh 17 Jun), merefleksikan kondisi DB **ASLI per 17 Jun 2026**, termasuk SEMUA perubahan via SQL Editor yang TIDAK masuk file migrasi: 4 kolom `assets` baru (`condition`/`department_id`/`brand`/`assignment_status`), `accounts` unified (master customer tunggal), RBAC 6 tabel (`modules`/`module_menus`/`module_actions`/`menu_actions`/`user_menu_permissions`/dst.), RLS `quotations`, **trigger `trg_set_customer_on_won` + tabel baru `activities`** (lihat **DB Changes via SQL Editor — 17 Jun 2026**), dll.
 
 **⚠️ INSTRUKSI WAJIB (sesi mendatang):** untuk struktur tabel/kolom/constraint yang **AKURAT**, baca **`supabase/schema_snapshot.sql`** — **JANGAN hanya mengandalkan `supabase/migrations/`**. File migrasi **BERHENTI 3 Jun 2026** (`...026_assets_kendaraan.sql`) dan TIDAK mencakup perubahan SQL-Editor 4–17 Jun → ini sudah **2× menyebabkan salah-baca schema** (skip 4 kolom `assets` baru, salah baca `products.unit_cost`). Migrasi lama tetap valid untuk **histori**, tapi **snapshot = sumber kebenaran struktur terkini**.
 
@@ -1064,6 +1108,8 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 - [ ] Tambah `.limit()` ke **~97 query** tanpa limit
 - [ ] Refactor **LOW-risk App.jsx**: ekstrak `PASTEL`→`lib/tokens.js`, `ENTITY_IDS`→`config/entities.js`, helper `isSuperAdmin()`; hapus **1.206 baris dead code** (`*.legacy.jsx`)
 - [ ] Ganti **5 hijau terlarang** + emoji UI ke token brand + ikon Lucide
+- [ ] **Modul Activity/Task — repoint frontend `sales_calls`/`sales_visits` → `activities`** (Phase 1 tabel sudah ada, Phase 2.9B). `SalesCallsPage.jsx` (call) + `CRMDashboardPage.jsx` AddVisitModal/calendar/fetch (visit) masih nulis-baca tabel lama. Pindah ke `activities`: map call → `type='call'` + `details jsonb` (duration_minutes/bant_collected), visit → `type='visit'` + `details` (point_of_meeting/mom/follow_up); manfaatkan anchor baru `account_id`/`inquiry_id`/`quotation_id`. Cek juga konsumen `sales_visit_logs` (status history) + 3 query `sales_calls`/`sales_visits` di CRMDashboard `fetchDash` (KPI mingguan).
+- [ ] **Drop `sales_calls` + `sales_visits`** — HANYA setelah frontend dipindah ke `activities` & diverifikasi (data lama sudah dimigrasi, `migrated_from` ter-set). Saat ini DORMANT, jangan drop dulu.
 
 ### 🟢 JANGKA PANJANG
 - [ ] Pecah **`App.jsx`** (4.667 baris god-file) — **SETELAH ada test**. Urutan aman: konstanta → komponen presentasional → modul Storbit → layout → registry routing
@@ -1079,6 +1125,8 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 
 - **Migrasi RLS proper (RBAC-driven) — BESAR, risiko tinggi:** RLS role hardcode tak sinkron RBAC; `has_permission()` broken; prasyarat HRIS. Eksekusi **sesi fresh** — lihat section **Backlog — Migrasi RLS Proper (RBAC-driven)**.
 - **CEO unblock review (Phase 2.8Y):** `profiles_read` di-set `USING(true)` agar CEO bisa baca `profiles`. Aman sekarang (bukan HRIS), tapi **WAJIB diperketat ulang saat modul HRIS masuk** (data pribadi/gaji).
+- **Modul Activity/Task — tabel `activities` siap, frontend belum (Phase 2.9B):** tabel baru sudah live + data lama dimigrasi, tapi `SalesCallsPage` & `CRMDashboard` AddVisitModal **masih** baca-tulis `sales_calls`/`sales_visits` (DORMANT). Backlog: repoint frontend → `activities`, lalu drop tabel lama setelah verifikasi.
+- **WON→customer sekarang dijamin DB (Phase 2.9B):** trigger `trg_set_customer_on_won` menutup semua jalur → tak perlu lagi andalkan `WinLossModal` (frontend redundan, dibiarkan). Backfill sudah jalan untuk record lama yang stuck (mis. TOKO DAMRAH).
 - **Mobile polish — verifikasi visual per-halaman:** util responsive (2.8T) + nav drawer (2.8U) sudah diterapkan, tapi halaman selain CRM Dashboard (Inventory / Asset / Logistics / Quotation) **belum dicek satu-satu di mobile** → backlog: sisir visual tiap halaman di <1024px.
 - **Warning React minor:** beberapa input read-only tampil "form field value without onChange handler" (terpisah dari responsive) — bisa dibersihkan (tambah `readOnly` atau `onChange` no-op).
 - **24 laptop MSI — `assigned_to` kosong:** di-update setelah re-audit (bulk insert 2.8R sengaja tanpa assignee, `assignment_status` all 'available').
