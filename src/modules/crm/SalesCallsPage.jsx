@@ -1,11 +1,31 @@
 // src/modules/crm/SalesCallsPage.jsx
 // Activity & Calls — log and monitor sales-team call activity.
 // Visual pattern follows InquiryListPage.jsx (warm-beige C tokens, badge maps, detail modal).
-// DB: table `sales_calls` (created via SQL Editor on staging — see CLAUDE.md phase note).
+// DB: table `activities` (type='call'). Migrated from the legacy calls table.
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, Plus, Eye, PhoneCall, X, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+
+// Resolve active 'sales' users for a company via RBAC (roles.code='sales'),
+// never a hardcoded role_id. Conditions: same company, user_roles active +
+// not revoked. Returns [{ id, full_name }] (active profiles only).
+async function fetchSalesProfiles(companyId) {
+  const { data: roleRows } = await supabase
+    .from('roles').select('id').eq('company_id', companyId).eq('code', 'sales');
+  const roleIds = (roleRows || []).map(r => r.id);
+  if (!roleIds.length) return [];
+  const { data: urs } = await supabase
+    .from('user_roles').select('user_id')
+    .eq('company_id', companyId).in('role_id', roleIds)
+    .eq('is_active', true).is('revoked_at', null);
+  const userIds = [...new Set((urs || []).map(u => u.user_id).filter(Boolean))];
+  if (!userIds.length) return [];
+  const { data: profs } = await supabase
+    .from('profiles').select('id, full_name').in('id', userIds)
+    .eq('active', true).order('full_name').limit(1000);
+  return profs || [];
+}
 
 const C = {
   bg:        '#F6EFE3',
@@ -321,7 +341,7 @@ function CallFormModal({ open, isEdit, draft, setDraft, saving, error, prospects
 
 export default function SalesCallsPage({ showToast }) {
   const { profile, erpRole } = useAuth();
-  // Visibility scope by role (mirrors RLS on `sales_calls`):
+  // Visibility scope by role (mirrors RLS on `activities`):
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only calls where they are the salesperson or creator
   //  • everyone else (manager, ceo, gm, …) → their own entity
@@ -351,24 +371,61 @@ export default function SalesCallsPage({ showToast }) {
     if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
+      // Calls now live in `activities` (type='call'). account_id has an FK to
+      // accounts so the prospect name embeds; assigned_to/created_by do NOT have
+      // a profiles FK → salesperson name is resolved via a client-side map below.
       let query = supabase
-        .from('sales_calls')
+        .from('activities')
         .select(`
           *,
-          prospect:accounts!sales_calls_prospect_id_fkey(name, company_prefix),
-          salesperson:profiles!sales_calls_salesperson_id_fkey(full_name)
-        `);
+          prospect:accounts!activities_account_id_fkey(name, company_prefix)
+        `)
+        .eq('type', 'call')
+        .is('deleted_at', null);
 
-      // Role-aware scope (see flags above)
+      // Role-aware scope (mirrors RLS on `activities`)
       if (!isAllEntities) query = query.eq('company_id', profile.company_id);
-      if (isSalesOnly)    query = query.or(`salesperson_id.eq.${profile.id},created_by.eq.${profile.id}`);
+      if (isSalesOnly)    query = query.or(`assigned_to.eq.${profile.id},created_by.eq.${profile.id}`);
 
       const { data, error } = await query
-        .order('call_date', { ascending: false })
-        .order('call_time', { ascending: false })
+        .order('scheduled_for', { ascending: false })
+        .order('activity_time', { ascending: false })
         .limit(1000);
       if (error) throw error;
-      setCalls(data || []);
+
+      // Resolve salesperson names (no profiles FK on assigned_to). Fetch ALL
+      // referenced profiles regardless of active flag so inactive/legacy sales
+      // still render in the list.
+      const rows = data || [];
+      const salesIds = [...new Set(rows.map(a => a.assigned_to).filter(Boolean))];
+      const nameMap = {};
+      if (salesIds.length) {
+        const { data: profs } = await supabase
+          .from('profiles').select('id, full_name').in('id', salesIds);
+        (profs || []).forEach(p => { nameMap[p.id] = p.full_name; });
+      }
+
+      // Map activities rows back to the call shape the rest of the UI expects.
+      setCalls(rows.map(a => ({
+        id:               a.id,
+        prospect_id:      a.account_id,
+        salesperson_id:   a.assigned_to,
+        prospect:         a.prospect,
+        salesperson:      a.assigned_to ? { full_name: nameMap[a.assigned_to] || null } : null,
+        call_date:        a.scheduled_for,
+        call_time:        a.activity_time,
+        contact_name:     a.contact_name,
+        contact_phone:    a.contact_phone,
+        result:           a.outcome,
+        notes:            a.notes,
+        next_action:      a.next_action,
+        next_action_date: a.next_action_date,
+        call_type:        a.details?.call_type ?? null,
+        duration_minutes: a.details?.duration_minutes ?? null,
+        bant_collected:   a.details?.bant_collected ?? 0,
+        created_by:       a.created_by,
+        created_at:       a.created_at,
+      })));
     } catch (err) {
       showToast?.('Gagal memuat data call: ' + err.message, 'error');
     } finally {
@@ -380,14 +437,16 @@ export default function SalesCallsPage({ showToast }) {
   useEffect(() => { setPage(0); }, [search, filterType, filterResult, filterDate]);
 
   // Load prospect + salesperson options for the form (called when a modal opens).
+  // Salesperson dropdown = active 'sales' users in the current entity only
+  // (resolved via RBAC role code, see fetchSalesProfiles).
   const loadFormOptions = async () => {
     if (!profile?.company_id) return;
-    const [pRes, sRes] = await Promise.all([
+    const [pRes, sales] = await Promise.all([
       supabase.from('accounts').select('id, name, company_prefix').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(1000),
-      supabase.from('profiles').select('id, full_name').eq('company_id', profile.company_id).eq('active', true).order('full_name').limit(1000),
+      fetchSalesProfiles(profile.company_id),
     ]);
     setProspects(pRes.data || []);
-    setSalesProfiles(sRes.data || []);
+    setSalesProfiles(sales);
   };
 
   // ── stats (current month) ───────────────────────────────────────────────
@@ -461,26 +520,32 @@ export default function SalesCallsPage({ showToast }) {
     setSaving(true);
     setFormError(null);
     try {
+      // Write to `activities` (type='call', logged as a completed event).
+      // Field-specific call data lives in details jsonb.
       const payload = {
-        prospect_id:      draft.prospect_id      || null,
+        type:             'call',
+        status:           'done',
+        account_id:       draft.prospect_id      || null,
         contact_name:     draft.contact_name.trim(),
         contact_phone:    draft.contact_phone    || null,
-        call_date:        draft.call_date,
-        call_time:        draft.call_time        || null,
-        duration_minutes: draft.duration_minutes !== '' ? Number(draft.duration_minutes) : null,
-        call_type:        draft.call_type        || null,
-        result:           draft.result,
-        bant_collected:   Number(draft.bant_collected) || 0,
+        scheduled_for:    draft.call_date,
+        activity_time:    draft.call_time        || null,
+        outcome:          draft.result,
         notes:            draft.notes            || null,
         next_action:      draft.next_action      || null,
         next_action_date: draft.next_action_date || null,
-        salesperson_id:   draft.salesperson_id   || profile.id,
+        assigned_to:      draft.salesperson_id   || profile.id,
+        details: {
+          call_type:        draft.call_type || null,
+          duration_minutes: draft.duration_minutes !== '' ? Number(draft.duration_minutes) : null,
+          bant_collected:   Number(draft.bant_collected) || 0,
+        },
       };
       let error;
       if (editId) {
-        ({ error } = await supabase.from('sales_calls').update(payload).eq('id', editId));
+        ({ error } = await supabase.from('activities').update(payload).eq('id', editId));
       } else {
-        ({ error } = await supabase.from('sales_calls').insert({ ...payload, company_id: profile.company_id, created_by: profile.id }));
+        ({ error } = await supabase.from('activities').insert({ ...payload, company_id: profile.company_id, created_by: profile.id }));
       }
       if (error) throw error;
       showToast?.(editId ? 'Call berhasil diperbarui ✨' : 'Call berhasil dicatat ✨');
