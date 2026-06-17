@@ -985,7 +985,9 @@ Output:
 
 | 2.9B | **DB-only (via SQL Editor, dokumentasi) — WON→customer trigger + tabel `activities`.** Tidak ada kode/DB diubah dari sesi ini; mencatat 2 perubahan DB 17 Jun yang sudah masuk `schema_snapshot.sql` (refresh → **70 tabel, ~8.313 baris**). **(1) Fix WON→customer:** backfill record `pipeline_stage='WON' AND account_status<>'customer'` + trigger `trg_set_customer_on_won` (function `set_customer_on_won`, `BEFORE INSERT OR UPDATE ON accounts`) → menutup SEMUA jalur (drag/edit-form/import), DB jadi sumber kebenaran tunggal (frontend `WinLossModal` jadi redundan, dibiarkan). Akar masalah & jalur lihat `CRM_FLOW.md` + audit TOKO DAMRAH. **(2) Tabel `public.activities`:** menyatukan & akan menggantikan `sales_calls`+`sales_visits` — multi-tipe (`type` call/visit/meeting/prospecting/followup), `status` todo/done/cancelled, anchor `account_id`/`inquiry_id`/`quotation_id` (FK lengkap), `details jsonb` per-tipe, `migrated_from`, RLS role-aware niru accounts, 6 index. Data lama dimigrasi (0 calls + 2 visits). **`sales_calls`/`sales_visits` DORMANT (belum di-drop)** — frontend masih pakai tabel lama. Detail di section **DB Changes via SQL Editor — 17 Jun 2026**. Backlog: repoint frontend call/visit → activities, lalu drop tabel lama. | ✅ Complete |
 
-Current phase: **Phase 2.9B** ✅ Complete
+| 2.9C | **DB-only (via SQL Editor, dokumentasi) — tabel `activity_logs`.** Tidak ada kode/DB diubah dari sesi ini; mencatat 1 perubahan DB 17 Jun (snapshot refresh → **71 tabel, ~8.395 baris**). Tabel baru `public.activity_logs` = audit log perubahan status untuk `activities` (`activity_id`→activities ON DELETE CASCADE, `changed_by`, `changed_at`, `from_status`, `to_status`, `notes`; 1 index; **RLS scope via parent activity** pakai `EXISTS` ke `activities`, bukan `company_id` langsung). **Menggantikan `sales_visit_logs`**; data lama dimigrasi (2 log). **`sales_visit_logs` DORMANT (belum di-drop)** — `CRMDashboardPage` VisitDetailModal masih pakai tabel lama; drop bareng `sales_calls`/`sales_visits` setelah frontend dipindah. Detail di section **DB Changes via SQL Editor — 17 Jun 2026** (#3). | ✅ Complete |
+
+Current phase: **Phase 2.9C** ✅ Complete
 
 ---
 
@@ -1030,7 +1032,7 @@ Current phase: **Phase 2.9B** ✅ Complete
 
 ## DB Changes via SQL Editor — 17 Jun 2026
 
-> Dua perubahan DB dijalankan via Supabase SQL Editor. **Sudah masuk `supabase/schema_snapshot.sql`** (di-refresh 17 Jun → **70 tabel, ~8.313 baris**). Belum ter-pull ke file migrasi formal.
+> Perubahan DB dijalankan via Supabase SQL Editor. **Sudah masuk `supabase/schema_snapshot.sql`** (di-refresh 17 Jun → **71 tabel, ~8.395 baris**). Belum ter-pull ke file migrasi formal.
 
 ### 1. WON → customer — fix konversi (trigger DB = sumber kebenaran tunggal)
 
@@ -1068,13 +1070,26 @@ Tabel baru yang **menyatukan & akan menggantikan** `sales_calls` + `sales_visits
 
 **⚠️ `sales_calls` & `sales_visits` DIBIARKAN DORMANT (belum di-drop).** Frontend (`SalesCallsPage`, `CRMDashboardPage` AddVisitModal) **masih** menulis/membaca ke tabel lama. Penggantian → lihat **Backlog**.
 
+### 3. Tabel `public.activity_logs` — audit log status untuk `activities`
+
+Tabel baru: audit trail perubahan status untuk row `activities` (padanan `sales_visit_logs` di model lama). **Menggantikan `sales_visit_logs`.**
+
+**Struktur (snapshot — CREATE TABLE public.activity_logs):**
+- `id`, `activity_id uuid NOT NULL` → activities(id) **ON DELETE CASCADE** (`activity_logs_activity_id_fkey`, snapshot baris 5104), `changed_by uuid`, `changed_at timestamptz DEFAULT now()`, `from_status text`, `to_status text`, `notes text`.
+- **Index:** `idx_activity_logs_activity` (activity_id, baris 3958).
+- **RLS scope via parent activity** (bukan `company_id` langsung): SELECT/INSERT/UPDATE/DELETE pakai `EXISTS (SELECT 1 FROM activities ... )` — hak akses log mengikuti hak akses activity induknya (baris 6730-6760).
+
+**Migrasi data lama:** 2 row `sales_visit_logs` → dipindah ke `activity_logs`.
+
+**⚠️ `sales_visit_logs` DIBIARKAN DORMANT (belum di-drop).** `CRMDashboardPage` VisitDetailModal masih baca/tulis tabel lama ([CRMDashboardPage.jsx:1006](src/modules/crm/CRMDashboardPage.jsx#L1006) read, [:1795](src/modules/crm/CRMDashboardPage.jsx#L1795) write). Drop bareng `sales_calls`/`sales_visits` setelah frontend dipindah → **Backlog**.
+
 ---
 
 ## DB Schema Reference
 
 > **Sumber kebenaran terkini untuk struktur DB = `supabase/schema_snapshot.sql`** (bukan file migrasi).
 
-**File:** `supabase/schema_snapshot.sql` — full schema dump (`pg_dump --schema-only --schema=public`), **70 tabel, ~8.313 baris** (refresh 17 Jun), merefleksikan kondisi DB **ASLI per 17 Jun 2026**, termasuk SEMUA perubahan via SQL Editor yang TIDAK masuk file migrasi: 4 kolom `assets` baru (`condition`/`department_id`/`brand`/`assignment_status`), `accounts` unified (master customer tunggal), RBAC 6 tabel (`modules`/`module_menus`/`module_actions`/`menu_actions`/`user_menu_permissions`/dst.), RLS `quotations`, **trigger `trg_set_customer_on_won` + tabel baru `activities`** (lihat **DB Changes via SQL Editor — 17 Jun 2026**), dll.
+**File:** `supabase/schema_snapshot.sql` — full schema dump (`pg_dump --schema-only --schema=public`), **71 tabel, ~8.395 baris** (refresh 17 Jun), merefleksikan kondisi DB **ASLI per 17 Jun 2026**, termasuk SEMUA perubahan via SQL Editor yang TIDAK masuk file migrasi: 4 kolom `assets` baru (`condition`/`department_id`/`brand`/`assignment_status`), `accounts` unified (master customer tunggal), RBAC 6 tabel (`modules`/`module_menus`/`module_actions`/`menu_actions`/`user_menu_permissions`/dst.), RLS `quotations`, **trigger `trg_set_customer_on_won` + tabel baru `activities` & `activity_logs`** (lihat **DB Changes via SQL Editor — 17 Jun 2026**), dll.
 
 **⚠️ INSTRUKSI WAJIB (sesi mendatang):** untuk struktur tabel/kolom/constraint yang **AKURAT**, baca **`supabase/schema_snapshot.sql`** — **JANGAN hanya mengandalkan `supabase/migrations/`**. File migrasi **BERHENTI 3 Jun 2026** (`...026_assets_kendaraan.sql`) dan TIDAK mencakup perubahan SQL-Editor 4–17 Jun → ini sudah **2× menyebabkan salah-baca schema** (skip 4 kolom `assets` baru, salah baca `products.unit_cost`). Migrasi lama tetap valid untuk **histori**, tapi **snapshot = sumber kebenaran struktur terkini**.
 
@@ -1108,8 +1123,8 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 - [ ] Tambah `.limit()` ke **~97 query** tanpa limit
 - [ ] Refactor **LOW-risk App.jsx**: ekstrak `PASTEL`→`lib/tokens.js`, `ENTITY_IDS`→`config/entities.js`, helper `isSuperAdmin()`; hapus **1.206 baris dead code** (`*.legacy.jsx`)
 - [ ] Ganti **5 hijau terlarang** + emoji UI ke token brand + ikon Lucide
-- [ ] **Modul Activity/Task — repoint frontend `sales_calls`/`sales_visits` → `activities`** (Phase 1 tabel sudah ada, Phase 2.9B). `SalesCallsPage.jsx` (call) + `CRMDashboardPage.jsx` AddVisitModal/calendar/fetch (visit) masih nulis-baca tabel lama. Pindah ke `activities`: map call → `type='call'` + `details jsonb` (duration_minutes/bant_collected), visit → `type='visit'` + `details` (point_of_meeting/mom/follow_up); manfaatkan anchor baru `account_id`/`inquiry_id`/`quotation_id`. Cek juga konsumen `sales_visit_logs` (status history) + 3 query `sales_calls`/`sales_visits` di CRMDashboard `fetchDash` (KPI mingguan).
-- [ ] **Drop `sales_calls` + `sales_visits`** — HANYA setelah frontend dipindah ke `activities` & diverifikasi (data lama sudah dimigrasi, `migrated_from` ter-set). Saat ini DORMANT, jangan drop dulu.
+- [ ] **Modul Activity/Task — repoint frontend `sales_calls`/`sales_visits`/`sales_visit_logs` → `activities`/`activity_logs`** (Phase 1 tabel sudah ada, Phase 2.9B/2.9C). `SalesCallsPage.jsx` (call) + `CRMDashboardPage.jsx` AddVisitModal/calendar/fetch (visit) masih nulis-baca tabel lama. Pindah ke `activities`: map call → `type='call'` + `details jsonb` (duration_minutes/bant_collected), visit → `type='visit'` + `details` (point_of_meeting/mom/follow_up); manfaatkan anchor baru `account_id`/`inquiry_id`/`quotation_id`. Status-history VisitDetailModal (`sales_visit_logs` [:1006](src/modules/crm/CRMDashboardPage.jsx#L1006)/[:1795](src/modules/crm/CRMDashboardPage.jsx#L1795)) → repoint ke `activity_logs` (`activity_id`). Cek juga 3 query KPI mingguan `sales_calls`/`sales_visits` di CRMDashboard `fetchDash`. Inventory UI lengkap → `ACTIVITY_UI_MAP.md`.
+- [ ] **Drop `sales_calls` + `sales_visits` + `sales_visit_logs`** — HANYA setelah frontend dipindah ke `activities`/`activity_logs` & diverifikasi (data lama sudah dimigrasi: `migrated_from` di activities, 2 log di activity_logs). Saat ini DORMANT, jangan drop dulu.
 
 ### 🟢 JANGKA PANJANG
 - [ ] Pecah **`App.jsx`** (4.667 baris god-file) — **SETELAH ada test**. Urutan aman: konstanta → komponen presentasional → modul Storbit → layout → registry routing
@@ -1125,7 +1140,7 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 
 - **Migrasi RLS proper (RBAC-driven) — BESAR, risiko tinggi:** RLS role hardcode tak sinkron RBAC; `has_permission()` broken; prasyarat HRIS. Eksekusi **sesi fresh** — lihat section **Backlog — Migrasi RLS Proper (RBAC-driven)**.
 - **CEO unblock review (Phase 2.8Y):** `profiles_read` di-set `USING(true)` agar CEO bisa baca `profiles`. Aman sekarang (bukan HRIS), tapi **WAJIB diperketat ulang saat modul HRIS masuk** (data pribadi/gaji).
-- **Modul Activity/Task — tabel `activities` siap, frontend belum (Phase 2.9B):** tabel baru sudah live + data lama dimigrasi, tapi `SalesCallsPage` & `CRMDashboard` AddVisitModal **masih** baca-tulis `sales_calls`/`sales_visits` (DORMANT). Backlog: repoint frontend → `activities`, lalu drop tabel lama setelah verifikasi.
+- **Modul Activity/Task — tabel `activities` + `activity_logs` siap, frontend belum (Phase 2.9B/2.9C):** tabel baru sudah live + data lama dimigrasi (activities: 0 call+2 visit; activity_logs: 2 log), tapi `SalesCallsPage` & `CRMDashboard` AddVisitModal/VisitDetailModal **masih** baca-tulis `sales_calls`/`sales_visits`/`sales_visit_logs` (DORMANT). Backlog: repoint frontend → `activities`/`activity_logs`, lalu drop tabel lama setelah verifikasi. Inventory UI di `ACTIVITY_UI_MAP.md`.
 - **WON→customer sekarang dijamin DB (Phase 2.9B):** trigger `trg_set_customer_on_won` menutup semua jalur → tak perlu lagi andalkan `WinLossModal` (frontend redundan, dibiarkan). Backfill sudah jalan untuk record lama yang stuck (mis. TOKO DAMRAH).
 - **Mobile polish — verifikasi visual per-halaman:** util responsive (2.8T) + nav drawer (2.8U) sudah diterapkan, tapi halaman selain CRM Dashboard (Inventory / Asset / Logistics / Quotation) **belum dicek satu-satu di mobile** → backlog: sisir visual tiap halaman di <1024px.
 - **Warning React minor:** beberapa input read-only tampil "form field value without onChange handler" (terpisah dari responsive) — bisa dibersihkan (tambah `readOnly` atau `onChange` no-op).
