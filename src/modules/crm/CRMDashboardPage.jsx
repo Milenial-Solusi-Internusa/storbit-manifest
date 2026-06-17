@@ -150,6 +150,31 @@ function useWidth() {
   return [ref, w];
 }
 
+/* Viewport <1024px detector (initial value from matchMedia → no flash).
+   Used ONLY for the calendar's tap behavior (dot+popup on mobile vs the
+   unchanged desktop day-click). Visuals stay CSS-driven via lg: breakpoints. */
+function useIsMobile(maxWidth = 1023) {
+  const query = `(max-width:${maxWidth}px)`;
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [query]);
+  return isMobile;
+}
+
+/* Pastel dot colours per visit status (mobile calendar indicators —
+   intentionally NOT navy/orange). */
+const VISIT_DOT_PASTEL = {
+  scheduled: '#A5C8E8', // sky
+  completed: '#7FD8C4', // teal muda
+  cancelled: '#F5C9A8', // peach
+};
+
 /* ---------- style tokens ---------- */
 const D = {
   root: { fontFamily: "'Inter', system-ui, sans-serif", background: "#F7F7F8", minHeight: "100%", padding: "26px 28px 44px", boxSizing: "border-box", color: "#1A2330" },
@@ -860,7 +885,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
           </div>
 
           {/* Prospect / Customer + Salesperson */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="nx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               {lbl('Prospect / Customer')}
               {sel({
@@ -886,7 +911,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
           </div>
 
           {/* Tanggal + Waktu */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="nx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               {lbl('Tanggal Kunjungan', true)}
               {inp({ type: 'date', value: draft.visit_date, onChange: e => setDraft(d => ({ ...d, visit_date: e.target.value })) })}
@@ -1098,6 +1123,8 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
 }
 
 function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
+  const isMobile = useIsMobile();
+  const [dayPopup, setDayPopup] = useState(null); // mobile day-detail sheet: { label, dateKey, visits }
   const now = new Date();
   const year  = now.getFullYear();
   const month = now.getMonth();
@@ -1165,10 +1192,10 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
 
       {/* day headers */}
       <div style={D.calGridHead}>
-        {DOW.map((d) => <div key={d} style={D.calDow}>{d}</div>)}
+        {DOW.map((d) => <div key={d} className="nx-cal-dow" style={D.calDow}>{d}</div>)}
       </div>
 
-      {/* grid */}
+      {/* grid — desktop: event text in cell; mobile (<1024px): pastel dots, tap → day sheet */}
       <div style={D.calGrid}>
         {cells.map((d, i) => {
           const isToday = d === todayDate;
@@ -1176,7 +1203,15 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
           const dayVisits = dateKey ? (visitsByDay[dateKey] || []) : [];
           return (
             <div key={i}
-              onClick={d ? () => onDayClick?.(`${year}-${pad(month + 1)}-${pad(d)}`) : undefined}
+              className="nx-cal-cell"
+              onClick={d ? () => {
+                // Mobile + has visits → open day sheet; else fall back to add-visit-for-date.
+                if (isMobile && dayVisits.length > 0) {
+                  setDayPopup({ label: `${d} ${MONTH_LABELS[month]} ${year}`, dateKey, visits: dayVisits });
+                } else {
+                  onDayClick?.(dateKey);
+                }
+              } : undefined}
               onMouseEnter={d ? (e) => { if (!isToday) e.currentTarget.style.background = '#F0F4FA'; } : undefined}
               onMouseLeave={d ? (e) => { if (!isToday) e.currentTarget.style.background = ''; } : undefined}
               style={{
@@ -1190,26 +1225,83 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
                   ? <div style={D.calNumToday}>{d}</div>
                   : <div style={D.calNum}>{d}</div>
               ) : null}
-              {dayVisits.slice(0, 3).map((v, j) => {
-                const st = VISIT_STATUS[v.status || 'scheduled'] || VISIT_STATUS.scheduled;
-                return (
-                  <div key={j}
-                    onClick={e => { e.stopPropagation(); onVisitClick?.(v); }}
-                    style={{ ...D.calEvent, borderLeftColor: st.fg, background: st.bg + "88", cursor: 'pointer' }}>
-                    <div style={D.calEventProspect} title={v.prospect}>{v.prospect}</div>
-                    <div style={D.calEventMeta}>
-                      {v.time ? v.time.slice(0, 5) + ' · ' : ''}{v.salesperson !== '—' ? v.salesperson : ''}
+
+              {/* DESKTOP (≥1024px): full event text in cell */}
+              <div className="hidden lg:block">
+                {dayVisits.slice(0, 3).map((v, j) => {
+                  const st = VISIT_STATUS[v.status || 'scheduled'] || VISIT_STATUS.scheduled;
+                  return (
+                    <div key={j}
+                      onClick={e => { e.stopPropagation(); onVisitClick?.(v); }}
+                      style={{ ...D.calEvent, borderLeftColor: st.fg, background: st.bg + "88", cursor: 'pointer' }}>
+                      <div style={D.calEventProspect} title={v.prospect}>{v.prospect}</div>
+                      <div style={D.calEventMeta}>
+                        {v.time ? v.time.slice(0, 5) + ' · ' : ''}{v.salesperson !== '—' ? v.salesperson : ''}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-              {dayVisits.length > 3 && (
-                <div style={{ fontSize: 10, color: "#9AA0AC", fontWeight: 600, paddingLeft: 2 }}>+{dayVisits.length - 3} lainnya</div>
+                  );
+                })}
+                {dayVisits.length > 3 && (
+                  <div style={{ fontSize: 10, color: "#9AA0AC", fontWeight: 600, paddingLeft: 2 }}>+{dayVisits.length - 3} lainnya</div>
+                )}
+              </div>
+
+              {/* MOBILE (<1024px): pastel dot indicators */}
+              {dayVisits.length > 0 && (
+                <div className="lg:hidden" style={{ display: 'flex', alignItems: 'center', gap: 2.5, marginTop: 2, flexWrap: 'wrap' }}>
+                  {dayVisits.slice(0, 3).map((v, j) => (
+                    <span key={j} style={{ width: 6, height: 6, borderRadius: '50%', display: 'inline-block',
+                      background: VISIT_DOT_PASTEL[v.status || 'scheduled'] || VISIT_DOT_PASTEL.scheduled }} />
+                  ))}
+                  {dayVisits.length > 3 && (
+                    <span style={{ fontSize: 8.5, fontWeight: 700, color: '#9AA0AC', lineHeight: 1 }}>+{dayVisits.length - 3}</span>
+                  )}
+                </div>
               )}
             </div>
           );
         })}
       </div>
+
+      {/* MOBILE day-detail sheet (bottom sheet) — opened by tapping a date with visits */}
+      {dayPopup && (
+        <div onClick={() => setDayPopup(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(0,0,0,0.42)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 480, background: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: '18px 18px 24px', maxHeight: '72vh', overflowY: 'auto', boxShadow: '0 -8px 30px rgba(10,20,40,0.18)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800, fontSize: 16, color: '#16243A' }}>{dayPopup.label}</div>
+              <button onClick={() => setDayPopup(null)} aria-label="Tutup"
+                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #ECEDF1', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6B7280' }}>
+                <Icon name="x" size={15} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+              {dayPopup.visits.map((v, j) => {
+                const st = VISIT_STATUS[v.status || 'scheduled'] || VISIT_STATUS.scheduled;
+                return (
+                  <button key={j} onClick={() => { onVisitClick?.(v); setDayPopup(null); }}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left', width: '100%', background: '#FAFBFC', border: '1px solid #F0F1F4', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 5, flexShrink: 0, background: VISIT_DOT_PASTEL[v.status || 'scheduled'] || VISIT_DOT_PASTEL.scheduled }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#16243A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.prospect}</div>
+                      <div style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
+                        {v.time ? <span style={{ fontFamily: "'IBM Plex Mono',monospace" }}>{v.time.slice(0, 5)}</span> : null}
+                        {v.time && v.salesperson !== '—' ? ' · ' : ''}{v.salesperson !== '—' ? v.salesperson : ''}
+                      </div>
+                    </div>
+                    <span style={{ ...D.badge, background: st.bg, color: st.fg, padding: '2px 8px', fontSize: 10, flexShrink: 0 }}>{st.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => { const k = dayPopup.dateKey; setDayPopup(null); onDayClick?.(k); }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', background: NAVY, color: '#fff', border: 'none', borderRadius: 10, padding: '11px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <Icon name="plus" size={15} /> Tambah Visit
+            </button>
+          </div>
+        </div>
+      )}
 
       {totalVisits === 0 && (
         <div style={{ padding: "20px", textAlign: "center", color: "#9AA0AC", fontSize: 13, borderTop: "1px solid #F4F5F7" }}>
@@ -1740,7 +1832,7 @@ function CRMDashboardPage() {
 
   // ── skeleton row ─────────────────────────────────────────────────────────
   const SkeletonRow = () => (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 16, marginBottom: 16 }}>
+    <div className="nx-grid-kpi" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 16, marginBottom: 16 }}>
       {[1,2,3,4].map(i => (
         <div key={i} style={{ height: 130, borderRadius: 14, background: "linear-gradient(90deg,#F2F4F7 25%,#E8EBF0 50%,#F2F4F7 75%)", backgroundSize: "400% 100%", animation: "db-shimmer 1.4s ease infinite" }} />
       ))}
@@ -1748,7 +1840,7 @@ function CRMDashboardPage() {
   );
 
   return (
-    <div style={D.root}>
+    <div className="nx-page-pad" style={D.root}>
       <style>{`
         .om-card{transition:box-shadow .18s ease, transform .18s ease;}
         .om-card:hover{box-shadow:0 2px 4px rgba(20,40,70,.06), 0 14px 32px rgba(20,40,70,.11);transform:translateY(-3px);}
@@ -1854,7 +1946,7 @@ function CRMDashboardPage() {
           <React.Fragment>
           {/* row 1 — KPI */}
           {dashLoading ? <SkeletonRow /> : (
-            <div style={D.kpiRow}>
+            <div className="nx-grid-kpi" style={D.kpiRow}>
               {kpiCards.map((k) => <KpiCard key={k.label} data={k} />)}
             </div>
           )}
@@ -1868,14 +1960,14 @@ function CRMDashboardPage() {
           </div>
 
           {/* row 3 — charts */}
-          <div style={D.chartsRow}>
+          <div className="nx-grid-2" style={D.chartsRow}>
             <PipelineByStage stages={dashData?.stagesData} />
             <LeadSourceDonut data={dashData?.leadSourceData || []} />
           </div>
 
           {/* row 4 — tables (team view only — hidden for sales/operations) */}
           {!isSalesOnly && (
-            <div style={D.tablesRow}>
+            <div className="nx-grid-2" style={D.tablesRow}>
               <SalesPerformance data={dashData?.salesPerfData || []} />
               <LeadsBySource sourceData={dashData?.leadSourceData || []} />
             </div>

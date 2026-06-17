@@ -604,7 +604,7 @@ export default function InventoryDashboardPage() {
   const movement = (data?.movementFull || []).slice(-weeksN).map((m, i) => ({ ...m, week: "M" + (i + 1) }));
 
   return (
-    <div style={D.root}>
+    <div className="nx-page-pad" style={D.root}>
       <style>{".om-card{transition:box-shadow .18s ease, transform .18s ease;} .om-card:hover{box-shadow:0 2px 4px rgba(40,35,25,.06), 0 14px 32px rgba(40,35,25,.10);transform:translateY(-3px);} .recharts-surface{outline:none;}"}</style>
       <div style={D.wrap}>
         {/* header */}
@@ -651,18 +651,18 @@ export default function InventoryDashboardPage() {
         ) : data ? (
           <>
             {/* row 1 — KPI */}
-            <div style={D.kpiRow}>
+            <div className="nx-grid-kpi" style={D.kpiRow}>
               {data.KPIS.map((k) => <KpiCard key={k.label} data={k} />)}
             </div>
 
             {/* row 2 — movement + category */}
-            <div style={D.chartsRow}>
+            <div className="nx-grid-2" style={D.chartsRow}>
               <MovementTrend data={movement} weeks={weeksN} />
               <CategoryDonut data={data.catList} />
             </div>
 
             {/* row 3 — top value + warehouse */}
-            <div style={D.chartsRow2}>
+            <div className="nx-grid-2" style={D.chartsRow2}>
               <TopByValue data={data.topByValue} />
               <StockPerWarehouse data={data.warehouses} />
             </div>

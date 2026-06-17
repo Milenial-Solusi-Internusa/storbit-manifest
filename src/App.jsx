@@ -4,7 +4,7 @@ import {
   Search, Download, Upload, Eye, Edit3, Trash2, X,
   Package, AlertTriangle, CheckCircle2,
   ChevronRight, Save, RefreshCw, Calendar, Building2, User,
-  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut,
+  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, Menu,
   Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen,
@@ -1096,22 +1096,36 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
 // Replaces the global accordion sidebar. Renders only the active module's items
 // plus a "← Apps" button to return to the launcher.
 // ─────────────────────────────────────────────────────────────────────────────
-function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role, hasPermission, hasMenuPermission }) {
+function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role, hasPermission, hasMenuPermission, asDrawer = false, isOpen = false, onClose }) {
   const visibleItems = (moduleGroup?.items || []).filter(item => canSeeMenuItem(item, role, hasPermission, hasMenuPermission));
   const Icon = moduleGroup?.items[0]?.icon;
 
+  // In drawer mode, navigating / going back also closes the drawer.
+  const navigate   = asDrawer ? (id) => { onNavigate(id); onClose?.(); } : onNavigate;
+  const backToApps = asDrawer ? () => { onBackToApps(); onClose?.(); } : onBackToApps;
+
+  // Desktop: static sidebar (hidden lg:flex). Mobile drawer: fixed slide-in (lg:hidden).
+  const asideClass = asDrawer
+    ? 'lg:hidden flex flex-col w-[280px] max-w-[85vw] fixed top-0 left-0 h-screen z-50 border-r transition-transform duration-300 ease-out'
+    : 'hidden lg:flex flex-col w-[260px] flex-shrink-0 sticky top-0 h-screen border-r';
+  const asideStyle = {
+    background: 'linear-gradient(165deg, #144682 0%, #0f3366 100%)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    color: '#F8F5ED',
+    ...(asDrawer ? {
+      transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
+      boxShadow: isOpen ? '0 12px 40px rgba(0,0,0,0.35)' : 'none',
+    } : {}),
+  };
+
   return (
     <aside
-      className="hidden lg:flex flex-col w-[260px] flex-shrink-0 sticky top-0 h-screen border-r"
-      style={{
-        background: 'linear-gradient(165deg, #144682 0%, #0f3366 100%)',
-        borderColor: 'rgba(255,255,255,0.12)',
-        color: '#F8F5ED',
-      }}
+      className={asideClass}
+      style={asideStyle}
     >
       {/* Back to Apps */}
       <button
-        onClick={onBackToApps}
+        onClick={backToApps}
         className="flex items-center gap-2 mx-3 mt-4 mb-1 px-3 py-2.5 rounded-xl transition-all text-sm font-medium flex-shrink-0"
         style={{ color: 'rgba(248,245,237,0.60)' }}
         onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#FFFDF7'; }}
@@ -1150,7 +1164,7 @@ function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role
               key={item.id}
               item={item}
               activeMenu={activeMenu}
-              setActiveMenu={onNavigate}
+              setActiveMenu={navigate}
             />
           );
         })}
@@ -1179,6 +1193,7 @@ export default function StorbitManifest() {
   const [activeMenu, setActiveMenu] = useState(
     localStorage.getItem('nexus_last_menu') || 'home'
   );
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile module-menu drawer
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
   const [activeCustomerId, setActiveCustomerId] = useState(null); // for customer-detail page
   const [prevCustomerMenu, setPrevCustomerMenu] = useState('crm-customers'); // back target
@@ -1250,7 +1265,7 @@ export default function StorbitManifest() {
   }, [prevCustomerMenu]);
 
   // Return to app launcher.
-  const goToLauncher = useCallback(() => setActiveModule(null), []);
+  const goToLauncher = useCallback(() => { setActiveModule(null); setMobileDrawerOpen(false); }, []);
 
   // Enter a module group — select the first visible leaf in that group.
   // Traverses children/grandchildren because some groups (e.g. CRM) wrap their
@@ -1754,10 +1769,49 @@ export default function StorbitManifest() {
           />
         )}
 
+        {/* MOBILE DRAWER — module menu (lg:hidden); reuses ModuleSidebar */}
+        {activeModule && (
+          <>
+            <div
+              className="lg:hidden fixed inset-0 z-40 transition-opacity duration-300"
+              style={{
+                background: 'rgba(0,0,0,0.42)',
+                opacity: mobileDrawerOpen ? 1 : 0,
+                pointerEvents: mobileDrawerOpen ? 'auto' : 'none',
+              }}
+              onClick={() => setMobileDrawerOpen(false)}
+              aria-hidden="true"
+            />
+            <ModuleSidebar
+              asDrawer
+              isOpen={mobileDrawerOpen}
+              onClose={() => setMobileDrawerOpen(false)}
+              moduleGroup={activeModuleGroup}
+              activeMenu={activeMenu}
+              onNavigate={navigateTo}
+              onBackToApps={goToLauncher}
+              role={role}
+              hasPermission={hasPermission}
+              hasMenuPermission={hasMenuPermission}
+            />
+          </>
+        )}
+
         {/* MOBILE TOPBAR */}
         <header className="lg:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: 'rgba(15,42,35,0.12)', background: 'rgba(250, 246, 240, 0.94)' }}>
           <div className="px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
+              {/* Hamburger — only inside a module (opens the module-menu drawer) */}
+              {activeModule && (
+                <button
+                  onClick={() => setMobileDrawerOpen(true)}
+                  aria-label="Buka menu"
+                  className="w-9 h-9 rounded-xl flex items-center justify-center border flex-shrink-0"
+                  style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}
+                >
+                  <Menu size={18} strokeWidth={2}/>
+                </button>
+              )}
               <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: PASTEL.ink }}>
                 <Package size={17} style={{ color: 'white' }} strokeWidth={2}/>
               </div>
@@ -1776,25 +1830,6 @@ export default function StorbitManifest() {
               Logout
             </button>
           </div>
-          <nav className="px-3 pb-2 flex items-center gap-1 overflow-x-auto">
-            {visibleMenus.map(m => {
-              const Icon = m.icon;
-              const active = activeMenu === m.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => navigateTo(m.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap"
-                  style={{
-                    background: active ? PASTEL.ink : 'transparent',
-                    color: active ? PASTEL.ink : PASTEL.inkSoft,
-                  }}
-                >
-                  <Icon size={13} style={{ color: active ? 'white' : PASTEL.inkSoft }}/><span style={{ color: active ? 'white' : PASTEL.inkSoft }}>{m.label}</span>
-                </button>
-              );
-            })}
-          </nav>
         </header>
 
         {/* MAIN CONTENT */}

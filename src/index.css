@@ -15,3 +15,39 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Montserrat', 'Inter', system-ui, sans-serif;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Responsive grid helpers — OPT-IN via className (Phase 2.8T).
+   Desktop (≥1024px) is UNTOUCHED: the element's inline
+   gridTemplateColumns still applies, so desktop stays pixel-identical.
+   Below 1024px these !important rules override the inline columns so
+   multi-column dashboards/KPI/chart/section rows reflow instead of
+   overflowing. Attach the class alongside the existing inline style:
+     .nx-grid-kpi  4/3-col KPI rows → tablet 2-col, mobile 1-col
+     .nx-grid-3    3-col rows       → tablet 2-col, mobile 1-col
+     .nx-grid-2    2-col rows       → tablet & mobile 1-col (full-width)
+     .nx-page-pad  page root        → smaller horizontal padding on mobile
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  .nx-grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .nx-grid-3   { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .nx-grid-2   { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 639px) {
+  .nx-grid-kpi { grid-template-columns: 1fr !important; }
+  .nx-grid-3   { grid-template-columns: 1fr !important; }
+  .nx-page-pad { padding-left: 14px !important; padding-right: 14px !important; }
+}
+/* .nx-stack — a flex row with a fixed-width sidebar that should stack
+   (full-width, unsticky) below 1024px. Desktop unchanged. */
+@media (max-width: 1023px) {
+  .nx-stack { flex-direction: column !important; }
+  .nx-stack > * { flex: 1 1 auto !important; width: 100% !important; min-width: 0 !important; position: static !important; }
+}
+/* Calendar mobile sizing — shrink cells so all 7 columns fit <1024px without
+   scroll (date numbers stay legible; events become dots, handled in JSX via the
+   `hidden lg:block` / `lg:hidden` Tailwind breakpoints). Desktop unchanged. */
+@media (max-width: 1023px) {
+  .nx-cal-cell { min-height: 50px !important; padding: 4px 2px !important; }
+  .nx-cal-dow  { padding: 6px 2px !important; font-size: 9.5px !important; }
+}

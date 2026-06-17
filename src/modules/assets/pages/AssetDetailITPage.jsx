@@ -1202,7 +1202,7 @@ export default function AssetDetailITPage({ id, asset, onBack, onSaved }) {
           {!itLoading && network && (
             <>
               {/* Stat cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 14 }}>
+              <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 14 }}>
                 {[
                   { label: 'IPv4 Address', val: network.ip_address, sub: 'DHCP · Lease 24j', mono: true },
                   { label: 'Hostname',     val: network.hostname,   sub: null, mono: true },

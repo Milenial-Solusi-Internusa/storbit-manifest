@@ -288,7 +288,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
             <div style={{ padding: '20px 22px' }}>
 
               {/* Row 1: SP Date | Customer | Distribution Center */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 16px', marginBottom: 14 }}>
+              <div className="nx-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 16px', marginBottom: 14 }}>
                 <Field label="SP Date" req>
                   {inp({ type: 'date', value: spDate, onChange: e => setSpDate(e.target.value) })}
                 </Field>
@@ -319,7 +319,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
               </div>
 
               {/* Row 2: Deadline (alone) */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 16px', marginBottom: 14 }}>
+              <div className="nx-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 16px', marginBottom: 14 }}>
                 <Field label="Expired Date" req>
                   {inp({ type: 'date', value: expiredDate, min: today(), onChange: e => setExpiredDate(e.target.value) })}
                 </Field>
@@ -665,7 +665,7 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
         </div>
 
         {/* Row 2: Unit Price | Ongkos Kirim | Exp Date | Deadline */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 12px' }}>
+        <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 12px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {fieldLabel('Unit Price', true)}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>

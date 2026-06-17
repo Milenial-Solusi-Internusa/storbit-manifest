@@ -351,7 +351,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
 
           {/* Pricing */}
           <ModalSect>Pricing</ModalSect>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', marginBottom: 12 }}>
+          <div className="nx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', marginBottom: 12 }}>
             <ModalField label="Unit Price (Rp)" req>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.inkFaint, pointerEvents: 'none' }}>Rp</span>
@@ -368,7 +368,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
             </ModalField>
           </div>
           {/* Calc row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'hidden', background: C.surface2, marginBottom: 4 }}>
+          <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'hidden', background: C.surface2, marginBottom: 4 }}>
             {[
               { label: 'Subtotal',    value: rp(subtotal),   color: null      },
               { label: 'PPN (11%)',   value: rp(ppn),        color: null      },
@@ -412,7 +412,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
               </label>
             ))}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
+          <div className="nx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
             <ModalField label="Submit Date">
               <ModalInp type="date" value={draft.submitDate} onChange={e => set('submitDate', e.target.value)}/>
             </ModalField>
