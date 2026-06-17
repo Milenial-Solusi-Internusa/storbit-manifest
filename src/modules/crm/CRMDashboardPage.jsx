@@ -690,20 +690,25 @@ function RecentActivity({ items = ACTIVITY }) {
           const m = ACT_META[a.type] || ACT_META.prospect;
           const last = i === list.length - 1;
           return (
-            <div key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
+            <div key={i} className="nx-act-row" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
               style={{ ...D.actRow, borderBottom: last ? "none" : D.actRow.borderBottom, marginLeft: -8, marginRight: -8, paddingLeft: 8, paddingRight: 8, borderRadius: 9, background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
               <div style={{ ...D.actIco, background: m.bg, color: m.fg }}><Icon name={m.icon} size={18} /></div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={D.actText}>{a.text}</div>
-                <div style={D.actCo}>{a.co}</div>
+              {/* content: desktop = row [text | meta]; mobile (<1024px) = column (meta drops below name) */}
+              <div className="nx-act-content" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={D.actText}>{a.text}</div>
+                  <div style={D.actCo}>{a.co}</div>
+                </div>
+                <div className="nx-act-meta" style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
+                  <span style={D.actTime}>{a.time}</span>
+                  {a.user && a.user !== '—' && (
+                    <span style={D.userBadge}>
+                      <span style={{ ...D.userBadgeAv, background: avatarColor(a.user) }}>{initials(a.user)}</span>
+                      {a.user}
+                    </span>
+                  )}
+                </div>
               </div>
-              <span style={D.actTime}>{a.time}</span>
-              {a.user && a.user !== '—' && (
-                <span style={D.userBadge}>
-                  <span style={{ ...D.userBadgeAv, background: avatarColor(a.user) }}>{initials(a.user)}</span>
-                  {a.user}
-                </span>
-              )}
             </div>
           );
         })}
