@@ -2,6 +2,29 @@
 
 ## 2026-06-18
 
+### ActivitiesPage — delete (super_admin) + fix popup "Buat Prospek?" (Phase 2.9I)
+- [x] **Delete activity (super_admin)** — tombol "Hapus" (outline danger, paling kiri) di footer view-mode modal, muncul hanya jika `isSuperAdmin`. `handleDeleteActivity` = soft delete (`deleted_at=now()`) + toast + setDetail(null) + setDeleteConfirm(null) + fetchActivities(). Flow: Hapus → tutup modal + `ConfirmModal` variant=danger "Hapus Aktivitas?" → confirm → soft delete. Role non-super: tombol tak muncul
+- [x] **Fix popup "Buat Prospek?"** — `handleCheck` urutan: UPDATE → fetchActivities() → setConfirmProspect(row) → setDetail(null) TERAKHIR (sebelumnya setConfirmProspect sebelum fetch/setDetail). ConfirmModal prospek `open={!!confirmProspect}` dikonfirmasi benar. Popup kini muncul saat "Tandai Selesai" prospecting dari modal
+- [x] **Build clean** — 2630 modules, 1.22s; lint ActivitiesPage 5→5 (net-zero baseline)
+- [ ] **Tes manual (belum — runtime):** super_admin buka modal → tombol Hapus → konfirmasi danger → soft delete, list refresh · role lain → Hapus tak muncul · prospecting + Tandai Selesai dari modal → popup "Buat Prospek?" muncul → [Ya] → form prospek prefilled
+
+### ActivitiesPage — aksi dari dalam modal: Tandai Selesai + Batalkan (Phase 2.9H)
+> Footer button bar di ActivityDetailModal view mode, muncul hanya saat status='todo'.
+- [x] **Tombol "Tandai Selesai"** (primary navy, icon Check) → `handleCheck(detail)` (reuse — handle prospecting `setConfirmProspect` + mark done); muncul saat status todo (tanpa gate canEdit, konsisten centang list row)
+- [x] **Tombol "Batalkan Aktivitas"** (outline danger) → `handleCancelActivity(id)`: UPDATE status='cancelled' + toast + setDetail(null) + fetchActivities(); muncul saat `status==='todo' && canEdit`
+- [x] **handleCheck** +`setDetail(null)` setelah fetchActivities() (unconditional, no-op dari list row → modal auto-tutup setelah mark-done; popup "Buat Prospek?" tetap muncul utk prospecting krn state terpisah)
+- [x] Modal signature +2 prop (onCancel, onMarkDone), mount di-wire `detail && handleCheck/handleCancelActivity`. Status done/cancelled → kedua tombol tak muncul
+- [x] **Build clean** — 2630 modules, 1.07s; lint ActivitiesPage 5→5 (net-zero baseline)
+- [ ] **Tes manual (belum — runtime):** modal todo → 2 tombol muncul · Tandai Selesai biasa → modal tutup, done di list · Tandai Selesai prospecting → popup "Buat Prospek?" · Batalkan → modal tutup, cancelled di list · modal done/cancelled → tombol tak muncul
+
+### Activity module Phase 2C — edit + history tab + daily report (Phase 2.9G)
+> Edit activity (3B), tab Aktivitas di CustomerDetail (3C), daily activity report di Dashboard (3D). DB tidak diubah.
+- [x] **ActivitiesPage.jsx — edit mode di ActivityDetailModal** (bukan modal baru): tombol Edit (view mode, muncul jika `canEdit`) → form inline. `canEdit = isManagerOrAbove || assigned_to===self`; `isManagerOrAbove` incl. `sales_head` (selaras `is_manager_or_above()` DB). Field: type/tanggal/waktu/sales/account/prospect_name/contact/outcome/notes/next_action+date/location. Status TIDAK via form. `handleEditSave` UPDATE (tanpa status/company_id/created_by); **details merge-preserve** (tak hapus call_type/visit_type/mom)
+- [x] **CustomerDetailPage.jsx — tab "Aktivitas"** setelah 'visit': fetch semua tipe (account_id, tanpa filter type), tabel Tanggal/Tipe/Status/Sales/Catatan-Outcome, badge copy ACT_TYPE_META/ACT_STATUS_META, count badge. Tab 'visit' tak diubah
+- [x] **CRMDashboardPage.jsx — tab "Aktivitas"** (DASH_TABS ketiga, icon activity): `ActivityReportTab` role-aware. SALES → ringkasan hari ini (todo/done + done per tipe) + detail (filter tanggal). MANAGER+ → ringkasan per-sales hari ini (Todo/Done/per-tipe) + filter sales (fetchSalesProfiles RBAC) + filter tanggal + detail (+kolom Sales). Fetch company-scoped, assigned_to=uid jika sales. Tab Overview/Calendar tak diubah
+- [x] **Build clean** — 2630 modules, 1.18s; 3 chunk rebuilt. Lint net +1 set-state-in-effect per file (baseline); "Cannot create components" CRMDashboard pre-existing (line shift, bukan dari edit ini)
+- [ ] **Tes manual (belum — runtime):** edit activity (klik row→Edit→ubah→simpan→refresh) · sales hanya bisa edit milik sendiri (tombol Edit tak muncul kalau bukan owner/manager) · tab Aktivitas CustomerDetail (semua tipe muncul) · Dashboard Aktivitas login sales (ringkasan+detail diri) · login manager (summary per-sales + filter sales + detail)
+
 ### CRM role-scoping hardening (Phase 2.9F — hasil audit role akses)
 > Tutup celah defense-in-depth + selaraskan frontend dgn RLS. Tampilan/fitur tidak diubah.
 - [x] **LeadPoolPage.jsx frontend belt** — sebelumnya fetch `lead_pool` tanpa `company_id`/owner filter (sole guard = RLS). Tambah pola ProspectListPage: `isAllEntities=['super_admin']` + `isSalesOnly=['sales','operations']`; guard profile.id/company_id; `if(!isAllEntities) .eq('company_id')` + `if(isSalesOnly) .or('assigned_to.eq.{uid},created_by.eq.{uid}')`; deps effect diperbarui. Sales kini cuma lihat leads milik sendiri

@@ -719,8 +719,9 @@ function RecentActivity({ items = ACTIVITY }) {
 
 /* ---------- tab navigation ---------- */
 const DASH_TABS = [
-  { id: "summary",  label: "Summary",  icon: "layoutdashboard" },
-  { id: "calendar", label: "Calendar", icon: "calendar" },
+  { id: "summary",  label: "Summary",   icon: "layoutdashboard" },
+  { id: "calendar", label: "Calendar",  icon: "calendar" },
+  { id: "activity", label: "Aktivitas", icon: "activity" },
 ];
 function DashTab({ tab, active, onSelect }) {
   const [h, setH] = useState(false);
@@ -735,6 +736,249 @@ function DashTab({ tab, active, onSelect }) {
 }
 function DashTabs({ active, onSelect }) {
   return <div style={D.tabBar}>{DASH_TABS.map((t) => <DashTab key={t.id} tab={t} active={active === t.id} onSelect={onSelect} />)}</div>;
+}
+
+/* =========================================================================
+   ActivityReportTab — daily activity report (Aktivitas tab)
+   Sales: own today-summary + date-filtered detail.
+   Manager+: per-sales today-summary + sales/date filters + detail.
+   ========================================================================= */
+const ART_TYPE_META = {
+  call:        { label: 'Call',        bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
+  visit:       { label: 'Visit',       bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
+  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#144682', bd: '#BAD2E6' },
+  prospecting: { label: 'Prospecting', bg: '#FBE6DA', color: '#C8521B', bd: '#F0C3A8' },
+  followup:    { label: 'Follow-up',   bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
+};
+const ART_STATUS_META = {
+  todo:      { label: 'To Do',      bg: 'transparent', color: '#5E6553', bd: '#DDD3BE' },
+  done:      { label: 'Selesai',    bg: '#E4F0E5',     color: '#2E7D4F', bd: '#BFDDC4' },
+  cancelled: { label: 'Dibatalkan', bg: 'transparent', color: '#B23227', bd: '#E6BBB2' },
+};
+const ART_TYPES = ['call', 'visit', 'meeting', 'prospecting', 'followup'];
+function ArtBadge({ meta }) {
+  if (!meta) return <span style={{ color: '#D1D5DB' }}>—</span>;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700, letterSpacing: '.3px', border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color }}>
+      {meta.label}
+    </span>
+  );
+}
+function artTodayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function artFmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + (String(iso).length === 10 ? 'T00:00:00' : ''));
+  if (isNaN(d.getTime())) return String(iso);
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+function artBounds(filterDate, customFrom, customTo) {
+  const d = new Date();
+  const f = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  if (filterDate === 'today') return { start: artTodayStr(), end: artTodayStr() };
+  if (filterDate === 'this_week') {
+    const dow = (d.getDay() + 6) % 7;
+    const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow);
+    const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+    return { start: f(monday), end: f(sunday) };
+  }
+  if (filterDate === 'this_month') {
+    return { start: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`, end: f(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+  }
+  return { start: customFrom || '0000-01-01', end: customTo || '9999-12-31' };
+}
+
+function ActivityReportTab({ profile, isSalesOnly, showToast }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterDate, setFilterDate] = useState('today');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [filterSales, setFilterSales] = useState('all');
+  const [salesOpts, setSalesOpts] = useState([]);
+
+  useEffect(() => {
+    if (!profile?.company_id) return;
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      let q = supabase
+        .from('activities')
+        .select('id, type, status, scheduled_for, activity_time, outcome, notes, account_id, assigned_to, prospect_name, account:accounts!activities_account_id_fkey(name)')
+        .eq('company_id', profile.company_id)
+        .is('deleted_at', null);
+      if (isSalesOnly) q = q.eq('assigned_to', profile.id);
+      const { data, error } = await q.order('scheduled_for', { ascending: false }).limit(1000);
+      if (cancelled) return;
+      if (error) { showToast?.('Gagal memuat aktivitas: ' + error.message, 'error'); setRows([]); setLoading(false); return; }
+      const list = data || [];
+      const ids = [...new Set(list.map(a => a.assigned_to).filter(Boolean))];
+      const nm = {};
+      if (ids.length) {
+        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+        (profs || []).forEach(p => { nm[p.id] = p.full_name; });
+      }
+      setRows(list.map(a => ({
+        ...a,
+        salesperson_name: a.assigned_to ? (nm[a.assigned_to] || null) : null,
+        account_name: a.account?.name || a.prospect_name || '—',
+      })));
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.company_id, profile?.id, isSalesOnly, showToast]);
+
+  // Manager+ sales dropdown (RBAC sales-only, company-scoped).
+  useEffect(() => {
+    if (isSalesOnly || !profile?.company_id) return;
+    let cancelled = false;
+    fetchSalesProfiles(profile.company_id).then(s => { if (!cancelled) setSalesOpts(s); });
+    return () => { cancelled = true; };
+  }, [isSalesOnly, profile?.company_id]);
+
+  const today = artTodayStr();
+  const todayRows = rows.filter(r => r.scheduled_for === today);
+
+  // Sales summary (today).
+  const salesSummary = {
+    todo: todayRows.filter(r => r.status === 'todo').length,
+    done: todayRows.filter(r => r.status === 'done').length,
+    donePerType: ART_TYPES.reduce((acc, t) => { acc[t] = todayRows.filter(r => r.status === 'done' && r.type === t).length; return acc; }, {}),
+  };
+
+  // Manager per-sales summary (today).
+  const perSales = (() => {
+    const map = {};
+    todayRows.forEach(r => {
+      const key = r.assigned_to || '—';
+      if (!map[key]) map[key] = { name: r.salesperson_name || 'Belum di-assign', todo: 0, done: 0, call: 0, visit: 0, meeting: 0, prospecting: 0, followup: 0 };
+      if (r.status === 'todo') map[key].todo++;
+      if (r.status === 'done') map[key].done++;
+      if (ART_TYPES.includes(r.type)) map[key][r.type]++;
+    });
+    return Object.values(map).sort((a, b) => (b.done + b.todo) - (a.done + a.todo));
+  })();
+
+  // Detail (date-filtered + sales filter for manager).
+  const { start, end } = artBounds(filterDate, customFrom, customTo);
+  let detail = rows.filter(r => r.scheduled_for >= start && r.scheduled_for <= end);
+  if (!isSalesOnly && filterSales !== 'all') detail = detail.filter(r => r.assigned_to === filterSales);
+
+  const card = { background: '#fff', border: '1px solid #ECE3D4', borderRadius: 14, padding: 18, boxShadow: '0 1px 6px rgba(35,41,30,.05)' };
+  const selStyle = { height: 34, borderRadius: 8, border: '1px solid #E2D9C7', background: '#fff', padding: '0 10px', fontSize: 13, color: '#23291E', outline: 'none', fontFamily: 'inherit', cursor: 'pointer' };
+  const th = { padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: '#857A68', whiteSpace: 'nowrap' };
+  const td = { padding: '10px 14px', fontSize: 13, color: '#4A5360', whiteSpace: 'nowrap' };
+  const mono = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5 };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 4 }}>
+      {/* ── Summary (today) ── */}
+      {isSalesOnly ? (
+        <div style={card}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 14 }}>Ringkasan Hari Ini</div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+            <div style={{ flex: '1 1 140px', background: '#FBF8F2', border: '1px solid #ECE3D4', borderRadius: 10, padding: '12px 16px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#857A68', textTransform: 'uppercase', marginBottom: 6 }}>To Do</div>
+              <div style={{ ...mono, fontSize: 24, fontWeight: 800, color: ORANGE }}>{salesSummary.todo}</div>
+            </div>
+            <div style={{ flex: '1 1 140px', background: '#FBF8F2', border: '1px solid #ECE3D4', borderRadius: 10, padding: '12px 16px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#857A68', textTransform: 'uppercase', marginBottom: 6 }}>Selesai</div>
+              <div style={{ ...mono, fontSize: 24, fontWeight: 800, color: '#2E7D4F' }}>{salesSummary.done}</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {ART_TYPES.map(t => (
+              <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4A5360' }}>
+                <ArtBadge meta={ART_TYPE_META[t]} /><span style={{ ...mono, fontWeight: 700, color: '#16243A' }}>{salesSummary.donePerType[t]}</span>
+              </span>
+            ))}
+            <span style={{ fontSize: 11, color: '#A29684', alignSelf: 'center' }}>(selesai per tipe)</span>
+          </div>
+        </div>
+      ) : (
+        <div style={card}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 12 }}>Ringkasan Per Sales — Hari Ini</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr style={{ borderBottom: '1px solid #ECE3D4' }}>
+                {['Sales', 'Todo', 'Done', 'Call', 'Visit', 'Meeting', 'Prospecting', 'Followup'].map(h => <th key={h} style={th}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {perSales.length === 0 ? (
+                  <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: '24px', color: '#A29684' }}>Belum ada aktivitas hari ini</td></tr>
+                ) : perSales.map((s, i) => (
+                  <tr key={i} style={{ borderBottom: i < perSales.length - 1 ? '1px solid #F3ECDF' : 'none' }}>
+                    <td style={{ ...td, fontWeight: 600, color: '#23291E' }}>{s.name}</td>
+                    <td style={{ ...td, ...mono }}>{s.todo}</td>
+                    <td style={{ ...td, ...mono, color: '#2E7D4F', fontWeight: 700 }}>{s.done}</td>
+                    <td style={{ ...td, ...mono }}>{s.call}</td>
+                    <td style={{ ...td, ...mono }}>{s.visit}</td>
+                    <td style={{ ...td, ...mono }}>{s.meeting}</td>
+                    <td style={{ ...td, ...mono }}>{s.prospecting}</td>
+                    <td style={{ ...td, ...mono }}>{s.followup}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Filters ── */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {!isSalesOnly && (
+          <select value={filterSales} onChange={e => setFilterSales(e.target.value)} style={selStyle}>
+            <option value="all">Semua Sales</option>
+            {salesOpts.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          </select>
+        )}
+        <select value={filterDate} onChange={e => setFilterDate(e.target.value)} style={selStyle}>
+          <option value="today">Hari Ini</option>
+          <option value="this_week">Minggu Ini</option>
+          <option value="this_month">Bulan Ini</option>
+          <option value="custom">Custom</option>
+        </select>
+        {filterDate === 'custom' && (
+          <>
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={selStyle} />
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={selStyle} />
+          </>
+        )}
+      </div>
+
+      {/* ── Detail table ── */}
+      <div style={card}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr style={{ borderBottom: '1px solid #ECE3D4' }}>
+              {(isSalesOnly
+                ? ['Tanggal', 'Tipe', 'Status', 'Customer / Prospek', 'Catatan / Outcome']
+                : ['Tanggal', 'Tipe', 'Status', 'Sales', 'Customer / Prospek', 'Catatan / Outcome']
+              ).map(h => <th key={h} style={th}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={isSalesOnly ? 5 : 6} style={{ ...td, textAlign: 'center', padding: '32px', color: '#A29684' }}>Memuat data…</td></tr>
+              ) : detail.length === 0 ? (
+                <tr><td colSpan={isSalesOnly ? 5 : 6} style={{ ...td, textAlign: 'center', padding: '32px', color: '#A29684' }}>Tidak ada aktivitas pada rentang ini</td></tr>
+              ) : detail.map((r, i) => (
+                <tr key={r.id} style={{ borderBottom: i < detail.length - 1 ? '1px solid #F3ECDF' : 'none' }}>
+                  <td style={{ ...td, ...mono, color: '#23291E' }}>{artFmtDate(r.scheduled_for)}{r.activity_time ? ` · ${String(r.activity_time).slice(0, 5)}` : ''}</td>
+                  <td style={td}><ArtBadge meta={ART_TYPE_META[r.type]} /></td>
+                  <td style={td}><ArtBadge meta={ART_STATUS_META[r.status]} /></td>
+                  {!isSalesOnly && <td style={td}>{r.salesperson_name || '—'}</td>}
+                  <td style={{ ...td, fontWeight: 600, color: '#23291E' }}>{r.account_name}</td>
+                  <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.outcome || r.notes || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ---------- visit status badge ---------- */
@@ -2011,6 +2255,8 @@ function CRMDashboardPage() {
               }}
             />
           </>
+        ) : tab === "activity" ? (
+          <ActivityReportTab profile={profile} isSalesOnly={isSalesOnly} showToast={showToast} />
         ) : (
           <React.Fragment>
           {/* row 1 — KPI */}
