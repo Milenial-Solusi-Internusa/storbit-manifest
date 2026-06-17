@@ -320,7 +320,13 @@ function CallFormModal({ open, isEdit, draft, setDraft, saving, error, prospects
 }
 
 export default function SalesCallsPage({ showToast }) {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
+  // Visibility scope by role (mirrors RLS on `sales_calls`):
+  //  • super_admin / admin → all entities (no company filter)
+  //  • sales / operations  → only calls where they are the salesperson or creator
+  //  • everyone else (manager, ceo, gm, …) → their own entity
+  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -341,17 +347,23 @@ export default function SalesCallsPage({ showToast }) {
   const [salesProfiles, setSalesProfiles] = useState([]);
 
   const fetchCalls = useCallback(async () => {
-    if (!profile?.company_id) return;
+    if (!profile?.id) return;
+    if (!isAllEntities && !profile?.company_id) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('sales_calls')
         .select(`
           *,
           prospect:accounts!sales_calls_prospect_id_fkey(name, company_prefix),
           salesperson:profiles!sales_calls_salesperson_id_fkey(full_name)
-        `)
-        .eq('company_id', profile.company_id)
+        `);
+
+      // Role-aware scope (see flags above)
+      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+      if (isSalesOnly)    query = query.or(`salesperson_id.eq.${profile.id},created_by.eq.${profile.id}`);
+
+      const { data, error } = await query
         .order('call_date', { ascending: false })
         .order('call_time', { ascending: false })
         .limit(1000);
@@ -362,7 +374,7 @@ export default function SalesCallsPage({ showToast }) {
     } finally {
       setLoading(false);
     }
-  }, [profile?.company_id, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, showToast]);
 
   useEffect(() => { fetchCalls(); }, [fetchCalls]);
   useEffect(() => { setPage(0); }, [search, filterType, filterResult, filterDate]);

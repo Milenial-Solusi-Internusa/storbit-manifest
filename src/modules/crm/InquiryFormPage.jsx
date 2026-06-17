@@ -45,21 +45,19 @@ function Field({ label, req, children, full }) {
 
 async function generateInquiryNo(companyId, companyCode) {
   const year = new Date().getFullYear();
-  try {
-    const { data, error } = await supabase.rpc('increment_document_sequence', {
-      p_company_id:     companyId,
-      p_document_type:  'INQ',
-      p_department_code:'CRM',
-      p_year:           year,
-      p_month:          0,
-    });
-    if (error) throw error;
-    const seq = String(data).padStart(3, '0');
-    return `INQ/${companyCode || 'MSI'}/${year}/${seq}`;
-  } catch {
-    const fallback = Date.now().toString().slice(-4);
-    return `INQ/${companyCode || 'MSI'}/${year}/${fallback}`;
-  }
+  const { data, error } = await supabase.rpc('increment_document_sequence', {
+    p_company_id:     companyId,
+    p_document_type:  'INQ',
+    p_department_code:'CRM',
+    p_year:           year,
+    p_month:          0,
+  });
+  // No silent fallback: a non-sequential number (e.g. timestamp) risks duplicate /
+  // garbage document numbers. Surface the failure so the caller's try/catch aborts
+  // the save and shows an error instead of generating a bad number.
+  if (error) throw new Error('Gagal generate nomor dokumen, coba lagi.');
+  const seq = String(data).padStart(3, '0');
+  return `INQ/${companyCode || 'MSI'}/${year}/${seq}`;
 }
 
 export default function InquiryFormPage({ onBack, showToast }) {
@@ -83,9 +81,9 @@ export default function InquiryFormPage({ onBack, showToast }) {
 
   useEffect(() => {
     if (!profile?.company_id) return;
-    supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name')
+    supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setProspects(data || []));
-    supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'customer').is('deleted_at', null).order('name')
+    supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'customer').is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
 
@@ -104,7 +102,7 @@ export default function InquiryFormPage({ onBack, showToast }) {
     if (!validate()) return;
     setSaving(true);
     try {
-      const companyRow = await supabase.from('companies').select('code').eq('id', profile.company_id).single();
+      const companyRow = await supabase.from('companies').select('code').eq('id', profile.company_id).maybeSingle();
       const companyCode = companyRow.data?.code || 'MSI';
       const inquiry_no = await generateInquiryNo(profile.company_id, companyCode);
 

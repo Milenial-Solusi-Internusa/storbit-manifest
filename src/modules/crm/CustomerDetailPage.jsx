@@ -419,11 +419,15 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
           payment_term:payment_terms!prospects_payment_terms_id_fkey(name)
         `)
         .eq('id', id)
-        .single();
+        .maybeSingle();
       if (error) throw error;
       setCustomer(data);
-    } catch {
-      const { data } = await supabase.from('accounts').select('*').eq('id', id).single();
+    } catch (err) {
+      // The joined query can fail if an FK embed is missing/renamed; fall back to a
+      // plain row fetch so the page still renders. Log the original error (not silent).
+      console.error('[CustomerDetail] joined fetch failed, falling back to plain select:', err);
+      const { data, error: fbErr } = await supabase.from('accounts').select('*').eq('id', id).maybeSingle();
+      if (fbErr) console.error('[CustomerDetail] fallback fetch also failed:', fbErr);
       setCustomer(data || null);
     } finally {
       setLoading(false);

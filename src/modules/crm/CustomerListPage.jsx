@@ -548,14 +548,18 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
         .limit(1000);
       if (error) throw error;
       setCustomers(data || []);
-    } catch {
-      const { data } = await supabase
+    } catch (err) {
+      // The joined query can fail if an FK embed is missing/renamed; fall back to a
+      // plain row fetch so the list still renders. Log the original error (not silent).
+      console.error('[CustomerList] joined fetch failed, falling back to plain select:', err);
+      const { data, error: fbErr } = await supabase
         .from('accounts')
         .select('*')
         .eq('account_status', statusFilter)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);
+      if (fbErr) console.error('[CustomerList] fallback fetch also failed:', fbErr);
       setCustomers(data || []);
     } finally {
       setLoading(false);

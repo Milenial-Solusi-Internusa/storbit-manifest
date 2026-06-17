@@ -169,7 +169,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone)
         `)
         .eq('id', quotationId)
-        .single(),
+        .maybeSingle(),
 
       supabase
         .from('quotation_items')
@@ -183,7 +183,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
       setQuot(qData);
       setItems(iData || []);
       if (qData?.payment_terms_id) {
-        supabase.from('payment_terms').select('name').eq('id', qData.payment_terms_id).single()
+        supabase.from('payment_terms').select('name').eq('id', qData.payment_terms_id).maybeSingle()
           .then(({ data }) => { if (!cancelled) setPaymentTermName(data?.name || ''); });
       }
       setLoading(false);
@@ -200,7 +200,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
       .from('profiles')
       .select('full_name, position_id, positions(name)')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
       .then(({ data }) => setCreatorProfile(data));
   }, [user?.id, profile?.id]);
 
