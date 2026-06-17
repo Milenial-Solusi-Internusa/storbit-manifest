@@ -1008,13 +1008,31 @@ Current phase: **Phase 2.8R** ✅ Complete
 
 ---
 
+## DB Schema Reference
+
+> **Sumber kebenaran terkini untuk struktur DB = `supabase/schema_snapshot.sql`** (bukan file migrasi).
+
+**File:** `supabase/schema_snapshot.sql` — full schema dump (`pg_dump --schema-only --schema=public`), **69 tabel, ~8.140 baris**, merefleksikan kondisi DB **ASLI per 17 Jun 2026**, termasuk SEMUA perubahan via SQL Editor yang TIDAK masuk file migrasi: 4 kolom `assets` baru (`condition`/`department_id`/`brand`/`assignment_status`), `accounts` unified (master customer tunggal), RBAC 6 tabel (`modules`/`module_menus`/`module_actions`/`menu_actions`/`user_menu_permissions`/dst.), RLS `quotations`, dll.
+
+**⚠️ INSTRUKSI WAJIB (sesi mendatang):** untuk struktur tabel/kolom/constraint yang **AKURAT**, baca **`supabase/schema_snapshot.sql`** — **JANGAN hanya mengandalkan `supabase/migrations/`**. File migrasi **BERHENTI 3 Jun 2026** (`...026_assets_kendaraan.sql`) dan TIDAK mencakup perubahan SQL-Editor 4–17 Jun → ini sudah **2× menyebabkan salah-baca schema** (skip 4 kolom `assets` baru, salah baca `products.unit_cost`). Migrasi lama tetap valid untuk **histori**, tapi **snapshot = sumber kebenaran struktur terkini**.
+
+**Refresh snapshot (untuk update ke depan):**
+```bash
+pg_dump "postgresql://postgres.untmpqceexwxzuhlmyrg@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres" \
+  --schema-only --schema=public --no-owner --no-privileges \
+  > supabase/schema_snapshot.sql
+```
+Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **Docker TIDAK diperlukan** — `supabase db pull` butuh Docker yang belum terinstall, jadi pakai `pg_dump` langsung.
+
+---
+
 ## Roadmap Menuju Production-Grade (hasil audit 15 Jun 2026)
 
 > Dari audit menyeluruh aplikasi (arsitektur / keamanan / maintainability / reliability / performance), 15 Jun 2026. Dikelompokkan 3 tier; `[x]` = selesai.
 
 ### 🔴 SEGERA (keamanan & integritas data)
 - [x] Cabut akses `anon` tabel sensitif (29 tabel) — lihat **Security Hardening — 15 Jun 2026** (Phase 2.8L)
-- [ ] **⬆️ NAIK PRIORITAS (2× penghambat 16 Jun)** `supabase db pull` → bawa **~18+ tabel & kolom** ke migrasi (`accounts`, `quotations`, `quotation_items`, `inquiries`, `sales_*`, RBAC tables, `stock_*`, **4 kolom `assets` baru** [condition/department_id/brand/assignment_status], **`products.unit_cost`**, dll) — schema via SQL Editor tak terlihat Claude Code → 2× sempat skip field hari ini (lihat **Master Data & Schema Changes — 16 Jun 2026**)
+- [x] **Schema ke version control (via `pg_dump` snapshot, 17 Jun)** — `supabase/schema_snapshot.sql` (full dump, **69 tabel**) jadi sumber kebenaran struktur terkini; mencakup ~18+ tabel & kolom yg sebelumnya cuma di SQL Editor (4 kolom `assets` baru [condition/department_id/brand/assignment_status], `accounts` unified, RBAC, **`products.unit_cost`**, dll). Pakai `pg_dump` langsung — bukan `supabase db pull` (Docker belum terinstall). Lihat **DB Schema Reference**. _(Pending: jadikan migrasi formal kalau Docker tersedia.)_
 - [ ] Audit **CRUD policy lintas tabel** — pola BERULANG: (a) "UPDATE admin-only" nyangkut owner-edit (`quotations_update` → fixed Phase 2.8Q), (b) over-filter `account_status` (dashboard/visit dropdown/visibility). Sisir `.from('accounts').eq('account_status', …)` + policy UPDATE/DELETE **semua tabel** (DELETE: hanya ~4 dari ~50 punya — `quotation_items` fixed Phase 2.8J)
 - [ ] Write quotation **atomik** (bungkus update→delete→insert ke RPC transaksi tunggal)
 
