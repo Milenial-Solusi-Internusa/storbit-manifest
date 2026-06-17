@@ -1740,7 +1740,7 @@ export default function StorbitManifest() {
       `}</style>
 
       {/* LAYOUT: Sidebar + Content */}
-      <div className="flex min-h-screen">
+      <div className="flex flex-col lg:flex-row min-h-screen">
         {/* SIDEBAR — only visible when inside a module (Option B: sidebar-after-launcher) */}
         {activeModule && (
           <ModuleSidebar
