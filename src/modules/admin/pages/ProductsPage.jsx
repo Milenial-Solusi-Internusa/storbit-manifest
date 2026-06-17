@@ -339,15 +339,10 @@ export default function ProductsPage({ onSelectProduct }) {
     ]).then(([{ data: cos }, { data: prods, error: prodsErr }]) => {
       if (cancelled) return;
 
-      console.log('[Products] total fetched:', prods?.length, 'error:', prodsErr);
-
       // Build lookup: company uuid → short code (MSI / JCI / SOA)
       const codeById = Object.fromEntries(
         (cos || []).map(c => [c.id, c.code])
       );
-
-      console.log('[Products] companies map:', codeById);
-      console.log('[Products] first 3 products:', (prods || []).slice(0, 3));
 
       if (!prodsErr && prods && prods.length > 0) {
         const mapped = prods.map(r => ({

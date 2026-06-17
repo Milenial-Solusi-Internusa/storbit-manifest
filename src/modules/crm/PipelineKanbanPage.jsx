@@ -587,7 +587,14 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     dragId.current = id;
     setDraggingId(id);
     e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', id); } catch (_) {}
+    try {
+      e.dataTransfer.setData('text/plain', id);
+    } catch (err) {
+      // Non-fatal: the drag uses dragId.current as its source of truth, so a
+      // setData() failure (rare browser edge case) doesn't break drag-and-drop.
+      // Log lightly for diagnostics; do not surface to the user.
+      console.warn('[Pipeline] dataTransfer.setData failed (non-fatal):', err);
+    }
   }
   function onDragEnd() {
     setDraggingId(null);

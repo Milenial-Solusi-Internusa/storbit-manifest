@@ -979,7 +979,9 @@ Output:
 
 | 2.8Y | **CEO unblock — `profiles_read` RLS dilonggarkan (DB change via SQL Editor, BUKAN di repo).** Akar masalah: fungsi `is_admin_or_above()` TIDAK mengenal role `ceo` → CEO ke-block baca `profiles` (nama assignee/sales muncul kosong di banyak page). **Fix DB:** policy `profiles_read` di-DROP & dibuat ulang `USING (true)` → semua `authenticated` bisa baca `profiles`; `profiles_update` **TIDAK disentuh** (tetap ketat). **Aman untuk sekarang:** `profiles` tidak menyimpan data sensitif (bukan HRIS — hanya nama/role/avatar/company). **⚠️ WAJIB ditinjau ulang saat modul HRIS masuk** (kalau ada gaji/data pribadi, `USING(true)` jadi tidak aman). Bagian dari masalah lebih besar (RLS role hardcode tak sinkron RBAC) → lihat section **Backlog — Migrasi RLS Proper (RBAC-driven)**. Tidak ada kode/repo diubah — catat sebagai known DB change. | ✅ Complete (DB) |
 
-Current phase: **Phase 2.8Y** ✅ Complete
+| 2.8Z | **Bersihkan console.log leak data + fix empty catch (3 file kode + CLAUDE.md).** **TASK 1:** hapus **6 `console.log` debug** di `AuthContext.jsx` (termasuk yg mem-leak SELURUH row profile user di `fetchProfileById`) + **3 `console.log`** data produk/company map di `ProductsPage.jsx`. `console.error` (5×) + `console.warn` safety-timeout (1×) di AuthContext **DIPERTAHANKAN** (error handling beneran, bukan debug). **TASK 2:** `PipelineKanbanPage.jsx` empty `catch (_) {}` (drag `dataTransfer.setData`) → diisi `console.warn` + komentar — operasi **OPSIONAL** (drag pakai `dragId.current` sbg source of truth; `setData` boleh gagal di edge-case browser, non-fatal, **tak di-surface ke user**); sekaligus hilangkan lint `no-empty` + `_` unused-var. **TASK 3:** refresh angka basi di Roadmap 🟢 — `App.jsx` 4.618→**4.667**, `CRMDashboardPage` 1.850→**1.996** (aktual `wc -l`). build clean (2629 modules, 1.12s); lint AuthContext 2→2 / ProductsPage 1→1 / **PipelineKanban 5→3** (net-improve). Catatan: build clean ≠ jaminan fitur jalan (perlu tes manual: console bersih saat login & Products, drag Pipeline normal). | ✅ Complete |
+
+Current phase: **Phase 2.8Z** ✅ Complete
 
 ---
 
@@ -1062,8 +1064,8 @@ Pakai `pg_dump` dari libpq (butuh DB password, di-prompt / via `PGPASSWORD`). **
 - [ ] Ganti **5 hijau terlarang** + emoji UI ke token brand + ikon Lucide
 
 ### 🟢 JANGKA PANJANG
-- [ ] Pecah **`App.jsx`** (4.618 baris god-file) — **SETELAH ada test**. Urutan aman: konstanta → komponen presentasional → modul Storbit → layout → registry routing
-- [ ] Pecah file **>1.000 baris** (`CRMDashboardPage` 1.850, `AssetDetailITPage`, `SalesOrderDetailPage`)
+- [ ] Pecah **`App.jsx`** (4.667 baris god-file) — **SETELAH ada test**. Urutan aman: konstanta → komponen presentasional → modul Storbit → layout → registry routing
+- [ ] Pecah file **>1.000 baris** (`CRMDashboardPage` 1.996, `AssetDetailITPage`, `SalesOrderDetailPage`)
 - [ ] Ekstrak shared: `useRoleScopedQuery`, `DataTablePage`, `Badge`, `Modal`, `lib/format.js`
 - [ ] Satukan paradigma styling (**75 inline vs 50 Tailwind**)
 - [ ] **Field Registry Level 1** (custom field via JSONB — nunggu keputusan desain: struktur metadata, field core 2a/2b, pilot form)

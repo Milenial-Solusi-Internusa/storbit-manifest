@@ -23,6 +23,11 @@
 - [ ] Audit 173 policy: ~51 `is_admin_or_above` (target migrasi), 70 `super_admin` (OK), 130 `company_id` (OK); `has_permission()` BROKEN (query tabel `permissions`/`role_permissions` yg tak ada)
 - [ ] Cross-entity (`is_cross_entity`) sudah ada strukturnya di `role_permission_templates` & `user_menu_permissions`; rencana 4 fase — detail di CLAUDE.md section **Backlog — Migrasi RLS Proper (RBAC-driven)**
 
+### Console cleanup + empty-catch fix (Phase 2.8Z)
+- [x] Hapus 6 `console.log` debug di `AuthContext.jsx` (termasuk yg mem-leak seluruh row profile user) + 3 `console.log` data produk/company di `ProductsPage.jsx`; `console.error`/`console.warn` (error handling beneran) dipertahankan
+- [x] `PipelineKanbanPage.jsx` empty `catch (_) {}` (drag `setData`) → `console.warn` + komentar (operasi opsional, non-fatal, tak di-surface); lint `no-empty` + `_` unused hilang (5→3)
+- [x] Refresh angka basi CLAUDE.md Roadmap: App.jsx 4.618→4.667, CRMDashboardPage 1.850→1.996 (aktual `wc -l`)
+
 ### Backlog (update)
 - [ ] Mobile polish — verifikasi visual per-halaman (Inventory/Asset/Logistics/Quotation) di <1024px
 - [ ] Warning React "form field value without onChange handler" di input read-only — bersihkan
