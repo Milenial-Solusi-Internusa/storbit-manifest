@@ -137,7 +137,7 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only inquiries they created
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isAllEntities = ['super_admin'].includes(erpRole);
   const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);

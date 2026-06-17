@@ -82,8 +82,14 @@ function StatCard({ label, value, accent }) {
 }
 
 export default function LeadPoolPage({ showToast }) {
-  const { profile } = useAuth();
+  const { profile, erpRole } = useAuth();
   const myId = profile?.id || null;
+  // Visibility scope by role (mirrors RLS on `accounts` + ProspectListPage):
+  //  • super_admin        → all entities (no company filter)
+  //  • sales / operations → only leads assigned to / created by them
+  //  • everyone else (admin, manager, ceo, gm, …) → their own entity
+  const isAllEntities = ['super_admin'].includes(erpRole);
+  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
 
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
@@ -103,14 +109,23 @@ export default function LeadPoolPage({ showToast }) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // Fetch lead_pool accounts. RLS scopes rows per user — no manual owner filter.
+  // Fetch lead_pool accounts. Frontend belt (mirrors ProspectListPage) on top of
+  // RLS: company-scoped for all but super_admin; sales see only their own leads.
   useEffect(() => {
+    if (!profile?.id) return;
+    if (!isAllEntities && !profile?.company_id) return;
     let cancelled = false;
     setLoading(true);
-    supabase
+    let query = supabase
       .from('accounts')
       .select('*, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
-      .eq('account_status', 'lead_pool')
+      .eq('account_status', 'lead_pool');
+
+    // Role-aware scope (see flags above)
+    if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+    if (isSalesOnly)    query = query.or(`assigned_to.eq.${profile.id},created_by.eq.${profile.id}`);
+
+    query
       .order('name')
       .limit(1000)
       .then(({ data, error }) => {
@@ -124,7 +139,7 @@ export default function LeadPoolPage({ showToast }) {
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, showToast]);
 
   // Reset to first page whenever filters change.
   useEffect(() => { setPage(0); }, [search, sourceFilter, typeFilter]);

@@ -2,6 +2,13 @@
 
 ## 2026-06-18
 
+### CRM role-scoping hardening (Phase 2.9F — hasil audit role akses)
+> Tutup celah defense-in-depth + selaraskan frontend dgn RLS. Tampilan/fitur tidak diubah.
+- [x] **LeadPoolPage.jsx frontend belt** — sebelumnya fetch `lead_pool` tanpa `company_id`/owner filter (sole guard = RLS). Tambah pola ProspectListPage: `isAllEntities=['super_admin']` + `isSalesOnly=['sales','operations']`; guard profile.id/company_id; `if(!isAllEntities) .eq('company_id')` + `if(isSalesOnly) .or('assigned_to.eq.{uid},created_by.eq.{uid}')`; deps effect diperbarui. Sales kini cuma lihat leads milik sendiri
+- [x] **Admin role alignment** — `isAllEntities` `['super_admin','admin']`→`['super_admin']` di 7 file CRM (Prospect/Inquiry/Quotation/PipelineKanban/Activities/SalesCalls/LeadPool). Admin tadinya intent all-entities tapi RLS batasi own-entity (silent mismatch) → kini frontend single-entity utk admin, konsisten RLS. super_admin tetap lintas entitas
+- [x] **Build clean** — 2630 modules, 1.07s; grep verifikasi 7/7 file `isAllEntities=['super_admin']`, 0 sisa `'admin'`. Lint LeadPool 2 set-state-in-effect (baseline)
+- [ ] **Tes manual (belum — runtime):** login sales → LeadPool cuma leads sendiri · login admin → data CRM tetap jalan (single-entity, tak hilang) · login super_admin → data tetap lintas entitas
+
 ### Activity module Phase 2B — ActivitiesPage gantikan SalesCallsPage (Phase 2.9E)
 > Halaman aktivitas terpadu (semua tipe) di route `crm-calls`. SalesCallsPage tidak dihapus.
 - [x] **`src/modules/crm/ActivitiesPage.jsx` (BARU)** — list semua activity (call/visit/meeting/prospecting/followup) dari `activities`, role-aware (sales→assigned_to/created_by, manager+→se-entitas, super/admin→semua), embed account name + nama sales via client map. Kolom: Tanggal/Tipe/Status/Customer-Prospek/Sales/Catatan-Outcome/Aksi. Visual mirror SalesCallsPage (tokens C, pagination 20)

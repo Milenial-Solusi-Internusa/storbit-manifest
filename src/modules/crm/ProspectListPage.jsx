@@ -86,7 +86,7 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only prospects assigned to / created by them
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isAllEntities = ['super_admin'].includes(erpRole);
   const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
   const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });

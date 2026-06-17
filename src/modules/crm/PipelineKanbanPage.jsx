@@ -398,7 +398,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only prospects assigned to / created by them
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin', 'admin'].includes(erpRole);
+  const isAllEntities = ['super_admin'].includes(erpRole);
   const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
 
   // ── Existing state — unchanged ─────────────────────────────────────────────
