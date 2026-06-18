@@ -472,7 +472,6 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                         <tr key={row.id || ri} style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
                           <td style={{ padding: '9px 12px', color: C.ink }}>
                             {row.description || '—'}
-                            {row.notes && <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 2 }}>{row.notes}</div>}
                           </td>
                           <td className="no-print" style={{ padding: '9px 8px', textAlign: 'right', color: C.inkSoft, fontSize: 12 }}>
                             {(Number(row.cost_price) || 0).toLocaleString('id-ID')}
@@ -683,7 +682,6 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                     <tr key={row.id || ri} style={{ background: ri % 2 === 0 ? '#fff' : '#fafaf8' }}>
                       <td style={{ padding: '6px 8px', border: '1px solid #ddd' }}>
                         {row.description || '—'}
-                        {row.notes && <div style={{ fontSize: '10px', color: '#777', marginTop: '2px' }}>{row.notes}</div>}
                       </td>
                       <td style={{ padding: '6px 8px', textAlign: 'center', border: '1px solid #ddd', color: row.currency === 'USD' ? '#a45a22' : '#333' }}>{row.currency || 'IDR'}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'right',  border: '1px solid #ddd' }}>
