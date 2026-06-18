@@ -1,7 +1,7 @@
 // src/modules/crm/QuotationFormPage.jsx
 // Layout: header kiri 60% + sticky summary kanan 40%
 // Sectioned line items dengan currency IDR/USD per row + kurs USD manual
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Plus, Trash2, Save, Receipt, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -78,7 +78,6 @@ const freshRow = () => ({
   qty:         1,
   unit_label:  'Per 20Ft',
   total:       0,
-  notes:       '',
 });
 
 const freshSection = (name = 'ORIGIN CHARGES') => ({
@@ -187,8 +186,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
           </thead>
           <tbody>
             {section.rows.map((row) => (
-              <Fragment key={row.id}>
-              <tr>
+              <tr key={row.id} style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
                 <td style={{ padding: '6px 6px', minWidth: 160 }}>
                   <input value={row.description} onChange={e => onUpdateRow(section.id, row.id, 'description', e.target.value)}
                     style={cellInp()} placeholder="Deskripsi…" />
@@ -218,7 +216,8 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                   </select>
                 </td>
                 <td style={{ padding: '6px 6px', width: 60 }}>
-                  <input type="number" min="1" value={row.qty}
+                  <input type="number" min="0" step="any" value={row.qty}
+                    className="qty-input"
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => onUpdateRow(section.id, row.id, 'qty', e.target.value.replace(/^0+(?=\d)/, ''))}
                     style={cellInp({ textAlign: 'right' })} />
@@ -240,15 +239,6 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                   )}
                 </td>
               </tr>
-              {/* Per-item notes — expand row (customer-facing, shown in PDF). Second
-                  row keeps the table from widening beyond its 8 columns. */}
-              <tr style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
-                <td colSpan={8} style={{ padding: '0 6px 8px' }}>
-                  <input value={row.notes || ''} onChange={e => onUpdateRow(section.id, row.id, 'notes', e.target.value)}
-                    style={cellInp({ fontSize: 11.5, color: C.inkSoft })} placeholder="Catatan item (tampil di PDF customer)…" />
-                </td>
-              </tr>
-              </Fragment>
             ))}
           </tbody>
         </table>
@@ -353,7 +343,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             unit_label:  row.unit_label  || 'Per 20Ft',
             qty:         row.qty         || 1,
             total:       row.total       || 0,
-            notes:       row.notes       || '',
           });
         });
         setSections(order.map(name => ({
@@ -495,7 +484,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             exchange_rate: row.currency === 'USD' ? (Number(header.usd_rate) || DEFAULT_USD) : 1,
             total:         Number(row.total)      || 0,
             cost_price:    Number(row.cost_price) || 0,
-            notes:         row.notes              || null,
           }))
         );
       };
@@ -596,7 +584,9 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
 
   return (
     <div style={{ fontFamily: 'Inter, sans-serif', color: C.ink }}>
-      <style>{`@media print { .no-print { display: none !important; } }`}</style>
+      <style>{`@media print { .no-print { display: none !important; } }
+        .qty-input::-webkit-inner-spin-button, .qty-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        .qty-input { -moz-appearance: textfield; }`}</style>
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
         <button onClick={onBack}
