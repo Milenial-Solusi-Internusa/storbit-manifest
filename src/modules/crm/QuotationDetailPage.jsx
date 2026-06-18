@@ -165,6 +165,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           valid_until, created_at, notes, terms, usd_rate,
           subtotal, tax_amount, total_amount, payment_terms_id,
           pricing_done_at, quote_sent_at, discount_pct,
+          inquiry_id, prospect_id, customer_id, internal_notes, quote_date,
+          currency_code, margin_floor,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city, pic_name, pic_email, pic_phone),
           customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone)
         `)
@@ -244,11 +246,13 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
     setSending(true);
     try {
       const nowIso = new Date().toISOString();
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('quotations')
         .update({ status: 'SENT', quote_sent_at: nowIso, updated_by: profile.id })
-        .eq('id', quotationId);
+        .eq('id', quotationId)
+        .select('id');
       if (error) throw error;
+      if (!data || data.length === 0) throw new Error('Gagal mengirim: tidak ada baris ter-update (cek izin akses).');
       setQuot(q => q ? { ...q, status: 'SENT', quote_sent_at: nowIso } : q);
       setConfirmSend(false);
       showToast?.('Quotation dikirim ke customer ✨');
@@ -429,6 +433,13 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
               <InfoRow label="Status" value={<StatusBadge status={quot.status} />} />
               {quot.notes && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Notes" value={quot.notes} /></div>}
             </div>
+            {/* Sales-only internal notes — never in the customer PDF (no-print + excluded from #quotation-print-area) */}
+            {quot.internal_notes && (
+              <div className="no-print" style={{ marginTop: 14, padding: '10px 14px', borderRadius: 8, background: C.dangerBg, border: `1px dashed ${C.dangerBd}` }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.danger, marginBottom: 4 }}>Catatan Internal (Sales)</div>
+                <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{quot.internal_notes}</div>
+              </div>
+            )}
           </div>
 
           {/* Sectioned items */}

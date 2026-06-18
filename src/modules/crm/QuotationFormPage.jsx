@@ -1,7 +1,7 @@
 // src/modules/crm/QuotationFormPage.jsx
 // Layout: header kiri 60% + sticky summary kanan 40%
 // Sectioned line items dengan currency IDR/USD per row + kurs USD manual
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { ChevronLeft, Plus, Trash2, Save, Receipt, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -187,7 +187,8 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
           </thead>
           <tbody>
             {section.rows.map((row) => (
-              <tr key={row.id} style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
+              <Fragment key={row.id}>
+              <tr>
                 <td style={{ padding: '6px 6px', minWidth: 160 }}>
                   <input value={row.description} onChange={e => onUpdateRow(section.id, row.id, 'description', e.target.value)}
                     style={cellInp()} placeholder="Deskripsi…" />
@@ -239,6 +240,15 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                   )}
                 </td>
               </tr>
+              {/* Per-item notes — expand row (customer-facing, shown in PDF). Second
+                  row keeps the table from widening beyond its 8 columns. */}
+              <tr style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
+                <td colSpan={8} style={{ padding: '0 6px 8px' }}>
+                  <input value={row.notes || ''} onChange={e => onUpdateRow(section.id, row.id, 'notes', e.target.value)}
+                    style={cellInp({ fontSize: 11.5, color: C.inkSoft })} placeholder="Catatan item (tampil di PDF customer)…" />
+                </td>
+              </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -269,8 +279,9 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     payment_terms_id: '',
     notes:            '',
     terms:            '',
+    internal_notes:   '',
     usd_rate:         DEFAULT_USD,
-    tanggal:          today(),
+    quote_date:       today(),
   });
 
   const [clientName,      setClientName]      = useState('');
@@ -314,8 +325,9 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
       payment_terms_id: quotation.payment_terms_id  || '',
       notes:            quotation.notes             || '',
       terms:            quotation.terms             || '',
+      internal_notes:   quotation.internal_notes    || '',
       usd_rate:         quotation.usd_rate          || DEFAULT_USD,
-      tanggal:          quotation.created_at?.slice(0, 10) || today(),
+      quote_date:       quotation.quote_date || quotation.created_at?.slice(0, 10) || today(),
     });
     setClientName(quotation.prospect?.name || quotation.customer?.name || '');
 
@@ -467,12 +479,11 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     if (!validate()) return;
     setSaving(true);
     try {
-      // Shared item rows builder
-      const buildItemRows = (quotId) => {
+      // Item rows in DB-column shape (no quotation_id — RPC / create-insert add it).
+      const baseItemRows = () => {
         let sortOrder = 0;
         return sections.flatMap(sec =>
           sec.rows.map(row => ({
-            quotation_id:  quotId,
             sort_order:    ++sortOrder,
             group_name:    sec.name,
             description:   row.description,
@@ -493,46 +504,44 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
         // ── Guard: quotation.id must exist ────────────────────────────
         if (!quotation?.id) throw new Error('Quotation ID tidak ditemukan — tidak bisa update.');
 
-        // ── Step 1: UPDATE quotation header ───────────────────────────
-        const updatePayload = {
+        // ── Atomic save via RPC: update header + replace items in one txn ──
+        // internal_notes / currency_code / margin_floor are read from the (real)
+        // quotation prop, NOT form defaults, so they aren't overwritten by ''/0.
+        // prospect/customer: keep existing unless user re-picked an inquiry.
+        const p_header = {
+          quotation_no:     quotation.quotation_no,
+          quote_date:       header.quote_date             || null,
+          inquiry_id:       header.inquiry_id              || null,
+          prospect_id:      selectedInquiry?.prospect?.id ?? quotation.prospect_id ?? null,
+          customer_id:      selectedInquiry?.customer?.id ?? quotation.customer_id ?? null,
           service_type:     header.service_type,
-          route:            header.route             || null,
-          valid_until:      header.valid_until        || null,
-          pricing_done_at:  header.pricing_done_at    || null,
-          discount_pct:     Number(header.discount_pct) || 0,
-          payment_terms_id: header.payment_terms_id   || null,
-          notes:            header.notes              || null,
-          terms:            header.terms              || null,
-          usd_rate:         Number(header.usd_rate)   || DEFAULT_USD,
+          valid_until:      header.valid_until             || null,
+          pricing_done_at:  header.pricing_done_at         || null,
+          payment_terms_id: header.payment_terms_id        || null,
+          currency_code:    quotation.currency_code        || 'IDR',
+          notes:            header.notes                   || null,
+          terms:            header.terms                   || null,
+          internal_notes:   header.internal_notes          || null,
           subtotal,
           tax_amount:       tax,
           total_amount:     grandTotal,
           status:           submitNow ? 'SUBMITTED' : (quotation.status || 'DRAFT'),
-          updated_by:       profile.id,
+          usd_rate:         Number(header.usd_rate)         || DEFAULT_USD,
+          route:            header.route                   || null,
+          discount_pct:     Number(header.discount_pct)     || 0,
+          margin_floor:     quotation.margin_floor ?? 0,
         };
 
-        const { error: updateError } = await supabase
-          .from('quotations')
-          .update(updatePayload)
-          .eq('id', quotation.id);
-        if (updateError) throw updateError;
-
-        // ── Step 2: DELETE semua items lama ───────────────────────────
-        const { error: deleteError } = await supabase
-          .from('quotation_items')
-          .delete()
-          .eq('quotation_id', quotation.id);
-        if (deleteError) throw deleteError;
-
-        // ── Step 3: INSERT items baru (hanya setelah DELETE sukses) ───
-        const { error: insertError } = await supabase
-          .from('quotation_items')
-          .insert(buildItemRows(quotation.id));
-        if (insertError) throw insertError;
+        const { error: rpcError } = await supabase.rpc('save_quotation', {
+          p_quotation_id: quotation.id,
+          p_header,
+          p_items: baseItemRows(),
+        });
+        if (rpcError) throw rpcError;   // RAISE dari RPC (mis. RLS tolak) → pesan asli
 
         showToast?.(submitNow ? 'Quotation di-submit ✨' : 'Quotation berhasil diupdate ✨');
       } else {
-        // ── INSERT new quotation ───────────────────────────────────────
+        // ── CREATE new quotation (insert; verify a row came back) ───────
         const { data: companyRow } = await supabase
           .from('companies').select('code').eq('id', profile.company_id).maybeSingle();
         const companyCode  = companyRow?.code || 'MSI';
@@ -541,6 +550,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
         const insertPayload = {
           quotation_no,
           company_id:       profile.company_id,
+          quote_date:       header.quote_date             || null,
           inquiry_id:       header.inquiry_id            || null,
           prospect_id:      selectedInquiry?.prospect?.id || null,
           customer_id:      selectedInquiry?.customer?.id || null,
@@ -552,6 +562,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
           payment_terms_id: header.payment_terms_id       || null,
           notes:            header.notes                  || null,
           terms:            header.terms                  || null,
+          internal_notes:   header.internal_notes         || null,
           usd_rate:         Number(header.usd_rate)        || DEFAULT_USD,
           subtotal,
           tax_amount:       tax,
@@ -563,9 +574,10 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
         const { data: quot, error: qErr } = await supabase
           .from('quotations').insert(insertPayload).select('id').single();
         if (qErr) throw qErr;
+        if (!quot?.id) throw new Error('Gagal membuat quotation — tidak ada baris kembali (cek izin akses).');
 
-        const { error: iErr } = await supabase
-          .from('quotation_items').insert(buildItemRows(quot.id));
+        const itemRows = baseItemRows().map(r => ({ ...r, quotation_id: quot.id }));
+        const { error: iErr } = await supabase.from('quotation_items').insert(itemRows);
         if (iErr) throw iErr;
 
         showToast?.(submitNow ? 'Quotation berhasil di-submit ✨' : 'Draft quotation tersimpan ✨');
@@ -647,7 +659,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
               </Field>
 
               <Field label="Tanggal">
-                <input type="date" value={header.tanggal} onChange={setH('tanggal')} style={inpStyle()} />
+                <input type="date" value={header.quote_date} onChange={setH('quote_date')} style={inpStyle()} />
               </Field>
 
               <Field label="Valid Until">
@@ -714,6 +726,13 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
                   style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical', fontSize: 12.5 }) }}
                   placeholder={`Contoh:\n• Carrier's local charges as per invoice\n• Warehouse storage charges as per invoice\n• Import Duty and Tax under Customer account`}
                 />
+              </Field>
+
+              {/* Sales-only — never printed to the customer PDF */}
+              <Field label="Catatan Internal (Sales) — tidak tampil di PDF customer" full>
+                <textarea value={header.internal_notes} onChange={setH('internal_notes')} rows={2}
+                  style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical', borderColor: '#E6BBB2', background: '#FFF6F5' }) }}
+                  placeholder="Catatan internal tim sales (tidak dikirim ke customer)…" />
               </Field>
             </div>
           </div>

@@ -2,6 +2,18 @@
 
 ## 2026-06-18
 
+### Quotation save hardening — RPC atomik + internal/per-item notes + quote_date (Phase 2.9O)
+> Prasyarat DB (SQL Editor, BELUM di snapshot): `quotations.internal_notes`/`quote_date`, RPC `save_quotation(p_quotation_id,p_header,p_items)` atomik, RLS `quotation_items` fix.
+- [x] **QuotationDetailPage** — detail select +`inquiry_id,prospect_id,customer_id,internal_notes,quote_date,currency_code,margin_floor` (wajib biar form edit punya nilai real); blok "Catatan Internal (Sales)" on-screen `no-print` + TIDAK di `#quotation-print-area` (tak ke PDF customer); "Kirim ke Customer" +`.select('id')`+cek row → error asli
+- [x] **QuotationFormPage TASK 1 (edit)** — update→delete→insert diganti 1 `rpc('save_quotation')`; `rpcError`→pesan asli (no fake success). `p_header` lengkap; **inquiry_id/prospect_id/customer_id ikut** (dulu ketinggalan), prospect/customer fallback ke prop kalau inquiry tak diganti; **internal_notes/currency_code/margin_floor dibaca dari prop real** (bukan default '' /0/'IDR' → cegah wipe). `p_items`=baseItemRows tanpa quotation_id
+- [x] **TASK 2 (create)** — tetap insert +`.select('id').single()`+guard `!quot?.id`→error asli; items +quotation_id; payload +quote_date/internal_notes
+- [x] **TASK 3 quote_date** — ganti field-hantu `tanggal` (load `quote_date||created_at`, bind setH('quote_date'), masuk payload) → tanggal kini kesimpen
+- [x] **TASK 4 internal_notes** — textarea "Catatan Internal (Sales)" di form; sales-only (no-print, bukan di print-area)
+- [x] **TASK 5 per-item notes** — input baris-expand (`<Fragment>`+`<tr colSpan=8>` di bawah item, bukan kolom ke-9 → tabel tak melebar); kebawa ke p_items; tetap customer-facing (PDF)
+- [x] **Build clean** — 2632 modules, 1.18s; lint net-zero (QuotationFormPage 4→4, QuotationDetailPage 1→1, baseline)
+- [ ] **Tes manual (belum — runtime):** edit semua header (tanggal/ganti inquiry/internal notes) → reload SEMUA kesimpen · edit item +per-item notes → kesimpen · internal notes di form+detail TAPI tidak di PDF · per-item notes di PDF · non-owner edit quotation orang lain → ERROR ASLI (bukan sukses palsu) · Kirim ke Customer gagal → error asli
+- [ ] **Refresh schema_snapshot.sql** (kolom internal_notes/quote_date + RPC save_quotation belum ter-pull)
+
 ### Unified feed — sumber ke-5: login (user_login_logs) (Phase 2.9M)
 > Tabel `user_login_logs` BARU (belum di schema_snapshot; RLS gating manager+/super/own).
 - [x] **activityFeed.js** — fetch ke-5 `user_login_logs.select('*').order('logged_in_at',desc).limit(1000)` TANPA filter company/owner (andelin RLS, tak ada kolom company_id). Event `{type:'login', title:'Login', subtitle:nama user, icon:'LogIn'}`; subtitle dari nameMap (`||'Pengguna'`); user_id login ikut nameMap. `FEED_ACT_LABEL`/`FEED_ACT_ICON` +login

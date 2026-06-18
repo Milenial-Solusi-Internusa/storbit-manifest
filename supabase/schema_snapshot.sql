@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict LEjpF8X6dgB0J1gSZ7A36J9912qxdAbtvySuh30iUkpZvfoEB3ndKEA2uXXD37g
+\restrict NucuYRm9aUYdINQNmgDTTCCJIgbCSkb6T8LtOGaRPZckbxu5uYltNZqWFfB30t1
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -424,6 +424,74 @@ $$;
 --
 
 COMMENT ON FUNCTION public.is_super_admin() IS 'True if the current user holds super_admin role (new user_roles table) or legacy profiles.role=''super''. Legacy fallback removed after Phase 1.0F.';
+
+
+--
+-- Name: save_quotation(uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_quotation(p_quotation_id uuid, p_header jsonb, p_items jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_count int;
+BEGIN
+  UPDATE public.quotations SET
+    quotation_no     = COALESCE(p_header->>'quotation_no', quotation_no),
+    quote_date       = COALESCE(NULLIF(p_header->>'quote_date','')::date, quote_date),
+    inquiry_id       = COALESCE(NULLIF(p_header->>'inquiry_id','')::uuid, inquiry_id),
+    prospect_id      = COALESCE(NULLIF(p_header->>'prospect_id','')::uuid, prospect_id),
+    customer_id      = COALESCE(NULLIF(p_header->>'customer_id','')::uuid, customer_id),
+    service_type     = COALESCE(p_header->>'service_type', service_type),
+    valid_until      = COALESCE(NULLIF(p_header->>'valid_until','')::date, valid_until),
+    payment_terms_id = COALESCE(NULLIF(p_header->>'payment_terms_id','')::uuid, payment_terms_id),
+    currency_code    = COALESCE(p_header->>'currency_code', currency_code),
+    notes            = COALESCE(p_header->>'notes', notes),
+    terms            = COALESCE(p_header->>'terms', terms),
+    internal_notes   = COALESCE(p_header->>'internal_notes', internal_notes),
+    subtotal         = COALESCE(NULLIF(p_header->>'subtotal','')::numeric, subtotal),
+    tax_amount       = COALESCE(NULLIF(p_header->>'tax_amount','')::numeric, tax_amount),
+    total_amount     = COALESCE(NULLIF(p_header->>'total_amount','')::numeric, total_amount),
+    status           = COALESCE(p_header->>'status', status),
+    usd_rate         = COALESCE(NULLIF(p_header->>'usd_rate','')::numeric, usd_rate),
+    route            = COALESCE(p_header->>'route', route),
+    discount_pct     = COALESCE(NULLIF(p_header->>'discount_pct','')::numeric, discount_pct),
+    margin_floor     = COALESCE(NULLIF(p_header->>'margin_floor','')::numeric, margin_floor),
+    updated_at       = now(),
+    updated_by       = auth.uid()
+  WHERE id = p_quotation_id;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF v_count = 0 THEN
+    RAISE EXCEPTION 'Quotation tidak ditemukan atau tidak ada izin edit (RLS).';
+  END IF;
+
+  DELETE FROM public.quotation_items WHERE quotation_id = p_quotation_id;
+
+  IF p_items IS NOT NULL AND jsonb_typeof(p_items) = 'array' THEN
+    INSERT INTO public.quotation_items (
+      quotation_id, sort_order, description, qty, unit, unit_price, notes,
+      group_name, currency, unit_label, exchange_rate, total, cost_price
+    )
+    SELECT p_quotation_id,
+      COALESCE(NULLIF(it->>'sort_order','')::int, 0),
+      it->>'description',
+      NULLIF(it->>'qty','')::numeric,
+      it->>'unit',
+      NULLIF(it->>'unit_price','')::numeric,
+      it->>'notes',
+      it->>'group_name',
+      it->>'currency',
+      it->>'unit_label',
+      NULLIF(it->>'exchange_rate','')::numeric,
+      NULLIF(it->>'total','')::numeric,
+      NULLIF(it->>'cost_price','')::numeric
+    FROM jsonb_array_elements(p_items) AS it;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'quotation_id', p_quotation_id);
+END;
+$$;
 
 
 --
@@ -2594,7 +2662,9 @@ CREATE TABLE public.quotations (
     pricing_done_at timestamp with time zone,
     quote_sent_at timestamp with time zone,
     discount_pct numeric DEFAULT 0,
-    margin_floor numeric DEFAULT 0
+    margin_floor numeric DEFAULT 0,
+    internal_notes text,
+    quote_date date
 );
 
 
@@ -8043,9 +8113,9 @@ CREATE POLICY quotation_items_delete ON public.quotation_items FOR DELETE USING 
 -- Name: quotation_items quotation_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY quotation_items_insert ON public.quotation_items FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+CREATE POLICY quotation_items_insert ON public.quotation_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
    FROM public.quotations q
-  WHERE ((q.id = quotation_items.quotation_id) AND (q.company_id = public.get_user_company_id())))));
+  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id = public.get_user_company_id()) OR public.is_super_admin())))));
 
 
 --
@@ -8061,9 +8131,11 @@ CREATE POLICY quotation_items_read ON public.quotation_items FOR SELECT USING ((
 -- Name: quotation_items quotation_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY quotation_items_update ON public.quotation_items FOR UPDATE USING ((EXISTS ( SELECT 1
+CREATE POLICY quotation_items_update ON public.quotation_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.quotations q
-  WHERE ((q.id = quotation_items.quotation_id) AND (q.company_id = public.get_user_company_id())))));
+  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id = public.get_user_company_id()) OR public.is_super_admin()))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.quotations q
+  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id = public.get_user_company_id()) OR public.is_super_admin())))));
 
 
 --
@@ -8076,7 +8148,7 @@ ALTER TABLE public.quotations ENABLE ROW LEVEL SECURITY;
 -- Name: quotations quotations_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY quotations_insert ON public.quotations FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
+CREATE POLICY quotations_insert ON public.quotations FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
@@ -8560,5 +8632,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict LEjpF8X6dgB0J1gSZ7A36J9912qxdAbtvySuh30iUkpZvfoEB3ndKEA2uXXD37g
+\unrestrict NucuYRm9aUYdINQNmgDTTCCJIgbCSkb6T8LtOGaRPZckbxu5uYltNZqWFfB30t1
 
