@@ -2,6 +2,14 @@
 
 ## 2026-06-19
 
+### Quotation mobile fix — list scroll horizontal + box tabel item muat konten (Phase 2.9R)
+> MURNI mobile styling (`@media max-width:1023px`, desktop pixel-identik). 2 file. Tanpa DB/perhitungan/alignment/header-coral.
+- [x] **TASK 1 (QuotationListPage)** — tabel di card `overflow:hidden` ke-clip di mobile (kolom Service tak terjangkau). Tambah `<style>` in-component `@media(max-width:1023px){ .q-list-table{ min-width:920px } }` + bungkus `<table>` dgn `<div overflowX:auto>` + className. Desktop `width:100%` + media mobile-only → identik
+- [x] **TASK 2 (QuotationFormPage SectionCard)** — UNIT LABEL & QTY desimal ke-clip karena squeeze. `<style>` existing +blok `@media(max-width:1023px)`: `.q-item-table{min-width:800px}` (tak squeeze → wrapper overflowX:auto [sudah ada] scroll), `.q-unit-select{appearance:none +min-width:116px}` (panah dropdown hilang HANYA mobile, reclaim ruang, tetap tappable), `.qty-input{min-width:54px}` ("4,1" muat). className `q-item-table` ke table, `q-unit-select` ke select unit (qty input sudah `qty-input`)
+- [x] Semua min-width ≤ lebar kolom desktop + media mobile-only → desktop tak berubah (full-width 2.9Q, alignment, header coral, panah unit desktop tetap)
+- [x] **Build clean** — 2632 modules, 1.19s
+- [ ] **Tes manual (belum — runtime mobile):** list geser samping → Service kebaca penuh · form "Per CBM"/"Per Shipment" muat + qty "4,1" lengkap + panah unit hilang + tabel scroll horizontal · desktop tak berubah
+
 ### Quotation line item — full-width tabel (form) + alignment konsisten + header coral (Phase 2.9Q)
 > MURNI layout/styling, 2 file (QuotationFormPage + QuotationDetailPage). Tanpa DB/RPC/perhitungan.
 - [x] **TASK 1 (full-width, FORM saja)** — `.nx-stack` 1-baris (kiri 60% header+sections+summary 40%) → **2 baris**: Baris 1 `.nx-stack` (header card 60% + summary 40% sticky, tak berubah); Baris 2 baru full-width = `sections.map(SectionCard)` + tombol Tambah Section. Responsive: `.nx-stack` collapse <1024px (index.css:44), Baris 2 stack di bawah pada mobile; drawer/sidebar/`flex-col lg:flex-row` tak disentuh

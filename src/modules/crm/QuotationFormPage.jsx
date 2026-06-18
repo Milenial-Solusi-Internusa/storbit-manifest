@@ -171,7 +171,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
 
       {/* Rows table */}
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <table className="q-item-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
               <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Description</th>
@@ -211,6 +211,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 </td>
                 <td style={{ padding: '6px 6px', width: 130 }}>
                   <select value={row.unit_label} onChange={e => onUpdateRow(section.id, row.id, 'unit_label', e.target.value)}
+                    className="q-unit-select"
                     style={cellInp({ padding: '0 4px', cursor: 'pointer', textAlign: 'center' })}>
                     {UNIT_LABELS.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
@@ -586,7 +587,12 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     <div style={{ fontFamily: 'Inter, sans-serif', color: C.ink }}>
       <style>{`@media print { .no-print { display: none !important; } }
         .qty-input::-webkit-inner-spin-button, .qty-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        .qty-input { -moz-appearance: textfield; }`}</style>
+        .qty-input { -moz-appearance: textfield; }
+        @media (max-width: 1023px) {
+          .q-item-table { min-width: 800px; }
+          .q-unit-select { -webkit-appearance: none; -moz-appearance: none; appearance: none; min-width: 116px; }
+          .qty-input { min-width: 54px; }
+        }`}</style>
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
         <button onClick={onBack}
