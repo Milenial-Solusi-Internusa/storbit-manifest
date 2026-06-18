@@ -150,6 +150,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
 
   return (
     <div style={{ fontFamily: 'Inter, sans-serif', color: C.ink }}>
+      <style>{`@media (max-width: 1023px) { .q-list-table { min-width: 920px; } }`}</style>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -199,7 +200,8 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
 
       {/* Table */}
       <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, overflow: 'hidden', boxShadow: '0 1px 6px rgba(35,41,30,.06)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table className="q-list-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
               {['Quotation No', 'Prospect / Customer', 'Service', 'Routing', 'Status', 'SLA', 'Valid Until', 'Grand Total', 'Created At', ''].map(h => (
@@ -243,6 +245,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination */}
