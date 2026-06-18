@@ -7,7 +7,7 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, Menu,
   Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
-  Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen,
+  Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
   ClipboardList, LayoutList, Archive, UserX, Activity,
 } from 'lucide-react';
@@ -41,6 +41,7 @@ const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage')
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
 const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
+const ActivityLogPage      = lazy(() => import('./modules/crm/ActivityLogPage'));
 const LeadPoolPage         = lazy(() => import('./modules/crm/LeadPoolPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
@@ -453,6 +454,7 @@ const ERP_MENU_GROUPS = [
             ],
           },
           { id: 'crm-calls',      label: 'Activities', icon: Activity },
+          { id: 'crm-activity-log', label: 'Activity Log', icon: History },
         ],
       },
     ],
@@ -2468,6 +2470,15 @@ export default function StorbitManifest() {
                   setShowProspectForm={setShowProspectForm}
                   setEditingProspect={setEditingProspect}
                 />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Activity Log ───────────────────────────────────────────── */}
+          {activeMenu === 'crm-activity-log' && (
+            <ErrorBoundary title="Activity Log temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <ActivityLogPage showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           )}

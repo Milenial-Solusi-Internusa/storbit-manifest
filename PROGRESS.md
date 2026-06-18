@@ -2,6 +2,25 @@
 
 ## 2026-06-18
 
+### Unified feed — sumber ke-5: login (user_login_logs) (Phase 2.9M)
+> Tabel `user_login_logs` BARU (belum di schema_snapshot; RLS gating manager+/super/own).
+- [x] **activityFeed.js** — fetch ke-5 `user_login_logs.select('*').order('logged_in_at',desc).limit(1000)` TANPA filter company/owner (andelin RLS, tak ada kolom company_id). Event `{type:'login', title:'Login', subtitle:nama user, icon:'LogIn'}`; subtitle dari nameMap (`||'Pengguna'`); user_id login ikut nameMap. `FEED_ACT_LABEL`/`FEED_ACT_ICON` +login
+- [x] **ActivityLogPage.jsx** — filter tipe +opsi "Login"; ICONS +LogIn; TYPE_TONE.login slate (no dark green)
+- [x] **CRMDashboardPage.jsx** — widget pakai feed sama → login auto top-7; ICONS registry +SVG `login` + ACT_META.login (slate) biar tak fallback info
+- [x] **Build clean** — 2632 modules, 1.14s; lint net-zero (activityFeed 0, ActivityLogPage 3→3, CRMDashboard 8→8). Login `select('*')` no embed → tak 400
+- [x] Scoping note (FYI bukan bug): widget dashboard sumber login andelin RLS → super_admin lihat login semua entitas (minor, hanya super; tak dipaksa single-entity)
+- [ ] **Tes manual (belum — runtime):** Activity Log filter "Login" → event login muncul (min. punya sendiri) · feed campuran login interleaved · dashboard Recent Activity login nongol kalau terbaru · login sebagai sales → cuma login sendiri (RLS) · fetch user_login_logs tak 400
+
+### Unified activity feed + Activity Log page + Recent Activity widget (Phase 2.9L)
+> Shared feed (4 tabel) dipakai halaman Activity Log baru + widget dashboard. DB read-only.
+- [x] **`activityFeed.js` (BARU, shared)** — `fetchActivityFeed({companyId,uid,isAllEntities,isSalesOnly})`: merge accounts(prospect)/inquiries/quotations/activities → events `{id,timestamp,type,actType,title,subtitle,user_id,user_name,icon}`, sort desc. Role-aware scoping (company always kecuali super; sales own via created_by/assigned_to). Nama user via nameMap profiles. `.limit(1000)`/sumber. Helper feedTimeAgo/feedFmtDate
+- [x] **Embed FK names diverifikasi vs schema** (byte-identik dgn list page live): `inquiries_prospect_id_fkey`, `inquiries_customer_id_fkey`, `quotations_prospect_id_fkey`, `quotations_customer_id_fkey`, `activities_account_id_fkey` — semua prefix tabel sendiri, BUKAN legacy `prospects_*`/`customers_*`. Build clean → tak 400
+- [x] **`ActivityLogPage.jsx` (BARU)** — feed penuh, newest-first (icon Lucide + title + subtitle + user + relatif+tanggal). Filter tipe + tanggal (today/this_week/this_month/custom); manager+ dropdown sales (fetchSalesProfiles RBAC), sales own-only. Pagination 25. `isAllEntities=super_admin`
+- [x] **App.jsx** — lucide +History; menu `crm-activity-log` "Activity Log" PERSIS setelah Activities di grup CRM (item lain tak disentuh, TIDAK di MENU_KEY_MAP spt crm-calls); lazy import + route block
+- [x] **CRMDashboardPage (Task 3)** — `recentActivity` pakai unified feed top-7 (ganti prospects-only); widget dashboard SELALU single-entity (`isAllEntities:false`, termasuk super_admin); ACT_META +`activity`; subtitle → "Prospect, inquiry, quotation & aktivitas terbaru". Render tak berubah
+- [x] **Build clean** — 2632 modules, 1.33s; lint net-zero (activityFeed 0, ActivityLogPage 3 baseline, CRMDashboard 8→8, App 4→4)
+- [ ] **Tes manual (belum — runtime):** menu Activity Log muncul di bawah Activities → halaman kebuka · feed campuran (prospect+inquiry+quotation+activity), terbaru di atas · filter tipe/tanggal jalan, manager filter sales, sales own-only · dashboard Recent Activity campuran (bukan cuma "Prospect baru") · login sales → feed own-only
+
 ### ActivitiesPage — tipe final (6) + convert-to-prospect aksi list + delete list (Phase 2.9K)
 - [x] **Tipe (6):** TYPE_META/TYPE_FORM hapus `prospecting` → call(biru)/whatsapp(hijau)/visit(ungu)/meeting(navy)/email(amber)/followup(slate), no dark green. `activities.type` tanpa CHECK → aman tanpa ubah DB. Field kondisional: contact utk call|whatsapp, location utk visit|meeting, email/followup notes saja. **Field `prospect_name` dihapus dari form** (input/EMPTY_TASK/actToDraft/payload); legacy read dipertahankan
 - [x] **Hapus flow prospecting dari centang:** handleCheck tak lagi `setConfirmProspect` saat type prospecting → centang selesai tak munculkan popup
