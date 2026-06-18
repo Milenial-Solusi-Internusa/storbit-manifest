@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict NucuYRm9aUYdINQNmgDTTCCJIgbCSkb6T8LtOGaRPZckbxu5uYltNZqWFfB30t1
+\restrict AA0X3JbVU9ProNa4p4seLcSNTG7akLxok3CS6hIFgj7Wb7NOMx8FsASUpDUlc4u
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -446,17 +446,18 @@ BEGIN
     valid_until      = COALESCE(NULLIF(p_header->>'valid_until','')::date, valid_until),
     payment_terms_id = COALESCE(NULLIF(p_header->>'payment_terms_id','')::uuid, payment_terms_id),
     currency_code    = COALESCE(p_header->>'currency_code', currency_code),
-    notes            = COALESCE(p_header->>'notes', notes),
-    terms            = COALESCE(p_header->>'terms', terms),
-    internal_notes   = COALESCE(p_header->>'internal_notes', internal_notes),
+    notes            = CASE WHEN p_header ? 'notes'          THEN p_header->>'notes'          ELSE notes          END,
+    terms            = CASE WHEN p_header ? 'terms'          THEN p_header->>'terms'          ELSE terms          END,
+    internal_notes   = CASE WHEN p_header ? 'internal_notes' THEN p_header->>'internal_notes' ELSE internal_notes END,
+    route            = CASE WHEN p_header ? 'route'          THEN p_header->>'route'          ELSE route          END,
     subtotal         = COALESCE(NULLIF(p_header->>'subtotal','')::numeric, subtotal),
     tax_amount       = COALESCE(NULLIF(p_header->>'tax_amount','')::numeric, tax_amount),
     total_amount     = COALESCE(NULLIF(p_header->>'total_amount','')::numeric, total_amount),
     status           = COALESCE(p_header->>'status', status),
     usd_rate         = COALESCE(NULLIF(p_header->>'usd_rate','')::numeric, usd_rate),
-    route            = COALESCE(p_header->>'route', route),
     discount_pct     = COALESCE(NULLIF(p_header->>'discount_pct','')::numeric, discount_pct),
     margin_floor     = COALESCE(NULLIF(p_header->>'margin_floor','')::numeric, margin_floor),
+    pricing_done_at  = COALESCE(NULLIF(p_header->>'pricing_done_at','')::timestamptz, pricing_done_at),
     updated_at       = now(),
     updated_by       = auth.uid()
   WHERE id = p_quotation_id;
@@ -8632,5 +8633,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict NucuYRm9aUYdINQNmgDTTCCJIgbCSkb6T8LtOGaRPZckbxu5uYltNZqWFfB30t1
+\unrestrict AA0X3JbVU9ProNa4p4seLcSNTG7akLxok3CS6hIFgj7Wb7NOMx8FsASUpDUlc4u
 
