@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, LabelList, AreaChart, Area } from "recharts";
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { fetchActivityFeed } from './activityFeed';
 
 /* =========================================================================
    CRMDashboardPage — Nexus by MSI · CRM Sales Dashboard (freight forwarding)
@@ -29,6 +30,7 @@ const ICONS = {
   inbox:       '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   filetext:    '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
   userplus:    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
+  login:       '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/>',
   checkcircle: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
   ban:         '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
   arrowright:  '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
@@ -104,6 +106,8 @@ const ACT_META = {
   inquiry:   { icon: "inbox",       bg: "#E5EDF7", fg: "#1E5894" },
   move:      { icon: "arrowright",  bg: "#EAF0F8", fg: NAVY },
   lost:      { icon: "ban",         bg: "#F7E1DE", fg: "#C0392B" },
+  activity:  { icon: "activity",    bg: "#EFE7F6", fg: "#7C3AED" },
+  login:     { icon: "login",       bg: "#EEF0F3", fg: "#51607A" },
 };
 
 /* ---------- lead source color palette ---------- */
@@ -670,7 +674,7 @@ function RecentActivity({ items = ACTIVITY }) {
       <div className="om-card" style={D.card}>
         <div style={D.cardHead}>
           <div style={D.cardIco}><Icon name="activity" size={18} /></div>
-          <div><div style={D.cardTitle}>Recent Activity</div><div style={D.cardSub}>Aktivitas prospect, inquiry & quotation terbaru</div></div>
+          <div><div style={D.cardTitle}>Recent Activity</div><div style={D.cardSub}>Prospect, inquiry, quotation & aktivitas terbaru</div></div>
         </div>
         <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada aktivitas</div>
       </div>
@@ -682,7 +686,7 @@ function RecentActivity({ items = ACTIVITY }) {
         <div style={D.cardIco}><Icon name="activity" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Recent Activity</div>
-          <div style={D.cardSub}>Aktivitas prospect, inquiry & quotation terbaru</div>
+          <div style={D.cardSub}>Prospect, inquiry, quotation & aktivitas terbaru</div>
         </div>
       </div>
       <div style={D.actBody}>
@@ -1774,6 +1778,10 @@ function CRMDashboardPage() {
       const ownBySales   = (q) => isSalesOnly ? q.eq('assigned_to', uid) : q;  // activities use assigned_to
       const ownByCreator = (q) => isSalesOnly ? q.eq('created_by', uid) : q;
 
+      // Unified Recent Activity feed (prospect/inquiry/quotation/activity). Dashboard
+      // widget is always single-entity (isAllEntities:false) — consistent with fetchDash.
+      const feedPromise = fetchActivityFeed({ companyId: cid, uid, isAllEntities: false, isSalesOnly });
+
       const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes] = await Promise.all([
         // Full prospects for this company — all fields needed for multiple computations
         ownProspects(supabase
@@ -1995,17 +2003,15 @@ function CRMDashboardPage() {
         follow_up:        v.next_action               || '',
       }));
 
-      // ── Recent activity ────────────────────────────────────────────────────
-      const recentActivity = [...prospects]
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .slice(0, 5)
-        .map(p => ({
-          type: 'prospect',
-          text: 'Prospect baru',
-          co:   p.name || '(tanpa nama)',
-          time: fmtTimeAgo(p.created_at),
-          user: p.profiles?.full_name || '—',
-        }));
+      // ── Recent activity (unified feed: prospect/inquiry/quotation/activity) ──
+      const feedEvents = await feedPromise;
+      const recentActivity = feedEvents.slice(0, 7).map(ev => ({
+        type: ev.type,                 // prospect | inquiry | quotation | activity → ACT_META
+        text: ev.title,
+        co:   ev.subtitle,
+        time: fmtTimeAgo(ev.timestamp),
+        user: ev.user_name || '—',
+      }));
 
       // ── S2 personal activity KPIs ───────────────────────────────────────────
       const callsThisWeek       = (callsWeekRes.data  || []).length;

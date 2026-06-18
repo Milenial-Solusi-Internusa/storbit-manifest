@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict zrqHqKKRTzK5u8zFOCZP5lTWmflBHQLe4wbOJ4TtdLAkYOhMn56zj8NuwhL5XuD
+\restrict RwdGpWoLu3T9hQZftaf1VCIHdG4YJbIp18gyQAOssOYiqvowYUYMcUQd52pKwgq
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -34,6 +34,26 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
+-- Name: capture_login_session(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.capture_login_session() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  BEGIN
+    INSERT INTO public.user_login_logs (user_id, session_id, logged_in_at, ip, user_agent)
+    VALUES (NEW.user_id, NEW.id, COALESCE(NEW.created_at, now()), host(NEW.ip), NEW.user_agent);
+  EXCEPTION WHEN OTHERS THEN
+    NULL;  -- kalau logging gagal, login TETEP jalan
+  END;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: exec_sql(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -44,6 +64,30 @@ BEGIN
   EXECUTE sql;
 END;
 $$;
+
+
+--
+-- Name: generate_customer_code(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_customer_code() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+declare
+  yr int := extract(year from coalesce(NEW.created_at, now()))::int;
+  next_num int;
+begin
+  if NEW.account_status = 'customer' and (NEW.code is null or NEW.code = '') then
+    insert into public.code_counters (entity, year, last_number)
+    values ('CUST', yr, 1)
+    on conflict (entity, year)
+    do update set last_number = public.code_counters.last_number + 1
+    returning last_number into next_num;
+
+    NEW.code := 'MSI/CUST/' || yr || '/' || int_to_roman(next_num);
+  end if;
+  return NEW;
+end; $$;
 
 
 --
@@ -276,6 +320,30 @@ $$;
 --
 
 COMMENT ON FUNCTION public.increment_document_sequence(p_company_id uuid, p_document_type text, p_department_code text, p_year integer, p_month integer) IS 'Atomically increments the document sequence counter for the given key. Inserts the row with last_sequence=1 if it does not yet exist. SECURITY DEFINER — bypasses RLS; safe because company_id is validated. Returns the new sequence number.';
+
+
+--
+-- Name: int_to_roman(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.int_to_roman(num integer) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+declare
+  vals int[]  := array[1000,900,500,400,100,90,50,40,10,9,5,4,1];
+  syms text[] := array['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I'];
+  result text := '';
+  i int;
+begin
+  if num is null or num <= 0 then return null; end if;
+  for i in 1..array_length(vals,1) loop
+    while num >= vals[i] loop
+      result := result || syms[i];
+      num := num - vals[i];
+    end loop;
+  end loop;
+  return result;
+end; $$;
 
 
 --
@@ -1270,6 +1338,17 @@ COMMENT ON COLUMN public.chart_of_accounts.normal_balance IS 'debit: increases w
 --
 
 COMMENT ON COLUMN public.chart_of_accounts.deleted_at IS 'Soft delete only if no transactions reference this account. Finance Controller approval required before deleting any account.';
+
+
+--
+-- Name: code_counters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.code_counters (
+    entity text NOT NULL,
+    year integer NOT NULL,
+    last_number integer DEFAULT 0 NOT NULL
+);
 
 
 --
@@ -2894,6 +2973,21 @@ COMMENT ON COLUMN public.taxes.gl_account_id IS 'Nullable FK to chart_of_account
 
 
 --
+-- Name: user_login_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_login_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid,
+    session_id uuid,
+    logged_in_at timestamp with time zone DEFAULT now() NOT NULL,
+    ip text,
+    user_agent text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: user_menu_permissions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3243,6 +3337,14 @@ ALTER TABLE ONLY public.chart_of_accounts
 
 ALTER TABLE ONLY public.chart_of_accounts
     ADD CONSTRAINT chart_of_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: code_counters code_counters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_counters
+    ADD CONSTRAINT code_counters_pkey PRIMARY KEY (entity, year);
 
 
 --
@@ -3846,6 +3948,14 @@ ALTER TABLE ONLY public.taxes
 
 
 --
+-- Name: user_login_logs user_login_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_login_logs
+    ADD CONSTRAINT user_login_logs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: user_menu_permissions user_menu_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3907,6 +4017,13 @@ ALTER TABLE ONLY public.warehouses
 
 ALTER TABLE ONLY public.warehouses
     ADD CONSTRAINT warehouses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: accounts_code_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX accounts_code_unique ON public.accounts USING btree (code) WHERE (code IS NOT NULL);
 
 
 --
@@ -4743,6 +4860,20 @@ CREATE INDEX idx_taxes_deleted_at ON public.taxes USING btree (deleted_at) WHERE
 
 
 --
+-- Name: idx_user_login_logs_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_login_logs_time ON public.user_login_logs USING btree (logged_in_at DESC);
+
+
+--
+-- Name: idx_user_login_logs_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_login_logs_user ON public.user_login_logs USING btree (user_id);
+
+
+--
 -- Name: idx_user_roles_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4985,6 +5116,20 @@ CREATE TRIGGER trg_document_types_updated_at BEFORE UPDATE ON public.document_ty
 --
 
 CREATE TRIGGER trg_exchange_rates_updated_at BEFORE UPDATE ON public.exchange_rates FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: accounts trg_gen_customer_code_ins; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_gen_customer_code_ins BEFORE INSERT ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.generate_customer_code();
+
+
+--
+-- Name: accounts trg_gen_customer_code_upd; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR EACH ROW WHEN (((new.code IS NULL) OR (new.code = ''::text))) EXECUTE FUNCTION public.generate_customer_code();
 
 
 --
@@ -7589,7 +7734,7 @@ CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((((company_id
 -- Name: inquiries inquiries_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY inquiries_update ON public.inquiries FOR UPDATE USING (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
+CREATE POLICY inquiries_update ON public.inquiries FOR UPDATE TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
@@ -8285,6 +8430,21 @@ CREATE POLICY ump_select ON public.user_menu_permissions FOR SELECT USING ((user
 
 
 --
+-- Name: user_login_logs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.user_login_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: user_login_logs user_login_logs_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY user_login_logs_read ON public.user_login_logs FOR SELECT TO authenticated USING ((public.is_super_admin() OR (user_id = auth.uid()) OR (public.is_manager_or_above() AND (EXISTS ( SELECT 1
+   FROM public.profiles p
+  WHERE ((p.id = user_login_logs.user_id) AND (p.company_id = public.get_user_company_id())))))));
+
+
+--
 -- Name: user_menu_permissions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8391,5 +8551,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict zrqHqKKRTzK5u8zFOCZP5lTWmflBHQLe4wbOJ4TtdLAkYOhMn56zj8NuwhL5XuD
+\unrestrict RwdGpWoLu3T9hQZftaf1VCIHdG4YJbIp18gyQAOssOYiqvowYUYMcUQd52pKwgq
 
