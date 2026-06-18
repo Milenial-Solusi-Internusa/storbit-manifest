@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict RwdGpWoLu3T9hQZftaf1VCIHdG4YJbIp18gyQAOssOYiqvowYUYMcUQd52pKwgq
+\restrict LEjpF8X6dgB0J1gSZ7A36J9912qxdAbtvySuh30iUkpZvfoEB3ndKEA2uXXD37g
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -71,23 +71,32 @@ $$;
 --
 
 CREATE FUNCTION public.generate_customer_code() RETURNS trigger
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
     AS $$
 declare
   yr int := extract(year from coalesce(NEW.created_at, now()))::int;
   next_num int;
+  prefix text;
+  ckey text;
 begin
   if NEW.account_status = 'customer' and (NEW.code is null or NEW.code = '') then
+    select code into prefix from public.companies
+      where id = coalesce(NEW.owner_company_id, NEW.company_id);
+    if prefix is null or prefix = '' then prefix := 'MSI'; end if;
+
+    ckey := prefix || '-CUST';
     insert into public.code_counters (entity, year, last_number)
-    values ('CUST', yr, 1)
+    values (ckey, yr, 1)
     on conflict (entity, year)
     do update set last_number = public.code_counters.last_number + 1
     returning last_number into next_num;
 
-    NEW.code := 'MSI/CUST/' || yr || '/' || int_to_roman(next_num);
+    NEW.code := prefix || '/CUST/' || yr || '/' || int_to_roman(next_num);
   end if;
   return NEW;
-end; $$;
+end;
+$$;
 
 
 --
@@ -8551,5 +8560,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict RwdGpWoLu3T9hQZftaf1VCIHdG4YJbIp18gyQAOssOYiqvowYUYMcUQd52pKwgq
+\unrestrict LEjpF8X6dgB0J1gSZ7A36J9912qxdAbtvySuh30iUkpZvfoEB3ndKEA2uXXD37g
 
