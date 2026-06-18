@@ -583,6 +583,14 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
     return true;
   });
 
+  // Y for "Menampilkan X dari Y": customers passing the ENTITY filter only
+  // (mirrors lines above), BEFORE search/tier/status — so it's per-entity, not global.
+  const entityCount = customers.filter(c => {
+    if (entityFilter === 'FREE_AGENT') return statusOf(c) === 'free_agent';
+    if (entityFilter) return c.source_company?.code === entityFilter;
+    return true;
+  }).length;
+
   // Stat cards — computed from the filtered set
   const total      = filtered.length;
   const activeCnt  = filtered.filter(c => statusOf(c) === 'customer').length;
@@ -668,7 +676,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
               <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
             </div>
           )}
-          <span style={P.countLine}>Menampilkan {total} dari {customers.length}</span>
+          <span style={P.countLine}>Menampilkan {total} dari {entityCount}</span>
         </div>
 
         {/* Table */}
