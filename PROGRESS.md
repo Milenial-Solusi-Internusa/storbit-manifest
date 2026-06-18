@@ -1,5 +1,17 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-06-19
+
+### Quotation line item — full-width tabel (form) + alignment konsisten + header coral (Phase 2.9Q)
+> MURNI layout/styling, 2 file (QuotationFormPage + QuotationDetailPage). Tanpa DB/RPC/perhitungan.
+- [x] **TASK 1 (full-width, FORM saja)** — `.nx-stack` 1-baris (kiri 60% header+sections+summary 40%) → **2 baris**: Baris 1 `.nx-stack` (header card 60% + summary 40% sticky, tak berubah); Baris 2 baru full-width = `sections.map(SectionCard)` + tombol Tambah Section. Responsive: `.nx-stack` collapse <1024px (index.css:44), Baris 2 stack di bawah pada mobile; drawer/sidebar/`flex-col lg:flex-row` tak disentuh
+- [x] **Tradeoff (disepakati "two-row, summary on top")** — summary sticky kini di Baris 1 → scroll lewat saat dalam tabel; tiap SectionCard tetap punya "Section total", grand total di atas
+- [x] **TASK 2 (alignment, kedua file on-screen)** — Description=left · Cost=right · Currency=center · Sell=right · Unit=center · Qty=center · Total=right (header ikut isi). Form: qty input right→center, select currency/unit +center; Detail: header cost→right, currency/unit header+cell→center
+- [x] **TASK 3 (header coral, kedua file on-screen)** — baris header `background:#F08C7D` + teks `color:#144682` navy (kontras, bukan cream/putih). Bar judul section cream TIDAK diubah
+- [x] **PDF `#quotation-print-area` TIDAK disentuh** (opsi "on-screen only"; dokumen customer tetap brand navy, tak ada kolom Cost Price)
+- [x] **Build clean** — 2632 modules, 1.22s
+- [ ] **Tes manual (belum — runtime):** form tabel full-width di desktop + rapih di mobile (layar kecil) · alignment sesuai spec, header sejajar isi, sama di form+detail · header coral+navy kebaca · angka/total tak berubah (cuma posisi)
+
 ## 2026-06-18
 
 ### Quotation save hardening — RPC atomik + internal/per-item notes + quote_date (Phase 2.9O)

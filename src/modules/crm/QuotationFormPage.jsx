@@ -174,14 +174,14 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
-              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, whiteSpace: 'nowrap', background: C.surface }}>Description</th>
-              <th className="no-print" style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.danger, whiteSpace: 'nowrap', background: C.surface }}>Cost Price</th>
-              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, whiteSpace: 'nowrap', background: C.surface }}>Currency</th>
-              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, whiteSpace: 'nowrap', background: C.surface }}>Sell Price</th>
-              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, whiteSpace: 'nowrap', background: C.surface }}>Unit Label</th>
-              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, whiteSpace: 'nowrap', background: C.surface }}>QTY</th>
-              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, whiteSpace: 'nowrap', background: C.surface }}>Total IDR</th>
-              <th style={{ padding: '7px 8px', background: C.surface }}></th>
+              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Description</th>
+              <th className="no-print" style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Cost Price</th>
+              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Currency</th>
+              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Sell Price</th>
+              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Unit Label</th>
+              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>QTY</th>
+              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Total IDR</th>
+              <th style={{ padding: '7px 8px', background: '#F08C7D' }}></th>
             </tr>
           </thead>
           <tbody>
@@ -199,7 +199,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 </td>
                 <td style={{ padding: '6px 6px', width: 72 }}>
                   <select value={row.currency} onChange={e => onUpdateRow(section.id, row.id, 'currency', e.target.value)}
-                    style={cellInp({ padding: '0 4px', cursor: 'pointer' })}>
+                    style={cellInp({ padding: '0 4px', cursor: 'pointer', textAlign: 'center' })}>
                     {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </td>
@@ -211,7 +211,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 </td>
                 <td style={{ padding: '6px 6px', width: 130 }}>
                   <select value={row.unit_label} onChange={e => onUpdateRow(section.id, row.id, 'unit_label', e.target.value)}
-                    style={cellInp({ padding: '0 4px', cursor: 'pointer' })}>
+                    style={cellInp({ padding: '0 4px', cursor: 'pointer', textAlign: 'center' })}>
                     {UNIT_LABELS.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </td>
@@ -220,7 +220,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                     className="qty-input"
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => onUpdateRow(section.id, row.id, 'qty', e.target.value.replace(/^0+(?=\d)/, ''))}
-                    style={cellInp({ textAlign: 'right' })} />
+                    style={cellInp({ textAlign: 'center' })} />
                 </td>
                 <td style={{ padding: '6px 10px', width: 120, fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap', color: row.currency === 'USD' ? C.orange : C.ink }}>
                   {rp(row.total)}
@@ -726,31 +726,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
               </Field>
             </div>
           </div>
-
-          {/* Sections */}
-          {sections.map(sec => (
-            <SectionCard
-              key={sec.id}
-              section={sec}
-              onUpdateName={updateSectionName}
-              onAddRow={addRow}
-              onRemoveRow={removeRow}
-              onUpdateRow={updateRow}
-              onRemoveSection={removeSection}
-              canRemove={sections.length > 1}
-              usdRate={header.usd_rate}
-            />
-          ))}
-
-          {/* Add section button */}
-          <button
-            onClick={addSection}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 10, border: `2px dashed ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'border-color .14s, color .14s' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.color = C.inkSoft; }}
-          >
-            <Plus size={15} /> Tambah Section
-          </button>
         </div>
 
         {/* ── RIGHT — sticky summary (40%) ───────────────────────────────── */}
@@ -849,6 +824,33 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ── Sections — full width (below header + summary) ──────────────── */}
+      <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {sections.map(sec => (
+          <SectionCard
+            key={sec.id}
+            section={sec}
+            onUpdateName={updateSectionName}
+            onAddRow={addRow}
+            onRemoveRow={removeRow}
+            onUpdateRow={updateRow}
+            onRemoveSection={removeSection}
+            canRemove={sections.length > 1}
+            usdRate={header.usd_rate}
+          />
+        ))}
+
+        {/* Add section button */}
+        <button
+          onClick={addSection}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 10, border: `2px dashed ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'border-color .14s, color .14s' }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.color = C.inkSoft; }}
+        >
+          <Plus size={15} /> Tambah Section
+        </button>
       </div>
     </div>
   );

@@ -458,13 +458,13 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
-                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.inkFaint }}>Description</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.danger    }} className="no-print">Cost Price</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.inkFaint }}>Currency</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.inkFaint }}>Sell Price</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.inkFaint }}>Unit Label</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.inkFaint }}>QTY</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: C.inkFaint }}>Total IDR</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Description</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }} className="no-print">Cost Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Currency</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Sell Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Unit Label</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>QTY</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Total IDR</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -476,13 +476,13 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                           <td className="no-print" style={{ padding: '9px 8px', textAlign: 'right', color: C.inkSoft, fontSize: 12 }}>
                             {(Number(row.cost_price) || 0).toLocaleString('id-ID')}
                           </td>
-                          <td style={{ padding: '9px 8px', color: row.currency === 'USD' ? C.orange : C.inkSoft, fontWeight: 600, fontSize: 12 }}>
+                          <td style={{ padding: '9px 8px', textAlign: 'center', color: row.currency === 'USD' ? C.orange : C.inkSoft, fontWeight: 600, fontSize: 12 }}>
                             {row.currency || 'IDR'}
                           </td>
                           <td style={{ padding: '9px 8px', textAlign: 'right', color: C.ink, fontSize: 12 }}>
                             {(Number(row.unit_price) || 0).toLocaleString('id-ID')}
                           </td>
-                          <td style={{ padding: '9px 8px', color: C.inkSoft, fontSize: 12 }}>{row.unit_label || '—'}</td>
+                          <td style={{ padding: '9px 8px', textAlign: 'center', color: C.inkSoft, fontSize: 12 }}>{row.unit_label || '—'}</td>
                           <td style={{ padding: '9px 8px', textAlign: 'center', color: C.ink, fontWeight: 600 }}>{row.qty || 1}</td>
                           <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: row.currency === 'USD' ? C.orange : C.ink, whiteSpace: 'nowrap' }}>
                             {rp(row.total)}
