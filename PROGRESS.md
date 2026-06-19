@@ -2,6 +2,19 @@
 
 ## 2026-06-19
 
+### Struktur Organisasi (Org Chart) — port Lovable + Supabase (Phase 2.9S)
+> File baru `src/modules/foundation/OrgStructurePage.jsx`. Modul Foundation (AdminShell). Tanpa ubah DB (kolom `profiles.reports_to` sudah ada).
+- [x] **Import desain** — paste manual (Option A); MCP `claude_design`/DesignSync tak bisa auth di sesi token-pinned (`CLAUDE_CODE_OAUTH_TOKEN` tak bisa di-grant design scopes, `/design-login`/`/login` tak tersedia)
+- [x] **Data (ganti dummy)** — `profiles` `.eq('active', true)` (TAK ada `deleted_at`) + embed `position:positions(name)` (FK `fk_profiles_position_id`) + `department:departments(name)` + `reports_to` + `company_id`; `.order('full_name').limit(1000)`
+- [x] **company_id dari user_roles** — query terpisah (`user_roles.user_id→auth.users`, tak bisa embed dari profiles): `is_active=true`, `revoked_at IS NULL`, `order granted_at`, ambil pertama; **fallback `profiles.company_id`** kalau role aktif tak terlihat (RLS)
+- [x] **Warna node by company_id** — MSI navy #144682 / JCI orange #E85A1E / SOA coral #F08C7D (badge+avatar+border-left+focus ring); unknown→abu fallback
+- [x] **Edit modal "Atur Atasan"** — `update({ reports_to: value }).eq('id', nodeId)`, null=root; cycle-guard (exclude self+descendants); async save + saving/saveError + re-fetch tree setelah sukses
+- [x] **Adaptasi shell** — `height:100vh`→`calc(100vh-120px)` card (AdminShell normal-flow); chart `overflow:auto`; loading/error+retry/empty/no-root states
+- [x] **Brand/ikon** — company colors persis brand; Lucide `X`/`Search` (ganti glyph `×` + inline SVG); select chevron CSS data-URI (bukan emoji); no dark green; CSS connector scoped `.ocp`
+- [x] **Sidebar** — AdminShell import `GitBranch`+`OrgStructurePage`; nav `org-structure` "Struktur Organisasi" SETELAH Positions (section Organization); PAGE_MAP ErrorBoundary
+- [x] **Build clean** — 2633 modules, 1.21s
+- [ ] **Tes manual (belum — runtime):** tree dari data nyata · warna per entitas benar · search dim/highlight · klik node → modal → ganti atasan → save → re-fetch & re-parent · set "tanpa atasan" → jadi root · cek RLS: non-super admin mungkin lihat "—" untuk position/department lintas-entitas (idealnya super_admin)
+
 ### Quotation mobile fix — list scroll horizontal + box tabel item muat konten (Phase 2.9R)
 > MURNI mobile styling (`@media max-width:1023px`, desktop pixel-identik). 2 file. Tanpa DB/perhitungan/alignment/header-coral.
 - [x] **TASK 1 (QuotationListPage)** — tabel di card `overflow:hidden` ke-clip di mobile (kolom Service tak terjangkau). Tambah `<style>` in-component `@media(max-width:1023px){ .q-list-table{ min-width:920px } }` + bungkus `<table>` dgn `<div overflowX:auto>` + className. Desktop `width:100%` + media mobile-only → identik
