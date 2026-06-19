@@ -179,6 +179,120 @@ const SOURCE_LABELS_KP = {
   linkedin: 'LinkedIn', tiktok: 'TikTok', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
 };
 
+/* ── Toolbar control config + client-side filter/sort helpers ── */
+const SORT_OPTIONS = [
+  { id: 'recent',     label: 'Terbaru' },
+  { id: 'oldest',     label: 'Terlama' },
+  { id: 'value_desc', label: 'Nilai Tertinggi' },
+  { id: 'value_asc',  label: 'Nilai Terendah' },
+  { id: 'closing',    label: 'Closing Terdekat' },
+  { id: 'name_az',    label: 'Nama A–Z' },
+];
+
+const BANT_BANDS = [
+  { id: 'high', label: 'Tinggi (6–7)' },
+  { id: 'mid',  label: 'Sedang (4–5)' },
+  { id: 'low',  label: 'Rendah (1–3)' },
+  { id: 'none', label: 'Belum diisi' },
+];
+
+const CLOSING_OPTIONS = [
+  { id: 'all',   label: 'Semua' },
+  { id: 'month', label: 'Bulan ini' },
+  { id: 'd30',   label: '30 hari ke depan' },
+  { id: 'd60',   label: '60 hari ke depan' },
+  { id: 'd90',   label: '90 hari ke depan' },
+];
+
+const EMPTY_FILTERS = { sources: [], types: [], bant: [], closing: 'all' };
+
+const toggleIn = (arr, val) => (arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]);
+
+function bantBandOf(raw) {
+  const s = raw.bant_score != null ? raw.bant_score : calcBantScore(raw);
+  if (s >= 6) return 'high';
+  if (s >= 4) return 'mid';
+  if (s >= 1) return 'low';
+  return 'none';
+}
+
+function closingMatch(raw, mode) {
+  if (mode === 'all') return true;
+  if (!raw.estimated_closing_date) return false;
+  const d = new Date(raw.estimated_closing_date);
+  if (isNaN(d.getTime())) return false;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (mode === 'month') {
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }
+  const days = mode === 'd30' ? 30 : mode === 'd60' ? 60 : 90;
+  const end = new Date(today); end.setDate(end.getDate() + days);
+  return d >= today && d <= end;
+}
+
+function sortDeals(items, mode) {
+  const arr = [...items];
+  const t = iso => { const d = new Date(iso); return isNaN(d.getTime()) ? 0 : d.getTime(); };
+  switch (mode) {
+    case 'oldest':     arr.sort((a, b) => t(a.raw.created_at) - t(b.raw.created_at)); break;
+    case 'value_desc': arr.sort((a, b) => (b.value || 0) - (a.value || 0)); break;
+    case 'value_asc':  arr.sort((a, b) => (a.value || 0) - (b.value || 0)); break;
+    case 'closing':    arr.sort((a, b) => {
+        const da = a.raw.estimated_closing_date, db = b.raw.estimated_closing_date;
+        if (!da && !db) return 0;
+        if (!da) return 1;            // null/empty closing date sorts last
+        if (!db) return -1;
+        return t(da) - t(db);
+      }); break;
+    case 'name_az':    arr.sort((a, b) => (a.co || '').localeCompare(b.co || '')); break;
+    case 'recent':
+    default:           arr.sort((a, b) => t(b.raw.created_at) - t(a.raw.created_at)); break;
+  }
+  return arr;
+}
+
+/* ── Toolbar popover primitives ── */
+const FILTER_SECTION = { fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: '#9AA0AC', padding: '8px 8px 4px' };
+
+function MenuBox({ width, children }) {
+  return (
+    <div style={{ position: 'absolute', top: 46, left: 0, minWidth: width || 220, maxHeight: 360, overflowY: 'auto', background: '#fff', border: '1px solid #E0E2E8', borderRadius: 10, boxShadow: '0 12px 30px rgba(20,40,70,.16)', padding: 6, zIndex: 150 }}>
+      {children}
+    </div>
+  );
+}
+
+function MenuOption({ active, onClick, children }) {
+  const [h, setH] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 7, border: 0, background: active ? '#EEF3FB' : (h ? '#F6F7F9' : 'transparent'), color: active ? '#144682' : '#3C4350', fontWeight: active ? 700 : 500, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+    >
+      <span style={{ width: 16, flex: '0 0 16px', display: 'flex' }}>{active && <Icon name="check" size={15} color="#144682" />}</span>
+      <span style={{ flex: 1 }}>{children}</span>
+    </button>
+  );
+}
+
+function CheckRow({ checked, round, onClick, children }) {
+  const [h, setH] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '6px 8px', borderRadius: 6, border: 0, background: h ? '#F6F7F9' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, color: '#3C4350', textAlign: 'left' }}
+    >
+      <span style={{ width: 16, height: 16, flex: '0 0 16px', borderRadius: round ? '50%' : 4, border: `1.5px solid ${checked ? '#144682' : '#C7CBD4'}`, background: checked ? '#144682' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {checked && (round ? <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} /> : <Icon name="check" size={11} color="#fff" />)}
+      </span>
+      <span>{children}</span>
+    </button>
+  );
+}
+
 /* ── ProspectDetailModal — presentational sub-components (module scope) ── */
 const Field = ({ label, value, full }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 3, gridColumn: full ? '1 / -1' : undefined }}>
@@ -353,7 +467,7 @@ function ListRow({ deal, onClick }) {
 }
 
 /* ── List group ── */
-function ListGroup({ stage, items }) {
+function ListGroup({ stage, items, onRowClick }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hh, setHh] = useState(false);
   const total = items.reduce((a, d) => a + (d.value || 0), 0);
@@ -383,7 +497,7 @@ function ListGroup({ stage, items }) {
             <div style={{ textAlign: 'right' }}>Nilai</div>
           </div>
           {items.length
-            ? items.map(d => <ListRow key={d.id} deal={d} onClick={setDetailDeal} />)
+            ? items.map(d => <ListRow key={d.id} deal={d} onClick={onRowClick} />)
             : <div style={S.lrEmpty}>Tidak ada deal di tahap ini</div>}
         </div>
       )}
@@ -416,6 +530,12 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   const [winLossSaving, setWinLossSaving] = useState(false);
   // Soft stage gating — confirm (not block) when prerequisites are missing.
   const [stageGate,     setStageGate]     = useState({ open: false, stageId: null, id: null, type: null, prospectName: '' });
+  // Toolbar controls — member filter / sort / filter panel (all client-side)
+  const [openMenu,     setOpenMenu]     = useState(null);   // 'member' | 'sort' | 'filter' | null
+  const [memberFilter, setMemberFilter] = useState(null);   // accounts.assigned_to
+  const [sortMode,     setSortMode]     = useState('recent');
+  const [filters,      setFilters]      = useState(EMPTY_FILTERS);  // applied
+  const [filterDraft,  setFilterDraft]  = useState(EMPTY_FILTERS);  // panel working copy
   const dragId      = useRef(null);
   const toastTimer  = useRef(null);
 
@@ -434,7 +554,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     try {
       let query = supabase
         .from('accounts')
-        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, payment_terms_id, notes, assigned_to, created_at, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
+        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, estimated_value, payment_terms_id, notes, assigned_to, created_at, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
         .eq('account_status', 'prospect')
         .is('deleted_at', null);
 
@@ -607,7 +727,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     id:      p.id,
     co:      p.name,
     contact: p.pic_name || '',
-    value:   p.estimated_value ?? p.deal_value ?? 0,
+    value:   p.estimated_value ?? 0,
     date:    fmtDate(p.created_at),
     svc:     sourceToSvc(p.source),
     stage:   (p.pipeline_stage || 'NEW').toLowerCase(),
@@ -615,7 +735,31 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     raw:     p,
   }));
 
-  const activeCount = deals.filter(d => d.stage !== 'won' && d.stage !== 'lost').length;
+  // Distinct members / sources / customer types for the toolbar controls
+  const memberMap = new Map();
+  prospects.forEach(p => { if (p.assigned_to && !memberMap.has(p.assigned_to)) memberMap.set(p.assigned_to, p.assigned_profile?.full_name || 'Tanpa nama'); });
+  const members    = [...memberMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  const sourceOpts = [...new Set(prospects.map(p => p.source).filter(Boolean))];
+  const typeOpts   = [...new Set(prospects.map(p => p.customer_type).filter(Boolean))];
+
+  // Apply member + panel filters (AND-combined). Sort is applied per-stage at render.
+  const filteredDeals = deals.filter(d => {
+    if (memberFilter && d.raw.assigned_to !== memberFilter) return false;
+    if (filters.sources.length && !filters.sources.includes(d.raw.source)) return false;
+    if (filters.types.length && !filters.types.includes(d.raw.customer_type)) return false;
+    if (filters.bant.length && !filters.bant.includes(bantBandOf(d.raw))) return false;
+    if (!closingMatch(d.raw, filters.closing)) return false;
+    return true;
+  });
+
+  const activeCount = filteredDeals.filter(d => d.stage !== 'won' && d.stage !== 'lost').length;
+  const activeFilterCount =
+    (filters.sources.length ? 1 : 0) +
+    (filters.types.length ? 1 : 0) +
+    (filters.bant.length ? 1 : 0) +
+    (filters.closing !== 'all' ? 1 : 0);
+  const memberLabel = memberFilter ? (members.find(m => m.id === memberFilter)?.name || 'Anggota') : 'Semua Anggota';
+  const sortLabel   = SORT_OPTIONS.find(o => o.id === sortMode)?.label || 'Urutkan';
 
   /* ── Render ── */
   return (
@@ -648,15 +792,90 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
           }}>
           <Icon name="plus" size={16} />Tambah Deal
         </HoverButton>
-        <HoverButton base={S.drop} hover={S.dropHover}>
-          <span>Semua Anggota</span><Icon name="chevdown" size={15} color="#9AA0AC" />
-        </HoverButton>
-        <HoverButton base={S.drop} hover={S.dropHover}>
-          <Icon name="filter" size={15} color="#9AA0AC" /><span>Filter</span>
-        </HoverButton>
-        <HoverButton base={S.drop} hover={S.dropHover}>
-          <span>Nilai Pipeline</span><Icon name="chevdown" size={15} color="#9AA0AC" />
-        </HoverButton>
+        {/* Member filter */}
+        <div style={{ position: 'relative' }}>
+          <HoverButton base={S.drop} hover={S.dropHover}
+            onClick={() => setOpenMenu(m => m === 'member' ? null : 'member')}>
+            <Icon name="users" size={15} color="#9AA0AC" />
+            <span>{memberLabel}</span>
+            <Icon name="chevdown" size={15} color="#9AA0AC" />
+          </HoverButton>
+          {openMenu === 'member' && (
+            <MenuBox width={230}>
+              <MenuOption active={!memberFilter} onClick={() => { setMemberFilter(null); setOpenMenu(null); }}>Semua Anggota</MenuOption>
+              {members.map(m => (
+                <MenuOption key={m.id} active={memberFilter === m.id} onClick={() => { setMemberFilter(m.id); setOpenMenu(null); }}>{m.name}</MenuOption>
+              ))}
+              {members.length === 0 && <div style={{ padding: '8px 10px', fontSize: 12, color: '#9AA0AC' }}>Belum ada anggota ter-assign</div>}
+            </MenuBox>
+          )}
+        </div>
+
+        {/* Filter panel */}
+        <div style={{ position: 'relative' }}>
+          <HoverButton base={S.drop} hover={S.dropHover}
+            onClick={() => { if (openMenu === 'filter') { setOpenMenu(null); } else { setFilterDraft(filters); setOpenMenu('filter'); } }}>
+            <Icon name="filter" size={15} color="#9AA0AC" />
+            <span>{activeFilterCount ? `Filter · ${activeFilterCount}` : 'Filter'}</span>
+          </HoverButton>
+          {openMenu === 'filter' && (
+            <MenuBox width={300}>
+              <div style={FILTER_SECTION}>Source</div>
+              {sourceOpts.length ? sourceOpts.map(src => (
+                <CheckRow key={src} checked={filterDraft.sources.includes(src)} onClick={() => setFilterDraft(d => ({ ...d, sources: toggleIn(d.sources, src) }))}>
+                  {SOURCE_LABELS_KP[src] || src}
+                </CheckRow>
+              )) : <div style={{ padding: '4px 10px', fontSize: 12, color: '#9AA0AC' }}>—</div>}
+
+              <div style={FILTER_SECTION}>Customer Type</div>
+              {typeOpts.length ? typeOpts.map(tp => (
+                <CheckRow key={tp} checked={filterDraft.types.includes(tp)} onClick={() => setFilterDraft(d => ({ ...d, types: toggleIn(d.types, tp) }))}>
+                  {CUSTOMER_TYPE_LABELS[tp] || tp}
+                </CheckRow>
+              )) : <div style={{ padding: '4px 10px', fontSize: 12, color: '#9AA0AC' }}>—</div>}
+
+              <div style={FILTER_SECTION}>BANT Score</div>
+              {BANT_BANDS.map(b => (
+                <CheckRow key={b.id} checked={filterDraft.bant.includes(b.id)} onClick={() => setFilterDraft(d => ({ ...d, bant: toggleIn(d.bant, b.id) }))}>
+                  {b.label}
+                </CheckRow>
+              ))}
+
+              <div style={FILTER_SECTION}>Estimasi Closing</div>
+              {CLOSING_OPTIONS.map(c => (
+                <CheckRow key={c.id} round checked={filterDraft.closing === c.id} onClick={() => setFilterDraft(d => ({ ...d, closing: c.id }))}>
+                  {c.label}
+                </CheckRow>
+              ))}
+
+              <div style={{ display: 'flex', gap: 8, padding: '10px 8px 4px', borderTop: '1px solid #F0F1F4', marginTop: 6 }}>
+                <button onClick={() => { setFilters(EMPTY_FILTERS); setFilterDraft(EMPTY_FILTERS); setOpenMenu(null); }}
+                  style={{ flex: 1, height: 34, borderRadius: 8, border: '1px solid #E0E2E8', background: '#fff', color: '#6B7280', fontWeight: 600, fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer' }}>
+                  Reset
+                </button>
+                <button onClick={() => { setFilters(filterDraft); setOpenMenu(null); }}
+                  style={{ flex: 1, height: 34, borderRadius: 8, border: '1px solid #144682', background: '#144682', color: '#fff', fontWeight: 700, fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer' }}>
+                  Terapkan
+                </button>
+              </div>
+            </MenuBox>
+          )}
+        </div>
+
+        {/* Sort */}
+        <div style={{ position: 'relative' }}>
+          <HoverButton base={S.drop} hover={S.dropHover}
+            onClick={() => setOpenMenu(m => m === 'sort' ? null : 'sort')}>
+            <span>{sortLabel}</span><Icon name="chevdown" size={15} color="#9AA0AC" />
+          </HoverButton>
+          {openMenu === 'sort' && (
+            <MenuBox width={210}>
+              {SORT_OPTIONS.map(o => (
+                <MenuOption key={o.id} active={sortMode === o.id} onClick={() => { setSortMode(o.id); setOpenMenu(null); }}>{o.label}</MenuOption>
+              ))}
+            </MenuBox>
+          )}
+        </div>
         <HoverButton base={S.icoBtn} hover={S.icoBtnHover} title="Refresh" onClick={refresh}>
           <Icon name="refresh" size={18} />
         </HoverButton>
@@ -671,6 +890,9 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         </HoverButton>
       </div>
 
+      {/* Click-outside catcher for any open toolbar popover */}
+      {openMenu && <div onClick={() => setOpenMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 140 }} />}
+
       {/* ── Loading ── */}
       {loading && (
         <div style={{ padding: '5rem', textAlign: 'center', color: '#9AA0AC', fontSize: 14 }}>
@@ -683,7 +905,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         <div style={S.kanbanWrap}>
           <div style={S.kanban}>
             {STAGES.map((stage, i) => {
-              const items    = deals.filter(d => d.stage === stage.id);
+              const items    = sortDeals(filteredDeals.filter(d => d.stage === stage.id), sortMode);
               const total    = items.reduce((a, d) => a + (d.value || 0), 0);
               const isFirst  = i === 0;
               const isLast   = i === STAGES.length - 1;
@@ -742,7 +964,8 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
             <ListGroup
               key={stage.id}
               stage={stage}
-              items={deals.filter(d => d.stage === stage.id)}
+              items={sortDeals(filteredDeals.filter(d => d.stage === stage.id), sortMode)}
+              onRowClick={setDetailDeal}
             />
           ))}
         </div>
