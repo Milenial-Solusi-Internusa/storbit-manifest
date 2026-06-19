@@ -1,24 +1,27 @@
 // src/modules/admin/pages/PositionsPage.jsx
-// Positions master data — paginated list with create / edit / soft-delete.
-// Phase 1.0I: CRUD via centered AdminFormModal.
+// Positions master data — COMPACT view grouped by `code` (one row per code,
+// entity badges inline) instead of one row per (company, code).
+// Edit modal re-parents a code across entities via checkboxes:
+//  • checked + row exists  → UPDATE name/level + reactivate (is_active=true)
+//  • checked + no row       → INSERT
+//  • unchecked + active row → UPDATE is_active=false (soft delete; NOT hard delete)
+// positions has UNIQUE(company_id, code) → Save pre-checks existing rows (incl.
+// inactive/soft-deleted) and reactivates rather than INSERT to avoid violations.
+// NOTE: positions RLS scopes non-super admins to their own company — the full
+// cross-entity (MSI/JCI/SOA) view + multi-entity save works for super_admin;
+// other roles see one badge and cross-entity writes surface an RLS error toast.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Search, RefreshCw, ChevronLeft, ChevronRight, Check, Plus, RefreshCw as Spinner,
+  Search, RefreshCw, Check, Plus, RefreshCw as Spinner,
 } from 'lucide-react';
-import {
-  usePositions, POSITIONS_PAGE_SIZE, POSITION_LEVELS,
-  createPosition, updatePosition, softDeletePosition,
-  fetchDepartmentsForPositionForm,
-} from '../../../hooks/usePositions';
-import { fetchAllCompanies } from '../../../hooks/useUserAccess';
-import { useDebounce } from '../../../hooks/useDebounce';
+import { supabase } from '../../../lib/supabase';
+import { POSITION_LEVELS } from '../../../hooks/usePositions';
 import AdminPageHeader from '../components/AdminPageHeader';
 import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
-import ConfirmModal from '../../../components/ConfirmModal';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -39,8 +42,15 @@ const PASTEL = {
   sky:          '#C8E4F5',
   skyDeep:      '#8FBCD8',
   peach:        '#FFD4B8',
-  peachDeep:    '#F5A78F',
 };
+
+// MSI brand entity palette (keyed by company_id)
+const ENTITIES = [
+  { id: '0e1840d8-e6fb-4190-bd09-88338e68b492', code: 'MSI', name: 'Milenial Solusi Internusa', color: '#144682' }, // navy
+  { id: '42569e7c-531b-4d2b-832a-d5a7268c455b', code: 'JCI', name: 'Jago Custom Indonesia',     color: '#E85A1E' }, // orange
+  { id: 'd2e5e565-5f67-4954-b8d9-5979a2a0c697', code: 'SOA', name: 'Stuja Orbit Abadi',          color: '#F08C7D' }, // coral
+];
+const ENTITY_IDS = ENTITIES.map((e) => e.id);
 
 const LEVEL_STYLE = {
   Staff:      { bg: PASTEL.lineSoft,  color: PASTEL.inkMute },
@@ -50,47 +60,11 @@ const LEVEL_STYLE = {
   Director:   { bg: '#F0E0FF',        color: '#7B3FA0' },
 };
 
-const EMPTY_DRAFT = {
-  id: null,
-  company_id: '',
-  department_id: '',
-  code: '',
-  name: '',
-  level: 'Staff',
-  is_active: true,
-};
+const GRID_COLS = '90px 1fr 110px 1fr 96px 60px';
 
 // ─────────────────────────────────────────────────────────────
-// Table badge components
+// Badges
 // ─────────────────────────────────────────────────────────────
-
-function StatusBadge({ active }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide"
-      style={
-        active
-          ? { background: PASTEL.mint, color: '#1A5C35' }
-          : { background: PASTEL.lineSoft, color: PASTEL.inkMute }
-      }
-    >
-      <span className="w-1 h-1 rounded-full" style={{ background: active ? PASTEL.mintDeep : PASTEL.inkMute }} />
-      {active ? 'Active' : 'Inactive'}
-    </span>
-  );
-}
-
-function CompanyBadge({ company }) {
-  if (!company) return <span style={{ color: PASTEL.inkMute }}>—</span>;
-  return (
-    <span
-      className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-      style={{ background: PASTEL.sky, color: PASTEL.skyDeep }}
-    >
-      {company.code}
-    </span>
-  );
-}
 
 function LevelBadge({ level }) {
   const style = LEVEL_STYLE[level] || { bg: PASTEL.lineSoft, color: PASTEL.inkMute };
@@ -104,8 +78,36 @@ function LevelBadge({ level }) {
   );
 }
 
+function EntityPill({ ent, present }) {
+  return (
+    <span
+      className="inline-flex items-center font-mono text-[10px] px-2 py-0.5 rounded-lg font-bold"
+      style={
+        present
+          ? { background: ent.color, color: '#fff' }
+          : { background: PASTEL.lineSoft, color: PASTEL.inkMute, opacity: 0.55 }
+      }
+      title={`${ent.code} — ${ent.name}${present ? '' : ' (tidak tersedia)'}`}
+    >
+      {ent.code}
+    </span>
+  );
+}
+
+function GroupStatusBadge({ full }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide"
+      style={full ? { background: PASTEL.mint, color: '#1A5C35' } : { background: PASTEL.peach, color: '#C4611E' }}
+    >
+      <span className="w-1 h-1 rounded-full" style={{ background: full ? PASTEL.mintDeep : '#C4611E' }} />
+      {full ? 'Active' : 'Partial'}
+    </span>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────
-// Form field primitives
+// Form primitives
 // ─────────────────────────────────────────────────────────────
 
 function FieldLabel({ children, required }) {
@@ -146,30 +148,6 @@ function FieldSelect({ value, onChange, disabled, children }) {
   );
 }
 
-function FieldToggle({ checked, onChange, disabled }) {
-  return (
-    <button
-      type="button"
-      onClick={() => !disabled && onChange(!checked)}
-      disabled={disabled}
-      className="flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <span
-        className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors"
-        style={{ background: checked ? PASTEL.mintDeep : PASTEL.line }}
-      >
-        <span
-          className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
-          style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
-        />
-      </span>
-      <span className="text-sm font-medium" style={{ color: checked ? '#1A5C35' : PASTEL.inkSoft }}>
-        {checked ? 'Active' : 'Inactive'}
-      </span>
-    </button>
-  );
-}
-
 function SectionLabel({ children }) {
   return (
     <div className="text-[10px] uppercase tracking-[0.22em] font-bold mb-4" style={{ color: PASTEL.lavenderDeep }}>
@@ -182,136 +160,189 @@ function Divider() {
   return <div className="my-6" style={{ borderTop: `1px solid ${PASTEL.line}` }} />;
 }
 
+function EntityCheckbox({ ent, checked, onToggle, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={() => !disabled && onToggle()}
+      disabled={disabled}
+      className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl border transition-colors disabled:opacity-50 text-left"
+      style={{
+        borderColor: checked ? ent.color : PASTEL.line,
+        background: checked ? `${ent.color}0F` : 'white',
+      }}
+    >
+      <span
+        className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
+        style={{
+          background: checked ? ent.color : 'white',
+          border: `1.5px solid ${checked ? ent.color : PASTEL.line}`,
+        }}
+      >
+        {checked && <Check size={13} color="#fff" />}
+      </span>
+      <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-bold" style={{ background: ent.color, color: '#fff' }}>
+        {ent.code}
+      </span>
+      <span className="text-sm" style={{ color: PASTEL.inkSoft }}>{ent.name}</span>
+    </button>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────
 // Main page
 // ─────────────────────────────────────────────────────────────
 
 export default function PositionsPage() {
-  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [searchInput, setSearchInput] = useState('');
-  const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
-  const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
-  const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
-  const search = useDebounce(searchInput, 300);
 
-  const { data, total, loading, error, refresh } = usePositions({ page, search });
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  const totalPages = Math.max(1, Math.ceil(total / POSITIONS_PAGE_SIZE));
-  const from = total === 0 ? 0 : (page - 1) * POSITIONS_PAGE_SIZE + 1;
-  const to = Math.min(page * POSITIONS_PAGE_SIZE, total);
+  // Fetch all active positions (per spec) — grouped client-side by code.
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('positions')
+      .select('id, company_id, code, name, level, is_active')
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .order('name', { ascending: true })
+      .limit(1000)
+      .then(({ data, error: err }) => {
+        if (cancelled) return;
+        if (err) { setError(err); } else { setRows(data || []); setError(null); }
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [refreshKey]);
 
-  const handleSearch = (val) => { setSearchInput(val); setPage(1); };
+  // Group by code → one entry per unique code. Representative name/level = first
+  // row by name. byCompany maps company_id → active row id.
+  const groups = useMemo(() => {
+    const map = {};
+    rows.forEach((r) => {
+      if (!map[r.code]) {
+        map[r.code] = { code: r.code, name: r.name, level: r.level, byCompany: {} };
+      }
+      map[r.code].byCompany[r.company_id] = { id: r.id };
+    });
+    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+
+  const s = searchInput.trim().toLowerCase();
+  const filteredGroups = useMemo(
+    () => (s ? groups.filter((g) => g.name.toLowerCase().includes(s) || g.code.toLowerCase().includes(s)) : groups),
+    [groups, s]
+  );
 
   // ── Modal state ──
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
-  const [archiving, setArchiving] = useState(false);
   const [toast, setToast] = useState(null);
-  const [companies, setCompanies] = useState([]);
-  const [departments, setDepartments] = useState([]);
 
   const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  useEffect(() => {
-    if (!draft) return;
-    fetchAllCompanies().then(({ data: cos }) => setCompanies(cos || []));
-  }, [draft !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openCreate = useCallback(() => {
+    setDraft({ mode: 'create', code: '', name: '', level: 'Staff', entities: {} });
+    setSaveError(null);
+  }, []);
 
-  useEffect(() => {
-    if (!draft) return;
-    fetchDepartmentsForPositionForm(draft.company_id).then(
-      ({ data: depts }) => setDepartments(depts || [])
-    );
-  }, [draft?.company_id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const openCreate = useCallback(() => { setDraft({ ...EMPTY_DRAFT }); setSaveError(null); }, []);
-
-  const openEdit = useCallback((row) => {
-    setDraft({
-      id:            row.id,
-      company_id:    row.company_id || '',
-      department_id: row.department_id || '',
-      code:          row.code || '',
-      name:          row.name || '',
-      level:         row.level || 'Staff',
-      is_active:     row.is_active !== false,
-    });
+  const openEdit = useCallback((group) => {
+    const entities = {};
+    ENTITIES.forEach((e) => { entities[e.id] = !!group.byCompany[e.id]; });
+    setDraft({ mode: 'edit', code: group.code, name: group.name, level: group.level, entities });
     setSaveError(null);
   }, []);
 
   const closeModal = useCallback(() => {
     setDraft(null);
     setSaveError(null);
-    setArchiving(false);
-    setCompanies([]);
-    setDepartments([]);
+  }, []);
+
+  const toggleEntity = useCallback((id) => {
+    setDraft((d) => (d ? { ...d, entities: { ...d.entities, [id]: !d.entities[id] } } : d));
   }, []);
 
   const handleSave = useCallback(async () => {
     if (!draft) return;
-    if (!draft.company_id) { setSaveError('Company is required.'); return; }
-    if (!draft.code.trim()) { setSaveError('Code is required.'); return; }
-    if (!draft.name.trim()) { setSaveError('Name is required.'); return; }
-    if (!draft.level)       { setSaveError('Level is required.'); return; }
+    const code = draft.code.trim().toUpperCase();
+    const name = draft.name.trim();
+    if (!code) { setSaveError('Code wajib diisi.'); return; }
+    if (!name) { setSaveError('Name wajib diisi.'); return; }
+    if (!draft.level) { setSaveError('Level wajib dipilih.'); return; }
+    const anyChecked = ENTITIES.some((e) => draft.entities[e.id]);
+    if (draft.mode === 'create' && !anyChecked) { setSaveError('Pilih minimal satu entitas.'); return; }
 
     setSaving(true);
     setSaveError(null);
+    try {
+      // Pre-check existing rows for this code across the 3 entities (incl.
+      // inactive / soft-deleted) so we reactivate instead of INSERT — the
+      // UNIQUE(company_id, code) constraint covers inactive rows too.
+      const { data: existingRows, error: exErr } = await supabase
+        .from('positions')
+        .select('id, company_id, is_active, deleted_at')
+        .eq('code', code)
+        .in('company_id', ENTITY_IDS);
+      if (exErr) throw exErr;
+      const existing = {};
+      (existingRows || []).forEach((r) => { existing[r.company_id] = r; });
 
-    const { error: saveErr } = draft.id
-      ? await updatePosition(draft.id, draft)
-      : await createPosition(draft);
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id || null;
 
-    setSaving(false);
-    if (saveErr) { setSaveError(saveErr.message || 'Save failed. Check your permissions.'); return; }
+      for (const e of ENTITIES) {
+        const checked = !!draft.entities[e.id];
+        const ex = existing[e.id];
+        if (checked) {
+          if (ex) {
+            const { error: uErr } = await supabase
+              .from('positions')
+              .update({ name, level: draft.level, is_active: true, deleted_at: null })
+              .eq('id', ex.id);
+            if (uErr) throw uErr;
+          } else {
+            const { error: iErr } = await supabase
+              .from('positions')
+              .insert({ company_id: e.id, code, name, level: draft.level, is_active: true, created_by: userId });
+            if (iErr) throw iErr;
+          }
+        } else if (ex && ex.is_active && !ex.deleted_at) {
+          const { error: dErr } = await supabase
+            .from('positions')
+            .update({ is_active: false })
+            .eq('id', ex.id);
+          if (dErr) throw dErr;
+        }
+      }
 
-    closeModal();
-    refresh();
-    showToast(draft.id ? 'Position updated.' : 'Position created.');
+      setSaving(false);
+      closeModal();
+      refresh();
+      showToast(draft.mode === 'create' ? 'Position dibuat.' : 'Position diperbarui.');
+    } catch (err) {
+      setSaving(false);
+      setSaveError(err.message || 'Gagal menyimpan. Cek izin akses.');
+    }
   }, [draft, closeModal, refresh, showToast]);
 
-  const handleArchive = useCallback(() => {
-    if (!draft?.id) return;
-    showConfirm(
-      'Archive Position',
-      'Archive this position? It will no longer appear in active lists.',
-      async () => {
-        closeConfirm();
-        setArchiving(true);
-        setSaveError(null);
-        const { error: archErr } = await softDeletePosition(draft.id);
-        setArchiving(false);
-        if (archErr) { setSaveError(archErr.message || 'Archive failed. Check your permissions.'); return; }
-        closeModal();
-        refresh();
-        showToast('Position archived.');
-      }
-    );
-  }, [draft, closeModal, refresh, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const isCreate = !draft?.id;
+  const isCreate = draft?.mode === 'create';
 
   const modalFooter = (
     <div className="flex items-center gap-3">
-      {!isCreate && (
-        <button
-          type="button"
-          onClick={handleArchive}
-          disabled={saving || archiving}
-          className="px-4 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
-          style={{ background: 'white', color: PASTEL.roseDeep, border: `1px solid ${PASTEL.roseDeep}55` }}
-        >
-          {archiving ? 'Archiving…' : 'Archive'}
-        </button>
-      )}
       <div className="flex-1" />
       <button
         type="button"
         onClick={closeModal}
-        disabled={saving || archiving}
+        disabled={saving}
         className="px-5 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
         style={{ background: 'white', color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
       >
@@ -320,7 +351,7 @@ export default function PositionsPage() {
       <button
         type="button"
         onClick={handleSave}
-        disabled={saving || archiving}
+        disabled={saving}
         className="px-5 py-2.5 rounded-2xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
         style={{ background: PASTEL.ink, color: 'white' }}
       >
@@ -339,8 +370,8 @@ export default function PositionsPage() {
     <div>
       <AdminPageHeader
         title="Positions"
-        subtitle="Job titles and seniority levels. Levels drive approval matrix thresholds."
-        count={loading ? undefined : total}
+        subtitle="Satu baris per kode jabatan, dengan ketersediaan per entitas (MSI / JCI / SOA)."
+        count={loading ? undefined : groups.length}
       />
 
       {/* Toolbar */}
@@ -354,7 +385,7 @@ export default function PositionsPage() {
             type="text"
             placeholder="Search by name or code…"
             value={searchInput}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#9C948D]"
             style={{ color: PASTEL.ink }}
           />
@@ -383,18 +414,12 @@ export default function PositionsPage() {
       <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
-          style={{
-            gridTemplateColumns: '70px 80px 1fr 100px 1fr 80px 44px',
-            borderColor: PASTEL.line,
-            background: PASTEL.lineSoft,
-            color: PASTEL.inkMute,
-          }}
+          style={{ gridTemplateColumns: GRID_COLS, borderColor: PASTEL.line, background: PASTEL.lineSoft, color: PASTEL.inkMute }}
         >
-          <div>Company</div>
           <div>Code</div>
           <div>Name</div>
           <div>Level</div>
-          <div>Department</div>
+          <div>Entities</div>
           <div className="text-right">Status</div>
           <div />
         </div>
@@ -403,58 +428,45 @@ export default function PositionsPage() {
           <ErrorState message={error.message} onRetry={refresh} />
         ) : loading ? (
           <LoadingState rows={6} />
-        ) : data.length === 0 ? (
-          <EmptyState message={search ? 'No positions match your search.' : 'No positions found.'} />
+        ) : filteredGroups.length === 0 ? (
+          <EmptyState message={s ? 'No positions match your search.' : 'No positions found.'} />
         ) : (
-          data.map((row) => (
-            <div
-              key={row.id}
-              className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
-              style={{ gridTemplateColumns: '70px 80px 1fr 100px 1fr 80px 44px', borderColor: PASTEL.line }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = PASTEL.lineSoft)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <div><CompanyBadge company={row.companies} /></div>
-              <div>
-                <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold" style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}>
-                  {row.code}
-                </span>
+          filteredGroups.map((g) => {
+            const activeCount = ENTITIES.filter((e) => g.byCompany[e.id]).length;
+            return (
+              <div
+                key={g.code}
+                className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
+                style={{ gridTemplateColumns: GRID_COLS, borderColor: PASTEL.line }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = PASTEL.lineSoft)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <div>
+                  <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold" style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}>
+                    {g.code}
+                  </span>
+                </div>
+                <div className="font-medium" style={{ color: PASTEL.ink }}>{g.name}</div>
+                <div><LevelBadge level={g.level} /></div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {ENTITIES.map((e) => (
+                    <EntityPill key={e.id} ent={e} present={!!g.byCompany[e.id]} />
+                  ))}
+                </div>
+                <div className="flex justify-end"><GroupStatusBadge full={activeCount === ENTITIES.length} /></div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(g)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
+                    style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
-              <div className="font-medium" style={{ color: PASTEL.ink }}>{row.name}</div>
-              <div><LevelBadge level={row.level} /></div>
-              <div style={{ color: PASTEL.inkSoft }}>
-                {row.departments ? row.departments.code : <span style={{ color: PASTEL.inkMute }}>—</span>}
-              </div>
-              <div className="flex justify-end"><StatusBadge active={row.is_active} /></div>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => openEdit(row)}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
-                  style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
-                >
-                  Edit
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-
-        {!error && (
-          <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${PASTEL.line}` }}>
-            <span className="text-xs" style={{ color: PASTEL.inkMute }}>
-              {total === 0 ? 'No records' : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
-            </span>
-            <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
-                <ChevronLeft size={14} style={{ color: PASTEL.inkSoft }} />
-              </button>
-              <span className="px-3 text-xs font-medium" style={{ color: PASTEL.inkSoft }}>{page} / {totalPages}</span>
-              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
-                <ChevronRight size={14} style={{ color: PASTEL.inkSoft }} />
-              </button>
-            </div>
-          </div>
+            );
+          })
         )}
       </div>
 
@@ -463,7 +475,7 @@ export default function PositionsPage() {
         open={!!draft}
         eyebrow={isCreate ? 'New Position' : 'Edit Position'}
         title={isCreate ? 'Create Position' : draft?.name || 'Edit Position'}
-        subtitle="Define job title, seniority level, and optional department assignment."
+        subtitle="Atur nama, level, dan ketersediaan jabatan di tiap entitas."
         onClose={closeModal}
         footer={modalFooter}
       >
@@ -473,38 +485,10 @@ export default function PositionsPage() {
             {/* ── Identity ── */}
             <div>
               <SectionLabel>Identity</SectionLabel>
-              <div className="space-y-4">
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <FieldLabel required>Company</FieldLabel>
+                  <FieldLabel required>Code</FieldLabel>
                   {isCreate ? (
-                    <FieldSelect
-                      value={draft.company_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, company_id: v, department_id: '' }))}
-                      disabled={saving}
-                    >
-                      <option value="">— Select company —</option>
-                      {companies.map((c) => (
-                        <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                      ))}
-                    </FieldSelect>
-                  ) : (
-                    <div
-                      className="rounded-2xl border px-4 py-3 text-sm"
-                      style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
-                    >
-                      {companies.find((c) => c.id === draft.company_id)
-                        ? `${companies.find((c) => c.id === draft.company_id).code} — ${companies.find((c) => c.id === draft.company_id).name}`
-                        : 'Loading…'}
-                      <span className="ml-2 text-[10px] uppercase tracking-wide" style={{ color: PASTEL.inkMute }}>(locked)</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Code + Name — 2 col */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <FieldLabel required>Code</FieldLabel>
                     <FieldInput
                       value={draft.code}
                       onChange={(v) => setDraft((d) => ({ ...d, code: v }))}
@@ -512,68 +496,65 @@ export default function PositionsPage() {
                       placeholder="e.g. MGR, SPV"
                       maxLength={20}
                     />
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Saved uppercase. Unique per company.</p>
-                  </div>
-                  <div>
-                    <FieldLabel required>Name</FieldLabel>
-                    <FieldInput
-                      value={draft.name}
-                      onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
-                      disabled={saving}
-                      placeholder="e.g. Operations Manager"
-                      maxLength={100}
-                    />
-                  </div>
+                  ) : (
+                    <div
+                      className="rounded-2xl border px-4 py-3 text-sm font-mono"
+                      style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
+                    >
+                      {draft.code}
+                      <span className="ml-2 text-[10px] uppercase tracking-wide font-sans" style={{ color: PASTEL.inkMute }}>(locked)</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
-
-            <Divider />
-
-            {/* ── Organization ── */}
-            <div>
-              <SectionLabel>Organization</SectionLabel>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <FieldLabel required>Seniority Level</FieldLabel>
-                  <FieldSelect
-                    value={draft.level}
-                    onChange={(v) => setDraft((d) => ({ ...d, level: v }))}
+                  <FieldLabel required>Name</FieldLabel>
+                  <FieldInput
+                    value={draft.name}
+                    onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
                     disabled={saving}
-                  >
-                    {POSITION_LEVELS.map((lvl) => (
-                      <option key={lvl} value={lvl}>{lvl}</option>
-                    ))}
-                  </FieldSelect>
-                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Used for approval thresholds.</p>
-                </div>
-                <div>
-                  <FieldLabel>Department</FieldLabel>
-                  <FieldSelect
-                    value={draft.department_id}
-                    onChange={(v) => setDraft((d) => ({ ...d, department_id: v }))}
-                    disabled={saving || !draft.company_id}
-                  >
-                    <option value="">— All departments —</option>
-                    {departments.map((dep) => (
-                      <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
-                    ))}
-                  </FieldSelect>
-                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Optional. Leave blank if cross-department.</p>
+                    placeholder="e.g. Manager"
+                    maxLength={100}
+                  />
                 </div>
               </div>
             </div>
 
             <Divider />
 
-            {/* ── Status ── */}
+            {/* ── Level ── */}
             <div>
-              <SectionLabel>Status</SectionLabel>
-              <FieldToggle
-                checked={draft.is_active}
-                onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))}
+              <SectionLabel>Seniority Level</SectionLabel>
+              <FieldSelect
+                value={draft.level}
+                onChange={(v) => setDraft((d) => ({ ...d, level: v }))}
                 disabled={saving}
-              />
+              >
+                {POSITION_LEVELS.map((lvl) => (
+                  <option key={lvl} value={lvl}>{lvl}</option>
+                ))}
+              </FieldSelect>
+              <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Name &amp; level diterapkan ke semua entitas yang dicentang.</p>
+            </div>
+
+            <Divider />
+
+            {/* ── Entities ── */}
+            <div>
+              <SectionLabel>Tersedia di entitas</SectionLabel>
+              <div className="space-y-2.5">
+                {ENTITIES.map((e) => (
+                  <EntityCheckbox
+                    key={e.id}
+                    ent={e}
+                    checked={!!draft.entities[e.id]}
+                    onToggle={() => toggleEntity(e.id)}
+                    disabled={saving}
+                  />
+                ))}
+              </div>
+              <p className="text-[10px] mt-2.5" style={{ color: PASTEL.inkMute }}>
+                Hapus centang → jabatan di entitas itu dinonaktifkan (is_active=false), bukan dihapus permanen.
+              </p>
             </div>
 
             {saveError && (
@@ -603,17 +584,6 @@ export default function PositionsPage() {
           {toast.msg}
         </div>
       )}
-
-      <ConfirmModal
-        open={confirmState.open}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmLabel="Ya, Archive"
-        cancelLabel="Batal"
-        variant="warning"
-        onConfirm={confirmState.onConfirm}
-        onCancel={closeConfirm}
-      />
     </div>
   );
 }
