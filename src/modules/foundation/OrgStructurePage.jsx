@@ -19,6 +19,17 @@ const ENTITY = {
 const FALLBACK_ENTITY = { color: '#6b7280', label: '—' };
 const entityOf = (companyId) => ENTITY[companyId] || FALLBACK_ENTITY;
 
+/* ---------- level colour scheme (drives node accent; entity badge stays entity colour) ---------- */
+const LEVEL_COLOR = {
+  Director:   '#9B1C1C', // merah tua / executive
+  Manager:    '#166534', // hijau tua / manager
+  Head:       '#0F766E', // teal gelap / head
+  Supervisor: '#4338CA', // indigo / supervisor
+  Staff:      '#1E40AF', // biru / staff
+  Operator:   '#374151', // abu tua / operator
+};
+const levelColorOf = (level) => LEVEL_COLOR[level] || '#64748B'; // slate fallback
+
 /* ---------- helpers ---------- */
 function initials(name) {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);
@@ -116,12 +127,12 @@ const S = {
 
 /* ---------- node ---------- */
 function Node({ person, onClick, dimmed, hit }) {
-  const ent = entityOf(person.company_id);
-  const c = ent.color;
+  const ent = entityOf(person.company_id);   // entity badge colour (unchanged)
+  const lc = levelColorOf(person.positionLevel); // node accent = position level
   const cardStyle = {
     ...S.card,
-    borderLeft: `4px solid ${c}`,
-    boxShadow: hit ? `0 0 0 3px ${hexA(c, 0.4)}, 0 8px 28px rgba(16,24,40,.14)` : S.card.boxShadow,
+    borderLeft: `4px solid ${lc}`,
+    boxShadow: hit ? `0 0 0 3px ${hexA(lc, 0.4)}, 0 8px 28px rgba(16,24,40,.14)` : S.card.boxShadow,
   };
   return (
     <div
@@ -129,10 +140,10 @@ function Node({ person, onClick, dimmed, hit }) {
       style={{ display: "flex", alignItems: "stretch", cursor: "pointer", position: "relative", opacity: dimmed ? 0.4 : 1, filter: dimmed ? "saturate(.6)" : "none" }}
       onClick={(e) => { e.stopPropagation(); onClick(person); }}
     >
-      <div style={{ ...S.avatar, background: c }}>{initials(person.name)}</div>
+      <div style={{ ...S.avatar, background: lc }}>{initials(person.name)}</div>
       <div className="ocp-card" style={cardStyle}>
-        <span style={{ ...S.badge, background: c }}>{ent.label}</span>
-        <div style={{ ...S.name, color: c }}>{person.name}</div>
+        <span style={{ ...S.badge, background: ent.color }}>{ent.label}</span>
+        <div style={{ ...S.name, color: lc }}>{person.name}</div>
         <div style={S.title}>{person.title}</div>
         <div style={S.dept}>{person.dept}</div>
       </div>
@@ -162,8 +173,8 @@ function Branch({ node, childrenOf, onClick, matchIds }) {
 /* ---------- modal — set reports_to ---------- */
 function ReportsToModal({ person, people, childrenOf, saving, saveError, onSave, onClose }) {
   const [value, setValue] = useState(person.reportsTo || "__root__");
-  const ent = entityOf(person.company_id);
-  const c = ent.color;
+  const ent = entityOf(person.company_id);          // entity label (unchanged)
+  const lc = levelColorOf(person.positionLevel);    // avatar accent = position level
   const blocked = subtreeIds(person.id, childrenOf); // self + descendants (prevents cycles)
   const options = people
     .filter((p) => !blocked.has(p.id))
@@ -173,7 +184,7 @@ function ReportsToModal({ person, people, childrenOf, saving, saveError, onSave,
     <div style={S.overlay} onClick={onClose}>
       <div style={S.modal} onClick={(e) => e.stopPropagation()}>
         <div style={S.modalHead}>
-          <div style={{ ...S.avatar, marginRight: 0, width: 44, height: 44, flexBasis: 44, fontSize: 14, background: c }}>{initials(person.name)}</div>
+          <div style={{ ...S.avatar, marginRight: 0, width: 44, height: 44, flexBasis: 44, fontSize: 14, background: lc }}>{initials(person.name)}</div>
           <div style={S.mhText}>
             <div style={S.mhName}>{person.name}</div>
             <div style={S.mhSub}>{person.title} · {ent.label}</div>
@@ -224,7 +235,7 @@ export default function OrgStructurePage() {
     try {
       const { data: profs, error: pErr } = await supabase
         .from('profiles')
-        .select('id, full_name, reports_to, company_id, position:positions(name), department:departments(name)')
+        .select('id, full_name, reports_to, company_id, position:positions(name, level), department:departments(name)')
         .eq('active', true)
         .order('full_name', { ascending: true })
         .limit(1000);
@@ -249,6 +260,7 @@ export default function OrgStructurePage() {
         id: p.id,
         name: p.full_name || '—',
         title: p.position?.name || '—',
+        positionLevel: p.position?.level || null,
         dept: p.department?.name || '—',
         company_id: urMap[p.id] || p.company_id,
         reportsTo: p.reports_to || null,
