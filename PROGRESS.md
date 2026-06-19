@@ -2,6 +2,16 @@
 
 ## 2026-06-19
 
+### Positions — compact group-by-code + edit modal checkbox entitas (Phase 2.9T)
+> `PositionsPage.jsx` saja (rewrite). Tanpa ubah `usePositions.js`/DB/file lain. Tabel lama 1 baris per (company,code) → "Manager" 3×.
+- [x] **TASK 1 (compact list)** — fetch lokal `positions` `.eq('is_active',true).is('deleted_at',null).order('name').limit(1000)` (ganti usePositions paginated); group by `code` → 1 baris/code: Code badge · Name · LevelBadge · entity pills inline (MSI navy/JCI orange/SOA coral; absent=abu dim) · Status ACTIVE(3 entitas)/PARTIAL · Edit. Department dihapus, pagination dihapus, search client-side
+- [x] **TASK 2 (edit modal, reuse AdminFormModal)** — Code (read-only edit / editable create) · Name · Level dropdown · 3 EntityCheckbox pre-checked sesuai row aktif
+- [x] **Save (supabase.from langsung, BUKAN hook updatePosition yg null-kan department_id)** — pre-check existing rows lintas-3-entitas (incl inactive/deleted): dicentang+ada→UPDATE name/level/is_active=true/deleted_at=null (reactivate, hindari langgar UNIQUE(company_id,code)); dicentang+tak ada→INSERT; uncentang+aktif→UPDATE is_active=false (soft delete flag, bukan hard delete). Error→toast asli; sukses→toast+refetch
+- [x] **Create dipertahankan** — "New Position" → modal create-mode (code editable, wajib ≥1 entitas)
+- [x] **Build clean** — 2633 modules, 1.22s
+- [x] **RLS caveat dicatat** — positions_read/insert/update scope non-super ke company sendiri → cross-entity view+save fully functional utk super_admin; admin biasa 1 badge & write lintas-entitas error RLS (ter-surface toast); tak nambah role-gating
+- [ ] **Tes manual (belum — runtime):** Manager 1 baris badge MSI+JCI+SOA · edit pre-checked benar · uncheck→save→inactive & hilang dari badge · recheck→save→reactivate (bukan duplicate) · edit name/level→semua entitas ke-update · create code baru
+
 ### Struktur Organisasi (Org Chart) — port Lovable + Supabase (Phase 2.9S)
 > File baru `src/modules/foundation/OrgStructurePage.jsx`. Modul Foundation (AdminShell). Tanpa ubah DB (kolom `profiles.reports_to` sudah ada).
 - [x] **Import desain** — paste manual (Option A); MCP `claude_design`/DesignSync tak bisa auth di sesi token-pinned (`CLAUDE_CODE_OAUTH_TOKEN` tak bisa di-grant design scopes, `/design-login`/`/login` tak tersedia)
