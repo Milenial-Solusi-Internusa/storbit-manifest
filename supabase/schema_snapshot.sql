@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict AA0X3JbVU9ProNa4p4seLcSNTG7akLxok3CS6hIFgj7Wb7NOMx8FsASUpDUlc4u
+\restrict X6dMNeBCVy7h33VEXc3nTcU8JAWg7EfskGY4nStJ2WtMD0nGy7bPXXlqac3gq62
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -8549,7 +8549,7 @@ CREATE POLICY user_roles_insert ON public.user_roles FOR INSERT TO authenticated
 -- Name: user_roles user_roles_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY user_roles_read ON public.user_roles FOR SELECT TO authenticated USING (((user_id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
+CREATE POLICY user_roles_read ON public.user_roles FOR SELECT TO authenticated USING (((user_id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND public.is_manager_or_above()) OR public.is_super_admin()));
 
 
 --
@@ -8633,5 +8633,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict AA0X3JbVU9ProNa4p4seLcSNTG7akLxok3CS6hIFgj7Wb7NOMx8FsASUpDUlc4u
+\unrestrict X6dMNeBCVy7h33VEXc3nTcU8JAWg7EfskGY4nStJ2WtMD0nGy7bPXXlqac3gq62
 
