@@ -8,7 +8,7 @@ import { useState, useCallback } from 'react';
 import { Check } from 'lucide-react';
 import { useAuth } from '../../contexts/useAuth';
 import {
-  Building2, MapPin, Network, Briefcase,
+  Building2, MapPin, Network, Briefcase, GitBranch,
   ShieldCheck, Users,
   FileText, Tag, Percent, CreditCard,
 } from 'lucide-react';
@@ -24,6 +24,7 @@ import TaxesPage from './pages/TaxesPage';
 import PaymentTermsPage from './pages/PaymentTermsPage';
 import UserAccessPage from './pages/UserAccessPage';
 import UserEditPage from './pages/UserEditPage';
+import OrgStructurePage from '../foundation/OrgStructurePage';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -55,6 +56,7 @@ const NAV_SECTIONS = [
       { id: 'branches',    label: 'Branches',    icon: MapPin    },
       { id: 'departments', label: 'Departments', icon: Network   },
       { id: 'positions',   label: 'Positions',   icon: Briefcase },
+      { id: 'org-structure', label: 'Struktur Organisasi', icon: GitBranch },
     ],
   },
   {
@@ -171,6 +173,7 @@ const PAGE_MAP = {
   'branches':       <ErrorBoundary title="Branches unavailable"><BranchesPage /></ErrorBoundary>,
   'departments':    <ErrorBoundary title="Departments unavailable"><DepartmentsPage /></ErrorBoundary>,
   'positions':      <ErrorBoundary title="Positions unavailable"><PositionsPage /></ErrorBoundary>,
+  'org-structure':  <ErrorBoundary title="Struktur Organisasi unavailable"><OrgStructurePage /></ErrorBoundary>,
   'roles':          <ErrorBoundary title="Roles unavailable"><RolesPage /></ErrorBoundary>,
   'document-types': <ErrorBoundary title="Document Types unavailable"><DocumentTypesPage /></ErrorBoundary>,
   'status-catalog': <ErrorBoundary title="Status Catalog unavailable"><StatusCatalogPage /></ErrorBoundary>,

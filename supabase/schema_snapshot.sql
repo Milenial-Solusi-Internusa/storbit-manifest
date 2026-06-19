@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict AIvhFXIZCoIfK4mTQtdyyDKLwZAaDiLJ4KFUqPqA9Buyxwg4Sfo58dhaQINTSs6
+\restrict 7AHb0ZhxnMSlOVgTcPRmpLXO5GYjJitcXIyuC9uOvkKrNhXPfw0osIVA4DTMZFp
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2548,7 +2548,8 @@ CREATE TABLE public.profiles (
     emergency_contact_name character varying,
     emergency_contact_phone character varying,
     notification_preferences jsonb DEFAULT '{}'::jsonb,
-    display_preferences jsonb DEFAULT '{}'::jsonb
+    display_preferences jsonb DEFAULT '{}'::jsonb,
+    reports_to uuid
 );
 
 
@@ -4800,6 +4801,13 @@ CREATE INDEX idx_profiles_department_id ON public.profiles USING btree (departme
 
 
 --
+-- Name: idx_profiles_reports_to; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_profiles_reports_to ON public.profiles USING btree (reports_to);
+
+
+--
 -- Name: idx_prospects_assigned_to; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6455,6 +6463,14 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.profiles
     ADD CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: profiles profiles_reports_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_reports_to_fkey FOREIGN KEY (reports_to) REFERENCES public.profiles(id);
 
 
 --
@@ -8633,5 +8649,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict AIvhFXIZCoIfK4mTQtdyyDKLwZAaDiLJ4KFUqPqA9Buyxwg4Sfo58dhaQINTSs6
+\unrestrict 7AHb0ZhxnMSlOVgTcPRmpLXO5GYjJitcXIyuC9uOvkKrNhXPfw0osIVA4DTMZFp
 
