@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict JNIQskrX2QyAjSCZcZEIdBKWMlmE3ZWCLGBe7MLgpOckOlwwFOUWKSQmhvns0m4
+\restrict 2Ii7Gnvo2zdnbKlXFeKuJloAuz02tPHsP3suhS2zIesVudFniKqFB2k8ZaZ9p7P
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -593,6 +593,7 @@ CREATE TABLE public.accounts (
     default_dc text,
     last_activity_at timestamp with time zone DEFAULT now(),
     became_customer_at timestamp with time zone,
+    estimated_value numeric DEFAULT 0,
     CONSTRAINT prospects_source_check CHECK (((source)::text = ANY (ARRAY['sales_visit'::text, 'cold_call'::text, 'referral'::text, 'existing_network'::text, 'exhibition'::text, 'instagram'::text, 'linkedin'::text, 'tiktok'::text, 'website'::text, 'walk_in'::text, 'other'::text])))
 );
 
@@ -8649,5 +8650,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict JNIQskrX2QyAjSCZcZEIdBKWMlmE3ZWCLGBe7MLgpOckOlwwFOUWKSQmhvns0m4
+\unrestrict 2Ii7Gnvo2zdnbKlXFeKuJloAuz02tPHsP3suhS2zIesVudFniKqFB2k8ZaZ9p7P
 

@@ -2,6 +2,19 @@
 
 ## 2026-06-19
 
+### PipelineKanban — aktifkan 4 kontrol toolbar + fix list crash + value 0 (Phase 2.9X)
+> `PipelineKanbanPage.jsx` saja. Prasyarat DB: `accounts.estimated_value` sudah dibuat via SQL Editor. Tanpa ubah DB/RLS/file lain.
+- [x] **Shared infra** — `openMenu` (1 popover) + overlay z140 click-outside (no doc listener) + menu z150 dalam wrapper relative; primitives `MenuBox`/`MenuOption`/`CheckRow` (navy aktif, Lucide check). Pipeline turunan: `filteredDeals = deals→member→panel`, `sortDeals()` per stage (board & list sama)
+- [x] **TASK 1 (fix crash)** — `ListGroup`/`ListRow` +`onRowClick` (ganti `setDetailDeal` out-of-scope → ReferenceError); list pass `onRowClick={setDetailDeal}`
+- [x] **TASK 2 (value)** — `estimated_value` ke SELECT + mapping `value: p.estimated_value ?? 0` (buang deal_value); display `rp()` existing (toLocaleString id-ID, 0/null→'—')
+- [x] **TASK 3 (Semua Anggota)** — dropdown; members derive distinct assigned_to+full_name; "Semua Anggota" reset; filter assigned_to; label=member
+- [x] **TASK 4 (sort "Nilai Pipeline")** — 6 opsi (Terbaru/Terlama/Nilai↑↓/Closing Terdekat null-last/Nama A–Z) via sortDeals per stage; default recent; aktif check+navy; label=opsi
+- [x] **TASK 5 (Filter panel)** — draft→applied; Source(multi)+Customer Type(multi)+BANT(multi 6-7/4-5/1-3/0)+Closing(single bulan ini/30/60/90/semua); Terapkan+Reset; badge "Filter · N"; AND dgn member
+- [x] **TASK 6 (list view)** — full setelah fix; member+filter+sort+value lewat filteredDeals/sortDeals di kedua view
+- [x] **Header "X prospect aktif"** dari filteredDeals (excl won/lost) — konsisten saat filter aktif (disepakati)
+- [x] **Build clean** — 2633 modules, 1.17s
+- [ ] **Tes manual (belum — runtime):** toggle list→klik baris buka detail (bukan crash) · nilai kartu+total Rp setelah estimated_value diisi · member filter → board hanya deal-nya · sort Nilai Tertinggi → urutan berubah · Filter panel + badge angka · kombinasi member+filter+sort di board & list
+
 ### Org chart — warna node level-based (Phase 2.9U)
 > `OrgStructurePage.jsx` saja. Node accent dari entity-based → level-based; badge entitas tetap entity-based.
 - [x] `LEVEL_COLOR` map + `levelColorOf(level)` — Director #9B1C1C / Manager #166534 / Supervisor #4338CA / Staff #1E40AF / Operator #374151 / default #64748B
