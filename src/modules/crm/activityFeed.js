@@ -1,7 +1,8 @@
 // src/modules/crm/activityFeed.js
 // Unified CRM activity feed — merges recent events from accounts (prospect baru),
-// inquiries, quotations, activities, and user_login_logs (login) into one
-// chronological list (newest first).
+// inquiries, quotations, activity_logs (activity lifecycle: baru/selesai/
+// dibatalkan/diubah), and user_login_logs (login) into one chronological list
+// (newest first).
 // Read-only; scoping mirrors the CRM list pages (company_id always unless
 // isAllEntities; sales see only their own via created_by / assigned_to).
 // EXCEPTION: user_login_logs has no company_id — it relies entirely on its own
@@ -76,14 +77,16 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
     return q.order('created_at', { ascending: false }).limit(1000);
   })();
 
-  const activitiesQ = (() => {
-    let q = supabase.from('activities')
-      .select('id, type, scheduled_for, created_at, created_by, assigned_to, contact_name, prospect_name, account:accounts!activities_account_id_fkey(name)')
-      .is('deleted_at', null);
-    q = scopeCo(q);
-    if (isSalesOnly) q = q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`);
-    return q.order('created_at', { ascending: false }).limit(1000);
-  })();
+  // Activity lifecycle events come from activity_logs (created / done / cancelled /
+  // edited) — NOT the activities row directly. No company_id column → RLS (via the
+  // parent activity) does the scoping, like user_login_logs, so no manual filter.
+  const activityLogsQ = supabase.from('activity_logs')
+    .select(`
+      id, activity_id, changed_by, changed_at, from_status, to_status,
+      activity:activities(type, contact_name, account:accounts(name))
+    `)
+    .order('changed_at', { ascending: false })
+    .limit(200);
 
   // Login source — no company_id column; RLS (manager+/super_admin/own) does the
   // scoping, so NO manual company/owner filter here.
@@ -92,7 +95,7 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
     .order('logged_in_at', { ascending: false })
     .limit(1000);
 
-  const [accRes, inqRes, quoRes, actRes, logRes] = await Promise.all([accountsQ, inquiriesQ, quotationsQ, activitiesQ, loginsQ]);
+  const [accRes, inqRes, quoRes, actRes, logRes] = await Promise.all([accountsQ, inquiriesQ, quotationsQ, activityLogsQ, loginsQ]);
 
   const events = [];
   (accRes.data || []).forEach(r => events.push({
@@ -112,12 +115,21 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
     subtitle: [r.quotation_no, r.customer?.name || r.prospect?.name].filter(Boolean).join(' — ') || '—',
     user_id: r.created_by || null, icon: 'FileCheck',
   }));
-  (actRes.data || []).forEach(r => events.push({
-    id: 'act-' + r.id, timestamp: r.scheduled_for || r.created_at, type: 'activity', actType: r.type,
-    title: FEED_ACT_LABEL[r.type] || 'Aktivitas',
-    subtitle: r.account?.name || r.contact_name || r.prospect_name || '—',
-    user_id: r.assigned_to || r.created_by || null, icon: FEED_ACT_ICON[r.type] || 'Activity',
-  }));
+  (actRes.data || []).forEach(r => {
+    const act = r.activity || {};
+    const title =
+      (r.from_status == null && r.to_status === 'todo') ? 'Aktivitas baru' :
+      r.to_status === 'done'      ? 'Aktivitas selesai' :
+      r.to_status === 'cancelled' ? 'Aktivitas dibatalkan' :
+      r.to_status === 'edited'    ? 'Aktivitas diubah' :
+      'Aktivitas';
+    events.push({
+      id: 'actlog-' + r.id, timestamp: r.changed_at, type: 'activity', actType: act.type,
+      title,
+      subtitle: act.contact_name || act.account?.name || '—',
+      user_id: r.changed_by || null, icon: FEED_ACT_ICON[act.type] || 'Activity',
+    });
+  });
   (logRes.data || []).forEach(r => events.push({
     id: 'login-' + r.id, timestamp: r.logged_in_at, type: 'login', actType: null,
     title: 'Login', subtitle: '',   // filled with the user name after nameMap resolves

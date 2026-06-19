@@ -682,8 +682,15 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         company_id:       profile.company_id,
         created_by:       profile.id,
       };
-      const { error } = await supabase.from('activities').insert(payload);
+      const { data: created, error } = await supabase.from('activities').insert(payload).select('id').single();
       if (error) throw error;
+      // fire-and-forget audit log (don't block UI; log errors only)
+      if (created?.id) {
+        supabase.from('activity_logs').insert({
+          activity_id: created.id, changed_by: profile.id,
+          from_status: null, to_status: 'todo',
+        }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] create', logErr); });
+      }
       showToast?.('Task berhasil disimpan');
       setFormOpen(false);
       fetchActivities();
@@ -701,11 +708,15 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .update({ status: 'done', completed_at: new Date().toISOString() })
       .eq('id', row.id);
     if (error) { showToast?.('Gagal menandai selesai: ' + error.message, 'error'); return; }
+    supabase.from('activity_logs').insert({
+      activity_id: row.id, changed_by: profile.id,
+      from_status: row.status || null, to_status: 'done',
+    }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] done', logErr); });
     showToast?.('Aktivitas ditandai selesai');
     fetchActivities();
     // Close the detail modal if open (no-op when invoked from a list row).
     setDetail(null);
-  }, [fetchActivities, showToast]);
+  }, [fetchActivities, showToast, profile]);
 
   // ── cancel activity (from detail modal, todo only) ──────────────────────────
   const handleCancelActivity = useCallback(async (id) => {
@@ -714,10 +725,15 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .update({ status: 'cancelled' })
       .eq('id', id);
     if (error) { showToast?.('Gagal membatalkan: ' + error.message, 'error'); return; }
+    const fromStatus = rows.find(r => r.id === id)?.status || null;
+    supabase.from('activity_logs').insert({
+      activity_id: id, changed_by: profile.id,
+      from_status: fromStatus, to_status: 'cancelled',
+    }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] cancel', logErr); });
     showToast?.('Aktivitas dibatalkan');
     setDetail(null);
     fetchActivities();
-  }, [fetchActivities, showToast]);
+  }, [fetchActivities, showToast, profile, rows]);
 
   // ── delete activity (super_admin only, soft delete) ─────────────────────────
   const handleDeleteActivity = useCallback(async (id) => {
@@ -763,6 +779,10 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       };
       const { error } = await supabase.from('activities').update(payload).eq('id', detail.id);
       if (error) throw error;
+      supabase.from('activity_logs').insert({
+        activity_id: detail.id, changed_by: profile.id,
+        from_status: 'edited', to_status: 'edited',
+      }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] edit', logErr); });
       showToast?.('Aktivitas berhasil diperbarui');
       setDetail(null);
       fetchActivities();
@@ -771,7 +791,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     } finally {
       setDetailSaving(false);
     }
-  }, [detail, fetchActivities, showToast]);
+  }, [detail, fetchActivities, showToast, profile]);
 
   // Open the existing ProspectFormPage in CREATE mode, prefilled from the
   // activity (Option A: ProspectFormPage treats an id-less object as create).
