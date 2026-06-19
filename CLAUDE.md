@@ -1025,7 +1025,9 @@ Output:
 
 | 2.9V | **Org chart — tambah warna level 'Head' di `LEVEL_COLOR`.** `OrgStructurePage.jsx` saja, 1 baris: tambah `Head: '#0F766E'` (teal gelap) di antara Manager & Supervisor. Sebelumnya level 'Head' jatuh ke slate default #64748B (catatan 2.9U); kini punya warna sendiri. Tak ubah hal lain/DB. Build clean (2633 modules, 1.20s). | ✅ Complete |
 
-Current phase: **Phase 2.9V** ✅ Complete
+| 2.9W | **QuotationFormPage — tambah 3 opsi `UNIT_LABELS`.** Array opsi unit label item quotation: tambah `Per Unit`, `Per Type`, `Per HS Code` setelah `Per Receipt`, sebelum `Lumpsum` (tetap paling bawah). Urutan final: Per CBM, Per KG, Per Ton, Per 20Ft, Per 40Ft, Per Container, Per BL, Per Shipment, Per Trip, Per Day, Per Document, Per Receipt, **Per Unit, Per Type, Per HS Code**, Lumpsum (16 opsi). Hanya 1 array diubah; logika/styling/file lain tak disentuh. Build clean (2633 modules, 1.17s). | ✅ Complete |
+
+Current phase: **Phase 2.9W** ✅ Complete
 
 > **⚠️ DB — migrasi data lama `activities.type='prospecting'` (Phase 2.9K — JALANKAN MANUAL, belum dieksekusi):**
 > ```sql
