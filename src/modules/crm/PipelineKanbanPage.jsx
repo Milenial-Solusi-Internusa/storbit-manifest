@@ -146,10 +146,10 @@ const S = {
   list: { paddingRight: 0, display: 'flex', flexDirection: 'column', gap: 12 },
   lg: { background: '#fff', border: '1px solid #ECEDF1', borderRadius: 11, overflow: 'hidden', boxShadow: '0 1px 2px rgba(20,40,70,.04)' },
   lgHead: { width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px', background: '#fff', border: 0, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
-  lgName: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 12.5, letterSpacing: 0.6, textTransform: 'uppercase', color: '#16243A' },
-  lgCount: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 600, color: '#838A95' },
+  lgName: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 600, fontSize: 12.5, letterSpacing: 0.6, textTransform: 'uppercase', color: '#fff' },
+  lgCount: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.8)' },
   lgProb: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20 },
-  lgTotal: { marginLeft: 'auto', fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, color: '#144682', fontSize: 14, letterSpacing: -0.3 },
+  lgTotal: { marginLeft: 'auto', fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, color: '#fff', fontSize: 14, letterSpacing: -0.3 },
   lr: { display: 'grid', gridTemplateColumns: 'minmax(220px,1fr) 150px 150px 170px', gap: 14, alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid #F4F5F7' },
   lrHead: { fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#9AA0AC', background: '#FAFBFC', borderBottom: '1px solid #F0F1F4', padding: '8px 16px' },
   lrCo: { fontWeight: 700, fontSize: 13, color: '#1A2330', letterSpacing: -0.1 },
@@ -481,10 +481,10 @@ function ListGroup({ stage, items, onRowClick }) {
         onClick={() => setCollapsed(c => !c)}
         onMouseEnter={() => setHh(true)}
         onMouseLeave={() => setHh(false)}
-        style={{ ...S.lgHead, borderLeft: '3px solid ' + stage.color, ...(hh ? { background: '#FAFBFC' } : null) }}
+        style={{ ...S.lgHead, background: HEAD_BG[stage.tone], borderLeft: '3px solid ' + stage.color, ...(hh ? { filter: 'brightness(1.08)' } : null) }}
       >
-        <Icon name="chevdown" size={16} color="#9AA0AC" style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .15s' }} />
-        <span style={{ width: 9, height: 9, borderRadius: '50%', flex: '0 0 9px', background: stage.color }} />
+        <Icon name="chevdown" size={16} color="rgba(255,255,255,.85)" style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .15s' }} />
+        <span style={{ width: 9, height: 9, borderRadius: '50%', flex: '0 0 9px', background: 'rgba(255,255,255,.9)' }} />
         <span style={S.lgName}>{stage.name}</span>
         <span style={S.lgCount}>{items.length} deal</span>
         <span style={{ ...S.lgProb, ...probTone }}>{stage.prob}%</span>
