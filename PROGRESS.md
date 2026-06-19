@@ -2,6 +2,15 @@
 
 ## 2026-06-19
 
+### Activity lifecycle → feed: tulis activity_logs + feed baca log (Phase 2.9Z)
+> 3 file (ActivitiesPage/activityFeed/ActivityLogPage). Tanpa ubah DB (activity_logs + RLS sudah ada). Pilihan: edit via edited↔edited (A) + ganti sumber feed (B).
+- [x] **TASK 1 (ActivitiesPage)** — fire-and-forget INSERT activity_logs (`changed_by: profile.id`; error→console.error, tak block/tak toast) tiap op: CREATE `.select('id').single()` → `{from:null,to:'todo'}`; mark-done `{from:row.status,to:'done'}`; cancel (resolve from via `rows.find`) `{to:'cancelled'}`; edit `{from:'edited',to:'edited'}`. deps +profile (+rows di cancel)
+- [x] **TASK 2 (activityFeed)** — hapus sumber activities-row; ganti `activity_logs` (embed `activity:activities(type,contact_name,account:accounts(name))`, order changed_at desc limit 200, no company filter → RLS via parent). Map type:'activity' (tetap), actType=activity.type, title per to_status (baru/selesai/dibatalkan/diubah), subtitle contact_name||account.name, timestamp changed_at, user_id changed_by (auto nameMap). id `actlog-`
+- [x] **TASK 3 (ActivityLogPage)** — no change: type tetap 'activity' → TYPE_TONE.activity + filter 'activity' existing tetap jalan (hanya title beda per status)
+- [x] **Build clean** — 2633 modules, 1.19s
+- [x] Catatan: activity lama tanpa baris activity_logs (kecuali visit via CRMDashboard sejak 2.9D) tak muncul di feed sampai di-aksi lagi (konsekuensi ganti sumber). FEED_ACT_LABEL tetap di-export; FEED_ACT_ICON tetap dipakai
+- [ ] **Tes manual (belum — runtime):** create→"Aktivitas baru" · mark-done→"Aktivitas selesai" · edit→"Aktivitas diubah" · cancel→"Aktivitas dibatalkan" · nama user benar · subtitle kontak/akun · tak ada duplikat (activities-row sudah dihapus)
+
 ### PipelineKanban — aktifkan 4 kontrol toolbar + fix list crash + value 0 (Phase 2.9X)
 > `PipelineKanbanPage.jsx` saja. Prasyarat DB: `accounts.estimated_value` sudah dibuat via SQL Editor. Tanpa ubah DB/RLS/file lain.
 - [x] **Shared infra** — `openMenu` (1 popover) + overlay z140 click-outside (no doc listener) + menu z150 dalam wrapper relative; primitives `MenuBox`/`MenuOption`/`CheckRow` (navy aktif, Lucide check). Pipeline turunan: `filteredDeals = deals→member→panel`, `sortDeals()` per stage (board & list sama)
