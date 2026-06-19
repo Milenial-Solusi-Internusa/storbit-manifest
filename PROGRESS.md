@@ -2,6 +2,16 @@
 
 ## 2026-06-19
 
+### Org chart — warna node level-based (Phase 2.9U)
+> `OrgStructurePage.jsx` saja. Node accent dari entity-based → level-based; badge entitas tetap entity-based.
+- [x] `LEVEL_COLOR` map + `levelColorOf(level)` — Director #9B1C1C / Manager #166534 / Supervisor #4338CA / Staff #1E40AF / Operator #374151 / default #64748B
+- [x] **Node** — `lc=levelColorOf(person.positionLevel)` dipakai avatar bg + card border-left + nama color + focus ring (hexA); **badge entitas tetap `ent.color`**
+- [x] **Modal head avatar** ikut `lc` (drop `c` unused, `ent` tetap utk label)
+- [x] **Fetch** `position:positions(name)` → `(name, level)`; mapping +`positionLevel`
+- [x] **Build clean** — 2633 modules, 1.18s
+- [x] Catatan: `positions.level` enum tak punya 'Operator'; 'Head' tak ada di mapping task → jatuh ke slate default (sesuai instruksi eksplisit)
+- [ ] **Tes manual (belum — runtime):** avatar+border+nama per level (Director merah/Manager hijau/Supervisor indigo/Staff biru) · badge entitas tetap navy/orange/coral · node tanpa level → slate
+
 ### Positions — compact group-by-code + edit modal checkbox entitas (Phase 2.9T)
 > `PositionsPage.jsx` saja (rewrite). Tanpa ubah `usePositions.js`/DB/file lain. Tabel lama 1 baris per (company,code) → "Manager" 3×.
 - [x] **TASK 1 (compact list)** — fetch lokal `positions` `.eq('is_active',true).is('deleted_at',null).order('name').limit(1000)` (ganti usePositions paginated); group by `code` → 1 baris/code: Code badge · Name · LevelBadge · entity pills inline (MSI navy/JCI orange/SOA coral; absent=abu dim) · Status ACTIVE(3 entitas)/PARTIAL · Edit. Department dihapus, pagination dihapus, search client-side
