@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2Ii7Gnvo2zdnbKlXFeKuJloAuz02tPHsP3suhS2zIesVudFniKqFB2k8ZaZ9p7P
+\restrict xtNhowaUaATKJPZUCi1XeKEdykXLfHJ33oqGXnkb8dQD8fbxGB2eM8qhejTNxz7
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -5218,7 +5218,7 @@ CREATE TRIGGER trg_gen_customer_code_ins BEFORE INSERT ON public.accounts FOR EA
 -- Name: accounts trg_gen_customer_code_upd; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR EACH ROW WHEN (((new.code IS NULL) OR (new.code = ''::text))) EXECUTE FUNCTION public.generate_customer_code();
+CREATE TRIGGER trg_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR EACH ROW WHEN ((((new.code IS NULL) OR (new.code = ''::text)) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION public.generate_customer_code();
 
 
 --
@@ -8650,5 +8650,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 2Ii7Gnvo2zdnbKlXFeKuJloAuz02tPHsP3suhS2zIesVudFniKqFB2k8ZaZ9p7P
+\unrestrict xtNhowaUaATKJPZUCi1XeKEdykXLfHJ33oqGXnkb8dQD8fbxGB2eM8qhejTNxz7
 
