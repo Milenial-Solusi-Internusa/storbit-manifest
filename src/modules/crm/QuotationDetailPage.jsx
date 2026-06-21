@@ -1,12 +1,12 @@
 // src/modules/crm/QuotationDetailPage.jsx
-// Read-only detail view — sectioned table, internal cost/profit (no-print), PDF via jspdf+html2canvas
+// Read-only detail view — sectioned table, internal cost/profit (no-print), PDF via @react-pdf/renderer (QuotationPDF)
 import { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, Edit2, Download, Receipt, Send } from 'lucide-react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { pdf } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import ConfirmModal from '../../components/ConfirmModal';
+import QuotationPDF from './QuotationPDF';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -263,80 +263,19 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
     }
   };
 
-  // ── PDF generator ─────────────────────────────────────────────────────
+  // ── PDF generator — @react-pdf/renderer (vector/text, auto pagination) ──────
   const handleDownloadPDF = async () => {
-    const element = document.getElementById('quotation-print-area');
-    if (!element) { showToast?.('Print area tidak ditemukan', 'error'); return; }
     setGeneratingPDF(true);
     try {
-      const canvas = await html2canvas(element, {
-        scale:           2,
-        useCORS:         true,
-        logging:         false,
-        backgroundColor: '#ffffff',
-      });
-
-      const pdf           = new jsPDF('p', 'mm', 'a4');
-      const pageWidth     = pdf.internal.pageSize.getWidth();
-      const pageHeight    = pdf.internal.pageSize.getHeight();
-      const margin        = 8;
-      const contentWidth  = pageWidth - margin * 2;
-      const contentHeight = pageHeight - margin * 2;
-
-      // canvas rendered at scale:2 — logical px = canvas.px / 2
-      const scale         = contentWidth / (canvas.width / 2);
-      const totalHeightMm = (canvas.height / 2) * scale;
-
-      // Collect no-break element positions in mm
-      const noBreakPositions = [];
-      element.querySelectorAll('.pdf-no-break, tr').forEach(el => {
-        const rect    = el.getBoundingClientRect();
-        const elRect  = element.getBoundingClientRect();
-        const topMm    = ((rect.top    - elRect.top) / (canvas.height / 2)) * totalHeightMm;
-        const bottomMm = ((rect.bottom - elRect.top) / (canvas.height / 2)) * totalHeightMm;
-        noBreakPositions.push({ top: topMm, bottom: bottomMm });
-      });
-
-      // Build page breaks — shift up when a break would split a no-break element
-      const pageBreaks   = [0];
-      let currentPageEnd = contentHeight;
-      while (currentPageEnd < totalHeightMm) {
-        let adjustedBreak = currentPageEnd;
-        for (const pos of noBreakPositions) {
-          if (pos.top < currentPageEnd && pos.bottom > currentPageEnd) {
-            adjustedBreak = Math.min(adjustedBreak, pos.top - 2);
-          }
-        }
-        pageBreaks.push(adjustedBreak);
-        currentPageEnd = adjustedBreak + contentHeight;
-      }
-      pageBreaks.push(totalHeightMm);
-
-      // Render each page slice
-      for (let i = 0; i < pageBreaks.length - 1; i++) {
-        const startMm  = pageBreaks[i];
-        const endMm    = pageBreaks[i + 1];
-        const heightMm = endMm - startMm;
-
-        const startPx  = (startMm  / totalHeightMm) * canvas.height;
-        const heightPx = (heightMm / totalHeightMm) * canvas.height;
-
-        const pageCanvas  = document.createElement('canvas');
-        pageCanvas.width  = canvas.width;
-        pageCanvas.height = Math.ceil(heightPx);
-        const ctx         = pageCanvas.getContext('2d');
-        ctx.fillStyle     = '#ffffff';
-        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        ctx.drawImage(canvas, 0, startPx, canvas.width, heightPx,
-                              0, 0,       canvas.width, heightPx);
-
-        if (i > 0) pdf.addPage();
-        pdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.95),
-                     'JPEG', margin, margin, contentWidth, heightMm);
-      }
-
-      const revision = quot?.revision ?? 1;
-      pdf.save(`${quot?.quotation_no || 'quotation'}_rev${revision}.pdf`);
+      const blob = await pdf(
+        <QuotationPDF quot={quot} items={items} sections={sections} creatorProfile={creatorProfile} />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${quot?.quotation_no || 'quotation'}_rev${quot?.revision ?? 1}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
       showToast?.('PDF berhasil diunduh ⬇');
     } catch (err) {
       showToast?.('Gagal generate PDF: ' + err.message, 'error');

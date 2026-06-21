@@ -1,6 +1,16 @@
 # Nexus MSI — Development Progress Log
 
-## 2026-06-19
+## 2026-06-22
+
+### Quotation PDF rewrite — html2canvas+jsPDF → @react-pdf/renderer (Phase 2.10A)
+> Vector/text PDF, pagination otomatis. Ganti raster JPEG screenshot. 3 file (deps + QuotationPDF baru + QuotationDetailPage).
+- [x] **TASK 1 (deps)** — uninstall html2canvas+jspdf (cuma dipakai di QuotationDetailPage, diverifikasi), install @react-pdf/renderer ^4.5.1
+- [x] **TASK 2 (`QuotationPDF.jsx` BARU)** — `({quot, items, sections, creatorProfile})`, Document/Page/View/Text/Image/StyleSheet, font Helvetica built-in (no register). 9 section: header(logo h36, not fixed)/customer details(+APPROVED BY blank)/item tables per section (wrap=false per row, section-name+col-header nyatu, zebra, USD #a45a22, kolom 35/8/14/14/8/21, NO cost/margin)/grand summary(VAT 1.1%, GRAND TOTAL navy)/notes(navy left)/terms(orange left "Above rates :")/signatures 2-kolom/divider 8%+92%/footer navy `fixed` text-only (logo footer skip — filter invert tak didukung). Page paddingBottom 96 ≥ footer
+- [x] **TASK 3 (QuotationDetailPage)** — hapus import html2canvas+jsPDF, +`{ pdf }`+QuotationPDF; handleDownloadPDF → `pdf(<QuotationPDF/>).toBlob()` → a.download `${quotation_no}_rev${revision??1}.pdf`; showToast?.(msg,'error') (urutan existing, bukan snippet kebalik); 2 tombol tetap. `#quotation-print-area` DIPERTAHANKAN (per instruksi; kini dead DOM, comment stale)
+- [x] Internal (internal_notes/cost_price/margin) TIDAK di PDF
+- [x] **Build clean** — 2550 modules (turun dari 2633: html2canvas+jsPDF dibuang; @react-pdf di chunk lazy), 1.50s
+- [ ] **Tes manual (belum — runtime):** Download PDF → .pdf ter-download (bukan error) · teks selectable (bukan raster) · 9 section urut lengkap · tabel item tak kepotong di tengah baris · footer tiap halaman · grand total benar · internal_notes/cost/margin tak muncul · on-screen detail tetap normal
+- [ ] **Catatan:** `#quotation-print-area` kini dead/unused DOM (dipertahankan per instruksi) — kandidat cleanup terpisah kalau memang tak dipakai on-screen
 
 ### Activity lifecycle → feed: tulis activity_logs + feed baca log (Phase 2.9Z)
 > 3 file (ActivitiesPage/activityFeed/ActivityLogPage). Tanpa ubah DB (activity_logs + RLS sudah ada). Pilihan: edit via edited↔edited (A) + ganti sumber feed (B).
