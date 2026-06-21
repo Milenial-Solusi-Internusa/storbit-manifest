@@ -85,14 +85,16 @@ const styles = StyleSheet.create({
   sigLabel: { fontFamily: 'Helvetica-Bold', fontSize: 9 },
   sigLine: { marginTop: 40, borderTopWidth: 1, borderTopColor: '#333', width: 180, paddingTop: 4, fontSize: 9 },
   sigSub: { fontSize: 9, color: '#666' },
+  sigCenter: { textAlign: 'center' },
 
-  // [8] Divider
-  divider: { flexDirection: 'row', marginTop: 28, height: 3 },
+  // [8] Divider — sits flush at the top edge of the fixed footer (no marginTop)
+  divider: { flexDirection: 'row', height: 3 },
   divOrange: { width: '8%', backgroundColor: ORANGE },
   divNavy: { width: '92%', backgroundColor: NAVY },
 
-  // [9] Footer (fixed)
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: NAVY, paddingVertical: 14, paddingHorizontal: 28, flexDirection: 'row' },
+  // [9] Footer (fixed) — column: divider row on top, then padded address row
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: NAVY },
+  footerRow: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 28 },
   footCol: { width: '50%', paddingRight: 16 },
   footCoName: { fontFamily: 'Helvetica-Bold', fontSize: 9, color: '#fff', marginBottom: 4 },
   footLine: { fontSize: 7.5, color: '#fff', lineHeight: 1.4 },
@@ -250,32 +252,34 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
             <Text style={styles.sigSub}>PT. Milenial Solusi Internusa</Text>
           </View>
           <View style={styles.sigColRight}>
-            <Text style={styles.sigLabel}>Approved by,</Text>
-            <Text style={styles.sigLine}>Customer Representative</Text>
-            <Text style={styles.sigSub}>{clientName}</Text>
+            <Text style={[styles.sigLabel, styles.sigCenter]}>Approved by,</Text>
+            <Text style={[styles.sigLine, styles.sigCenter]}>Customer Representative</Text>
+            <Text style={[styles.sigSub, styles.sigCenter]}>{clientName}</Text>
           </View>
         </View>
 
-        {/* [8] Divider */}
-        <View style={styles.divider} wrap={false}>
-          <View style={styles.divOrange} />
-          <View style={styles.divNavy} />
-        </View>
-
-        {/* [9] Footer — fixed (every page), text-only logo */}
+        {/* [8]+[9] Footer — fixed (every page); divider flush at its top edge */}
         <View style={styles.footer} fixed>
-          <View style={styles.footCol}>
-            <Text style={styles.footCoName}>PT Milenial Solusi Internusa</Text>
-            <Text style={styles.footLine}>Latinos Business District</Text>
-            <Text style={styles.footLine}>Blok C9 No. 12-15 Jl. Raya Rawa Buntu</Text>
-            <Text style={styles.footLine}>Kota Tangerang Selatan, Banten 15310</Text>
-            <Text style={styles.footHours}>Senin - Jumat, 08:00 AM - 05:00 PM</Text>
+          {/* [8] Divider — top row of the footer (no gap) */}
+          <View style={styles.divider}>
+            <View style={styles.divOrange} />
+            <View style={styles.divNavy} />
           </View>
-          <View style={styles.footCol}>
-            <Text style={styles.footCoName}> </Text>
-            <Text style={styles.footLine}>Sentra 22, Jl. Cakung Cilincing Raya, No. 22D</Text>
-            <Text style={styles.footLine}>Cilincing, Kota Jakarta Utara, Jakarta 14130</Text>
-            <Text style={styles.footHours}>Senin - Jumat, 08:00 AM - 05:00 PM</Text>
+          {/* Footer content — text-only logo */}
+          <View style={styles.footerRow}>
+            <View style={styles.footCol}>
+              <Text style={styles.footCoName}>PT Milenial Solusi Internusa</Text>
+              <Text style={styles.footLine}>Latinos Business District</Text>
+              <Text style={styles.footLine}>Blok C9 No. 12-15 Jl. Raya Rawa Buntu</Text>
+              <Text style={styles.footLine}>Kota Tangerang Selatan, Banten 15310</Text>
+              <Text style={styles.footHours}>Senin - Jumat, 08:00 AM - 05:00 PM</Text>
+            </View>
+            <View style={styles.footCol}>
+              <Text style={styles.footCoName}> </Text>
+              <Text style={styles.footLine}>Sentra 22, Jl. Cakung Cilincing Raya, No. 22D</Text>
+              <Text style={styles.footLine}>Cilincing, Kota Jakarta Utara, Jakarta 14130</Text>
+              <Text style={styles.footHours}>Senin - Jumat, 08:00 AM - 05:00 PM</Text>
+            </View>
           </View>
         </View>
 
