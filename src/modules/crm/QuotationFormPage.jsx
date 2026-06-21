@@ -67,7 +67,20 @@ const UNIT_LABELS = [
   'Per Unit', 'Per Type', 'Per HS Code', 'Lumpsum',
 ];
 
-const CURRENCIES = ['IDR', 'USD'];
+const CURRENCIES = ['IDR', 'USD']; // fallback before DB currencies load
+
+// VAT/PPN options + service-type → default rate (customs = 11%, else 1.1%).
+const VAT_OPTIONS = [
+  { value: 0,     label: '0%' },
+  { value: 0.011, label: '1,1%' },
+  { value: 0.11,  label: '11%' },
+];
+const vatDefaultFor = (st) => (/custom/i.test(st || '') ? 0.11 : VAT_RATE);
+// Indonesian-formatted PPN label, e.g. "PPN 1,1%" / "PPN 11%" / "PPN 0%".
+const vatLabel = (rate) => {
+  const r = Number(rate);
+  return 'PPN ' + (r * 100).toFixed(r === 0.011 ? 1 : 0).replace('.', ',') + '%';
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const freshRow = () => ({
@@ -133,7 +146,8 @@ async function generateQuotationNo(companyId, companyCode) {
 }
 
 // ─── Section component ────────────────────────────────────────────────────
-function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow, onRemoveSection, canRemove, usdRate }) {
+function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow, onRemoveSection, canRemove, usdRate, currencies }) {
+  const currencyCodes = (currencies && currencies.length) ? currencies.map(c => c.code) : CURRENCIES;
   const cellInp = (extra = {}) => ({
     width: '100%', height: 34, borderRadius: 7, border: `1px solid ${C.line}`,
     background: C.surface, padding: '0 8px', fontSize: 12.5, color: C.ink,
@@ -201,7 +215,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 <td style={{ padding: '6px 6px', width: 72 }}>
                   <select value={row.currency} onChange={e => onUpdateRow(section.id, row.id, 'currency', e.target.value)}
                     style={cellInp({ padding: '0 4px', cursor: 'pointer', textAlign: 'center' })}>
-                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    {currencyCodes.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </td>
                 <td style={{ padding: '6px 6px', width: 110 }}>
@@ -273,6 +287,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     terms:            '',
     internal_notes:   '',
     usd_rate:         DEFAULT_USD,
+    vat_rate:         VAT_RATE,
     quote_date:       today(),
   });
 
@@ -283,6 +298,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
 
   const [inquiries,    setInquiries]    = useState([]);
   const [paymentTerms, setPaymentTerms] = useState([]);
+  const [currencies,   setCurrencies]   = useState([]);
   const [saving,       setSaving]       = useState(false);
   const [errors,       setErrors]       = useState({});
 
@@ -301,6 +317,10 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     supabase.from('payment_terms').select('id, name')
       .eq('company_id', profile.company_id).is('deleted_at', null)
       .then(({ data }) => setPaymentTerms(data || []));
+
+    supabase.from('currencies').select('code, name')
+      .eq('is_active', true).order('code')
+      .then(({ data }) => setCurrencies(data || []));
   }, [profile?.company_id]);
 
   // ── Edit mode — populate header + sections from existing quotation ──────
@@ -319,6 +339,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
       terms:            quotation.terms             || '',
       internal_notes:   quotation.internal_notes    || '',
       usd_rate:         quotation.usd_rate          || DEFAULT_USD,
+      vat_rate:         quotation.vat_rate          ?? VAT_RATE,
       quote_date:       quotation.quote_date || quotation.created_at?.slice(0, 10) || today(),
     });
     setClientName(quotation.prospect?.name || quotation.customer?.name || '');
@@ -384,7 +405,15 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
       inquiry_id:   id,
       service_type: inq.service_type || h.service_type,
       route:        inq.route        || h.route,
+      vat_rate:     vatDefaultFor(inq.service_type || h.service_type),
     }));
+  };
+
+  // Changing service type resets PPN to its default (customs 11%, else 1.1%);
+  // the user can still override via the TARIF PPN dropdown afterwards.
+  const handleServiceTypeChange = (e) => {
+    const st = e.target.value;
+    setHeader(h => ({ ...h, service_type: st, vat_rate: vatDefaultFor(st) }));
   };
 
   // ── Section / row mutations ─────────────────────────────────────────────
@@ -438,7 +467,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
   const subtotal       = useMemo(() => sectionTotals.reduce((s, sec) => s + sec.total, 0), [sectionTotals]);
   const discountPct    = Number(header.discount_pct) || 0;
   const discountAmount = useMemo(() => Math.round(subtotal * discountPct / 100), [subtotal, discountPct]);
-  const tax            = useMemo(() => Math.round((subtotal - discountAmount) * VAT_RATE), [subtotal, discountAmount]);
+  const tax            = useMemo(() => Math.round((subtotal - discountAmount) * (Number(header.vat_rate) || 0)), [subtotal, discountAmount, header.vat_rate]);
   const grandTotal     = useMemo(() => (subtotal - discountAmount) + tax, [subtotal, discountAmount, tax]);
 
   // Cost totals — internal only, never printed
@@ -517,6 +546,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
           total_amount:     grandTotal,
           status:           submitNow ? 'SUBMITTED' : (quotation.status || 'DRAFT'),
           usd_rate:         Number(header.usd_rate)         || DEFAULT_USD,
+          vat_rate:         Number(header.vat_rate)         || 0,
           route:            header.route                   || null,
           discount_pct:     Number(header.discount_pct)     || 0,
           margin_floor:     quotation.margin_floor ?? 0,
@@ -554,6 +584,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
           terms:            header.terms                  || null,
           internal_notes:   header.internal_notes         || null,
           usd_rate:         Number(header.usd_rate)        || DEFAULT_USD,
+          vat_rate:         Number(header.vat_rate)        || 0,
           subtotal,
           tax_amount:       tax,
           total_amount:     grandTotal,
@@ -645,7 +676,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
               </Field>
 
               <Field label="Service Type">
-                <select value={header.service_type} onChange={setH('service_type')} style={selStyle}>
+                <select value={header.service_type} onChange={handleServiceTypeChange} style={selStyle}>
                   {SERVICE_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </Field>
@@ -707,6 +738,16 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
                   onChange={(e) => setHeader(h => ({ ...h, usd_rate: e.target.value.replace(/^0+(?=\d)/, '') }))}
                   style={inpStyle({ textAlign: 'right' })}
                 />
+              </Field>
+
+              <Field label="Tarif PPN">
+                <select
+                  value={header.vat_rate}
+                  onChange={(e) => setHeader(h => ({ ...h, vat_rate: Number(e.target.value) }))}
+                  style={selStyle}
+                >
+                  {VAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
               </Field>
 
               <Field label="Notes" full>
@@ -788,7 +829,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5 }}>
-                <span style={{ color: C.inkSoft }}>VAT 1.1%</span>
+                <span style={{ color: C.inkSoft }}>{vatLabel(header.vat_rate)}</span>
                 <span style={{ fontWeight: 700 }}>{rp(tax)}</span>
               </div>
               <div style={{ height: 1, background: C.line }} />
@@ -846,6 +887,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             onRemoveSection={removeSection}
             canRemove={sections.length > 1}
             usdRate={header.usd_rate}
+            currencies={currencies}
           />
         ))}
 
