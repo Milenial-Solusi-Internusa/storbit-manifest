@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict WcFoXxY2quGBOcjz8BnXS8gd6n9hsfucNObJU0E5dD1LTTyPl4v6eDJSEAstJVS
+\restrict sw5wv8CdOV4dLGwqT8WufF4jRTiMUL3YdXskcNVhDjfOVL3AKOzDxL8JJotVwQx
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -453,6 +453,7 @@ BEGIN
     subtotal         = COALESCE(NULLIF(p_header->>'subtotal','')::numeric, subtotal),
     tax_amount       = COALESCE(NULLIF(p_header->>'tax_amount','')::numeric, tax_amount),
     total_amount     = COALESCE(NULLIF(p_header->>'total_amount','')::numeric, total_amount),
+    vat_rate         = COALESCE(NULLIF(p_header->>'vat_rate','')::numeric, vat_rate),
     status           = COALESCE(p_header->>'status', status),
     usd_rate         = COALESCE(NULLIF(p_header->>'usd_rate','')::numeric, usd_rate),
     discount_pct     = COALESCE(NULLIF(p_header->>'discount_pct','')::numeric, discount_pct),
@@ -2667,7 +2668,8 @@ CREATE TABLE public.quotations (
     discount_pct numeric DEFAULT 0,
     margin_floor numeric DEFAULT 0,
     internal_notes text,
-    quote_date date
+    quote_date date,
+    vat_rate numeric DEFAULT 0.011
 );
 
 
@@ -8650,5 +8652,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict WcFoXxY2quGBOcjz8BnXS8gd6n9hsfucNObJU0E5dD1LTTyPl4v6eDJSEAstJVS
+\unrestrict sw5wv8CdOV4dLGwqT8WufF4jRTiMUL3YdXskcNVhDjfOVL3AKOzDxL8JJotVwQx
 

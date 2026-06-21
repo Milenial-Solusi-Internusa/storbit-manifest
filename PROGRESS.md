@@ -2,6 +2,16 @@
 
 ## 2026-06-22
 
+### Quotation — currency dropdown DB + VAT rate per service_type + PPN dynamic (Phase 2.10C)
+> Prasyarat DB (SQL Editor, sudah ada; snapshot stale): tabel `currencies`, `quotations.vat_rate` DEFAULT 0.011, RPC save_quotation terima vat_rate. `currencies_read_all` USING(true). 3 file.
+- [x] **TASK 1 (Form currency)** — state `currencies` + fetch (is_active, order code); SectionCard prop `currencies` → dropdown render code (fallback ['IDR','USD']). Kurs USD/calcRowTotal tak diubah (currency non-USD listing only, konversi USD-only out of scope)
+- [x] **TASK 2 (Form VAT)** — VAT_OPTIONS (0/1,1%/11%) + `vatDefaultFor` (customs→0.11 else 0.011) + `vatLabel` (koma). header.vat_rate default+edit-populate. Field "Tarif PPN" antara Kurs USD & Notes. Auto-default saat service_type berubah (handleServiceTypeChange + handleInquiryChange), override manual OK. tax pakai header.vat_rate; vat_rate ke p_header+insertPayload; summary label dynamic
+- [x] **TASK 3 (DetailPage on-screen)** — SELECT +vat_rate; effVat=`quot.vat_rate ?? 0.011`; tax recompute pakai effVat (bukan cuma label); sidebar label PPN dynamic koma. Dead print-area (html2canvas) tak disentuh
+- [x] **TASK 4 (PDF)** — effVat=`quot.vat_rate ?? 0.011`; tax=`tax_amount ?? round((sub-disc)*effVat)`; label PPN dynamic koma; baris VAT hidden kalau effVat===0
+- [x] Format label ID-koma konsisten Task 2/3/4 (`.replace('.',',')`)
+- [x] **Build clean** — 2550 modules, 1.65s
+- [ ] **Tes manual (belum — runtime):** dropdown currency EUR/SGD/JPY/MYR/USD/IDR muncul · service Customs→VAT 11%, lain→1,1% · override manual tersimpan+reload benar · detail+PDF label PPN dynamic · baris VAT hilang di PDF saat 0% · quote lama vat_rate null→fallback 1,1%
+
 ### Quotation PDF rewrite — html2canvas+jsPDF → @react-pdf/renderer (Phase 2.10A)
 > Vector/text PDF, pagination otomatis. Ganti raster JPEG screenshot. 3 file (deps + QuotationPDF baru + QuotationDetailPage).
 - [x] **TASK 1 (deps)** — uninstall html2canvas+jspdf (cuma dipakai di QuotationDetailPage, diverifikasi), install @react-pdf/renderer ^4.5.1

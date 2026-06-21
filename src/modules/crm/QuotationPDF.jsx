@@ -119,7 +119,8 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
   const subtotal     = quot.subtotal ?? subtotalCalc;
   const discountPct    = Number(quot.discount_pct) || 0;
   const discountAmount = Math.round(subtotal * discountPct / 100);
-  const tax        = quot.tax_amount   ?? Math.round((subtotal - discountAmount) * VAT_RATE);
+  const effVat     = Number(quot.vat_rate ?? VAT_RATE); // null (old quotes) → 1.1%
+  const tax        = quot.tax_amount   ?? Math.round((subtotal - discountAmount) * effVat);
   const grandTotal = quot.total_amount ?? ((subtotal - discountAmount) + tax);
 
   const custRows = [
@@ -217,10 +218,12 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
                 <Text style={styles.sumVal}>−Rp {rpN(discountAmount)}</Text>
               </View>
             )}
-            <View style={styles.sumRow}>
-              <Text style={styles.sumLabel}>VAT 1.1%</Text>
-              <Text style={styles.sumVal}>Rp {rpN(tax)}</Text>
-            </View>
+            {effVat !== 0 && (
+              <View style={styles.sumRow}>
+                <Text style={styles.sumLabel}>{'PPN ' + (effVat * 100).toFixed(effVat === 0.011 ? 1 : 0).replace('.', ',') + '%'}</Text>
+                <Text style={styles.sumVal}>Rp {rpN(tax)}</Text>
+              </View>
+            )}
             <View style={styles.grandRow}>
               <Text style={styles.grandLabel}>GRAND TOTAL</Text>
               <Text style={styles.grandVal}>Rp {rpN(grandTotal)}</Text>

@@ -166,7 +166,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           subtotal, tax_amount, total_amount, payment_terms_id,
           pricing_done_at, quote_sent_at, discount_pct,
           inquiry_id, prospect_id, customer_id, internal_notes, quote_date,
-          currency_code, margin_floor,
+          currency_code, margin_floor, vat_rate,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city, pic_name, pic_email, pic_phone),
           customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone)
         `)
@@ -226,7 +226,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
   const subtotal       = useMemo(() => items.reduce((s, r) => s + (Number(r.total) || 0), 0), [items]);
   const discountPct    = Number(quot?.discount_pct) || 0;
   const discountAmount = useMemo(() => Math.round(subtotal * discountPct / 100), [subtotal, discountPct]);
-  const tax            = useMemo(() => Math.round((subtotal - discountAmount) * VAT_RATE), [subtotal, discountAmount]);
+  const effVat         = Number(quot?.vat_rate ?? VAT_RATE); // null (old quotes) → 1.1%
+  const tax            = useMemo(() => Math.round((subtotal - discountAmount) * effVat), [subtotal, discountAmount, effVat]);
   const grandTotal     = useMemo(() => (subtotal - discountAmount) + tax, [subtotal, discountAmount, tax]);
 
   const totalCost = useMemo(() => items.reduce((s, r) => {
@@ -497,7 +498,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                <span style={{ color: C.inkSoft }}>VAT 1.1%</span>
+                <span style={{ color: C.inkSoft }}>{'PPN ' + (effVat * 100).toFixed(effVat === 0.011 ? 1 : 0).replace('.', ',') + '%'}</span>
                 <span style={{ fontWeight: 700 }}>{rp(tax)}</span>
               </div>
               <div style={{ height: 1, background: C.line }} />
