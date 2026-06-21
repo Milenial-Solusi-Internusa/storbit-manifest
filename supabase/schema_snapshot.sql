@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict xtNhowaUaATKJPZUCi1XeKEdykXLfHJ33oqGXnkb8dQD8fbxGB2eM8qhejTNxz7
+\restrict WcFoXxY2quGBOcjz8BnXS8gd6n9hsfucNObJU0E5dD1LTTyPl4v6eDJSEAstJVS
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -5215,13 +5215,6 @@ CREATE TRIGGER trg_gen_customer_code_ins BEFORE INSERT ON public.accounts FOR EA
 
 
 --
--- Name: accounts trg_gen_customer_code_upd; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR EACH ROW WHEN ((((new.code IS NULL) OR (new.code = ''::text)) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION public.generate_customer_code();
-
-
---
 -- Name: payment_terms trg_payment_terms_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5296,6 +5289,13 @@ CREATE TRIGGER trg_vendors_updated_at BEFORE UPDATE ON public.vendors FOR EACH R
 --
 
 CREATE TRIGGER trg_warehouses_updated_at BEFORE UPDATE ON public.warehouses FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: accounts trg_z_gen_customer_code_upd; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_z_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR EACH ROW WHEN ((((new.code IS NULL) OR (new.code = ''::text)) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION public.generate_customer_code();
 
 
 --
@@ -8650,5 +8650,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict xtNhowaUaATKJPZUCi1XeKEdykXLfHJ33oqGXnkb8dQD8fbxGB2eM8qhejTNxz7
+\unrestrict WcFoXxY2quGBOcjz8BnXS8gd6n9hsfucNObJU0E5dD1LTTyPl4v6eDJSEAstJVS
 
