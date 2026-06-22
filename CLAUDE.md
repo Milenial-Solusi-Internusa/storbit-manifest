@@ -37,9 +37,10 @@
 
 ## Current Phase & Recent Changes
 
-**Current phase: 2.10H** ✅ Complete
+**Current phase: 2.10I** ✅ Complete
 
 Recent (terbaru → lama; detail granular di git history & `PROGRESS.md`):
+- **2.10I** — Quotation: satu sumber kurs (per-baris saja). Hapus field header "Kurs USD (IDR)" + recalc-effect + summary note. `calcRowTotal(row)`: IDR→×1, SEMUA non-IDR (incl USD)→×`row.exchange_rate`. Kolom "Kurs" tampil utk semua non-IDR; ganti ke USD → pre-fill 16000 (override OK), ke EUR/dll → kosong, IDR → "—". `totalCost`/`baseItemRows` ikut per-baris. `header.usd_rate` dipertahankan di state+payload (backward-compat DB), tak di-render. Detail+PDF: subtitle "× kurs" untuk semua non-IDR pakai `item.exchange_rate`; InfoRow "Kurs USD" dihapus. 3 file. Build clean (2550 modules, 1.27s). **Belum: tes manual runtime**.
 - **2.10H** — Quotation konversi per-row multi-currency. `calcRowTotal`: IDR→1, USD→`header.usd_rate`, lainnya (EUR/SGD/JPY/MYR)→`row.exchange_rate`. Form: kolom "Kurs" (input muncul HANYA non-IDR/non-USD, else "—") setelah Currency; ganti currency reset kurs (IDR→1/USD→''/lain→'' user isi); subtitle total + `exchange_rate` preserved di edit-reconstruction & baseItemRows. Detail + PDF: subtitle "× kurs {rate}" untuk non-IDR/non-USD. 3 file. Build clean (2550 modules, 1.25s). **Belum: tes manual runtime** (EUR 320×1×kurs 17.000 → Rp 5.440.000; input kurs dinamis; USD/IDR tetap).
 - **2.10G** — CRM Dashboard fit lebar: `D.wrap` `maxWidth:1280` → `"100%"` (hapus cap penyebab whitespace L/R di layar lebar) + `D.root` padding L/R `28px` → `20px` (top/bottom 26/44 tetap). Chart (`nx-grid-2` 1fr/1fr) kini stretch full-width. Hanya CRMDashboardPage.jsx (line 184-185). Build clean (2550 modules, 1.21s).
 - **2.10F** — `.nexus-shell-bg` background cream gradient → `#ffffff` (app shell putih global). *(pushed)*
