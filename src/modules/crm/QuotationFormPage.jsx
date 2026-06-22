@@ -92,6 +92,7 @@ const freshRow = () => ({
   unit_price:  0,
   qty:         1,
   unit_label:  'Per 20Ft',
+  exchange_rate: 1,
   total:       0,
 });
 
@@ -104,7 +105,11 @@ const freshSection = (name = 'ORIGIN CHARGES') => ({
 function calcRowTotal(row, usdRate) {
   const price = Number(row.unit_price) || 0;
   const qty   = Number(row.qty) || 0;
-  const rate  = row.currency === 'USD' ? (Number(usdRate) || DEFAULT_USD) : 1;
+  // IDR → 1; USD → header.usd_rate; lainnya (EUR/SGD/JPY/MYR/…) → kurs per baris.
+  let rate;
+  if (row.currency === 'IDR')      rate = 1;
+  else if (row.currency === 'USD') rate = Number(usdRate) || DEFAULT_USD;
+  else                             rate = Number(row.exchange_rate) || 0;
   return Math.round(price * qty * rate);
 }
 
@@ -193,6 +198,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
               <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Description</th>
               <th className="no-print" style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Cost Price</th>
               <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Currency</th>
+              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Kurs</th>
               <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Sell Price</th>
               <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Unit Label</th>
               <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>QTY</th>
@@ -219,6 +225,16 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                     {currencyCodes.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </td>
+                <td style={{ padding: '6px 6px', width: 96 }}>
+                  {row.currency !== 'IDR' && row.currency !== 'USD' ? (
+                    <input type="number" min="0" step="any" value={row.exchange_rate ?? ''}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => onUpdateRow(section.id, row.id, 'exchange_rate', e.target.value.replace(/^0+(?=\d)/, ''))}
+                      style={cellInp({ textAlign: 'right' })} placeholder="kurs ke IDR" />
+                  ) : (
+                    <span style={{ display: 'block', textAlign: 'center', color: C.inkFaint, fontSize: 11 }}>—</span>
+                  )}
+                </td>
                 <td style={{ padding: '6px 6px', width: 110 }}>
                   <input type="number" min="0" value={row.unit_price}
                     onFocus={(e) => e.target.select()}
@@ -244,6 +260,11 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                   {row.currency === 'USD' && (
                     <div style={{ fontSize: 10, color: C.inkFaint, fontWeight: 400 }}>
                       USD {(Number(row.unit_price) || 0).toLocaleString('id-ID')} × {row.qty}
+                    </div>
+                  )}
+                  {row.currency !== 'USD' && row.currency !== 'IDR' && (
+                    <div style={{ fontSize: 10, color: C.inkFaint, fontWeight: 400 }}>
+                      {row.currency} {(Number(row.unit_price) || 0).toLocaleString('id-ID')} × {row.qty} × kurs {(Number(row.exchange_rate) || 0).toLocaleString('id-ID')}
                     </div>
                   )}
                 </td>
@@ -366,6 +387,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             unit_price:  row.unit_price  || 0,
             unit_label:  row.unit_label  || 'Per 20Ft',
             qty:         row.qty         || 1,
+            exchange_rate: row.exchange_rate ?? 1,
             total:       row.total       || 0,
           });
         });
@@ -448,8 +470,13 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
         rows: sec.rows.map(row => {
           if (row.id !== rowId) return row;
           const updated = { ...row, [key]: value };
+          // Ganti currency → reset kurs per baris: IDR→1, USD→pakai header.usd_rate
+          // (input kurs disembunyikan), lainnya→kosong (user isi manual).
+          if (key === 'currency') {
+            updated.exchange_rate = value === 'IDR' ? 1 : '';
+          }
           // Recalc sell total only — cost_price does not affect it
-          if (['unit_price', 'qty', 'currency'].includes(key)) {
+          if (['unit_price', 'qty', 'currency', 'exchange_rate'].includes(key)) {
             updated.total = calcRowTotal(updated, rate);
           }
           return updated;
@@ -513,7 +540,9 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             unit_price:    Number(row.unit_price) || 0,
             unit_label:    row.unit_label,
             currency:      row.currency,
-            exchange_rate: row.currency === 'USD' ? (Number(header.usd_rate) || DEFAULT_USD) : 1,
+            exchange_rate: row.currency === 'USD' ? (Number(header.usd_rate) || DEFAULT_USD)
+                         : row.currency === 'IDR' ? 1
+                         : (Number(row.exchange_rate) || 1),
             total:         Number(row.total)      || 0,
             cost_price:    Number(row.cost_price) || 0,
           }))
