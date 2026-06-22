@@ -1043,7 +1043,9 @@ Output:
 
 | 2.10E | **CRMDashboardPage — background page putih (fix belang).** Background area konten dashboard (`D.root.background`, [CRMDashboardPage.jsx:184](src/modules/crm/CRMDashboardPage.jsx#L184), dipakai `<div className="nx-page-pad" style={D.root}>` line ~2162) diubah `#F7F7F8` → `#ffffff` supaya tidak belang dgn card putih (#fff) di dalamnya. Hanya 1 properti diubah. **TIDAK disentuh:** navy #144682 (cardHead/sidebar/topbar), card chart, padding (26/28/44 normal, tak berlebihan). Catatan: `#F6EFE3` di App.jsx (line 2011-2012) hanya overlay loading AppLauncher, bukan surface dashboard — tak terkait. Build clean (2550 modules, 1.24s). | ✅ Complete |
 
-Current phase: **Phase 2.10E** ✅ Complete
+| 2.10F | **`.nexus-shell-bg` → background putih (hapus frame cream global).** App.jsx `<style>` block (~line 1753-1757), class `.nexus-shell-bg` (dipakai `<main>` line 1839, bingkai cream di sekeliling konten via padding `nexus-main-surface`). Nilai LAMA: `background: radial-gradient(circle at top left, rgba(200,239,217,0.26), transparent 34rem), linear-gradient(135deg, #FBF7EF 0%, #F6F1E8 42%, #F8FAF7 100%);` → BARU: `background: #ffffff;`. Hanya 1 class diubah; tak ada hal lain di App.jsx/file lain disentuh. **⚠️ Global:** class ini surface SEMUA modul (bukan cuma CRM) → seluruh app shell kini putih (frame cream hilang di semua halaman, bukan hanya CRM Dashboard). Build clean (2550 modules, 1.22s). | ✅ Complete |
+
+Current phase: **Phase 2.10F** ✅ Complete
 
 > **⚠️ DB — migrasi data lama `activities.type='prospecting'` (Phase 2.9K — JALANKAN MANUAL, belum dieksekusi):**
 > ```sql
