@@ -409,7 +409,7 @@ export default function CRMReportPage() {
   ];
 
   return (
-    <div style={{ fontFamily: FONT_BODY, background: C.page, backgroundImage: "radial-gradient(rgba(20,70,130,0.04) 1px, transparent 1px)", backgroundSize: "22px 22px", color: C.ink, minHeight: "100vh" }}>
+    <div style={{ fontFamily: FONT_BODY, background: C.page, backgroundImage: "radial-gradient(rgba(20,70,130,0.04) 1px, transparent 1px)", backgroundSize: "22px 22px", color: C.ink }}>
       <style>{CSS}</style>
 
       {/* ============ FILTER BAR ============ */}
@@ -806,8 +806,8 @@ const stTh = (align) => ({
   padding: "12px 12px", textAlign: align, whiteSpace: "nowrap", borderBottom: `1px solid ${C.line}`, userSelect: "none",
 });
 const st = {
-  filterBar: { position: "sticky", top: 0, zIndex: 30, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", borderBottom: `1px solid ${C.line}`, boxShadow: "0 6px 20px rgba(20,70,130,0.08)" },
-  filterInner: { display: "flex", alignItems: "center", gap: 14, padding: "14px 24px", maxWidth: 1440, margin: "0 auto", flexWrap: "wrap" },
+  filterBar: { background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", borderBottom: `1px solid ${C.line}`, boxShadow: "0 6px 20px rgba(20,70,130,0.08)" },
+  filterInner: { display: "flex", alignItems: "center", gap: 14, padding: "14px 24px", maxWidth: "100%", margin: "0 auto", flexWrap: "wrap" },
   pillGroup: { display: "flex", alignItems: "center", gap: 4, padding: 4, background: C.subtle, borderRadius: 12, border: `1px solid ${C.line}` },
   pill: { fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 9, border: "none", cursor: "pointer", transition: "all .15s", whiteSpace: "nowrap" },
   entityPill: { fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", padding: "6px 12px", borderRadius: 9, border: "1px solid", cursor: "pointer", transition: "all .15s" },
@@ -819,7 +819,7 @@ const st = {
   cb: { width: 16, height: 16, accentColor: C.navy, cursor: "pointer" },
   entityDot: { width: 9, height: 9, borderRadius: 9, flex: "0 0 auto" },
 
-  body: { maxWidth: 1440, margin: "0 auto", padding: "22px 24px 0" },
+  body: { maxWidth: "100%", margin: "0 auto", padding: "22px 24px 0" },
 
   kpiGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 16, marginBottom: 18 },
   kpiCard: { position: "relative", borderRadius: 16, padding: "17px 17px 18px", boxShadow: CARD_SHADOW, overflow: "hidden", color: "#fff", transition: "transform .18s ease, box-shadow .18s ease" },
