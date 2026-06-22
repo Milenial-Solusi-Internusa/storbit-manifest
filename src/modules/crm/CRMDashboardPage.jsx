@@ -181,8 +181,8 @@ const VISIT_DOT_PASTEL = {
 
 /* ---------- style tokens ---------- */
 const D = {
-  root: { fontFamily: "'Inter', system-ui, sans-serif", background: "#ffffff", minHeight: "100%", padding: "26px 28px 44px", boxSizing: "border-box", color: "#1A2330" },
-  wrap: { maxWidth: 1280, margin: "0 auto" },
+  root: { fontFamily: "'Inter', system-ui, sans-serif", background: "#ffffff", minHeight: "100%", padding: "26px 20px 44px", boxSizing: "border-box", color: "#1A2330" },
+  wrap: { maxWidth: "100%", margin: "0 auto" },
 
   topRow: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 18, marginBottom: 22, flexWrap: "wrap" },
   crumbs: { display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#9AA0AC", marginBottom: 8 },

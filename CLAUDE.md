@@ -37,9 +37,10 @@
 
 ## Current Phase & Recent Changes
 
-**Current phase: 2.10F** ✅ Complete
+**Current phase: 2.10G** ✅ Complete
 
 Recent (terbaru → lama; detail granular di git history & `PROGRESS.md`):
+- **2.10G** — CRM Dashboard fit lebar: `D.wrap` `maxWidth:1280` → `"100%"` (hapus cap penyebab whitespace L/R di layar lebar) + `D.root` padding L/R `28px` → `20px` (top/bottom 26/44 tetap). Chart (`nx-grid-2` 1fr/1fr) kini stretch full-width. Hanya CRMDashboardPage.jsx (line 184-185). Build clean (2550 modules, 1.21s).
 - **2.10F** — `.nexus-shell-bg` background cream gradient → `#ffffff` (app shell putih global). *(pushed)*
 - **2.10E** — CRM Dashboard `D.root` bg `#F7F7F8` → `#ffffff` (fix belang vs card).
 - **2.10D** — `UNIT_LABELS` quotation +3 (Per CBM-Up, Per 1-3 CBM, Per Waybill).
