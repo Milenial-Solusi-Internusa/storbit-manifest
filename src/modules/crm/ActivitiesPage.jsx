@@ -690,18 +690,6 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           activity_id: created.id, changed_by: profile.id,
           from_status: null, to_status: 'todo',
         }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] create', logErr); });
-        // fire-and-forget notif to assignee (skip self-assign / null)
-        if (draft.assigned_to && draft.assigned_to !== profile.id) {
-          supabase.from('notifications').insert({
-            company_id:     profile.company_id,
-            user_id:        draft.assigned_to,
-            event_type:     'activity_assigned',
-            title:          'Task baru ditugaskan',
-            body:           `${profile.full_name || 'Seseorang'} menugaskan task "${TYPE_META[draft.type]?.label || draft.type}" kepada kamu`,
-            reference_type: 'activity',
-            reference_id:   created.id,
-          }).then(({ error: nErr }) => { if (nErr) console.debug('[notifications] activity_assigned', nErr.message); });
-        }
       }
       showToast?.('Task berhasil disimpan');
       setFormOpen(false);
@@ -724,18 +712,6 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       activity_id: row.id, changed_by: profile.id,
       from_status: row.status || null, to_status: 'done',
     }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] done', logErr); });
-    // fire-and-forget notif to creator (skip if self completed / null)
-    if (row.created_by && row.created_by !== profile.id) {
-      supabase.from('notifications').insert({
-        company_id:     row.company_id || profile.company_id,
-        user_id:        row.created_by,
-        event_type:     'activity_done',
-        title:          'Task selesai',
-        body:           `Task "${TYPE_META[row.type]?.label || row.type}" telah diselesaikan`,
-        reference_type: 'activity',
-        reference_id:   row.id,
-      }).then(({ error: nErr }) => { if (nErr) console.debug('[notifications] activity_done', nErr.message); });
-    }
     showToast?.('Aktivitas ditandai selesai');
     fetchActivities();
     // Close the detail modal if open (no-op when invoked from a list row).
