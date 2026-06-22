@@ -12,6 +12,7 @@ import {
   ClipboardList, LayoutList, Archive, UserX, Activity,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
+import { supabase } from './lib/supabase';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
@@ -1211,8 +1212,54 @@ export default function StorbitManifest() {
   const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
-  const { role: authRole, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading } = useAuth();
+  const { role: authRole, erpRoles, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading } = useAuth();
   const role = authRole || 'management';
+
+  // ── Navbar: Pending Approval badge (HRGA approver inbox count) ──────────────
+  // Lightweight count: HRGA requests in-progress (submitted/under_review) whose
+  // current-level approver_role matches one of the current user's ERP roles.
+  // (hrga_request_approvals is an audit trail; pending is derived from
+  //  hrga_requests.current_level × hrga_approval_configs role mapping.)
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const myRoleCodesKey = (erpRoles || []).map(r => r.roles?.code).filter(Boolean).sort().join(',');
+  useEffect(() => {
+    if (!profile?.id) return;
+    let cancelled = false;
+    const myRoles = myRoleCodesKey ? myRoleCodesKey.split(',') : [];
+    const isSuper = authRole === 'super_admin';
+
+    const fetchPending = async () => {
+      if (!myRoles.length) { if (!cancelled) setPendingApprovalCount(0); return; }
+      try {
+        // Levels (per request type) this user is the approver for.
+        let cfgQ = supabase.from('hrga_approval_configs')
+          .select('request_type_id, level, approver_role').in('approver_role', myRoles);
+        if (!isSuper) cfgQ = cfgQ.eq('company_id', profile.company_id);
+        const { data: cfgs, error: cfgErr } = await cfgQ;
+        if (cfgErr) throw cfgErr;
+        if (!cfgs?.length) { if (!cancelled) setPendingApprovalCount(0); return; }
+        const approveSet = new Set(cfgs.map(c => `${c.request_type_id}|${c.level}`));
+
+        // In-progress requests awaiting approval (lightweight: ids only).
+        let reqQ = supabase.from('hrga_requests')
+          .select('request_type_id, current_level')
+          .in('status', ['submitted', 'under_review']).is('deleted_at', null).limit(1000);
+        if (!isSuper) reqQ = reqQ.eq('company_id', profile.company_id);
+        const { data: reqs, error: reqErr } = await reqQ;
+        if (reqErr) throw reqErr;
+
+        const n = (reqs || []).filter(r => approveSet.has(`${r.request_type_id}|${r.current_level}`)).length;
+        if (!cancelled) setPendingApprovalCount(n);
+      } catch (e) {
+        console.debug('[pendingApproval] count failed:', e?.message || e);
+        if (!cancelled) setPendingApprovalCount(0);
+      }
+    };
+
+    fetchPending();
+    const iv = setInterval(fetchPending, 60000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [profile?.id, profile?.company_id, authRole, myRoleCodesKey]);
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.
@@ -1893,13 +1940,20 @@ export default function StorbitManifest() {
                   <ChevronsUpDown size={11} style={{ color: PASTEL.inkMute }}/>
                 </button>
 
-                {/* Pending Approval */}
-                <button type="button" onClick={() => navigateTo('approvals')}
-                  className="nexus-cmd-btn inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
+                {/* Pending Approval — navigates to the real HRGA approver inbox
+                    ('approvals' Approval Center is still a ComingSoon placeholder). */}
+                <button type="button" onClick={() => navigateTo('hrga-pending-approval')}
+                  className="nexus-cmd-btn relative inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
                   style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', color: PASTEL.inkSoft, height: '36px' }}>
                   <ClipboardCheck size={13} style={{ color: PASTEL.inkMute }}/>
                   <span className="hidden xl:inline">Pending Approval</span>
                   <span className="xl:hidden">Approvals</span>
+                  {pendingApprovalCount > 0 && (
+                    <span className="absolute inline-flex items-center justify-center font-bold"
+                      style={{ top: -6, right: -6, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#E85A1E', color: '#fff', fontSize: 10, lineHeight: 1, boxShadow: '0 1px 3px rgba(232,90,30,.4)' }}>
+                      {pendingApprovalCount > 99 ? '99+' : pendingApprovalCount}
+                    </span>
+                  )}
                 </button>
 
                 {/* Notifications */}
