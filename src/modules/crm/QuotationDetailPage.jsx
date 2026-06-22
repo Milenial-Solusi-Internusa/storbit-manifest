@@ -368,7 +368,6 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
               <InfoRow label="Tanggal" value={fmtDate(quot.created_at)} />
               <InfoRow label="Valid Until" value={fmtDate(quot.valid_until)} />
               <InfoRow label="Payment Terms" value={paymentTermName} />
-              <InfoRow label="Kurs USD" value={quot.usd_rate ? `Rp ${Number(quot.usd_rate).toLocaleString('id-ID')} / USD` : '—'} />
               <InfoRow label="Diskon" value={`${discountPct}%`} />
               <InfoRow label="Status" value={<StatusBadge status={quot.status} />} />
               {quot.notes && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Notes" value={quot.notes} /></div>}
@@ -424,14 +423,9 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                           </td>
                           <td style={{ padding: '9px 8px', textAlign: 'center', color: C.inkSoft, fontSize: 12 }}>{row.unit_label || '—'}</td>
                           <td style={{ padding: '9px 8px', textAlign: 'center', color: C.ink, fontWeight: 600 }}>{row.qty || 1}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: row.currency === 'USD' ? C.orange : C.ink, whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: row.currency !== 'IDR' ? C.orange : C.ink, whiteSpace: 'nowrap' }}>
                             {rp(row.total)}
-                            {row.currency === 'USD' && (
-                              <div style={{ fontSize: 10, color: C.inkFaint, fontWeight: 400 }}>
-                                × kurs {(Number(row.exchange_rate) || 1).toLocaleString('id-ID')}
-                              </div>
-                            )}
-                            {row.currency !== 'USD' && row.currency !== 'IDR' && (
+                            {row.currency !== 'IDR' && (
                               <div style={{ fontSize: 10, color: C.inkFaint, fontWeight: 400 }}>
                                 × kurs {(Number(row.exchange_rate) || 1).toLocaleString('id-ID')}
                               </div>

@@ -102,14 +102,11 @@ const freshSection = (name = 'ORIGIN CHARGES') => ({
   rows: [freshRow()],
 });
 
-function calcRowTotal(row, usdRate) {
+function calcRowTotal(row) {
   const price = Number(row.unit_price) || 0;
   const qty   = Number(row.qty) || 0;
-  // IDR → 1; USD → header.usd_rate; lainnya (EUR/SGD/JPY/MYR/…) → kurs per baris.
-  let rate;
-  if (row.currency === 'IDR')      rate = 1;
-  else if (row.currency === 'USD') rate = Number(usdRate) || DEFAULT_USD;
-  else                             rate = Number(row.exchange_rate) || 0;
+  // IDR → ×1; SEMUA currency lain (USD/EUR/SGD/JPY/MYR/…) → ×kurs per baris (exchange_rate).
+  const rate  = row.currency === 'IDR' ? 1 : (Number(row.exchange_rate) || 0);
   return Math.round(price * qty * rate);
 }
 
@@ -152,7 +149,7 @@ async function generateQuotationNo(companyId, companyCode) {
 }
 
 // ─── Section component ────────────────────────────────────────────────────
-function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow, onRemoveSection, canRemove, usdRate, currencies }) {
+function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow, onRemoveSection, canRemove, currencies }) {
   const currencyCodes = (currencies && currencies.length) ? currencies.map(c => c.code) : CURRENCIES;
   const cellInp = (extra = {}) => ({
     width: '100%', height: 34, borderRadius: 7, border: `1px solid ${C.line}`,
@@ -226,7 +223,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                   </select>
                 </td>
                 <td style={{ padding: '6px 6px', width: 96 }}>
-                  {row.currency !== 'IDR' && row.currency !== 'USD' ? (
+                  {row.currency !== 'IDR' ? (
                     <input type="number" min="0" step="any" value={row.exchange_rate ?? ''}
                       onFocus={(e) => e.target.select()}
                       onChange={(e) => onUpdateRow(section.id, row.id, 'exchange_rate', e.target.value.replace(/^0+(?=\d)/, ''))}
@@ -255,14 +252,9 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                     onChange={(e) => onUpdateRow(section.id, row.id, 'qty', e.target.value.replace(/^0+(?=\d)/, ''))}
                     style={cellInp({ textAlign: 'center' })} />
                 </td>
-                <td style={{ padding: '6px 10px', width: 120, fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap', color: row.currency === 'USD' ? C.orange : C.ink }}>
+                <td style={{ padding: '6px 10px', width: 120, fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap', color: row.currency !== 'IDR' ? C.orange : C.ink }}>
                   {rp(row.total)}
-                  {row.currency === 'USD' && (
-                    <div style={{ fontSize: 10, color: C.inkFaint, fontWeight: 400 }}>
-                      USD {(Number(row.unit_price) || 0).toLocaleString('id-ID')} × {row.qty}
-                    </div>
-                  )}
-                  {row.currency !== 'USD' && row.currency !== 'IDR' && (
+                  {row.currency !== 'IDR' && (
                     <div style={{ fontSize: 10, color: C.inkFaint, fontWeight: 400 }}>
                       {row.currency} {(Number(row.unit_price) || 0).toLocaleString('id-ID')} × {row.qty} × kurs {(Number(row.exchange_rate) || 0).toLocaleString('id-ID')}
                     </div>
@@ -400,19 +392,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, quotation?.id]);
 
-  // Recalc all row totals when usd_rate changes
-  useEffect(() => {
-    const rate = Number(header.usd_rate) || DEFAULT_USD;
-    setSections(prev => prev.map(sec => ({
-      ...sec,
-      rows: sec.rows.map(row => ({
-        ...row,
-        total: calcRowTotal(row, rate),
-      })),
-    })));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [header.usd_rate]);
-
   const setH = (k) => (e) => setHeader(h => ({ ...h, [k]: e.target.value }));
 
   const handleInquiryChange = (e) => {
@@ -462,7 +441,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
   };
 
   const updateRow = (secId, rowId, key, value) => {
-    const rate = Number(header.usd_rate) || DEFAULT_USD;
     setSections(s => s.map(sec => {
       if (sec.id !== secId) return sec;
       return {
@@ -470,14 +448,14 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
         rows: sec.rows.map(row => {
           if (row.id !== rowId) return row;
           const updated = { ...row, [key]: value };
-          // Ganti currency → reset kurs per baris: IDR→1, USD→pakai header.usd_rate
-          // (input kurs disembunyikan), lainnya→kosong (user isi manual).
+          // Ganti currency → reset kurs per baris: IDR→1, USD→pre-fill 16000
+          // (user bisa override), lainnya→kosong (user isi manual).
           if (key === 'currency') {
-            updated.exchange_rate = value === 'IDR' ? 1 : '';
+            updated.exchange_rate = value === 'IDR' ? 1 : value === 'USD' ? DEFAULT_USD : '';
           }
           // Recalc sell total only — cost_price does not affect it
           if (['unit_price', 'qty', 'currency', 'exchange_rate'].includes(key)) {
-            updated.total = calcRowTotal(updated, rate);
+            updated.total = calcRowTotal(updated);
           }
           return updated;
         }),
@@ -500,16 +478,15 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
 
   // Cost totals — internal only, never printed
   const totalCost = useMemo(() => {
-    const rate = Number(header.usd_rate) || DEFAULT_USD;
     return sections.reduce((acc, sec) =>
       acc + sec.rows.reduce((s, row) => {
         const cost  = Number(row.cost_price) || 0;
         const qty   = Number(row.qty) || 0;
-        const kurs  = row.currency === 'USD' ? rate : 1;
+        const kurs  = row.currency === 'IDR' ? 1 : (Number(row.exchange_rate) || 0);
         return s + Math.round(cost * qty * kurs);
       }, 0)
     , 0);
-  }, [sections, header.usd_rate]);
+  }, [sections]);
 
   const grossProfit   = subtotal - totalCost;
   const marginPct     = subtotal > 0 ? (grossProfit / subtotal * 100).toFixed(1) : '0.0';
@@ -540,9 +517,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             unit_price:    Number(row.unit_price) || 0,
             unit_label:    row.unit_label,
             currency:      row.currency,
-            exchange_rate: row.currency === 'USD' ? (Number(header.usd_rate) || DEFAULT_USD)
-                         : row.currency === 'IDR' ? 1
-                         : (Number(row.exchange_rate) || 1),
+            exchange_rate: row.currency === 'IDR' ? 1 : (Number(row.exchange_rate) || 1),
             total:         Number(row.total)      || 0,
             cost_price:    Number(row.cost_price) || 0,
           }))
@@ -761,15 +736,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
                 </select>
               </Field>
 
-              <Field label="Kurs USD (IDR)">
-                <input
-                  type="number" min="1" value={header.usd_rate}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => setHeader(h => ({ ...h, usd_rate: e.target.value.replace(/^0+(?=\d)/, '') }))}
-                  style={inpStyle({ textAlign: 'right' })}
-                />
-              </Field>
-
               <Field label="Tarif PPN">
                 <select
                   value={header.vat_rate}
@@ -869,12 +835,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
               </div>
             </div>
 
-            {header.usd_rate && Number(header.usd_rate) !== DEFAULT_USD && (
-              <div style={{ fontSize: 11.5, color: C.inkFaint, marginBottom: 14, padding: '8px 10px', background: C.orangeBg, borderRadius: 7, border: `1px solid ${C.orangeBd}` }}>
-                Kurs USD: Rp {Number(header.usd_rate).toLocaleString('id-ID')} / USD
-              </div>
-            )}
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <button onClick={() => handleSave(false)} disabled={saving}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13.5, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .7 : 1 }}>
@@ -897,9 +857,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
               <span>{sections.length} section</span>
               <span>{sections.reduce((s, sec) => s + sec.rows.length, 0)} baris</span>
             </div>
-            <div style={{ fontSize: 12, color: C.inkFaint }}>
-              USD rows pakai kurs Rp {Number(header.usd_rate || DEFAULT_USD).toLocaleString('id-ID')}
-            </div>
           </div>
         </div>
       </div>
@@ -916,7 +873,6 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             onUpdateRow={updateRow}
             onRemoveSection={removeSection}
             canRemove={sections.length > 1}
-            usdRate={header.usd_rate}
             currencies={currencies}
           />
         ))}

@@ -196,7 +196,7 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
                 <Text style={[styles.td, styles.cUnit]}>{r.unit_label || '—'}</Text>
                 <Text style={[styles.td, styles.cQty]}>{r.qty || 1}</Text>
                 <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>Rp {rpN(r.total)}
-                  {r.currency !== 'IDR' && r.currency !== 'USD' && (
+                  {r.currency !== 'IDR' && (
                     <Text style={{ fontFamily: 'Helvetica', fontSize: 6.5, color: '#777' }}>{'\n'}× kurs {rpN(r.exchange_rate)}</Text>
                   )}
                 </Text>
