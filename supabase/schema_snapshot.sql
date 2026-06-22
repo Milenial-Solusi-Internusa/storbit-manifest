@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict sw5wv8CdOV4dLGwqT8WufF4jRTiMUL3YdXskcNVhDjfOVL3AKOzDxL8JJotVwQx
+\restrict uN1uIOAWI6pPHT2nEQpOb3nRdhIvLFPf0fYJv9rLYINJft0pP1x62ahsYlt6eES
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -7959,6 +7959,33 @@ CREATE POLICY network_update ON public.asset_network FOR UPDATE USING ((company_
 
 
 --
+-- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notifications notifications_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notifications_insert ON public.notifications FOR INSERT TO authenticated WITH CHECK (true);
+
+
+--
+-- Name: notifications notifications_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notifications_read ON public.notifications FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+
+
+--
+-- Name: notifications notifications_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notifications_update ON public.notifications FOR UPDATE TO authenticated USING ((user_id = auth.uid()));
+
+
+--
 -- Name: payment_terms; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8652,5 +8679,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict sw5wv8CdOV4dLGwqT8WufF4jRTiMUL3YdXskcNVhDjfOVL3AKOzDxL8JJotVwQx
+\unrestrict uN1uIOAWI6pPHT2nEQpOb3nRdhIvLFPf0fYJv9rLYINJft0pP1x62ahsYlt6eES
 

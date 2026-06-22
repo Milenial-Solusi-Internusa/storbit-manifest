@@ -2,6 +2,19 @@
 
 ## 2026-06-22
 
+### Notification bell + producer notifikasi (Phase 2.10K)
+> 3 file (App.jsx, ActivitiesPage.jsx, useHrgaRequests.js). RLS `notifications_*` ditambah via SQL Editor. Tabel `notifications.company_id` NOT NULL → disertakan di tiap insert.
+- [x] **TASK 1 (App.jsx bell)** — state notifications/unreadCount/notifOpen; fetch (user_id=me, is_read=false, order desc, limit 20) saat mount + setInterval 60s + cleanup; badge orange #E85A1E (>99→"99+"); dropdown 340px max-h scroll z-50 + overlay click-outside + Escape; header "Notifikasi" + "Tandai semua dibaca" (update is_read semua unread); item = Lucide icon per event_type + title bold + body + relative-time; klik → optimistic mark-read + navigate (hrga_request→hrga-semua-request, activity→crm-calls); empty state
+- [x] **Fix bug 2.10J** — badge Pending Approval status `['submitted','under_review']` → `['submitted','in_progress']` (under_review tak ada di enum)
+- [x] **TASK 2A** — ActivitiesPage CREATE sukses → notif assignee (skip self/null) `activity_assigned`, company_id profile
+- [x] **TASK 2B** — mark-done → notif creator (skip self) `activity_done`, company_id row||profile
+- [x] **TASK 2C** — useHrgaRequests submit Step 7 (reuse recipientIds approver) → notif `hrga_approval_needed` (skip submitter), body pakai rtRow.type_name (+ditambah ke select), company_id profile
+- [x] **TASK 2D** — submitApproval terminal (approved final/rejected) → notif requester (skip self) `hrga_approved`/`hrga_rejected`, +requester_id,subject ke req select, company_id req
+- [x] Semua producer fire-and-forget (try-catch → console.debug, tak block UI/tak toast)
+- [x] **Build clean** — 2550 modules, 1.26s
+- [ ] Catatan: notif intermediate-level (next approver saat in_progress) TIDAK diproduksi (di luar scope; submit hanya notif level-1). Isolasi notif = RLS DB (baru ditambah) + filter client `user_id`
+- [ ] **Tes manual (belum — runtime):** bell muncul; submit HRGA→approver dapat notif; approve/reject→requester dapat; assign activity ke orang lain→mereka dapat; klik notif→mark read badge turun; "tandai semua dibaca"; empty state
+
 ### Quotation — currency dropdown DB + VAT rate per service_type + PPN dynamic (Phase 2.10C)
 > Prasyarat DB (SQL Editor, sudah ada; snapshot stale): tabel `currencies`, `quotations.vat_rate` DEFAULT 0.011, RPC save_quotation terima vat_rate. `currencies_read_all` USING(true). 3 file.
 - [x] **TASK 1 (Form currency)** — state `currencies` + fetch (is_active, order code); SectionCard prop `currencies` → dropdown render code (fallback ['IDR','USD']). Kurs USD/calcRowTotal tak diubah (currency non-USD listing only, konversi USD-only out of scope)
