@@ -1243,7 +1243,7 @@ export default function StorbitManifest() {
         // In-progress requests awaiting approval (lightweight: ids only).
         let reqQ = supabase.from('hrga_requests')
           .select('request_type_id, current_level')
-          .in('status', ['submitted', 'in_progress']).is('deleted_at', null).limit(1000);
+          .in('status', ['submitted', 'under_review']).is('deleted_at', null).limit(1000);
         if (!isSuper) reqQ = reqQ.eq('company_id', profile.company_id);
         const { data: reqs, error: reqErr } = await reqQ;
         if (reqErr) throw reqErr;
@@ -1260,83 +1260,6 @@ export default function StorbitManifest() {
     const iv = setInterval(fetchPending, 60000);
     return () => { cancelled = true; clearInterval(iv); };
   }, [profile?.id, profile?.company_id, authRole, myRoleCodesKey]);
-
-  // ── Navbar: Notifications bell ──────────────────────────────────────────────
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount]     = useState(0);
-  const [notifOpen, setNotifOpen]         = useState(false);
-
-  const NOTIF_ICON = {
-    activity_assigned:    Activity,
-    activity_done:        CheckCircle2,
-    hrga_approval_needed: ClipboardCheck,
-    hrga_approved:        CheckCircle2,
-    hrga_rejected:        X,
-  };
-  const notifTimeAgo = (iso) => {
-    if (!iso) return '';
-    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-    if (d < 60)    return 'baru saja';
-    if (d < 3600)  return `${Math.floor(d / 60)} menit lalu`;
-    if (d < 86400) return `${Math.floor(d / 3600)} jam lalu`;
-    return `${Math.floor(d / 86400)} hari lalu`;
-  };
-
-  const fetchNotifications = useCallback(async () => {
-    if (!profile?.id) return;
-    try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('id, title, body, event_type, created_at, reference_type, reference_id')
-        .eq('user_id', profile.id)
-        .eq('is_read', false)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      setNotifications(data || []);
-      setUnreadCount((data || []).length);
-    } catch (e) {
-      console.debug('[notifications] fetch failed:', e?.message || e);
-    }
-  }, [profile?.id]);
-
-  useEffect(() => {
-    if (!profile?.id) return;
-    fetchNotifications();
-    const iv = setInterval(fetchNotifications, 60000);
-    return () => clearInterval(iv);
-  }, [profile?.id, fetchNotifications]);
-
-  useEffect(() => {
-    if (!notifOpen) return;
-    const onKey = (e) => { if (e.key === 'Escape') setNotifOpen(false); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [notifOpen]);
-
-  const markAllNotifRead = useCallback(async () => {
-    if (!profile?.id) return;
-    setNotifications([]); setUnreadCount(0); // optimistic
-    try {
-      await supabase.from('notifications')
-        .update({ is_read: true, read_at: new Date().toISOString() })
-        .eq('user_id', profile.id).eq('is_read', false);
-    } catch (e) { console.debug('[notifications] markAll failed:', e?.message || e); }
-  }, [profile?.id]);
-
-  const handleNotifClick = useCallback((n) => {
-    setNotifications(prev => prev.filter(x => x.id !== n.id));
-    setUnreadCount(c => Math.max(0, c - 1));
-    setNotifOpen(false);
-    supabase.from('notifications')
-      .update({ is_read: true, read_at: new Date().toISOString() })
-      .eq('id', n.id)
-      .then(({ error }) => { if (error) console.debug('[notifications] markRead failed:', error.message); });
-    const dest = n.reference_type === 'hrga_request' ? 'hrga-semua-request'
-               : n.reference_type === 'activity'     ? 'crm-calls'
-               : null;
-    if (dest) navigateTo(dest);
-  }, [navigateTo]);
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.
@@ -2034,57 +1957,11 @@ export default function StorbitManifest() {
                 </button>
 
                 {/* Notifications */}
-                <div className="relative shrink-0">
-                  <button type="button" title="Notifications"
-                    onClick={() => setNotifOpen(o => !o)}
-                    className="nexus-cmd-btn relative inline-flex items-center justify-center rounded-[10px] border"
-                    style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', width: '36px', height: '36px' }}>
-                    <Bell size={14} style={{ color: PASTEL.inkSoft }}/>
-                    {unreadCount > 0 && (
-                      <span className="absolute inline-flex items-center justify-center font-bold"
-                        style={{ top: -6, right: -6, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#E85A1E', color: '#fff', fontSize: 10, lineHeight: 1, boxShadow: '0 1px 3px rgba(232,90,30,.4)' }}>
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
-                  </button>
-                  {notifOpen && (
-                    <>
-                      <div onClick={() => setNotifOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                      <div style={{ position: 'absolute', top: 44, right: 0, width: 340, maxHeight: 420, overflowY: 'auto', background: '#fff', border: '1px solid #E8E0D4', borderRadius: 12, boxShadow: '0 12px 30px rgba(20,32,28,0.18)', zIndex: 50 }}>
-                        <div className="flex items-center justify-between" style={{ padding: '12px 14px', borderBottom: '1px solid #F0EBE2', position: 'sticky', top: 0, background: '#fff' }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: '#144682' }}>Notifikasi</span>
-                          {unreadCount > 0 && (
-                            <button type="button" onClick={markAllNotifRead}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, color: '#E85A1E' }}>
-                              Tandai semua dibaca
-                            </button>
-                          )}
-                        </div>
-                        {notifications.length === 0 ? (
-                          <div style={{ padding: '28px 14px', textAlign: 'center', fontSize: 12.5, color: PASTEL.inkMute }}>Tidak ada notifikasi</div>
-                        ) : (
-                          notifications.map(n => {
-                            const Ico = NOTIF_ICON[n.event_type] || Bell;
-                            return (
-                              <button key={n.id} type="button" onClick={() => handleNotifClick(n)}
-                                className="w-full text-left"
-                                style={{ display: 'flex', gap: 10, padding: '11px 14px', borderBottom: '1px solid #F5F1E9', background: '#FBF7EF', borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer' }}>
-                                <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: '#EAF0F8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <Ico size={15} style={{ color: '#144682' }} />
-                                </span>
-                                <span style={{ minWidth: 0, flex: 1 }}>
-                                  <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1A2330' }}>{n.title}</span>
-                                  {n.body && <span style={{ display: 'block', fontSize: 11.5, color: PASTEL.inkSoft, marginTop: 1 }}>{n.body}</span>}
-                                  <span style={{ display: 'block', fontSize: 10.5, color: PASTEL.inkMute, marginTop: 3 }}>{notifTimeAgo(n.created_at)}</span>
-                                </span>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
+                <button type="button" title="Notifications"
+                  className="nexus-cmd-btn inline-flex items-center justify-center rounded-[10px] border shrink-0"
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', width: '36px', height: '36px' }}>
+                  <Bell size={14} style={{ color: PASTEL.inkSoft }}/>
+                </button>
 
                 {/* Profile dropdown trigger */}
                 <div className="relative">
