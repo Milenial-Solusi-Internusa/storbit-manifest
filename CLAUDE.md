@@ -1041,7 +1041,9 @@ Output:
 
 | 2.10D | **QuotationFormPage — tambah 3 opsi `UNIT_LABELS`.** Sisip `Per CBM-Up`, `Per 1-3 CBM`, `Per Waybill` setelah `Per CBM`, sebelum `Per KG`. Urutan final: Per CBM, **Per CBM-Up, Per 1-3 CBM, Per Waybill**, Per KG, Per Ton, Per 20Ft, Per 40Ft, Per Container, Per BL, Per Shipment, Per Trip, Per Day, Per Document, Per Receipt, Per Unit, Per Type, Per HS Code, Lumpsum (19 opsi; Lumpsum tetap paling bawah). Hanya 1 array diubah; logika/styling/file lain tak disentuh. Build clean (2550 modules, 1.16s). | ✅ Complete |
 
-Current phase: **Phase 2.10D** ✅ Complete
+| 2.10E | **CRMDashboardPage — background page putih (fix belang).** Background area konten dashboard (`D.root.background`, [CRMDashboardPage.jsx:184](src/modules/crm/CRMDashboardPage.jsx#L184), dipakai `<div className="nx-page-pad" style={D.root}>` line ~2162) diubah `#F7F7F8` → `#ffffff` supaya tidak belang dgn card putih (#fff) di dalamnya. Hanya 1 properti diubah. **TIDAK disentuh:** navy #144682 (cardHead/sidebar/topbar), card chart, padding (26/28/44 normal, tak berlebihan). Catatan: `#F6EFE3` di App.jsx (line 2011-2012) hanya overlay loading AppLauncher, bukan surface dashboard — tak terkait. Build clean (2550 modules, 1.24s). | ✅ Complete |
+
+Current phase: **Phase 2.10E** ✅ Complete
 
 > **⚠️ DB — migrasi data lama `activities.type='prospecting'` (Phase 2.9K — JALANKAN MANUAL, belum dieksekusi):**
 > ```sql
