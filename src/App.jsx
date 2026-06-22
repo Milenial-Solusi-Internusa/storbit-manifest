@@ -1751,9 +1751,7 @@ export default function StorbitManifest() {
         }
         .nexus-sidebar-children { animation: accordionDown 0.14s ease-out; }
         .nexus-shell-bg {
-          background:
-            radial-gradient(circle at top left, rgba(200, 239, 217, 0.26), transparent 34rem),
-            linear-gradient(135deg, #FBF7EF 0%, #F6F1E8 42%, #F8FAF7 100%);
+          background: #ffffff;
         }
       `}</style>
 
