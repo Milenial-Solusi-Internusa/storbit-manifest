@@ -61,7 +61,8 @@ const SERVICE_TYPES = [
 ];
 
 const UNIT_LABELS = [
-  'Per CBM', 'Per KG', 'Per Ton', 'Per 20Ft', 'Per 40Ft',
+  'Per CBM', 'Per CBM-Up', 'Per 1-3 CBM', 'Per Waybill',
+  'Per KG', 'Per Ton', 'Per 20Ft', 'Per 40Ft',
   'Per Container', 'Per BL', 'Per Shipment', 'Per Trip',
   'Per Day', 'Per Document', 'Per Receipt',
   'Per Unit', 'Per Type', 'Per HS Code', 'Lumpsum',
