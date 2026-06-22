@@ -6,7 +6,7 @@ Last updated: 2026-06-04
 | Field | Value |
 |-------|-------|
 | Platform | React 19 + Vite 8 + Supabase + TailwindCSS |
-| Production URL | https://storbitmanifest.dli.my.id |
+| Production URL | https://nexus.dli.my.id |
 | Repository | storbit-manifest |
 | Default branch | `main` (Vercel auto-deploys from `main`) |
 | Branch strategy | Direct commits to `main` — solo dev workflow |
