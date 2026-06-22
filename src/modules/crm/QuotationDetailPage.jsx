@@ -431,6 +431,11 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
                                 × kurs {(Number(row.exchange_rate) || 1).toLocaleString('id-ID')}
                               </div>
                             )}
+                            {row.currency !== 'USD' && row.currency !== 'IDR' && (
+                              <div style={{ fontSize: 10, color: C.inkFaint, fontWeight: 400 }}>
+                                × kurs {(Number(row.exchange_rate) || 1).toLocaleString('id-ID')}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}
