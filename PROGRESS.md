@@ -2,6 +2,15 @@
 
 ## 2026-06-22
 
+### CRM Report page — port Lovable + data Supabase real (Phase 2.10L)
+> File baru `src/modules/crm/CRMReportPage.jsx` + wiring App.jsx (lazy import, menu, route). recharts ^3.8.1 (sudah terpasang). Tanpa ubah DB/RLS.
+- [x] **TASK 1** — port visual Lovable ke `CRMReportPage.jsx` PERSIS (tokens C, kpiGrad/tint/shade, Ic icons, STATUS_STYLE/TYPE_COLOR/ENTITY_COLOR, st, CSS, LegendDots/Th/RankBadge/Pill, layout filter bar/KPI/area+bar chart/tabel/detail). Tidak simplify/ubah design
+- [x] **TASK 2** — ganti dummy (mulberry32/genActivities/CURRENT/PREVIOUS/SALES/CUSTOMERS/NOTES) → fetch real. Roster sales/supervisor/manager (pola fetchSalesProfiles, entity dari user_roles.company_id). `activities` filter scheduled_for in range (done=status done; pending=todo & scheduled_for>=now; overdue=todo & <now; cancelled di-skip; type map call/whatsapp→Call, visit/meeting→Visit, email→Email, followup→Task). `accounts` (prospect/lead in range, by assigned_to). `quotations` (SENT/SUBMITTED in range, by created_by). KPI/trend/per-sales aggregate; period today/week/month + prev-window utk "vs periode lalu"; loading/error/empty
+- [x] **TASK 3** — sidebar CRM menu Report (BarChart2) setelah Activity Log + route crm-report → CRMReportPage (lazy + ErrorBoundary + Suspense). Tak ada MENU_KEY_MAP (konsisten crm-calls/crm-activity-log)
+- [x] **Build clean** — 2551 modules, 1.30s (CRMReportPage chunk 31.56kB)
+- [ ] **Tes manual (belum — runtime):** KPI/trend/per-sales dari data nyata; filter period/sales/entity; loading→data; super_admin lintas entity vs non-super single company; chip vs periode lalu
+- [ ] ⚠️ RLS `activities`/`accounts`/`quotations` scope per company/role — entity pills lain bisa kosong untuk non-super (bukan bug, by-RLS)
+
 ### Quotation — currency dropdown DB + VAT rate per service_type + PPN dynamic (Phase 2.10C)
 > Prasyarat DB (SQL Editor, sudah ada; snapshot stale): tabel `currencies`, `quotations.vat_rate` DEFAULT 0.011, RPC save_quotation terima vat_rate. `currencies_read_all` USING(true). 3 file.
 - [x] **TASK 1 (Form currency)** — state `currencies` + fetch (is_active, order code); SectionCard prop `currencies` → dropdown render code (fallback ['IDR','USD']). Kurs USD/calcRowTotal tak diubah (currency non-USD listing only, konversi USD-only out of scope)

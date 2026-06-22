@@ -39,6 +39,7 @@ const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPag
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
 const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
+const CRMReportPage        = lazy(() => import('./modules/crm/CRMReportPage'));
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
 const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
@@ -456,6 +457,7 @@ const ERP_MENU_GROUPS = [
           },
           { id: 'crm-calls',      label: 'Activities', icon: Activity },
           { id: 'crm-activity-log', label: 'Activity Log', icon: History },
+          { id: 'crm-report',     label: 'Report',     icon: BarChart2 },
         ],
       },
     ],
@@ -2657,6 +2659,15 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Activity Log temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <ActivityLogPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Report ─────────────────────────────────────────────────── */}
+          {activeMenu === 'crm-report' && (
+            <ErrorBoundary title="CRM Report temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <CRMReportPage />
               </Suspense>
             </ErrorBoundary>
           )}
