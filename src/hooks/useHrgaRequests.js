@@ -221,7 +221,7 @@ export async function submitHrgaRequest({
   // ── Step 3: Fetch total levels from request type ──────────────────────────
   const { data: rtRow, error: rtErr } = await supabase
     .from('hrga_request_types')
-    .select('approval_levels')
+    .select('approval_levels, type_name')
     .eq('id', requestTypeId)
     .single();
 
@@ -333,6 +333,20 @@ export async function submitHrgaRequest({
           status: 'pending',
         }));
         await supabase.from('hrga_notification_queue').insert(notifications);
+
+        // In-app bell notifications — skip the submitter; company_id NOT NULL.
+        const bellNotifs = recipientIds
+          .filter(uid => uid && uid !== profile.id)
+          .map(uid => ({
+            company_id:     profile.company_id,
+            user_id:        uid,
+            event_type:     'hrga_approval_needed',
+            title:          'Request HRGA menunggu approval',
+            body:           `${profile.full_name || 'Seseorang'} mengajukan ${rtRow.type_name || subject}`,
+            reference_type: 'hrga_request',
+            reference_id:   requestRow.id,
+          }));
+        if (bellNotifs.length) await supabase.from('notifications').insert(bellNotifs);
       }
     }
   } catch (notifyErr) {
@@ -664,7 +678,7 @@ export async function submitApproval({ requestId, action, comment, profile }) {
   // Fetch current request state
   const { data: req, error: reqErr } = await supabase
     .from('hrga_requests')
-    .select('id, status, current_level, total_levels, company_id, request_type_id')
+    .select('id, status, current_level, total_levels, company_id, request_type_id, requester_id, subject')
     .eq('id', requestId)
     .single();
 
@@ -710,6 +724,23 @@ export async function submitApproval({ requestId, action, comment, profile }) {
     .from('hrga_requests')
     .update(updatePayload)
     .eq('id', requestId);
+
+  // In-app bell notif to requester on a TERMINAL result (final approved / rejected).
+  // Fire-and-forget; skip self-approval & null requester. company_id NOT NULL.
+  const isTerminal = newStatus === 'approved' || newStatus === 'rejected';
+  if (!updateErr && isTerminal && req.requester_id && req.requester_id !== profile.id) {
+    try {
+      await supabase.from('notifications').insert({
+        company_id:     req.company_id,
+        user_id:        req.requester_id,
+        event_type:     newStatus === 'rejected' ? 'hrga_rejected' : 'hrga_approved',
+        title:          newStatus === 'rejected' ? 'Request HRGA ditolak' : 'Request HRGA disetujui',
+        body:           `Request "${req.subject || ''}" kamu telah ${newStatus === 'rejected' ? 'ditolak' : 'disetujui'}`,
+        reference_type: 'hrga_request',
+        reference_id:   requestId,
+      });
+    } catch (e) { console.debug('[notifications] hrga approval result', e?.message || e); }
+  }
 
   return { error: updateErr || null };
 }
