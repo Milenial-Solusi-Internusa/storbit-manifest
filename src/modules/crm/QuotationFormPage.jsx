@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Plus, Trash2, Save, Receipt, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -54,13 +55,14 @@ const AUTHORITY_TONE = {
   red:    { bg: '#F6E0DB', bd: '#E6BBB2', color: '#B23227' },
 };
 
-const SERVICE_TYPES = [
+// Fallbacks — used only if the DB fetch (dropdown_options / taxes) fails or is empty.
+const SERVICE_TYPES_FALLBACK = [
   { value: 'freight_forwarding', label: 'Freight Forwarding' },
   { value: 'customs',            label: 'Customs Clearance'  },
   { value: 'trading',            label: 'General Trading'    },
 ];
 
-const UNIT_LABELS = [
+const UNIT_LABELS_FALLBACK = [
   'Per CBM', 'Per CBM-Up', 'Per 1-3 CBM', 'Per Waybill',
   'Per KG', 'Per Ton', 'Per 20Ft', 'Per 40Ft',
   'Per Container', 'Per BL', 'Per Shipment', 'Per Trip',
@@ -71,7 +73,7 @@ const UNIT_LABELS = [
 const CURRENCIES = ['IDR', 'USD']; // fallback before DB currencies load
 
 // VAT/PPN options + service-type → default rate (customs = 11%, else 1.1%).
-const VAT_OPTIONS = [
+const VAT_OPTIONS_FALLBACK = [
   { value: 0,     label: '0%' },
   { value: 0.011, label: '1,1%' },
   { value: 0.11,  label: '11%' },
@@ -149,8 +151,9 @@ async function generateQuotationNo(companyId, companyCode) {
 }
 
 // ─── Section component ────────────────────────────────────────────────────
-function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow, onRemoveSection, canRemove, currencies }) {
+function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow, onRemoveSection, canRemove, currencies, unitLabels }) {
   const currencyCodes = (currencies && currencies.length) ? currencies.map(c => c.code) : CURRENCIES;
+  const unitOptions = (unitLabels && unitLabels.length) ? unitLabels : UNIT_LABELS_FALLBACK;
   const cellInp = (extra = {}) => ({
     width: '100%', height: 34, borderRadius: 7, border: `1px solid ${C.line}`,
     background: C.surface, padding: '0 8px', fontSize: 12.5, color: C.ink,
@@ -242,7 +245,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                   <select value={row.unit_label} onChange={e => onUpdateRow(section.id, row.id, 'unit_label', e.target.value)}
                     className="q-unit-select"
                     style={cellInp({ padding: '0 4px', cursor: 'pointer', textAlign: 'center' })}>
-                    {UNIT_LABELS.map(u => <option key={u} value={u}>{u}</option>)}
+                    {unitOptions.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </td>
                 <td style={{ padding: '6px 6px', width: 60 }}>
@@ -315,6 +318,43 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
   const [currencies,   setCurrencies]   = useState([]);
   const [saving,       setSaving]       = useState(false);
   const [errors,       setErrors]       = useState({});
+
+  // ── DB-driven dropdowns (fallback to hardcoded const on error/empty) ──────
+  const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
+  const { options: unitOpts }        = useDropdownOptions('unit_label', UNIT_LABELS_FALLBACK);
+  // unit_label stored value === label (string), so render the label as both.
+  const unitLabels = useMemo(
+    () => unitOpts.map((o) => (typeof o === 'string' ? o : o.label)),
+    [unitOpts]
+  );
+
+  // VAT rates from `taxes` (company-scoped). Union with the standard fallback so
+  // the 0 / 1,1% / 11% defaults are always present even if a company's taxes row
+  // for a rate is missing/inactive; extra company rates are appended.
+  const [vatOptions, setVatOptions] = useState(VAT_OPTIONS_FALLBACK);
+  useEffect(() => {
+    if (!profile?.company_id) return;
+    let cancelled = false;
+    supabase.from('taxes')
+      .select('rate, is_active, deleted_at, company_id')
+      .eq('company_id', profile.company_id)
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .order('rate', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setVatOptions(VAT_OPTIONS_FALLBACK); return; }
+        const merged = new Map();
+        VAT_OPTIONS_FALLBACK.forEach((o) => merged.set(Number(o.value), o.label));
+        (data || []).forEach((t) => {
+          const r = Number(t.rate);
+          if (!Number.isFinite(r) || merged.has(r)) return;
+          merged.set(r, vatLabel(r).replace('PPN ', ''));
+        });
+        setVatOptions([...merged.entries()].sort((a, b) => a[0] - b[0]).map(([value, label]) => ({ value, label })));
+      });
+    return () => { cancelled = true; };
+  }, [profile?.company_id]);
 
   // Load dropdowns
   useEffect(() => {
@@ -682,7 +722,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
 
               <Field label="Service Type">
                 <select value={header.service_type} onChange={handleServiceTypeChange} style={selStyle}>
-                  {SERVICE_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  {serviceTypeOpts.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </Field>
 
@@ -742,7 +782,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
                   onChange={(e) => setHeader(h => ({ ...h, vat_rate: Number(e.target.value) }))}
                   style={selStyle}
                 >
-                  {VAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  {vatOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </Field>
 
@@ -874,6 +914,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             onRemoveSection={removeSection}
             canRemove={sections.length > 1}
             currencies={currencies}
+            unitLabels={unitLabels}
           />
         ))}
 
