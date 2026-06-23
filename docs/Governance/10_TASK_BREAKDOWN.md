@@ -46,10 +46,28 @@
 
 > Prioritas tech-debt aktif: **F2** (~65 `console.*`), **F3** (~33 `.single()`), **F4** (~97 `.limit()`), **F5** (file >800 baris), **F6** (dead code `*.legacy.jsx`).
 
-### G. Topbar & Dropdown (port Lovable → CC)
-- [ ] **G1.** **Dropdown Management** — port JSX Lovable ke CC (brief/desain selesai; reuse `kit.jsx`+`tokens.js`; data Supabase / fallback bila tabel belum ada). Master dropdown/option values.
+### G. Topbar & Dropdown lanjutan
+- [ ] **G1.** **Migrasi `SERVICE_TYPE_LABELS` (display map)** di `QuotationDetailPage.jsx`, `InquiryListPage.jsx`, `QuotationListPage.jsx` → ambil label dari `dropdown_options` (`service_type`) via `useDropdownOptions` (bikin helper value→label). Lanjutan 2.11E (form sudah DB-driven; label display belum).
 - [ ] **G2.** **Entity switcher navbar** — Step 3 dari 4 fitur topbar (setelah notification bell + pending approval badge). Switch entity aktif MSI/JCI/SOA dari topbar.
 - [ ] **G3.** **Search bar navbar** — Step 4 topbar. Global search (debounce ≥300ms; scope per modul/role).
+- [ ] **G4.** **Seed status/stage CRM ke `status_catalog`** (pipeline/inquiry/quotation/activity/hrga status) + konsumsi via fetch. Tabel `status_catalog` sudah ada (generic, `applicable_modules` jsonb). Lanjutan migrasi dropdown hardcoded.
+
+---
+
+## Completed (24 Jun 2026 — malam, 2.11C–E)
+
+> Dropdown DB-driven end-to-end. Detail di `CLAUDE.md` Recent Changes (2.11C–E).
+
+**Dropdown Management (2.11C–E):**
+- [x] **Dropdown Management page** — port Lovable → CC, lalu jadi **Tab 2 di General Preferences** (2.11C–D).
+- [x] **`dropdown_options` table + seed (12 list)** — service_type, unit_label, lead_source, lost_reason, activity_type, customer_type, customer_tier, shipment_mode, container_type, incoterm, leave_type, allowance_type (global; RLS write super_admin-only). *(DB — di luar repo)*
+- [x] **Full DB-driven CRUD** — `dropdown_options` INSERT/UPDATE/soft-DELETE/toggle/reorder (persist + re-fetch); `currencies`+`payment_terms` toggle-only. Toast sukses/error asli.
+- [x] **`useDropdownOptions` hook** — `src/hooks/useDropdownOptions.js` (fetch 1 list_key, fallback array).
+- [x] **QuotationForm** — `service_type` + `unit_label` via hook; VAT dari `taxes` (union dgn fallback).
+- [x] **InquiryForm** — `service_type` via hook.
+- [x] **`taxes` cleanup** — 6 baris duplikat soft-deleted (PPN11/VAT_0 × 3 entitas). *(SQL Editor — di luar repo)*
+
+> ⚠️ 2.11C–E **belum tes manual runtime**. Const lama dipertahankan sbg `*_FALLBACK`. Writes super_admin-only (RLS).
 
 ---
 

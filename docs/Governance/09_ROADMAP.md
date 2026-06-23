@@ -24,7 +24,7 @@
 | | Admin Settings (Entity profile/bank/signatories, Document numbering/templates, Finance defaults, Approval workflows, Notifications) | ✅ | UI + Supabase wired (2.6A–F) |
 | | **Admin Settings — Security Policy, Audit Log, General Preferences, Integrations** | ✅ | port Lovable (2.11A); General/Security/Integrations = localStorage fallback (TD-36), Audit Log = fetch real `user_login_logs` (login-only, TD-37); **belum tes manual runtime** |
 | | **AdminKit (`kit.jsx`) extended** | ✅ | +13 ikon lucide + primitive `KitSelect` (2.11A); satu sumber design-system Admin Settings |
-| | Dropdown Management (master dropdown/option values) | 🔄 | brief/desain Lovable selesai; port JSX ke CC pending |
+| | **Dropdown Management** (master dropdown/option values) | ✅ | full DB-driven via `dropdown_options` (CRUD persist) + `currencies`/`payment_terms` (toggle-only); Tab 2 di General Preferences (2.11C–E); **belum tes manual runtime** |
 | | My Profile (overlay, avatar, password, prefs) | ✅ | 2.8A |
 | **CRM & Inquiry** | Pipeline / Kanban (drag-stage, soft-gate, toolbar: member/sort/filter/list-view) | ✅ | 2.9X–Z; `estimated_value` |
 | | Prospect form + BANT scorecard + Win/Loss capture | ✅ | auto-assign sales, dup-check |
@@ -50,6 +50,20 @@
 | **Approval Center** | Reusable approval engine | 🔄 | tabel + Admin Settings UI ada; engine runtime belum |
 | **Document Mgmt / API / Portal / Reporting / Audit** | — | 📋 | arah jangka panjang (`AGENTS.md`) |
 | **App Launcher** | Bento module grid + permission gating | ✅ | 2.0H |
+
+---
+
+## Selesai Terbaru (24 Jun 2026 — malam, 2.11E)
+
+**Dropdown DB-driven (master data → konsumen form):**
+- ✅ **`dropdown_options` table + seed (12 list)** — service_type, unit_label, lead_source, lost_reason, activity_type, customer_type, customer_tier, shipment_mode, container_type, incoterm, leave_type, allowance_type (global; RLS SELECT semua authenticated, write super_admin-only).
+- ✅ **Dropdown Management full DB-driven** — CRUD persist ke DB (`dropdown_options` INSERT/UPDATE/soft-DELETE/toggle/reorder); `currencies`+`payment_terms` merge ke Finance (toggle-only, tak ada `sort_order`). Toast sukses + error asli.
+- ✅ **`useDropdownOptions` hook** (`src/hooks/useDropdownOptions.js`) — fetch 1 `list_key`, fallback array bila error/empty.
+- ✅ **QuotationForm** — `service_type` + `unit_label` via hook (unit pakai label sbg value utk preserve data lama), VAT via fetch `taxes` (rate→label, union dgn fallback agar 0/1,1%/11% selalu ada).
+- ✅ **InquiryForm** — `service_type` via hook.
+- ✅ **`taxes` dirapiin** — 6 baris duplikat soft-deleted (PPN11/VAT_0 × 3 entitas; sisa VAT_FULL 0.11 + TAXFREE 0). *(dijalankan di SQL Editor, bukan dari repo)*
+
+> ⚠️ 2.11E **build clean, belum tes manual runtime**. Semua const lama dipertahankan sbg `*_FALLBACK`. Writes super_admin-only (RLS) → role lain dapat toast error asli.
 
 ---
 
