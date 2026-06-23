@@ -22,6 +22,9 @@
 | | Struktur Organisasi (Org Chart, `reports_to`, warna per-level) | ✅ | 2.9S/U/V |
 | | Schema Manager | ✅ | via EF `manage-schema` |
 | | Admin Settings (Entity profile/bank/signatories, Document numbering/templates, Finance defaults, Approval workflows, Notifications) | ✅ | UI + Supabase wired (2.6A–F) |
+| | **Admin Settings — Security Policy, Audit Log, General Preferences, Integrations** | ✅ | port Lovable (2.11A); General/Security/Integrations = localStorage fallback (TD-36), Audit Log = fetch real `user_login_logs` (login-only, TD-37); **belum tes manual runtime** |
+| | **AdminKit (`kit.jsx`) extended** | ✅ | +13 ikon lucide + primitive `KitSelect` (2.11A); satu sumber design-system Admin Settings |
+| | Dropdown Management (master dropdown/option values) | 🔄 | brief/desain Lovable selesai; port JSX ke CC pending |
 | | My Profile (overlay, avatar, password, prefs) | ✅ | 2.8A |
 | **CRM & Inquiry** | Pipeline / Kanban (drag-stage, soft-gate, toolbar: member/sort/filter/list-view) | ✅ | 2.9X–Z; `estimated_value` |
 | | Prospect form + BANT scorecard + Win/Loss capture | ✅ | auto-assign sales, dup-check |
@@ -47,6 +50,19 @@
 | **Approval Center** | Reusable approval engine | 🔄 | tabel + Admin Settings UI ada; engine runtime belum |
 | **Document Mgmt / API / Portal / Reporting / Audit** | — | 📋 | arah jangka panjang (`AGENTS.md`) |
 | **App Launcher** | Bento module grid + permission gating | ✅ | 2.0H |
+
+---
+
+## Selesai Terbaru (24 Jun 2026)
+
+**Fitur — Admin Settings (port Lovable, 2.11A):**
+- ✅ **Security Policy** — password policy, sesi, login protection, 2FA per-role (localStorage fallback `security_policy_*`).
+- ✅ **Audit Log** — fetch real `user_login_logs` + join `profiles`; filter/pagination/CSV export (login events only sampai `audit_logs` jadi — TD-37).
+- ✅ **General Preferences** — lokalisasi/format/tampilan per entitas (localStorage `general_prefs_*`; EntitySwitcher default dari `useAuth`).
+- ✅ **Integrations** — WhatsApp/SMTP/n8n webhook/API keys (localStorage `integrations_*`; ⚠️ credentials belum secure — TD-36).
+- ✅ **`kit.jsx` extended** — +13 ikon lucide + `KitSelect` (reuse kit existing, tanpa `adminKit.js` baru).
+
+> ⚠️ Semua page 2.11A **"build clean, belum tes manual runtime"**. TD baru: **TD-36** (credentials localStorage), **TD-37** (AuditLog login-only).
 
 ---
 
