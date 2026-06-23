@@ -21,12 +21,12 @@ const HUB_GROUPS = [
     ],
   },
   {
-    title: "Roadmap",
+    title: "Keamanan & Sistem",
     cards: [
-      { id: "security",  icon: "shield",     name: "Security Policy",      desc: "Pengaturan kata sandi & sesi.",           status: "roadmap" },
-      { id: "audit",     icon: "clipboard",  name: "Audit Log",            desc: "Riwayat aktivitas sistem.",               status: "roadmap" },
-      { id: "general",   icon: "settings",   name: "General Preferences",  desc: "Lokalisasi & tampilan.",                  status: "roadmap" },
-      { id: "integrate", icon: "plug",       name: "Integrations",         desc: "Konektor eksternal & API key.",           status: "roadmap" },
+      { id: "security",  icon: "shield",     name: "Security Policy",      desc: "Kebijakan kata sandi, sesi & 2FA.",       status: "available" },
+      { id: "audit",     icon: "clipboard",  name: "Audit Log",            desc: "Riwayat aktivitas sistem.",               status: "available" },
+      { id: "general",   icon: "settings",   name: "General Preferences",  desc: "Lokalisasi, format & tampilan.",          status: "available" },
+      { id: "integrate", icon: "plug",       name: "Integrations",         desc: "Konektor eksternal & API key.",           status: "available" },
     ],
   },
 ];

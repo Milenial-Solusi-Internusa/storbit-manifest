@@ -57,6 +57,10 @@ const FinanceDefaultsPage    = lazy(() => import('./pages/foundation/admin-setti
 const ApprovalWorkflowsPage  = lazy(() => import('./pages/foundation/admin-settings/ApprovalWorkflowsPage'));
 const MyProfilePage          = lazy(() => import('./pages/profile/MyProfilePage'));
 const NotificationsPage      = lazy(() => import('./pages/foundation/admin-settings/NotificationsPage'));
+const SecurityPolicyPage     = lazy(() => import('./pages/foundation/admin-settings/SecurityPolicyPage'));
+const AuditLogPage           = lazy(() => import('./pages/foundation/admin-settings/AuditLogPage'));
+const GeneralPreferencesPage = lazy(() => import('./pages/foundation/admin-settings/GeneralPreferencesPage'));
+const IntegrationsPage       = lazy(() => import('./pages/foundation/admin-settings/IntegrationsPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -2696,6 +2700,10 @@ export default function StorbitManifest() {
                     : id === 'finance' ? 'admin-settings-finance'
                     : id === 'approval' ? 'admin-settings-approvals'
                     : id === 'notif' ? 'admin-settings-notifications'
+                    : id === 'security' ? 'admin-settings-security'
+                    : id === 'audit' ? 'admin-settings-audit'
+                    : id === 'general' ? 'admin-settings-general'
+                    : id === 'integrate' ? 'admin-settings-integrations'
                     : 'admin-settings'
                 )} />
               </Suspense>
@@ -2733,6 +2741,34 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Notifications temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <NotificationsPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-security' && (
+            <ErrorBoundary title="Security Policy temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <SecurityPolicyPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-audit' && (
+            <ErrorBoundary title="Audit Log temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <AuditLogPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-general' && (
+            <ErrorBoundary title="General Preferences temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <GeneralPreferencesPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-integrations' && (
+            <ErrorBoundary title="Integrations temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <IntegrationsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
