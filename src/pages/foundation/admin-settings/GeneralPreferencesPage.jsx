@@ -250,7 +250,18 @@ export default function GeneralPreferencesPage({ onHome }) {
       </div>
       )}
 
-      {tab === "dropdown" && <DropdownManagementBody />}
+      {tab === "dropdown" && (
+        <div className="gp-dropdown-tab">
+          {/* DropdownManagementBody centers its inner grid at max-width:1280 (inline
+              style in the embedded body). Inside this tab that makes it look narrow
+              vs Tab 1. Defeat the cap so the tree + editor stretch full width —
+              scoped to this tab only (direct grandchild = the body's shell/state div). */}
+          <style>{`
+            .gp-dropdown-tab > div > div { max-width: none !important; margin-left: 0 !important; margin-right: 0 !important; }
+          `}</style>
+          <DropdownManagementBody />
+        </div>
+      )}
       {toastNode}
     </div>
   );
