@@ -19,7 +19,7 @@ import {
   Globe2, Calendar, Landmark, Percent, Wallet, Scale, Clock, Banknote,
   AlignLeft, AlignCenter, AlignRight,
   Smartphone, User, Filter, Download, MessageCircle, Webhook, KeyRound,
-  Signal, Zap, Link2, Copy, Eye, EyeOff,
+  Signal, Zap, Link2, Copy, Eye, EyeOff, Layers,
 } from "lucide-react";
 
 import {
@@ -45,6 +45,7 @@ const ICONS = {
   smartphone: Smartphone, user: User, filter: Filter, download: Download,
   messagecircle: MessageCircle, webhook: Webhook, key: KeyRound,
   signal: Signal, zap: Zap, link2: Link2, copy: Copy, eye: Eye, eyeoff: EyeOff,
+  layers: Layers,
 };
 
 export function Icon({ name, size = 18, color, style, strokeWidth = 1.7 }) {
