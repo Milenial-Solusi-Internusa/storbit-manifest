@@ -67,7 +67,6 @@ export function AuthProvider({ children }) {
     // Safety timeout
     const safetyTimeout = setTimeout(() => {
       if (mounted) {
-        console.warn('[Auth] Safety timeout (8s): forcing loading=false');
         setLoading(false);
       }
     }, 8000);
@@ -82,9 +81,8 @@ export function AuthProvider({ children }) {
         // Defer profile fetch ke next tick (avoid deadlock with onAuthStateChange)
         setTimeout(() => {
           if (!mounted) return;
-          fetchProfileById(s.user.id).then(({ data, erpRoles: roles, error }) => {
+          fetchProfileById(s.user.id).then(({ data, erpRoles: roles }) => {
             if (!mounted) return;
-            if (error) console.error('[Auth] profile error:', error);
             setProfile(data);
             setErpRoles(roles || []);
             setLoading(false);
@@ -96,8 +94,7 @@ export function AuthProvider({ children }) {
         setLoading(false);
         clearTimeout(safetyTimeout);
       }
-    }).catch((err) => {
-      console.error('[Auth] getSession error:', err);
+    }).catch(() => {
       if (mounted) {
         setLoading(false);
         clearTimeout(safetyTimeout);
@@ -144,14 +141,12 @@ export function AuthProvider({ children }) {
       // Defer to next tick supaya gak block listener
       setTimeout(() => {
         if (!mounted) return;
-        fetchProfileById(s.user.id).then(({ data, erpRoles: roles, error }) => {
+        fetchProfileById(s.user.id).then(({ data, erpRoles: roles }) => {
           if (!mounted) return;
-          if (error) console.error('[Auth] profile error:', error);
           setProfile(data);
           setErpRoles(roles || []);
           if (event === 'SIGNED_IN') setLoading(false);
-        }).catch((err) => {
-          console.error('[Auth] profile fetch failed:', err);
+        }).catch(() => {
           if (mounted && event === 'SIGNED_IN') setLoading(false);
         });
       }, 0);
@@ -180,10 +175,7 @@ export function AuthProvider({ children }) {
     // by user id and survive logout otherwise).
     localStorage.removeItem('nexus_last_menu');
     localStorage.removeItem('nexus_last_module');
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('[Auth] Sign out error:', error);
-    }
+    await supabase.auth.signOut();
   };
 
   // ── Fetch permissions for the primary ERP role ─────────────────────────────
