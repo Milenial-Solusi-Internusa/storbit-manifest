@@ -2046,7 +2046,7 @@ function CRMDashboardPage() {
     if (!addVisitOpen || !profile?.company_id) return;
     Promise.all([
       fetchSalesProfiles(profile.company_id),
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['prospect', 'customer']).is('deleted_at', null).order('name').limit(200),
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['prospect', 'customer']).is('deleted_at', null).order('name').limit(1000),
     ]).then(([sales, prospRes]) => {
       setSalesProfiles(sales);
       setProspectOptions(prospRes.data || []);
