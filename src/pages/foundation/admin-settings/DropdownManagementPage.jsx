@@ -16,8 +16,8 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  ChevronRight, ChevronDown, Search, Plus, Pencil, Trash2, GripVertical,
-  Check, X, Layers, ListTree, Tag, Users, Coins, Ship, FileText, Inbox,
+  ChevronDown, Search, Plus, Pencil, Trash2, GripVertical,
+  Check, X, ListTree, Tag, Users, Coins, Ship, FileText, Inbox,
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/useAuth";
@@ -364,7 +364,9 @@ function OptionRow({ opt, index, onEdit, onDelete, onToggle, dnd, pendingDelete,
 /* =========================================================================
    PAGE
    ========================================================================= */
-export default function DropdownManagementPage({ onHome }) {
+/* Embeddable body — rendered inside GeneralPreferencesPage as a tab.
+   No breadcrumb / h1 / outer padding (host page provides chrome). */
+export function DropdownManagementBody() {
   const { profile, erpRole } = useAuth();
   const isSuper = erpRole === "super_admin";
 
@@ -501,7 +503,7 @@ export default function DropdownManagementPage({ onHome }) {
 
   /* ---- styles ---- */
   const page = {
-    fontFamily: FONT_BODY, color: INK, background: "#ffffff",
+    fontFamily: FONT_BODY, color: INK,
   };
   const shell = {
     display: "grid", gridTemplateColumns: "320px 1fr", gap: 20,
@@ -521,37 +523,6 @@ export default function DropdownManagementPage({ onHome }) {
         .dm-spinner{width:34px;height:34px;border-radius:50%;border:3px solid ${LINE};border-top-color:${NAVY};animation:dm-spin .7s linear infinite}
         *{box-sizing:border-box}
       `}</style>
-
-      {/* ---- header ---- */}
-      <div style={{ maxWidth: 1280, margin: "0 auto 22px" }}>
-        <nav style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: FAINT, marginBottom: 10 }}>
-          <span>Foundation</span>
-          <ChevronRight size={13} />
-          {onHome ? (
-            <button type="button" onClick={onHome}
-              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12.5, color: FAINT }}>
-              Admin Settings
-            </button>
-          ) : (
-            <span>Admin Settings</span>
-          )}
-          <ChevronRight size={13} />
-          <span style={{ color: INK_SOFT, fontWeight: 600 }}>Dropdown Management</span>
-        </nav>
-        <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-          <span style={{ width: 44, height: 44, borderRadius: 12, background: NAVY, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 44px" }}>
-            <Layers size={22} />
-          </span>
-          <div>
-            <h1 style={{ fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 700, letterSpacing: -0.4, color: NAVY, margin: 0, lineHeight: 1.1 }}>
-              Dropdown Management
-            </h1>
-            <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>
-              Kelola daftar pilihan yang dipakai di seluruh modul sistem
-            </div>
-          </div>
-        </div>
-      </div>
 
       {loading ? (
         <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: "80px 20px" }}>
