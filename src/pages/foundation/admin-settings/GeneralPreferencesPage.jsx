@@ -14,9 +14,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../../contexts/useAuth";
 import {
-  Icon, PageHeader, EntitySwitcher, Segmented, Toggle, KitSelect,
+  Icon, PageHeader, EntitySwitcher, Tabs, Segmented, Toggle, KitSelect,
   SaveButton, Card, useToast, KitStyles,
 } from "./kit";
+import { DropdownManagementBody } from "./DropdownManagementPage";
 import {
   NAVY, ORANGE, CREAM, LINE, LINE_SOFT, INK, MUTED, GREEN,
   FONT_HEAD, FONT_BODY,
@@ -172,6 +173,8 @@ export default function GeneralPreferencesPage({ onHome }) {
   }
   const save = (label) => { persist(); fireToast(label + " disimpan untuk " + entity); };
 
+  const [tab, setTab] = useState("prefs");
+
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
       <KitStyles />
@@ -183,6 +186,13 @@ export default function GeneralPreferencesPage({ onHome }) {
         right={<EntitySwitcher value={entity} onChange={switchEntity} />}
       />
 
+      <Tabs
+        tabs={[{ id: "prefs", label: "Preferensi Umum" }, { id: "dropdown", label: "Dropdown Management" }]}
+        value={tab}
+        onChange={setTab}
+      />
+
+      {tab === "prefs" && (
       <div key={entity} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
         <GPSection icon="globe" title="Lokalisasi" desc="Bahasa, zona waktu, dan format regional" onSave={() => save("Lokalisasi")}>
           <GPRow title="Bahasa" desc="Bahasa antarmuka untuk seluruh pengguna entitas ini.">
@@ -238,6 +248,9 @@ export default function GeneralPreferencesPage({ onHome }) {
           </GPRow>
         </GPSection>
       </div>
+      )}
+
+      {tab === "dropdown" && <DropdownManagementBody />}
       {toastNode}
     </div>
   );

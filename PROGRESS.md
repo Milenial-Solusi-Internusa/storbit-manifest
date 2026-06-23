@@ -2,6 +2,13 @@
 
 ## 2026-06-24
 
+### Dropdown Management → Tab 2 di GeneralPreferences (Phase 2.11D)
+> Integrasi: Dropdown Management bukan page terpisah lagi, jadi tab di dalam `GeneralPreferencesPage`. 4 file diubah. Tanpa ubah DB/RLS, tanpa package baru.
+- [x] **TASK 1 (integrasi)** — `DropdownManagementPage.jsx`: refactor default export `DropdownManagementPage({onHome})` → named `export function DropdownManagementBody()`; buang header (breadcrumb + h1), `page` bg `#ffffff` dihapus (jadi `{fontFamily,color}`), import lucide `ChevronRight`+`Layers` (cuma dipakai header) dibuang. Tree kiri + editor kanan + fetch payment_terms/currencies + loading/error TETAP. `GeneralPreferencesPage.jsx`: import `Tabs` (kit) + `{DropdownManagementBody}`; state `tab` (default `prefs`); render `<Tabs>` (Tab "Preferensi Umum" + "Dropdown Management") setelah PageHeader; konten prefs existing di-wrap `{tab==='prefs' && …}`; `{tab==='dropdown' && <DropdownManagementBody/>}`. Tab/section/styling existing TIDAK diubah
+- [x] **TASK 2 (cleanup page terpisah)** — AdminSettingsHub: hapus card `dropdown-mgmt`. App.jsx: hapus lazy import `DropdownManagementPage` + onOpen map `dropdown-mgmt` + render block `admin-settings-dropdown`. File `DropdownManagementPage.jsx` dibiarkan (kini meng-export `DropdownManagementBody` yang di-import GeneralPreferences). kit.jsx ikon `layers` dibiarkan (harmless, di luar scope)
+- [x] **Build clean** — 2556 modules, 1.46s
+- [ ] **Tes manual (belum — runtime):** buka General Preferences → 2 tab muncul; Tab 1 prefs jalan spt biasa (save per-section, EntitySwitcher); Tab 2 = tree + editor; "Termin Pembayaran"/"Mata Uang" data DB nyata; add/edit/delete/toggle/reorder in-memory; hub TIDAK lagi ada card Dropdown Management; route lama `admin-settings-dropdown` sudah tak ada
+
 ### Dropdown Management page — port Lovable + fetch partial Supabase (Phase 2.11C)
 > File baru `src/pages/foundation/admin-settings/DropdownManagementPage.jsx` (self-contained: lucide-react + inline styles + dnd reorder). 3 file diubah (kit.jsx, AdminSettingsHub.jsx, App.jsx). Tanpa ubah DB/RLS, tanpa package baru.
 - [x] **TASK 1 (port)** — copy Lovable verbatim + 3 tweak: page bg CREAM→`#ffffff`; `minHeight:'100vh'` dihapus; outer padding root (`26px 28px 60px`) dihapus (shell handle). Padding internal panel/card dipertahankan. lucide-react import OK. `export default DropdownManagementPage`. Breadcrumb "Admin Settings" dibuat clickable (`onHome`) agar tidak dead-end (wiring, bukan ubah desain)
