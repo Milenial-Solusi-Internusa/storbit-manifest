@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ga3pXrSoTk0wNIHfChr4pNE5ZRk4dqmfJSu9VDGncGWFPmffFEptTMIMP5QFn4Q
+\restrict UCPpdMJ7hEQ7W3NJGAkPrD6EAKpxqC5Fk9iVcZ7JZ94umOB7E9U2U3gufbZpKHv
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1890,6 +1890,25 @@ COMMENT ON COLUMN public.document_types.seq_padding IS 'Zero-padding width for t
 
 
 --
+-- Name: dropdown_options; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dropdown_options (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    group_key text NOT NULL,
+    list_key text NOT NULL,
+    label text NOT NULL,
+    value text NOT NULL,
+    sort_order smallint DEFAULT 0,
+    is_active boolean DEFAULT true,
+    company_id uuid,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
 -- Name: entity_bank_accounts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3560,6 +3579,14 @@ ALTER TABLE ONLY public.document_types
 
 
 --
+-- Name: dropdown_options dropdown_options_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dropdown_options
+    ADD CONSTRAINT dropdown_options_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: entity_bank_accounts entity_bank_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4111,6 +4138,20 @@ CREATE UNIQUE INDEX accounts_code_unique ON public.accounts USING btree (code) W
 
 
 --
+-- Name: dropdown_options_entity_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX dropdown_options_entity_unique ON public.dropdown_options USING btree (company_id, list_key, value) WHERE (company_id IS NOT NULL);
+
+
+--
+-- Name: dropdown_options_global_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX dropdown_options_global_unique ON public.dropdown_options USING btree (list_key, value) WHERE (company_id IS NULL);
+
+
+--
 -- Name: idx_activities_account; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4563,6 +4604,20 @@ CREATE INDEX idx_document_types_company_code ON public.document_types USING btre
 --
 
 CREATE INDEX idx_document_types_company_id ON public.document_types USING btree (company_id);
+
+
+--
+-- Name: idx_dropdown_options_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dropdown_options_group ON public.dropdown_options USING btree (group_key);
+
+
+--
+-- Name: idx_dropdown_options_list; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dropdown_options_list ON public.dropdown_options USING btree (list_key, is_active);
 
 
 --
@@ -5922,6 +5977,14 @@ ALTER TABLE ONLY public.document_types
 
 ALTER TABLE ONLY public.document_types
     ADD CONSTRAINT document_types_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: dropdown_options dropdown_options_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dropdown_options
+    ADD CONSTRAINT dropdown_options_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
 
 
 --
@@ -7491,6 +7554,40 @@ CREATE POLICY document_types_update ON public.document_types FOR UPDATE TO authe
 
 
 --
+-- Name: dropdown_options; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.dropdown_options ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: dropdown_options dropdown_options_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dropdown_options_delete ON public.dropdown_options FOR DELETE TO authenticated USING (public.is_super_admin());
+
+
+--
+-- Name: dropdown_options dropdown_options_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dropdown_options_insert ON public.dropdown_options FOR INSERT TO authenticated WITH CHECK (public.is_super_admin());
+
+
+--
+-- Name: dropdown_options dropdown_options_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dropdown_options_read ON public.dropdown_options FOR SELECT TO authenticated USING (((deleted_at IS NULL) AND ((company_id IS NULL) OR (company_id = public.get_user_company_id()) OR public.is_super_admin())));
+
+
+--
+-- Name: dropdown_options dropdown_options_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dropdown_options_update ON public.dropdown_options FOR UPDATE TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+
+
+--
 -- Name: exchange_rates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8711,5 +8808,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ga3pXrSoTk0wNIHfChr4pNE5ZRk4dqmfJSu9VDGncGWFPmffFEptTMIMP5QFn4Q
+\unrestrict UCPpdMJ7hEQ7W3NJGAkPrD6EAKpxqC5Fk9iVcZ7JZ94umOB7E9U2U3gufbZpKHv
 

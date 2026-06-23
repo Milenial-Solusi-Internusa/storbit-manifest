@@ -1,17 +1,23 @@
 /* =========================================================================
    DropdownManagementPage — Nexus by MSI · Admin Settings › Dropdown Management
-   Single, self-contained page for managing the system's reference dropdown
-   lists (lead source, payment terms, shipment mode, …). Two-pane layout:
+   Two-pane manager for the system's reference dropdown lists:
 
      • Left  — searchable tree: groups → dropdown lists (with option counts)
-     • Right — option editor for the selected list: add / edit / delete /
-               toggle-active / drag-to-reorder, plus an option filter
+     • Right — option editor: add / edit / delete / toggle-active / reorder
 
-   Ported from the Claude Design handoff (DropdownManagementPage.jsx). Layout
-   & styling preserved verbatim EXCEPT: page bg CREAM→#ffffff, minHeight &
-   outer page padding removed (Nexus shell handles those). Data partial-real:
-   `payment_terms` + `currencies` fetched live from Supabase; the rest stay
-   dummy (TODO) until their tables exist. In-memory edits only (no DB write).
+   Exported as <DropdownManagementBody/> and embedded as a tab inside
+   GeneralPreferencesPage (no breadcrumb / h1 / outer padding — host provides
+   chrome).
+
+   DATA — fully DB-driven (no dummy):
+     • `dropdown_options` (group_key→list_key→options) — full CRUD + reorder.
+       Writes are super_admin-only (RLS); other roles get the real error toast.
+     • `currencies` (global) + `payment_terms` (scoped company_id) merged into
+       the Finance group. These two are TOGGLE-ONLY here (no sort_order column,
+       and add/edit/delete are managed elsewhere) — add/edit/delete/reorder are
+       gated off; toggle flips is_active.
+   Every write persists immediately then re-fetches the whole tree.
+   Styling/layout preserved verbatim from the Lovable handoff.
    ========================================================================= */
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
@@ -21,6 +27,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/useAuth";
+import { useToast } from "./kit";
 
 /* ---------- brand tokens ---------- */
 const NAVY = "#144682";
@@ -47,149 +54,90 @@ const GROUP_ICON = { Users, Coins, Ship, FileText };
 /* ---------- helpers ---------- */
 const toCode = (s) =>
   s.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-let UID = 1000;
-const uid = () => "opt_" + ++UID;
+const humanize = (k) =>
+  String(k || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-/* ---------- seed data (freight-forwarding holding) ----------
-   NOTE: `payment_terms` & `currency` options below are placeholders — they
-   are overwritten by the live Supabase fetch on mount. The rest are dummy
-   until their tables exist (see TODO markers). */
-const SEED = [
-  {
-    id: "sales", name: "Sales & CRM", icon: "Users",
-    lists: [
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "lead_source", name: "Lead Source", desc: "Sumber masuknya prospek baru",
-        options: [
-          { id: uid(), label: "Referensi", value: "REFERRAL", active: true },
-          { id: uid(), label: "Website", value: "WEBSITE", active: true },
-          { id: uid(), label: "Pameran Dagang", value: "TRADE_SHOW", active: true },
-          { id: uid(), label: "Cold Call", value: "COLD_CALL", active: true },
-          { id: uid(), label: "Media Sosial", value: "SOCIAL_MEDIA", active: false },
-        ],
-      },
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "deal_stage", name: "Deal Stage", desc: "Tahapan pipeline penjualan",
-        options: [
-          { id: uid(), label: "Prospek", value: "PROSPECT", active: true },
-          { id: uid(), label: "Kualifikasi", value: "QUALIFICATION", active: true },
-          { id: uid(), label: "Penawaran", value: "PROPOSAL", active: true },
-          { id: uid(), label: "Negosiasi", value: "NEGOTIATION", active: true },
-          { id: uid(), label: "Menang", value: "WON", active: true },
-          { id: uid(), label: "Kalah", value: "LOST", active: true },
-        ],
-      },
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "lost_reason", name: "Alasan Kalah", desc: "Sebab deal tidak berhasil ditutup",
-        options: [
-          { id: uid(), label: "Harga Terlalu Tinggi", value: "PRICE", active: true },
-          { id: uid(), label: "Memilih Kompetitor", value: "COMPETITOR", active: true },
-          { id: uid(), label: "Tidak Ada Anggaran", value: "NO_BUDGET", active: true },
-          { id: uid(), label: "Tidak Responsif", value: "NO_RESPONSE", active: true },
-        ],
-      },
-    ],
-  },
-  {
-    id: "finance", name: "Finance", icon: "Coins",
-    lists: [
-      {
-        // REAL: di-overwrite dari tabel `payment_terms` saat mount
-        id: "payment_terms", name: "Termin Pembayaran", desc: "Jangka waktu jatuh tempo invoice",
-        options: [
-          { id: uid(), label: "Tunai", value: "CASH", active: true },
-          { id: uid(), label: "Net 14 Hari", value: "NET_14", active: true },
-          { id: uid(), label: "Net 30 Hari", value: "NET_30", active: true },
-          { id: uid(), label: "Net 60 Hari", value: "NET_60", active: false },
-        ],
-      },
-      {
-        // REAL: di-overwrite dari tabel `currencies` saat mount
-        id: "currency", name: "Mata Uang", desc: "Mata uang transaksi yang didukung",
-        options: [
-          { id: uid(), label: "Rupiah", value: "IDR", active: true },
-          { id: uid(), label: "US Dollar", value: "USD", active: true },
-          { id: uid(), label: "Singapore Dollar", value: "SGD", active: true },
-          { id: uid(), label: "Euro", value: "EUR", active: false },
-        ],
-      },
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "tax_type", name: "Jenis Pajak", desc: "Komponen pajak pada dokumen",
-        options: [
-          { id: uid(), label: "PPN 11%", value: "VAT_11", active: true },
-          { id: uid(), label: "PPh 23", value: "WHT_23", active: true },
-          { id: uid(), label: "Bebas Pajak", value: "TAX_FREE", active: true },
-        ],
-      },
-    ],
-  },
-  {
-    id: "ops", name: "Operations", icon: "Ship",
-    lists: [
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "shipment_mode", name: "Moda Pengiriman", desc: "Jalur transportasi pengiriman",
-        options: [
-          { id: uid(), label: "Laut (FCL)", value: "SEA_FCL", active: true },
-          { id: uid(), label: "Laut (LCL)", value: "SEA_LCL", active: true },
-          { id: uid(), label: "Udara", value: "AIR", active: true },
-          { id: uid(), label: "Darat", value: "LAND", active: true },
-          { id: uid(), label: "Kereta", value: "RAIL", active: false },
-        ],
-      },
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "container_type", name: "Tipe Kontainer", desc: "Ukuran & jenis peti kemas",
-        options: [
-          { id: uid(), label: "20' Standard", value: "20GP", active: true },
-          { id: uid(), label: "40' Standard", value: "40GP", active: true },
-          { id: uid(), label: "40' High Cube", value: "40HC", active: true },
-          { id: uid(), label: "20' Reefer", value: "20RF", active: true },
-        ],
-      },
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "incoterm", name: "Incoterm", desc: "Syarat penyerahan barang internasional",
-        options: [
-          { id: uid(), label: "FOB", value: "FOB", active: true },
-          { id: uid(), label: "CIF", value: "CIF", active: true },
-          { id: uid(), label: "EXW", value: "EXW", active: true },
-          { id: uid(), label: "DDP", value: "DDP", active: true },
-        ],
-      },
-    ],
-  },
-  {
-    id: "hrga", name: "HRGA", icon: "FileText",
-    lists: [
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "request_type", name: "Tipe Request", desc: "Kategori pengajuan internal HRGA",
-        options: [
-          { id: uid(), label: "Pengadaan ATK", value: "PROCUREMENT", active: true },
-          { id: uid(), label: "Perbaikan", value: "REPAIR", active: true },
-          { id: uid(), label: "Reimbursement", value: "REIMBURSEMENT", active: true },
-          { id: uid(), label: "Cuti", value: "LEAVE", active: true },
-        ],
-      },
-      {
-        // TODO: fetch dari DB (belum ada tabel)
-        id: "department", name: "Departemen", desc: "Unit organisasi perusahaan",
-        options: [
-          { id: uid(), label: "Sales", value: "SALES", active: true },
-          { id: uid(), label: "Operations", value: "OPS", active: true },
-          { id: uid(), label: "Finance", value: "FINANCE", active: true },
-          { id: uid(), label: "HRGA", value: "HRGA", active: true },
-          { id: uid(), label: "IT", value: "IT", active: true },
-        ],
-      },
-    ],
-  },
+/* ---------- display metadata (DB only stores keys, not friendly names) ---------- */
+const GROUP_META = {
+  sales:   { name: "Sales & CRM", icon: "Users" },
+  finance: { name: "Finance",     icon: "Coins" },
+  ops:     { name: "Operations",  icon: "Ship" },
+  hrga:    { name: "HRGA",        icon: "FileText" },
+};
+const GROUP_ORDER = ["sales", "finance", "ops", "hrga"];
+
+const LIST_META = {
+  service_type:   { name: "Service Type",      desc: "Jenis layanan inquiry & quotation" },
+  lead_source:    { name: "Lead Source",       desc: "Sumber masuknya prospek baru" },
+  lost_reason:    { name: "Alasan Kalah",      desc: "Sebab deal tidak berhasil ditutup" },
+  activity_type:  { name: "Tipe Aktivitas",    desc: "Jenis aktivitas CRM" },
+  customer_type:  { name: "Tipe Customer",     desc: "Klasifikasi pelanggan" },
+  customer_tier:  { name: "Tier Customer",     desc: "Tingkatan pelanggan" },
+  unit_label:     { name: "Satuan (Unit)",     desc: "Satuan item pada quotation" },
+  payment_terms:  { name: "Termin Pembayaran", desc: "Jangka waktu jatuh tempo invoice" },
+  currency:       { name: "Mata Uang",         desc: "Mata uang transaksi yang didukung" },
+  shipment_mode:  { name: "Moda Pengiriman",   desc: "Jalur transportasi pengiriman" },
+  container_type: { name: "Tipe Kontainer",    desc: "Ukuran & jenis peti kemas" },
+  incoterm:       { name: "Incoterm",          desc: "Syarat penyerahan barang internasional" },
+  leave_type:     { name: "Tipe Cuti",         desc: "Jenis pengajuan cuti" },
+  allowance_type: { name: "Tipe Tunjangan",    desc: "Jenis tunjangan/benefit" },
+};
+const LIST_ORDER = [
+  "service_type", "lead_source", "lost_reason", "activity_type", "customer_type", "customer_tier",
+  "unit_label", "payment_terms", "currency",
+  "shipment_mode", "container_type", "incoterm",
+  "leave_type", "allowance_type",
 ];
+const orderIdx = (arr, k) => { const i = arr.indexOf(k); return i < 0 ? 99 : i; };
+
+/* Build the groups→lists→options tree from the three sources.
+   Groups are data-driven (from dropdown_options.group_key); currencies +
+   payment_terms are injected into the Finance group. */
+function buildTree(ddRows, curRows, ptRows) {
+  const byGroup = {}; // group_key -> { list_key -> options[] }
+  (ddRows || []).forEach((r) => {
+    byGroup[r.group_key] = byGroup[r.group_key] || {};
+    byGroup[r.group_key][r.list_key] = byGroup[r.group_key][r.list_key] || [];
+    byGroup[r.group_key][r.list_key].push({
+      id: r.id, label: r.label, value: r.value, active: !!r.is_active,
+      source: "dropdown_options", group_key: r.group_key, list_key: r.list_key,
+      sort_order: r.sort_order ?? 0,
+    });
+  });
+
+  // Finance: currencies (global) + payment_terms (company-scoped) — toggle-only.
+  byGroup.finance = byGroup.finance || {};
+  byGroup.finance.payment_terms = (ptRows || []).map((r) => ({
+    id: r.id, label: r.name, value: r.code || r.name, active: !!r.is_active, source: "payment_terms",
+  }));
+  byGroup.finance.currency = (curRows || []).map((r) => ({
+    id: r.code, label: r.name + (r.symbol ? " (" + r.symbol + ")" : ""), value: r.code,
+    active: !!r.is_active, source: "currencies",
+  }));
+
+  const groupKeys = Object.keys(byGroup).sort(
+    (a, b) => orderIdx(GROUP_ORDER, a) - orderIdx(GROUP_ORDER, b) || a.localeCompare(b)
+  );
+
+  return groupKeys.map((gk) => {
+    const gmeta = GROUP_META[gk] || { name: humanize(gk), icon: "ListTree" };
+    const listKeys = Object.keys(byGroup[gk]).sort(
+      (a, b) => orderIdx(LIST_ORDER, a) - orderIdx(LIST_ORDER, b) || a.localeCompare(b)
+    );
+    return {
+      id: gk, name: gmeta.name, icon: gmeta.icon,
+      lists: listKeys.map((lk) => {
+        const lmeta = LIST_META[lk] || { name: humanize(lk), desc: "" };
+        const source = lk === "currency" ? "currencies" : lk === "payment_terms" ? "payment_terms" : "dropdown_options";
+        const opts = byGroup[gk][lk];
+        const options = source === "dropdown_options"
+          ? opts.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+          : opts;
+        return { id: lk, list_key: lk, group_key: gk, name: lmeta.name, desc: lmeta.desc, source, options };
+      }),
+    };
+  });
+}
 
 /* =========================================================================
    SMALL PRESENTATIONAL PIECES
@@ -296,8 +244,9 @@ function OptionEditor({ initial, onSave, onCancel }) {
   );
 }
 
-/* single option row (display mode) with drag + delete-confirm */
-function OptionRow({ opt, index, onEdit, onDelete, onToggle, dnd, pendingDelete, setPendingDelete }) {
+/* single option row (display mode). `editable` gates edit/delete/drag
+   (currencies & payment_terms are toggle-only). */
+function OptionRow({ opt, index, editable, onEdit, onDelete, onToggle, dnd, pendingDelete, setPendingDelete }) {
   const [h, setH] = useState(false);
   const confirming = pendingDelete === opt.id;
   const isOver = dnd.overId === opt.id && dnd.dragId !== opt.id;
@@ -305,11 +254,11 @@ function OptionRow({ opt, index, onEdit, onDelete, onToggle, dnd, pendingDelete,
 
   return (
     <div
-      draggable={!confirming}
-      onDragStart={(e) => { dnd.onDragStart(opt.id); e.dataTransfer.effectAllowed = "move"; }}
-      onDragOver={(e) => { e.preventDefault(); dnd.onDragOver(opt.id); }}
-      onDrop={(e) => { e.preventDefault(); dnd.onDrop(opt.id); }}
-      onDragEnd={dnd.onDragEnd}
+      draggable={editable && !confirming}
+      onDragStart={(e) => { if (!editable) return; dnd.onDragStart(opt.id); e.dataTransfer.effectAllowed = "move"; }}
+      onDragOver={(e) => { if (!editable) return; e.preventDefault(); dnd.onDragOver(opt.id); }}
+      onDrop={(e) => { if (!editable) return; e.preventDefault(); dnd.onDrop(opt.id); }}
+      onDragEnd={editable ? dnd.onDragEnd : undefined}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
         display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 11,
@@ -319,10 +268,14 @@ function OptionRow({ opt, index, onEdit, onDelete, onToggle, dnd, pendingDelete,
         boxShadow: isOver ? "0 -2px 0 " + NAVY + " inset, 0 4px 14px rgba(20,70,130,.12)" : "none",
         transition: "border-color .15s, background .15s, box-shadow .15s", cursor: "default",
       }}>
-      <span title="Seret untuk mengurutkan"
-        style={{ color: h ? NAVY : FAINT, cursor: "grab", display: "flex", flex: "0 0 auto", transition: "color .15s" }}>
-        <GripVertical size={17} />
-      </span>
+      {editable ? (
+        <span title="Seret untuk mengurutkan"
+          style={{ color: h ? NAVY : FAINT, cursor: "grab", display: "flex", flex: "0 0 auto", transition: "color .15s" }}>
+          <GripVertical size={17} />
+        </span>
+      ) : (
+        <span style={{ flex: "0 0 17px" }} />
+      )}
       <span style={{
         fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, color: MUTED, width: 22,
         textAlign: "right", flex: "0 0 22px",
@@ -352,9 +305,9 @@ function OptionRow({ opt, index, onEdit, onDelete, onToggle, dnd, pendingDelete,
         </div>
       ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "0 0 auto" }}>
-          <Toggle on={opt.active} onChange={() => onToggle(opt.id)} title={opt.active ? "Nonaktifkan" : "Aktifkan"} />
-          <IconBtn icon={Pencil} title="Edit" onClick={() => onEdit(opt)} />
-          <IconBtn icon={Trash2} title="Hapus" danger onClick={() => setPendingDelete(opt.id)} />
+          <Toggle on={opt.active} onChange={() => onToggle(opt)} title={opt.active ? "Nonaktifkan" : "Aktifkan"} />
+          {editable && <IconBtn icon={Pencil} title="Edit" onClick={() => onEdit(opt)} />}
+          {editable && <IconBtn icon={Trash2} title="Hapus" danger onClick={() => setPendingDelete(opt.id)} />}
         </div>
       )}
     </div>
@@ -362,64 +315,69 @@ function OptionRow({ opt, index, onEdit, onDelete, onToggle, dnd, pendingDelete,
 }
 
 /* =========================================================================
-   PAGE
+   BODY — embedded inside GeneralPreferencesPage as a tab.
    ========================================================================= */
-/* Embeddable body — rendered inside GeneralPreferencesPage as a tab.
-   No breadcrumb / h1 / outer padding (host page provides chrome). */
 export function DropdownManagementBody() {
-  const { profile, erpRole } = useAuth();
-  const isSuper = erpRole === "super_admin";
+  const { profile } = useAuth();
 
-  const [data, setData] = useState(SEED);
+  const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [expanded, setExpanded] = useState(() => ({ sales: true, finance: true, ops: true, hrga: true }));
-  const [selectedListId, setSelectedListId] = useState("lead_source");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState({});
+  const [selectedListId, setSelectedListId] = useState(null);
   const [treeQuery, setTreeQuery] = useState("");
   const [optQuery, setOptQuery] = useState("");
   const [editor, setEditor] = useState(null); // {mode:'add'|'edit', id?}
   const [pendingDelete, setPendingDelete] = useState(null);
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
+  const [fireToast, toastNode] = useToast();
 
-  /* ---- partial real fetch: payment_terms + currencies (rest stays dummy) ---- */
+  const hasLoaded = useRef(false);
+  const refresh = () => setRefreshKey((k) => k + 1);
+
+  /* ---- fetch everything (dropdown_options + currencies + payment_terms) ---- */
   useEffect(() => {
     if (!profile?.id) return;
     let cancelled = false;
-    setLoading(true);
+    if (!hasLoaded.current) setLoading(true);
     setError(null);
+
     (async () => {
       let ptQ = supabase.from("payment_terms")
         .select("id, code, name, is_active, company_id")
         .is("deleted_at", null).order("name").limit(1000);
-      if (!isSuper && profile.company_id) ptQ = ptQ.eq("company_id", profile.company_id);
+      if (profile.company_id) ptQ = ptQ.eq("company_id", profile.company_id);
 
-      const [{ data: pt, error: e1 }, { data: cur, error: e2 }] = await Promise.all([
-        ptQ,
+      const [ddRes, curRes, ptRes] = await Promise.all([
+        supabase.from("dropdown_options").select("*").is("deleted_at", null).order("sort_order", { ascending: true }).limit(2000),
         supabase.from("currencies").select("code, name, symbol, is_active").order("code").limit(1000),
+        ptQ,
       ]);
       if (cancelled) return;
-      if (e1 || e2) { setError((e1 || e2).message || "Gagal memuat data."); setLoading(false); return; }
-
-      const ptOpts = (pt || []).map((r) => ({ id: r.id, label: r.name, value: r.code || r.name, active: r.is_active }));
-      const curOpts = (cur || []).map((r) => ({ id: r.code, label: r.name + (r.symbol ? " (" + r.symbol + ")" : ""), value: r.code, active: r.is_active }));
-
-      setData((prev) => prev.map((g) => ({
-        ...g,
-        lists: g.lists.map((l) =>
-          l.id === "payment_terms" ? { ...l, options: ptOpts }
-            : l.id === "currency" ? { ...l, options: curOpts }
-              : l
-        ),
-      })));
+      if (ddRes.error || curRes.error || ptRes.error) {
+        throw (ddRes.error || curRes.error || ptRes.error);
+      }
+      return buildTree(ddRes.data, curRes.data, ptRes.data);
+    })().then((tree) => {
+      if (cancelled || !tree) return;
+      setData(tree);
+      setExpanded((prev) => { const e = { ...prev }; tree.forEach((g) => { if (!(g.id in e)) e[g.id] = true; }); return e; });
+      setSelectedListId((prev) =>
+        tree.some((g) => g.lists.some((l) => l.id === prev)) ? prev : (tree[0]?.lists[0]?.id || null)
+      );
+      hasLoaded.current = true;
       setLoading(false);
-    })().catch((err) => {
+    }).catch((err) => {
       if (cancelled) return;
       setError(err?.message || "Gagal memuat data.");
       setLoading(false);
     });
+
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.company_id, isSuper]);
+  }, [profile?.id, profile?.company_id, refreshKey]);
 
   /* tree search (auto-expands matches) */
   const tree = useMemo(() => {
@@ -443,51 +401,94 @@ export function DropdownManagementBody() {
     return { selList: null, selGroup: null };
   }, [data, selectedListId]);
 
+  const listEditable = !!selList && selList.source === "dropdown_options";
+
   const visibleOptions = useMemo(() => {
     if (!selList) return [];
     const q = optQuery.trim().toLowerCase();
     if (!q) return selList.options;
     return selList.options.filter(
-      (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)
+      (o) => o.label.toLowerCase().includes(q) || String(o.value).toLowerCase().includes(q)
     );
   }, [selList, optQuery]);
 
   /* reset transient UI when switching lists */
   useEffect(() => { setEditor(null); setPendingDelete(null); setOptQuery(""); }, [selectedListId]);
 
-  /* ---- mutations on the selected list (in-memory only) ---- */
-  const mutateList = (fn) =>
-    setData((prev) =>
-      prev.map((g) => ({
-        ...g,
-        lists: g.lists.map((l) => (l.id === selectedListId ? fn(l) : l)),
-      }))
-    );
+  /* ---- DB writes (persist immediately, then re-fetch) ---- */
+  const runWrite = async (promise, okMsg) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { error: e } = await promise;
+      if (e) throw e;
+      fireToast(okMsg || "Tersimpan");
+      refresh();
+    } catch (err) {
+      fireToast(err?.message || "Gagal menyimpan", "alert");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const addOption = (draft) => {
-    mutateList((l) => ({ ...l, options: [...l.options, { id: uid(), ...draft }] }));
+    if (!selList || selList.source !== "dropdown_options") return;
+    const maxSort = selList.options.reduce((m, o) => Math.max(m, o.sort_order ?? 0), 0);
     setEditor(null);
+    runWrite(
+      supabase.from("dropdown_options").insert({
+        group_key: selList.group_key, list_key: selList.list_key,
+        label: draft.label, value: draft.value, sort_order: maxSort + 1,
+        is_active: draft.active, company_id: null,
+      }),
+      "Opsi ditambahkan"
+    );
   };
+
   const updateOption = (id, draft) => {
-    mutateList((l) => ({ ...l, options: l.options.map((o) => (o.id === id ? { ...o, ...draft } : o)) }));
+    if (!selList || selList.source !== "dropdown_options") return;
     setEditor(null);
+    runWrite(
+      supabase.from("dropdown_options").update({ label: draft.label, value: draft.value, is_active: draft.active }).eq("id", id),
+      "Opsi diperbarui"
+    );
   };
-  const deleteOption = (id) =>
-    mutateList((l) => ({ ...l, options: l.options.filter((o) => o.id !== id) }));
-  const toggleOption = (id) =>
-    mutateList((l) => ({ ...l, options: l.options.map((o) => (o.id === id ? { ...o, active: !o.active } : o)) }));
+
+  const deleteOption = (id) => {
+    if (!selList || selList.source !== "dropdown_options") return;
+    runWrite(
+      supabase.from("dropdown_options").update({ deleted_at: new Date().toISOString() }).eq("id", id),
+      "Opsi dihapus"
+    );
+  };
+
+  const toggleOption = (opt) => {
+    const next = !opt.active;
+    let p;
+    if (opt.source === "currencies") p = supabase.from("currencies").update({ is_active: next }).eq("code", opt.id);
+    else if (opt.source === "payment_terms") p = supabase.from("payment_terms").update({ is_active: next }).eq("id", opt.id);
+    else p = supabase.from("dropdown_options").update({ is_active: next }).eq("id", opt.id);
+    runWrite(p, next ? "Opsi diaktifkan" : "Opsi dinonaktifkan");
+  };
 
   const reorder = (fromId, toId) => {
-    if (fromId === toId) return;
-    mutateList((l) => {
-      const opts = [...l.options];
-      const from = opts.findIndex((o) => o.id === fromId);
-      const to = opts.findIndex((o) => o.id === toId);
-      if (from < 0 || to < 0) return l;
-      const [moved] = opts.splice(from, 1);
-      opts.splice(to, 0, moved);
-      return { ...l, options: opts };
-    });
+    if (!selList || selList.source !== "dropdown_options" || fromId === toId || busy) return;
+    const opts = selList.options.slice();
+    const from = opts.findIndex((o) => o.id === fromId);
+    const to = opts.findIndex((o) => o.id === toId);
+    if (from < 0 || to < 0) return;
+    const [moved] = opts.splice(from, 1);
+    opts.splice(to, 0, moved);
+    setBusy(true);
+    Promise.all(opts.map((o, idx) => supabase.from("dropdown_options").update({ sort_order: idx }).eq("id", o.id)))
+      .then((results) => {
+        const err = results.find((r) => r.error)?.error;
+        if (err) throw err;
+        fireToast("Urutan diperbarui");
+        refresh();
+      })
+      .catch((err) => fireToast(err?.message || "Gagal mengurutkan", "alert"))
+      .finally(() => setBusy(false));
   };
 
   const dnd = {
@@ -502,9 +503,7 @@ export function DropdownManagementBody() {
   const activeCount = selList ? selList.options.filter((o) => o.active).length : 0;
 
   /* ---- styles ---- */
-  const page = {
-    fontFamily: FONT_BODY, color: INK,
-  };
+  const page = { fontFamily: FONT_BODY, color: INK };
   const shell = {
     display: "grid", gridTemplateColumns: "320px 1fr", gap: 20,
     maxWidth: 1280, margin: "0 auto", alignItems: "start",
@@ -513,7 +512,6 @@ export function DropdownManagementBody() {
 
   return (
     <div style={page}>
-      {/* minimal CSS the inline styles can't express (placeholder + scrollbar + spinner) */}
       <style>{`
         .dm-scroll::-webkit-scrollbar{width:10px;height:10px}
         .dm-scroll::-webkit-scrollbar-thumb{background:#D8D0C2;border-radius:20px;border:3px solid ${SURFACE}}
@@ -615,6 +613,11 @@ export function DropdownManagementBody() {
                     <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: MUTED, background: CREAM, border: "1px solid " + LINE_SOFT, borderRadius: 6, padding: "2px 7px", flex: "0 0 auto" }}>
                       {selGroup.name}
                     </span>
+                    {!listEditable && (
+                      <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: MUTED, background: "#F3EFE6", border: "1px solid " + LINE_SOFT, borderRadius: 6, padding: "2px 7px", flex: "0 0 auto" }}>
+                        toggle saja
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>{selList.desc}</div>
                   <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
@@ -623,19 +626,21 @@ export function DropdownManagementBody() {
                     <Stat label="Nonaktif" value={selList.options.length - activeCount} color={FAINT} />
                   </div>
                 </div>
-                <button type="button" onClick={() => { setEditor({ mode: "add" }); setPendingDelete(null); }}
-                  onMouseDown={(e) => (e.currentTarget.style.transform = "scale(.97)")}
-                  onMouseUp={(e) => (e.currentTarget.style.transform = "none")}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 8, height: 44, padding: "0 18px",
-                    borderRadius: 11, border: "none", background: ORANGE, color: "#fff", fontFamily: FONT_HEAD,
-                    fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
-                    boxShadow: "0 6px 16px rgba(232,90,30,.22)", transition: "transform .1s, background .2s",
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = ORANGE_DK)}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = ORANGE)}>
-                  <Plus size={17} />Tambah Opsi
-                </button>
+                {listEditable && (
+                  <button type="button" onClick={() => { setEditor({ mode: "add" }); setPendingDelete(null); }}
+                    onMouseDown={(e) => (e.currentTarget.style.transform = "scale(.97)")}
+                    onMouseUp={(e) => (e.currentTarget.style.transform = "none")}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 8, height: 44, padding: "0 18px",
+                      borderRadius: 11, border: "none", background: ORANGE, color: "#fff", fontFamily: FONT_HEAD,
+                      fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+                      boxShadow: "0 6px 16px rgba(232,90,30,.22)", transition: "transform .1s, background .2s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = ORANGE_DK)}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = ORANGE)}>
+                    <Plus size={17} />Tambah Opsi
+                  </button>
+                )}
               </div>
 
               {/* option filter */}
@@ -654,15 +659,15 @@ export function DropdownManagementBody() {
 
               {/* option list */}
               <div className="dm-scroll" style={{ padding: "14px 22px 22px", display: "flex", flexDirection: "column", gap: 9, maxHeight: "calc(100vh - 360px)", overflowY: "auto" }}>
-                {editor && editor.mode === "add" && (
+                {listEditable && editor && editor.mode === "add" && (
                   <OptionEditor initial={{ active: true }} onSave={addOption} onCancel={() => setEditor(null)} />
                 )}
 
-                {visibleOptions.map((o, i) =>
-                  editor && editor.mode === "edit" && editor.id === o.id ? (
+                {visibleOptions.map((o) =>
+                  listEditable && editor && editor.mode === "edit" && editor.id === o.id ? (
                     <OptionEditor key={o.id} initial={o} onSave={(d) => updateOption(o.id, d)} onCancel={() => setEditor(null)} />
                   ) : (
-                    <OptionRow key={o.id} opt={o} index={selList.options.indexOf(o)}
+                    <OptionRow key={o.id} opt={o} index={selList.options.indexOf(o)} editable={listEditable}
                       onEdit={(opt) => { setEditor({ mode: "edit", id: opt.id }); setPendingDelete(null); }}
                       onDelete={deleteOption} onToggle={toggleOption}
                       dnd={dnd} pendingDelete={pendingDelete} setPendingDelete={setPendingDelete} />
@@ -677,7 +682,7 @@ export function DropdownManagementBody() {
                         {optQuery ? "Tidak ada opsi yang cocok" : "Belum ada opsi"}
                       </div>
                       <div style={{ fontSize: 13 }}>
-                        {optQuery ? "Coba kata kunci lain." : "Klik “Tambah Opsi” untuk membuat pilihan pertama."}
+                        {optQuery ? "Coba kata kunci lain." : listEditable ? "Klik “Tambah Opsi” untuk membuat pilihan pertama." : "Daftar ini dikelola di modul lain."}
                       </div>
                     </div>
                   </div>
@@ -688,6 +693,7 @@ export function DropdownManagementBody() {
         </div>
       </div>
       )}
+      {toastNode}
     </div>
   );
 }

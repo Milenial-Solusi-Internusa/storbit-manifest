@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { ChevronLeft, Save, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 
 const C = {
   bg:        '#F6EFE3',
@@ -18,7 +19,8 @@ const C = {
   danger:    '#B23227',
 };
 
-const SERVICE_TYPES = [
+// Fallback — used only if the DB fetch (dropdown_options) fails or is empty.
+const SERVICE_TYPES_FALLBACK = [
   { value: 'freight_forwarding', label: 'Freight Forwarding' },
   { value: 'customs',            label: 'Customs Clearance'  },
   { value: 'trading',            label: 'General Trading'    },
@@ -62,6 +64,7 @@ async function generateInquiryNo(companyId, companyCode) {
 
 export default function InquiryFormPage({ onBack, showToast }) {
   const { profile } = useAuth();
+  const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
 
   const [form, setForm] = useState({
     prospect_id:      '',
@@ -199,7 +202,7 @@ export default function InquiryFormPage({ onBack, showToast }) {
 
           <Field label="Service Type" req>
             <select value={form.service_type} onChange={set('service_type')} style={selStyle}>
-              {SERVICE_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {serviceTypeOpts.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
             {errors.service_type && <span style={{ fontSize: 11.5, color: C.danger }}>{errors.service_type}</span>}
           </Field>
