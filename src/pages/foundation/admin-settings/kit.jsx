@@ -18,6 +18,8 @@ import {
   Receipt, Search, Inbox, Quote, ShoppingCart, Globe, MapPin, Phone, Mail,
   Globe2, Calendar, Landmark, Percent, Wallet, Scale, Clock, Banknote,
   AlignLeft, AlignCenter, AlignRight,
+  Smartphone, User, Filter, Download, MessageCircle, Webhook, KeyRound,
+  Signal, Zap, Link2, Copy, Eye, EyeOff,
 } from "lucide-react";
 
 import {
@@ -40,6 +42,9 @@ const ICONS = {
   calendar: Calendar, bank: Landmark, percent: Percent, wallet: Wallet,
   scale: Scale, clock: Clock, banknote: Banknote, alignleft: AlignLeft,
   aligncenter: AlignCenter, alignright: AlignRight,
+  smartphone: Smartphone, user: User, filter: Filter, download: Download,
+  messagecircle: MessageCircle, webhook: Webhook, key: KeyRound,
+  signal: Signal, zap: Zap, link2: Link2, copy: Copy, eye: Eye, eyeoff: EyeOff,
 };
 
 export function Icon({ name, size = 18, color, style, strokeWidth = 1.7 }) {
@@ -535,6 +540,21 @@ export function Skel({ w = "100%", h = 14, r = 8, style }) {
 /* ---------- card shell ---------- */
 export function Card({ children, style, pad = 24 }) {
   return <div style={{ background: SURFACE, border: "1px solid " + LINE, borderRadius: 16, padding: pad, ...style }}>{children}</div>;
+}
+
+/* ---------- compact select (fixed width, for setting rows / filters) ---------- */
+export function KitSelect({ value, onChange, options, width = 220, icon }) {
+  const [f, setF] = useState(false);
+  return (
+    <div style={{ position: "relative", width }}>
+      {icon && <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none" }}><Icon name={icon} size={15} /></span>}
+      <select value={value} onChange={(e) => onChange(e.target.value)} onFocus={() => setF(true)} onBlur={() => setF(false)}
+        style={{ width: "100%", height: 44, borderRadius: 11, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: icon ? "0 34px 0 36px" : "0 34px 0 14px", fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500, color: INK, appearance: "none", WebkitAppearance: "none", cursor: "pointer", outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }}>
+        {options.map((o) => { const v = typeof o === "string" ? o : o.value; const l = typeof o === "string" ? o : o.label; return <option key={v} value={v}>{l}</option>; })}
+      </select>
+      <span style={{ position: "absolute", right: 13, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none" }}><Icon name="chevdown" size={15} /></span>
+    </div>
+  );
 }
 
 /* ---------- selectable pill (tag toggle) ---------- */

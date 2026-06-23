@@ -1,5 +1,19 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-06-24
+
+### Admin Settings — 4 page baru (Security/Audit/General/Integrations) port Lovable (Phase 2.11A)
+> Port 5 file Lovable (AdminKit + 4 page) ke pola modul Nexus. Reuse `kit.jsx` + `tokens.js` existing (TANPA bikin `adminKit.js` baru). Lokasi `src/pages/foundation/admin-settings/`. Routing via `activeMenu` state-swap (bukan react-router). Tanpa ubah DB/RLS, tanpa package baru. 3 file diubah + 4 file baru.
+- [x] **TASK 1 (kit.jsx)** — TIDAK buat adminKit.js (duplikasi). Tambah ke kit existing: 13 ikon lucide yang kurang (`smartphone/user/filter/download/messagecircle/webhook/key(KeyRound)/signal/zap/link2/copy/eye/eyeoff`) + primitive `KitSelect` (compact select; dipakai General/Audit). NumberStepper/Segmented/SaveButton(variant navy)/dll sudah ada
+- [x] **TASK 2 (GeneralPreferencesPage)** — layout/styling Lovable PERSIS; shared-scope→import `./kit`+`./tokens`. Data: localStorage `general_prefs_<entity>` (load on entity change + persist per-section save). EntitySwitcher default ke company user via `useAuth` (ENTITY_CODE_BY_ID, set once). TODO: migrate ke DB settings table
+- [x] **TASK 3 (SecurityPolicyPage)** — layout PERSIS; localStorage `security_policy_<entity>` (password policy/session/login protection/2FA per-role). EntitySwitcher default dari useAuth. TODO: DB + enforcement server-side
+- [x] **TASK 4 (AuditLogPage)** — fetch REAL dari `user_login_logs` (login events: logged_in_at/ip/user_agent) + join `profiles` utk nama; RLS auto-scope (super_admin semua, admin/manager company). Map → type=login/module=Authentication. User-filter dropdown dinamis dari data. Filter/pagination/CSV export tetap jalan; loading/error/empty state. ⚠️ Belum ada tabel audit sistem penuh (TD-05) → baru login events; create/update/delete dst nyusul
+- [x] **TASK 5 (IntegrationsPage)** — layout PERSIS; localStorage `integrations_wa/smtp/hook/keys` (load once + persist on change). WhatsApp/SMTP/n8n webhook/API keys interaktif (modal/slideover, test sim, generate/copy/revoke key). TODO: secrets pindah ke secret store server-side (bukan localStorage)
+- [x] **TASK 6 (AdminSettingsHub)** — group "Roadmap" → "Keamanan & Sistem"; 4 card status `roadmap`→`available`. Card style existing dipertahankan. id card (security/audit/general/integrate) tetap
+- [x] **TASK 7 (App.jsx)** — 4 lazy import + extend hub `onOpen` map (security/audit/general/integrate → `admin-settings-security/-audit/-general/-integrations`) + 4 render block (ErrorBoundary+Suspense, `onHome`→hub). Pola `admin-settings-*` existing menangani sidebar/scroll guard
+- [x] **Build clean** — 2555 modules (+4), 1.34s
+- [ ] **Tes manual (belum — runtime):** hub 4 card "Tersedia" → navigasi; General EntitySwitcher+save; Security toggle/stepper+save; Audit filter/pagination/CSV (data login_logs nyata); Integrations modal/slideover buka-tutup, test connection, generate/copy/revoke key; persist localStorage survive reload
+
 ## 2026-06-22
 
 ### CRM Report page — port Lovable + data Supabase real (Phase 2.10L)
