@@ -44,6 +44,28 @@
 - [ ] **F7.** Seragamkan loading/empty/error state lintas list page (TD-35).
 - [ ] **F8.** Lanjutkan audit RLS: ganti `is_admin_or_above`→`is_manager_or_above` Bucket B (master config, butuh keputusan bisnis) + audit DELETE policy tabel ber-`deleted_at` (TD-01/TD-03; oversight read & 4 DELETE policy sudah selesai).
 
+> Prioritas tech-debt aktif: **F2** (~65 `console.*`), **F3** (~33 `.single()`), **F4** (~97 `.limit()`), **F5** (file >800 baris), **F6** (dead code `*.legacy.jsx`).
+
+### G. Topbar & Dropdown (port Lovable → CC)
+- [ ] **G1.** **Dropdown Management** — port JSX Lovable ke CC (brief/desain selesai; reuse `kit.jsx`+`tokens.js`; data Supabase / fallback bila tabel belum ada). Master dropdown/option values.
+- [ ] **G2.** **Entity switcher navbar** — Step 3 dari 4 fitur topbar (setelah notification bell + pending approval badge). Switch entity aktif MSI/JCI/SOA dari topbar.
+- [ ] **G3.** **Search bar navbar** — Step 4 topbar. Global search (debounce ≥300ms; scope per modul/role).
+
+---
+
+## Completed (24 Jun 2026)
+
+> Detail di `CLAUDE.md` Recent Changes (2.11A) + `08_TECH_DEBT.md` (TD-36/TD-37).
+
+**Admin Settings — 4 page baru (port Lovable, 2.11A):**
+- [x] **Security Policy** — password/sesi/login-protection/2FA per-role (localStorage `security_policy_*`).
+- [x] **Audit Log** — fetch real `user_login_logs` + join `profiles`; filter/pagination/CSV (login-only sampai `audit_logs` — TD-37).
+- [x] **General Preferences** — lokalisasi/format/tampilan per entitas (localStorage `general_prefs_*`; EntitySwitcher default `useAuth`).
+- [x] **Integrations** — WhatsApp/SMTP/n8n/API keys (localStorage `integrations_*`; ⚠️ credentials belum secure — TD-36).
+- [x] **`kit.jsx` extended** — +13 ikon lucide + `KitSelect`; hub group "Roadmap"→"Keamanan & Sistem"; 4 route `admin-settings-*` di App.jsx (state-swap). Reuse kit existing, tanpa `adminKit.js`.
+
+> ⚠️ Semua **belum tes manual runtime**. Tanpa ubah DB/RLS, tanpa package baru.
+
 ---
 
 ## Completed (23 Jun 2026)
