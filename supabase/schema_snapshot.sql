@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict sw5wv8CdOV4dLGwqT8WufF4jRTiMUL3YdXskcNVhDjfOVL3AKOzDxL8JJotVwQx
+\restrict GJIq3IjOoeiDqzQ72dBG4HhovR4aUFdFumQaN4zWceIgjR9Hh0xSYs7v5papCOM
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -386,17 +386,17 @@ COMMENT ON FUNCTION public.is_admin_or_above() IS 'True if current user is admin
 --
 
 CREATE FUNCTION public.is_manager_or_above() RETURNS boolean
-    LANGUAGE sql SECURITY DEFINER
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
     AS $$
   SELECT EXISTS (
-    SELECT 1
-    FROM user_roles ur
+    SELECT 1 FROM user_roles ur
     JOIN roles r ON r.id = ur.role_id
     WHERE ur.user_id = auth.uid()
+      AND r.code IN ('super_admin','admin','ceo','gm','manager','sales_head')
       AND ur.is_active = true
-      AND r.code IN ('super_admin', 'admin', 'ceo', 'gm', 'manager', 'sales_head')
       AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
-  )
+  );
 $$;
 
 
@@ -7025,7 +7025,7 @@ CREATE POLICY approval_delegations_insert ON public.approval_delegations FOR INS
 -- Name: approval_delegations approval_delegations_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY approval_delegations_read ON public.approval_delegations FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) AND ((delegator_id = auth.uid()) OR (delegate_id = auth.uid()) OR public.is_admin_or_above())));
+CREATE POLICY approval_delegations_read ON public.approval_delegations FOR SELECT TO authenticated USING (((delegator_id = auth.uid()) OR (delegate_id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_manager_or_above())) OR public.is_super_admin()));
 
 
 --
@@ -7575,7 +7575,7 @@ CREATE POLICY hrga_notification_queue_insert ON public.hrga_notification_queue F
 -- Name: hrga_notification_queue hrga_notification_queue_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_notification_queue_read ON public.hrga_notification_queue FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above())));
+CREATE POLICY hrga_notification_queue_read ON public.hrga_notification_queue FOR SELECT TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_manager_or_above())) OR public.is_super_admin()));
 
 
 --
@@ -7792,7 +7792,7 @@ CREATE POLICY hrga_requests_insert ON public.hrga_requests FOR INSERT TO authent
 -- Name: hrga_requests hrga_requests_read_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_requests_read_own ON public.hrga_requests FOR SELECT TO authenticated USING (((deleted_at IS NULL) AND (public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (requester_id = auth.uid())) OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text) OR public.has_role('it'::text) OR public.has_role('finance'::text))))));
+CREATE POLICY hrga_requests_read_own ON public.hrga_requests FOR SELECT TO authenticated USING (((requester_id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_manager_or_above() OR public.has_role('hrga'::text) OR public.has_role('it'::text) OR public.has_role('finance'::text))) OR public.is_super_admin()));
 
 
 --
@@ -7956,6 +7956,33 @@ CREATE POLICY network_select ON public.asset_network FOR SELECT USING ((public.i
 --
 
 CREATE POLICY network_update ON public.asset_network FOR UPDATE USING ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notifications notifications_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notifications_insert ON public.notifications FOR INSERT TO authenticated WITH CHECK (true);
+
+
+--
+-- Name: notifications notifications_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notifications_read ON public.notifications FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+
+
+--
+-- Name: notifications notifications_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notifications_update ON public.notifications FOR UPDATE TO authenticated USING ((user_id = auth.uid()));
 
 
 --
@@ -8652,5 +8679,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict sw5wv8CdOV4dLGwqT8WufF4jRTiMUL3YdXskcNVhDjfOVL3AKOzDxL8JJotVwQx
+\unrestrict GJIq3IjOoeiDqzQ72dBG4HhovR4aUFdFumQaN4zWceIgjR9Hh0xSYs7v5papCOM
 
