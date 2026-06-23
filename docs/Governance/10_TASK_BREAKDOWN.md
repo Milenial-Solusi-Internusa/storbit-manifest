@@ -34,6 +34,36 @@
 - [ ] **E2.** Setup Vitest + RTL mulai dari util murni (`spCalc`, `bant`, format) (TD-07) — prasyarat pecah App.jsx.
 - [ ] **E3.** Pasang Sentry + ErrorBoundary report (TD-08).
 
+### F. Tech debt cleanup (open — dari audit 23 Jun 2026)
+- [ ] **F1.** Bungkus write non-atomik dlm RPC/transaksi: `ar_btbs` (`db.js:371`), permission diff-save (`RolesPage.jsx:201`, `UserEditPage.jsx:355`) (TD-33).
+- [ ] **F2.** Hapus / gate `import.meta.env.DEV` sisa **~65 `console.*`** noise di produksi (TD-32; AuthContext + ProductsPage sudah selesai).
+- [ ] **F3.** `.single()` → `.maybeSingle()` sisa **~33 lokasi** (TD-10).
+- [ ] **F4.** Tambah `.limit()`/`.range()` ke **~97 query** tanpa limit (TD-11).
+- [ ] **F5.** Pecah file >800 baris (setelah test): `CRMDashboardPage` (~1.996), `AssetDetailITPage`, `AssetDetailPage` (~1.094), `SalesOrderDetailPage` (TD-13) + tier 800–1.000: `MyProfilePage` (~870), `QuotationFormPage` (~847), `ProductDetailPage` (~832), `QuotationDetailPage` (~824), `CustomerDetailPage` (~812) (TD-34).
+- [ ] **F6.** Hapus dead code `*.legacy.jsx` (~1.206 baris: `CustomerMasterPage.legacy.jsx`, `UserManagement.legacy.jsx`) setelah konfirmasi 0 ref (TD-15).
+- [ ] **F7.** Seragamkan loading/empty/error state lintas list page (TD-35).
+- [ ] **F8.** Lanjutkan audit RLS: ganti `is_admin_or_above`→`is_manager_or_above` Bucket B (master config, butuh keputusan bisnis) + audit DELETE policy tabel ber-`deleted_at` (TD-01/TD-03; oversight read & 4 DELETE policy sudah selesai).
+
+---
+
+## Completed (23 Jun 2026)
+
+> Selesai hari ini. Detail di `CLAUDE.md` Recent Changes + `08_TECH_DEBT.md`.
+
+**Fitur:**
+- [x] **CRM Report page** — KPI, trend chart, per-sales breakdown, activity detail, Supabase real data, sidebar menu Report (2.10L–M). *(belum tes manual runtime)*
+- [x] **Notification bell** — badge, dropdown, mark-as-read, 4 producers: activity assign/done, HRGA submit/approve (2.10K). *(belum tes manual runtime)*
+- [x] **Pending Approval badge** — HRGA pending count, auto-refresh 60s (2.10J). *(belum tes manual runtime)*
+- [x] **Quotation** — currency EUR/SGD/JPY/MYR + VAT rate dropdown + kurs per-baris (2.10C/H/I).
+
+**Tech debt:**
+- [x] **`console.*` leak** — `AuthContext` 6 dihapus (1 warn + 5 error), `ProductsPage` sudah bersih duluan (TD-32 PARTIAL — sisa ~65 di F2).
+- [x] **RLS oversight read** — 3 policy +`is_manager_or_above` (`hrga_requests_read_own`, `hrga_notification_queue_read`, `approval_delegations_read`) + `is_manager_or_above()` +STABLE. Bucket A/B sengaja tak diubah (TD-01 PARTIAL).
+- [x] **DELETE policy** — 4 tabel transaksional: `notifications`, `hrga_request_items`, `hrga_offboarding_items`, `sp_btbs` (TD-03 PARTIAL).
+- [x] **Quotation save atomik** — RPC `save_quotation` (sejak 2.9C, finalized 2.9O) (TD-09 — sisa FE-calc).
+
+> ⚠️ Perubahan RLS/DELETE: refresh `schema_snapshot.sql` via `pg_dump` bila sudah live di DB (snapshot saat ini mungkin belum mencerminkannya).
+
 ---
 
 ## Backlog

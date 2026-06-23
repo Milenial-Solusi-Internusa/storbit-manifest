@@ -14,6 +14,8 @@
 | | RBAC (modules→menus→actions, `user_menu_permissions`) | ✅ | `hasPermission` + `hasMenuPermission`; RLS belum sinkron (TD-01) |
 | | User Access (list, edit page, avatar upload, permission matrix) | ✅ | EF delete-user/reset-password dibuat, **deploy pending** (TD-21) |
 | | Auth lifecycle hardening (logout cleanup, restored-menu guard, content gate, tab-switch state) | ✅ | Fase 2.3D–F, 2.8B |
+| | **Notification bell** (badge, dropdown, mark-as-read) | ✅ | 4 producers: activity assign/done, HRGA submit/approve; TDZ-safe (2.10K); **belum tes manual runtime** |
+| | **Pending Approval badge** (HRGA pending count) | ✅ | auto-refresh 60s, navigasi ke inbox HRGA (2.10J); **belum tes manual runtime** |
 | | `profiles.role` deprecation | 🔄 | Tahap 1–3 selesai; drop kolom = tahap 4 pending (TD-20) |
 | **Foundation / Master Data** | Companies, Branches, Departments, Roles, Products, Document Types, Payment Terms, Taxes, Status Catalog | ✅ | CRUD live |
 | | Positions (compact group-by-code + checkbox entitas) | ✅ | 2.9T |
@@ -24,8 +26,9 @@
 | **CRM & Inquiry** | Pipeline / Kanban (drag-stage, soft-gate, toolbar: member/sort/filter/list-view) | ✅ | 2.9X–Z; `estimated_value` |
 | | Prospect form + BANT scorecard + Win/Loss capture | ✅ | auto-assign sales, dup-check |
 | | Inquiry (list + form + detail) | ✅ | |
-| | Quotation (builder, SLA BD-05, pricing authority BD-06, discount, currency dropdown, VAT rate per service, PDF) | ✅ | PDF = `@react-pdf/renderer` (2.10A–C) |
+| | Quotation (builder, SLA BD-05, pricing authority BD-06, discount, currency dropdown, VAT rate per service, PDF) | ✅ | PDF = `@react-pdf/renderer` (2.10A–C); **currency EUR/SGD/JPY/MYR + VAT rate dropdown + kurs per-baris** ✅ (2.10C/H/I) |
 | | CRM Dashboard (KPI, charts, calendar, per-role, activity report) | ✅ | bg putih 2.10E |
+| | **CRM Report page** (KPI, trend chart, per-sales breakdown, activity detail) | ✅ | Supabase real data + sidebar menu Report (2.10L–M); **belum tes manual runtime** |
 | | Master Customer (list + detail page + health score) | ✅ | per-entitas + Free Agent (2.1C–G) |
 | | Lead Pool | ✅ | 2.4A |
 | | Activities (unified call/visit/meeting/email/followup/wa) + Activity Log feed | ✅ | gantikan sales_calls/visits (2.9D–N) |
@@ -44,6 +47,23 @@
 | **Approval Center** | Reusable approval engine | 🔄 | tabel + Admin Settings UI ada; engine runtime belum |
 | **Document Mgmt / API / Portal / Reporting / Audit** | — | 📋 | arah jangka panjang (`AGENTS.md`) |
 | **App Launcher** | Bento module grid + permission gating | ✅ | 2.0H |
+
+---
+
+## Selesai Terbaru (23 Jun 2026)
+
+**Fitur:**
+- ✅ **CRM Report page** — KPI, trend chart, per-sales breakdown, Supabase real data, sidebar menu Report.
+- ✅ **Notification bell** — badge, dropdown, mark-as-read, 4 producers (activity assign/done, HRGA submit/approve).
+- ✅ **Pending Approval badge** — HRGA pending count, auto-refresh 60s.
+- ✅ **Quotation** — currency EUR/SGD/JPY/MYR + VAT rate dropdown + kurs per-baris.
+
+**Tech debt fixes (detail: `08_TECH_DEBT.md`):**
+- ✅ `console.*` leak — `AuthContext` 6 dihapus, `ProductsPage` sudah bersih (TD-32; sisa ~65 OPEN).
+- ✅ RLS oversight read — 3 policy +`is_manager_or_above` + `is_manager_or_above()` +STABLE (TD-01 PARTIAL).
+- ✅ DELETE policy — 4 tabel transaksional: `notifications`, `hrga_request_items`, `hrga_offboarding_items`, `sp_btbs` (TD-03 PARTIAL).
+
+> ⚠️ Beberapa fitur di atas berstatus **"build clean, belum tes manual runtime"** — verifikasi sebelum dianggap final. Perubahan RLS/DELETE: refresh `schema_snapshot.sql` via `pg_dump` bila sudah live di DB.
 
 ---
 
