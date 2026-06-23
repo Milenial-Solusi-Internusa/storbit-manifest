@@ -27,6 +27,7 @@ const HUB_GROUPS = [
       { id: "audit",     icon: "clipboard",  name: "Audit Log",            desc: "Riwayat aktivitas sistem.",               status: "available" },
       { id: "general",   icon: "settings",   name: "General Preferences",  desc: "Lokalisasi, format & tampilan.",          status: "available" },
       { id: "integrate", icon: "plug",       name: "Integrations",         desc: "Konektor eksternal & API key.",           status: "available" },
+      { id: "dropdown-mgmt", icon: "layers", name: "Dropdown Management",   desc: "Daftar pilihan referensi lintas modul.",  status: "available" },
     ],
   },
 ];

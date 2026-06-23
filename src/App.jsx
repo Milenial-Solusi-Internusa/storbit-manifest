@@ -61,6 +61,7 @@ const SecurityPolicyPage     = lazy(() => import('./pages/foundation/admin-setti
 const AuditLogPage           = lazy(() => import('./pages/foundation/admin-settings/AuditLogPage'));
 const GeneralPreferencesPage = lazy(() => import('./pages/foundation/admin-settings/GeneralPreferencesPage'));
 const IntegrationsPage       = lazy(() => import('./pages/foundation/admin-settings/IntegrationsPage'));
+const DropdownManagementPage = lazy(() => import('./pages/foundation/admin-settings/DropdownManagementPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -2704,6 +2705,7 @@ export default function StorbitManifest() {
                     : id === 'audit' ? 'admin-settings-audit'
                     : id === 'general' ? 'admin-settings-general'
                     : id === 'integrate' ? 'admin-settings-integrations'
+                    : id === 'dropdown-mgmt' ? 'admin-settings-dropdown'
                     : 'admin-settings'
                 )} />
               </Suspense>
@@ -2769,6 +2771,13 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Integrations temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <IntegrationsPage onHome={() => setActiveMenu('admin-settings')} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'admin-settings-dropdown' && (
+            <ErrorBoundary title="Dropdown Management temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <DropdownManagementPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
