@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict p6t8uvbIGGBax74TwHginebb4ed4xNenSXMlcvE2rWSTn3SMDkZwDpvFfn2yyYc
+\restrict Iumc5zhBBkxz5rjM2gA8tER88zNtNF4GhKAaOGQI4xyZ2ICZXwJgZlHDtww4UEN
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -7619,6 +7619,15 @@ CREATE POLICY hrga_offboarding_checklists_update ON public.hrga_offboarding_chec
 ALTER TABLE public.hrga_offboarding_items ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: hrga_offboarding_items hrga_offboarding_items_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY hrga_offboarding_items_delete ON public.hrga_offboarding_items FOR DELETE TO authenticated USING (((EXISTS ( SELECT 1
+   FROM public.hrga_requests r
+  WHERE ((r.id = hrga_offboarding_items.request_id) AND (r.company_id = public.get_user_company_id()) AND public.is_manager_or_above()))) OR public.is_super_admin()));
+
+
+--
 -- Name: hrga_offboarding_items hrga_offboarding_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -7711,6 +7720,15 @@ CREATE POLICY hrga_request_attachments_update ON public.hrga_request_attachments
 --
 
 ALTER TABLE public.hrga_request_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: hrga_request_items hrga_request_items_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY hrga_request_items_delete ON public.hrga_request_items FOR DELETE TO authenticated USING (((EXISTS ( SELECT 1
+   FROM public.hrga_requests r
+  WHERE ((r.id = hrga_request_items.request_id) AND ((r.requester_id = auth.uid()) OR public.is_manager_or_above()) AND (r.company_id = public.get_user_company_id())))) OR public.is_super_admin()));
+
 
 --
 -- Name: hrga_request_items hrga_request_items_insert; Type: POLICY; Schema: public; Owner: -
@@ -7963,6 +7981,13 @@ CREATE POLICY network_update ON public.asset_network FOR UPDATE USING ((company_
 --
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notifications notifications_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notifications_delete ON public.notifications FOR DELETE TO authenticated USING ((user_id = auth.uid()));
+
 
 --
 -- Name: notifications notifications_insert; Type: POLICY; Schema: public; Owner: -
@@ -8394,6 +8419,13 @@ CREATE POLICY software_update ON public.asset_software_licenses FOR UPDATE USING
 ALTER TABLE public.sp_btbs ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: sp_btbs sp_btbs_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_btbs_delete ON public.sp_btbs FOR DELETE TO authenticated USING (true);
+
+
+--
 -- Name: sp_btbs sp_btbs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -8679,5 +8711,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict p6t8uvbIGGBax74TwHginebb4ed4xNenSXMlcvE2rWSTn3SMDkZwDpvFfn2yyYc
+\unrestrict Iumc5zhBBkxz5rjM2gA8tER88zNtNF4GhKAaOGQI4xyZ2ICZXwJgZlHDtww4UEN
 
