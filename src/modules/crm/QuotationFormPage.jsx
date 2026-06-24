@@ -174,13 +174,18 @@ function ProductDescInput({ value, products, inputStyle, onChangeText, onPick })
 
   // Position the portalled dropdown from the input's bounding rect, and keep it
   // anchored on scroll/resize. position:fixed → viewport coords (no scroll offset).
+  // Flip above the input when there isn't enough room below but there is above.
   useEffect(() => {
     if (!showDrop) return undefined;
     const update = () => {
       const el = inputRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setCoords({ top: r.bottom, left: r.left, width: r.width });
+      const dropdownHeight = 240; // matches the dropdown max-height
+      const spaceBelow = window.innerHeight - r.bottom;
+      const flipUp = spaceBelow < dropdownHeight && r.top > dropdownHeight;
+      const top = flipUp ? r.top - dropdownHeight : r.bottom;
+      setCoords({ top, left: r.left, width: r.width });
     };
     update();
     window.addEventListener('resize', update);
@@ -222,7 +227,7 @@ function ProductDescInput({ value, products, inputStyle, onChangeText, onPick })
             position: 'fixed', top: coords.top, left: coords.left, width: coords.width, marginTop: 2,
             background: C.surface, border: `1px solid ${C.line}`, borderRadius: 8,
             boxShadow: '0 6px 20px rgba(35,41,30,.16)', zIndex: 9999,
-            maxHeight: 260, overflowY: 'auto', minWidth: 240,
+            maxHeight: 240, overflowY: 'auto', minWidth: 240,
           }}
         >
           {matches.length === 0 ? (
