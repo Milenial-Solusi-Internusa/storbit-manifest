@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Zgm82V9MM2Y2Xy6iuvhAYjEhPpwLsuOjxefLqnI8ZTmAKdRCc1358SMtULFTQVO
+\restrict oqFBo29rBnsGzfbTHk7dwbTCY6ooh5eA8y3H0UNX1dOcMTZADg7vrQ6lUTqjfaA
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2877,6 +2877,26 @@ CREATE TABLE public.sales_visits (
 
 
 --
+-- Name: service_charges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.service_charges (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid,
+    code text NOT NULL,
+    name text NOT NULL,
+    category text NOT NULL,
+    default_price numeric(18,2) DEFAULT 0,
+    unit text,
+    is_active boolean DEFAULT true,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT service_charges_category_check CHECK ((category = ANY (ARRAY['freight'::text, 'customs'::text, 'trucking'::text, 'warehousing'::text, 'admin'::text, 'other'::text])))
+);
+
+
+--
 -- Name: sp_btbs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4065,6 +4085,22 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
+-- Name: service_charges service_charges_company_id_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_charges
+    ADD CONSTRAINT service_charges_company_id_code_key UNIQUE (company_id, code);
+
+
+--
+-- Name: service_charges service_charges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_charges
+    ADD CONSTRAINT service_charges_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sp_btbs sp_btbs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5044,6 +5080,27 @@ CREATE INDEX idx_roles_company_id ON public.roles USING btree (company_id);
 --
 
 CREATE INDEX idx_roles_deleted_at ON public.roles USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
+
+
+--
+-- Name: idx_service_charges_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_service_charges_active ON public.service_charges USING btree (is_active);
+
+
+--
+-- Name: idx_service_charges_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_service_charges_category ON public.service_charges USING btree (category);
+
+
+--
+-- Name: idx_service_charges_company; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_service_charges_company ON public.service_charges USING btree (company_id);
 
 
 --
@@ -6947,6 +7004,22 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
+-- Name: service_charges service_charges_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_charges
+    ADD CONSTRAINT service_charges_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: service_charges service_charges_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_charges
+    ADD CONSTRAINT service_charges_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: sp_items sp_items_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8679,6 +8752,40 @@ CREATE POLICY sales_visits_update ON public.sales_visits FOR UPDATE USING (((com
 
 
 --
+-- Name: service_charges; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.service_charges ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: service_charges service_charges_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY service_charges_delete ON public.service_charges FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: service_charges service_charges_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY service_charges_read ON public.service_charges FOR SELECT USING (((auth.uid() IS NOT NULL) AND ((company_id IS NULL) OR (company_id = public.get_user_company_id()))));
+
+
+--
+-- Name: service_charges service_charges_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY service_charges_update ON public.service_charges FOR UPDATE USING (public.is_admin_or_above());
+
+
+--
+-- Name: service_charges service_charges_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY service_charges_write ON public.service_charges FOR INSERT WITH CHECK (public.is_admin_or_above());
+
+
+--
 -- Name: asset_software_licenses software_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -8998,5 +9105,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Zgm82V9MM2Y2Xy6iuvhAYjEhPpwLsuOjxefLqnI8ZTmAKdRCc1358SMtULFTQVO
+\unrestrict oqFBo29rBnsGzfbTHk7dwbTCY6ooh5eA8y3H0UNX1dOcMTZADg7vrQ6lUTqjfaA
 
