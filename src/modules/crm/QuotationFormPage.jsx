@@ -1,12 +1,13 @@
 // src/modules/crm/QuotationFormPage.jsx
 // Layout: header kiri 60% + sticky summary kanan 40%
 // Sectioned line items dengan currency IDR/USD per row + kurs USD manual
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ChevronLeft, Plus, Trash2, Save, Receipt, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
+import { useProducts } from '../../hooks/useProducts';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -151,8 +152,84 @@ async function generateQuotationNo(companyId, companyCode) {
   return `QUO/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
 }
 
+// ─── Description input with products autocomplete ──────────────────────────
+// Free-text input + suggestion dropdown sourced from the products catalog.
+// Suggestions only — user can still type anything without picking.
+function ProductDescInput({ value, products, inputStyle, onChangeText, onPick }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  const q = (value || '').trim().toLowerCase();
+  const matches = q.length >= 1
+    ? (products || []).filter(p =>
+        (p.name && p.name.toLowerCase().includes(q)) ||
+        (p.code && p.code.toLowerCase().includes(q))
+      ).slice(0, 10)
+    : [];
+  const showDrop = open && q.length >= 1;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDocDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <input
+        value={value}
+        onChange={(e) => { onChangeText(e.target.value); setOpen(true); }}
+        onFocus={() => { if ((value || '').trim().length >= 1) setOpen(true); }}
+        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
+        style={inputStyle}
+        placeholder="Deskripsi…"
+        autoComplete="off"
+      />
+      {showDrop && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 2,
+          background: C.surface, border: `1px solid ${C.line}`, borderRadius: 8,
+          boxShadow: '0 6px 20px rgba(35,41,30,.16)', zIndex: 60,
+          maxHeight: 260, overflowY: 'auto', minWidth: 240,
+        }}>
+          {matches.length === 0 ? (
+            <div style={{ padding: '10px 12px', fontSize: 12, color: C.inkFaint }}>Tidak ada produk yang cocok</div>
+          ) : matches.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onPick(p); setOpen(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                padding: '8px 10px', background: 'none', border: 'none',
+                borderBottom: `1px solid ${C.lineSoft}`, cursor: 'pointer',
+                textAlign: 'left', fontFamily: 'inherit',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = C.surface2)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+            >
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: C.ink }}>
+                <span style={{ color: '#144682', fontWeight: 700 }}>[{p.code}]</span> {p.name}
+              </span>
+              {p.category && (
+                <span style={{
+                  flex: '0 0 auto', fontSize: 10.5, fontWeight: 600, color: '#144682',
+                  background: '#EAF0F8', borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap',
+                }}>
+                  {p.category}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Section component ────────────────────────────────────────────────────
-function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow, onRemoveSection, canRemove, currencies, unitLabels }) {
+function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow, onRemoveSection, canRemove, currencies, unitLabels, products }) {
   const currencyCodes = (currencies && currencies.length) ? currencies.map(c => c.code) : CURRENCIES;
   const unitOptions = (unitLabels && unitLabels.length) ? unitLabels : UNIT_LABELS_FALLBACK;
   const cellInp = (extra = {}) => ({
@@ -211,8 +288,19 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
             {section.rows.map((row) => (
               <tr key={row.id} style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
                 <td style={{ padding: '6px 6px', minWidth: 160 }}>
-                  <input value={row.description} onChange={e => onUpdateRow(section.id, row.id, 'description', e.target.value)}
-                    style={cellInp()} placeholder="Deskripsi…" />
+                  <ProductDescInput
+                    value={row.description}
+                    products={products}
+                    inputStyle={cellInp()}
+                    onChangeText={(v) => onUpdateRow(section.id, row.id, 'description', v)}
+                    onPick={(p) => {
+                      onUpdateRow(section.id, row.id, 'description', p.name);
+                      const unitVal = p.unit || p.uom;
+                      if (unitVal) onUpdateRow(section.id, row.id, 'unit_label', unitVal);
+                      const price = Number(p.default_price) || 0;
+                      if (price > 0) onUpdateRow(section.id, row.id, 'unit_price', price);
+                    }}
+                  />
                 </td>
                 <td className="no-print" style={{ padding: '6px 6px', width: 100 }}>
                   <input type="number" min="0" value={row.cost_price}
@@ -328,6 +416,9 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     () => unitOpts.map((o) => (typeof o === 'string' ? o : o.label)),
     [unitOpts]
   );
+
+  // Products catalog for line-item description autocomplete (company-scoped).
+  const { products } = useProducts();
 
   // VAT rates from `taxes` (company-scoped). Union with the standard fallback so
   // the 0 / 1,1% / 11% defaults are always present even if a company's taxes row
@@ -928,6 +1019,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
             canRemove={sections.length > 1}
             currencies={currencies}
             unitLabels={unitLabels}
+            products={products}
           />
         ))}
 
