@@ -7,7 +7,7 @@ import { AuthContext } from './authCtx';
 
 // ERP role priority — highest privilege wins when user has multiple active roles
 const ERP_ROLE_PRIORITY = [
-  'super_admin','admin','ceo','gm','manager',
+  'super_admin','admin','ceo','gm','manager','supervisor',
   'finance_controller','finance','operations',
   'sales','procurement','hrga','it','viewer',
 ];

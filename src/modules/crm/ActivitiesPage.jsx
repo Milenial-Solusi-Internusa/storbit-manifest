@@ -499,9 +499,9 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   //  • everyone else (manager, ceo, gm, …) → their own entity
   const isAllEntities = ['super_admin'].includes(erpRole);
   const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
-  // Mirrors DB is_manager_or_above() (incl. sales_head). Edit allowed for
+  // Mirrors DB is_manager_or_above() (incl. supervisor). Edit allowed for
   // manager+ or the activity's own assignee.
-  const isManagerOrAbove = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'sales_head'].includes(erpRole);
+  const isManagerOrAbove = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'supervisor'].includes(erpRole);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
