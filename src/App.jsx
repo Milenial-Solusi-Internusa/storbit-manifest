@@ -36,6 +36,7 @@ const InquiryFormPage      = lazy(() => import('./modules/crm/InquiryFormPage'))
 const QuotationFormPage    = lazy(() => import('./modules/crm/QuotationFormPage'));
 const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'));
 const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
+const DealDetailPage       = lazy(() => import('./modules/crm/DealDetailPage'));
 const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
 const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
@@ -1286,6 +1287,7 @@ export default function StorbitManifest() {
   const [showQuotationForm,   setShowQuotationForm]   = useState(false);
   const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
+  const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
   const { role: authRole, erpRoles, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading } = useAuth();
   const role = authRole || 'management';
@@ -1362,6 +1364,7 @@ export default function StorbitManifest() {
     setShowQuotationForm(false);
     setCrmQuotationDetail(null);
     setEditingQuotation(null);
+    setCrmDealInquiry(null);
   }, []);
 
   // Navigate to asset detail — called by list pages on row click.
@@ -2611,21 +2614,35 @@ export default function StorbitManifest() {
           )}
 
           {/* ── CRM: Inquiry List ───────────────────────────────────────────── */}
-          {activeMenu === 'crm-inquiry' && !showInquiryForm && (
+          {activeMenu === 'crm-inquiry' && !showInquiryForm && !crmDealInquiry && (
             <ErrorBoundary title="CRM Inquiry temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <InquiryListPage
                   onAddInquiry={() => setShowInquiryForm(true)}
+                  onSelectInquiry={(inq) => setCrmDealInquiry(inq)}
                   showToast={showToast}
                 />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'crm-inquiry' && showInquiryForm && (
+          {activeMenu === 'crm-inquiry' && showInquiryForm && !crmDealInquiry && (
             <ErrorBoundary title="Inquiry Form temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <InquiryFormPage
                   onBack={() => setShowInquiryForm(false)}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'crm-inquiry' && crmDealInquiry && !showInquiryForm && (
+            <ErrorBoundary title="Deal Detail temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <DealDetailPage
+                  inquiryId={crmDealInquiry.id}
+                  onBack={() => setCrmDealInquiry(null)}
+                  onCreateQuotation={() => { setCrmDealInquiry(null); setEditingQuotation(null); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onViewQuotation={(q) => { setCrmDealInquiry(null); setCrmQuotationDetail(q); setActiveMenu('quotation-draft'); }}
                   showToast={showToast}
                 />
               </Suspense>
