@@ -2,6 +2,7 @@
 // Layout: header kiri 60% + sticky summary kanan 40%
 // Sectioned line items dengan currency IDR/USD per row + kurs USD manual
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, Plus, Trash2, Save, Receipt, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -157,7 +158,10 @@ async function generateQuotationNo(companyId, companyCode) {
 // Suggestions only — user can still type anything without picking.
 function ProductDescInput({ value, products, inputStyle, onChangeText, onPick }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState(null);   // { top, left, width } from input rect (viewport coords)
   const wrapRef = useRef(null);
+  const inputRef = useRef(null);
+  const menuRef = useRef(null);
 
   const q = (value || '').trim().toLowerCase();
   const matches = q.length >= 1
@@ -168,9 +172,33 @@ function ProductDescInput({ value, products, inputStyle, onChangeText, onPick })
     : [];
   const showDrop = open && q.length >= 1;
 
+  // Position the portalled dropdown from the input's bounding rect, and keep it
+  // anchored on scroll/resize. position:fixed → viewport coords (no scroll offset).
+  useEffect(() => {
+    if (!showDrop) return undefined;
+    const update = () => {
+      const el = inputRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setCoords({ top: r.bottom, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true); // capture: also catch scroll inside the table container
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [showDrop]);
+
+  // Close on outside click — both the input wrapper and the portalled menu count as "inside".
   useEffect(() => {
     if (!open) return undefined;
-    const onDocDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const onDocDown = (e) => {
+      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDocDown);
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [open]);
@@ -178,6 +206,7 @@ function ProductDescInput({ value, products, inputStyle, onChangeText, onPick })
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
       <input
+        ref={inputRef}
         value={value}
         onChange={(e) => { onChangeText(e.target.value); setOpen(true); }}
         onFocus={() => { if ((value || '').trim().length >= 1) setOpen(true); }}
@@ -186,13 +215,16 @@ function ProductDescInput({ value, products, inputStyle, onChangeText, onPick })
         placeholder="Deskripsi…"
         autoComplete="off"
       />
-      {showDrop && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 2,
-          background: C.surface, border: `1px solid ${C.line}`, borderRadius: 8,
-          boxShadow: '0 6px 20px rgba(35,41,30,.16)', zIndex: 60,
-          maxHeight: 260, overflowY: 'auto', minWidth: 240,
-        }}>
+      {showDrop && coords && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed', top: coords.top, left: coords.left, width: coords.width, marginTop: 2,
+            background: C.surface, border: `1px solid ${C.line}`, borderRadius: 8,
+            boxShadow: '0 6px 20px rgba(35,41,30,.16)', zIndex: 9999,
+            maxHeight: 260, overflowY: 'auto', minWidth: 240,
+          }}
+        >
           {matches.length === 0 ? (
             <div style={{ padding: '10px 12px', fontSize: 12, color: C.inkFaint }}>Tidak ada produk yang cocok</div>
           ) : matches.map((p) => (
@@ -222,7 +254,8 @@ function ProductDescInput({ value, products, inputStyle, onChangeText, onPick })
               )}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
