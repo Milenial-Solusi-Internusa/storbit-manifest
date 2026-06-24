@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict oqFBo29rBnsGzfbTHk7dwbTCY6ooh5eA8y3H0UNX1dOcMTZADg7vrQ6lUTqjfaA
+\restrict 0HXBcEshOv0L2LKAiBHPxdC6AgJLA1dQKbdnHB1zYo8lN5SJmHOcgbTFXP6QXHm
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -533,6 +533,37 @@ $$;
 --
 
 COMMENT ON FUNCTION public.set_updated_at() IS 'Trigger function: sets updated_at = now() before every UPDATE. Defined in migration 000 (legacy baseline) and reused by all subsequent migrations via CREATE OR REPLACE — safe to re-run.';
+
+
+--
+-- Name: sync_deal_value_on_quotation_accept(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_deal_value_on_quotation_accept() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  -- Hanya trigger kalau status berubah jadi 'ACCEPTED'
+  IF NEW.status = 'ACCEPTED' AND (OLD.status IS DISTINCT FROM 'ACCEPTED') THEN
+    -- Update estimated_value di accounts via prospect_id
+    IF NEW.prospect_id IS NOT NULL THEN
+      UPDATE public.accounts
+      SET estimated_value = NEW.total_amount,
+          updated_at = now()
+      WHERE id = NEW.prospect_id;
+    END IF;
+    -- Update juga via customer_id kalau prospect_id null
+    IF NEW.prospect_id IS NULL AND NEW.customer_id IS NOT NULL THEN
+      UPDATE public.accounts
+      SET estimated_value = NEW.total_amount,
+          updated_at = now()
+      WHERE id = NEW.customer_id;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
 
 SET default_tablespace = '';
@@ -2877,26 +2908,6 @@ CREATE TABLE public.sales_visits (
 
 
 --
--- Name: service_charges; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.service_charges (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    company_id uuid,
-    code text NOT NULL,
-    name text NOT NULL,
-    category text NOT NULL,
-    default_price numeric(18,2) DEFAULT 0,
-    unit text,
-    is_active boolean DEFAULT true,
-    created_by uuid,
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT service_charges_category_check CHECK ((category = ANY (ARRAY['freight'::text, 'customs'::text, 'trucking'::text, 'warehousing'::text, 'admin'::text, 'other'::text])))
-);
-
-
---
 -- Name: sp_btbs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4085,22 +4096,6 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
--- Name: service_charges service_charges_company_id_code_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_charges
-    ADD CONSTRAINT service_charges_company_id_code_key UNIQUE (company_id, code);
-
-
---
--- Name: service_charges service_charges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_charges
-    ADD CONSTRAINT service_charges_pkey PRIMARY KEY (id);
-
-
---
 -- Name: sp_btbs sp_btbs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5083,27 +5078,6 @@ CREATE INDEX idx_roles_deleted_at ON public.roles USING btree (deleted_at) WHERE
 
 
 --
--- Name: idx_service_charges_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_service_charges_active ON public.service_charges USING btree (is_active);
-
-
---
--- Name: idx_service_charges_category; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_service_charges_category ON public.service_charges USING btree (category);
-
-
---
--- Name: idx_service_charges_company; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_service_charges_company ON public.service_charges USING btree (company_id);
-
-
---
 -- Name: idx_sp_items_customer_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5521,6 +5495,13 @@ CREATE TRIGGER trg_warehouses_updated_at BEFORE UPDATE ON public.warehouses FOR 
 --
 
 CREATE TRIGGER trg_z_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR EACH ROW WHEN ((((new.code IS NULL) OR (new.code = ''::text)) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION public.generate_customer_code();
+
+
+--
+-- Name: quotations trg_z_sync_deal_value_on_quotation_accept; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_z_sync_deal_value_on_quotation_accept AFTER UPDATE ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.sync_deal_value_on_quotation_accept();
 
 
 --
@@ -7001,22 +6982,6 @@ ALTER TABLE ONLY public.sales_visits
 
 ALTER TABLE ONLY public.sales_visits
     ADD CONSTRAINT sales_visits_salesperson_id_fkey FOREIGN KEY (salesperson_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: service_charges service_charges_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_charges
-    ADD CONSTRAINT service_charges_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
-
-
---
--- Name: service_charges service_charges_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_charges
-    ADD CONSTRAINT service_charges_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 
 
 --
@@ -8752,40 +8717,6 @@ CREATE POLICY sales_visits_update ON public.sales_visits FOR UPDATE USING (((com
 
 
 --
--- Name: service_charges; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.service_charges ENABLE ROW LEVEL SECURITY;
-
---
--- Name: service_charges service_charges_delete; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY service_charges_delete ON public.service_charges FOR DELETE USING (public.is_super_admin());
-
-
---
--- Name: service_charges service_charges_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY service_charges_read ON public.service_charges FOR SELECT USING (((auth.uid() IS NOT NULL) AND ((company_id IS NULL) OR (company_id = public.get_user_company_id()))));
-
-
---
--- Name: service_charges service_charges_update; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY service_charges_update ON public.service_charges FOR UPDATE USING (public.is_admin_or_above());
-
-
---
--- Name: service_charges service_charges_write; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY service_charges_write ON public.service_charges FOR INSERT WITH CHECK (public.is_admin_or_above());
-
-
---
 -- Name: asset_software_licenses software_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -9105,5 +9036,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict oqFBo29rBnsGzfbTHk7dwbTCY6ooh5eA8y3H0UNX1dOcMTZADg7vrQ6lUTqjfaA
+\unrestrict 0HXBcEshOv0L2LKAiBHPxdC6AgJLA1dQKbdnHB1zYo8lN5SJmHOcgbTFXP6QXHm
 
