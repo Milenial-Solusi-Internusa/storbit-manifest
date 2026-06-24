@@ -427,7 +427,7 @@ const ERP_MENU_GROUPS = [
     label: 'Core',
     items: [
       {
-        id: 'dashboard', label: 'Command Center', icon: LayoutDashboard,
+        id: 'dashboard', label: 'Command Center', icon: LayoutDashboard, public: true,
         children: [
           { id: 'dashboard',               label: 'Overview Dashboard', icon: LayoutDashboard },
           { id: 'dashboard-tasks',         label: 'My Tasks',           icon: ClipboardList   },
@@ -446,7 +446,7 @@ const ERP_MENU_GROUPS = [
         children: [
           { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
           { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
-          { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive   },
+          { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, public: true },
           { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
@@ -459,9 +459,9 @@ const ERP_MENU_GROUPS = [
               { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX    },
             ],
           },
-          { id: 'crm-calls',      label: 'Activities', icon: Activity },
-          { id: 'crm-activity-log', label: 'Activity Log', icon: History },
-          { id: 'crm-report',     label: 'Report',     icon: BarChart2 },
+          { id: 'crm-calls',      label: 'Activities', icon: Activity, public: true },
+          { id: 'crm-activity-log', label: 'Activity Log', icon: History, public: true },
+          { id: 'crm-report',     label: 'Report',     icon: BarChart2, public: true },
         ],
       },
     ],
@@ -587,7 +587,7 @@ const ERP_MENU_GROUPS = [
     items: [
       { section: 'Inventory / Warehouse' },
       {
-        id: 'inventory', label: 'Inventory / Warehouse', icon: Boxes,
+        id: 'inventory', label: 'Inventory / Warehouse', icon: Boxes, public: true,
         children: [
           { id: 'inventory-dashboard',   label: 'Dashboard Inventory',   icon: LayoutDashboard },
           { id: 'inventory-stok',        label: 'Stok Barang',           icon: Package         },
@@ -624,12 +624,12 @@ const ERP_MENU_GROUPS = [
       {
         id: 'hrga', label: 'HRGA Request', icon: UsersRound,
         children: [
-          { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList        },
-          { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus                 },
+          { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList, public: true },
+          { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus, public: true },
           { section: 'Management' },
-          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList           },
-          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock,    badge: '' },
-          { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive              },
+          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList, public: true },
+          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock,    badge: '', public: true },
+          { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive, public: true },
         ],
       },
       { section: 'IT Service Mgmt' },
@@ -860,9 +860,13 @@ const MENU_KEY_MAP = {
   'adminSettings': 'admin_settings',
 };
 
-// canSeeMenuItem — priority: hasMenuPermission (per-user) → hasPermission (role-based) → item.role array → true.
+// canSeeMenuItem — priority: public → hasMenuPermission (per-user) → hasPermission
+// (role-based) → item.role array → DEFAULT-DENY.
+// Item tanpa gate apa pun (tanpa public/menuKey/module/role) disembunyikan.
 const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
   if (item.section) return true;
+  // Item ber-flag public terlihat untuk semua authenticated user.
+  if (item.public === true) return true;
   // Sistema baru: per-user menu permission check
   if (typeof hasMenuPermission === 'function') {
     const menuKey = MENU_KEY_MAP[item.id];
@@ -872,8 +876,22 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
   if (item.module && typeof hasPermission === 'function') {
     return hasPermission(item.module, 'view');
   }
-  if (!item.role) return true;
-  return item.role.includes(role);
+  if (item.role) return item.role.includes(role);
+  // Default-deny.
+  return false;
+};
+
+// isPlanned — true bila navigasi ke `id` akan me-render ComingSoonPage
+// (mirror PLANNED_MODULES + logika catch-all placeholder di render switch).
+// Item planned ditampilkan disabled + badge "Soon" di sidebar.
+const PLANNED_REAL_IDS = ['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory'];
+const PLANNED_REAL_PREFIXES = ['assets','hrga','crm-','quotation-','inventory-','customer-','admin-settings'];
+const isPlanned = (id) => {
+  if (!id) return false;
+  if (PLANNED_MODULES[id]) return true;
+  if (PLANNED_REAL_IDS.includes(id)) return false;
+  if (PLANNED_REAL_PREFIXES.some(p => id.startsWith(p))) return false;
+  return true;
 };
 
 // collectMenuIds — collect every navigable menu id within a node list
@@ -887,6 +905,27 @@ function collectMenuIds(nodes, acc) {
     if (n.children) collectMenuIds(n.children, acc);
   });
   return acc;
+}
+
+// findMenuItemById — locate a menu item (item → children → grandchildren) by id
+// across ERP_MENU_GROUPS. Used by the centralized route-guard (canRenderPage)
+// to reuse the same gate as the sidebar (canSeeMenuItem). Returns null when the
+// id is synthetic / not a sidebar menu (e.g. customer-detail, product-detail).
+function findMenuItemById(id) {
+  if (!id) return null;
+  const walk = (nodes) => {
+    for (const n of (nodes || [])) {
+      if (n.section) continue;
+      if (n.id === id) return n;
+      if (n.children) { const hit = walk(n.children); if (hit) return hit; }
+    }
+    return null;
+  };
+  for (const g of ERP_MENU_GROUPS) {
+    const hit = walk(g.items);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // AccessDeniedPage — shown in the content area when the current user has no
@@ -922,6 +961,19 @@ function AccessDeniedPage({ onGoHome }) {
 // ============================
 function SidebarItem({ item, activeMenu, setActiveMenu }) {
   const Icon = item.icon;
+  // Planned (Coming Soon) item → tampil disabled + badge "Soon", non-klik.
+  // Short-circuit sebelum logika children agar tidak bisa di-expand.
+  if (isPlanned(item.id)) {
+    return (
+      <button type="button" disabled aria-disabled="true" title="Segera hadir"
+        className="w-full flex items-center gap-3 px-3.5 py-[10px] rounded-2xl text-sm font-medium mb-0.5"
+        style={{ background: 'transparent', color: 'rgba(248,245,237,0.40)', fontWeight: 400, border: '1px solid transparent', cursor: 'default', opacity: 0.5, pointerEvents: 'none' }}>
+        {Icon && <Icon size={17} strokeWidth={1.8} style={{ color: 'rgba(248,245,237,0.32)', flexShrink: 0 }}/>}
+        <span className="flex-1 text-left leading-snug">{item.label}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.3px', padding: '1px 7px', borderRadius: 20, background: 'rgba(255,255,255,0.10)', color: 'rgba(248,245,237,0.55)', fontFamily: "'IBM Plex Mono', monospace" }}>Soon</span>
+      </button>
+    );
+  }
   const active = activeMenu === item.id;
   // The synthetic 'customer-detail' menu belongs to the crm-customers subtree.
   const isCustomerDetailContext = activeMenu === 'customer-detail';
@@ -1036,6 +1088,21 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
                 );
               }
               const ChildIcon = child.icon;
+              // Planned child leaf → disabled + badge "Soon", non-klik.
+              if (isPlanned(child.id)) {
+                return (
+                  <button key={child.id} type="button" disabled aria-disabled="true" title="Segera hadir"
+                    className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-xl text-[13px] font-medium mb-[1px]"
+                    style={{ background: 'transparent', color: 'rgba(248,245,237,0.38)', fontWeight: 400, border: '1px solid transparent', textAlign: 'left', cursor: 'default', opacity: 0.5, pointerEvents: 'none' }}>
+                    {ChildIcon
+                      ? <ChildIcon size={14} strokeWidth={1.7} style={{ color: 'rgba(248,245,237,0.3)', flexShrink: 0 }} />
+                      : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: .4, flexShrink: 0 }} />
+                    }
+                    <span className="flex-1 truncate">{child.label}</span>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 20, background: 'rgba(255,255,255,0.10)', color: 'rgba(248,245,237,0.5)', fontFamily: "'IBM Plex Mono', monospace" }}>Soon</span>
+                  </button>
+                );
+              }
               const childIsActive = activeMenu === child.id;
               return (
                 <button
@@ -1107,7 +1174,9 @@ function SidebarItem({ item, activeMenu, setActiveMenu }) {
 // plus a "← Apps" button to return to the launcher.
 // ─────────────────────────────────────────────────────────────────────────────
 function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role, hasPermission, hasMenuPermission, asDrawer = false, isOpen = false, onClose }) {
-  const visibleItems = (moduleGroup?.items || []).filter(item => canSeeMenuItem(item, role, hasPermission, hasMenuPermission));
+  // Planned items selalu lolos filter (ditampilkan disabled + "Soon" oleh SidebarItem),
+  // melewati default-deny — sesuai keputusan: user lihat roadmap.
+  const visibleItems = (moduleGroup?.items || []).filter(item => isPlanned(item.id) || canSeeMenuItem(item, role, hasPermission, hasMenuPermission));
   const Icon = moduleGroup?.items[0]?.icon;
 
   // In drawer mode, navigating / going back also closes the drawer.
@@ -1220,6 +1289,16 @@ export default function StorbitManifest() {
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
   const { role: authRole, erpRoles, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading } = useAuth();
   const role = authRole || 'management';
+
+  // canRenderPage — centralized route-guard (defense-in-depth). Reuses the same
+  // gate as the sidebar (canSeeMenuItem) so a page can't be rendered by a role
+  // that can't see its menu, even if activeMenu is set programmatically/forced.
+  // Synthetic / non-menu ids (customer-detail, product-detail, …) → allowed.
+  const canRenderPage = useCallback((menuId) => {
+    const item = findMenuItemById(menuId);
+    if (!item) return true;
+    return canSeeMenuItem(item, role, hasPermission, hasMenuPermission);
+  }, [role, hasPermission, hasMenuPermission]);
 
   // ── Navbar: Pending Approval badge (HRGA approver inbox count) ──────────────
   // Lightweight count: HRGA requests in-progress (submitted/under_review) whose
@@ -2395,7 +2474,9 @@ export default function StorbitManifest() {
             // Handles any stale state or bookmarks pointing to the old menu id.
             (() => { navigateTo('admin'); return null; })()
           )}
-          {activeMenu === 'admin' && (
+          {activeMenu === 'admin' && (!canRenderPage('admin') ? (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ) : (
             <ErrorBoundary title="Master Data section temporarily unavailable">
               <Suspense fallback={
                 <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
@@ -2405,8 +2486,10 @@ export default function StorbitManifest() {
                 <AdminShell />
               </Suspense>
             </ErrorBoundary>
-          )}
-          {(activeMenu === 'products' || activeMenu === 'product-detail') && (
+          ))}
+          {(activeMenu === 'products' || activeMenu === 'product-detail') && (!canRenderPage('products') ? (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ) : (
             <ErrorBoundary title="Products & Services temporarily unavailable">
               <Suspense fallback={
                 <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
@@ -2416,7 +2499,7 @@ export default function StorbitManifest() {
                 <ProductsPage onSelectProduct={(p) => { setSelectedProduct(p); setActiveMenu('product-detail'); }}/>
               </Suspense>
             </ErrorBoundary>
-          )}
+          ))}
           <Suspense fallback={null}>
             <ProductDetailModal
               isOpen={activeMenu === 'product-detail'}
@@ -2691,7 +2774,13 @@ export default function StorbitManifest() {
                 admin-settings-entity    → /foundation/admin-settings/entity
                 admin-settings-documents → /foundation/admin-settings/documents
                 admin-settings-finance   → /foundation/admin-settings/finance     */}
-          {activeMenu === 'admin-settings' && (
+          {/* Route-guard (defense-in-depth): block the whole admin-settings family
+              for roles that can't see it, even if activeMenu is forced
+              (FIX-B exempts 'admin-settings-*' from restored-menu validation). */}
+          {activeMenu?.startsWith('admin-settings') && !canRenderPage('admin-settings') && (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          )}
+          {activeMenu === 'admin-settings' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Admin Settings temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <AdminSettingsHub onOpen={(id) => setActiveMenu(
@@ -2709,63 +2798,63 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-entity' && (
+          {activeMenu === 'admin-settings-entity' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Entity Settings temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <EntitySettingsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-documents' && (
+          {activeMenu === 'admin-settings-documents' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Document Settings temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <DocumentSettingsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-finance' && (
+          {activeMenu === 'admin-settings-finance' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Finance Defaults temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <FinanceDefaultsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-approvals' && (
+          {activeMenu === 'admin-settings-approvals' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Approval Workflows temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <ApprovalWorkflowsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-notifications' && (
+          {activeMenu === 'admin-settings-notifications' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Notifications temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <NotificationsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-security' && (
+          {activeMenu === 'admin-settings-security' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Security Policy temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <SecurityPolicyPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-audit' && (
+          {activeMenu === 'admin-settings-audit' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Audit Log temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <AuditLogPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-general' && (
+          {activeMenu === 'admin-settings-general' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="General Preferences temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <GeneralPreferencesPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-integrations' && (
+          {activeMenu === 'admin-settings-integrations' && canRenderPage('admin-settings') && (
             <ErrorBoundary title="Integrations temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <IntegrationsPage onHome={() => setActiveMenu('admin-settings')} />

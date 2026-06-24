@@ -1034,7 +1034,7 @@ export default function SalesOrderDetailPage({
                       >
                         <Wallet size={13}/> Finance
                       </button>
-                      {(role === 'super_admin' || role === 'super' || role === 'operations' || role === 'logistic' || role === 'manager' || role === 'gm') && (
+                      {(role === 'super_admin' || role === 'operations' || role === 'manager' || role === 'gm') && (
                         <button
                           onClick={() => setEditingItem(item)}
                           title="Edit item"
@@ -1043,7 +1043,7 @@ export default function SalesOrderDetailPage({
                           <Pencil size={15}/>
                         </button>
                       )}
-                      {(role === 'super_admin' || role === 'super') && (
+                      {(role === 'super_admin') && (
                         <button
                           onClick={() => handleDeleteItem(item.id)}
                           title="Hapus item"
@@ -1109,7 +1109,7 @@ export default function SalesOrderDetailPage({
       </div>
 
       {/* ── Danger zone ───────────────────────────────────────────────── */}
-      {(role === 'super' || role === 'operations' || role === 'logistic') && (
+      {(role === 'super_admin' || role === 'operations') && (
         <div style={{
           border: `1px solid ${C.dangerBd}`, borderRadius: 12, background: C.dangerBg,
           padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 4,

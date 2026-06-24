@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict UCPpdMJ7hEQ7W3NJGAkPrD6EAKpxqC5Fk9iVcZ7JZ94umOB7E9U2U3gufbZpKHv
+\restrict mL4BrsQPjJODsJ7YbqOOoVlh7RERtcfWInEA9jz4U8lOJHy3RqwxULVVpxsreEC
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -393,7 +393,7 @@ CREATE FUNCTION public.is_manager_or_above() RETURNS boolean
     SELECT 1 FROM user_roles ur
     JOIN roles r ON r.id = ur.role_id
     WHERE ur.user_id = auth.uid()
-      AND r.code IN ('super_admin','admin','ceo','gm','manager','sales_head')
+      AND r.code IN ('super_admin','admin','ceo','gm','manager','supervisor')
       AND ur.is_active = true
       AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
   );
@@ -8808,5 +8808,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict UCPpdMJ7hEQ7W3NJGAkPrD6EAKpxqC5Fk9iVcZ7JZ94umOB7E9U2U3gufbZpKHv
+\unrestrict mL4BrsQPjJODsJ7YbqOOoVlh7RERtcfWInEA9jz4U8lOJHy3RqwxULVVpxsreEC
 
