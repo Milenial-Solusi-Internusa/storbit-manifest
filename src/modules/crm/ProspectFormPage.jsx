@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Save, User } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -74,7 +75,7 @@ function Field({ label, req, children, full }) {
 }
 
 export default function ProspectFormPage({ prospect, onBack, showToast }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, user } = useAuth();
   // Edit only when the passed prospect has a real id. A prefill object without
   // an id (e.g. opened from ActivitiesPage prospecting flow) stays CREATE mode
   // so handleSave INSERTs — see the prefill effect below.
@@ -349,6 +350,12 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         ({ error } = await supabase.from('accounts').insert(payload));
       }
       if (error) throw error;
+      logAudit(supabase, {
+        action: isEdit ? ACTION_TYPES.UPDATE_PROSPECT : ACTION_TYPES.CREATE_PROSPECT,
+        entityType: ENTITY_TYPES.PROSPECT,
+        entityId: isEdit ? prospect.id : null,
+        entityLabel: form.name,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
       showToast?.(isEdit ? 'Prospect berhasil diupdate ✨' : 'Prospect berhasil ditambahkan ✨');
       onBack();
     } catch (err) {

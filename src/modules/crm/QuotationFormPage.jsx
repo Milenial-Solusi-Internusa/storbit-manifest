@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Plus, Trash2, Save, Receipt, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
@@ -289,7 +290,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
 
 // ─── Main component ───────────────────────────────────────────────────────
 export default function QuotationFormPage({ onBack, showToast, quotation = null }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, user } = useAuth();
   const isEdit = !!quotation;
 
   const [header, setHeader] = useState({
@@ -604,6 +605,12 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
         });
         if (rpcError) throw rpcError;   // RAISE dari RPC (mis. RLS tolak) → pesan asli
 
+        logAudit(supabase, {
+          action: ACTION_TYPES.UPDATE_QUOTATION,
+          entityType: ENTITY_TYPES.QUOTATION,
+          entityId: quotation.id,
+          entityLabel: quotation.quotation_no,
+        }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
         showToast?.(submitNow ? 'Quotation di-submit ✨' : 'Quotation berhasil diupdate ✨');
       } else {
         // ── CREATE new quotation (insert; verify a row came back) ───────
@@ -646,6 +653,12 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
         const { error: iErr } = await supabase.from('quotation_items').insert(itemRows);
         if (iErr) throw iErr;
 
+        logAudit(supabase, {
+          action: ACTION_TYPES.CREATE_QUOTATION,
+          entityType: ENTITY_TYPES.QUOTATION,
+          entityId: quot.id,
+          entityLabel: quotation_no,
+        }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
         showToast?.(submitNow ? 'Quotation berhasil di-submit ✨' : 'Draft quotation tersimpan ✨');
       }
 

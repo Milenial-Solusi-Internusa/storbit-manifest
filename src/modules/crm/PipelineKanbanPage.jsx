@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import WinLossModal from './WinLossModal';
 import ConfirmModal from '../../components/ConfirmModal';
 import { calcBantScore } from './bant';
@@ -507,7 +508,7 @@ function ListGroup({ stage, items, onRowClick }) {
 
 /* ========================================================================= */
 export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowProspectForm, setEditingProspect }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, user } = useAuth();
   // Visibility scope by role (mirrors RLS on `accounts` + CRMDashboard):
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only prospects assigned to / created by them
@@ -599,6 +600,13 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         .update({ pipeline_stage: newStage, updated_by: profile.id })
         .eq('id', id);
       if (error) throw error;
+      logAudit(supabase, {
+        action: ACTION_TYPES.CHANGE_PIPELINE_STAGE,
+        entityType: ENTITY_TYPES.DEAL,
+        entityId: id,
+        entityLabel: prospect.name || '',
+        notes: (prospect.pipeline_stage || 'NEW') + ' → ' + newStage,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
       const st = STAGES.find(s => s.id === stageId);
       notify((prospect.name || '') + ' dipindah ke ' + (st?.name || stageId),
         stageId === 'won' ? 'checkcircle' : stageId === 'lost' ? 'ban' : 'check');
@@ -688,6 +696,13 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
       }
       const { error } = await supabase.from('accounts').update(payload).eq('id', id);
       if (error) throw error;
+      logAudit(supabase, {
+        action: ACTION_TYPES.CHANGE_PIPELINE_STAGE,
+        entityType: ENTITY_TYPES.DEAL,
+        entityId: id,
+        entityLabel: winLoss.prospectName || '',
+        notes: (winLoss.prevStage || 'NEW') + ' → ' + newStage,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
       // Reflect reason locally so the detail modal shows it without a full refetch
       setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage, ...values } : p));
       notify((winLoss.prospectName || '') + ' dipindah ke ' + (mode === 'won' ? 'Won' : 'Lost'),

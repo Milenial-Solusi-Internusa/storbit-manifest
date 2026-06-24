@@ -30,6 +30,7 @@ import {
   resetUserPassword,
 } from '../../../hooks/useUserAccess';
 import { useAuth } from '../../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../../lib/auditLogger';
 import ConfirmModal from '../../../components/ConfirmModal';
 import { PASTEL, NAVY, RED, getPrimaryErpRole, ACTION_ORDER } from './userAccessTokens';
 import {
@@ -151,7 +152,7 @@ function ChangePasswordModal({ open, userName, onClose, onSubmit }) {
 // ─────────────────────────────────────────────────────────────
 
 export default function UserEditPage({ userId, initialRow, onBack, showToast }) {
-  const { profile: myProfile, erpRole } = useAuth();
+  const { profile: myProfile, erpRole, user } = useAuth();
   const isSuperAdmin = erpRole === 'super_admin';
   const isSelf = userId === myProfile?.id;
 
@@ -259,9 +260,25 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
       setError(saveErr.message ? `Save failed: ${saveErr.message}` : 'Save failed. Check your permissions.');
       return;
     }
+    const audUser = { id: myProfile?.id, email: user?.email, role: erpRole, companyId: myProfile?.company_id };
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_USER,
+      entityType: ENTITY_TYPES.USER,
+      entityId: draft.id,
+      entityLabel: draft.full_name || null,
+    }, audUser);
+    if (erpRoleChanged) {
+      logAudit(supabase, {
+        action: ACTION_TYPES.CHANGE_ROLE,
+        entityType: ENTITY_TYPES.USER,
+        entityId: draft.id,
+        entityLabel: draft.full_name || null,
+        notes: 'erp_role_id → ' + (draft.erp_role_id || 'none'),
+      }, audUser);
+    }
     showToast?.('User updated.');
     onBack?.();
-  }, [draft, myProfile?.id, showToast, onBack]);
+  }, [draft, myProfile?.id, myProfile?.company_id, erpRole, user, showToast, onBack]);
 
   // ── Permission matrix ────────────────────────────────────────
   const [matrixModules, setMatrixModules] = useState([]);

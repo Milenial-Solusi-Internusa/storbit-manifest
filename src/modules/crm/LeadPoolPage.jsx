@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, Archive, ArrowRight, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 
 // Warm-beige token palette — shared visual language with the other CRM list pages.
@@ -82,7 +83,7 @@ function StatCard({ label, value, accent }) {
 }
 
 export default function LeadPoolPage({ showToast }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, user } = useAuth();
   const myId = profile?.id || null;
   // Visibility scope by role (mirrors RLS on `accounts` + ProspectListPage):
   //  • super_admin        → all entities (no company filter)
@@ -175,10 +176,17 @@ export default function LeadPoolPage({ showToast }) {
       showToast?.('Gagal menarik lead: ' + error.message, 'error');
       return;
     }
+    logAudit(supabase, {
+      action: ACTION_TYPES.CONVERT_LEAD,
+      entityType: ENTITY_TYPES.LEAD,
+      entityId: lead.id,
+      entityLabel: lead.name,
+      notes: 'lead_pool → prospect',
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     // Lead leaves the pool → drop it from the local list immediately.
     setRows(prev => prev.filter(r => r.id !== lead.id));
     showToast?.(`"${lead.name}" ditarik ke pipeline`, 'success');
-  }, [confirmLead, showToast]);
+  }, [confirmLead, showToast, profile, erpRole, user]);
 
   const resetFilters = () => { setSearchInput(''); setSourceFilter(''); setTypeFilter(''); };
   const hasFilters = search || sourceFilter || typeFilter;
