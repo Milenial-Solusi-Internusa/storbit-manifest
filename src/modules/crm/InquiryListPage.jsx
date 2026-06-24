@@ -131,7 +131,7 @@ function InquiryDetailModal({ inquiry, onClose }) {
   );
 }
 
-export default function InquiryListPage({ onAddInquiry, showToast }) {
+export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToast }) {
   const { profile, erpRole } = useAuth();
   // Visibility scope by role (mirrors RLS on `inquiries`):
   //  • super_admin / admin → all entities (no company filter)
@@ -269,7 +269,7 @@ export default function InquiryListPage({ onAddInquiry, showToast }) {
             ) : inquiries.map((inq, i) => (
               <tr
                 key={inq.id}
-                onClick={() => setDetailInquiry(inq)}
+                onClick={() => (onSelectInquiry ? onSelectInquiry(inq) : setDetailInquiry(inq))}
                 style={{
                   borderBottom: i < inquiries.length - 1 ? `1px solid ${C.lineSoft}` : 'none',
                   cursor: 'pointer',
