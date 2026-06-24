@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { ChevronLeft, Save, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 
 const C = {
@@ -63,7 +64,7 @@ async function generateInquiryNo(companyId, companyCode) {
 }
 
 export default function InquiryFormPage({ onBack, showToast }) {
-  const { profile } = useAuth();
+  const { profile, erpRole, user } = useAuth();
   const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
 
   const [form, setForm] = useState({
@@ -127,6 +128,12 @@ export default function InquiryFormPage({ onBack, showToast }) {
 
       const { error } = await supabase.from('inquiries').insert(payload);
       if (error) throw error;
+      logAudit(supabase, {
+        action: ACTION_TYPES.CREATE_INQUIRY,
+        entityType: ENTITY_TYPES.INQUIRY,
+        entityId: null,
+        entityLabel: inquiry_no,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
       showToast?.('Inquiry berhasil dibuat ✨');
       onBack();
     } catch (err) {

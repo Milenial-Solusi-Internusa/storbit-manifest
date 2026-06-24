@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict mL4BrsQPjJODsJ7YbqOOoVlh7RERtcfWInEA9jz4U8lOJHy3RqwxULVVpxsreEC
+\restrict ZQTyG3hX7ElfXSS6wjGClclrg9u3gRiMeqk0TZbIL2Z0VYezVB2s2eP3Jff4uvJ
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1296,6 +1296,29 @@ COMMENT ON COLUMN public.assets.coa_depreciation_account_id IS 'Nullable FK to c
 --
 
 COMMENT ON COLUMN public.assets.coa_expense_account_id IS 'Nullable FK to chart_of_accounts. Depreciation expense posting account.';
+
+
+--
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    user_id uuid,
+    user_email text,
+    user_role text,
+    company_id uuid,
+    action text NOT NULL,
+    entity_type text NOT NULL,
+    entity_id uuid,
+    entity_label text,
+    old_data jsonb,
+    new_data jsonb,
+    ip_address text,
+    user_agent text,
+    notes text
+);
 
 
 --
@@ -3411,6 +3434,14 @@ ALTER TABLE ONLY public.assets
 
 
 --
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: branches branches_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4443,6 +4474,41 @@ CREATE INDEX idx_assets_plate_number ON public.assets USING btree (company_id, p
 --
 
 CREATE INDEX idx_assets_status ON public.assets USING btree (company_id, status);
+
+
+--
+-- Name: idx_audit_logs_action; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_action ON public.audit_logs USING btree (action);
+
+
+--
+-- Name: idx_audit_logs_company; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_company ON public.audit_logs USING btree (company_id);
+
+
+--
+-- Name: idx_audit_logs_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_created_at ON public.audit_logs USING btree (created_at DESC);
+
+
+--
+-- Name: idx_audit_logs_entity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_entity ON public.audit_logs USING btree (entity_type, entity_id);
+
+
+--
+-- Name: idx_audit_logs_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_user_id ON public.audit_logs USING btree (user_id);
 
 
 --
@@ -5761,6 +5827,22 @@ ALTER TABLE ONLY public.assets
 
 ALTER TABLE ONLY public.assets
     ADD CONSTRAINT assets_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: audit_logs audit_logs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
 
 
 --
@@ -7318,6 +7400,26 @@ CREATE POLICY assets_update ON public.assets FOR UPDATE TO authenticated USING (
 
 
 --
+-- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs audit_logs_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY audit_logs_insert ON public.audit_logs FOR INSERT WITH CHECK ((auth.uid() IS NOT NULL));
+
+
+--
+-- Name: audit_logs audit_logs_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY audit_logs_read ON public.audit_logs FOR SELECT USING (public.is_admin_or_above());
+
+
+--
 -- Name: branches; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8808,5 +8910,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict mL4BrsQPjJODsJ7YbqOOoVlh7RERtcfWInEA9jz4U8lOJHy3RqwxULVVpxsreEC
+\unrestrict ZQTyG3hX7ElfXSS6wjGClclrg9u3gRiMeqk0TZbIL2Z0VYezVB2s2eP3Jff4uvJ
 

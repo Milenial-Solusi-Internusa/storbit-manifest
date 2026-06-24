@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../lib/auditLogger';
 import { AuthContext } from './authCtx';
 
 // ERP role priority — highest privilege wins when user has multiple active roles
@@ -166,10 +167,27 @@ export function AuthProvider({ children }) {
       setAuthError(error.message);
       return { ok: false, error };
     }
+    // Audit: real login only (signInWithPassword success). Role/company not yet
+    // loaded at this point — logged best-effort (email + user id).
+    logAudit(supabase, {
+      action: ACTION_TYPES.LOGIN,
+      entityType: ENTITY_TYPES.USER,
+      entityId: data?.user?.id ?? null,
+      entityLabel: data?.user?.email ?? null,
+    }, { id: data?.user?.id, email: data?.user?.email, role: null, companyId: null });
     return { ok: true, data };
   };
 
   const signOut = async () => {
+    // Audit: log LOGOUT BEFORE signing out (and await) so the insert still runs
+    // while authenticated (audit_logs insert requires authenticated).
+    const primary = pickPrimaryErpRole(erpRoles);
+    await logAudit(supabase, {
+      action: ACTION_TYPES.LOGOUT,
+      entityType: ENTITY_TYPES.USER,
+      entityId: session?.user?.id ?? null,
+      entityLabel: session?.user?.email ?? null,
+    }, { id: session?.user?.id, email: session?.user?.email, role: primary?.roles?.code ?? null, companyId: profile?.company_id ?? null });
     // Clear user-specific app state so the next user in this browser doesn't
     // inherit the previous user's last menu/module (these keys are not scoped
     // by user id and survive logout otherwise).

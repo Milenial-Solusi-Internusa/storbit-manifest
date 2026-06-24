@@ -1,24 +1,19 @@
 /* =========================================================================
    AuditLogPage — Nexus by MSI · Admin Settings › Audit Log
-   Activity-log viewer: filter bar (search, user, module, action type, date
-   range), table (timestamp, user, action, module, details, IP), CSV export
-   of the current filtered set, and pagination.
+   System audit-trail viewer: filter bar (search, user, action, entity type,
+   date range), table (Waktu, User, Role, Aksi, Entitas, Catatan), CSV export
+   of the filtered set, and pagination.
 
-   Ported from the Claude Design handoff (AuditLog.jsx). Layout & styling
-   preserved verbatim; shared-scope refs replaced with ES imports from
-   ./kit + ./tokens.
-
-   DATA: real fetch from `user_login_logs` (login events: timestamp, user,
-   IP, user-agent) joined to `profiles` for names. RLS scopes rows to the
-   viewer's company (super_admin sees all). NOTE: a full system-wide audit
-   table does not exist yet (TECH_DEBT TD-05) — this currently surfaces
-   LOGIN events only; create/update/delete/approve rows will appear once
-   `audit_logs` + logAudit() land. The module/action-type filters are kept
-   for forward-compatibility.
+   DATA: real fetch from `audit_logs` (written by src/lib/auditLogger.js).
+   RLS read = is_admin_or_above() (super_admin/admin); this page is already
+   gated behind Admin Settings. old_data/new_data are NOT displayed here
+   (TODO: optional diff viewer) — they remain available in the DB.
+   Styling preserved from the previous version (kit + tokens).
    ========================================================================= */
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../../lib/supabase";
+import { ACTION_TYPES, ENTITY_TYPES } from "../../../lib/auditLogger";
 import {
   Icon, PageHeader, KitSelect, OutlineBtn, Card, useToast, KitStyles,
 } from "./kit";
@@ -27,28 +22,31 @@ import {
   FAINT, DANGER, FONT_HEAD, FONT_BODY, FONT_MONO,
 } from "./tokens";
 
-const AL_MODULES = ["Semua Modul", "Authentication", "Sales Order", "CRM", "Finance", "HRGA", "Admin Settings", "Documents"];
-const AL_ACTYPES = [
-  { value: "all",     label: "Semua Aksi" },
-  { value: "create",  label: "Create" },
-  { value: "update",  label: "Update" },
-  { value: "delete",  label: "Delete" },
-  { value: "login",   label: "Login" },
-  { value: "approve", label: "Approve" },
-  { value: "reject",  label: "Reject" },
-  { value: "export",  label: "Export" },
-];
-const AL_TYPE_STYLE = {
+// Filter dropdown options, derived from the canonical action/entity catalogs.
+const AL_ACTIONS = [{ value: "all", label: "Semua Aksi" }, ...Object.values(ACTION_TYPES).map((a) => ({ value: a, label: a }))];
+const AL_ENTITIES = [{ value: "all", label: "Semua Entitas" }, ...Object.values(ENTITY_TYPES).map((e) => ({ value: e, label: e }))];
+
+// action → visual kind (color/icon). Derived from the action prefix.
+function kindOf(action) {
+  const a = String(action || "").toUpperCase();
+  if (a.startsWith("CREATE") || a === "CONVERT_LEAD") return "create";
+  if (a.startsWith("UPDATE") || a === "CHANGE_PIPELINE_STAGE" || a === "CHANGE_ROLE") return "update";
+  if (a.startsWith("DELETE") || a === "DEACTIVATE_USER") return "delete";
+  if (a === "LOGIN" || a === "LOGOUT") return "login";
+  if (a === "APPROVE_QUOTATION") return "approve";
+  if (a === "REJECT_QUOTATION") return "reject";
+  return "update";
+}
+const AL_KIND_STYLE = {
   create:  { bg: "#E8F3EC", fg: "#1F8B4D", icon: "plus" },
   update:  { bg: "#EAF0F8", fg: "#144682", icon: "pencil" },
   delete:  { bg: "#FBE3E3", fg: "#C0392B", icon: "trash" },
   login:   { bg: "#E7EEF1", fg: "#2C6E73", icon: "lock" },
   approve: { bg: "#E8F3EC", fg: "#1F8B4D", icon: "check" },
   reject:  { bg: "#FBE3E3", fg: "#C0392B", icon: "x" },
-  export:  { bg: "#FBF0DD", fg: "#B45309", icon: "download" },
 };
 
-const AL_PAGE_SIZE = 8;
+const AL_PAGE_SIZE = 12;
 
 /* ---------- format an ISO timestamp → "YYYY-MM-DD HH:mm:ss" (local) ---------- */
 function fmtTs(iso) {
@@ -59,20 +57,20 @@ function fmtTs(iso) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-/* ---------- action-type badge ---------- */
-function ALTypeBadge({ type }) {
-  const s = AL_TYPE_STYLE[type] || AL_TYPE_STYLE.update;
+/* ---------- action badge ---------- */
+function ALActionBadge({ action }) {
+  const s = AL_KIND_STYLE[kindOf(action)] || AL_KIND_STYLE.update;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 9px", borderRadius: 7, background: s.bg, color: s.fg, fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, textTransform: "capitalize" }}>
-      <Icon name={s.icon} size={12} />{type}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 9px", borderRadius: 7, background: s.bg, color: s.fg, fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700 }}>
+      <Icon name={s.icon} size={12} />{action || "—"}
     </span>
   );
 }
 
-/* ---------- avatar chip from initials ---------- */
-function ALAvatar({ name }) {
-  const sys = name === "Sistem" || name === "—";
-  const init = sys ? "SY" : name.split(" ").map((w) => w[0]).slice(0, 2).join("");
+/* ---------- avatar chip from email initials ---------- */
+function ALAvatar({ email }) {
+  const sys = !email || email === "—";
+  const init = sys ? "SY" : email.slice(0, 2).toUpperCase();
   return (
     <span style={{ width: 30, height: 30, borderRadius: 9, background: sys ? "#E7E1D6" : "#EAF0F8", color: sys ? MUTED : NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 30px", fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700 }}>
       {sys ? <Icon name="settings" size={15} /> : init}
@@ -82,16 +80,16 @@ function ALAvatar({ name }) {
 
 export default function AuditLogPage({ onHome }) {
   const [q, setQ] = useState("");
-  const [user, setUser] = useState("all");
-  const [mod, setMod] = useState("Semua Modul");
-  const [actype, setActype] = useState("all");
+  const [userF, setUserF] = useState("all");
+  const [actionF, setActionF] = useState("all");
+  const [entityF, setEntityF] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
   const [fireToast, toastNode] = useToast();
   const [qFocus, setQFocus] = useState(false);
 
-  // ── live data (login events from user_login_logs) ──
+  // ── live data (audit_logs) ──
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -101,31 +99,23 @@ export default function AuditLogPage({ onHome }) {
     setLoading(true);
     setError(null);
     (async () => {
-      const { data: logRows, error: e1 } = await supabase
-        .from("user_login_logs")
-        .select("id, user_id, logged_in_at, ip, user_agent")
-        .order("logged_in_at", { ascending: false })
+      const { data: rows, error: e1 } = await supabase
+        .from("audit_logs")
+        .select("id, created_at, user_email, user_role, action, entity_type, entity_id, entity_label, notes")
+        .order("created_at", { ascending: false })
         .limit(1000);
       if (cancelled) return;
       if (e1) { setError(e1.message || "Gagal memuat audit log."); setLoading(false); return; }
 
-      const ids = [...new Set((logRows || []).map((r) => r.user_id).filter(Boolean))];
-      const nameById = {};
-      if (ids.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids).limit(1000);
-        (profs || []).forEach((p) => { nameById[p.id] = p.full_name || "—"; });
-      }
-      if (cancelled) return;
-
-      const mapped = (logRows || []).map((r) => ({
-        ts: fmtTs(r.logged_in_at),
-        user: nameById[r.user_id] || "—",
-        role: "",
-        type: "login",
-        action: "Login Berhasil",
-        module: "Authentication",
-        details: r.user_agent || "—",
-        ip: r.ip || "—",
+      const mapped = (rows || []).map((r) => ({
+        id: r.id,
+        ts: fmtTs(r.created_at),
+        email: r.user_email || "—",
+        role: r.user_role || "",
+        action: r.action || "—",
+        entityType: r.entity_type || "",
+        entityLabel: r.entity_label || "",
+        notes: r.notes || "",
       }));
       setLogs(mapped);
       setLoading(false);
@@ -139,39 +129,39 @@ export default function AuditLogPage({ onHome }) {
 
   // user filter options derived from real data
   const AL_USERS = useMemo(() => {
-    const names = [...new Set(logs.map((r) => r.user).filter((n) => n && n !== "—"))].sort((a, b) => a.localeCompare(b));
-    return [{ value: "all", label: "Semua Pengguna" }, ...names.map((n) => ({ value: n, label: n }))];
+    const emails = [...new Set(logs.map((r) => r.email).filter((n) => n && n !== "—"))].sort((a, b) => a.localeCompare(b));
+    return [{ value: "all", label: "Semua Pengguna" }, ...emails.map((n) => ({ value: n, label: n }))];
   }, [logs]);
 
   const filtered = useMemo(() => {
     return logs.filter((r) => {
-      if (user !== "all" && r.user !== user) return false;
-      if (mod !== "Semua Modul" && r.module !== mod) return false;
-      if (actype !== "all" && r.type !== actype) return false;
+      if (userF !== "all" && r.email !== userF) return false;
+      if (actionF !== "all" && r.action !== actionF) return false;
+      if (entityF !== "all" && r.entityType !== entityF) return false;
       const day = r.ts.slice(0, 10);
       if (from && day < from) return false;
       if (to && day > to) return false;
       if (q.trim()) {
-        const hay = (r.user + " " + r.action + " " + r.module + " " + r.details + " " + r.ip).toLowerCase();
+        const hay = (r.email + " " + r.role + " " + r.action + " " + r.entityType + " " + r.entityLabel + " " + r.notes).toLowerCase();
         if (!hay.includes(q.trim().toLowerCase())) return false;
       }
       return true;
     });
-  }, [logs, q, user, mod, actype, from, to]);
+  }, [logs, q, userF, actionF, entityF, from, to]);
 
-  useEffect(() => { setPage(1); }, [q, user, mod, actype, from, to]);
+  useEffect(() => { setPage(1); }, [q, userF, actionF, entityF, from, to]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / AL_PAGE_SIZE));
   const curPage = Math.min(page, pages);
   const slice = filtered.slice((curPage - 1) * AL_PAGE_SIZE, curPage * AL_PAGE_SIZE);
-  const hasFilters = q || user !== "all" || mod !== "Semua Modul" || actype !== "all" || from || to;
+  const hasFilters = q || userF !== "all" || actionF !== "all" || entityF !== "all" || from || to;
 
-  function resetFilters() { setQ(""); setUser("all"); setMod("Semua Modul"); setActype("all"); setFrom(""); setTo(""); }
+  function resetFilters() { setQ(""); setUserF("all"); setActionF("all"); setEntityF("all"); setFrom(""); setTo(""); }
 
   function exportCSV() {
-    const head = ["Timestamp", "User", "Role", "Action", "Module", "Details", "IP Address"];
+    const head = ["Waktu", "User", "Role", "Aksi", "Entity Type", "Entity Label", "Catatan"];
     const esc = (v) => '"' + String(v).replace(/"/g, '""') + '"';
-    const lines = [head.join(",")].concat(filtered.map((r) => [r.ts, r.user, r.role, r.action, r.module, r.details, r.ip].map(esc).join(",")));
+    const lines = [head.join(",")].concat(filtered.map((r) => [r.ts, r.email, r.role, r.action, r.entityType, r.entityLabel, r.notes].map(esc).join(",")));
     const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -201,13 +191,13 @@ export default function AuditLogPage({ onHome }) {
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ position: "relative", flex: "1 1 240px", minWidth: 200 }}>
             <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none" }}><Icon name="search" size={16} /></span>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari aksi, detail, IP…"
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari user, aksi, entitas, catatan…"
               onFocus={() => setQFocus(true)} onBlur={() => setQFocus(false)}
               style={{ width: "100%", height: 44, borderRadius: 11, border: "1px solid " + (qFocus ? NAVY : LINE), background: SURFACE, padding: "0 14px 0 38px", fontFamily: FONT_BODY, fontSize: 13.5, color: INK, outline: "none", boxShadow: qFocus ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }} />
           </div>
-          <KitSelect value={user} onChange={setUser} options={AL_USERS} width={190} icon="user" />
-          <KitSelect value={mod} onChange={setMod} options={AL_MODULES} width={180} icon="layout" />
-          <KitSelect value={actype} onChange={setActype} options={AL_ACTYPES} width={160} icon="filter" />
+          <KitSelect value={userF} onChange={setUserF} options={AL_USERS} width={200} icon="user" />
+          <KitSelect value={actionF} onChange={setActionF} options={AL_ACTIONS} width={190} icon="filter" />
+          <KitSelect value={entityF} onChange={setEntityF} options={AL_ENTITIES} width={170} icon="layout" />
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {dateInput(from, setFrom, "Dari tanggal")}
             <span style={{ color: FAINT, fontSize: 13 }}>—</span>
@@ -239,8 +229,8 @@ export default function AuditLogPage({ onHome }) {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 940 }}>
             <thead>
               <tr style={{ background: CREAM }}>
-                {["Timestamp", "Pengguna", "Aksi", "Modul", "Detail", "IP Address"].map((h, i) => (
-                  <th key={h} style={{ textAlign: "left", padding: "13px 18px", fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, color: INK_SOFT, textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid " + LINE, whiteSpace: "nowrap", width: i === 4 ? "auto" : "1%" }}>{h}</th>
+                {["Waktu", "User", "Role", "Aksi", "Entitas", "Catatan"].map((h, i) => (
+                  <th key={h} style={{ textAlign: "left", padding: "13px 18px", fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, color: INK_SOFT, textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid " + LINE, whiteSpace: "nowrap", width: i === 5 ? "auto" : "1%" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -267,7 +257,7 @@ export default function AuditLogPage({ onHome }) {
                 </tr>
               )}
               {!loading && !error && slice.map((r, i) => (
-                <ALRow key={r.ts + r.ip + i} r={r} zebra={i % 2 === 1} />
+                <ALRow key={r.id || (r.ts + i)} r={r} zebra={i % 2 === 1} />
               ))}
               {!loading && !error && slice.length === 0 && (
                 <tr>
@@ -323,24 +313,23 @@ function ALRow({ r, zebra }) {
       <td style={{ padding: "13px 18px", fontFamily: FONT_MONO, fontSize: 12.5, color: INK_SOFT, whiteSpace: "nowrap" }}>{r.ts}</td>
       <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
-          <ALAvatar name={r.user} />
-          <span>
-            <span style={{ display: "block", fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: INK }}>{r.user}</span>
-            {r.role && <span style={{ display: "block", fontSize: 11.5, color: FAINT }}>{r.role}</span>}
-          </span>
+          <ALAvatar email={r.email} />
+          <span style={{ display: "block", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK }}>{r.email}</span>
         </span>
       </td>
       <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
-        <span style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <ALTypeBadge type={r.type} />
-          <span style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT }}>{r.action}</span>
-        </span>
+        <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: r.role ? INK_SOFT : FAINT }}>{r.role || "—"}</span>
       </td>
       <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
-        <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: NAVY, background: "#EAF0F8", borderRadius: 7, padding: "4px 10px" }}>{r.module}</span>
+        <ALActionBadge action={r.action} />
       </td>
-      <td style={{ padding: "13px 18px", fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT, maxWidth: 360, lineHeight: 1.45 }}>{r.details}</td>
-      <td style={{ padding: "13px 18px", fontFamily: FONT_MONO, fontSize: 12.5, color: MUTED, whiteSpace: "nowrap" }}>{r.ip}</td>
+      <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: NAVY, background: "#EAF0F8", borderRadius: 7, padding: "3px 9px", alignSelf: "flex-start" }}>{r.entityType || "—"}</span>
+          {r.entityLabel && <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{r.entityLabel}</span>}
+        </span>
+      </td>
+      <td style={{ padding: "13px 18px", fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT, maxWidth: 360, lineHeight: 1.45 }}>{r.notes || "—"}</td>
     </tr>
   );
 }

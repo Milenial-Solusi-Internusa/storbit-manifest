@@ -34,6 +34,8 @@ import {
 } from '../../../hooks/useUserAccess';
 import { useDebounce } from '../../../hooks/useDebounce';
 import { useAuth } from '../../../contexts/useAuth';
+import { supabase } from '../../../lib/supabase';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../../lib/auditLogger';
 import AdminPageHeader from '../components/AdminPageHeader';
 import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
@@ -66,7 +68,7 @@ const EMPTY_ADD = {
 // ─────────────────────────────────────────────────────────────
 
 export default function UserAccessPage({ showToast, onEditUser }) {
-  const { profile: myProfile } = useAuth();
+  const { profile: myProfile, erpRole, user } = useAuth();
 
   // Fallback toast if rendered without a shell-level showToast (defensive).
   const [localToast, setLocalToast] = useState(null);
@@ -105,6 +107,14 @@ export default function UserAccessPage({ showToast, onEditUser }) {
         if (toggleErr) {
           toast(toggleErr.message || `Failed to ${action} user.`, 'error');
           return;
+        }
+        if (action === 'deactivate') {
+          logAudit(supabase, {
+            action: ACTION_TYPES.DEACTIVATE_USER,
+            entityType: ENTITY_TYPES.USER,
+            entityId: row.id,
+            entityLabel: row.full_name || null,
+          }, { id: myProfile?.id, email: user?.email, role: erpRole, companyId: myProfile?.company_id });
         }
         refresh();
         toast(`User ${action === 'deactivate' ? 'deactivated' : 'activated'}.`);
@@ -205,10 +215,16 @@ export default function UserAccessPage({ showToast, onEditUser }) {
       return;
     }
 
+    logAudit(supabase, {
+      action: ACTION_TYPES.CREATE_USER,
+      entityType: ENTITY_TYPES.USER,
+      entityId: result?.user?.id ?? result?.id ?? null,
+      entityLabel: full_name.trim() || email.trim(),
+    }, { id: myProfile?.id, email: user?.email, role: erpRole, companyId: myProfile?.company_id });
     closeAdd();
     refresh();
     toast(result?.warning ? `User created (with warning: ${result.warning})` : 'User created successfully.');
-  }, [addDraft, closeAdd, refresh, toast]);
+  }, [addDraft, closeAdd, refresh, toast, myProfile, erpRole, user]);
 
   const addFooter = (
     <div className="flex items-center gap-3">

@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, Plus, Eye, Check, Activity, X, Pencil, UserPlus, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 
 // Resolve active 'sales' users for a company via RBAC (roles.code='sales'),
@@ -492,7 +493,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
 }
 
 export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspectForm, setEditingProspect }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, user } = useAuth();
   // Visibility scope by role (mirrors RLS on `activities`):
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only activities assigned to or created by them
@@ -684,7 +685,13 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       };
       const { data: created, error } = await supabase.from('activities').insert(payload).select('id').single();
       if (error) throw error;
-      // fire-and-forget audit log (don't block UI; log errors only)
+      logAudit(supabase, {
+        action: ACTION_TYPES.CREATE_ACTIVITY,
+        entityType: ENTITY_TYPES.ACTIVITY,
+        entityId: created?.id ?? null,
+        entityLabel: draft.contact_name || draft.type,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      // fire-and-forget activity_logs feed (don't block UI; log errors only)
       if (created?.id) {
         supabase.from('activity_logs').insert({
           activity_id: created.id, changed_by: profile.id,
@@ -708,6 +715,13 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .update({ status: 'done', completed_at: new Date().toISOString() })
       .eq('id', row.id);
     if (error) { showToast?.('Gagal menandai selesai: ' + error.message, 'error'); return; }
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_ACTIVITY,
+      entityType: ENTITY_TYPES.ACTIVITY,
+      entityId: row.id,
+      entityLabel: row.contact_name || '',
+      notes: (row.status || 'todo') + ' → done',
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     supabase.from('activity_logs').insert({
       activity_id: row.id, changed_by: profile.id,
       from_status: row.status || null, to_status: 'done',
@@ -726,6 +740,13 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .eq('id', id);
     if (error) { showToast?.('Gagal membatalkan: ' + error.message, 'error'); return; }
     const fromStatus = rows.find(r => r.id === id)?.status || null;
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_ACTIVITY,
+      entityType: ENTITY_TYPES.ACTIVITY,
+      entityId: id,
+      entityLabel: rows.find(r => r.id === id)?.contact_name || '',
+      notes: (fromStatus || 'todo') + ' → cancelled',
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     supabase.from('activity_logs').insert({
       activity_id: id, changed_by: profile.id,
       from_status: fromStatus, to_status: 'cancelled',
@@ -742,11 +763,17 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
     if (error) { showToast?.('Gagal menghapus: ' + error.message, 'error'); return; }
+    logAudit(supabase, {
+      action: ACTION_TYPES.DELETE_ACTIVITY,
+      entityType: ENTITY_TYPES.ACTIVITY,
+      entityId: id,
+      entityLabel: null,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     showToast?.('Aktivitas dihapus');
     setDetail(null);
     setDeleteConfirm(null);
     fetchActivities();
-  }, [fetchActivities, showToast]);
+  }, [fetchActivities, showToast, profile, erpRole, user]);
 
   // ── edit activity (via ActivityDetailModal edit mode) ───────────────────────
   // Same payload shape as handleSave minus status/company_id/created_by. details
