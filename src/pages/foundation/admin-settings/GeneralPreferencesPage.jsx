@@ -6,13 +6,14 @@
 
    Ported from the Claude Design handoff (GeneralPreferences.jsx). Layout &
    styling preserved verbatim; shared-scope refs replaced with ES imports
-   from ./kit + ./tokens. Data persisted to localStorage per entity
-   (TODO: migrate to a DB settings table once available). Default entity
-   derived from the signed-in user's company via useAuth.
+   from ./kit + ./tokens. Data persisted to the app_settings table
+   (category 'general_prefs') per entity via useAppSettings(). Default
+   entity derived from the signed-in user's company via useAuth.
    ========================================================================= */
 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../../contexts/useAuth";
+import useAppSettings from "../../../hooks/useAppSettings";
 import {
   Icon, PageHeader, EntitySwitcher, Tabs, Segmented, Toggle, KitSelect,
   SaveButton, Card, useToast, KitStyles,
@@ -28,6 +29,12 @@ const ENTITY_CODE_BY_ID = {
   "0e1840d8-e6fb-4190-bd09-88338e68b492": "MSI",
   "42569e7c-531b-4d2b-832a-d5a7268c455b": "JCI",
   "d2e5e565-5f67-4954-b8d9-5979a2a0c697": "SOA",
+};
+// Selected entity code → company UUID (app_settings.company_id is per-entity).
+const ENTITY_ID_BY_CODE = {
+  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
+  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
+  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
 };
 
 const GP_LANGS = [
@@ -63,13 +70,12 @@ const GP_ACCENTS = [
   { value: "violet", color: "#6D4AC4", label: "Violet" },
 ];
 
-/* ---------- persisted defaults (localStorage fallback) ---------- */
+/* ---------- default fallback values (when app_settings has no row) ---------- */
 const GP_DEFAULTS = {
   lang: "id", tz: "wib", dateFmt: "dmy_slash", timeFmt: "24h", numFmt: "id", curr: "rp",
   theme: "light", density: "nyaman", accent: "orange", sidebar: "open", animations: true,
   firstDay: "mon", fiscalStart: "0", weekend: true,
 };
-const GP_KEY = (entity) => "general_prefs_" + entity;
 
 /* ---------- one setting row ---------- */
 function GPRow({ title, desc, children, last }) {
@@ -124,6 +130,10 @@ export default function GeneralPreferencesPage({ onHome }) {
   const [fade, setFade] = useState(false);
   const [fireToast, toastNode] = useToast();
 
+  // DB-backed settings, scoped to the selected entity's company (app_settings).
+  const companyId = ENTITY_ID_BY_CODE[entity] || profile?.company_id || null;
+  const { getVal, saveSettings, loading } = useAppSettings('general_prefs', companyId);
+
   // localization
   const [lang, setLang] = useState(GP_DEFAULTS.lang);
   const [tz, setTz] = useState(GP_DEFAULTS.tz);
@@ -153,25 +163,33 @@ export default function GeneralPreferencesPage({ onHome }) {
     if (code) setEntity(code);
   }, [profile?.company_id]);
 
-  // Load persisted settings whenever the active entity changes.
-  // TODO: replace localStorage with a DB settings table (per-entity).
+  // Hydrate fields from DB (app_settings). Re-runs when the hook refetches —
+  // including when the active entity changes (companyId → new fetch → new getVal).
   useEffect(() => {
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(GP_KEY(entity)) || "{}") || {}; } catch (e) { saved = {}; }
-    const s = { ...GP_DEFAULTS, ...saved };
-    setLang(s.lang); setTz(s.tz); setDateFmt(s.dateFmt); setTimeFmt(s.timeFmt);
-    setNumFmt(s.numFmt); setCurr(s.curr); setTheme(s.theme); setDensity(s.density);
-    setAccent(s.accent); setSidebar(s.sidebar); setAnimations(s.animations);
-    setFirstDay(s.firstDay); setFiscalStart(s.fiscalStart); setWeekend(s.weekend);
-  }, [entity]);
+    setLang(getVal('lang', GP_DEFAULTS.lang));
+    setTz(getVal('tz', GP_DEFAULTS.tz));
+    setDateFmt(getVal('dateFmt', GP_DEFAULTS.dateFmt));
+    setTimeFmt(getVal('timeFmt', GP_DEFAULTS.timeFmt));
+    setNumFmt(getVal('numFmt', GP_DEFAULTS.numFmt));
+    setCurr(getVal('curr', GP_DEFAULTS.curr));
+    setTheme(getVal('theme', GP_DEFAULTS.theme));
+    setDensity(getVal('density', GP_DEFAULTS.density));
+    setAccent(getVal('accent', GP_DEFAULTS.accent));
+    setSidebar(getVal('sidebar', GP_DEFAULTS.sidebar));
+    setAnimations(getVal('animations', GP_DEFAULTS.animations));
+    setFirstDay(getVal('firstDay', GP_DEFAULTS.firstDay));
+    setFiscalStart(getVal('fiscalStart', GP_DEFAULTS.fiscalStart));
+    setWeekend(getVal('weekend', GP_DEFAULTS.weekend));
+  }, [getVal]);
 
   function switchEntity(id) { if (id === entity) return; setFade(true); setTimeout(() => { setEntity(id); setFade(false); }, 200); }
 
-  function persist() {
+  const save = async (label) => {
     const payload = { lang, tz, dateFmt, timeFmt, numFmt, curr, theme, density, accent, sidebar, animations, firstDay, fiscalStart, weekend };
-    try { localStorage.setItem(GP_KEY(entity), JSON.stringify(payload)); } catch (e) { /* ignore quota/availability */ }
-  }
-  const save = (label) => { persist(); fireToast(label + " disimpan untuk " + entity); };
+    const { error } = await saveSettings(payload);
+    if (error) fireToast('Gagal menyimpan: ' + (error.message || error), 'alert');
+    else fireToast(label + " disimpan untuk " + entity);
+  };
 
   const [tab, setTab] = useState("prefs");
 
@@ -191,6 +209,8 @@ export default function GeneralPreferencesPage({ onHome }) {
         value={tab}
         onChange={setTab}
       />
+
+      {tab === "prefs" && loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: MUTED, padding: "2px 2px 12px" }}>Memuat pengaturan…</div>}
 
       {tab === "prefs" && (
       <div key={entity} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>

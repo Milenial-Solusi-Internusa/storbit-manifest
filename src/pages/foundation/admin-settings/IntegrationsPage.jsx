@@ -7,12 +7,14 @@
 
    Ported from the Claude Design handoff (Integrations.jsx). Layout &
    styling preserved verbatim; shared-scope refs replaced with ES imports
-   from ./kit + ./tokens. Config persisted to localStorage with prefix
-   integrations_ (TODO: migrate to a DB settings table — secrets/tokens
-   should move to a server-side secret store, NOT localStorage).
+   from ./kit + ./tokens. Config persisted to the app_settings table
+   (category 'integrations') via useAppSettings(). TODO: secrets/tokens
+   (wa.token / smtp.pass / API keys) should move to a server-side secret
+   store (Supabase Vault / Edge Function env), NOT app_settings jsonb.
    ========================================================================= */
 
 import { useState, useEffect, useRef } from "react";
+import useAppSettings from "../../../hooks/useAppSettings";
 import {
   Icon, PageHeader, Segmented, Toggle, PrimaryBtn, OutlineBtn,
   SlideOver, Modal, useToast, KitStyles,
@@ -22,7 +24,10 @@ import {
   FAINT, DANGER, GREEN, FONT_HEAD, FONT_BODY, FONT_MONO,
 } from "./tokens";
 
-const INT_KEYS = { wa: "integrations_wa", smtp: "integrations_smtp", hook: "integrations_hook", apikeys: "integrations_keys" };
+// app_settings keys (category 'integrations'). NOTE: wa.token / smtp.pass / API
+// keys are sensitive — TODO: migrate sensitive credentials to Supabase Vault /
+// Edge Function environment variables (do NOT keep them in app_settings jsonb).
+const INT_KEYS = { wa: "wa", smtp: "smtp", hook: "hook", apikeys: "keys" };
 
 /* ---------- status pill ---------- */
 function INTStatus({ kind }) {
@@ -111,19 +116,14 @@ const intRandKey = () => {
 };
 const intMask = (k) => k.slice(0, 12) + "••••••••••••••••" + k.slice(-4);
 
-/* ---------- localStorage helpers (fallback persistence) ---------- */
-function loadJSON(key, fallback) {
-  try { const v = JSON.parse(localStorage.getItem(key) || "null"); return v == null ? fallback : v; } catch (e) { return fallback; }
-}
-function saveJSON(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore quota/availability */ }
-}
-
 /* =========================================================================
    PAGE
    ========================================================================= */
 export default function IntegrationsPage({ onHome }) {
   const [fireToast, toastNode] = useToast();
+
+  // DB-backed config (app_settings, scoped to the user's company).
+  const { getVal, saveSetting, loading } = useAppSettings('integrations');
 
   // WhatsApp
   const [waOpen, setWaOpen] = useState(false);
@@ -152,26 +152,30 @@ export default function IntegrationsPage({ onHome }) {
   const [justMade, setJustMade] = useState(null);
   const seq = useRef(3);
 
-  // Load persisted config once. TODO: replace with DB-backed settings; move
-  // secrets (tokens/passwords/api keys) to a server-side secret store.
+  // Hydrate config from DB once the fetch completes. The `loaded` ref gates the
+  // persist effects below so they don't fire during hydration.
+  // TODO: migrate sensitive credentials (wa.token / smtp.pass / API keys) to
+  // Supabase Vault / Edge Function environment variables — NOT app_settings.
   const loaded = useRef(false);
   useEffect(() => {
-    const wa0 = loadJSON(INT_KEYS.wa, null);
+    if (loading || loaded.current) return;
+    const wa0 = getVal(INT_KEYS.wa, null);
     if (wa0) { setWa(wa0); setWaDraft(wa0); }
-    const smtp0 = loadJSON(INT_KEYS.smtp, null);
+    const smtp0 = getVal(INT_KEYS.smtp, null);
     if (smtp0) { setSmtp(smtp0); setSmtpDraft(smtp0); }
-    const hook0 = loadJSON(INT_KEYS.hook, null);
+    const hook0 = getVal(INT_KEYS.hook, null);
     if (hook0) setHook(hook0);
-    const keys0 = loadJSON(INT_KEYS.apikeys, null);
+    const keys0 = getVal(INT_KEYS.apikeys, null);
     if (Array.isArray(keys0)) { setKeys(keys0); seq.current = keys0.reduce((m, k) => Math.max(m, Number(k.id) || 0), 3); }
     loaded.current = true;
-  }, []);
+  }, [loading, getVal]);
 
-  // Persist each slice whenever it changes (after the initial load).
-  useEffect(() => { if (loaded.current) saveJSON(INT_KEYS.wa, wa); }, [wa]);
-  useEffect(() => { if (loaded.current) saveJSON(INT_KEYS.smtp, smtp); }, [smtp]);
-  useEffect(() => { if (loaded.current) saveJSON(INT_KEYS.hook, hook); }, [hook]);
-  useEffect(() => { if (loaded.current) saveJSON(INT_KEYS.apikeys, keys); }, [keys]);
+  // Persist each slice whenever it changes (after the initial load). Fire-and-
+  // forget upsert to app_settings.
+  useEffect(() => { if (loaded.current) saveSetting(INT_KEYS.wa, wa); }, [wa]);
+  useEffect(() => { if (loaded.current) saveSetting(INT_KEYS.smtp, smtp); }, [smtp]);
+  useEffect(() => { if (loaded.current) saveSetting(INT_KEYS.hook, hook); }, [hook]);
+  useEffect(() => { if (loaded.current) saveSetting(INT_KEYS.apikeys, keys); }, [keys]);
 
   function openWa() { setWaDraft(wa); setWaOpen(true); }
   function saveWa() { setWa(waDraft); setWaOpen(false); fireToast("Konfigurasi WhatsApp disimpan"); }
@@ -218,6 +222,8 @@ export default function IntegrationsPage({ onHome }) {
         subtitle="Konektor eksternal — WhatsApp, email, otomasi & akses API"
         onBack={onHome}
       />
+
+      {loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: MUTED, padding: "2px 2px 12px" }}>Memuat konfigurasi…</div>}
 
       <div className="ak-rise" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(440px, 1fr))", gap: 18 }}>
         {/* WHATSAPP */}

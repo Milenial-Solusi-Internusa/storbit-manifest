@@ -5,13 +5,14 @@
 
    Ported from the Claude Design handoff (SecurityPolicy.jsx). Layout &
    styling preserved verbatim; shared-scope refs replaced with ES imports
-   from ./kit + ./tokens. Settings persisted to localStorage per entity
-   with prefix security_policy_ (TODO: migrate to a DB settings table +
-   wire to real enforcement once available). Default entity from useAuth.
+   from ./kit + ./tokens. Settings persisted to the app_settings table
+   (category 'security_policy') per entity via useAppSettings(). Default
+   entity from useAuth. (TODO: wire to real server-side enforcement.)
    ========================================================================= */
 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../../contexts/useAuth";
+import useAppSettings from "../../../hooks/useAppSettings";
 import {
   Icon, PageHeader, EntitySwitcher, NumberStepper, Toggle, Segmented,
   SaveButton, Card, useToast, KitStyles,
@@ -27,6 +28,12 @@ const ENTITY_CODE_BY_ID = {
   "42569e7c-531b-4d2b-832a-d5a7268c455b": "JCI",
   "d2e5e565-5f67-4954-b8d9-5979a2a0c697": "SOA",
 };
+// Selected entity code → company UUID (app_settings.company_id is per-entity).
+const ENTITY_ID_BY_CODE = {
+  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
+  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
+  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
+};
 
 const SEC_ROLES = [
   { value: "super_admin", label: "Super Admin", desc: "Akses penuh sistem" },
@@ -37,7 +44,7 @@ const SEC_ROLES = [
   { value: "hrga",        label: "HRGA",        desc: "SDM & umum" },
 ];
 
-/* ---------- persisted defaults (localStorage fallback) ---------- */
+/* ---------- default fallback values (when app_settings has no row) ---------- */
 const SEC_DEFAULTS = {
   minLen: 10, reqUpper: true, reqNumber: true, reqSymbol: false, reuse: 3, expiry: 90,
   timeout: 30, maxSessions: 3, rememberMe: true, singleDevice: false,
@@ -45,7 +52,6 @@ const SEC_DEFAULTS = {
   twoFA: { super_admin: true, admin: true, finance: true, manager: false, sales: false, hrga: false },
   twoFAMethod: "app", graceDays: 7,
 };
-const SEC_KEY = (entity) => "security_policy_" + entity;
 
 /* ---------- setting row ---------- */
 function SECRow({ title, desc, children, last }) {
@@ -126,6 +132,10 @@ export default function SecurityPolicyPage({ onHome }) {
   const [fade, setFade] = useState(false);
   const [fireToast, toastNode] = useToast();
 
+  // DB-backed settings, scoped to the selected entity's company (app_settings).
+  const companyId = ENTITY_ID_BY_CODE[entity] || profile?.company_id || null;
+  const { getVal, saveSettings, loading } = useAppSettings('security_policy', companyId);
+
   // password policy
   const [minLen, setMinLen] = useState(SEC_DEFAULTS.minLen);
   const [reqUpper, setReqUpper] = useState(SEC_DEFAULTS.reqUpper);
@@ -160,25 +170,36 @@ export default function SecurityPolicyPage({ onHome }) {
     if (code) setEntity(code);
   }, [profile?.company_id]);
 
-  // Load persisted policy whenever the active entity changes.
-  // TODO: migrate to a DB settings table + enforce server-side.
+  // Hydrate fields from DB (app_settings). Re-runs when the hook refetches —
+  // including when the active entity changes (companyId → new fetch → new getVal).
   useEffect(() => {
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(SEC_KEY(entity)) || "{}") || {}; } catch (e) { saved = {}; }
-    const s = { ...SEC_DEFAULTS, ...saved, twoFA: { ...SEC_DEFAULTS.twoFA, ...(saved.twoFA || {}) } };
-    setMinLen(s.minLen); setReqUpper(s.reqUpper); setReqNumber(s.reqNumber); setReqSymbol(s.reqSymbol);
-    setReuse(s.reuse); setExpiry(s.expiry); setTimeoutMin(s.timeout); setMaxSessions(s.maxSessions);
-    setRememberMe(s.rememberMe); setSingleDevice(s.singleDevice); setMaxFails(s.maxFails); setLockout(s.lockout);
-    setCaptcha(s.captcha); setNotifyLock(s.notifyLock); setTwoFA(s.twoFA); setTwoFAMethod(s.twoFAMethod); setGraceDays(s.graceDays);
-  }, [entity]);
+    setMinLen(getVal('minLen', SEC_DEFAULTS.minLen));
+    setReqUpper(getVal('reqUpper', SEC_DEFAULTS.reqUpper));
+    setReqNumber(getVal('reqNumber', SEC_DEFAULTS.reqNumber));
+    setReqSymbol(getVal('reqSymbol', SEC_DEFAULTS.reqSymbol));
+    setReuse(getVal('reuse', SEC_DEFAULTS.reuse));
+    setExpiry(getVal('expiry', SEC_DEFAULTS.expiry));
+    setTimeoutMin(getVal('timeout', SEC_DEFAULTS.timeout));
+    setMaxSessions(getVal('maxSessions', SEC_DEFAULTS.maxSessions));
+    setRememberMe(getVal('rememberMe', SEC_DEFAULTS.rememberMe));
+    setSingleDevice(getVal('singleDevice', SEC_DEFAULTS.singleDevice));
+    setMaxFails(getVal('maxFails', SEC_DEFAULTS.maxFails));
+    setLockout(getVal('lockout', SEC_DEFAULTS.lockout));
+    setCaptcha(getVal('captcha', SEC_DEFAULTS.captcha));
+    setNotifyLock(getVal('notifyLock', SEC_DEFAULTS.notifyLock));
+    setTwoFA({ ...SEC_DEFAULTS.twoFA, ...(getVal('twoFA', SEC_DEFAULTS.twoFA) || {}) });
+    setTwoFAMethod(getVal('twoFAMethod', SEC_DEFAULTS.twoFAMethod));
+    setGraceDays(getVal('graceDays', SEC_DEFAULTS.graceDays));
+  }, [getVal]);
 
   function switchEntity(id) { if (id === entity) return; setFade(true); setTimeout(() => { setEntity(id); setFade(false); }, 200); }
 
-  function persist() {
+  const save = async (label) => {
     const payload = { minLen, reqUpper, reqNumber, reqSymbol, reuse, expiry, timeout, maxSessions, rememberMe, singleDevice, maxFails, lockout, captcha, notifyLock, twoFA, twoFAMethod, graceDays };
-    try { localStorage.setItem(SEC_KEY(entity), JSON.stringify(payload)); } catch (e) { /* ignore quota/availability */ }
-  }
-  const save = (label) => { persist(); fireToast(label + " disimpan untuk " + entity); };
+    const { error } = await saveSettings(payload);
+    if (error) fireToast('Gagal menyimpan: ' + (error.message || error), 'alert');
+    else fireToast(label + " disimpan untuk " + entity);
+  };
   const enabled2FA = Object.values(twoFA).filter(Boolean).length;
 
   return (
@@ -191,6 +212,8 @@ export default function SecurityPolicyPage({ onHome }) {
         onBack={onHome}
         right={<EntitySwitcher value={entity} onChange={switchEntity} />}
       />
+
+      {loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: MUTED, padding: "2px 2px 12px" }}>Memuat pengaturan…</div>}
 
       <div key={entity} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
         {/* PASSWORD POLICY */}

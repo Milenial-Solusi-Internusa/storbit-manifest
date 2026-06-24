@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ZQTyG3hX7ElfXSS6wjGClclrg9u3gRiMeqk0TZbIL2Z0VYezVB2s2eP3Jff4uvJ
+\restrict Zgm82V9MM2Y2Xy6iuvhAYjEhPpwLsuOjxefLqnI8ZTmAKdRCc1358SMtULFTQVO
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -643,6 +643,21 @@ CREATE TABLE public.activity_logs (
     from_status text,
     to_status text,
     notes text
+);
+
+
+--
+-- Name: app_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_settings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid,
+    category text NOT NULL,
+    key text NOT NULL,
+    value jsonb,
+    updated_at timestamp with time zone DEFAULT now(),
+    updated_by uuid
 );
 
 
@@ -3266,6 +3281,22 @@ ALTER TABLE ONLY public.activity_logs
 
 
 --
+-- Name: app_settings app_settings_company_id_category_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_company_id_category_key_key UNIQUE (company_id, category, key);
+
+
+--
+-- Name: app_settings app_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: approval_delegations approval_delegations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4229,6 +4260,20 @@ CREATE INDEX idx_activities_type ON public.activities USING btree (type);
 --
 
 CREATE INDEX idx_activity_logs_activity ON public.activity_logs USING btree (activity_id);
+
+
+--
+-- Name: idx_app_settings_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_settings_category ON public.app_settings USING btree (category, key);
+
+
+--
+-- Name: idx_app_settings_company; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_app_settings_company ON public.app_settings USING btree (company_id);
 
 
 --
@@ -5459,6 +5504,22 @@ ALTER TABLE ONLY public.activities
 
 ALTER TABLE ONLY public.activity_logs
     ADD CONSTRAINT activity_logs_activity_id_fkey FOREIGN KEY (activity_id) REFERENCES public.activities(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_settings app_settings_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_settings app_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 
 
 --
@@ -7151,6 +7212,33 @@ CREATE POLICY activity_logs_update ON public.activity_logs FOR UPDATE TO authent
   WHERE (a.id = activity_logs.activity_id))) OR public.is_super_admin())) WITH CHECK (((EXISTS ( SELECT 1
    FROM public.activities a
   WHERE (a.id = activity_logs.activity_id))) OR public.is_super_admin()));
+
+
+--
+-- Name: app_settings; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: app_settings app_settings_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY app_settings_read ON public.app_settings FOR SELECT USING (public.is_admin_or_above());
+
+
+--
+-- Name: app_settings app_settings_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY app_settings_update ON public.app_settings FOR UPDATE USING (public.is_admin_or_above());
+
+
+--
+-- Name: app_settings app_settings_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY app_settings_write ON public.app_settings FOR INSERT WITH CHECK (public.is_admin_or_above());
 
 
 --
@@ -8910,5 +8998,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ZQTyG3hX7ElfXSS6wjGClclrg9u3gRiMeqk0TZbIL2Z0VYezVB2s2eP3Jff4uvJ
+\unrestrict Zgm82V9MM2Y2Xy6iuvhAYjEhPpwLsuOjxefLqnI8ZTmAKdRCc1358SMtULFTQVO
 
