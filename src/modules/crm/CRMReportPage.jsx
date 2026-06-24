@@ -10,8 +10,10 @@ import {
   BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
+import { pdf } from "@react-pdf/renderer";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../contexts/useAuth";
+import ActivityReportPDF from "./ActivityReportPDF";
 
 /* ---------------- tokens ---------------- */
 const C = {
@@ -212,6 +214,8 @@ const Ic = {
   Chevron: (p) => (<svg viewBox="0 0 24 24" {...p}><polyline points="6 9 12 15 18 9" /></svg>),
   Search: (p) => (<svg viewBox="0 0 24 24" {...p}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>),
   Sort: (p) => (<svg viewBox="0 0 24 24" {...p}><polyline points="8 9 12 5 16 9" /><polyline points="8 15 12 19 16 15" /></svg>),
+  XCircle: (p) => (<svg viewBox="0 0 24 24" {...p}><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>),
+  Download: (p) => (<svg viewBox="0 0 24 24" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>),
 };
 const iconBase = { width: 32, height: 32, fill: "none", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" };
 
@@ -220,6 +224,7 @@ const STATUS_STYLE = {
   Done: { color: C.teal, bg: tint(C.teal, 0.12), label: "Selesai" },
   Pending: { color: C.amber, bg: tint(C.amber, 0.12), label: "Pending" },
   Overdue: { color: C.red, bg: tint(C.red, 0.12), label: "Overdue" },
+  Cancelled: { color: C.gray500, bg: tint(C.gray500, 0.14), label: "Dibatalkan" },
 };
 const TYPE_COLOR = { Call: C.blue, Visit: C.purple, Task: C.amber, Email: C.teal };
 
@@ -237,6 +242,7 @@ export default function CRMReportPage() {
   const [salesQuery, setSalesQuery] = useState("");
   const [sort, setSort] = useState({ key: "total", dir: "desc" });
   const [detailOpen, setDetailOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [animate, setAnimate] = useState(false);
   const dropRef = useRef(null);
 
@@ -309,9 +315,9 @@ export default function CRMReportPage() {
   const mapActs = useMemo(() => {
     const nowMs = Date.now();
     const map = (rows) => (rows || []).map((a) => {
-      if (a.status === "cancelled") return null;
       let status;
-      if (a.status === "done") status = "Done";
+      if (a.status === "cancelled") status = "Cancelled";
+      else if (a.status === "done") status = "Done";
       else {
         const sd = a.scheduled_for ? new Date(a.scheduled_for + "T23:59:59").getTime() : null;
         status = sd !== null && sd < nowMs ? "Overdue" : "Pending";
@@ -340,8 +346,14 @@ export default function CRMReportPage() {
     return set;
   }, [selectedSales, selectedEntities, salesList]);
 
-  const acts        = useMemo(() => mapActs.cur.filter((a) => effSalesIds.has(a.salesId)), [mapActs, effSalesIds]);
-  const prevActs    = useMemo(() => mapActs.prev.filter((a) => effSalesIds.has(a.salesId)), [mapActs, effSalesIds]);
+  // actsAll includes cancelled (detail table + export + cancelled counter);
+  // acts = active-only (Done/Pending/Overdue) so existing KPI/trend/per-sales/winRate stay unchanged.
+  const actsAll     = useMemo(() => mapActs.cur.filter((a) => effSalesIds.has(a.salesId)), [mapActs, effSalesIds]);
+  const prevAll     = useMemo(() => mapActs.prev.filter((a) => effSalesIds.has(a.salesId)), [mapActs, effSalesIds]);
+  const acts        = useMemo(() => actsAll.filter((a) => a.status !== "Cancelled"), [actsAll]);
+  const prevActs    = useMemo(() => prevAll.filter((a) => a.status !== "Cancelled"), [prevAll]);
+  const cancelledCount     = useMemo(() => actsAll.length - acts.length, [actsAll, acts]);
+  const prevCancelledCount = useMemo(() => prevAll.length - prevActs.length, [prevAll, prevActs]);
   const curProspects  = useMemo(() => rawCur.prospects.filter((p) => effSalesIds.has(p.assigned_to)), [rawCur.prospects, effSalesIds]);
   const prevProspects = useMemo(() => rawPrev.prospects.filter((p) => effSalesIds.has(p.assigned_to)), [rawPrev.prospects, effSalesIds]);
   const curQuotations  = useMemo(() => rawCur.quotations.filter((q) => effSalesIds.has(q.created_by)), [rawCur.quotations, effSalesIds]);
@@ -367,9 +379,12 @@ export default function CRMReportPage() {
     return arr;
   }, [rows, sort]);
 
-  const detailActs = useMemo(() => {
-    return [...acts].sort((a, b) => new Date(b.scheduled_for || 0) - new Date(a.scheduled_for || 0)).slice(0, 40);
-  }, [acts]);
+  // Full filtered set (active + cancelled), newest first — used by export.
+  const exportRows = useMemo(
+    () => [...actsAll].sort((a, b) => new Date(b.scheduled_for || 0) - new Date(a.scheduled_for || 0)),
+    [actsAll]
+  );
+  const detailActs = useMemo(() => exportRows.slice(0, 40), [exportRows]);
 
   const pct = (cur, prev) => {
     if (!prev) return cur ? 100 : 0;
@@ -381,6 +396,7 @@ export default function CRMReportPage() {
     { key: "done", name: "Selesai", color: C.teal, Icon: Ic.CheckCircle, val: k.done, prev: kPrev.done },
     { key: "pending", name: "Pending", color: C.amber, Icon: Ic.Clock, val: k.pending, prev: kPrev.pending, goodWhenDown: true },
     { key: "overdue", name: "Overdue", color: C.red, Icon: Ic.AlertCircle, val: k.overdue, prev: kPrev.overdue, goodWhenDown: true },
+    { key: "cancelled", name: "Dibatalkan", color: C.gray500, Icon: Ic.XCircle, val: cancelledCount, prev: prevCancelledCount, goodWhenDown: true },
     { key: "prospect", name: "Prospect Baru", color: C.purple, Icon: Ic.UserPlus, val: k.prospect, prev: kPrev.prospect },
     { key: "quotation", name: "Quotation Dikirim", color: C.orange, Icon: Ic.FileText, val: k.quotation, prev: kPrev.quotation },
   ];
@@ -407,6 +423,34 @@ export default function CRMReportPage() {
     { id: "month", label: "Bulan Ini" },
     { id: "custom", label: "Custom" },
   ];
+  const periodLabel = (periodPresets.find((p) => p.id === period) || {}).label || period;
+
+  // ── Export PDF (download langsung; tanpa preview) ──────────────────────────
+  const canExport = !loading && !errorMsg && exportRows.length > 0;
+  const handleExportPDF = async () => {
+    if (exporting || !canExport) return;
+    setExporting(true);
+    try {
+      const now = new Date();
+      const generatedAt =
+        `${String(now.getDate()).padStart(2, "0")} ${MONTHS_ID[now.getMonth()]} ${now.getFullYear()} ` +
+        `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const meta = { periodLabel, salesLabel, generatedAt };
+      const summary = { total: k.total, done: k.done, pending: k.pending, overdue: k.overdue, cancelled: cancelledCount };
+      const blob = await pdf(<ActivityReportPDF meta={meta} summary={summary} rows={exportRows} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const slug = (s) => String(s).replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Laporan-Aktivitas-${slug(salesLabel)}-${slug(periodLabel)}-${ymd(now)}.pdf`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch (err) {
+      window.alert("Gagal generate PDF: " + (err?.message || err));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div style={{ fontFamily: FONT_BODY, background: C.page, backgroundImage: "radial-gradient(rgba(20,70,130,0.04) 1px, transparent 1px)", backgroundSize: "22px 22px", color: C.ink }}>
@@ -518,6 +562,25 @@ export default function CRMReportPage() {
               );
             })}
           </div>
+
+          {/* export PDF — pojok kanan bar */}
+          <button
+            className="crm-pill"
+            onClick={handleExportPDF}
+            disabled={!canExport || exporting}
+            title={canExport ? "Export laporan ke PDF" : "Tidak ada aktivitas untuk diekspor"}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 16px",
+              borderRadius: 11, border: "none", background: C.orange, color: "#fff",
+              fontFamily: FONT_BODY, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap",
+              boxShadow: "0 4px 14px rgba(232,90,30,.3)",
+              opacity: (!canExport || exporting) ? 0.5 : 1,
+              cursor: (!canExport || exporting) ? "not-allowed" : "pointer",
+            }}
+          >
+            <Ic.Download style={{ width: 15, height: 15, fill: "none", stroke: "#fff", strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round" }} />
+            {exporting ? "Membuat…" : "Export PDF"}
+          </button>
         </div>
       </div>
 
@@ -821,7 +884,7 @@ const st = {
 
   body: { maxWidth: "100%", margin: "0 auto", padding: "22px 24px 0" },
 
-  kpiGrid: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 16, marginBottom: 18 },
+  kpiGrid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 16, marginBottom: 18 },
   kpiCard: { position: "relative", borderRadius: 16, padding: "17px 17px 18px", boxShadow: CARD_SHADOW, overflow: "hidden", color: "#fff", transition: "transform .18s ease, box-shadow .18s ease" },
   kpiTop: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 },
   kpiLabel: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(255,255,255,0.88)", maxWidth: 100, lineHeight: 1.3 },
