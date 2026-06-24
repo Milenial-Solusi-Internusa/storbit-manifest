@@ -526,7 +526,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const maxT = totals.length ? Math.max(...totals) : null;
 
   return (
-    <div style={{ maxWidth: 1180, margin: '0 auto', padding: '4px 0 40px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: BODY, color: C.text }}>
+    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 24px 48px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: BODY, color: C.text }}>
       <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}`}</style>
 
       <Stepper current={stageIdx} value={estValue} />
