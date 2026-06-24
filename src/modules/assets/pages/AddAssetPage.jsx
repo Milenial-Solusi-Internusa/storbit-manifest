@@ -9,8 +9,12 @@
 //   onSuccess    : () => void   — invoked after a successful (simulated) save
 //
 // Self-contained within the assets module: local brand tokens, a lucide-react
-// Icon wrapper, Toggle, and a page-local style block. Mock data, no backend —
-// "Simpan Aset" simulates a ~1.5s save then calls onSuccess().
+// Icon wrapper, Toggle, and a page-local style block. "Simpan Aset" inserts a
+// real row into `assets` (+ asset_specifications / asset_network for IT-EQP),
+// then calls onSuccess(). category_id is resolved by looking up asset_categories
+// (company_id + code = categoryCode). Constrained columns (asset_subtype /
+// status / fuel_type) are mapped from the Indonesian form labels to the DB
+// CHECK values; unmappable values fall back to a safe default.
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -20,6 +24,9 @@ import {
   ArrowRight, AlertTriangle, Info, Lock, Pencil, Loader, CheckCircle2,
 } from 'lucide-react';
 import { AA_CATS, AA_VEH_DOCS, AA_STATUS_TONE } from '../AddAssetData';
+import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../../lib/auditLogger';
 
 /* ---------- brand tokens (MSI Brand Guideline v1.0) ---------- */
 const NAVY = '#144682', ORANGE = '#E85A1E', ORANGE_DK = '#D14E18',
@@ -66,6 +73,26 @@ function aaFmtDate(iso) {
 }
 const aaDigits = (s) => String(s == null ? '' : s).replace(/[^0-9]/g, '');
 const aaGroup = (s) => { const d = aaDigits(s); return d ? Number(d).toLocaleString('id-ID') : ''; };
+
+/* ---------- DB value coercion (form → insert payload) ---------- */
+// empty / whitespace → null (so we send NULL, never an empty string)
+const aaTxt = (v) => { const s = v == null ? '' : String(v).trim(); return s === '' ? null : s; };
+const aaNum = (v) => { const s = aaTxt(v); if (s == null) return null; const n = Number(s); return isNaN(n) ? null : n; };
+const aaInt = (v) => { const n = aaNum(v); return n == null ? null : Math.trunc(n); };
+
+// Map Indonesian form labels → DB CHECK-constraint values (assets table).
+const AA_SUBTYPE_MAP = {
+  'Laptop': 'laptop', 'Desktop/PC': 'desktop', 'Server': 'server',
+  'Printer': 'printer', 'Network Device': 'network', 'Peripheral': 'peripheral',
+};
+const aaMapSubtype = (v) => { const s = aaTxt(v); return s == null ? null : (AA_SUBTYPE_MAP[s] || 'other'); };
+const AA_STATUS_MAP = {
+  'Aktif': 'active', 'Dalam Perbaikan': 'in_repair', 'Dalam Renovasi': 'in_repair',
+  'Rusak': 'in_repair', 'Tidak Aktif': 'retired',
+};
+const aaMapStatus = (v) => { const s = aaTxt(v); return s == null ? 'active' : (AA_STATUS_MAP[s] || 'active'); };
+const AA_FUEL_MAP = { 'Bensin': 'bensin', 'Solar': 'solar', 'Listrik': 'listrik', 'Hybrid': 'other' };
+const aaMapFuel = (v) => { const s = aaTxt(v); return s == null ? null : (AA_FUEL_MAP[s] || 'other'); };
 
 /* ---------- focus-ring helpers ---------- */
 const AA_RING = '0 0 0 3px rgba(20,70,130,.16)';
@@ -502,18 +529,23 @@ function AAReview({ cat, form, onEditStep, visibleSections }) {
 }
 
 /* =========================================================================
-   SAVE BUTTON — spinner → success → onSuccess()  (~1.5s simulated)
+   SAVE BUTTON — spinner → real DB insert → success → onSuccess()
+   onSave: async () => boolean   (true = inserted OK, false = failed)
    ========================================================================= */
-function AASaveButton({ onSuccess, full }) {
+function AASaveButton({ onSave, onSuccess, full }) {
   const [state, setState] = useState('idle');
   const [h, setH] = useState(false);
-  function go() {
+  async function go() {
     if (state !== 'idle') return;
     setState('saving');
-    setTimeout(() => {
+    let ok = false;
+    try { ok = await onSave(); } catch (e) { ok = false; }
+    if (ok) {
       setState('saved');
-      setTimeout(() => { onSuccess && onSuccess(); }, 450);
-    }, 1050);
+      onSuccess && onSuccess();
+    } else {
+      setState('idle');
+    }
   }
   const bg = state === 'saved' ? GREEN : h && state === 'idle' ? ORANGE_DK : ORANGE;
   return (
@@ -550,12 +582,14 @@ function aaBuildInitial(cat) {
 }
 
 export default function AddAssetPage({ categoryCode = 'IT-EQP', onBack, onSuccess }) {
+  const { profile, erpRole, user } = useAuth();
   const cat = AA_CATS[categoryCode] || AA_CATS['IT-EQP'];
   const [form, setForm] = useState(() => aaBuildInitial(cat));
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [dirty, setDirty] = useState(false);
   const [confirmBack, setConfirmBack] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   useEffect(() => { setForm(aaBuildInitial(cat)); setStep(0); setErrors({}); setDirty(false); setConfirmBack(false); }, [categoryCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -595,6 +629,124 @@ export default function AddAssetPage({ categoryCode = 'IT-EQP', onBack, onSucces
   }
   function jumpTo(i) { setStep(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   function handleLeave() { if (dirty) setConfirmBack(true); else onBack && onBack(); }
+
+  // Real DB save. Returns true on success (assets row inserted), false otherwise.
+  // asset_specifications / asset_network (IT-EQP) are best-effort: a failure
+  // there is logged but does NOT block success — the main asset is already saved.
+  async function handleSave() {
+    setSaveError(null);
+    const f = form;
+    const companyId = profile?.company_id ?? null;
+    if (!companyId) { setSaveError('Company tidak ditemukan pada sesi Anda. Silakan login ulang.'); return false; }
+
+    const name = aaTxt(f.nama);
+    const audUser = { id: profile?.id, email: user?.email, role: erpRole, companyId };
+    try {
+      // Resolve category_id (NOT NULL + FK). Category code === wizard categoryCode.
+      const { data: catRow, error: catErr } = await supabase
+        .from('asset_categories')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('code', categoryCode)
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle();
+      if (catErr) { setSaveError('Gagal memuat kategori: ' + catErr.message); return false; }
+      if (!catRow?.id) { setSaveError('Kategori "' + categoryCode + '" belum tersedia untuk entitas ini. Hubungi admin untuk seed kategori aset.'); return false; }
+
+      const row = {
+        company_id: companyId,
+        created_by: user?.id ?? null,
+        asset_no: aaTxt(f.code) || ('AST-' + Date.now()),
+        name,
+        category_id: catRow.id,
+        asset_subtype: aaMapSubtype(f.subtype),
+        serial_number: aaTxt(f.serial),
+        model: aaTxt(f.model) || aaTxt(f.merkModel),
+        brand: aaTxt(f.merkModel),
+        vendor_name: aaTxt(f.vendor),
+        purchase_date: aaTxt(f.tglBeli),
+        purchase_invoice_no: aaTxt(f.invoice),
+        purchase_price: aaNum(f.harga),
+        assigned_to_name: aaTxt(f.assignedTo),
+        description: aaTxt(f.keterangan),
+        status: aaMapStatus(f.status),
+        assignment_status: 'available',
+        plate_number: aaTxt(f.noPol),
+        color: aaTxt(f.warna),
+        manufacture_year: aaInt(f.tahun),
+        fuel_type: aaMapFuel(f.bbm),
+        vin: aaTxt(f.vin),
+        engine_number: aaTxt(f.noMesin),
+        km_odometer: aaInt(f.odometer),
+      };
+
+      const { data: asset, error } = await supabase
+        .from('assets')
+        .insert(row)
+        .select('id, name')
+        .single();
+      if (error) { setSaveError('Gagal menyimpan aset: ' + error.message); return false; }
+
+      // Audit (fire-and-forget) — after assets insert succeeds.
+      logAudit(supabase, {
+        action: ACTION_TYPES.CREATE_ASSET,
+        entityType: ENTITY_TYPES.ASSET,
+        entityId: asset?.id ?? null,
+        entityLabel: asset?.name ?? name,
+      }, audUser);
+
+      // IT-EQP extras — best-effort, non-blocking.
+      if (categoryCode === 'IT-EQP' && asset?.id) {
+        const spec = {
+          asset_id: asset.id,
+          company_id: companyId,
+          cpu_model: aaTxt(f.cpuModel),
+          ram_gb: aaInt(f.ramGb),
+          storage_gb: aaInt(f.stoGb),
+          storage_type: aaTxt(f.stoType),
+          display_size_inch: aaNum(f.dispSize),
+          gpu_model: aaTxt(f.gpuModel),
+          os_name: aaTxt(f.osName),
+          os_version: aaTxt(f.osVersion),
+          battery_capacity_wh: aaNum(f.batWh),
+          webcam_desc: aaTxt(f.webcam),
+          keyboard_desc: aaTxt(f.keyboard),
+          ports_desc: aaTxt(f.ports),
+          wireless_desc: aaTxt(f.wireless),
+          weight_kg: aaNum(f.weight),
+          color: aaTxt(f.color),
+        };
+        const { error: specErr } = await supabase.from('asset_specifications').insert(spec);
+        if (specErr) console.error('[asset] asset_specifications insert failed:', specErr.message);
+
+        // Network row only when there's actual network data (ip or hostname).
+        if (aaTxt(f.ip) || aaTxt(f.hostname)) {
+          const net = {
+            asset_id: asset.id,
+            company_id: companyId,
+            ip_address: aaTxt(f.ip),
+            ipv6_address: aaTxt(f.ipv6),
+            mac_wifi: aaTxt(f.macWifi),
+            mac_lan: aaTxt(f.macLan),
+            hostname: aaTxt(f.hostname),
+            gateway: aaTxt(f.gateway),
+            dns_primary: aaTxt(f.dns1),
+            dns_secondary: aaTxt(f.dns2),
+            vlan: aaTxt(f.vlan),
+            domain_workgroup: aaTxt(f.domain),
+          };
+          const { error: netErr } = await supabase.from('asset_network').insert(net);
+          if (netErr) console.error('[asset] asset_network insert failed:', netErr.message);
+        }
+      }
+
+      return true;
+    } catch (e) {
+      setSaveError('Gagal menyimpan aset: ' + (e?.message || e));
+      return false;
+    }
+  }
 
   const errorCount = Object.values(errors).filter(Boolean).length;
   const assetName = form[cat.titleField];
@@ -672,6 +824,14 @@ export default function AddAssetPage({ categoryCode = 'IT-EQP', onBack, onSucces
         </div>
       )}
 
+      {/* ---------- save error banner ---------- */}
+      {saveError && (
+        <div className="aa-fade" style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px', marginBottom: 18, borderRadius: 12, background: '#FBE3DF', border: '1px solid #ECC2BA' }}>
+          <Icon name="alert" size={17} color={DANGER} />
+          <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: '#9B2C22' }}>{saveError}</span>
+        </div>
+      )}
+
       {/* ---------- step content ---------- */}
       <div key={step} className="aa-fade" data-aa-scroll>
         {stepDef.kind === 'form' && (
@@ -724,7 +884,7 @@ export default function AddAssetPage({ categoryCode = 'IT-EQP', onBack, onSucces
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginLeft: 'auto' }}>
           {stepDef.kind === 'review' ? (
-            <AASaveButton onSuccess={onSuccess} />
+            <AASaveButton onSave={handleSave} onSuccess={onSuccess} />
           ) : (
             <button type="button" onClick={next}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 44, padding: '0 22px', borderRadius: 11, border: 'none', background: ORANGE, color: '#fff', fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 2px rgba(232,90,30,.3), 0 8px 18px rgba(232,90,30,.18)', transition: 'background .2s, transform .12s' }}
