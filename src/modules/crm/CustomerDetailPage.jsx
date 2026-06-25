@@ -11,6 +11,7 @@ import BantScoreBar from './BantScoreBar';
 import { calcBantScore } from './bant';
 import ConfirmModal from '../../components/ConfirmModal';
 import { CustomerFormModal } from './CustomerListPage';
+import TOPRequestModal from './TOPRequestModal';
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const NAVY = '#144682';
@@ -420,6 +421,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
   const [activitiesLoading, setActivitiesLoading] = useState(false);
 
   const [editing,    setEditing]    = useState(false);
+  const [topOpen,    setTopOpen]    = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [deleting,   setDeleting]   = useState(false);
 
@@ -687,6 +689,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
           <h1 style={S.title}>Detail Customer</h1>
         </div>
         <div style={S.actions}>
+          <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setTopOpen(true)}><Icon name="creditcard" size={16} />Ajukan TOP Request</button>
           <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setEditing(true)}><Icon name="pencil" size={16} />Edit</button>
           {canDelete && <button type="button" className="cd-danger" style={S.dangerBtn} onClick={() => setConfirmDel(true)}><Icon name="trash" size={16} />Hapus</button>}
         </div>
@@ -922,6 +925,15 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
           initial={customer}
           onClose={() => setEditing(false)}
           onSaved={() => { setEditing(false); fetchCustomer(); }}
+          showToast={showToast}
+        />
+      )}
+
+      {/* TOP Request modal */}
+      {topOpen && (
+        <TOPRequestModal
+          account={customer}
+          onClose={() => setTopOpen(false)}
           showToast={showToast}
         />
       )}

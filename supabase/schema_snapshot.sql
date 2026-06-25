@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 94BjYdahAke2wgxBUetJi2GeBplTUJsXgpLy32dFoP10YrTXhsuYmGQRSQf7I9S
+\restrict 3gkPOmDST4KUe7dhWqz1DaxrKbD5UQa1qZkNeSWIjRmPSKrQPoXd1DfRJdYPMpR
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1819,6 +1819,66 @@ COMMENT ON COLUMN public.customers.updated_by IS 'User who last updated this rec
 
 
 --
+-- Name: deal_handovers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deal_handovers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid,
+    account_id uuid,
+    handover_type text NOT NULL,
+    nama_perusahaan text,
+    npwp text,
+    nib text,
+    ktp_direktur text,
+    alamat text,
+    website text,
+    industri text,
+    tahun_berdiri text,
+    tipe_customer text,
+    tier_assigned text,
+    stream_service text,
+    estimasi_volume text,
+    payment_terms text,
+    credit_limit numeric(18,2),
+    validity_quote text,
+    special_handling text,
+    tcv_forecast numeric(18,2),
+    volume_per_lane text,
+    service_mix text,
+    sla_komitmen text,
+    quotation_ref text,
+    msa_status text,
+    pic_decision_maker text,
+    pic_operasional text,
+    pic_commercial text,
+    pic_finance text,
+    pic_escalation_1 text,
+    pic_escalation_2 text,
+    top_approved text,
+    pefindo_score text,
+    bank_reference text,
+    invoicing_instructions text,
+    tax_status text,
+    doc_requirement text,
+    communication_pref text,
+    reporting_cadence text,
+    kam_assigned uuid,
+    status text DEFAULT 'draft'::text,
+    submitted_at timestamp with time zone,
+    approved_by_sales uuid,
+    approved_by_ops uuid,
+    approved_by_finance uuid,
+    approved_at timestamp with time zone,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT deal_handovers_handover_type_check CHECK ((handover_type = ANY (ARRAY['light'::text, 'strategic'::text]))),
+    CONSTRAINT deal_handovers_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'submitted'::text, 'approved'::text])))
+);
+
+
+--
 -- Name: departments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3212,6 +3272,74 @@ COMMENT ON COLUMN public.taxes.gl_account_id IS 'Nullable FK to chart_of_account
 
 
 --
+-- Name: top_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.top_requests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid,
+    account_id uuid,
+    nama_perusahaan text,
+    alamat_kantor text,
+    alamat_gudang text,
+    telepon text,
+    email text,
+    website text,
+    npwp text,
+    nib text,
+    direktur_nama text,
+    direktur_ktp text,
+    status_pkp text,
+    industri text,
+    tahun_berdiri text,
+    jumlah_karyawan text,
+    revenue_tahunan text,
+    produk_utama text,
+    customer_utama text,
+    supplier_utama text,
+    volume_bulanan text,
+    total_aset numeric(18,2),
+    total_liabilities numeric(18,2),
+    annual_revenue numeric(18,2),
+    net_profit_margin text,
+    laporan_keuangan text,
+    outstanding_hutang text,
+    bank_1_nama text,
+    bank_1_rekening text,
+    bank_1_cabang text,
+    bank_1_contact text,
+    bank_2_nama text,
+    bank_2_rekening text,
+    bank_2_cabang text,
+    bank_2_contact text,
+    trade_ref_1 text,
+    trade_ref_2 text,
+    trade_ref_3 text,
+    top_requested text,
+    credit_limit_diminta numeric(18,2),
+    service_type text,
+    estimasi_volume text,
+    alasan_top text,
+    pefindo_score text,
+    bank_ref_verified text,
+    trade_ref_verified text,
+    credit_limit_approved numeric(18,2),
+    top_approved text,
+    effective_date date,
+    review_date date,
+    catatan text,
+    status text DEFAULT 'draft'::text,
+    submitted_at timestamp with time zone,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT top_requests_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'submitted'::text, 'approved'::text, 'rejected'::text])))
+);
+
+
+--
 -- Name: user_login_logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3656,6 +3784,14 @@ ALTER TABLE ONLY public.currencies
 
 ALTER TABLE ONLY public.customers
     ADD CONSTRAINT customers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: deal_handovers deal_handovers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deal_handovers
+    ADD CONSTRAINT deal_handovers_pkey PRIMARY KEY (id);
 
 
 --
@@ -4216,6 +4352,14 @@ ALTER TABLE ONLY public.taxes
 
 ALTER TABLE ONLY public.taxes
     ADD CONSTRAINT taxes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: top_requests top_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.top_requests
+    ADD CONSTRAINT top_requests_pkey PRIMARY KEY (id);
 
 
 --
@@ -6170,6 +6314,62 @@ ALTER TABLE ONLY public.customers
 
 
 --
+-- Name: deal_handovers deal_handovers_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deal_handovers
+    ADD CONSTRAINT deal_handovers_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: deal_handovers deal_handovers_approved_by_finance_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deal_handovers
+    ADD CONSTRAINT deal_handovers_approved_by_finance_fkey FOREIGN KEY (approved_by_finance) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: deal_handovers deal_handovers_approved_by_ops_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deal_handovers
+    ADD CONSTRAINT deal_handovers_approved_by_ops_fkey FOREIGN KEY (approved_by_ops) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: deal_handovers deal_handovers_approved_by_sales_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deal_handovers
+    ADD CONSTRAINT deal_handovers_approved_by_sales_fkey FOREIGN KEY (approved_by_sales) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: deal_handovers deal_handovers_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deal_handovers
+    ADD CONSTRAINT deal_handovers_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: deal_handovers deal_handovers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deal_handovers
+    ADD CONSTRAINT deal_handovers_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: deal_handovers deal_handovers_kam_assigned_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deal_handovers
+    ADD CONSTRAINT deal_handovers_kam_assigned_fkey FOREIGN KEY (kam_assigned) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
 -- Name: departments departments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7130,6 +7330,38 @@ ALTER TABLE ONLY public.taxes
 
 
 --
+-- Name: top_requests top_requests_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.top_requests
+    ADD CONSTRAINT top_requests_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: top_requests top_requests_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.top_requests
+    ADD CONSTRAINT top_requests_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: top_requests top_requests_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.top_requests
+    ADD CONSTRAINT top_requests_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: top_requests top_requests_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.top_requests
+    ADD CONSTRAINT top_requests_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: user_menu_permissions user_menu_permissions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7783,6 +8015,12 @@ CREATE POLICY customers_update ON public.customers FOR UPDATE USING ((company_id
 
 
 --
+-- Name: deal_handovers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.deal_handovers ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: departments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7943,6 +8181,27 @@ CREATE POLICY fuel_logs_select ON public.asset_fuel_logs FOR SELECT USING ((publ
 --
 
 CREATE POLICY fuel_logs_update ON public.asset_fuel_logs FOR UPDATE USING ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: deal_handovers handover_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY handover_read ON public.deal_handovers FOR SELECT USING ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: deal_handovers handover_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY handover_update ON public.deal_handovers FOR UPDATE USING (((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))));
+
+
+--
+-- Name: deal_handovers handover_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY handover_write ON public.deal_handovers FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
@@ -8990,6 +9249,33 @@ CREATE POLICY taxes_update ON public.taxes FOR UPDATE TO authenticated USING (((
 
 
 --
+-- Name: top_requests top_request_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY top_request_read ON public.top_requests FOR SELECT USING ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: top_requests top_request_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY top_request_update ON public.top_requests FOR UPDATE USING (((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))));
+
+
+--
+-- Name: top_requests top_request_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY top_request_write ON public.top_requests FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: top_requests; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.top_requests ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: user_menu_permissions ump_admin_all; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -9125,5 +9411,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 94BjYdahAke2wgxBUetJi2GeBplTUJsXgpLy32dFoP10YrTXhsuYmGQRSQf7I9S
+\unrestrict 3gkPOmDST4KUe7dhWqz1DaxrKbD5UQa1qZkNeSWIjRmPSKrQPoXd1DfRJdYPMpR
 
