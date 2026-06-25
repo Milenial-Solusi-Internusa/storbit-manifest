@@ -914,18 +914,21 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-                {['Tanggal', 'Tipe', 'Status', 'Customer / Prospek', 'Sales', 'Catatan / Outcome', 'Aksi'].map(h => (
-                  <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
+                {['No', 'Tanggal', 'Tipe', 'Status', 'Customer / Prospek', 'Sales', 'Catatan / Outcome', 'Aksi'].map(h => (
+                  <th key={h} style={{ padding: '11px 14px', textAlign: h === 'No' ? 'center' : 'left', minWidth: h === 'No' ? 48 : undefined, fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
               ) : pageRows.length === 0 ? (
-                <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada aktivitas</td></tr>
+                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada aktivitas</td></tr>
               ) : pageRows.map((r, i) => (
                 <tr key={r.id} onClick={() => setDetail(r)} style={{ borderBottom: i < pageRows.length - 1 ? `1px solid ${C.lineSoft}` : 'none', cursor: 'pointer' }}>
+                  <td style={{ padding: '12px 14px', textAlign: 'center', minWidth: 48, fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.inkSoft, whiteSpace: 'nowrap' }}>
+                    {page * PAGE_SIZE + i + 1}
+                  </td>
                   <td style={{ padding: '12px 14px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.ink, whiteSpace: 'nowrap' }}>
                     {fmtDate(r.scheduled_for)}{r.activity_time ? ` · ${fmtTime(r.activity_time)}` : ''}
                   </td>

@@ -1766,11 +1766,15 @@ function CRMDashboardPage() {
       const startOfMonth   = startThisMonth.toISOString().slice(0, 10);
       const endOfMonth     = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
 
-      // S2 — current ISO week (Monday start) + today, for personal activity KPIs
+      // S2 — current ISO week (Monday start) + today, for personal activity KPIs.
+      // Use LOCAL date parts (not toISOString/UTC) so WIB pre-07:00 doesn't shift
+      // the date back a day and exclude today's calls (scheduled_for is a local DATE).
       const dow         = (now.getDay() + 6) % 7;          // 0 = Monday … 6 = Sunday
       const mondayDate  = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
-      const startOfWeek = mondayDate.toISOString().slice(0, 10);
-      const todayStr    = now.toISOString().slice(0, 10);
+      const pad         = (n) => String(n).padStart(2, '0');
+      const localDate   = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const startOfWeek = localDate(mondayDate);
+      const todayStr    = localDate(now);
       const uid         = profile.id;
 
       // S2 — sales/operations only see their own data

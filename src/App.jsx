@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, Suspense, lazy } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
   Search, Download, Upload, Eye, Edit3, Trash2, X,
@@ -1310,6 +1310,9 @@ export default function StorbitManifest() {
   // (hrga_request_approvals is an audit trail; pending is derived from
   //  hrga_requests.current_level × hrga_approval_configs role mapping.)
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  // Skip redundant setState from the 60s polls (avoid root re-render / flicker).
+  const pendingCountRef = useRef(null);
+  const lastNotifJsonRef = useRef('');
   const myRoleCodesKey = (erpRoles || []).map(r => r.roles?.code).filter(Boolean).sort().join(',');
   useEffect(() => {
     if (!profile?.id) return;
@@ -1317,8 +1320,13 @@ export default function StorbitManifest() {
     const myRoles = myRoleCodesKey ? myRoleCodesKey.split(',') : [];
     const isSuper = authRole === 'super_admin';
 
+    // Only re-render when the count actually changes.
+    const applyPending = (n) => {
+      if (cancelled) return;
+      if (n !== pendingCountRef.current) { pendingCountRef.current = n; setPendingApprovalCount(n); }
+    };
     const fetchPending = async () => {
-      if (!myRoles.length) { if (!cancelled) setPendingApprovalCount(0); return; }
+      if (!myRoles.length) { applyPending(0); return; }
       try {
         // Levels (per request type) this user is the approver for.
         let cfgQ = supabase.from('hrga_approval_configs')
@@ -1326,7 +1334,7 @@ export default function StorbitManifest() {
         if (!isSuper) cfgQ = cfgQ.eq('company_id', profile.company_id);
         const { data: cfgs, error: cfgErr } = await cfgQ;
         if (cfgErr) throw cfgErr;
-        if (!cfgs?.length) { if (!cancelled) setPendingApprovalCount(0); return; }
+        if (!cfgs?.length) { applyPending(0); return; }
         const approveSet = new Set(cfgs.map(c => `${c.request_type_id}|${c.level}`));
 
         // In-progress requests awaiting approval (lightweight: ids only).
@@ -1338,10 +1346,10 @@ export default function StorbitManifest() {
         if (reqErr) throw reqErr;
 
         const n = (reqs || []).filter(r => approveSet.has(`${r.request_type_id}|${r.current_level}`)).length;
-        if (!cancelled) setPendingApprovalCount(n);
+        applyPending(n);
       } catch (e) {
         console.debug('[pendingApproval] count failed:', e?.message || e);
-        if (!cancelled) setPendingApprovalCount(0);
+        applyPending(0);
       }
     };
 
@@ -1439,8 +1447,14 @@ export default function StorbitManifest() {
         .order('created_at', { ascending: false })
         .limit(20);
       if (error) throw error;
-      setNotifications(data || []);
-      setUnreadCount((data || []).length);
+      const list = data || [];
+      // Skip redundant setState (avoid root re-render / flicker) when unchanged.
+      const json = JSON.stringify(list);
+      if (json !== lastNotifJsonRef.current) {
+        lastNotifJsonRef.current = json;
+        setNotifications(list);
+        setUnreadCount(list.length);
+      }
     } catch (e) {
       console.debug('[notifications] fetch failed:', e?.message || e);
     }

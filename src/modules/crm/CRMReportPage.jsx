@@ -4,6 +4,7 @@
 // quotations + sales roster). Tokens, layout, recharts config, and CSS are kept
 // EXACTLY as designed; only the data source changed.
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   ResponsiveContainer,
   AreaChart, Area,
@@ -244,7 +245,12 @@ export default function CRMReportPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [animate, setAnimate] = useState(false);
-  const dropRef = useRef(null);
+  const dropRef = useRef(null);            // sales-filter trigger (button wrapper)
+  const menuRef = useRef(null);            // portalled sales dropdown panel
+  const [dropCoords, setDropCoords] = useState(null);  // { top, left, width }
+  // Drill-down: { salesId, status } | null — set by clicking a Performa Sales pill.
+  const [drill, setDrill] = useState(null);
+  const detailRef = useRef(null);          // detail section (scroll target)
 
   // ── live data ──
   const [salesList, setSalesList] = useState([]);
@@ -259,14 +265,36 @@ export default function CRMReportPage() {
     return () => clearTimeout(t);
   }, []);
 
-  // close sales dropdown on outside click
+  // close sales dropdown on outside click (trigger + portalled panel both count as inside)
   useEffect(() => {
     function onDoc(e) {
-      if (dropRef.current && !dropRef.current.contains(e.target)) setSalesOpen(false);
+      if (dropRef.current && dropRef.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setSalesOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
+
+  // Position the portalled sales dropdown from the trigger rect; keep anchored on
+  // scroll/resize. position:fixed → viewport coords (panel right-aligned to button).
+  useEffect(() => {
+    if (!salesOpen) return undefined;
+    const update = () => {
+      const el = dropRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const width = 260;
+      setDropCoords({ top: r.bottom + 8, left: Math.max(8, r.right - width), width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [salesOpen]);
 
   // Sales roster — fetch once when profile is ready; default-select all on first load.
   useEffect(() => {
@@ -385,6 +413,17 @@ export default function CRMReportPage() {
     [actsAll]
   );
   const detailActs = useMemo(() => exportRows.slice(0, 40), [exportRows]);
+  // Drill-down view for the detail table: when a Performa Sales pill is clicked,
+  // show only that sales' activities of that status; else the normal detail list.
+  const shownActs = useMemo(() => {
+    if (!drill) return detailActs;
+    return exportRows.filter((a) => a.salesId === drill.salesId && a.status === drill.status).slice(0, 40);
+  }, [drill, detailActs, exportRows]);
+  const openDrill = (salesId, status) => {
+    setDrill({ salesId, status });
+    setDetailOpen(true);
+    setTimeout(() => { detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60);
+  };
 
   const pct = (cur, prev) => {
     if (!prev) return cur ? 100 : 0;
@@ -496,8 +535,8 @@ export default function CRMReportPage() {
               <span style={{ fontWeight: 600 }}>{salesLabel}</span>
               <Ic.Chevron style={{ width: 15, height: 15, fill: "none", stroke: C.gray500, strokeWidth: 2.4, transform: salesOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
             </button>
-            {salesOpen && (
-              <div style={st.dropdown}>
+            {salesOpen && dropCoords && createPortal(
+              <div ref={menuRef} style={{ position: "fixed", top: dropCoords.top, left: dropCoords.left, width: dropCoords.width, maxHeight: 320, overflowY: "auto", background: "#fff", borderRadius: 14, border: `1px solid ${C.line}`, boxShadow: "0 12px 32px rgba(0,0,0,0.12)", padding: 10, zIndex: 9999 }}>
                 <div style={{ position: "relative", marginBottom: 8 }}>
                   <Ic.Search style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, fill: "none", stroke: C.gray400, strokeWidth: 2.2 }} />
                   <input
@@ -533,7 +572,8 @@ export default function CRMReportPage() {
                 {salesList.length === 0 && (
                   <div style={{ padding: "8px", fontSize: 12.5, color: C.gray400 }}>Tidak ada sales</div>
                 )}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
@@ -719,9 +759,9 @@ export default function CRMReportPage() {
                     <td style={st.td}>{r.visit}</td>
                     <td style={st.td}>{r.task}</td>
                     <td style={{ ...st.td, fontWeight: 700, fontFamily: FONT_HEAD }}>{r.total}</td>
-                    <td style={st.td}><Pill text={r.done} c={C.teal} /></td>
-                    <td style={st.td}><Pill text={r.pending} c={C.amber} /></td>
-                    <td style={st.td}><Pill text={r.overdue} c={C.red} /></td>
+                    <td style={st.td}><Pill text={r.done} c={C.teal} onClick={() => openDrill(r.id, "Done")} active={drill?.salesId === r.id && drill?.status === "Done"} /></td>
+                    <td style={st.td}><Pill text={r.pending} c={C.amber} onClick={() => openDrill(r.id, "Pending")} active={drill?.salesId === r.id && drill?.status === "Pending"} /></td>
+                    <td style={st.td}><Pill text={r.overdue} c={C.red} onClick={() => openDrill(r.id, "Overdue")} active={drill?.salesId === r.id && drill?.status === "Overdue"} /></td>
                     <td style={st.td}>{r.prospect}</td>
                     <td style={st.td}>{r.quotation}</td>
                     <td style={{ ...st.td, textAlign: "left", minWidth: 130 }}>
@@ -743,14 +783,24 @@ export default function CRMReportPage() {
         </div>
 
         {/* ACTIVITY DETAIL */}
-        <div className="crm-card" style={{ ...st.panel, padding: 0, overflow: "hidden" }}>
+        <div ref={detailRef} className="crm-card" style={{ ...st.panel, padding: 0, overflow: "hidden" }}>
           <button className="crm-detailToggle" onClick={() => setDetailOpen((o) => !o)} style={st.detailToggle}>
             <span style={st.sectionLabel}>Lihat Detail Aktivitas</span>
             <span style={{ display: "flex", alignItems: "center", gap: 8, color: C.gray500, fontSize: 13 }}>
-              {detailActs.length} aktivitas
+              {shownActs.length} aktivitas
               <Ic.Chevron style={{ width: 18, height: 18, fill: "none", stroke: C.navy, strokeWidth: 2.4, transform: detailOpen ? "rotate(180deg)" : "none", transition: "transform .25s" }} />
             </span>
           </button>
+          {drill && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 22px", background: C.subtle, borderTop: `1px solid ${C.line100}`, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12.5, color: C.gray500 }}>
+                Filter detail: <b style={{ color: C.navy }}>{nameById[drill.salesId] || "—"}</b> · <span style={{ color: (STATUS_STYLE[drill.status] || {}).color }}>{(STATUS_STYLE[drill.status] || {}).label || drill.status}</span>
+              </span>
+              <button onClick={() => setDrill(null)} style={{ fontSize: 12, fontWeight: 700, color: C.navy, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>
+                Reset Filter Detail
+              </button>
+            </div>
+          )}
           <div style={{ maxHeight: detailOpen ? 1600 : 0, overflow: "hidden", transition: "max-height .35s ease" }}>
             <div style={{ overflowX: "auto", borderTop: `1px solid ${C.line100}` }}>
               <table style={st.table}>
@@ -765,7 +815,7 @@ export default function CRMReportPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {detailActs.map((a, i) => (
+                  {shownActs.map((a, i) => (
                     <tr key={a.id} style={{ background: i % 2 ? C.subtle : "#fff" }}>
                       <td style={{ ...st.td, textAlign: "left", whiteSpace: "nowrap", color: C.gray500 }}>{dateLabel(a)}</td>
                       <td style={{ ...st.td, textAlign: "left" }}>
@@ -784,7 +834,7 @@ export default function CRMReportPage() {
                       <td style={{ ...st.td, textAlign: "left", color: C.gray500, maxWidth: 280 }}>{a.note}</td>
                     </tr>
                   ))}
-                  {detailActs.length === 0 && (
+                  {shownActs.length === 0 && (
                     <tr><td colSpan={6} style={{ ...st.td, padding: 32, textAlign: "center", color: C.gray400 }}>Tidak ada aktivitas.</td></tr>
                   )}
                 </tbody>
@@ -843,8 +893,17 @@ function RankBadge({ rank }) {
   }
   return <span style={{ fontSize: 12, color: C.gray400, fontWeight: 600 }}>{rank}</span>;
 }
-function Pill({ text, c }) {
-  return <span style={{ display: "inline-block", minWidth: 26, padding: "3px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700, color: c, background: tint(c, 0.12) }}>{text}</span>;
+function Pill({ text, c, onClick, active }) {
+  const clickable = !!onClick;
+  return (
+    <span
+      onClick={onClick}
+      title={clickable ? "Lihat detail aktivitas" : undefined}
+      style={{ display: "inline-block", minWidth: 26, padding: "3px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700, color: active ? "#fff" : c, background: active ? c : tint(c, 0.12), border: `1px solid ${active ? c : "transparent"}`, cursor: clickable ? "pointer" : "default" }}
+    >
+      {text}
+    </span>
+  );
 }
 const shortName = (n) => { const p = n.split(" "); return p.length > 1 ? p[0] + " " + p[p.length - 1][0] + "." : n; };
 function dateLabel(a) {
