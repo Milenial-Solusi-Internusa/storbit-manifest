@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 3gkPOmDST4KUe7dhWqz1DaxrKbD5UQa1qZkNeSWIjRmPSKrQPoXd1DfRJdYPMpR
+\restrict geQzKkYCfd7TkDrcOyNy2vUuhmvj3Wdq117Ejc2Vz2MpHFlemaN8Gf1TMffLh9B
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2429,7 +2429,21 @@ CREATE TABLE public.inquiries (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    deleted_at timestamp with time zone
+    deleted_at timestamp with time zone,
+    deadline_quote date,
+    pol text,
+    pod text,
+    incoterms text[],
+    container_types text[],
+    goods_name text,
+    hs_code text,
+    weight_kg numeric(12,2),
+    volume_cbm numeric(12,2),
+    cargo_types text[],
+    un_number text,
+    imo_class text,
+    has_msds text,
+    additional_services text[]
 );
 
 
@@ -9411,5 +9425,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 3gkPOmDST4KUe7dhWqz1DaxrKbD5UQa1qZkNeSWIjRmPSKrQPoXd1DfRJdYPMpR
+\unrestrict geQzKkYCfd7TkDrcOyNy2vUuhmvj3Wdq117Ejc2Vz2MpHFlemaN8Gf1TMffLh9B
 

@@ -19,7 +19,7 @@ import {
   Sparkles, Phone, BadgeCheck, FileText, Handshake, Trophy, XCircle,
   ChevronLeft, ChevronRight, ChevronDown, Check, Pencil, X, ArrowRightLeft,
   Hash, CalendarClock, Plus, Eye, Download, Loader2, AlertCircle,
-  MessageCircle, MapPin, Users, Mail, ListChecks,
+  MessageCircle, MapPin, Users, Mail, ListChecks, Anchor,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -364,6 +364,23 @@ function InfoRow({ label, value, full }) {
   );
 }
 
+// Render a text[] (or null) as pills; "—" when empty.
+function BadgeRow({ label, values, full }) {
+  const arr = Array.isArray(values) ? values.filter(Boolean) : [];
+  return (
+    <div style={{ gridColumn: full ? '1 / -1' : undefined }}>
+      <div style={{ fontFamily: BODY, fontSize: 11, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{label}</div>
+      {arr.length ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {arr.map((v) => (
+            <span key={v} style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.navy, background: C.navySoft, borderRadius: 7, padding: '3px 9px' }}>{v}</span>
+          ))}
+        </div>
+      ) : <div style={{ fontFamily: BODY, fontSize: 13.5, color: C.text }}>—</div>}
+    </div>
+  );
+}
+
 /* ========================================================================= */
 export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, showToast }) {
   const { profile, erpRole, user } = useAuth();
@@ -389,7 +406,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, commodity, estimated_volume, status, notes, prospect_id, created_by, created_at')
+        .select('id, inquiry_no, service_type, route, commodity, estimated_volume, status, notes, prospect_id, created_by, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -558,6 +575,29 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px' }}>
               <InfoRow label="Jenis Layanan" value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type} />
               <InfoRow label="Status" value={inquiry.status} />
+              {/* POL → POD */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Anchor size={15} color={C.navy} />
+                    <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{inquiry.pol || '—'}</span>
+                  </span>
+                  <ChevronRight size={15} color={C.textFaint} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <MapPin size={15} color={C.orange} />
+                    <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{inquiry.pod || '—'}</span>
+                  </span>
+                </div>
+              </div>
+              <BadgeRow label="Incoterm" values={inquiry.incoterms} />
+              <BadgeRow label="Jenis Kontainer" values={inquiry.container_types} />
+              <InfoRow label="Nama Barang" value={inquiry.goods_name} />
+              <InfoRow label="HS Code" value={inquiry.hs_code} />
+              <InfoRow label="Berat Total (KG)" value={inquiry.weight_kg != null ? String(inquiry.weight_kg) : ''} />
+              <InfoRow label="Volume (CBM)" value={inquiry.volume_cbm != null ? String(inquiry.volume_cbm) : ''} />
+              <BadgeRow label="Cargo Type" values={inquiry.cargo_types} />
+              <BadgeRow label="Layanan Tambahan" values={inquiry.additional_services} />
+              <InfoRow label="Deadline Quote" value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''} />
               <InfoRow label="Route" value={inquiry.route} />
               <InfoRow label="Komoditas" value={inquiry.commodity} />
               <InfoRow label="Estimasi Volume" value={inquiry.estimated_volume} />
