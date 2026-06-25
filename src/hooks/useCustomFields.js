@@ -28,6 +28,7 @@ export const STANDARD_COLUMNS = {
     // BANT qualification scorecard
     'bant_commodity', 'bant_origin', 'bant_destination', 'bant_frequency',
     'bant_current_vendor', 'bant_payment', 'bant_decision_maker', 'bant_score',
+    'bant_budget', 'bant_authority', 'bant_need', 'bant_timeline',
     // accounts model columns (rename batch)
     'account_status', 'owner_company_id', 'tier', 'code', 'nomor_kontrak',
     'default_dc', 'last_activity_at', 'became_customer_at',

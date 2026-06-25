@@ -8,7 +8,7 @@ import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
 import WinLossModal from './WinLossModal';
-import { BANT_FREQUENCY_OPTIONS, BANT_PAYMENT_OPTIONS, calcBantScore } from './bant';
+import { BANT_DIMENSIONS, calcBantScore } from './bant';
 import BantScoreBar from './BantScoreBar';
 
 const C = {
@@ -107,7 +107,12 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     payment_terms_id: '',
     won_reason:       '',
     lost_reason:      '',
-    // BANT qualification scorecard
+    // BANT qualification — 4 dimensi 0–3 (model baru)
+    bant_budget:         0,
+    bant_authority:      0,
+    bant_need:           0,
+    bant_timeline:       0,
+    // BANT scorecard lama — dipertahankan di DB (tech debt), tak dirender lagi
     bant_commodity:      '',
     bant_origin:         '',
     bant_destination:    '',
@@ -158,6 +163,12 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         bant_payment:        prospect.bant_payment        || '',
         bant_decision_maker: prospect.bant_decision_maker || '',
       };
+      const dimVals = {
+        bant_budget:    Number(prospect.bant_budget)    || 0,
+        bant_authority: Number(prospect.bant_authority) || 0,
+        bant_need:      Number(prospect.bant_need)      || 0,
+        bant_timeline:  Number(prospect.bant_timeline)  || 0,
+      };
       setForm({
         company_prefix:   prospect.company_prefix    || '',
         name:             prospect.name             || '',
@@ -178,7 +189,8 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         won_reason:       prospect.won_reason        || '',
         lost_reason:      prospect.lost_reason       || '',
         ...bantVals,
-        bant_score:       calcBantScore(bantVals),
+        ...dimVals,
+        bant_score:       calcBantScore(dimVals),
       });
     }
   }, [isEdit, prospect]);
@@ -264,10 +276,10 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
-  // BANT scoring fields — update the field and recompute bant_score in one pass,
-  // so the score stays in sync in form state (carried to payload via ...form spread).
-  const setBant = (k) => (e) => setForm(f => {
-    const next = { ...f, [k]: e.target.value };
+  // BANT dimension (0–3) — update the dimension and recompute bant_score in one
+  // pass, so the score stays in sync in form state (carried to payload via spread).
+  const setBantDim = (k) => (e) => setForm(f => {
+    const next = { ...f, [k]: Number(e.target.value) };
     next.bant_score = calcBantScore(next);
     return next;
   });
@@ -513,41 +525,24 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         <div style={{ marginTop: 28, paddingTop: 20, borderTop: `1px solid ${C.lineSoft}` }}>
           <div style={{ marginBottom: 18 }}>
             <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: '.4px', textTransform: 'uppercase', color: C.ink }}>BANT Qualification</h2>
-            <p style={{ margin: '4px 0 0', fontSize: 12, color: C.inkFaint }}>Isi minimal 4 dari 6 poin untuk lanjut ke tahap Qualified</p>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: C.inkFaint }}>Skor ≥8/12 untuk lanjut ke tahap Qualified</p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px 24px' }}>
-            <Field label="Komoditi / Barang">
-              <input value={form.bant_commodity} onChange={setBant('bant_commodity')} style={inpStyle()} placeholder="cth: Garmen, Electronic, Chemical" />
-            </Field>
-
-            <Field label="Kota/Port Asal (POL)">
-              <input value={form.bant_origin} onChange={setBant('bant_origin')} style={inpStyle()} placeholder="cth: Jakarta, Surabaya" />
-            </Field>
-
-            <Field label="Kota/Port Tujuan (POD)">
-              <input value={form.bant_destination} onChange={setBant('bant_destination')} style={inpStyle()} placeholder="cth: Singapore, Tokyo, Los Angeles" />
-            </Field>
-
-            <Field label="Frekuensi Pengiriman">
-              <select value={form.bant_frequency} onChange={setBant('bant_frequency')} style={selStyle}>
-                {BANT_FREQUENCY_OPTIONS.map(o => <option key={o} value={o}>{o || '—'}</option>)}
-              </select>
-            </Field>
-
-            <Field label="Vendor / Forwarder Saat Ini">
-              <input value={form.bant_current_vendor} onChange={setBant('bant_current_vendor')} style={inpStyle()} placeholder="cth: DHL, Expeditors, atau belum ada" />
-            </Field>
-
-            <Field label="Preferensi Payment">
-              <select value={form.bant_payment} onChange={setBant('bant_payment')} style={selStyle}>
-                {BANT_PAYMENT_OPTIONS.map(o => <option key={o} value={o}>{o || '—'}</option>)}
-              </select>
-            </Field>
-
-            <Field label="Decision Maker" full>
-              <input value={form.bant_decision_maker} onChange={setBant('bant_decision_maker')} style={inpStyle()} placeholder="Nama dan jabatan yang berwenang memutuskan" />
-            </Field>
+            {BANT_DIMENSIONS.map(dim => {
+              const selected = dim.options.find(o => o.value === Number(form[dim.key]));
+              return (
+                <Field key={dim.key} label={dim.label}>
+                  <p style={{ margin: '0 0 6px', fontSize: 11.5, color: C.inkFaint }}>{dim.description}</p>
+                  <select value={Number(form[dim.key]) || 0} onChange={setBantDim(dim.key)} style={selStyle}>
+                    {dim.options.map(o => <option key={o.value} value={o.value}>{o.value} — {o.label}</option>)}
+                  </select>
+                  {selected && (
+                    <span style={{ display: 'block', marginTop: 6, fontSize: 12, color: '#144682', fontWeight: 600 }}>{selected.label}</span>
+                  )}
+                </Field>
+              );
+            })}
           </div>
 
           <div style={{ marginTop: 18 }}>
