@@ -167,6 +167,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           pricing_done_at, quote_sent_at, discount_pct,
           inquiry_id, prospect_id, customer_id, internal_notes, quote_date,
           currency_code, margin_floor, vat_rate,
+          attention_to, pickup_address, delivery_address, cargo_mode,
+          gw, dimension, cw, cbm, container_type, container_qty,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city, pic_name, pic_email, pic_phone),
           customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone)
         `)
@@ -200,7 +202,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
     if (!userId) return;
     supabase
       .from('profiles')
-      .select('full_name, position_id, positions(name)')
+      .select('full_name, phone, position_id, positions(name)')
       .eq('id', userId)
       .maybeSingle()
       .then(({ data }) => setCreatorProfile(data));
