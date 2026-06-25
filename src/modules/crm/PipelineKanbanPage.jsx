@@ -80,6 +80,7 @@ const ICONS = {
   info:        '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   users:       '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   user:        '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  clock:       '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
 };
 
 function Icon({ name, size = 18, color, style }) {
@@ -162,6 +163,19 @@ const S = {
 };
 
 const valColorFor = stage => stage === 'won' ? '#1F8B4D' : stage === 'lost' ? '#9AA0AC' : '#144682';
+
+// Aging limits (hari) per stage — selaras Edge Function aging-pipeline.
+const AGING_LIMITS = { contacted: 5, qualified: 5, proposal: 3, negotiation: 14 };
+// Hitung badge aging dari stage_changed_at. null bila stage tak ter-aging / aman.
+function agingBadge(stageId, stageChangedAt) {
+  const limit = AGING_LIMITS[stageId];
+  if (!limit || !stageChangedAt) return null;
+  const days = Math.floor((Date.now() - new Date(stageChangedAt).getTime()) / 86400000);
+  if (isNaN(days)) return null;
+  if (days > limit) return { text: 'Overdue', bg: '#FBE3E3', fg: '#C0392B' };
+  if (days >= Math.ceil(limit * 0.75)) return { text: `${days} hari`, bg: '#FBF0DD', fg: '#B45309' };
+  return null;
+}
 
 /* ── Stage badge config ── */
 const STAGE_BADGE = {
@@ -409,6 +423,7 @@ function DealCard({ deal, stColor, onDragStart, onDragEnd, dragging, onClick }) 
   const [h, setH] = useState(false);
   const isDragging = useRef(false);
   const svc = SVC[deal.svc] || SVC.sea;
+  const aging = agingBadge(deal.stage, deal.stageChangedAt);
   return (
     <div
       draggable
@@ -419,6 +434,13 @@ function DealCard({ deal, stColor, onDragStart, onDragEnd, dragging, onClick }) 
       onClick={() => { if (!isDragging.current) onClick?.(deal); }}
       style={{ ...S.deal, borderLeft: '3px solid ' + stColor, ...(h ? S.dealHover : null), ...(dragging ? { opacity: 0.45 } : null) }}
     >
+      {aging && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: aging.fg, background: aging.bg, borderRadius: 99, padding: '2px 8px' }}>
+            <Icon name="clock" size={11} color={aging.fg} />{aging.text}
+          </span>
+        </div>
+      )}
       <div style={S.dCo}>{deal.co}</div>
       {deal.contact && <div style={S.dContact}>{deal.contact}</div>}
       <div style={{ ...S.dVal, color: valColorFor(deal.stage), textDecoration: deal.stage === 'lost' ? 'line-through' : 'none' }}>
@@ -555,8 +577,9 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     try {
       let query = supabase
         .from('accounts')
-        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, estimated_value, payment_terms_id, notes, assigned_to, created_at, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, bant_budget, bant_authority, bant_need, bant_timeline, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
+        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, estimated_value, payment_terms_id, notes, assigned_to, created_at, stage_changed_at, is_in_lead_pool, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, bant_budget, bant_authority, bant_need, bant_timeline, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
         .eq('account_status', 'prospect')
+        .eq('is_in_lead_pool', false)
         .is('deleted_at', null);
 
       // Role-aware scope (see flags above)
@@ -758,6 +781,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     svc:     sourceToSvc(p.source),
     stage:   (p.pipeline_stage || 'NEW').toLowerCase(),
     assigned: p.assigned_profile?.full_name || null,
+    stageChangedAt: p.stage_changed_at || null,
     raw:     p,
   }));
 
