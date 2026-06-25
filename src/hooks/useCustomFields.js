@@ -32,6 +32,9 @@ export const STANDARD_COLUMNS = {
     // accounts model columns (rename batch)
     'account_status', 'owner_company_id', 'tier', 'code', 'nomor_kontrak',
     'default_dc', 'last_activity_at', 'became_customer_at',
+    // aging pipeline + lead pool (system columns)
+    'stage_changed_at', 'is_in_lead_pool', 'lead_pool_reason', 'lead_pool_at',
+    'pull_justification', 'pull_requested_at', 'pull_approved_by', 'pull_approved_at', 'pull_status',
     // join result aliases — not real DB columns, must be excluded from custom fields
     'assigned_profile',
     // company prefix (PT/CV/Mr./Mrs./Ms.) — stored separately from name
