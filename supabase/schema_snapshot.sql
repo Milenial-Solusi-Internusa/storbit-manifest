@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict x6wnRwOC5V1gRcaSgxcy7U8VE3hQPhSIJNufZrlG7nG9uHht8oexlbK7QDtZpcR
+\restrict 94BjYdahAke2wgxBUetJi2GeBplTUJsXgpLy32dFoP10YrTXhsuYmGQRSQf7I9S
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -591,6 +591,23 @@ END;
 $$;
 
 
+--
+-- Name: track_stage_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.track_stage_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.pipeline_stage IS DISTINCT FROM OLD.pipeline_stage THEN
+    NEW.stage_changed_at = now();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -655,6 +672,16 @@ CREATE TABLE public.accounts (
     bant_authority smallint DEFAULT 0,
     bant_need smallint DEFAULT 0,
     bant_timeline smallint DEFAULT 0,
+    stage_changed_at timestamp with time zone DEFAULT now(),
+    is_in_lead_pool boolean DEFAULT false,
+    lead_pool_reason text,
+    lead_pool_at timestamp with time zone,
+    pull_justification text,
+    pull_requested_at timestamp with time zone,
+    pull_approved_by uuid,
+    pull_approved_at timestamp with time zone,
+    pull_status text,
+    CONSTRAINT accounts_pull_status_check CHECK ((pull_status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text]))),
     CONSTRAINT prospects_source_check CHECK (((source)::text = ANY (ARRAY['sales_visit'::text, 'cold_call'::text, 'referral'::text, 'existing_network'::text, 'exhibition'::text, 'instagram'::text, 'linkedin'::text, 'tiktok'::text, 'website'::text, 'walk_in'::text, 'other'::text])))
 );
 
@@ -5552,6 +5579,21 @@ CREATE TRIGGER trg_z_sync_profile_email BEFORE INSERT OR UPDATE ON public.profil
 
 
 --
+-- Name: accounts trg_z_track_stage_change; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_z_track_stage_change BEFORE UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.track_stage_change();
+
+
+--
+-- Name: accounts accounts_pull_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.accounts
+    ADD CONSTRAINT accounts_pull_approved_by_fkey FOREIGN KEY (pull_approved_by) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
 -- Name: activities activities_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9083,5 +9125,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict x6wnRwOC5V1gRcaSgxcy7U8VE3hQPhSIJNufZrlG7nG9uHht8oexlbK7QDtZpcR
+\unrestrict 94BjYdahAke2wgxBUetJi2GeBplTUJsXgpLy32dFoP10YrTXhsuYmGQRSQf7I9S
 

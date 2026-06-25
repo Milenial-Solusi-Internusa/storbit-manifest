@@ -46,6 +46,7 @@ const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
 const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
 const ActivityLogPage      = lazy(() => import('./modules/crm/ActivityLogPage'));
 const LeadPoolPage         = lazy(() => import('./modules/crm/LeadPoolPage'));
+const LeadPoolApprovalPage = lazy(() => import('./modules/crm/LeadPoolApprovalPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
 const InventoryDashboardPage = lazy(() => import('./modules/inventory/pages/InventoryDashboardPage'));
@@ -448,6 +449,7 @@ const ERP_MENU_GROUPS = [
           { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
           { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
           { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, public: true },
+          { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['manager','supervisor','admin','super_admin'] },
           { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
@@ -1478,6 +1480,7 @@ export default function StorbitManifest() {
       .then(({ error }) => { if (error) console.debug('[notifications] markRead failed:', error.message); });
     const dest = n.reference_type === 'hrga_request' ? 'hrga-semua-request'
                : n.reference_type === 'activity'     ? 'crm-calls'
+               : n.reference_type === 'lead_pool'     ? 'crm-lead-pool'
                : null;
     if (dest) navigateTo(dest);
   }, [navigateTo]);
@@ -2784,6 +2787,17 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
+
+          {/* ── CRM: Lead Pool Approval (manager/supervisor/admin) ──────────────── */}
+          {activeMenu === 'crm-lead-pool-approval' && (!canRenderPage('crm-lead-pool-approval') ? (
+            <AccessDeniedPage />
+          ) : (
+            <ErrorBoundary title="Approval Lead Pool temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <LeadPoolApprovalPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          ))}
 
           {/* ── Foundation: Admin Settings ──────────────────────────────────── */}
           {/* Routes (activeMenu-based, no react-router in this app):
