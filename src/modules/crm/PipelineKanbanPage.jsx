@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import WinLossModal from './WinLossModal';
+import LightHandoverModal from './LightHandoverModal';
+import StrategicHandoverModal from './StrategicHandoverModal';
 import ConfirmModal from '../../components/ConfirmModal';
 import { calcBantScore } from './bant';
 import BantScoreBar from './BantScoreBar';
@@ -551,6 +553,9 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   // Win/Loss capture modal — { open, mode, id, prevStage, prospectName }
   const [winLoss,       setWinLoss]       = useState({ open: false, mode: 'won', id: null, prevStage: 'NEW', prospectName: '' });
   const [winLossSaving, setWinLossSaving] = useState(false);
+  // Handover gate (WON only): { open, type:'light'|'strategic', account, prevStage, wonValues }
+  const [handover,      setHandover]      = useState({ open: false, type: 'light', account: null, prevStage: 'NEW', wonValues: null });
+  const HANDOVER_TCV_LIMIT = 100000000; // ≤ 100jt → Light, > → Strategic
   // Soft stage gating — confirm (not block) when prerequisites are missing.
   const [stageGate,     setStageGate]     = useState({ open: false, stageId: null, id: null, type: null, prospectName: '' });
   // Toolbar controls — member filter / sort / filter panel (all client-side)
@@ -712,45 +717,96 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     });
   }, []);
 
-  // ── Win/Loss modal — save writes pipeline_stage + reason to DB ──────────────
+  // Finalize WON → write accounts (pipeline_stage WON + convert to customer).
+  // Dipanggil setelah handover form disubmit. Return boolean.
+  const finalizeWon = useCallback(async (id, prevStage, prospectName, wonValues) => {
+    const nowIso = new Date().toISOString();
+    const payload = {
+      pipeline_stage: 'WON', ...wonValues, updated_by: profile.id,
+      converted_at: nowIso, account_status: 'customer', became_customer_at: nowIso,
+    };
+    const { error } = await supabase.from('accounts').update(payload).eq('id', id);
+    if (error) {
+      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: prevStage } : p));
+      showToast?.('Gagal menyimpan: ' + error.message, 'error');
+      return false;
+    }
+    logAudit(supabase, {
+      action: ACTION_TYPES.CHANGE_PIPELINE_STAGE, entityType: ENTITY_TYPES.DEAL,
+      entityId: id, entityLabel: prospectName || '', notes: (prevStage || 'NEW') + ' → WON',
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: 'WON', ...wonValues } : p));
+    notify((prospectName || '') + ' dipindah ke Won', 'checkcircle');
+    return true;
+  }, [profile?.id, showToast]);
+
+  // ── Win/Loss modal — LOST tulis langsung; WON buka handover gate dulu ──────────
   const handleWinLossSave = useCallback(async (values) => {
     const { id, mode } = winLoss;
     if (!id) return;
-    const newStage = mode.toUpperCase();           // WON / LOST
+    if (mode === 'won') {
+      // Tunda update accounts — buka handover form (Light/Strategic by estimated_value).
+      const prospect = prospects.find(p => p.id === id);
+      const tcv = Number(prospect?.estimated_value || 0);
+      setHandover({
+        open: true,
+        type: tcv > HANDOVER_TCV_LIMIT ? 'strategic' : 'light',
+        account: prospect || { id, name: winLoss.prospectName },
+        prevStage: winLoss.prevStage,
+        wonValues: values,
+      });
+      setWinLoss(wl => ({ ...wl, open: false }));
+      return;
+    }
+    // LOST → tulis langsung
     setWinLossSaving(true);
     try {
-      const payload = { pipeline_stage: newStage, ...values, updated_by: profile.id };
-      if (mode === 'won') {
-        // WON → auto-convert account to customer
-        payload.converted_at       = new Date().toISOString();
-        payload.account_status     = 'customer';
-        payload.became_customer_at = new Date().toISOString();
-      } else if (mode === 'lost') {
-        payload.account_status = 'lost';
-      }
+      const payload = { pipeline_stage: 'LOST', ...values, updated_by: profile.id, account_status: 'lost' };
       const { error } = await supabase.from('accounts').update(payload).eq('id', id);
       if (error) throw error;
       logAudit(supabase, {
-        action: ACTION_TYPES.CHANGE_PIPELINE_STAGE,
-        entityType: ENTITY_TYPES.DEAL,
-        entityId: id,
-        entityLabel: winLoss.prospectName || '',
-        notes: (winLoss.prevStage || 'NEW') + ' → ' + newStage,
+        action: ACTION_TYPES.CHANGE_PIPELINE_STAGE, entityType: ENTITY_TYPES.DEAL,
+        entityId: id, entityLabel: winLoss.prospectName || '', notes: (winLoss.prevStage || 'NEW') + ' → LOST',
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      // Reflect reason locally so the detail modal shows it without a full refetch
-      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage, ...values } : p));
-      notify((winLoss.prospectName || '') + ' dipindah ke ' + (mode === 'won' ? 'Won' : 'Lost'),
-        mode === 'won' ? 'checkcircle' : 'ban');
+      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: 'LOST', ...values } : p));
+      notify((winLoss.prospectName || '') + ' dipindah ke Lost', 'ban');
       setWinLoss(wl => ({ ...wl, open: false, id: null }));
     } catch (err) {
-      // Rollback the optimistic move on failure
       setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: winLoss.prevStage } : p));
       setWinLoss(wl => ({ ...wl, open: false, id: null }));
       showToast?.('Gagal menyimpan: ' + err.message, 'error');
     } finally {
       setWinLossSaving(false);
     }
-  }, [winLoss, profile?.id, showToast]);
+  }, [winLoss, prospects, profile?.id, showToast]);
+
+  // Handover submit → insert deal_handovers, lalu finalize WON. Return boolean.
+  const handleHandoverSubmit = useCallback(async (fields) => {
+    const { account, type, prevStage, wonValues } = handover;
+    if (!account?.id) return false;
+    const { error } = await supabase.from('deal_handovers').insert({
+      company_id: profile.company_id,
+      account_id: account.id,
+      handover_type: type,
+      status: 'submitted',
+      submitted_at: new Date().toISOString(),
+      created_by: profile.id,
+      ...fields,
+    });
+    if (error) { showToast?.('Gagal menyimpan handover: ' + error.message, 'error'); return false; }
+    const ok = await finalizeWon(account.id, prevStage, account.name, wonValues);
+    if (!ok) return false;
+    setHandover(h => ({ ...h, open: false, account: null }));
+    return true;
+  }, [handover, profile?.company_id, profile?.id, finalizeWon, showToast]);
+
+  // Handover cancel → batalkan WON, kembalikan stage ke sebelumnya.
+  const handleHandoverCancel = useCallback(() => {
+    setHandover(h => {
+      if (h.account?.id) setProspects(prev => prev.map(p => p.id === h.account.id ? { ...p, pipeline_stage: h.prevStage } : p));
+      return { ...h, open: false, account: null };
+    });
+  }, []);
 
   function onDragStart(e, id) {
     dragId.current = id;
@@ -1037,6 +1093,22 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         onSave={handleWinLossSave}
         onCancel={handleWinLossCancel}
       />
+
+      {/* ── Handover gate (WON) — Light / Strategic by estimated_value ── */}
+      {handover.open && handover.type === 'light' && (
+        <LightHandoverModal
+          account={handover.account}
+          onCancel={handleHandoverCancel}
+          onSubmit={handleHandoverSubmit}
+        />
+      )}
+      {handover.open && handover.type === 'strategic' && (
+        <StrategicHandoverModal
+          account={handover.account}
+          onCancel={handleHandoverCancel}
+          onSubmit={handleHandoverSubmit}
+        />
+      )}
 
       {/* ── Soft stage gating confirmation ── */}
       <ConfirmModal
