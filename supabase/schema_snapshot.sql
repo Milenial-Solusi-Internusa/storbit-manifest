@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 0HXBcEshOv0L2LKAiBHPxdC6AgJLA1dQKbdnHB1zYo8lN5SJmHOcgbTFXP6QXHm
+\restrict PkxRdikzzxs9nQOJ8mg2EygTMaVXcAjlTfXTofAotRLw3BHb8RJRyEvqoMhNTbQ
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -459,6 +459,16 @@ BEGIN
     discount_pct     = COALESCE(NULLIF(p_header->>'discount_pct','')::numeric, discount_pct),
     margin_floor     = COALESCE(NULLIF(p_header->>'margin_floor','')::numeric, margin_floor),
     pricing_done_at  = COALESCE(NULLIF(p_header->>'pricing_done_at','')::timestamptz, pricing_done_at),
+    attention_to     = CASE WHEN p_header ? 'attention_to'     THEN p_header->>'attention_to'     ELSE attention_to     END,
+    pickup_address   = CASE WHEN p_header ? 'pickup_address'   THEN p_header->>'pickup_address'   ELSE pickup_address   END,
+    delivery_address = CASE WHEN p_header ? 'delivery_address' THEN p_header->>'delivery_address' ELSE delivery_address END,
+    cargo_mode       = CASE WHEN p_header ? 'cargo_mode'       THEN p_header->>'cargo_mode'       ELSE cargo_mode       END,
+    gw               = CASE WHEN p_header ? 'gw'               THEN p_header->>'gw'               ELSE gw               END,
+    dimension        = CASE WHEN p_header ? 'dimension'        THEN p_header->>'dimension'        ELSE dimension        END,
+    cw               = CASE WHEN p_header ? 'cw'               THEN p_header->>'cw'               ELSE cw               END,
+    cbm              = CASE WHEN p_header ? 'cbm'              THEN p_header->>'cbm'              ELSE cbm              END,
+    container_type   = CASE WHEN p_header ? 'container_type'   THEN p_header->>'container_type'   ELSE container_type   END,
+    container_qty    = CASE WHEN p_header ? 'container_qty'    THEN NULLIF(p_header->>'container_qty','')::int ELSE container_qty END,
     updated_at       = now(),
     updated_by       = auth.uid()
   WHERE id = p_quotation_id;
@@ -561,6 +571,21 @@ BEGIN
       WHERE id = NEW.customer_id;
     END IF;
   END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: sync_profile_email(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_profile_email() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  NEW.email = (SELECT email FROM auth.users WHERE id = NEW.id);
   RETURN NEW;
 END;
 $$;
@@ -2639,7 +2664,8 @@ CREATE TABLE public.profiles (
     emergency_contact_phone character varying,
     notification_preferences jsonb DEFAULT '{}'::jsonb,
     display_preferences jsonb DEFAULT '{}'::jsonb,
-    reports_to uuid
+    reports_to uuid,
+    email text
 );
 
 
@@ -2757,7 +2783,17 @@ CREATE TABLE public.quotations (
     margin_floor numeric DEFAULT 0,
     internal_notes text,
     quote_date date,
-    vat_rate numeric DEFAULT 0.011
+    vat_rate numeric DEFAULT 0.011,
+    attention_to text,
+    pickup_address text,
+    delivery_address text,
+    cargo_mode text,
+    gw text,
+    dimension text,
+    cw text,
+    cbm text,
+    container_type text,
+    container_qty integer
 );
 
 
@@ -5502,6 +5538,13 @@ CREATE TRIGGER trg_z_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR 
 --
 
 CREATE TRIGGER trg_z_sync_deal_value_on_quotation_accept AFTER UPDATE ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.sync_deal_value_on_quotation_accept();
+
+
+--
+-- Name: profiles trg_z_sync_profile_email; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_z_sync_profile_email BEFORE INSERT OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.sync_profile_email();
 
 
 --
@@ -9036,5 +9079,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 0HXBcEshOv0L2LKAiBHPxdC6AgJLA1dQKbdnHB1zYo8lN5SJmHOcgbTFXP6QXHm
+\unrestrict PkxRdikzzxs9nQOJ8mg2EygTMaVXcAjlTfXTofAotRLw3BHb8RJRyEvqoMhNTbQ
 

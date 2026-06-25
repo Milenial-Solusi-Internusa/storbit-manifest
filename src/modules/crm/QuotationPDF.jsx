@@ -109,7 +109,7 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
   const picPhone   = quot.prospect?.pic_phone || quot.customer?.phone || '-';
   const custAddr   = [quot.prospect?.address || quot.customer?.address, quot.prospect?.city || quot.customer?.city].filter(Boolean).join(', ') || '-';
   const marketingName = creatorProfile?.full_name || '-';
-  const positionName  = creatorProfile?.positions?.name || 'Marketing Executive';
+  const positionName  = creatorProfile?.positions?.name || 'Sales Executive';
   const inquiryStr = [SERVICE_TYPE_LABELS[quot.service_type] || quot.service_type, quot.route].filter(Boolean).join(' - ') || '-';
   const dateStr  = fmtDateShort(quot.quote_date || quot.created_at);
   const validStr = fmtDateShort(quot.valid_until);
@@ -123,13 +123,45 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
   const tax        = quot.tax_amount   ?? Math.round((subtotal - discountAmount) * effVat);
   const grandTotal = quot.total_amount ?? ((subtotal - discountAmount) + tax);
 
+  const salesPhone = creatorProfile?.phone || '';
+  const salesEmail = creatorProfile?.email || ''; // profiles has no email column → usually empty (rendered only if present)
+
   const custRows = [
-    ['TO',       clientName, 'MARKETING', marketingName],
+    ['TO',       clientName, 'SALES REP', marketingName],
     ['ADDRESS',  custAddr,   'EMAIL',     picEmail],
     ['QUO. NO.', quot.quotation_no || '-', 'MOBILE', picPhone],
     ['INQUIRY',  inquiryStr, 'OFFICE',    '+62 21-3970-7558/9'],
     ['DATE',     dateStr,    'VALIDITY',  validStr],
   ];
+
+  // Optional rows — rendered only when the data exists. (attention_to / cargo /
+  // pickup / delivery are state-only in the form today, so they appear once the
+  // matching columns are added to `quotations` and saved.)
+  if (quot.attention_to) custRows.push(['ATTENTION TO', quot.attention_to, '', '']);
+  if (salesPhone || salesEmail) {
+    custRows.push([
+      salesPhone ? 'SALES PHONE' : '', salesPhone,
+      salesEmail ? 'SALES EMAIL' : '', salesEmail,
+    ]);
+  }
+
+  // Cargo fields — conditional on cargo_mode (mirrors the form logic).
+  const cm = quot.cargo_mode;
+  const cargoPairs = [];
+  if ((cm === 'air' || cm === 'sea_lcl' || cm === 'trucking') && quot.gw) cargoPairs.push(['GW', String(quot.gw)]);
+  if ((cm === 'air' || cm === 'trucking') && quot.dimension) cargoPairs.push(['DIMENSION', String(quot.dimension)]);
+  if (cm === 'air' && quot.cw) cargoPairs.push(['CW', String(quot.cw)]);
+  if (cm === 'sea_lcl' && quot.cbm) cargoPairs.push(['CBM', String(quot.cbm)]);
+  if (cm === 'sea_fcl' && quot.container_type) cargoPairs.push(['CONTAINER', String(quot.container_type)]);
+  if (cm === 'sea_fcl' && quot.container_qty) cargoPairs.push(['QTY', String(quot.container_qty)]);
+  for (let i = 0; i < cargoPairs.length; i += 2) {
+    const a = cargoPairs[i], b = cargoPairs[i + 1];
+    custRows.push([a[0], a[1], b ? b[0] : '', b ? b[1] : '']);
+  }
+
+  // Pick up / delivery addresses — only when present.
+  if (quot.pickup_address)   custRows.push(['PICK UP',  quot.pickup_address,   '', '']);
+  if (quot.delivery_address) custRows.push(['DELIVERY', quot.delivery_address, '', '']);
 
   return (
     <Document>
@@ -155,8 +187,8 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
           <View style={styles.custHeadRow}>
             <Text style={styles.custHeadText}>CUSTOMER DETAILS :</Text>
           </View>
-          {custRows.map(([l1, v1, l2, v2]) => (
-            <View key={l1} style={styles.custRow}>
+          {custRows.map(([l1, v1, l2, v2], i) => (
+            <View key={i} style={styles.custRow}>
               <Text style={styles.custLabel}>{l1}</Text>
               <Text style={styles.custValue}>{v1}</Text>
               <Text style={styles.custLabel}>{l2}</Text>

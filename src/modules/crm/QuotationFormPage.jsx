@@ -65,6 +65,15 @@ const SERVICE_TYPES_FALLBACK = [
   { value: 'trading',            label: 'General Trading'    },
 ];
 
+// Cargo mode — drives the conditional cargo fields. State-only (no DB column).
+const CARGO_MODES = [
+  { value: 'air',      label: 'Air Freight' },
+  { value: 'sea_lcl',  label: 'Sea LCL'     },
+  { value: 'sea_fcl',  label: 'Sea FCL'     },
+  { value: 'trucking', label: 'Trucking'    },
+];
+const CONTAINER_TYPES_FALLBACK = ['20 Feet', '40 Feet', '40 HC', '45 HC'];
+
 const UNIT_LABELS_FALLBACK = [
   'Per CBM', 'Per CBM-Up', 'Per 1-3 CBM', 'Per Waybill',
   'Per KG', 'Per Ton', 'Per 20Ft', 'Per 40Ft',
@@ -433,6 +442,17 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
     usd_rate:         DEFAULT_USD,
     vat_rate:         VAT_RATE,
     quote_date:       today(),
+    // New header fields — state-only (no columns in `quotations` yet, NOT saved to DB).
+    attention_to:     '',
+    pickup_address:   '',
+    delivery_address: '',
+    cargo_mode:       '',
+    gw:               '',
+    dimension:        '',
+    cw:               '',
+    cbm:              '',
+    container_type:   '',
+    container_qty:    '',
   });
 
   const [clientName,      setClientName]      = useState('');
@@ -449,6 +469,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
   // ── DB-driven dropdowns (fallback to hardcoded const on error/empty) ──────
   const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
   const { options: unitOpts }        = useDropdownOptions('unit_label', UNIT_LABELS_FALLBACK);
+  const { options: containerTypeOpts } = useDropdownOptions('container_type', CONTAINER_TYPES_FALLBACK);
   // unit_label stored value === label (string), so render the label as both.
   const unitLabels = useMemo(
     () => unitOpts.map((o) => (typeof o === 'string' ? o : o.label)),
@@ -525,6 +546,17 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
       usd_rate:         quotation.usd_rate          || DEFAULT_USD,
       vat_rate:         quotation.vat_rate          ?? VAT_RATE,
       quote_date:       quotation.quote_date || quotation.created_at?.slice(0, 10) || today(),
+      // New header fields — populated from DB on edit.
+      attention_to:     quotation.attention_to     || '',
+      pickup_address:   quotation.pickup_address   || '',
+      delivery_address: quotation.delivery_address || '',
+      cargo_mode:       quotation.cargo_mode       || '',
+      gw:               quotation.gw               || '',
+      dimension:        quotation.dimension        || '',
+      cw:               quotation.cw               || '',
+      cbm:              quotation.cbm              || '',
+      container_type:   quotation.container_type   || '',
+      container_qty:    quotation.container_qty    ?? '',
     });
     setClientName(quotation.prospect?.name || quotation.customer?.name || '');
 
@@ -725,6 +757,16 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
           route:            header.route                   || null,
           discount_pct:     Number(header.discount_pct)     || 0,
           margin_floor:     quotation.margin_floor ?? 0,
+          attention_to:     header.attention_to             || null,
+          pickup_address:   header.pickup_address           || null,
+          delivery_address: header.delivery_address         || null,
+          cargo_mode:       header.cargo_mode               || null,
+          gw:               header.gw                       || null,
+          dimension:        header.dimension                || null,
+          cw:               header.cw                       || null,
+          cbm:              header.cbm                      || null,
+          container_type:   header.container_type           || null,
+          container_qty:    header.container_qty !== '' ? Number(header.container_qty) : null,
         };
 
         const { error: rpcError } = await supabase.rpc('save_quotation', {
@@ -771,6 +813,16 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
           total_amount:     grandTotal,
           status:           submitNow ? 'SUBMITTED' : 'DRAFT',
           created_by:       profile.id,
+          attention_to:     header.attention_to             || null,
+          pickup_address:   header.pickup_address           || null,
+          delivery_address: header.delivery_address         || null,
+          cargo_mode:       header.cargo_mode               || null,
+          gw:               header.gw                       || null,
+          dimension:        header.dimension                || null,
+          cw:               header.cw                       || null,
+          cbm:              header.cbm                      || null,
+          container_type:   header.container_type           || null,
+          container_qty:    header.container_qty !== '' ? Number(header.container_qty) : null,
         };
 
         const { data: quot, error: qErr } = await supabase
@@ -950,6 +1002,91 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
                   style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical', borderColor: '#E6BBB2', background: '#FFF6F5' }) }}
                   placeholder="Catatan internal tim sales (tidak dikirim ke customer)…" />
               </Field>
+
+              {/* New fields — state-only (belum ada kolom di tabel quotations) */}
+              <Field label="Attention To" full>
+                <input value={header.attention_to} onChange={setH('attention_to')} style={inpStyle()}
+                  placeholder="Nama PIC customer yang dituju" />
+              </Field>
+
+              <Field label="Pick Up Address" full>
+                <textarea value={header.pickup_address} onChange={setH('pickup_address')} rows={2}
+                  style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical' }) }}
+                  placeholder="Alamat pengambilan (opsional)…" />
+              </Field>
+
+              <Field label="Delivery Address" full>
+                <textarea value={header.delivery_address} onChange={setH('delivery_address')} rows={2}
+                  style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical' }) }}
+                  placeholder="Alamat pengiriman akhir (opsional)…" />
+              </Field>
+
+              <Field label="Cargo Mode" full>
+                <select value={header.cargo_mode} onChange={setH('cargo_mode')} style={selStyle}>
+                  <option value="">— Pilih cargo mode —</option>
+                  {CARGO_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </Field>
+
+              {(header.cargo_mode === 'air' || header.cargo_mode === 'sea_lcl' || header.cargo_mode === 'trucking') && (
+                <Field label="GW (Gross Weight)">
+                  <input value={header.gw} onChange={setH('gw')} style={inpStyle()} placeholder="cth: 1.200 kg" />
+                </Field>
+              )}
+              {(header.cargo_mode === 'air' || header.cargo_mode === 'trucking') && (
+                <Field label="Dimension">
+                  <input value={header.dimension} onChange={setH('dimension')} style={inpStyle()} placeholder="cth: 120×80×100 cm" />
+                </Field>
+              )}
+              {header.cargo_mode === 'air' && (
+                <Field label="CW (Chargeable Weight)">
+                  <input value={header.cw} onChange={setH('cw')} style={inpStyle()} placeholder="cth: 1.500 kg" />
+                </Field>
+              )}
+              {header.cargo_mode === 'sea_lcl' && (
+                <Field label="CBM">
+                  <input value={header.cbm} onChange={setH('cbm')} style={inpStyle()} placeholder="cth: 12,5" />
+                </Field>
+              )}
+              {header.cargo_mode === 'sea_fcl' && (
+                <Field label="Container Type">
+                  <select value={header.container_type} onChange={setH('container_type')} style={selStyle}>
+                    <option value="">— Pilih container —</option>
+                    {containerTypeOpts.map(o => {
+                      const v = typeof o === 'string' ? o : o.value;
+                      const l = typeof o === 'string' ? o : o.label;
+                      return <option key={v} value={v}>{l}</option>;
+                    })}
+                  </select>
+                </Field>
+              )}
+              {header.cargo_mode === 'sea_fcl' && (
+                <Field label="Quantity">
+                  <input type="number" min="0" value={header.container_qty}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setHeader(h => ({ ...h, container_qty: e.target.value.replace(/^0+(?=\d)/, '') }))}
+                    style={inpStyle({ textAlign: 'right' })} placeholder="0" />
+                </Field>
+              )}
+            </div>
+          </div>
+
+          {/* Sales Rep — readonly info (current user) */}
+          <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: '16px 24px', boxShadow: '0 1px 6px rgba(35,41,30,.06)' }}>
+            <p style={{ margin: '0 0 12px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft }}>Sales Rep</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px 20px' }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, marginBottom: 2 }}>Nama</div>
+                <div style={{ fontSize: 13.5, color: C.ink, fontWeight: 600 }}>{profile?.full_name || '—'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, marginBottom: 2 }}>Email</div>
+                <div style={{ fontSize: 13.5, color: C.ink }}>{user?.email || '—'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, marginBottom: 2 }}>Phone</div>
+                <div style={{ fontSize: 13.5, color: C.ink }}>{profile?.phone || '—'}</div>
+              </div>
             </div>
           </div>
         </div>
