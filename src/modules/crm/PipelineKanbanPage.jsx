@@ -555,7 +555,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     try {
       let query = supabase
         .from('accounts')
-        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, estimated_value, payment_terms_id, notes, assigned_to, created_at, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
+        .select('id, name, legal_name, customer_type, phone, email, city, address, pic_name, pic_phone, pic_email, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, estimated_value, payment_terms_id, notes, assigned_to, created_at, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, bant_budget, bant_authority, bant_need, bant_timeline, assigned_profile:profiles!prospects_assigned_to_fkey(full_name)')
         .eq('account_status', 'prospect')
         .is('deleted_at', null);
 
@@ -631,7 +631,18 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     // PROPOSAL without an Inquiry, or WON without a Quotation → ask first
     // (lightweight COUNT). User can always proceed. On confirm, the move
     // resumes via handleStageGateConfirm → applyStageMove.
-    if (newStage === 'PROPOSAL') {
+    if (newStage === 'QUALIFIED') {
+      // BANT gate: ≥8 lolos, 5–7 konfirmasi, <5 blok total.
+      const score = calcBantScore(prospect);
+      if (score < 5) {
+        showToast?.(`BANT score terlalu rendah (${score}/12). Lengkapi qualification dulu sebelum Qualified.`, 'error');
+        return;
+      }
+      if (score < 8) {
+        setStageGate({ open: true, stageId, id, type: 'qualified', prospectName: prospect.name || '', score });
+        return;
+      }
+    } else if (newStage === 'PROPOSAL') {
       const { count } = await supabase
         .from('inquiries')
         .select('id', { count: 'exact', head: true })
@@ -652,7 +663,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     }
 
     applyStageMove(stageId, id, prospect);
-  }, [prospects, applyStageMove]);
+  }, [prospects, applyStageMove, showToast]);
 
   // ── Soft gate — "Ya, Lanjut" resumes the held move; "Batal" leaves card put ─
   const handleStageGateConfirm = useCallback(() => {
@@ -1007,10 +1018,12 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
       <ConfirmModal
         open={stageGate.open}
         variant="warning"
-        title={stageGate.type === 'won' ? 'Belum Ada Quotation' : 'Belum Ada Inquiry'}
+        title={stageGate.type === 'won' ? 'Belum Ada Quotation' : stageGate.type === 'qualified' ? 'Score BANT Belum Optimal' : 'Belum Ada Inquiry'}
         message={stageGate.type === 'won'
           ? 'Prospect ini belum punya Quotation. Biasanya deal ditandai WON setelah ada Quotation yang disetujui. Tetap tandai sebagai WON?'
-          : 'Prospect ini belum punya Inquiry. Biasanya Proposal dibuat setelah ada Inquiry. Tetap lanjut ke Proposal?'}
+          : stageGate.type === 'qualified'
+            ? `BANT score ${stageGate.score}/12 — prospect masih perlu di-nurture. Yakin pindah ke Qualified?`
+            : 'Prospect ini belum punya Inquiry. Biasanya Proposal dibuat setelah ada Inquiry. Tetap lanjut ke Proposal?'}
         confirmLabel={stageGate.type === 'won' ? 'Ya, Tandai WON' : 'Ya, Lanjut'}
         cancelLabel="Batal"
         onConfirm={handleStageGateConfirm}
