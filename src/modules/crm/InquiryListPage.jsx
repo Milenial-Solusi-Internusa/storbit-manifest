@@ -1,8 +1,10 @@
 // src/modules/crm/InquiryListPage.jsx
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, ChevronRight, FileText } from 'lucide-react';
+import { Search, Plus, ChevronRight, FileText, Download } from 'lucide-react';
+import { PDFDownloadLink } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import InquiryPDF from './InquiryPDF';
 
 const C = {
   bg:        '#F6EFE3',
@@ -157,8 +159,11 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         .from('inquiries')
         .select(`
           id, inquiry_no, service_type, route, status, created_at, commodity, estimated_volume, notes,
+          pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm,
+          cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
           prospect:accounts!inquiries_prospect_id_fkey(name),
-          customer:accounts!inquiries_customer_id_fkey(name)
+          customer:accounts!inquiries_customer_id_fkey(name),
+          created_by_profile:profiles!inquiries_created_by_fkey(full_name)
         `, { count: 'exact' })
         .is('deleted_at', null);
 
@@ -285,7 +290,28 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                 <td style={{ padding: '12px 14px', color: C.inkSoft }}>{inq.route || '—'}</td>
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={inq.status} /></td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(inq.created_at)}</td>
-                <td style={{ padding: '12px 10px' }}><ChevronRight size={15} color={C.inkFaint} /></td>
+                <td style={{ padding: '12px 10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                    <PDFDownloadLink
+                      document={<InquiryPDF inquiry={inq} prospectName={inq.prospect?.name || inq.customer?.name || '—'} salesName={inq.created_by_profile?.full_name || '—'} />}
+                      fileName={`Inquiry-${inq.inquiry_no?.replace(/\//g, '-') || 'unknown'}-${new Date().toISOString().slice(0, 10)}.pdf`}
+                      style={{ textDecoration: 'none' }}
+                    >
+                      {({ loading }) => (
+                        <span
+                          title="Download PDF"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ display: 'inline-flex', alignItems: 'center', padding: 6, borderRadius: 6, opacity: loading ? 0.4 : 1, cursor: 'pointer' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#EAF0F8'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          <Download size={16} color="#144682" />
+                        </span>
+                      )}
+                    </PDFDownloadLink>
+                    <ChevronRight size={15} color={C.inkFaint} />
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
