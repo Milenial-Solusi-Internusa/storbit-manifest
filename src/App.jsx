@@ -41,6 +41,9 @@ const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
 const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
 const CRMReportPage        = lazy(() => import('./modules/crm/CRMReportPage'));
+const MOMListPage          = lazy(() => import('./modules/reporting/MOMListPage'));
+const MOMFormPage          = lazy(() => import('./modules/reporting/MOMFormPage'));
+const MOMDetailPage        = lazy(() => import('./modules/reporting/MOMDetailPage'));
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
 const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
@@ -762,7 +765,7 @@ const ERP_MENU_GROUPS = [
       },
       { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, public: true },
       { id: 'reporting-form-report', label: 'Form Report',  icon: FileText, planned: true },
-      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, planned: true },
+      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, public: true },
       {
         id: 'performance', label: 'Performance & Cache', icon: Zap,
         children: [
@@ -889,7 +892,7 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
 // isPlanned — true bila navigasi ke `id` akan me-render ComingSoonPage
 // (mirror PLANNED_MODULES + logika catch-all placeholder di render switch).
 // Item planned ditampilkan disabled + badge "Soon" di sidebar.
-const PLANNED_REAL_IDS = ['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales'];
+const PLANNED_REAL_IDS = ['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales','reporting-mom'];
 const PLANNED_REAL_PREFIXES = ['assets','hrga','crm-','quotation-','inventory-','customer-','admin-settings'];
 const isPlanned = (id) => {
   if (!id) return false;
@@ -1292,6 +1295,8 @@ export default function StorbitManifest() {
   const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
   const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
+  const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
+  const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
   const { role: authRole, erpRoles, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading } = useAuth();
   const role = authRole || 'management';
@@ -1377,6 +1382,8 @@ export default function StorbitManifest() {
     setCrmQuotationDetail(null);
     setEditingQuotation(null);
     setCrmDealInquiry(null);
+    setReportingMomMode('list');
+    setReportingMomId(null);
   }, []);
 
   // Navigate to asset detail — called by list pages on row click.
@@ -1497,6 +1504,7 @@ export default function StorbitManifest() {
     const dest = n.reference_type === 'hrga_request' ? 'hrga-semua-request'
                : n.reference_type === 'activity'     ? 'crm-calls'
                : n.reference_type === 'lead_pool'     ? 'crm-lead-pool'
+               : n.reference_type === 'mom'           ? 'reporting-mom'
                : null;
     if (dest) navigateTo(dest);
   }, [navigateTo]);
@@ -2377,7 +2385,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales'].includes(activeMenu) &&
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales','reporting-mom'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -2804,6 +2812,33 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Sales Report temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <CRMReportPage />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── Reporting & Governance: MOM ─────────────────────────────────── */}
+          {activeMenu === 'reporting-mom' && (
+            <ErrorBoundary title="MOM temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                {reportingMomMode === 'create' ? (
+                  <MOMFormPage mode="create" onBack={() => setReportingMomMode('list')} showToast={showToast} />
+                ) : reportingMomMode === 'edit' ? (
+                  <MOMFormPage mode="edit" momId={reportingMomId} onBack={() => { setReportingMomMode('list'); setReportingMomId(null); }} showToast={showToast} />
+                ) : reportingMomMode === 'detail' ? (
+                  <MOMDetailPage
+                    momId={reportingMomId}
+                    onBack={() => { setReportingMomMode('list'); setReportingMomId(null); }}
+                    onEdit={(id) => { setReportingMomId(id); setReportingMomMode('edit'); }}
+                    showToast={showToast}
+                  />
+                ) : (
+                  <MOMListPage
+                    onCreateMom={() => { setReportingMomId(null); setReportingMomMode('create'); }}
+                    onViewMom={(id) => { setReportingMomId(id); setReportingMomMode('detail'); }}
+                    onEditMom={(id) => { setReportingMomId(id); setReportingMomMode('edit'); }}
+                    showToast={showToast}
+                  />
+                )}
               </Suspense>
             </ErrorBoundary>
           )}
