@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict HYnxWsv9p6ntUR3OAuBWmIsfcbv6JqGlQsf64nPDJWiSKBIYxtflxnua3BZTlJi
+\restrict riy8T1ohtgHmzjAV65wpINRu8m2ymHgGPgQ7DzmbljdNUuqCsWE5rGGmEdRaDi6
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2449,6 +2449,37 @@ CREATE TABLE public.inquiries (
 
 
 --
+-- Name: meeting_moms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.meeting_moms (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid,
+    mom_no text,
+    mom_type text NOT NULL,
+    divisi text,
+    meeting_date date,
+    time_start time without time zone,
+    time_end time without time zone,
+    pemimpin text,
+    notulis_id uuid,
+    lokasi text,
+    peserta text[],
+    catatan_tambahan text,
+    status text DEFAULT 'draft'::text,
+    submitted_at timestamp with time zone,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    reject_reason text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT meeting_moms_mom_type_check CHECK ((mom_type = ANY (ARRAY['weekly'::text, 'project'::text, 'probation'::text, 'board'::text, 'departmental'::text, 'adhoc'::text]))),
+    CONSTRAINT meeting_moms_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'submitted'::text, 'approved'::text, 'rejected'::text])))
+);
+
+
+--
 -- Name: menu_actions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2499,6 +2530,72 @@ CREATE TABLE public.modules (
     label text NOT NULL,
     sort_order integer DEFAULT 0,
     is_active boolean DEFAULT true,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: mom_action_plans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mom_action_plans (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    mom_id uuid,
+    section text NOT NULL,
+    no smallint,
+    action_plan text,
+    pic text,
+    timeline date,
+    prioritas text,
+    status text,
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT mom_action_plans_prioritas_check CHECK ((prioritas = ANY (ARRAY['high'::text, 'medium'::text, 'low'::text]))),
+    CONSTRAINT mom_action_plans_section_check CHECK ((section = ANY (ARRAY['review'::text, 'new'::text]))),
+    CONSTRAINT mom_action_plans_status_check CHECK ((status = ANY (ARRAY['done'::text, 'on_progress'::text, 'pending'::text, 'high_priority'::text, 'new_initiative'::text, 'appreciated'::text, 'positive'::text, 'need_improvement'::text])))
+);
+
+
+--
+-- Name: mom_improvements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mom_improvements (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    mom_id uuid,
+    no smallint,
+    usulan text,
+    catatan text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: mom_issues; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mom_issues (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    mom_id uuid,
+    no smallint,
+    issue text,
+    dampak text,
+    akar_masalah text,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: mom_progress_updates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mom_progress_updates (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    mom_id uuid,
+    no smallint,
+    aspek text,
+    capaian text,
+    target text,
+    status text,
     created_at timestamp with time zone DEFAULT now()
 );
 
@@ -4058,6 +4155,14 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
+-- Name: meeting_moms meeting_moms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.meeting_moms
+    ADD CONSTRAINT meeting_moms_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: menu_actions menu_actions_menu_id_action_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4119,6 +4224,38 @@ ALTER TABLE ONLY public.modules
 
 ALTER TABLE ONLY public.modules
     ADD CONSTRAINT modules_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mom_action_plans mom_action_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mom_action_plans
+    ADD CONSTRAINT mom_action_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mom_improvements mom_improvements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mom_improvements
+    ADD CONSTRAINT mom_improvements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mom_issues mom_issues_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mom_issues
+    ADD CONSTRAINT mom_issues_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mom_progress_updates mom_progress_updates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mom_progress_updates
+    ADD CONSTRAINT mom_progress_updates_pkey PRIMARY KEY (id);
 
 
 --
@@ -5140,6 +5277,55 @@ CREATE INDEX idx_inquiries_company_id ON public.inquiries USING btree (company_i
 --
 
 CREATE INDEX idx_inquiries_prospect_id ON public.inquiries USING btree (prospect_id);
+
+
+--
+-- Name: idx_meeting_moms_company; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_meeting_moms_company ON public.meeting_moms USING btree (company_id);
+
+
+--
+-- Name: idx_meeting_moms_created_by; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_meeting_moms_created_by ON public.meeting_moms USING btree (created_by);
+
+
+--
+-- Name: idx_meeting_moms_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_meeting_moms_status ON public.meeting_moms USING btree (status);
+
+
+--
+-- Name: idx_mom_action_plans_mom_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mom_action_plans_mom_id ON public.mom_action_plans USING btree (mom_id);
+
+
+--
+-- Name: idx_mom_improvements_mom_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mom_improvements_mom_id ON public.mom_improvements USING btree (mom_id);
+
+
+--
+-- Name: idx_mom_issues_mom_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mom_issues_mom_id ON public.mom_issues USING btree (mom_id);
+
+
+--
+-- Name: idx_mom_progress_updates_mom_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mom_progress_updates_mom_id ON public.mom_progress_updates USING btree (mom_id);
 
 
 --
@@ -6849,6 +7035,38 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
+-- Name: meeting_moms meeting_moms_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.meeting_moms
+    ADD CONSTRAINT meeting_moms_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: meeting_moms meeting_moms_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.meeting_moms
+    ADD CONSTRAINT meeting_moms_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: meeting_moms meeting_moms_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.meeting_moms
+    ADD CONSTRAINT meeting_moms_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: meeting_moms meeting_moms_notulis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.meeting_moms
+    ADD CONSTRAINT meeting_moms_notulis_id_fkey FOREIGN KEY (notulis_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
 -- Name: menu_actions menu_actions_menu_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6870,6 +7088,38 @@ ALTER TABLE ONLY public.module_actions
 
 ALTER TABLE ONLY public.module_menus
     ADD CONSTRAINT module_menus_module_id_fkey FOREIGN KEY (module_id) REFERENCES public.modules(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mom_action_plans mom_action_plans_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mom_action_plans
+    ADD CONSTRAINT mom_action_plans_mom_id_fkey FOREIGN KEY (mom_id) REFERENCES public.meeting_moms(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mom_improvements mom_improvements_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mom_improvements
+    ADD CONSTRAINT mom_improvements_mom_id_fkey FOREIGN KEY (mom_id) REFERENCES public.meeting_moms(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mom_issues mom_issues_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mom_issues
+    ADD CONSTRAINT mom_issues_mom_id_fkey FOREIGN KEY (mom_id) REFERENCES public.meeting_moms(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mom_progress_updates mom_progress_updates_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mom_progress_updates
+    ADD CONSTRAINT mom_progress_updates_mom_id_fkey FOREIGN KEY (mom_id) REFERENCES public.meeting_moms(id) ON DELETE CASCADE;
 
 
 --
@@ -8564,6 +8814,12 @@ CREATE POLICY maintenance_update ON public.asset_maintenance_records FOR UPDATE 
 
 
 --
+-- Name: meeting_moms; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.meeting_moms ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: menu_actions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8642,6 +8898,39 @@ CREATE POLICY modules_admin_only ON public.modules USING (true);
 
 CREATE POLICY modules_read_all ON public.modules FOR SELECT USING (true);
 
+
+--
+-- Name: mom_action_plans; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mom_action_plans ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: mom_improvements; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mom_improvements ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: mom_issues; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mom_issues ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: mom_issues mom_issues_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_issues_update ON public.mom_issues FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_issues.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_progress_updates; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mom_progress_updates ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: asset_network network_insert; Type: POLICY; Schema: public; Owner: -
@@ -9426,5 +9715,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict HYnxWsv9p6ntUR3OAuBWmIsfcbv6JqGlQsf64nPDJWiSKBIYxtflxnua3BZTlJi
+\unrestrict riy8T1ohtgHmzjAV65wpINRu8m2ymHgGPgQ7DzmbljdNUuqCsWE5rGGmEdRaDi6
 
