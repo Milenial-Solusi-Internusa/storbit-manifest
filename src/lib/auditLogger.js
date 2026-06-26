@@ -44,6 +44,8 @@ export const ACTION_TYPES = {
   DEACTIVATE_USER:     'DEACTIVATE_USER',
   CHANGE_ROLE:         'CHANGE_ROLE',
   CREATE_ASSET:        'CREATE_ASSET',
+  CREATE_MOM:          'CREATE_MOM',
+  UPDATE_MOM:          'UPDATE_MOM',
 };
 
 export const ENTITY_TYPES = {
@@ -55,6 +57,7 @@ export const ENTITY_TYPES = {
   LEAD:      'LEAD',
   DEAL:      'DEAL',
   ASSET:     'ASSET',
+  MOM:       'MOM',
 };
 
 /**
