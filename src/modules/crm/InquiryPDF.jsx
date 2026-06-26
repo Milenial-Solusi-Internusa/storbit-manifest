@@ -170,6 +170,7 @@ export default function InquiryPDF({ inquiry, prospectName, salesName }) {
               <Row label="Jenis Kontainer" value={joinArr(inq.container_types)} />
               <Row label="HS Code" value={val(inq.hs_code)} />
               <Row label="Volume" value={volume} />
+              <Row label="Dimensi" value={val(inq.dimension)} />
             </View>
           </View>
 
@@ -192,7 +193,6 @@ export default function InquiryPDF({ inquiry, prospectName, salesName }) {
           <Section num="5" title="INFORMASI TAMBAHAN" />
           <Row label="Route" value={val(inq.route)} />
           <Row label="Komoditas" value={val(inq.commodity)} />
-          <Row label="Estimasi Volume" value={val(inq.estimated_volume)} />
           {inq.notes ? (
             <View style={styles.noteBox}>
               <Text style={styles.noteText}>{inq.notes}</Text>

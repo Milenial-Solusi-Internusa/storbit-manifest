@@ -382,7 +382,7 @@ function BadgeRow({ label, values, full }) {
 }
 
 /* ========================================================================= */
-export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, showToast }) {
+export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, showToast }) {
   const { profile, erpRole, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -563,7 +563,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: 20, alignItems: 'start' }} className="dd-cols">
         {/* LEFT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
-          <Card title="Detail Inquiry" icon={<FileText size={17} />}>
+          <Card
+            title="Detail Inquiry"
+            icon={<FileText size={17} />}
+            right={onEditInquiry ? (
+              <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Pencil size={14} />Edit Inquiry
+              </button>
+            ) : null}
+          >
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
               <span style={{ padding: '4px 11px', borderRadius: 99, background: C.orangeSoft, color: C.orange, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
                 {SERVICE_LABEL[inquiry.service_type] || inquiry.service_type || '—'}
@@ -600,7 +608,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <InfoRow label="Deadline Quote" value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''} />
               <InfoRow label="Route" value={inquiry.route} />
               <InfoRow label="Komoditas" value={inquiry.commodity} />
-              <InfoRow label="Estimasi Volume" value={inquiry.estimated_volume} />
               <InfoRow label="Dibuat Oleh" value={createdByName} />
               <InfoRow label="Tanggal Dibuat" value={fmtDate(inquiry.created_at)} />
               <InfoRow label="Notes" value={inquiry.notes} full />

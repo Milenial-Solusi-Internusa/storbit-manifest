@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict hhMATrZGD6pj6FiJCtG5OOB7SEpfyAk9j5Alr08NuhC3bjsRHaBgtveiujS2vip
+\restrict HYnxWsv9p6ntUR3OAuBWmIsfcbv6JqGlQsf64nPDJWiSKBIYxtflxnua3BZTlJi
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2443,7 +2443,8 @@ CREATE TABLE public.inquiries (
     un_number text,
     imo_class text,
     has_msds text,
-    additional_services text[]
+    additional_services text[],
+    dimension text
 );
 
 
@@ -9425,5 +9426,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict hhMATrZGD6pj6FiJCtG5OOB7SEpfyAk9j5Alr08NuhC3bjsRHaBgtveiujS2vip
+\unrestrict HYnxWsv9p6ntUR3OAuBWmIsfcbv6JqGlQsf64nPDJWiSKBIYxtflxnua3BZTlJi
 

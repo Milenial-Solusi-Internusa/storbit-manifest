@@ -139,16 +139,17 @@ async function generateInquiryNo(companyId, companyCode) {
   return `INQ/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
 }
 
-export default function InquiryFormPage({ onBack, showToast }) {
+export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = 'create' }) {
   const { profile, erpRole, user } = useAuth();
   const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
+  const isEdit = mode === 'edit' && !!inquiryId;
 
   const [form, setForm] = useState({
     prospect_id: '', customer_id: '', service_type: 'freight_forwarding',
     route: '', commodity: '', estimated_volume: '', notes: '',
     // new RFQ fields
     deadline_quote: '', pol: '', pod: '', incoterms: [], container_types: [],
-    goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '',
+    goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
     cargo_types: [], un_number: '', imo_class: '', has_msds: '',
     additional_services: [],
   });
@@ -157,6 +158,7 @@ export default function InquiryFormPage({ onBack, showToast }) {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [sourceType, setSourceType] = useState('prospect');
+  const [editNo, setEditNo] = useState('');   // existing inquiry_no (edit mode header)
 
   useEffect(() => {
     if (!profile?.company_id) return;
@@ -165,6 +167,53 @@ export default function InquiryFormPage({ onBack, showToast }) {
     supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'customer').is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
+
+  // Edit mode — fetch the inquiry and populate the form once.
+  useEffect(() => {
+    if (!isEdit) return undefined;
+    let cancelled = false;
+    supabase.from('inquiries').select('*').eq('id', inquiryId).maybeSingle()
+      .then(async ({ data }) => {
+        if (cancelled || !data) return;
+        setEditNo(data.inquiry_no || '');
+        const linkedId = data.customer_id || data.prospect_id || '';
+        setSourceType(data.customer_id ? 'customer' : 'prospect');
+        setForm({
+          prospect_id: data.prospect_id || '',
+          customer_id: data.customer_id || '',
+          service_type: data.service_type || 'freight_forwarding',
+          route: data.route || '',
+          commodity: data.commodity || '',
+          estimated_volume: data.estimated_volume || '',
+          notes: data.notes || '',
+          deadline_quote: data.deadline_quote || '',
+          pol: data.pol || '',
+          pod: data.pod || '',
+          incoterms: data.incoterms || [],
+          container_types: data.container_types || [],
+          goods_name: data.goods_name || '',
+          hs_code: data.hs_code || '',
+          weight_kg: data.weight_kg != null ? String(data.weight_kg) : '',
+          volume_cbm: data.volume_cbm != null ? String(data.volume_cbm) : '',
+          dimension: data.dimension || '',
+          cargo_types: data.cargo_types || [],
+          un_number: data.un_number || '',
+          imo_class: data.imo_class || '',
+          has_msds: data.has_msds || '',
+          additional_services: data.additional_services || [],
+        });
+        // Make sure the linked account appears in its dropdown (it may be inactive
+        // or in the other status bucket) so the name renders instead of blank.
+        if (linkedId) {
+          const { data: acc } = await supabase.from('accounts').select('id, name, account_status').eq('id', linkedId).maybeSingle();
+          if (cancelled || !acc) return;
+          const opt = { id: acc.id, name: acc.name };
+          if (data.customer_id) setCustomers(prev => prev.some(c => c.id === acc.id) ? prev : [opt, ...prev]);
+          else setProspects(prev => prev.some(p => p.id === acc.id) ? prev : [opt, ...prev]);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, inquiryId]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const setNum = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value.replace(/[^\d.]/g, '') }));
@@ -183,13 +232,9 @@ export default function InquiryFormPage({ onBack, showToast }) {
     if (!validate()) return;
     setSaving(true);
     try {
-      const companyRow = await supabase.from('companies').select('code').eq('id', profile.company_id).maybeSingle();
-      const companyCode = companyRow.data?.code || 'MSI';
-      const inquiry_no = await generateInquiryNo(profile.company_id, companyCode);
-
-      const payload = {
-        inquiry_no,
-        company_id: profile.company_id,
+      // Fields shared by create + edit (inquiry_no / company_id / created_by /
+      // status are NOT mutated on edit).
+      const fields = {
         prospect_id: sourceType === 'prospect' ? (form.prospect_id || null) : (form.customer_id || null),
         customer_id: null,
         service_type: form.service_type,
@@ -197,9 +242,6 @@ export default function InquiryFormPage({ onBack, showToast }) {
         commodity: form.commodity || null,
         estimated_volume: form.estimated_volume || null,
         notes: form.notes || null,
-        status: 'OPEN',
-        created_by: profile.id,
-        // new RFQ columns
         deadline_quote: form.deadline_quote || null,
         pol: form.pol || null,
         pod: form.pod || null,
@@ -209,6 +251,7 @@ export default function InquiryFormPage({ onBack, showToast }) {
         hs_code: form.hs_code || null,
         weight_kg: form.weight_kg !== '' ? Number(form.weight_kg) : null,
         volume_cbm: form.volume_cbm !== '' ? Number(form.volume_cbm) : null,
+        dimension: form.dimension || null,
         cargo_types: form.cargo_types.length ? form.cargo_types : null,
         un_number: form.un_number || null,
         imo_class: form.imo_class || null,
@@ -216,6 +259,22 @@ export default function InquiryFormPage({ onBack, showToast }) {
         additional_services: form.additional_services.length ? form.additional_services : null,
       };
 
+      if (isEdit) {
+        const { error } = await supabase.from('inquiries').update(fields).eq('id', inquiryId);
+        if (error) throw error;
+        logAudit(supabase, {
+          action: ACTION_TYPES.UPDATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: inquiryId, entityLabel: editNo,
+        }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+        showToast?.('Inquiry berhasil diupdate ✨');
+        onBack();
+        return;
+      }
+
+      const companyRow = await supabase.from('companies').select('code').eq('id', profile.company_id).maybeSingle();
+      const companyCode = companyRow.data?.code || 'MSI';
+      const inquiry_no = await generateInquiryNo(profile.company_id, companyCode);
+
+      const payload = { inquiry_no, company_id: profile.company_id, status: 'OPEN', created_by: profile.id, ...fields };
       const { error } = await supabase.from('inquiries').insert(payload);
       if (error) throw error;
       logAudit(supabase, {
@@ -239,15 +298,15 @@ export default function InquiryFormPage({ onBack, showToast }) {
         <div style={S.headerCard}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0 }}>
-              <h1 style={S.hTitle}>Buat Inquiry Baru</h1>
+              <h1 style={S.hTitle}>{isEdit ? 'Edit Inquiry' : 'Buat Inquiry Baru'}</h1>
               <div style={S.hSub}>Form Permintaan Penawaran (RFQ)</div>
             </div>
-            <span style={S.inqBadge}>INQ/MSI/{new Date().getFullYear()}/—</span>
+            <span style={S.inqBadge}>{isEdit ? (editNo || '—') : `INQ/MSI/${new Date().getFullYear()}/—`}</span>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
             <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Batal</button>
             <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleSave} disabled={saving}>
-              <Send size={16} />{saving ? 'Menyimpan…' : 'Submit Inquiry'}
+              <Send size={16} />{saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Submit Inquiry')}
             </button>
           </div>
         </div>
@@ -312,7 +371,6 @@ export default function InquiryFormPage({ onBack, showToast }) {
                   </div>
                   {errors.service_type && <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors.service_type}</span>}
                 </Field>
-                <Field label="Estimated Volume"><input value={form.estimated_volume} onChange={set('estimated_volume')} style={S.input} placeholder="cth: 10 CBM / 500 KGS" /></Field>
               </div>
             </div>
           </div>
@@ -371,6 +429,10 @@ export default function InquiryFormPage({ onBack, showToast }) {
                     <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>CBM</span>
                   </div>
                 </Field>
+              </div>
+
+              <div style={grid2}>
+                <Field label="Dimensi (P x L x T)"><input value={form.dimension} onChange={set('dimension')} style={S.input} placeholder="cth: 120 x 80 x 100 cm" /></Field>
               </div>
 
               {/* preserved existing fields */}
