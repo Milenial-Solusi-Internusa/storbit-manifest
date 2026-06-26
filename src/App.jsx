@@ -9,7 +9,7 @@ import {
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
-  ClipboardList, LayoutList, Archive, UserX, Activity,
+  ClipboardList, LayoutList, Archive, UserX, Activity, BookOpen,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { supabase } from './lib/supabase';
@@ -464,7 +464,6 @@ const ERP_MENU_GROUPS = [
           },
           { id: 'crm-calls',      label: 'Activities', icon: Activity, public: true },
           { id: 'crm-activity-log', label: 'Activity Log', icon: History, public: true },
-          { id: 'crm-report',     label: 'Report',     icon: BarChart2, public: true },
         ],
       },
     ],
@@ -761,6 +760,9 @@ const ERP_MENU_GROUPS = [
           { id: 'reports-custom',      label: 'Custom Report',       icon: FileText        },
         ],
       },
+      { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, public: true },
+      { id: 'reporting-form-report', label: 'Form Report',  icon: FileText, planned: true },
+      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, planned: true },
       {
         id: 'performance', label: 'Performance & Cache', icon: Zap,
         children: [
@@ -887,7 +889,7 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
 // isPlanned — true bila navigasi ke `id` akan me-render ComingSoonPage
 // (mirror PLANNED_MODULES + logika catch-all placeholder di render switch).
 // Item planned ditampilkan disabled + badge "Soon" di sidebar.
-const PLANNED_REAL_IDS = ['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory'];
+const PLANNED_REAL_IDS = ['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales'];
 const PLANNED_REAL_PREFIXES = ['assets','hrga','crm-','quotation-','inventory-','customer-','admin-settings'];
 const isPlanned = (id) => {
   if (!id) return false;
@@ -2375,7 +2377,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory'].includes(activeMenu) &&
+           !['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -2797,9 +2799,9 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── CRM: Report ─────────────────────────────────────────────────── */}
-          {activeMenu === 'crm-report' && (
-            <ErrorBoundary title="CRM Report temporarily unavailable">
+          {/* ── Reporting & Governance: Sales Report ────────────────────────── */}
+          {activeMenu === 'reporting-sales' && (
+            <ErrorBoundary title="Sales Report temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <CRMReportPage />
               </Suspense>
