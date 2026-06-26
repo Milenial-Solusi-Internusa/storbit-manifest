@@ -2660,6 +2660,19 @@ export default function StorbitManifest() {
                   onBack={() => setCrmDealInquiry(null)}
                   onCreateQuotation={() => { setCrmDealInquiry(null); setEditingQuotation(null); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
                   onViewQuotation={(q) => { setCrmDealInquiry(null); setCrmQuotationDetail(q); setActiveMenu('quotation-draft'); }}
+                  onEditInquiry={() => setShowInquiryForm(true)}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'crm-inquiry' && crmDealInquiry && showInquiryForm && (
+            <ErrorBoundary title="Edit Inquiry temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <InquiryFormPage
+                  inquiryId={crmDealInquiry.id}
+                  mode="edit"
+                  onBack={() => setShowInquiryForm(false)}
                   showToast={showToast}
                 />
               </Suspense>
