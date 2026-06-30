@@ -27,6 +27,18 @@ const YELLOW = '#F59E0B';
 const RED = '#EF4444';
 
 // ─── Inline lucide icons (self-contained) ───────────────────────────────────────
+// TOP Request (perpanjangan termin) hanya relevan untuk customer dengan payment
+// terms TEMPO. Whitelist by NAMA (id terduplikasi per entitas) — nilai non-tempo
+// atau payment terms kosong default-nya hide.
+const TEMPO_TERMS = new Set([
+  'Net 15 Days',
+  'Net 30 Days',
+  'Net 45 Days',
+  'Net 60 Days',
+  'Top Net 7 hari',
+]);
+const isTempoTerm = (name) => !!name && TEMPO_TERMS.has(String(name).trim());
+
 const ICONS = {
   chevright:  '<path d="m9 18 6-6-6-6"/>',
   chevdown:   '<path d="m6 9 6 6 6-6"/>',
@@ -691,7 +703,9 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
           <h1 style={S.title}>Detail Customer</h1>
         </div>
         <div style={S.actions}>
-          <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setTopOpen(true)}><Icon name="creditcard" size={16} />Ajukan TOP Request</button>
+          {isTempoTerm(customer.payment_term?.name) && (
+            <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setTopOpen(true)}><Icon name="creditcard" size={16} />Ajukan TOP Request</button>
+          )}
           <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setEditing(true)}><Icon name="pencil" size={16} />Edit</button>
           {canDelete && <button type="button" className="cd-danger" style={S.dangerBtn} onClick={() => setConfirmDel(true)}><Icon name="trash" size={16} />Hapus</button>}
         </div>
