@@ -328,3 +328,192 @@ Verdict diverifikasi via grep (`supabase.from/.insert/.update/.rpc` + `localStor
 - `audit_logs` disimpulkan belum ada berdasarkan `AuditLogPage` membaca `user_login_logs` + catatan TD-05; konsisten dengan dokumen.
 - Daftar role kanonik diambil dari `ERP_ROLE_PRIORITY` (`AuthContext.jsx`) karena `INSERT INTO roles` tidak ada di `schema_snapshot.sql` (role di-seed di luar snapshot).
 - Audit ini READ-ONLY: tidak ada file/DB/kode yang diubah selain pembuatan `AUDIT.md` ini.
+
+---
+---
+
+# AUDIT — Investigasi 5 Temuan (30 Jun 2026)
+
+> **Mode:** AUDIT read-only. Tidak ada file kode/DB diubah; hanya menambah bagian ini ke `AUDIT.md` (bagian audit 24 Jun di atas dipertahankan utuh).
+> **Referensi DB:** `supabase/schema_snapshot.sql` (sumber kebenaran), bukan `migrations/`.
+> **Scope:** 5 investigasi spesifik (komoditi prospek · batalkan visit sales · text kepotong quotation · konsep tier · payment terms/CBD).
+
+## RINGKASAN
+
+1. **Komoditi hilang di Detail Prospek** — **ROOT CAUSE DITEMUKAN, ada bug data-loss lebih parah dari gejala.** Dua akar bertumpuk di `ProspectFormPage`: (a) form di-feed baris **tipis** dari `ProspectListPage` (8 kolom, tanpa `bant_*`), dan (b) input BANT kualitatif (komoditi/origin/destination/dll) **tak dirender lagi** sejak redesign 2.11W. Akibat: komoditi tak tampil **dan** — kritis — edit prospek dari daftar lalu Simpan **menimpa ~22 kolom jadi kosong** (komoditi, phone, email, address, notes, payment terms, seluruh BANT). Drawer Pipeline Kanban & CustomerDetailPage menampilkan komoditi benar (fetch lengkap).
+2. **Error "Batalkan Visit" role sales** — **ROOT CAUSE: gate frontend, BUKAN RLS.** `canCancel` (`CRMDashboardPage.jsx:1719`) tak memuat `sales`/`operations`/`supervisor`; klik tahap "Dibatalkan" → toast error "Hanya Manager ke atas…". RLS `activities` UPDATE **justru mengizinkan** pemilik (`assigned_to`/`created_by = auth.uid()`) — FE lebih ketat dari DB.
+3. **Text kepotong di Quotation** — **Tidak ada hard-truncation** (tidak ada `ellipsis`/`line-clamp`/`overflow:hidden`+height). Preview & PDF **wrap**. Titik "kepotong" nyata: input **Description** form = `<input>` 1 baris (clip visual); angka besar di Total/summary PDF lebar-tetap (wrap janggal); sel label `nowrap` (minor). Inventaris lengkap di bawah.
+4. **Konsep "Tier"** — **ADA.** `accounts.tier varchar(20)` (`schema:664`), nilai UI **A/B/C** (`CustomerListPage.jsx:41`). **Penanda asal Odoo: TIDAK ADA** — tak ada `is_migrated`/origin-system di `accounts`; `source` hanya origin lead.
+5. **Payment Terms & CBD** — sumber = `accounts.payment_terms_id` (FK→`payment_terms`), nama via embed `payment_term:payment_terms!...(name)` (`CustomerDetailPage.jsx:445`). **Nilai CBD tak terkonfirmasi di snapshot** (schema-only tanpa data seed); `'CBD'` di kode hanya opsi hardcode `TOPRequestModal`. Tombol "Ajukan TOP Request" = `CustomerDetailPage.jsx:692`, **tanpa syarat apa pun**.
+
+## INVESTIGASI 1 — Komoditi (dan field lain) hilang di Detail Prospek
+
+**Data DB:** `accounts.bant_commodity` (text) + kerabat — `schema_snapshot.sql:654-660` (`bant_commodity/origin/destination/frequency/current_vendor/payment/decision_maker`). Komoditi = **`bant_commodity`** (BUKAN `commodity`; `commodity` milik tabel `inquiries` `:2425`).
+
+**Permukaan detail prospek (inventaris):**
+| Permukaan | Fetch komoditi? | Render? | Status |
+|---|---|---|---|
+| Pipeline Kanban drawer (`PipelineKanbanPage.jsx:398-404`) | Ya — select `:585` | Ya | ✅ benar |
+| CustomerDetailPage tab BANT (`:809-816`) | Ya — `select('*')` `:441-448` | Ya (label "Komoditi" `:124`) | ✅ benar |
+| **ProspectFormPage** (form create/edit) | **Tidak** | **Tidak (input dihapus)** | ❌ bug |
+
+**Root cause (2 lapis):**
+- **Lapis A — baris tipis, tanpa re-fetch:** `ProspectListPage.jsx:109-113` select hanya `id,name,legal_name,customer_type,source,pic_name,pipeline_stage,created_at,assigned_profile` → diteruskan `:247 onEditProspect(p)` → `App.jsx:2625` → `App.jsx:2635 prospect={editingProspect}`. `ProspectFormPage.jsx:71` pakai prop; `:109-131` isi `form` **hanya dari prop** (`:112 bant_commodity: prospect.bant_commodity || ''` → `''`). Tak ada self-fetch baris penuh (kecuali fallback `assigned_to` `:138-150`).
+- **Lapis B — input tak dirender:** `ProspectFormPage.jsx:86` komentar *"…tak dirender lagi"*; section BANT `:385-405` hanya 4 kartu dimensi baru (`BANT_DIMENSIONS`), tanpa input kualitatif.
+
+**Konsekuensi (lebih parah dari gejala):** `:221-232` `payload = { ...form, ... }` → **`UPDATE accounts`** (`:228`). `form` di-set utuh `:121-129`, jadi payload **menulis** kolom-kolom ini; saat edit-dari-daftar nilainya `''`/`0` → **menimpa data lama**:
+- Ter-WIPE: `company_prefix, pic_phone, pic_email, phone, email, address, city, notes, payment_terms_id, won_reason, lost_reason, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_budget, bant_authority, bant_need, bant_timeline, bant_score`.
+- Ter-preserve: `name, legal_name, customer_type, source, pic_name, pipeline_stage`; `assigned_to` diselamatkan fallback `:138-150`.
+
+**Severity:** **CRITICAL** (potensi silent data-loss multi-field pada edit normal; melanggar prinsip soft-delete/jangan hilangkan data). Gejala visual komoditi = HIGH.
+
+**Rekomendasi (jangan dieksekusi):** (1) `ProspectFormPage` saat `isEdit` **self-fetch baris penuh** by id (pola `PipelineKanbanPage.jsx:585`) sebelum isi `form`; (2) atau lengkapi select `ProspectListPage`; (3) susun `payload` hanya dari field yang dirender / diff terhadap baris asli; (4) putuskan nasib BANT kualitatif — kembalikan ke render, atau keluarkan dari payload agar tak ter-wipe.
+
+## INVESTIGASI 2 — Error "Batalkan Visit" untuk role 'sales'
+
+**Handler & DB:** `CRMDashboardPage.jsx` → `AddVisitModal` (`:1076`), tahap via `VisitStepper` (`:1128-1137`); simpan `handleSaveVisit` (`:2063-2131`) → `UPDATE`/`INSERT` ke **`activities`** (`:2098`/`:2100`), status map `cancelled→'cancelled'` (`:2082`), log ke `activity_logs` (`:2113-2119`). Jalur kedua (di luar kalender): `ActivitiesPage.jsx:739` `.update({status:'cancelled'})`.
+
+**Root cause — gate frontend, BUKAN RLS:** `:1719 canCancel = ['super_admin','admin','ceo','gm','manager'].includes(erpRole)`. `:1131-1133` bila tahap `cancelled` & `!canCancel` → `onCancelBlocked()` + return. `:2241 onCancelBlocked` → `showToast('Hanya Manager ke atas…','error')` = "error" yang dilihat sales. Untuk `sales`/`operations`/`supervisor`, `canCancel=false`.
+
+**Kenapa role lain aman:** manager+ lolos gate FE lalu lolos RLS via `is_manager_or_above()`.
+
+**Apakah batasan DB? TIDAK.** RLS `activities_update` (`schema_snapshot.sql:7794`): `USING ((company_id=get_user_company_id()) AND (is_manager_or_above() OR assigned_to=auth.uid() OR created_by=auth.uid())) OR is_super_admin()`. Pemilik visit **boleh** update→cancel. Jadi RLS benar & permisif; FE lebih ketat. Bukan "policy hilang", bukan "new row violates", bukan 0-row diam-diam — ini **toast error sengaja dipicu FE**. `activity_logs` insert juga permisif (`:7816-7818`).
+
+**Inkonsistensi:** `is_manager_or_above()` (`:388-400`) memuat `supervisor`, tapi `canCancel` (`:1719`) tidak → supervisor ikut terblok di FE meski DB izinkan.
+
+**Severity:** **MEDIUM** (fungsional; bukan kebocoran keamanan). Bila kebijakan bisnis = "hanya manager boleh batal", maka ini bukan bug melainkan pesan membingungkan (lihat Catatan Terbuka).
+
+**Rekomendasi (jangan dieksekusi):** bila sales boleh batal visit sendiri → longgarkan gate FE: `canCancel = isManagerPlus || visit.assigned_to===profile.id || visit.created_by===profile.id` (**RLS tak perlu diubah**). Bila memang manager-only → ubah toast `error`→`info` teks netral + disable tahap "Dibatalkan" untuk role tak berwenang. Selaraskan `canCancel` dgn `is_manager_or_above()` (+`supervisor`).
+
+## INVESTIGASI 3 — Text kepotong di Quotation (inventaris)
+
+**Umum:** Tidak ada `ellipsis`/`-webkit-line-clamp`/`overflow:hidden`+tinggi-tetap di ketiga file. Preview HTML & PDF **wrap** → output customer-facing tidak terpotong keras. Titik yang bisa terlihat clip/wrap-janggal:
+
+**A. QuotationFormPage.jsx (input):**
+- (1) **Description = `<input>` 1 baris** `:337-350` (`ProductDescInput` `:168,:222-228`, style `cellInp` `:282-286 height:34`, sel `minWidth:160 :337`). Deskripsi panjang ter-clip di input (scroll-able). **MEDIUM.** Fix: `<textarea>` auto-grow / tooltip / perlebar.
+- (2) Sel Total `whiteSpace:'nowrap'`,`width:120` `:394` + sub-baris kurs `:396-399` → angka besar lewat 120px (parent `overflowX:auto :319`). **LOW.**
+- (3) Header `nowrap` `:323-330` — wajar; tabel scroll. **LOW.**
+
+**B. QuotationDetailPage.jsx (preview):**
+- (4) `labelCell nowrap width:80px` `:569` — label panjang ("APPROVAL DATE") sedikit melebihi sel (tanpa hidden → memuai, bukan clip). **LOW.**
+- (5) Kolom DESCRIPTION tanpa width & tanpa nowrap (`:613,:624`) → **wrap, aman.** Kolom lain lebar tetap (`:614-618`). **LOW.**
+
+**C. QuotationPDF.jsx (@react-pdf):**
+- (6) Kolom % `cDesc 35%…cTotal 21%` (`:58-63`) — Description **wrap** default. **LOW.**
+- (7) `wrap={false}` tiap baris (`:224`,header`:210`,total`:237`,summary`:245`) — cegah pecah antar-halaman; risiko tepi: deskripsi super-panjang bikin baris > tinggi halaman → ter-cut. **LOW.** Fix: lepas `wrap={false}` pada baris data berisiko.
+- (8) `summaryTable width:250` (`:67`) + `grandVal fontSize:12` bold (`:73`), `space-between` (`:71`) → grand total belasan digit bisa wrap/berhimpit label. **MEDIUM.** Fix: perlebar/ kecilkan font/ kolom nilai eksplisit.
+- (9) `cTotal 21%` "Rp …" 8pt + newline "× kurs" (`:230-232`) — umumnya muat. **LOW.**
+- (10) Lebar % total 100% + border 0.5/sel (`:54-55`) → drift kecil kolom akhir. **LOW.**
+
+**Severity keseluruhan:** **LOW–MEDIUM.** Kandidat utama yang dirasakan sales: input Description 1 baris (1) & summary PDF angka besar (8). *Batasan: analisis statik; perlu verifikasi runtime dgn data ekstrem.*
+
+## INVESTIGASI 4 — Konsep "Tier" Customer
+
+**(a) Tier — ADA.** DB: `accounts.tier character varying(20)` (`schema:664`; juga `customers.tier :1738`) — **tanpa CHECK constraint**. Kode/UI nilai **A/B/C**: `CustomerListPage.jsx:41 TIERS=['A','B','C']`; `TIER_CFG :80-82`; badge `:158-160,:206`; filter `:582,:656-657`; stat `:597,:641`; form select `:435-437`; tulis DB `:338`. `CustomerDetailPage.jsx:593 tierCfg` (default `B` bila tak dikenali), badge `:637,:713`. Terdaftar di `STANDARD_COLUMNS.accounts` (`useCustomFields.js:33`).
+
+**(b) Penanda asal Odoo — TIDAK ADA.** `accounts` (`schema:619-686`) tak punya `is_migrated`/`migrated_from`/`origin`/`external_source` (`migrated_from` hanya di `activities :713`). `accounts.source` (`:634`,CHECK `:685`) = origin **lead** (sales_visit/cold_call/referral/…), bukan penanda sistem. `owner_company_id`(`:663`)/`source_company_id`(customers `:1740`) = asal **entitas**, bukan Odoo. Tak ada `odoo`/`backfill` di `src/`/schema. **Kesimpulan: belum ada kolom pembeda customer migrasi-Odoo vs baru → perlu desain baru (schema change, butuh approval).**
+
+## INVESTIGASI 5 — Payment Terms & nilai "CBD"
+
+**Kolom:** master `payment_terms` (`code varchar(20) NOT NULL`, `name varchar(100) NOT NULL`, `days_due int`, `is_active`, `deleted_at`). Pada customer: `accounts.payment_terms_id uuid` (FK constraint `prospects_payment_terms_id_fkey` `schema:7329-7330`). FE baca: `CustomerDetailPage.jsx:445` embed `payment_term:payment_terms!...(name)` — **hanya `name`**; tampil `:643`.
+
+**Nilai CBD:** **tak terkonfirmasi dari snapshot** (schema-only tanpa data seed; `'CBD'` nihil di schema). String `'CBD'` di kode = opsi form, bukan FK: `TOPRequestModal.jsx:17 TOP_OPTIONS=['CBD','TOP 7',…]`; `bant.js:78 'Cash Before Delivery (CBD)'`. Format penyimpanan CBD di `payment_terms` (code/name/days_due) **perlu dicek langsung di DB**.
+
+**Tombol TOP Request:** `CustomerDetailPage.jsx:692` `onClick={()=>setTopOpen(true)}` (header actions `:691-695`; modal `:932-934`) — **tanpa guard payment-term.**
+
+**Severity:** **LOW** (enabler desain, bukan bug).
+
+**Rekomendasi (jangan dieksekusi):** (1) konfirmasi nilai kanonik CBD di `payment_terms` (pakai `code`, lebih stabil dari `name`); (2) tambah `code` ke embed `:445`; (3) bungkus tombol `:692` dgn `customer.payment_term?.code !== 'CBD'` (case-insensitive; default tampil bila null); (4) selaraskan dgn aturan bisnis (CBD=bayar di muka→tak perlu TOP).
+
+## CATATAN TERBUKA (perlu keputusan Den)
+
+1. **[INV2 kebijakan]** Apakah `sales` SEHARUSNYA boleh membatalkan visit miliknya? RLS sudah izinkan pemilik; yang memblok hanya gate FE `:1719`. Jawaban menentukan "perbaiki FE" vs "perhalus pesan". Pertimbangkan `supervisor`/`operations` yang sama terblok meski `is_manager_or_above()` memuat `supervisor`.
+2. **[INV1 keparahan]** Konfirmasi: edit prospek dilakukan **dari daftar** (`ProspectListPage`)? Bila ya, bug data-loss ~22 kolom aktif & berdampak luas (prioritas tinggi), bukan sekadar komoditi tak tampil.
+3. **[INV1 produk]** Apakah BANT kualitatif (komoditi/origin/dll) sengaja dipensiunkan dari form? Bila masih dipakai → kembalikan render; bila tidak → keluarkan dari payload agar tak menimpa data.
+4. **[INV3 runtime]** Inventaris truncation = analisis statik; perlu contoh nyata (deskripsi/alamat sangat panjang + total belasan digit) untuk prioritas.
+5. **[INV4 desain]** Penanda asal Odoo belum ada → fitur "handover hanya customer baru / naik tier" butuh kolom baru + backfill (schema change, approval). Apakah "customer baru" cukup via ambang `became_customer_at`/`created_at`, atau wajib penanda eksplisit?
+6. **[INV5 data]** Nilai persis CBD di `payment_terms` tak ada di snapshot → cek langsung DB sebelum kode guard tombol.
+7. **[Umum]** `schema_snapshot.sql` memuat **83** `CREATE TABLE`, sedangkan `CLAUDE.md` menyebut "73 tabel" — dokumentasi tertinggal dari snapshot (pengamatan, di luar scope 5 investigasi).
+
+---
+
+## INVESTIGASI 6 — Inventaris kolom BANT lama (text/kualitatif) di `accounts`
+
+> **Mode:** AUDIT read-only. Lanjutan investigasi 30 Jun. Tidak ada file kode/DB diubah; hanya menambah section ini ke `AUDIT.md`.
+> **Sumber:** `supabase/schema_snapshot.sql:619-686` (DDL `accounts`), `ProspectFormPage.jsx`, `PipelineKanbanPage.jsx`, `CustomerDetailPage.jsx`, `useCustomFields.js`, `bant.js`.
+> **Tujuan:** inventaris akurat sebelum memindah kolom BANT lama (kualitatif) jadi section "Informasi Tambahan" (nama kolom TETAP).
+
+### 1. Tabel inventaris lengkap
+
+Semua kolom `accounts` ber-prefix `bant_` (12 kolom). "DB line" merujuk `schema_snapshot.sql`. Semua kolom **nullable** (tak ada `NOT NULL`).
+
+| Kolom | Tipe DB | Nullable / Default | Skema | Input di ProspectFormPage? | Tampil di permukaan lain |
+|---|---|---|---|---|---|
+| `bant_budget` | `smallint` | nullable / `DEFAULT 0` (`:671`) | **BARU** (dimensi) | **Ya** — `BantCard` via `BANT_DIMENSIONS.map` `ProspectFormPage.jsx:395-396` | PipelineKanban: tidak ditampilkan per-dimensi (hanya di-`select` `:585` utk `calcBantScore`). CustomerDetail: tidak (BANT_FIELD_DEFS tak memuat dimensi) |
+| `bant_authority` | `smallint` | nullable / `DEFAULT 0` (`:672`) | **BARU** (dimensi) | **Ya** — `:395-396` | sama spt `bant_budget` |
+| `bant_need` | `smallint` | nullable / `DEFAULT 0` (`:673`) | **BARU** (dimensi) | **Ya** — `:395-396` | sama spt `bant_budget` |
+| `bant_timeline` | `smallint` | nullable / `DEFAULT 0` (`:674`) | **BARU** (dimensi) | **Ya** — `:395-396` | sama spt `bant_budget` |
+| `bant_score` | `integer` | nullable / `DEFAULT 0` (`:661`) | **Derivatif** (dipakai lama & baru; ditulis `calcBantScore`) | **Tidak diinput** — hanya ditampilkan via `BantScoreBar` `ProspectFormPage.jsx:393` (dihitung dari 4 dimensi `:128,:187`) | PipelineKanban `BantScoreBar` `:396`; CustomerDetail `BantScoreBar` `:801` |
+| `bant_commodity` | `text` | nullable / tanpa default (`:654`) | **LAMA** (kualitatif) | **Tidak** — hanya state `:87`/populate `:112`, tak ada JSX input | PipelineKanban drawer `:398` (label "Komoditi / Barang"); CustomerDetail BANT tab `:124,:809` (label "Komoditi") |
+| `bant_origin` | `text` | nullable / tanpa default (`:655`) | **LAMA** (kualitatif) | **Tidak** — state `:87`/populate `:112` | PipelineKanban `:399` ("Kota/Port Asal (POL)"); CustomerDetail `:125,:809` ("Asal") |
+| `bant_destination` | `text` | nullable / tanpa default (`:656`) | **LAMA** (kualitatif) | **Tidak** — state `:87`/populate `:113` | PipelineKanban `:400` ("Kota/Port Tujuan (POD)"); CustomerDetail `:126,:809` ("Tujuan") |
+| `bant_frequency` | `text` | nullable / tanpa default (`:657`) | **LAMA** (kualitatif) | **Tidak** — state `:87`/populate `:113` | PipelineKanban `:401` ("Frekuensi Pengiriman"); CustomerDetail `:127,:809` ("Frekuensi") |
+| `bant_current_vendor` | `text` | nullable / tanpa default (`:658`) | **LAMA** (kualitatif) | **Tidak** — state `:88`/populate `:114` | PipelineKanban `:402` ("Vendor / Forwarder Saat Ini"); CustomerDetail `:128,:809` ("Vendor Saat Ini") |
+| `bant_payment` | `text` | nullable / tanpa default (`:659`) | **LAMA** (kualitatif) | **Tidak** — state `:88`/populate `:114` | PipelineKanban `:403` ("Preferensi Payment"); CustomerDetail `:129,:809` ("Payment") |
+| `bant_decision_maker` | `text` | nullable / tanpa default (`:660`) | **LAMA** (kualitatif) | **Tidak** — state `:88`/populate `:115` | PipelineKanban `:404` ("Decision Maker"); CustomerDetail `:130,:809` ("Decision Maker") |
+
+**Catatan akurasi:**
+- Sumber data ketiga permukaan: ProspectForm dapat baris dari prop (lihat INV1 — baris tipis dari `ProspectListPage`). PipelineKanban `select` lengkap `PipelineKanbanPage.jsx:585`. CustomerDetail `select('*')` `CustomerDetailPage.jsx:441-448`.
+- 7 kolom LAMA: **tidak ada satupun input di ProspectFormPage saat ini** — section BANT `ProspectFormPage.jsx:385-400` hanya merender `BantScoreBar` + 4 `BantCard` (dimensi baru). Inilah sebab "komoditi hilang" (INV1).
+- **Tidak ada kolom `bant_volume`** di `accounts`. Contoh "volume" di brief tidak punya kolom BANT; data volume kargo ada di tabel **`inquiries`** (`volume_cbm`, `estimated_volume`), bukan `accounts`.
+
+### 2. Pengelompokan: "Informasi Tambahan" vs kandidat drop
+
+**Layak jadi "Informasi Tambahan" (semua 7 kolom LAMA punya nilai informasi kargo/prospect):**
+
+| Kolom | Nilai informasi | Pendapat |
+|---|---|---|
+| `bant_commodity` | Jenis komoditi/barang yang dikirim | **Berguna** — inti profil kargo prospect. Pertahankan. |
+| `bant_origin` | Kota/port asal (POL) | **Berguna** — rute. Pertahankan. |
+| `bant_destination` | Kota/port tujuan (POD) | **Berguna** — rute. Pertahankan. |
+| `bant_frequency` | Frekuensi pengiriman | **Berguna** — potensi volume bisnis. Pertahankan. |
+| `bant_current_vendor` | Vendor/forwarder incumbent | **Berguna** — intel kompetitif. Pertahankan. |
+| `bant_payment` | Preferensi term pembayaran | **Berguna**, tapi overlap konsep dengan `payment_terms_id` (FK real). Lihat Catatan Terbuka. |
+| `bant_decision_maker` | Nama/jabatan pengambil keputusan | **Berguna** — sales intel. Pertahankan. |
+
+**Kandidat drop (sisa scoring murni, tak berguna sebagai info):**
+- **TIDAK ADA** di antara 7 kolom kualitatif — semuanya menyimpan informasi, bukan angka skor.
+- Satu-satunya artefak skor adalah `bant_score` (integer agregat), tetapi **masih aktif** (ditulis ulang oleh `calcBantScore` dari 4 dimensi baru — `ProspectFormPage.jsx:128,:187`). **Bukan kandidat drop**, hanya perlu disadari overlap lama↔baru-nya.
+- Sesuai instruksi: **tidak ada yang di-drop**; ini hanya klasifikasi.
+
+### 3. Rekomendasi tipe input UI per kolom (rekomendasi saja)
+
+Berdasarkan nama + tipe `text` + himpunan nilai yang terdeteksi di `bant.js` (opsi legacy dipertahankan: `BANT_FREQUENCY_OPTIONS` `bant.js:74-76`, `BANT_PAYMENT_OPTIONS` `bant.js:77-79`):
+
+| Kolom | Tipe input disarankan | Alasan / dugaan himpunan nilai |
+|---|---|---|
+| `bant_commodity` | **Teks bebas** (input biasa) | Nama komoditi sangat bervariasi; tak ada himpunan terbatas. |
+| `bant_origin` | **Teks bebas** (input biasa) | Kota/port; bisa di-upgrade ke autocomplete port nanti, tapi data eksisting free-text. |
+| `bant_destination` | **Teks bebas** (input biasa) | Sama spt `bant_origin`. |
+| `bant_frequency` | **Dropdown/select** | Himpunan jelas dari `BANT_FREQUENCY_OPTIONS`: `Rutin Mingguan`, `Rutin Bulanan`, `Per Kuartal`, `Tidak Menentu`, `Proyek` (+ kosong). Pertimbangkan opsi "Lainnya" / free-text fallback krn data lama mungkin di luar daftar. |
+| `bant_current_vendor` | **Teks bebas** (input biasa) | Nama vendor/forwarder bebas. |
+| `bant_payment` | **Dropdown/select** | Himpunan dari `BANT_PAYMENT_OPTIONS`: `Cash Before Delivery (CBD)`, `TOP 7/14/30/45/60` (+ kosong). Catatan: ini **preferensi**, beda dari `payment_terms_id` FK. |
+| `bant_decision_maker` | **Teks bebas** (input biasa); **Textarea** bila ingin tampung nama+jabatan/banyak orang | Umumnya nama/jabatan singkat → input cukup; textarea opsional. |
+
+> Semua kolom bertipe `text` (bukan numeric), jadi tidak ada rekomendasi input numeric. Untuk dropdown (`bant_frequency`, `bant_payment`), karena kolom DB free-`text` (tanpa CHECK constraint), **disarankan tetap izinkan nilai di luar daftar** (combobox/select-with-other) agar data lama hasil free-text tidak hilang/invalid.
+
+### 4. Status pendaftaran di `STANDARD_COLUMNS.accounts` (`useCustomFields.js`)
+
+**Semua 12 kolom BANT (lama + baru) SUDAH terdaftar** → tidak akan salah muncul sebagai "custom field":
+- `bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score` — `useCustomFields.js:29-30`.
+- `bant_budget, bant_authority, bant_need, bant_timeline` — `useCustomFields.js:31`.
+
+Konsekuensi: memindah 7 kolom LAMA ke section "Informasi Tambahan" **tidak** memerlukan perubahan `STANDARD_COLUMNS` — mereka sudah dikecualikan dari `CustomFieldsSection` (`ProspectFormPage.jsx:401-409`). Aman.
+
+### 5. Catatan terbuka (INV6)
+
+1. **Inkonsistensi label antar permukaan** — `bant_origin`/`bant_destination`: PipelineKanban pakai "Kota/Port Asal (POL)"/"Tujuan (POD)" (`PipelineKanbanPage.jsx:399-400`), CustomerDetail pakai "Asal"/"Tujuan" (`CustomerDetailPage.jsx:125-126`). Saat mendesain section "Informasi Tambahan", samakan label agar tak membingungkan.
+2. **Overlap `bant_payment` vs `payment_terms_id`** — `bant_payment` (text, preferensi) berbeda dari `payment_terms_id` (uuid FK ke `payment_terms`, term aktual). Perlu keputusan Den: apakah keduanya tetap dipisah (preferensi vs disepakati) atau salah satu dikonsolidasi. **Jangan** gabungkan tanpa keputusan.
+3. **Tidak ada `bant_volume`** — bila "Informasi Tambahan" diharapkan memuat volume kargo, kolomnya **belum ada** di `accounts` (volume ada di `inquiries`). Menambah kolom = schema change (butuh approval), di luar scope inventaris ini.
+4. **`bant_score` overlap lama↔baru** — integer ini dipakai skema lama maupun baru (ditulis dari 4 dimensi). Bukan untuk dipindah ke "Informasi Tambahan"; tetap sebagai skor.
+5. **Keterkaitan dengan INV1** — saat 7 kolom LAMA dipindah jadi input "Informasi Tambahan", sekaligus menutup gap INV1 (komoditi tak terlihat & ter-wipe). Tapi perbaikan inti INV1 (form jangan menimpa kolom yang tak diinput / self-fetch baris penuh) tetap diperlukan agar pemindahan tidak malah menulis nilai kosong untuk kolom lain.

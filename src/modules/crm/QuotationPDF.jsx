@@ -10,11 +10,6 @@ const ORANGE = '#E85A1E';
 const LOGO_URL = 'https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png';
 const VAT_RATE = 0.011;
 
-const SERVICE_TYPE_LABELS = {
-  freight_forwarding: 'Freight Forwarding',
-  customs:            'Customs Clearance',
-  trading:            'General Trading',
-};
 
 // id-ID number without the "Rp" prefix (callers add "Rp " where needed).
 const rpN = (n) => (Number(n) || 0).toLocaleString('id-ID');
@@ -64,7 +59,7 @@ const styles = StyleSheet.create({
 
   // [4] Grand summary
   summaryWrap: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 },
-  summaryTable: { width: 250 },
+  summaryTable: { width: 300 },
   sumRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, paddingHorizontal: 8 },
   sumLabel: { fontSize: 9, color: '#555' },
   sumVal: { fontSize: 9, textAlign: 'right' },
@@ -110,7 +105,7 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
   const custAddr   = [quot.prospect?.address || quot.customer?.address, quot.prospect?.city || quot.customer?.city].filter(Boolean).join(', ') || '-';
   const marketingName = creatorProfile?.full_name || '-';
   const positionName  = creatorProfile?.positions?.name || 'Sales Executive';
-  const inquiryStr = [SERVICE_TYPE_LABELS[quot.service_type] || quot.service_type, quot.route].filter(Boolean).join(' - ') || '-';
+  const inquiryNo = quot.inquiry?.inquiry_no || '-';
   const dateStr  = fmtDateShort(quot.quote_date || quot.created_at);
   const validStr = fmtDateShort(quot.valid_until);
 
@@ -130,7 +125,7 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
     ['TO',       clientName, 'SALES REP', marketingName],
     ['ADDRESS',  custAddr,   'EMAIL',     picEmail],
     ['QUO. NO.', quot.quotation_no || '-', 'MOBILE', picPhone],
-    ['INQUIRY',  inquiryStr, 'OFFICE',    '+62 21-3970-7558/9'],
+    ['INQUIRY NO.', inquiryNo, 'OFFICE',  '+62 21-3970-7558/9'],
     ['DATE',     dateStr,    'VALIDITY',  validStr],
   ];
 

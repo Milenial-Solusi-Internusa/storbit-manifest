@@ -60,6 +60,7 @@ const ICONS = {
   activity:   '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
   alert:      '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
   heartpulse: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.49 4.04 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
+  database:   '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
 };
 function Icon({ name, size = 18, color, style, strokeWidth = 1.7 }) {
   return (
@@ -385,7 +386,7 @@ function computeHealth(customer, prospect, visits) {
   const visitCount = visits.length;
   const engagement = Math.min(visitCount * 30, 100);
   const bantPct = prospect
-    ? Math.round(((prospect.bant_score != null ? prospect.bant_score : calcBantScore(prospect)) / 7) * 100)
+    ? Math.round(((prospect.bant_score != null ? prospect.bant_score : calcBantScore(prospect)) / 12) * 100)
     : 0;
   const stage = (prospect?.pipeline_stage || '').toUpperCase();
   const pipeline = stage === 'WON' ? 100
@@ -409,7 +410,8 @@ function computeHealth(customer, prospect, visits) {
 // ─── Main component ─────────────────────────────────────────────────────────────
 export default function CustomerDetailPage({ id, onBack, showToast }) {
   const { profile, erpRole } = useAuth();
-  const canDelete = ['super_admin', 'admin', 'manager'].includes(erpRole);
+  // Delete customer is restricted to super_admin (soft-delete via deleted_at).
+  const canDelete = erpRole === 'super_admin';
 
   const [customer, setCustomer] = useState(null);
   const [loading,  setLoading]  = useState(true);
@@ -707,6 +709,9 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
             <h2 style={S.custName}>{customer.name}</h2>
             {subLine && <div style={S.custSub}>{subLine}</div>}
             <div style={S.badgeRow}>
+              {customer.is_odoo_customer && (
+                <span style={S.navyBadge}><Icon name="database" size={13} strokeWidth={2} />Existing · Odoo</span>
+              )}
               {customer.source_company?.name && (
                 <span style={S.navyBadge}><Icon name="building" size={13} strokeWidth={2} />{coCode ? coCode + ' · ' : ''}{customer.source_company.name}</span>
               )}

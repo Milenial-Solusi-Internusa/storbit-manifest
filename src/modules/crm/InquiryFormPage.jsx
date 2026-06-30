@@ -152,6 +152,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
     cargo_types: [], un_number: '', imo_class: '', has_msds: '',
     additional_services: [],
+    pickup_address: '', delivery_address: '',
   });
   const [prospects, setProspects] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -201,6 +202,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
           imo_class: data.imo_class || '',
           has_msds: data.has_msds || '',
           additional_services: data.additional_services || [],
+          pickup_address: data.pickup_address || '',
+          delivery_address: data.delivery_address || '',
         });
         // Make sure the linked account appears in its dropdown (it may be inactive
         // or in the other status bucket) so the name renders instead of blank.
@@ -257,6 +260,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         imo_class: form.imo_class || null,
         has_msds: form.has_msds || null,
         additional_services: form.additional_services.length ? form.additional_services : null,
+        pickup_address: form.pickup_address || null,
+        delivery_address: form.delivery_address || null,
       };
 
       if (isEdit) {
@@ -394,6 +399,17 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   <div style={{ ...S.miniLabel, color: C.orange }}>Destination</div>
                   <div style={S.label}><MapPin size={13} color={C.orange} /> POD — Port of Discharge</div>
                   <input value={form.pod} onChange={set('pod')} style={S.input} placeholder="cth: Singapore - SGSIN" />
+                </div>
+              </div>
+
+              <div style={grid2}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={S.label}><Anchor size={13} color={C.navy} /> Pickup Address</div>
+                  <textarea value={form.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Alamat penjemputan barang…" />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={S.label}><MapPin size={13} color={C.orange} /> Delivery Address</div>
+                  <textarea value={form.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Alamat pengiriman barang…" />
                 </div>
               </div>
 
