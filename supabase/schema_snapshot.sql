@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict riy8T1ohtgHmzjAV65wpINRu8m2ymHgGPgQ7DzmbljdNUuqCsWE5rGGmEdRaDi6
+\restrict 3ZUhHstba4ZDBzccBvsg5kufVfKgBEDwdeONhyhharXxaPc8gVtyA2LjXVwEhjy
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -8906,16 +8906,115 @@ CREATE POLICY modules_read_all ON public.modules FOR SELECT USING (true);
 ALTER TABLE public.mom_action_plans ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: mom_action_plans mom_children_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_children_delete ON public.mom_action_plans FOR DELETE USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_action_plans.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_action_plans mom_children_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_children_insert ON public.mom_action_plans FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_action_plans.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_action_plans mom_children_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_children_read ON public.mom_action_plans FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_action_plans.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_action_plans mom_children_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_children_update ON public.mom_action_plans FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_action_plans.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
 -- Name: mom_improvements; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.mom_improvements ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: mom_improvements mom_improvements_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_improvements_delete ON public.mom_improvements FOR DELETE USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_improvements.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_improvements mom_improvements_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_improvements_insert ON public.mom_improvements FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_improvements.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_improvements mom_improvements_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_improvements_read ON public.mom_improvements FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_improvements.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_improvements mom_improvements_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_improvements_update ON public.mom_improvements FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_improvements.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
 -- Name: mom_issues; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.mom_issues ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: mom_issues mom_issues_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_issues_delete ON public.mom_issues FOR DELETE USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_issues.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_issues mom_issues_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_issues_insert ON public.mom_issues FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_issues.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_issues mom_issues_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_issues_read ON public.mom_issues FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_issues.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
 
 --
 -- Name: mom_issues mom_issues_update; Type: POLICY; Schema: public; Owner: -
@@ -8927,10 +9026,67 @@ CREATE POLICY mom_issues_update ON public.mom_issues FOR UPDATE USING ((EXISTS (
 
 
 --
+-- Name: mom_progress_updates mom_progress_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_progress_delete ON public.mom_progress_updates FOR DELETE USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_progress_updates.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_progress_updates mom_progress_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_progress_insert ON public.mom_progress_updates FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_progress_updates.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_progress_updates mom_progress_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_progress_read ON public.mom_progress_updates FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_progress_updates.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
+-- Name: mom_progress_updates mom_progress_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY mom_progress_update ON public.mom_progress_updates FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM public.meeting_moms m
+  WHERE ((m.id = mom_progress_updates.mom_id) AND (m.company_id = public.get_user_company_id())))));
+
+
+--
 -- Name: mom_progress_updates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.mom_progress_updates ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: meeting_moms moms_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY moms_insert ON public.meeting_moms FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: meeting_moms moms_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY moms_read ON public.meeting_moms FOR SELECT USING ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: meeting_moms moms_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY moms_update ON public.meeting_moms FOR UPDATE USING (((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))));
+
 
 --
 -- Name: asset_network network_insert; Type: POLICY; Schema: public; Owner: -
@@ -9715,5 +9871,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict riy8T1ohtgHmzjAV65wpINRu8m2ymHgGPgQ7DzmbljdNUuqCsWE5rGGmEdRaDi6
+\unrestrict 3ZUhHstba4ZDBzccBvsg5kufVfKgBEDwdeONhyhharXxaPc8gVtyA2LjXVwEhjy
 
