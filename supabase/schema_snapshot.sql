@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 3ZUhHstba4ZDBzccBvsg5kufVfKgBEDwdeONhyhharXxaPc8gVtyA2LjXVwEhjy
+\restrict slryOMEG7Y57uOWqbjoohz41FPpkOG3AIjqbcU5CSQXNQSx8dv33nKttCc9l3Pe
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -9068,6 +9068,13 @@ CREATE POLICY mom_progress_update ON public.mom_progress_updates FOR UPDATE USIN
 ALTER TABLE public.mom_progress_updates ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: meeting_moms moms_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY moms_delete ON public.meeting_moms FOR DELETE USING (public.is_super_admin());
+
+
+--
 -- Name: meeting_moms moms_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -9871,5 +9878,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 3ZUhHstba4ZDBzccBvsg5kufVfKgBEDwdeONhyhharXxaPc8gVtyA2LjXVwEhjy
+\unrestrict slryOMEG7Y57uOWqbjoohz41FPpkOG3AIjqbcU5CSQXNQSx8dv33nKttCc9l3Pe
 
