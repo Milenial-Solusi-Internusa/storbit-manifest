@@ -46,6 +46,7 @@ export const ACTION_TYPES = {
   CREATE_ASSET:        'CREATE_ASSET',
   CREATE_MOM:          'CREATE_MOM',
   UPDATE_MOM:          'UPDATE_MOM',
+  DELETE_MOM:          'DELETE_MOM',
 };
 
 export const ENTITY_TYPES = {

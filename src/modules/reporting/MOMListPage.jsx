@@ -2,9 +2,11 @@
 // MOM list — all MOMs for the user's company. Manager+ see all; sales/staff see
 // only their own (created_by = self). Slate/white design (momConstants tokens).
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Search, Eye, Pencil, Download, Loader2, BookOpen } from 'lucide-react';
+import { Plus, Search, Eye, Pencil, Download, Trash2, Loader2, BookOpen } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import ConfirmModal from '../../components/ConfirmModal';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { C, MOM_TYPES, MOM_STATUS_META, momTypeLabel, fmtDate } from './momConstants';
 
 const SEE_ALL_ROLES = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'supervisor'];
@@ -16,8 +18,9 @@ function StatusBadge({ status }) {
 }
 
 export default function MOMListPage({ onCreateMom, onViewMom, onEditMom, showToast }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, user } = useAuth();
   const seeAll = SEE_ALL_ROLES.includes(erpRole);
+  const isSuperAdmin = erpRole === 'super_admin';
 
   const [rows, setRows] = useState([]);
   const [nameById, setNameById] = useState({});
@@ -27,6 +30,8 @@ export default function MOMListPage({ onCreateMom, onViewMom, onEditMom, showToa
   const [statusF, setStatusF] = useState('');
   const [typeF, setTypeF] = useState('');
   const [page, setPage] = useState(0);
+  const [delTarget, setDelTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { const t = setTimeout(() => setSearch(searchInput.trim().toLowerCase()), 300); return () => clearTimeout(t); }, [searchInput]);
 
@@ -54,6 +59,24 @@ export default function MOMListPage({ onCreateMom, onViewMom, onEditMom, showToa
 
   useEffect(() => { fetchMoms(); }, [fetchMoms]);
   useEffect(() => { setPage(0); }, [search, statusF, typeF]);
+
+  const handleDelete = useCallback(async () => {
+    if (!delTarget) return;
+    setDeleting(true);
+    const { id, mom_no } = delTarget;
+    const { error } = await supabase.from('meeting_moms').delete().eq('id', id);
+    setDeleting(false);
+    if (error) { showToast?.('Gagal menghapus MOM: ' + error.message, 'error'); return; }
+    logAudit(supabase, {
+      action: ACTION_TYPES.DELETE_MOM,
+      entityType: ENTITY_TYPES.MOM,
+      entityId: id,
+      entityLabel: mom_no || null,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    setDelTarget(null);
+    showToast?.(`MOM ${mom_no || ''} berhasil dihapus`, 'success');
+    fetchMoms();
+  }, [delTarget, showToast, fetchMoms, profile?.id, profile?.company_id, user?.email, erpRole]);
 
   const filtered = useMemo(() => rows.filter(r => {
     if (statusF && r.status !== statusF) return false;
@@ -138,6 +161,9 @@ export default function MOMListPage({ onCreateMom, onViewMom, onEditMom, showToa
                         <button type="button" title="Lihat" onClick={() => onViewMom?.(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.navy, padding: 6, display: 'inline-flex' }}><Eye size={16} /></button>
                         <button type="button" title={canEdit ? 'Edit' : 'Hanya draft/rejected bisa diedit'} onClick={() => canEdit && onEditMom?.(r.id)} disabled={!canEdit} style={{ background: 'none', border: 'none', cursor: canEdit ? 'pointer' : 'not-allowed', color: canEdit ? C.navy : C.muted, opacity: canEdit ? 1 : 0.4, padding: 6, display: 'inline-flex' }}><Pencil size={16} /></button>
                         <button type="button" title="Download (segera hadir)" onClick={() => showToast?.('Download PDF — segera hadir', 'info')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, padding: 6, display: 'inline-flex' }}><Download size={16} /></button>
+                        {isSuperAdmin && (
+                          <button type="button" title="Hapus" onClick={() => setDelTarget(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: 6, display: 'inline-flex' }}><Trash2 size={16} /></button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -154,6 +180,16 @@ export default function MOMListPage({ onCreateMom, onViewMom, onEditMom, showToa
           </div>
         )}
       </div>
+      <ConfirmModal
+        open={!!delTarget}
+        title="Hapus MOM"
+        message={`Hapus MOM ${delTarget?.mom_no || ''}? Tindakan ini tidak bisa dibatalkan dan akan menghapus semua data terkait (action plan, progress update, issue, improvement).`}
+        confirmLabel={deleting ? 'Menghapus…' : 'Hapus'}
+        cancelLabel="Batal"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => { if (!deleting) setDelTarget(null); }}
+      />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
