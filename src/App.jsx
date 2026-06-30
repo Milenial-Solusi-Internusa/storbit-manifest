@@ -41,6 +41,7 @@ const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage
 const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
 const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
 const CRMReportPage        = lazy(() => import('./modules/crm/CRMReportPage'));
+const RateListPage         = lazy(() => import('./modules/crm/RateListPage'));
 const MOMListPage          = lazy(() => import('./modules/reporting/MOMListPage'));
 const MOMFormPage          = lazy(() => import('./modules/reporting/MOMFormPage'));
 const MOMDetailPage        = lazy(() => import('./modules/reporting/MOMDetailPage'));
@@ -456,6 +457,7 @@ const ERP_MENU_GROUPS = [
           { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
+          { id: 'crm-rate-list',   label: 'Rate List',       icon: Tag, role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           {
             id: 'crm-customers', label: 'Master Customer', icon: Building2,
             children: [
@@ -1294,6 +1296,7 @@ export default function StorbitManifest() {
   const [showQuotationForm,   setShowQuotationForm]   = useState(false);
   const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
+  const [duplicatingQuotation, setDuplicatingQuotation] = useState(null);  // source row for duplicate (prefilled create)
   const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
@@ -1381,6 +1384,7 @@ export default function StorbitManifest() {
     setShowQuotationForm(false);
     setCrmQuotationDetail(null);
     setEditingQuotation(null);
+    setDuplicatingQuotation(null);
     setCrmDealInquiry(null);
     setReportingMomMode('list');
     setReportingMomId(null);
@@ -2731,7 +2735,8 @@ export default function StorbitManifest() {
                 <QuotationDetailPage
                   quotationId={crmQuotationDetail.id}
                   onBack={() => setCrmQuotationDetail(null)}
-                  onEdit={(q) => { setEditingQuotation(q); setShowQuotationForm(true); }}
+                  onEdit={(q) => { setDuplicatingQuotation(null); setEditingQuotation(q); setShowQuotationForm(true); }}
+                  onDuplicate={(q) => { setEditingQuotation(null); setDuplicatingQuotation(q); setShowQuotationForm(true); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -2963,9 +2968,19 @@ export default function StorbitManifest() {
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <QuotationFormPage
                   quotation={editingQuotation}
-                  onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); }}
+                  duplicateFrom={duplicatingQuotation}
+                  onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); setDuplicatingQuotation(null); }}
                   showToast={showToast}
                 />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Rate List (rate_sheets) ────────────────────────────────── */}
+          {activeMenu === 'crm-rate-list' && (
+            <ErrorBoundary title="Rate List temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <RateListPage showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           )}

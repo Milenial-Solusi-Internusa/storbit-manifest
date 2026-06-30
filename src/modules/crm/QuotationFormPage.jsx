@@ -217,15 +217,24 @@ function ProductDescInput({ value, products, inputStyle, onChangeText, onPick })
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [open]);
 
+  // Auto-grow the textarea so long descriptions wrap and stay fully visible.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, [value]);
+
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
-      <input
+      <textarea
         ref={inputRef}
+        rows={1}
         value={value}
         onChange={(e) => { onChangeText(e.target.value); setOpen(true); }}
         onFocus={() => { if ((value || '').trim().length >= 1) setOpen(true); }}
         onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
-        style={inputStyle}
+        style={{ ...inputStyle, height: 'auto', minHeight: 34, padding: '6px 8px', lineHeight: 1.4, resize: 'none', overflow: 'hidden', whiteSpace: 'pre-wrap' }}
         placeholder="Deskripsi…"
         autoComplete="off"
       />
@@ -424,7 +433,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
 }
 
 // ─── Main component ───────────────────────────────────────────────────────
-export default function QuotationFormPage({ onBack, showToast, quotation = null }) {
+export default function QuotationFormPage({ onBack, showToast, quotation = null, duplicateFrom = null }) {
   const { profile, erpRole, user } = useAuth();
   const isEdit = !!quotation;
 
@@ -593,6 +602,75 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null 
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, quotation?.id]);
+
+  // ── Duplicate mode — prefill a NEW (create) quotation from a source row ──────
+  // Copies header + line items from `duplicateFrom`, but stays in CREATE mode so
+  // Save generates a fresh quotation_no + DRAFT status. Number/status/dates/id are
+  // NOT copied (new quotation). Same source items reconstructed into sections.
+  useEffect(() => {
+    if (isEdit || !duplicateFrom) return;
+    const src = duplicateFrom;
+    setHeader({
+      inquiry_id:       src.inquiry_id        || '',
+      service_type:     src.service_type      || 'freight_forwarding',
+      route:            src.route             || '',
+      valid_until:      '',
+      pricing_done_at:  '',
+      discount_pct:     src.discount_pct      ?? 0,
+      payment_terms_id: src.payment_terms_id  || '',
+      notes:            src.notes             || '',
+      terms:            src.terms             || '',
+      internal_notes:   src.internal_notes    || '',
+      usd_rate:         src.usd_rate          || DEFAULT_USD,
+      vat_rate:         src.vat_rate          ?? VAT_RATE,
+      quote_date:       today(),
+      attention_to:     src.attention_to      || '',
+      pickup_address:   src.pickup_address    || '',
+      delivery_address: src.delivery_address  || '',
+      cargo_mode:       src.cargo_mode        || '',
+      gw:               src.gw                || '',
+      dimension:        src.dimension         || '',
+      cw:               src.cw                || '',
+      cbm:              src.cbm               || '',
+      container_type:   src.container_type    || '',
+      container_qty:    src.container_qty     ?? '',
+    });
+    setClientName(src.prospect?.name || src.customer?.name || '');
+    // Synthesise selectedInquiry so the CREATE payload keeps prospect/customer link.
+    setSelectedInquiry({
+      id:       src.inquiry_id || null,
+      prospect: src.prospect_id ? { id: src.prospect_id, name: src.prospect?.name } : null,
+      customer: src.customer_id ? { id: src.customer_id, name: src.customer?.name } : null,
+    });
+
+    supabase
+      .from('quotation_items')
+      .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes')
+      .eq('quotation_id', src.id)
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        const order = [];
+        const map   = {};
+        data.forEach(row => {
+          const key = row.group_name || 'CHARGES';
+          if (!map[key]) { map[key] = []; order.push(key); }
+          map[key].push({
+            id:          crypto.randomUUID(),
+            description: row.description || '',
+            cost_price:  row.cost_price  || 0,
+            currency:    row.currency    || 'IDR',
+            unit_price:  row.unit_price  || 0,
+            unit_label:  row.unit_label  || 'Per 20Ft',
+            qty:         row.qty         || 1,
+            exchange_rate: row.exchange_rate ?? 1,
+            total:       row.total       || 0,
+          });
+        });
+        setSections(order.map(name => ({ id: crypto.randomUUID(), name, rows: map[name] })));
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, duplicateFrom?.id]);
 
   const setH = (k) => (e) => setHeader(h => ({ ...h, [k]: e.target.value }));
 

@@ -268,6 +268,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
     credit_limit:     initial?.credit_limit    ?? '',
     currency_code:    initial?.currency_code   || 'IDR',
     notes:            initial?.notes           || '',
+    is_odoo_customer: initial?.is_odoo_customer || false,
   });
   const [errors, setErrors]         = useState({});
   const [saving, setSaving]         = useState(false);
@@ -332,6 +333,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         credit_limit:     form.credit_limit !== '' ? Number(form.credit_limit) : null,
         currency_code:    form.currency_code   || 'IDR',
         notes:            form.notes           || null,
+        is_odoo_customer: !!form.is_odoo_customer,
         updated_by:       profile.id,
         // accounts: status segment lives in account_status (form 'free_agent' → free_agent, else customer)
         account_status:   form.status === 'free_agent' ? 'free_agent' : 'customer',
@@ -462,6 +464,14 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
                 <option value="">— Pilih —</option>
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
               </select>
+            </FG>
+            <FG label="Sumber Data" full>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13.5, color: D.ink }}>
+                <input type="checkbox" checked={!!form.is_odoo_customer}
+                  onChange={e => setForm(f => ({ ...f, is_odoo_customer: e.target.checked }))}
+                  style={{ width: 16, height: 16, accentColor: '#144682', cursor: 'pointer' }} />
+                Customer Existing (dari Odoo)
+              </label>
             </FG>
           </div>
 

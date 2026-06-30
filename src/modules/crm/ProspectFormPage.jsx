@@ -11,7 +11,7 @@ import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
 import WinLossModal from './WinLossModal';
-import { BANT_DIMENSIONS, calcBantScore } from './bant';
+import { BANT_DIMENSIONS, calcBantScore, BANT_FREQUENCY_OPTIONS } from './bant';
 import BantScoreBar from './BantScoreBar';
 
 /* ---------- design tokens (Lovable) ---------- */
@@ -395,6 +395,34 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
               {BANT_DIMENSIONS.map(dim => (
                 <BantCard key={dim.key} dim={dim} value={Number(form[dim.key]) || 0} onChange={setBantDim(dim.key)} />
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 04 — Informasi Tambahan (info kargo/prospect, bukan BANT scoring) */}
+        <section style={S.card}>
+          <div style={S.secBar}>
+            <div style={S.secNum}>04</div>
+            <div><div style={S.secTitle}>Informasi Tambahan</div></div>
+            <div style={S.secSub}>Detail kargo &amp; kontak komersial prospect</div>
+          </div>
+          <div style={S.secBody}>
+            <div style={{ display: 'grid', gap: 18 }}>
+              <div style={grid3}>
+                <Field label="Komoditi"><input value={form.bant_commodity} onChange={set('bant_commodity')} style={S.input} placeholder="Jenis komoditi / barang…" /></Field>
+                <Field label="Origin (POL)"><input value={form.bant_origin} onChange={set('bant_origin')} style={S.input} placeholder="Kota / port asal…" /></Field>
+                <Field label="Destination (POD)"><input value={form.bant_destination} onChange={set('bant_destination')} style={S.input} placeholder="Kota / port tujuan…" /></Field>
+              </div>
+              <div style={grid3}>
+                <Field label="Frekuensi">
+                  <input value={form.bant_frequency} onChange={set('bant_frequency')} style={S.input} placeholder="Frekuensi pengiriman…" list="prospect-frequency-options" autoComplete="off" />
+                  <datalist id="prospect-frequency-options">
+                    {BANT_FREQUENCY_OPTIONS.filter(Boolean).map(o => <option key={o} value={o} />)}
+                  </datalist>
+                </Field>
+                <Field label="Vendor Saat Ini"><input value={form.bant_current_vendor} onChange={set('bant_current_vendor')} style={S.input} placeholder="Forwarder / vendor incumbent…" /></Field>
+                <Field label="Decision Maker"><input value={form.bant_decision_maker} onChange={set('bant_decision_maker')} style={S.input} placeholder="Nama / jabatan pengambil keputusan…" /></Field>
+              </div>
             </div>
           </div>
         </section>

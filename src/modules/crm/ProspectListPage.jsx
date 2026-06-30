@@ -108,7 +108,12 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
         .from('accounts')
         .select(`
           id, name, legal_name, customer_type, source,
-          pic_name, pipeline_stage, created_at,
+          pic_name, pic_phone, pic_email, phone, email, address, city, notes,
+          company_prefix, assigned_to, pipeline_stage, payment_terms_id,
+          won_reason, lost_reason, converted_at, created_at,
+          bant_commodity, bant_origin, bant_destination, bant_frequency,
+          bant_current_vendor, bant_payment, bant_decision_maker, bant_score,
+          bant_budget, bant_authority, bant_need, bant_timeline,
           assigned_profile:profiles!prospects_assigned_to_fkey(full_name)
         `, { count: 'exact' })
         .eq('account_status', 'prospect')

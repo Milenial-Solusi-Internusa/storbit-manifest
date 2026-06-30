@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict slryOMEG7Y57uOWqbjoohz41FPpkOG3AIjqbcU5CSQXNQSx8dv33nKttCc9l3Pe
+\restrict AwKQv0mBhQGPl7MXXrvHvHxoGLmIZQbdSevJ0rzakds6H6PJUQ04VMJOE9kDbhr
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -681,6 +681,7 @@ CREATE TABLE public.accounts (
     pull_approved_by uuid,
     pull_approved_at timestamp with time zone,
     pull_status text,
+    is_odoo_customer boolean DEFAULT false NOT NULL,
     CONSTRAINT accounts_pull_status_check CHECK ((pull_status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text]))),
     CONSTRAINT prospects_source_check CHECK (((source)::text = ANY (ARRAY['sales_visit'::text, 'cold_call'::text, 'referral'::text, 'existing_network'::text, 'exhibition'::text, 'instagram'::text, 'linkedin'::text, 'tiktok'::text, 'website'::text, 'walk_in'::text, 'other'::text])))
 );
@@ -2444,7 +2445,9 @@ CREATE TABLE public.inquiries (
     imo_class text,
     has_msds text,
     additional_services text[],
-    dimension text
+    dimension text,
+    pickup_address text,
+    delivery_address text
 );
 
 
@@ -2997,6 +3000,24 @@ CREATE TABLE public.quotations (
     cbm text,
     container_type text,
     container_qty integer
+);
+
+
+--
+-- Name: rate_sheets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rate_sheets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    created_by uuid NOT NULL,
+    rate_name text NOT NULL,
+    valid_until date,
+    columns jsonb DEFAULT '[]'::jsonb NOT NULL,
+    rows jsonb DEFAULT '[]'::jsonb NOT NULL,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -4376,6 +4397,14 @@ ALTER TABLE ONLY public.quotations
 
 ALTER TABLE ONLY public.quotations
     ADD CONSTRAINT quotations_quotation_no_revision_key UNIQUE (quotation_no, revision);
+
+
+--
+-- Name: rate_sheets rate_sheets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_sheets
+    ADD CONSTRAINT rate_sheets_pkey PRIMARY KEY (id);
 
 
 --
@@ -7403,6 +7432,22 @@ ALTER TABLE ONLY public.quotations
 
 
 --
+-- Name: rate_sheets rate_sheets_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_sheets
+    ADD CONSTRAINT rate_sheets_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: rate_sheets rate_sheets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_sheets
+    ADD CONSTRAINT rate_sheets_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
 -- Name: role_permission_templates role_permission_templates_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7759,6 +7804,13 @@ ALTER TABLE ONLY public.warehouses
 --
 
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: accounts accounts_delete_superadmin; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY accounts_delete_superadmin ON public.accounts FOR DELETE TO authenticated USING (public.is_super_admin());
+
 
 --
 -- Name: activities; Type: ROW SECURITY; Schema: public; Owner: -
@@ -9378,6 +9430,40 @@ CREATE POLICY quotations_update ON public.quotations FOR UPDATE USING ((((compan
 
 
 --
+-- Name: rate_sheets; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rate_sheets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: rate_sheets rate_sheets_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY rate_sheets_delete ON public.rate_sheets FOR DELETE TO authenticated USING (((created_by = auth.uid()) OR public.is_manager_or_above()));
+
+
+--
+-- Name: rate_sheets rate_sheets_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY rate_sheets_insert ON public.rate_sheets FOR INSERT TO authenticated WITH CHECK ((created_by = auth.uid()));
+
+
+--
+-- Name: rate_sheets rate_sheets_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY rate_sheets_select ON public.rate_sheets FOR SELECT TO authenticated USING (((created_by = auth.uid()) OR public.is_manager_or_above()));
+
+
+--
+-- Name: rate_sheets rate_sheets_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY rate_sheets_update ON public.rate_sheets FOR UPDATE TO authenticated USING ((((created_by = auth.uid()) OR public.is_manager_or_above()) AND ((valid_until IS NULL) OR (valid_until >= CURRENT_DATE)))) WITH CHECK ((((created_by = auth.uid()) OR public.is_manager_or_above()) AND ((valid_until IS NULL) OR (valid_until >= CURRENT_DATE))));
+
+
+--
 -- Name: role_permission_templates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9878,5 +9964,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict slryOMEG7Y57uOWqbjoohz41FPpkOG3AIjqbcU5CSQXNQSx8dv33nKttCc9l3Pe
+\unrestrict AwKQv0mBhQGPl7MXXrvHvHxoGLmIZQbdSevJ0rzakds6H6PJUQ04VMJOE9kDbhr
 

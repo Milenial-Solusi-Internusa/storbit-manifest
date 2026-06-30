@@ -23,6 +23,19 @@ const C = {
   info:      '#2A5B8C', infoBg: '#E1ECF5', infoBd: '#BAD2E6',
   neutral:   '#6B6F5E', neutralBg: '#EEE9DC', neutralBd: '#DDD3BE',
   purple:    '#6E4B8C', purpleBg: '#ECE3F4', purpleBd: '#D6C6E4',
+  teal:      '#1F6B6B', tealBg: '#DCEBEA', tealBd: '#B2D4D3',
+  orange:    '#A45A22', orangeBg: '#F6E8D6', orangeBd: '#E7CDA9',
+};
+
+// Pipeline stage badge palette — mirrors ProspectListPage STAGE_META (same tokens).
+const STAGE_META = {
+  NEW:         { label: 'New',         bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
+  CONTACTED:   { label: 'Contacted',   bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  QUALIFIED:   { label: 'Qualified',   bg: C.tealBg,    color: C.teal,    bd: C.tealBd    },
+  PROPOSAL:    { label: 'Proposal',    bg: C.warnBg,    color: C.warn,    bd: C.warnBd    },
+  NEGOTIATION: { label: 'Negotiation', bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd  },
+  WON:         { label: 'Won',         bg: C.okBg,      color: C.ok,      bd: C.okBd      },
+  LOST:        { label: 'Lost',        bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
 };
 
 const STATUS_META = {
@@ -47,6 +60,21 @@ function fmtDate(iso) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return String(iso);
   return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function StageBadge({ stage }) {
+  const m = STAGE_META[stage];
+  if (!m) return <span style={{ color: '#A29684', fontSize: 12 }}>—</span>;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700,
+      letterSpacing: '.3px', border: `1px solid ${m.bd}`,
+      background: m.bg, color: m.color,
+    }}>
+      {m.label}
+    </span>
+  );
 }
 
 function StatusBadge({ status }) {
@@ -161,8 +189,8 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           id, inquiry_no, service_type, route, status, created_at, commodity, estimated_volume, notes,
           pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
           cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
-          prospect:accounts!inquiries_prospect_id_fkey(name),
-          customer:accounts!inquiries_customer_id_fkey(name),
+          prospect:accounts!inquiries_prospect_id_fkey(name, pipeline_stage),
+          customer:accounts!inquiries_customer_id_fkey(name, pipeline_stage),
           created_by_profile:profiles!inquiries_created_by_fkey(full_name)
         `, { count: 'exact' })
         .is('deleted_at', null);
@@ -261,16 +289,16 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-              {['Inquiry No', 'Prospect / Customer', 'Service Type', 'Route', 'Status', 'Created At', ''].map(h => (
+              {['Inquiry No', 'Prospect / Customer', 'Service Type', 'Route', 'Stage', 'Status', 'Created At', ''].map(h => (
                 <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+              <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
             ) : inquiries.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada inquiry</td></tr>
+              <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada inquiry</td></tr>
             ) : inquiries.map((inq, i) => (
               <tr
                 key={inq.id}
@@ -288,6 +316,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                   {SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—'}
                 </td>
                 <td style={{ padding: '12px 14px', color: C.inkSoft }}>{inq.route || '—'}</td>
+                <td style={{ padding: '12px 14px' }}><StageBadge stage={inq.prospect?.pipeline_stage || inq.customer?.pipeline_stage} /></td>
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={inq.status} /></td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(inq.created_at)}</td>
                 <td style={{ padding: '12px 10px' }}>

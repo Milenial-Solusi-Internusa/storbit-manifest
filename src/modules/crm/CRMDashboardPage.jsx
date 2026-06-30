@@ -725,7 +725,6 @@ function RecentActivity({ items = ACTIVITY }) {
 const DASH_TABS = [
   { id: "summary",  label: "Summary",   icon: "layoutdashboard" },
   { id: "calendar", label: "Calendar",  icon: "calendar" },
-  { id: "activity", label: "Aktivitas", icon: "activity" },
 ];
 function DashTab({ tab, active, onSelect }) {
   const [h, setH] = useState(false);
@@ -1716,7 +1715,9 @@ function ActivitySaya({ data }) {
 
 function CRMDashboardPage() {
   const { profile, erpRole } = useAuth();
-  const canCancel = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
+  // Sales/operations may cancel their OWN visits (the visit list is already scoped
+  // to assigned_to/created_by = self, and RLS only permits the owner to UPDATE).
+  const canCancel = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'sales', 'operations'].includes(erpRole);
   // S2 — sales/operations see a personal dashboard; everyone else sees team-wide.
   const isSalesOnly = ['sales', 'operations'].includes(erpRole);
   const [period, setPeriod] = useState("This Month");

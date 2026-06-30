@@ -1,7 +1,7 @@
 // src/modules/crm/QuotationDetailPage.jsx
 // Read-only detail view — sectioned table, internal cost/profit (no-print), PDF via @react-pdf/renderer (QuotationPDF)
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, Edit2, Download, Receipt, Send } from 'lucide-react';
+import { ChevronLeft, Edit2, Download, Receipt, Send, Copy } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -140,7 +140,7 @@ function InfoRow({ label, value }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────
-export default function QuotationDetailPage({ quotationId, onBack, onEdit, showToast }) {
+export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDuplicate, showToast }) {
   const { profile, user } = useAuth();
   const [quot,           setQuot]           = useState(null);
   const [items,          setItems]          = useState([]);
@@ -170,7 +170,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           attention_to, pickup_address, delivery_address, cargo_mode,
           gw, dimension, cw, cbm, container_type, container_qty,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city, pic_name, pic_email, pic_phone),
-          customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone)
+          customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone),
+          inquiry:inquiries!quotations_inquiry_id_fkey(inquiry_no)
         `)
         .eq('id', quotationId)
         .maybeSingle(),
@@ -341,6 +342,14 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
           >
             <Edit2 size={14} /> Edit
           </button>
+          {onDuplicate && (
+            <button
+              onClick={() => onDuplicate(quot)}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <Copy size={14} /> Duplicate
+            </button>
+          )}
           <button
             onClick={handleDownloadPDF}
             disabled={generatingPDF}
@@ -367,6 +376,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
               <InfoRow label="Service Type" value={SERVICE_TYPE_LABELS[quot.service_type] || quot.service_type} />
               <InfoRow label="Routing" value={quot.route} />
               <InfoRow label="Quotation No" value={<span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>{quot.quotation_no}</span>} />
+              <InfoRow label="Inquiry No" value={quot.inquiry?.inquiry_no ? <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#144682' }}>{quot.inquiry.inquiry_no}</span> : '—'} />
               <InfoRow label="Tanggal" value={fmtDate(quot.created_at)} />
               <InfoRow label="Valid Until" value={fmtDate(quot.valid_until)} />
               <InfoRow label="Payment Terms" value={paymentTermName} />
@@ -558,15 +568,15 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
             const picPhone   = quot.prospect?.pic_phone   || quot.customer?.phone   || '-';
             const custAddr   = [quot.prospect?.address || quot.customer?.address, quot.prospect?.city || quot.customer?.city].filter(Boolean).join(', ') || '-';
             const marketingName = creatorProfile?.full_name || profile?.full_name || user?.email || '-';
-            const inquiryStr = [SERVICE_TYPE_LABELS[quot.service_type] || quot.service_type, quot.route].filter(Boolean).join(' - ');
+            const inquiryNo = quot.inquiry?.inquiry_no || '-';
             const rows = [
-              ['TO',       clientName,         'MARKETING', marketingName           ],
-              ['ADDRESS',  custAddr,           'EMAIL',     picEmail                ],
-              ['QUO. NO.', quot.quotation_no,  'MOBILE',    picPhone                ],
-              ['INQUIRY',  inquiryStr,         'OFFICE',    '+62 21-3970-7558/9'    ],
+              ['TO',         clientName,         'SALES REP', marketingName           ],
+              ['ADDRESS',    custAddr,           'EMAIL',     picEmail                ],
+              ['QUO. NO.',   quot.quotation_no,  'MOBILE',    picPhone                ],
+              ['INQUIRY NO.', inquiryNo,         'OFFICE',    '+62 21-3970-7558/9'    ],
               ['DATE',     fmtDateShort(quot.created_at), 'VALIDITY', fmtDateShort(quot.valid_until)],
             ];
-            const labelCell = { background: '#144682', color: 'white', padding: '5px 10px', fontWeight: 'bold', whiteSpace: 'nowrap', width: '80px', border: '1px solid #1a5299', fontSize: '11px', verticalAlign: 'middle' };
+            const labelCell = { background: '#144682', color: 'white', padding: '5px 10px', fontWeight: 'bold', width: '80px', border: '1px solid #1a5299', fontSize: '11px', verticalAlign: 'middle' };
             const valueCell = { background: '#f9f9f7', padding: '5px 10px', border: '1px solid #ddd', fontSize: '11px', verticalAlign: 'middle' };
             return (
               <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
@@ -707,7 +717,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, showT
             <div>
               <div style={{ fontWeight: 'bold' }}>Best Regards,</div>
               <div style={{ marginTop: '48px', borderTop: '1px solid #333', width: '200px', paddingTop: '4px' }}>
-                {creatorProfile?.full_name || profile?.full_name || user?.email || '—'}{' - '}{creatorProfile?.positions?.name || 'Marketing Executive'}
+                {creatorProfile?.full_name || profile?.full_name || user?.email || '—'}{' - '}{creatorProfile?.positions?.name || 'Sales Executive'}
               </div>
               <div>PT. Milenial Solusi Internusa</div>
             </div>
