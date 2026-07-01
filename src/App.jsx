@@ -160,6 +160,7 @@ const groupBySP = (rows) => {
         spDate: r.spDate,
         dc: r.dc,
         customer: r.customer || '',
+        spStatus: r.spStatus || 'draft', // lifecycle status — same across all rows of an SP
         expired_date: r.expired_date || r.deadline || '',
         deadline: r.expired_date || r.deadline || '', // backward compat
         items: [],
@@ -1459,6 +1460,7 @@ export default function StorbitManifest() {
   const { customers, saveCustomer: dbSaveCustomer, removeCustomer: dbRemoveCustomer } = useCustomers();
   const {
     rows,
+    refresh: refreshSp,
     saveRow: dbSaveRow,
     removeRow: dbRemoveRow,
     removeRowsBySp: dbRemoveRowsBySp,
@@ -2578,6 +2580,7 @@ export default function StorbitManifest() {
                   onSelectSP={(spNo) => setSelectedSpId(spNo)}
                   onAddSP={() => setShowInputSP(true)}
                   onExport={exportCSV}
+                  onRefresh={refreshSp}
                   showToast={showToast}
                 />
               </Suspense>
