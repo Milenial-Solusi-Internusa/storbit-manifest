@@ -2433,7 +2433,7 @@ export default function StorbitManifest() {
           {activeMenu === 'home' && (
             <ErrorBoundary title="Beranda tidak tersedia">
               <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center', color: '#9C948D' }}>Loading…</div>}>
-                <HomeDashboard profile={profile} currentRoleLabel={currentRoleLabel} onNavigate={navigateTo} />
+                <HomeDashboard profile={profile} currentRoleLabel={currentRoleLabel} onNavigate={navigateTo} canNavigate={canRenderPage} />
               </Suspense>
             </ErrorBoundary>
           )}

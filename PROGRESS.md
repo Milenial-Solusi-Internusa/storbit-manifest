@@ -2,6 +2,16 @@
 
 ## 2026-07-01
 
+### Role-gating Home quick actions (Phase 3.0C · branch `restruktur-nexus`)
+> Access-control gap: tombol quick action Home muncul utk semua role tanpa gating. 2 file (`App.jsx`, `HomeDashboard.jsx`), FE-only. Diverifikasi build/lint + live (super_admin).
+- [x] **Temuan (Point 1)** — target "Buat SP" = `InputPage` (`activeMenu==='input'`) **tak punya guard role/permission**; `InputSPPage.jsx` juga bersih. Satu-satunya gate = `canAccessActiveMenu` (kasar — izinkan `input` selama modul induk `manifest` visible krn `collectMenuIds` tak re-gate child). → andalkan block halaman tujuan TIDAK aman.
+- [x] **Fix (Point 2+3)** — `App.jsx`: pass `canNavigate={canRenderPage}` ke `HomeDashboard` (fungsi existing = `canSeeMenuItem(findMenuItemById(id),…)`, **mekanisme identik sidebar**). `HomeDashboard`: +prop `canNavigate`, helper `can(id)` (default-allow bila fn absen); `QUICK` array (Buat SP→`input`, Buat Quotation→`quotation-draft`, Catat Inquiry→`crm-inquiry`) `.filter(can)`; tombol tak-izin **disembunyikan** (bukan disabled); baris quick-action hilang total bila `QUICK.length===0`.
+- [x] **Perlu tindakan (interim)** — tiap TASK +`gate` (SP→`manifest`, akses customer→`crm-customers-msi`, quotation→`quotation-draft`); `visibleTasks = TASKS.filter(t=>can(t.gate))` dipakai di hero count + badge + rows; +empty state "Tidak ada yang perlu tindakan.". **Catatan:** ini interim utk dummy — saat wiring data asli, gating final harus by approval-assignment (bukan menu-visibility).
+- [x] **Garansi** — visibilitas tombol Home = **identik** sidebar (fungsi gating sama). "Buat SP" hilang utk sales/Karina IFF "Input SP" hilang di sidebar-nya.
+- [x] **Flag RBAC (dicatat di CLAUDE.md Known Issues, JANGAN diperbaiki sekarang)** — `input` di-gate `hasPermission('logistics','view')` + role-def include `sales`; kalau RBAC grant `logistics.view` ke sales, sales tetap lihat "Buat SP"/"Input SP" (mungkin tak diinginkan). Itu konfig data-permission/RLS (di luar scope FE, berisiko) → tunda, bahas terpisah.
+- [x] **Build clean** 2573 modules 1.39s · Lint 223 (0 error baru) · HomeDashboard lint bersih. **Verified live (super_admin):** 3 tombol + 3 task tampil.
+- [ ] **Tes manual (belum):** login **Karina (sales)** → "Buat SP" hilang di Home (ikut visibility sidebar "Input SP"); role lain sesuai izin masing-masing. (Perlu kredensial sales — negative case dijamin by construction.)
+
 ### Polish sidebar 3.0B — connector line, badge soon orange, audit flatten (lanjutan · branch `restruktur-nexus`)
 > 3 fix visual/struktur lanjutan. 1 file (`App.jsx`), FE-only. Diverifikasi live (login super_admin di Preview).
 - [x] **Fix 1 (visual — connector line)** — hapus `borderLeft: '1px solid var(--line)'` di 3 container submenu (LeafRow grandchildren + expandable-module children + soon-module children). Sekarang cuma indentasi (`marginLeft:12` + `paddingLeft:8`) + spacing, tanpa garis vertikal. Verified: `borderLeftWidth=0px` di semua container.
