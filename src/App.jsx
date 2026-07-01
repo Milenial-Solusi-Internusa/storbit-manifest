@@ -454,7 +454,7 @@ const ERP_MENU_GROUPS = [
         children: [
           { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
           { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
-          { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, public: true },
+          { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales','operations'] },
           { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['manager','supervisor','admin','super_admin'] },
           { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
@@ -469,8 +469,8 @@ const ERP_MENU_GROUPS = [
               { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX    },
             ],
           },
-          { id: 'crm-calls',      label: 'Activities', icon: Activity, public: true },
-          { id: 'crm-activity-log', label: 'Activity Log', icon: History, public: true },
+          { id: 'crm-calls',      label: 'Activities', icon: Activity, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales','operations'] },
+          { id: 'crm-activity-log', label: 'Activity Log', icon: History, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales','operations'] },
         ],
       },
     ],
@@ -774,7 +774,7 @@ const ERP_MENU_GROUPS = [
       },
       { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, role: ['super_admin','admin','ceo','gm','manager','supervisor'] },
       { id: 'reporting-form-report', label: 'Form Report',  icon: FileText, planned: true },
-      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, public: true },
+      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales','operations'] },
       {
         id: 'performance', label: 'Performance & Cache', icon: Zap,
         children: [
@@ -1163,6 +1163,58 @@ function moduleContainsMenu(m, activeMenu) {
     c.id === activeMenu || (c.children || []).some(gc => gc.id === activeMenu));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared nav-gating helpers (F4). Single source of truth used by BOTH the
+// sidebar (NexusSidebar) and the content-level gate (canAccessActiveMenu), so
+// "can I see this in the sidebar" and "can I render this page" never diverge.
+// Rule: a GATELESS child inherits its parent module's visibility (mirrors the
+// old sidebar that never gated children); a GATED child uses canSeeMenuItem.
+// ─────────────────────────────────────────────────────────────────────────────
+function navHasGate(item) {
+  return !!(item && (item.public === true || MENU_KEY_MAP[item.id] || item.module || item.role));
+}
+// tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
+function navChildGate(c, role, hasPermission, hasMenuPermission) {
+  if (c.children) {
+    const subs = c.children.map(gc => navChildGate(gc, role, hasPermission, hasMenuPermission));
+    if (subs.some(s => s === true)) return true;
+    if (subs.every(s => s === null)) return null;
+    return false;
+  }
+  const real = findMenuItemById(c.id);
+  if (!real) return null;              // not in ERP_MENU_GROUPS (e.g. 'users')
+  if (!navHasGate(real)) return null;  // gateless → inherit parent module
+  return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
+}
+function navModuleVisible(m, role, hasPermission, hasMenuPermission) {
+  if (m.soon) return true;             // roadmap skeleton — shown, disabled
+  if (m.target) {                      // direct-navigate leaf (Beranda / Users & Access)
+    if (m.role) return m.role.includes(role);
+    const real = findMenuItemById(m.target);
+    if (!real || !navHasGate(real)) return true;
+    return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
+  }
+  const gates = (m.children || []).map(c => navChildGate(c, role, hasPermission, hasMenuPermission));
+  if (gates.some(g => g === true)) return true;                   // a visible gated child
+  if (gates.length && gates.every(g => g === null)) return true;  // fully gateless → show
+  return false;                                                   // gated children, none visible → hide
+}
+function navModuleContaining(id) {
+  for (const g of NEXUS_NAV) for (const m of g.items) if (moduleContainsMenu(m, id)) return m;
+  return null;
+}
+// Content-level gate (F4): mirror the sidebar so a page can't be rendered by a
+// role that can't see its menu. Gateless child → inherit its NEXUS_NAV module's
+// visibility (NOT default-deny → Asset sub-pages stay reachable when the module is).
+function isMenuAccessible(id, role, hasPermission, hasMenuPermission) {
+  if (!id) return true;
+  const item = findMenuItemById(id);
+  if (item && navHasGate(item)) return canSeeMenuItem(item, role, hasPermission, hasMenuPermission);
+  const mod = navModuleContaining(id);
+  if (mod) return navModuleVisible(mod, role, hasPermission, hasMenuPermission);
+  return true; // unknown/synthetic → allow (caller keeps its SYNTHETIC/prefix allow-list)
+}
+
 function NexusSidebar({
   activeMenu, onNavigate, role, hasPermission, hasMenuPermission,
   profile, currentRoleLabel,
@@ -1175,34 +1227,9 @@ function NexusSidebar({
   // visibility, not fall into canSeeMenuItem's default-deny (which hid every
   // Asset sub-page: they carry no gate, only the module `assets` does).
   // childGate → true (visible) / false (explicitly denied) / null (gateless → inherit).
-  const hasGate = (item) =>
-    !!(item && (item.public === true || MENU_KEY_MAP[item.id] || item.module || item.role));
-  const childGate = (c) => {
-    if (c.children) {
-      const subs = c.children.map(childGate);
-      if (subs.some(s => s === true)) return true;
-      if (subs.every(s => s === null)) return null;
-      return false;
-    }
-    const real = findMenuItemById(c.id);
-    if (!real) return null;             // not in ERP_MENU_GROUPS (e.g. 'users')
-    if (!hasGate(real)) return null;    // gateless → inherit parent module
-    return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
-  };
-  const childVisible = (c) => childGate(c) !== false; // hide only when explicitly denied
-  const moduleVisible = (m) => {
-    if (m.soon) return true; // roadmap skeleton — always shown, disabled
-    if (m.target) {          // direct-navigate leaf (Beranda / Users & Access)
-      if (m.role) return m.role.includes(role);
-      const real = findMenuItemById(m.target);
-      if (!real || !hasGate(real)) return true;
-      return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
-    }
-    const gates = (m.children || []).map(childGate);
-    if (gates.some(g => g === true)) return true;                  // has a visible gated child
-    if (gates.length && gates.every(g => g === null)) return true; // fully gateless → show
-    return false;                                                  // gated children, none visible → hide
-  };
+  // Gating now lives in module-level nav* helpers (F4), shared with canAccessActiveMenu.
+  const childVisible = (c) => navChildGate(c, role, hasPermission, hasMenuPermission) !== false;
+  const moduleVisible = (m) => navModuleVisible(m, role, hasPermission, hasMenuPermission);
 
   const activeModId = (() => {
     for (const g of NEXUS_NAV) for (const m of g.items) if (moduleContainsMenu(m, activeMenu)) return m.id;
@@ -2092,9 +2119,10 @@ export default function StorbitManifest() {
     const SYNTHETIC = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
     if (SYNTHETIC.includes(activeMenu)) return true;
     if (activeMenu?.startsWith('customer-') || activeMenu?.startsWith('assets-') || activeMenu?.startsWith('product-') || activeMenu?.startsWith('admin-settings-')) return true;
-    const accessibleIds = new Set();
-    for (const group of visibleMenuGroups) collectMenuIds(group.items, accessibleIds);
-    return accessibleIds.has(activeMenu);
+    // F4: per-item gate mirroring the sidebar (gateless child inherits its
+    // module's visibility) — replaces the coarse "parent visible → all children
+    // accessible" (collectMenuIds) that let ungranted child pages render.
+    return isMenuAccessible(activeMenu, role, hasPermission, hasMenuPermission);
   })();
 
   return (

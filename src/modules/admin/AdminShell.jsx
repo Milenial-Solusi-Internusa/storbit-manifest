@@ -81,7 +81,7 @@ const NAV_SECTIONS = [
 // Sidebar
 // ─────────────────────────────────────────────────────────────
 
-function Sidebar({ active, onSelect, hasPermission }) {
+function Sidebar({ active, onSelect, role }) {
   return (
     <aside
       className="flex-shrink-0 flex flex-col"
@@ -123,9 +123,12 @@ function Sidebar({ active, onSelect, hasPermission }) {
 
           {/* Items */}
           {section.items.filter(item => {
+            // F7 Langkah 1: gate the 2 sensitive items (roles/user-access) by role
+            // (super_admin/admin) instead of the legacy hasPermission('admin',…) —
+            // removes the last active role_permissions consumer. Mapping to
+            // foundation_master was rejected (granted broadly → would over-expose).
             if (!item.permission) return true;
-            if (typeof hasPermission !== 'function') return true;
-            return hasPermission(item.permission.module, item.permission.action);
+            return role === 'super_admin' || role === 'admin';
           }).map((item) => {
             const isActive = active === item.id;
             const Icon = item.icon;
@@ -187,7 +190,7 @@ const PAGE_MAP = {
 
 export default function AdminShell() {
   const [activeTab, setActiveTab] = useState('companies');
-  const { hasPermission } = useAuth();
+  const { role } = useAuth();
 
   // User Access full-page edit — state-swap (mirror of AssetDetailPage pattern)
   const [editUserId, setEditUserId] = useState(null);
@@ -241,7 +244,7 @@ export default function AdminShell() {
 
   return (
     <div className="flex gap-5 items-start">
-      <Sidebar active={activeTab} onSelect={handleSelect} hasPermission={hasPermission} />
+      <Sidebar active={activeTab} onSelect={handleSelect} role={role} />
       <div className="flex-1 min-w-0">
         {content}
       </div>
