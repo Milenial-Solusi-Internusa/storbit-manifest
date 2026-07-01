@@ -851,8 +851,9 @@ const NEXUS_NAV = [
       {
         id: 'nav-sp', label: 'Daftar Pesanan (Storbit)', icon: ClipboardList, tone: 'violet',
         children: [
-          { id: 'manifest', label: 'SP Manifest', icon: LayoutList },
-          { id: 'input',    label: 'Input SP',    icon: Plus },
+          { id: 'manifest', label: 'SP Manifest',    icon: LayoutList },
+          { id: 'input',    label: 'Input SP',       icon: Plus },
+          { id: 'shipment', label: 'Pengiriman SP',  icon: Truck },
         ],
       },
       {
@@ -866,8 +867,20 @@ const NEXUS_NAV = [
           { id: 'inventory-opname',      label: 'Opname / Adjustment', icon: ClipboardCheck },
         ],
       },
-      { id: 'nav-freight', label: 'Freight Forwarding', icon: Ship,      tone: 'teal', soon: true },
-      { id: 'nav-customs', label: 'Customs / PPJK',     icon: FileCheck, tone: 'blue', soon: true },
+      {
+        id: 'nav-freight', label: 'Freight Forwarding', icon: Ship, tone: 'teal', soon: true,
+        children: [
+          { id: 'freight-sales-order', label: 'Sales Order', icon: FileText,          soon: true },
+          { id: 'freight-job-order',   label: 'Job Order',   icon: BriefcaseBusiness, soon: true },
+        ],
+      },
+      {
+        id: 'nav-customs', label: 'Customs / PPJK', icon: FileCheck, tone: 'blue', soon: true,
+        children: [
+          { id: 'customs-doc', label: 'Customs Doc',      icon: FileText,       soon: true },
+          { id: 'customs-tps', label: 'TPS / Bea Cukai',  icon: ClipboardCheck, soon: true },
+        ],
+      },
     ],
   },
   {
@@ -881,12 +894,18 @@ const NEXUS_NAV = [
           { id: 'ar',          label: 'AR / Collection',     icon: Wallet },
           { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet },
           { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark },
+          { id: 'fin-bank-disbursement', label: 'Bank Disbursement', icon: Wallet, soon: true },
           { id: 'accounting',  label: 'Accounting',          icon: BarChart3 },
           { id: 'outstanding', label: 'Outstanding',         icon: Clock },
           { id: 'finance',     label: 'Finance Docs',        icon: FileText },
         ],
       },
-      { id: 'nav-log',  label: 'Logistic',    icon: Truck,        tone: 'teal',  soon: true },
+      {
+        id: 'nav-log', label: 'Logistic', icon: Truck, tone: 'teal', soon: true,
+        children: [
+          { id: 'log-pengiriman', label: 'Pengiriman', icon: Truck, soon: true },
+        ],
+      },
       { id: 'nav-proc', label: 'Procurement', icon: ShoppingCart, tone: 'peach', soon: true },
       {
         id: 'nav-hrga', label: 'HRGA', icon: Users, tone: 'rose',
@@ -910,7 +929,10 @@ const NEXUS_NAV = [
           { id: 'assets-properti',  label: 'Properti',            icon: Building2 },
           { id: 'assets-maint',     label: 'Jadwal Maintenance',  icon: Wrench },
           { id: 'assets-hist',      label: 'History Maintenance', icon: Clock },
+          { id: 'assets-workorders', label: 'Work Orders',        icon: FolderOpen },
           { id: 'assets-docs',      label: 'Semua Dokumen',       icon: FolderOpen },
+          { id: 'assets-expiring',  label: 'Akan Expired',        icon: Clock },
+          { id: 'assets-expired',   label: 'Sudah Expired',       icon: FileX },
           { id: 'assets-kategori',  label: 'Kategori Aset',       icon: Tag },
           { id: 'assets-lokasi',    label: 'Lokasi & Ruangan',    icon: MapPin },
           { id: 'assets-vendor',    label: 'Vendor & Supplier',   icon: Truck },
@@ -1138,25 +1160,40 @@ function NexusSidebar({
   profile, currentRoleLabel,
   asDrawer = false, isOpen = false, onClose,
 }) {
-  // Gate a real page id via the same rules the old sidebar used.
-  const seeReal = (id) => {
-    const real = findMenuItemById(id);
-    if (real) return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
-    return null; // not in ERP_MENU_GROUPS (e.g. 'users') → caller decides
+  // An item is "gated" only if it carries an explicit access rule (public flag,
+  // a MENU_KEY_MAP entry, a module permission, or a role list). The OLD sidebar
+  // gated modules at the top level and rendered ALL their children
+  // unconditionally — so a child WITHOUT its own gate must inherit the module's
+  // visibility, not fall into canSeeMenuItem's default-deny (which hid every
+  // Asset sub-page: they carry no gate, only the module `assets` does).
+  // childGate → true (visible) / false (explicitly denied) / null (gateless → inherit).
+  const hasGate = (item) =>
+    !!(item && (item.public === true || MENU_KEY_MAP[item.id] || item.module || item.role));
+  const childGate = (c) => {
+    if (c.children) {
+      const subs = c.children.map(childGate);
+      if (subs.some(s => s === true)) return true;
+      if (subs.every(s => s === null)) return null;
+      return false;
+    }
+    const real = findMenuItemById(c.id);
+    if (!real) return null;             // not in ERP_MENU_GROUPS (e.g. 'users')
+    if (!hasGate(real)) return null;    // gateless → inherit parent module
+    return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
   };
-  const childVisible = (c) => {
-    if (c.children) return c.children.some(gc => seeReal(gc.id) !== false) && c.children.some(gc => seeReal(gc.id));
-    const v = seeReal(c.id);
-    return v === null ? true : v;
-  };
+  const childVisible = (c) => childGate(c) !== false; // hide only when explicitly denied
   const moduleVisible = (m) => {
     if (m.soon) return true; // roadmap skeleton — always shown, disabled
     if (m.target) {          // direct-navigate leaf (Beranda / Users & Access)
       if (m.role) return m.role.includes(role);
-      const v = seeReal(m.target);
-      return v === null ? true : v;
+      const real = findMenuItemById(m.target);
+      if (!real || !hasGate(real)) return true;
+      return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
     }
-    return (m.children || []).some(childVisible);
+    const gates = (m.children || []).map(childGate);
+    if (gates.some(g => g === true)) return true;                  // has a visible gated child
+    if (gates.length && gates.every(g => g === null)) return true; // fully gateless → show
+    return false;                                                  // gated children, none visible → hide
   };
 
   const activeModId = (() => {
@@ -1197,9 +1234,23 @@ function NexusSidebar({
 
   // Leaf row (objek). `depth` controls indent for grandchildren.
   const LeafRow = (c, depth = 0) => {
+    const Icon = c.icon;
+    // Soon objek — disabled skeleton + "soon" badge, non-clickable (no navigateTo).
+    if (c.soon) {
+      return (
+        <div key={c.id} title="Segera hadir"
+          className="w-full flex items-center gap-2.5 rounded-[10px]"
+          style={{ padding: '7px 10px', marginBottom: 1, color: 'var(--faint)', fontSize: 12.5, fontWeight: 500, cursor: 'default', opacity: 0.75, pointerEvents: 'none' }}>
+          {Icon
+            ? <Icon size={15} strokeWidth={1.7} style={{ flexShrink: 0, color: 'var(--faint)' }} />
+            : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: 0.4, flexShrink: 0 }} />}
+          <span className="flex-1 truncate">{c.label}</span>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.3px', padding: '1px 6px', borderRadius: 7, background: 'rgba(232,112,61,0.14)', color: '#E8703D' }}>soon</span>
+        </div>
+      );
+    }
     const active = activeMenu === c.id ||
       (depth === 0 && c.id === 'crm-customers' && (activeMenu === 'customer-detail' || activeMenu.startsWith('crm-customers')));
-    const Icon = c.icon;
     if (c.children) {
       const subVisible = c.children.filter(childVisible);
       if (!subVisible.length) return null;
@@ -1219,7 +1270,7 @@ function NexusSidebar({
             <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
           </button>
           {isExp && (
-            <div style={{ marginLeft: 12, paddingLeft: 8, borderLeft: '1px solid var(--line)' }}>
+            <div style={{ marginLeft: 12, paddingLeft: 8 }}>
               {subVisible.map(gc => LeafRow(gc, depth + 1))}
             </div>
           )}
@@ -1282,15 +1333,44 @@ function NexusSidebar({
                     </button>
                   );
                 }
-                // Soon skeleton — disabled
+                // Soon skeleton — disabled module. Without children: flat, non-clickable.
+                // With children (planned objek): expandable so the roadmap objek show,
+                // each also a "soon" row. The module toggle only expands (no navigate).
                 if (m.soon) {
+                  const soonKids = m.children || [];
+                  const soonBadge = (
+                    <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.3px', padding: '1px 7px', borderRadius: 8, background: 'rgba(232,112,61,0.14)', color: '#E8703D' }}>soon</span>
+                  );
+                  if (!soonKids.length) {
+                    return (
+                      <div key={m.id} title="Segera hadir"
+                        className="w-full flex items-center gap-3 rounded-[11px]"
+                        style={{ padding: '8px 10px', marginBottom: 2, color: 'var(--faint)', fontSize: 13, fontWeight: 500, cursor: 'default', opacity: 0.7, pointerEvents: 'none' }}>
+                        <NavBubble Icon={Icon} tone={m.tone} dim />
+                        <span className="flex-1 truncate">{m.label}</span>
+                        {soonBadge}
+                      </div>
+                    );
+                  }
+                  const soonExp = expanded(m.id);
                   return (
-                    <div key={m.id} title="Segera hadir"
-                      className="w-full flex items-center gap-3 rounded-[11px]"
-                      style={{ padding: '8px 10px', marginBottom: 2, color: 'var(--faint)', fontSize: 13, fontWeight: 500, cursor: 'default', opacity: 0.7, pointerEvents: 'none' }}>
-                      <NavBubble Icon={Icon} tone={m.tone} dim />
-                      <span className="flex-1 truncate">{m.label}</span>
-                      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.3px', padding: '1px 7px', borderRadius: 8, background: 'var(--p-slate)', color: 'var(--p-slate-i, #525E70)' }}>soon</span>
+                    <div key={m.id}>
+                      <button type="button" onClick={() => toggle(m.id)} title="Segera hadir"
+                        className="w-full flex items-center gap-3 rounded-[11px] transition-colors"
+                        style={{ padding: '8px 10px', marginBottom: 2, background: 'transparent', color: 'var(--faint)', fontSize: 13, fontWeight: 500, textAlign: 'left', opacity: 0.85 }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#F5F7FA'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <NavBubble Icon={Icon} tone={m.tone} dim />
+                        <span className="flex-1 truncate">{m.label}</span>
+                        {soonBadge}
+                        <ChevronDown size={14} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: soonExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
+                      </button>
+                      {soonExp && (
+                        <div style={{ marginLeft: 12, paddingLeft: 8, marginBottom: 4 }}>
+                          {soonKids.map(c => LeafRow(c, 0))}
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -1311,7 +1391,7 @@ function NexusSidebar({
                       <ChevronDown size={14} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
                     </button>
                     {isExp && (
-                      <div style={{ marginLeft: 12, paddingLeft: 8, borderLeft: '1px solid var(--line)', marginBottom: 4 }}>
+                      <div style={{ marginLeft: 12, paddingLeft: 8, marginBottom: 4 }}>
                         {kids.map(c => LeafRow(c, 0))}
                       </div>
                     )}
