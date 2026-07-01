@@ -1483,6 +1483,13 @@ export default function StorbitManifest() {
   // (AGENTS.md: don't rely on menu gating alone.)
   const canAdminSettings = role === 'super_admin' || role === 'admin';
 
+  // Defense-in-depth for Input SP (create SP — Storbit ops). Require BOTH the
+  // per-menu permission (logistics_input via canRenderPage) AND an operational
+  // role (admin/manager/operations/super_admin). InputPage has no guard of its
+  // own (F5), so this stops a stray navigation from rendering the create form.
+  const canInputSP = canRenderPage('input')
+    && ['admin', 'manager', 'operations', 'super_admin'].includes(role);
+
   // ── Navbar: Pending Approval badge (HRGA approver inbox count) ──────────────
   // Lightweight count: HRGA requests in-progress (submitted/under_review) whose
   // current-level approver_role matches one of the current user's ERP roles.
@@ -2586,7 +2593,7 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'input' && (
+          {activeMenu === 'input' && (canInputSP ? (
             <InputPage
               onAdd={() => setShowAdd(true)}
               onImport={() => setShowImport(true)}
@@ -2595,16 +2602,24 @@ export default function StorbitManifest() {
               rowCount={rows.length}
               spCount={groupedSP.length}
             />
-          )}
-          {activeMenu === 'shipment' && (
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+          {activeMenu === 'shipment' && (canRenderPage('shipment') ? (
             <ShipmentPage rows={enrichedRows} onUpdate={(r) => can(role,'shipment') && setShipmentRow(r)} role={role}/>
-          )}
-          {activeMenu === 'finance' && (
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+          {activeMenu === 'finance' && (canRenderPage('finance') ? (
             <FinancePage rows={enrichedRows} onUpdate={(r) => can(role,'finance') && setFinanceRow(r)} role={role}/>
-          )}
-          {activeMenu === 'outstanding' && (
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+          {activeMenu === 'outstanding' && (canRenderPage('outstanding') ? (
             <OutstandingPage rows={enrichedRows} onUpdate={(r) => can(role,'finance') && setFinanceRow(r)} role={role}/>
-          )}
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
           {activeMenu === 'customers' && (
             <CustomersPage
               customers={customers}
