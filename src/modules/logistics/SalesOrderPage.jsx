@@ -2,12 +2,14 @@
 // Design source: nexus-by-msi/project/sales-order.html + storbit.css
 // Real data: groupedSP from App.jsx (groupBySP + calcItem over sp_items)
 //
-// NOTE — Konfirmasi / Tolak / Manifest mutations currently show toast feedback
-// only. Persisting status requires a schema migration to add sp_items.status
-// (or a new sp_orders header table). Add TODO migration before Phase 2.0B.
+// NOTE — Konfirmasi / Tolak now PERSIST to sp_items.sp_status via the
+// set_sp_status RPC (all line items of an sp_no updated atomically), then
+// onRefresh() re-fetches. Manifest action still shows toast only (manifest
+// state is derived from qty/shipped_qty, not from sp_status).
 
 import { useState, useMemo, useCallback } from 'react';
 import { calcItem } from '../../lib/spCalc'; // eslint-disable-line no-unused-vars
+import { setSpStatus } from '../../lib/db';
 import {
   Search, Download, Plus, Check, X, Truck, ChevronRight,
   AlertTriangle, Clock, Receipt, Eye,
@@ -55,12 +57,17 @@ function custColor(name) {
 
 // ─── Status model ──────────────────────────────────────────────────────────
 // Design uses: OPEN → CONFIRMED → MANIFEST → CLOSED / CANCELLED
-// Current db derives from qty/shippedQty: Open / Partial / Closed
-// Mapping: Open→OPEN, Partial→MANIFEST, Closed→CLOSED
-// CONFIRMED + CANCELLED require sp_items.status migration (TODO)
+// Two signals combined, precedence high→low:
+//   1. spStatus 'cancelled'  → CANCELLED (overrides everything)
+//   2. qty-derived 'Closed'  → CLOSED
+//   3. qty-derived 'Partial' → MANIFEST (shipping in progress)
+//   4. spStatus 'confirmed'  → CONFIRMED (confirmed, not yet shipped)
+//   5. otherwise             → OPEN (draft / belum dikonfirmasi)
 function toDesignStatus(g) {
-  if (g.status === 'Closed') return 'CLOSED';
-  if (g.status === 'Partial') return 'MANIFEST';
+  if (g.spStatus === 'cancelled') return 'CANCELLED';
+  if (g.status === 'Closed')      return 'CLOSED';
+  if (g.status === 'Partial')     return 'MANIFEST';
+  if (g.spStatus === 'confirmed') return 'CONFIRMED';
   return 'OPEN';
 }
 
@@ -263,7 +270,7 @@ function PagerBtn({ children, active, disabled, onClick }) {
   );
 }
 
-function ConfirmModal({ modal, rejectReason, setRejectReason, rejectErr, onClose, onConfirm }) {
+function ConfirmModal({ modal, rejectReason, setRejectReason, rejectErr, onClose, onConfirm, busy }) {
   const ok = modal.action === 'confirm';
   const g = modal.group;
   return (
@@ -347,23 +354,26 @@ function ConfirmModal({ modal, rejectReason, setRejectReason, rejectErr, onClose
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '18px 22px 20px' }}>
           <button
             onClick={onClose}
+            disabled={busy}
             style={{
               height: 38, padding: '0 16px', borderRadius: 9,
               border: `1px solid ${C.line}`, background: C.surface2,
-              color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              color: C.inkSoft, fontSize: 13, fontWeight: 600,
+              cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: busy ? .6 : 1,
             }}
           >Batal</button>
           <button
             onClick={onConfirm}
+            disabled={busy}
             style={{
               height: 38, padding: '0 18px', borderRadius: 9, border: 'none',
               background: ok ? C.accent : C.danger, color: '#fff',
-              fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-              display: 'inline-flex', alignItems: 'center', gap: 7,
+              fontSize: 13, fontWeight: 700, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+              display: 'inline-flex', alignItems: 'center', gap: 7, opacity: busy ? .7 : 1,
             }}
           >
             {ok ? <Check size={15}/> : <X size={15}/>}
-            {ok ? 'Ya, Konfirmasi' : 'Ya, Tolak'}
+            {busy ? 'Menyimpan…' : ok ? 'Ya, Konfirmasi' : 'Ya, Tolak'}
           </button>
         </div>
       </div>
@@ -378,6 +388,7 @@ export default function SalesOrderPage({
   onSelectSP,
   onAddSP,
   onExport,
+  onRefresh,
   showToast,
 }) {
   const [tab, setTab]                       = useState('all');
@@ -485,16 +496,28 @@ export default function SalesOrderPage({
     setRejectErr(false);
   };
   const closeModal   = () => setModal(null);
-  const confirmModal = () => {
+  const [statusBusy, setStatusBusy] = useState(false);
+  const confirmModal = async () => {
     if (modal.action === 'reject' && !rejectReason.trim()) {
       setRejectErr(true); return;
     }
+    const no      = modal.no;
+    const action  = modal.action;
+    const status  = action === 'confirm' ? 'confirmed' : 'cancelled';
+    const reason  = action === 'reject' ? rejectReason.trim() : null;
+    setStatusBusy(true);
+    const { error } = await setSpStatus(no, status, reason);
+    setStatusBusy(false);
+    if (error) {
+      showToast(`Gagal memperbarui status SP ${no}: ${error.message || error}`, 'error');
+      return;
+    }
     closeModal();
-    // TODO: needs sp_items.status migration to persist state in Supabase
+    await onRefresh?.();
     showToast(
-      modal.action === 'confirm'
-        ? `SP ${modal.no} dikonfirmasi ✓`
-        : `SP ${modal.no} ditolak`,
+      action === 'confirm'
+        ? `SP ${no} dikonfirmasi ✓`
+        : `SP ${no} dibatalkan`,
       'success',
     );
   };
@@ -843,6 +866,7 @@ export default function SalesOrderPage({
           rejectErr={rejectErr}
           onClose={closeModal}
           onConfirm={confirmModal}
+          busy={statusBusy}
         />
       )}
     </div>

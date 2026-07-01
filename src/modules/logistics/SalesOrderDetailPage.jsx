@@ -675,13 +675,15 @@ export default function SalesOrderDetailPage({
 
   const cust = custColor(customer);
 
-  // ── Header status (derived from group) ────────────────────────────────
+  // ── Header status (spStatus lifecycle + qty-derived, precedence high→low) ──
   const headerStatus = (() => {
     if (!group) return null;
+    if (group.spStatus === 'cancelled') return { bg: C.dangerBg, color: C.danger, bd: C.dangerBd, label: 'Cancelled' };
     const s = group.status;
-    if (s === 'Closed')  return { bg: C.okBg,      color: C.ok,     bd: C.okBd,     label: 'Closed'  };
-    if (s === 'Partial') return { bg: C.warnBg,    color: C.warn,   bd: C.warnBd,   label: 'Partial' };
-    return                      { bg: C.infoBg,    color: C.info,   bd: C.infoBd,   label: 'Open'    };
+    if (s === 'Closed')  return { bg: C.okBg,   color: C.ok,   bd: C.okBd,   label: 'Closed'  };
+    if (s === 'Partial') return { bg: C.warnBg, color: C.warn, bd: C.warnBd, label: 'Partial' };
+    if (group.spStatus === 'confirmed') return { bg: C.okBg, color: C.ok, bd: C.okBd, label: 'Confirmed' };
+    return                      { bg: C.infoBg, color: C.info, bd: C.infoBd, label: 'Open'    };
   })();
 
   if (!spNo) return null;

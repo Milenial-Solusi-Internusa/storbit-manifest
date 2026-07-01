@@ -42,6 +42,11 @@ export function spFromDb(row) {
     submitDate: row.submit_date || '',
     emailStatus: row.email_status || '',
     notes: row.notes || '',
+    // SP lifecycle status (confirm/cancel) — mutated only via set_sp_status RPC.
+    spStatus: row.sp_status || 'draft',
+    confirmedAt: row.confirmed_at || '',
+    cancelledAt: row.cancelled_at || '',
+    cancelReason: row.cancel_reason || '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -314,6 +319,18 @@ export async function updateSpItem(id, item) {
 export async function deleteSpItem(id) {
   const { error } = await supabase.from('sp_items').delete().eq('id', id);
   return { error };
+}
+
+// Set SP lifecycle status (confirm/cancel) atomically across all line items
+// sharing the same sp_no. Backed by RPC set_sp_status (SECURITY DEFINER).
+// status: 'draft' | 'confirmed' | 'cancelled'. reason optional (for cancel).
+export async function setSpStatus(spNo, status, reason = null) {
+  const { data, error } = await supabase.rpc('set_sp_status', {
+    p_sp_no: spNo,
+    p_status: status,
+    p_reason: reason,
+  });
+  return { data, error }; // data = jumlah baris ter-update
 }
 
 // ============================================================
