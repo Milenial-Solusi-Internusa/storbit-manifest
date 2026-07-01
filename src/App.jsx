@@ -631,7 +631,12 @@ const ERP_MENU_GROUPS = [
     items: [
       { section: 'HRGA Request' },
       {
-        id: 'hrga', label: 'HRGA Request', icon: UsersRound,
+        // public: everyone can reach their own HRGA requests. NOTE: there is a
+        // duplicate id 'hrga' (this parent + the "My Requests" child); findMenuItemById
+        // resolves to THIS parent, so its gate decides My Requests visibility. Its
+        // menuKey (hrga_request) is orphaned in module_menus → without public, My
+        // Requests was hidden for all non-super_admin. Management screens below stay role-gated.
+        id: 'hrga', label: 'HRGA Request', icon: UsersRound, public: true,
         children: [
           { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList, public: true },
           { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus, public: true },
