@@ -33,3 +33,6 @@ Thumbs.db
 
 # Test files (kalau ada)
 coverage
+
+# Local-only working docs (jangan di-track / di-commit)
+RBAC_AUDIT.md
