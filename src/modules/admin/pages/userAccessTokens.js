@@ -27,7 +27,7 @@ export const PASTEL = {
   butterDeep:   '#E8C168',
 };
 
-export const NAVY   = '#144682';
+export const NAVY   = '#1B4D8A';
 export const ORANGE = '#E85A1E';
 export const RED    = '#DC2626';
 

@@ -334,7 +334,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                           onMouseEnter={(e) => { e.currentTarget.style.background = '#EAF0F8'; }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                         >
-                          <Download size={16} color="#144682" />
+                          <Download size={16} color="#1B4D8A" />
                         </span>
                       )}
                     </PDFDownloadLink>

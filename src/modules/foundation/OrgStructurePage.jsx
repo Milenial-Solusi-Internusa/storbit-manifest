@@ -12,7 +12,7 @@ import { supabase } from '../../lib/supabase';
 
 /* ---------- entity colour schemes (keyed by company_id) ---------- */
 const ENTITY = {
-  '0e1840d8-e6fb-4190-bd09-88338e68b492': { color: '#144682', label: 'MSI' }, // navy
+  '0e1840d8-e6fb-4190-bd09-88338e68b492': { color: '#1B4D8A', label: 'MSI' }, // navy
   '42569e7c-531b-4d2b-832a-d5a7268c455b': { color: '#E85A1E', label: 'JCI' }, // orange
   'd2e5e565-5f67-4954-b8d9-5979a2a0c697': { color: '#F08C7D', label: 'SOA' }, // coral
 };
@@ -75,8 +75,8 @@ const TREE_CSS = `
 .ocp .node{transition:opacity .2s ease, transform .12s ease, filter .2s ease;}
 .ocp .node:hover{transform:translateY(-2px);}
 .ocp .node:hover .ocp-card{box-shadow:0 8px 28px rgba(16,24,40,.14),0 2px 6px rgba(16,24,40,.08);}
-.ocp .search-input:focus{border-color:#144682!important;background:#fff!important;box-shadow:0 0 0 3px rgba(20,70,130,.12);}
-.ocp .select:focus{border-color:#144682!important;background-color:#fff!important;box-shadow:0 0 0 3px rgba(20,70,130,.12);}
+.ocp .search-input:focus{border-color:#1B4D8A!important;background:#fff!important;box-shadow:0 0 0 3px rgba(20,70,130,.12);}
+.ocp .select:focus{border-color:#1B4D8A!important;background-color:#fff!important;box-shadow:0 0 0 3px rgba(20,70,130,.12);}
 .ocp .btn-primary:hover{background:#103a6c!important;}
 .ocp .btn-ghost:hover{background:#f6f7f9!important;}
 .ocp .modal-close:hover{background:#f1f3f6!important;color:#1f2733!important;}
@@ -208,7 +208,7 @@ function ReportsToModal({ person, people, childrenOf, saving, saveError, onSave,
         </div>
         <div style={S.modalFoot}>
           <button className="btn-ghost" style={{ ...S.btn, background: "#fff", borderColor: "#D6DAE0", color: "#1f2733", opacity: saving ? 0.6 : 1, cursor: saving ? "not-allowed" : "pointer" }} onClick={onClose} disabled={saving}>Batal</button>
-          <button className="btn-primary" style={{ ...S.btn, background: "#144682", color: "#fff", opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }} onClick={() => onSave(person.id, value === "__root__" ? null : value)} disabled={saving}>{saving ? "Menyimpan…" : "Simpan"}</button>
+          <button className="btn-primary" style={{ ...S.btn, background: "#1B4D8A", color: "#fff", opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }} onClick={() => onSave(person.id, value === "__root__" ? null : value)} disabled={saving}>{saving ? "Menyimpan…" : "Simpan"}</button>
         </div>
       </div>
     </div>
@@ -365,7 +365,7 @@ export default function OrgStructurePage() {
       ) : error ? (
         <div style={S.centerState}>
           <span style={{ color: "#B23227" }}>{error}</span>
-          <button className="btn-primary" style={{ ...S.btn, background: "#144682", color: "#fff" }} onClick={fetchTree}>Coba lagi</button>
+          <button className="btn-primary" style={{ ...S.btn, background: "#1B4D8A", color: "#fff" }} onClick={fetchTree}>Coba lagi</button>
         </div>
       ) : people.length === 0 ? (
         <div style={S.centerState}>Belum ada data karyawan aktif.</div>

@@ -18,7 +18,7 @@ import ActivityReportPDF from "./ActivityReportPDF";
 
 /* ---------------- tokens ---------------- */
 const C = {
-  navy: "#144682",
+  navy: "#1B4D8A",
   orange: "#E85A1E",
   teal: "#0F766E",
   amber: "#D97706",

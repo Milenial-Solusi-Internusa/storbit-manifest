@@ -16,7 +16,7 @@ import BantScoreBar from './BantScoreBar';
 
 /* ---------- design tokens (Lovable) ---------- */
 const C = {
-  navy: '#144682', navyDark: '#0F3768', navySoft: '#EEF3FB',
+  navy: '#1B4D8A', navyDark: '#0F3768', navySoft: '#EEF3FB',
   orange: '#E85A1E', orangeDark: '#C94D18', orangeSoft: '#FDF0E9',
   pageBg: '#F8FAFC', card: '#FFFFFF',
   border: '#E2E8F0', borderStrong: '#CBD5E1',

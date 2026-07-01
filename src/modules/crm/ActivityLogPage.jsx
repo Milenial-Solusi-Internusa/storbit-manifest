@@ -39,7 +39,7 @@ const C = {
   inkFaint:  '#8A8E7C',
   line:      '#E7DCC8',
   lineSoft:  '#F0E7D6',
-  navy:      '#144682',
+  navy:      '#1B4D8A',
   accent:    '#E85A1E',
 };
 
@@ -48,7 +48,7 @@ const ICONS = { UserPlus, FileText, FileCheck, Phone, MessageCircle, MapPin, Use
 
 // Per event-type icon-chip colours (brand tones, no dark green).
 const TYPE_TONE = {
-  prospect:   { bg: '#EAF0F8', fg: '#144682' },
+  prospect:   { bg: '#EAF0F8', fg: '#1B4D8A' },
   inquiry:    { bg: '#E5EDF7', fg: '#1E5894' },
   quotation:  { bg: '#FBE6DA', fg: '#C8521B' },
   activity:   { bg: '#EFE7F6', fg: '#7C3AED' },

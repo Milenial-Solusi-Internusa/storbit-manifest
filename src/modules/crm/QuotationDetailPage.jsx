@@ -331,7 +331,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           {quot.status === 'SUBMITTED' && (
             <button
               onClick={() => setConfirmSend(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#144682', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(20,70,130,.22)' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1B4D8A', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(20,70,130,.22)' }}
             >
               <Send size={14} /> Kirim ke Customer
             </button>
@@ -376,7 +376,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               <InfoRow label="Service Type" value={SERVICE_TYPE_LABELS[quot.service_type] || quot.service_type} />
               <InfoRow label="Routing" value={quot.route} />
               <InfoRow label="Quotation No" value={<span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>{quot.quotation_no}</span>} />
-              <InfoRow label="Inquiry No" value={quot.inquiry?.inquiry_no ? <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#144682' }}>{quot.inquiry.inquiry_no}</span> : '—'} />
+              <InfoRow label="Inquiry No" value={quot.inquiry?.inquiry_no ? <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1B4D8A' }}>{quot.inquiry.inquiry_no}</span> : '—'} />
               <InfoRow label="Tanggal" value={fmtDate(quot.created_at)} />
               <InfoRow label="Valid Until" value={fmtDate(quot.valid_until)} />
               <InfoRow label="Payment Terms" value={paymentTermName} />
@@ -409,13 +409,13 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
-                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Description</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }} className="no-print">Cost Price</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Currency</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Sell Price</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Unit Label</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>QTY</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#144682', background: '#F08C7D' }}>Total IDR</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Description</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }} className="no-print">Cost Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Currency</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Sell Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Unit Label</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>QTY</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Total IDR</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -543,7 +543,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           }}
         >
           {/* Header — logo + quotation title */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #144682' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #1B4D8A' }}>
             <div>
               <img
                 src="https://untmpqceexwxzuhlmyrg.supabase.co/storage/v1/object/public/assets/MSI%20LOGO.png"
@@ -555,7 +555,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               <div style={{ fontSize: '10px', color: '#777', marginTop: 2 }}>SEA FREIGHT · NVOCC · DOMESTIC · LEGALITY · AIRFREIGHT · CUSTOM</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '22px', fontWeight: 'bold', letterSpacing: '3px', color: '#144682' }}>QUOTATION</div>
+              <div style={{ fontSize: '22px', fontWeight: 'bold', letterSpacing: '3px', color: '#1B4D8A' }}>QUOTATION</div>
               <div style={{ fontSize: '12px', marginTop: '6px', color: '#333' }}>{quot.quotation_no}{quot.revision ? ` rev.${quot.revision}` : ''}</div>
               <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>Tanggal: {fmtDateShort(quot.created_at)}</div>
               <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>Valid Until: {fmtDateShort(quot.valid_until)}</div>
@@ -576,13 +576,13 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               ['INQUIRY NO.', inquiryNo,         'OFFICE',    '+62 21-3970-7558/9'    ],
               ['DATE',     fmtDateShort(quot.created_at), 'VALIDITY', fmtDateShort(quot.valid_until)],
             ];
-            const labelCell = { background: '#144682', color: 'white', padding: '5px 10px', fontWeight: 'bold', width: '80px', border: '1px solid #1a5299', fontSize: '11px', verticalAlign: 'middle' };
+            const labelCell = { background: '#1B4D8A', color: 'white', padding: '5px 10px', fontWeight: 'bold', width: '80px', border: '1px solid #1a5299', fontSize: '11px', verticalAlign: 'middle' };
             const valueCell = { background: '#f9f9f7', padding: '5px 10px', border: '1px solid #ddd', fontSize: '11px', verticalAlign: 'middle' };
             return (
               <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
                 <thead>
                   <tr>
-                    <td colSpan={4} style={{ background: '#144682', color: 'white', padding: '7px 12px', fontWeight: 'bold', letterSpacing: '1px', fontSize: '11px' }}>
+                    <td colSpan={4} style={{ background: '#1B4D8A', color: 'white', padding: '7px 12px', fontWeight: 'bold', letterSpacing: '1px', fontSize: '11px' }}>
                       CUSTOMER DETAILS :
                     </td>
                   </tr>
@@ -597,9 +597,9 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
                     </tr>
                   ))}
                   <tr>
-                    <td style={{ background: '#144682', color: 'white', padding: '5px 10px', fontWeight: 'bold', verticalAlign: 'middle', border: '1px solid #1a5299', fontSize: '11px' }}>APPROVED BY</td>
+                    <td style={{ background: '#1B4D8A', color: 'white', padding: '5px 10px', fontWeight: 'bold', verticalAlign: 'middle', border: '1px solid #1a5299', fontSize: '11px' }}>APPROVED BY</td>
                     <td style={{ background: '#f9f9f7', padding: '5px 10px', border: '1px solid #ddd', verticalAlign: 'middle', fontSize: '11px' }}></td>
-                    <td style={{ background: '#144682', color: 'white', padding: '5px 10px', fontWeight: 'bold', verticalAlign: 'middle', border: '1px solid #1a5299', fontSize: '11px' }}>APPROVAL DATE</td>
+                    <td style={{ background: '#1B4D8A', color: 'white', padding: '5px 10px', fontWeight: 'bold', verticalAlign: 'middle', border: '1px solid #1a5299', fontSize: '11px' }}>APPROVAL DATE</td>
                     <td style={{ background: '#f9f9f7', padding: '5px 10px', border: '1px solid #ddd', verticalAlign: 'middle', fontSize: '11px' }}></td>
                   </tr>
                 </tbody>
@@ -615,7 +615,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
                       can never be sliced in half, and the tr-cascade in the page-break
                       engine keeps it attached to the column header + first data row. */}
                   <tr className="pdf-no-break">
-                    <th colSpan={6} style={{ background: '#144682', color: 'white', padding: '6px 12px', fontSize: '11px', fontWeight: 'bold', letterSpacing: '.5px', textAlign: 'left', border: '1px solid #144682' }}>
+                    <th colSpan={6} style={{ background: '#1B4D8A', color: 'white', padding: '6px 12px', fontSize: '11px', fontWeight: 'bold', letterSpacing: '.5px', textAlign: 'left', border: '1px solid #1B4D8A' }}>
                       {sec.name}
                     </th>
                   </tr>
@@ -677,9 +677,9 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
                   <td style={{ padding: '5px 10px', color: '#555' }}>VAT 1.1%</td>
                   <td style={{ padding: '5px 10px', textAlign: 'right' }}>Rp {rpN(quot.tax_amount ?? tax)}</td>
                 </tr>
-                <tr style={{ borderTop: '2px solid #144682' }}>
+                <tr style={{ borderTop: '2px solid #1B4D8A' }}>
                   <td style={{ padding: '8px 10px', fontWeight: 'bold', fontSize: '14px' }}>GRAND TOTAL</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', color: '#144682' }}>
+                  <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', fontSize: '14px', color: '#1B4D8A' }}>
                     Rp {rpN(quot.total_amount ?? grandTotal)}
                   </td>
                 </tr>
@@ -691,10 +691,10 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           {quot.notes && (
             <div className="pdf-no-break" style={{
               marginTop: '20px', fontSize: '11px',
-              border: '1px solid #E5E7EB', borderLeft: '4px solid #144682',
+              border: '1px solid #E5E7EB', borderLeft: '4px solid #1B4D8A',
               background: '#F8FAFC', borderRadius: '4px', padding: '10px 12px',
             }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#144682' }}>Notes</div>
+              <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#1B4D8A' }}>Notes</div>
               <div style={{ color: '#555', lineHeight: '1.6', whiteSpace: 'pre-line' }}>{quot.notes}</div>
             </div>
           )}
@@ -732,12 +732,12 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           </div>
 
           {/* Divider orange-navy */}
-          <div className="pdf-no-break" style={{ marginTop: '32px', height: '3px', background: 'linear-gradient(to right, #E85A1E 8%, #144682 8%)' }} />
+          <div className="pdf-no-break" style={{ marginTop: '32px', height: '3px', background: 'linear-gradient(to right, #E85A1E 8%, #1B4D8A 8%)' }} />
 
           {/* Footer navy */}
           <div className="pdf-no-break" style={{
             marginTop: '0px',
-            background: '#144682',
+            background: '#1B4D8A',
             color: 'white',
             padding: '20px 24px',
             display: 'flex',

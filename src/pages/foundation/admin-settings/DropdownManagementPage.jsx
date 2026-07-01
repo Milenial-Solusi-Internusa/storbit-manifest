@@ -30,7 +30,7 @@ import { useAuth } from "../../../contexts/useAuth";
 import { useToast } from "./kit";
 
 /* ---------- brand tokens ---------- */
-const NAVY = "#144682";
+const NAVY = "#1B4D8A";
 const ORANGE = "#E85A1E";
 const ORANGE_DK = "#D14E18";
 const CREAM = "#F6EFE3";

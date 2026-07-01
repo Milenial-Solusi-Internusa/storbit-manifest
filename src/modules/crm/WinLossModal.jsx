@@ -52,7 +52,7 @@ export default function WinLossModal({ open, mode, prospectName, saving, onSave,
     }
   };
 
-  const accent = isWon ? '#144682' : '#C0392B';
+  const accent = isWon ? '#1B4D8A' : '#C0392B';
 
   const lbl = (text, req) => (
     <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 5 }}>

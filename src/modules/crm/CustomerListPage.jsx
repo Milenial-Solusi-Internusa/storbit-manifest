@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
-const NAVY = '#144682';
+const NAVY = '#1B4D8A';
 const ORANGE = '#E85A1E';
 const SURFACE = '#FFFDF8';
 
@@ -23,7 +23,7 @@ const D = {
   inkFaint:   '#8A8E7C',
   line:       '#E7DCC8',
   lineSoft:   '#F0E7D6',
-  navy:       '#144682',
+  navy:       '#1B4D8A',
   navySoft:   '#EEF3FB',
   accent:     '#E85A1E',
   accentSoft: '#FEF2EC',
@@ -84,7 +84,7 @@ const TIER_CFG = {
 const STATUS_CFG = {
   // accounts.account_status segments
   customer:   { label: 'Customer',   bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D' },
-  prospect:   { label: 'Prospect',   bg: '#EAF0F8', fg: '#144682', dot: '#144682' },
+  prospect:   { label: 'Prospect',   bg: '#EAF0F8', fg: '#1B4D8A', dot: '#1B4D8A' },
   lost:       { label: 'Lost',       bg: '#FBE3E0', fg: '#B23227', dot: '#C0392B' },
   free_agent: { label: 'Free Agent', bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E' },
   // legacy customers.status (fallback)
@@ -469,7 +469,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13.5, color: D.ink }}>
                 <input type="checkbox" checked={!!form.is_odoo_customer}
                   onChange={e => setForm(f => ({ ...f, is_odoo_customer: e.target.checked }))}
-                  style={{ width: 16, height: 16, accentColor: '#144682', cursor: 'pointer' }} />
+                  style={{ width: 16, height: 16, accentColor: '#1B4D8A', cursor: 'pointer' }} />
                 Customer Existing (dari Odoo)
               </label>
             </FG>

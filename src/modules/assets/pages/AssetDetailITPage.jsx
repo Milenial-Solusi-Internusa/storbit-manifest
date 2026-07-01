@@ -1575,7 +1575,7 @@ export default function AssetDetailITPage({ id, asset, onBack, onSaved }) {
         <div style={{
           position: 'fixed', right: 24, bottom: 24, zIndex: 200,
           display: 'flex', alignItems: 'center', gap: 9,
-          background: toast.tone === 'ok' ? '#144682' : D.danger, color: '#fff',
+          background: toast.tone === 'ok' ? '#1B4D8A' : D.danger, color: '#fff',
           padding: '11px 15px', borderRadius: 10, fontSize: 13, fontWeight: 600,
           boxShadow: '0 12px 30px rgba(10,20,40,.28)',
         }}>

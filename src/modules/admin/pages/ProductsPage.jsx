@@ -8,7 +8,7 @@ import { supabase } from '../../../lib/supabase';
 import { useDebounce } from '../../../hooks/useDebounce';
 
 /* ── brand tokens ─────────────────────────────────────────────────────────── */
-const NAVY   = '#144682';
+const NAVY   = '#1B4D8A';
 const ORANGE = '#E85A1E';
 
 /* ── inline lucide paths (design-exact icon set) ─────────────────────────── */
@@ -185,7 +185,7 @@ const P = {
   catBadge: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 700, padding: '4px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
   unitBadge: { display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 600, color: '#7A828E', background: '#F4F5F7', padding: '4px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
   priceRow: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, marginTop: 'auto', paddingTop: 14 },
-  priceVal: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 21, fontWeight: 800, color: '#144682', letterSpacing: -0.6, lineHeight: 1, fontVariantNumeric: 'tabular-nums' },
+  priceVal: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 21, fontWeight: 800, color: '#1B4D8A', letterSpacing: -0.6, lineHeight: 1, fontVariantNumeric: 'tabular-nums' },
   priceMuted: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 21, fontWeight: 800, color: '#C2C7D0', letterSpacing: -0.6, lineHeight: 1 },
   typeChip: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 700, padding: '4px 9px 4px 7px', borderRadius: 20, whiteSpace: 'nowrap' },
   svcChip: { background: '#FBE6DA', color: '#C8521B' },
@@ -282,7 +282,7 @@ function TableRow({ p, onAction, onSelect }) {
       <td style={P.td}><span style={{ ...P.catBadge, background: cat.bg, color: cat.fg }}><Icon name={cat.icon} size={12}/>{cat.label}</span></td>
       <td style={{ ...P.td, color: '#6B7280' }}>{unitLabel(p.unit)}</td>
       <td style={{ ...P.td, textAlign: 'right' }}>
-        <span style={{ fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 700, fontSize: 12.5, color: p.price ? '#144682' : '#C2C7D0', fontVariantNumeric: 'tabular-nums' }}>{rp(p.price)}</span>
+        <span style={{ fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 700, fontSize: 12.5, color: p.price ? '#1B4D8A' : '#C2C7D0', fontVariantNumeric: 'tabular-nums' }}>{rp(p.price)}</span>
       </td>
       <td style={P.td}><TypeChip service={p.service}/></td>
       <td style={P.td}><span style={{ ...P.coBadge, background: co.bg, color: co.fg }}><Icon name="building" size={10}/>{co.short}</span></td>

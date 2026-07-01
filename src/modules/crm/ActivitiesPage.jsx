@@ -40,7 +40,7 @@ const C = {
   inkFaint:  '#8A8E7C',
   line:      '#E7DCC8',
   lineSoft:  '#F0E7D6',
-  navy:      '#144682',
+  navy:      '#1B4D8A',
   accent:    '#E85A1E',
   accentSoft:'#FEF2EC',
   ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',
@@ -56,7 +56,7 @@ const TYPE_META = {
   call:     { label: 'Call',      bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
   whatsapp: { label: 'WhatsApp',  bg: '#E4F0E5', color: '#2E7D4F', bd: '#BFDDC4' },
   visit:    { label: 'Visit',     bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
-  meeting:  { label: 'Meeting',   bg: '#E1ECF5', color: '#144682', bd: '#BAD2E6' },
+  meeting:  { label: 'Meeting',   bg: '#E1ECF5', color: '#1B4D8A', bd: '#BAD2E6' },
   email:    { label: 'Email',     bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
   followup: { label: 'Follow-up', bg: '#EEF0F3', color: '#51607A', bd: '#CDD5E1' },
 };

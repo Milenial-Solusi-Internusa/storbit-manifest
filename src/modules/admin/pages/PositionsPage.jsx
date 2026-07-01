@@ -46,7 +46,7 @@ const PASTEL = {
 
 // MSI brand entity palette (keyed by company_id)
 const ENTITIES = [
-  { id: '0e1840d8-e6fb-4190-bd09-88338e68b492', code: 'MSI', name: 'Milenial Solusi Internusa', color: '#144682' }, // navy
+  { id: '0e1840d8-e6fb-4190-bd09-88338e68b492', code: 'MSI', name: 'Milenial Solusi Internusa', color: '#1B4D8A' }, // navy
   { id: '42569e7c-531b-4d2b-832a-d5a7268c455b', code: 'JCI', name: 'Jago Custom Indonesia',     color: '#E85A1E' }, // orange
   { id: 'd2e5e565-5f67-4954-b8d9-5979a2a0c697', code: 'SOA', name: 'Stuja Orbit Abadi',          color: '#F08C7D' }, // coral
 ];

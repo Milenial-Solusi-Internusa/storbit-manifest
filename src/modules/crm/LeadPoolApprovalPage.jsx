@@ -11,7 +11,7 @@ import { useAuth } from '../../contexts/useAuth';
 const C = {
   bg: '#F6EFE3', surface: '#FFFDF8', surface2: '#FBF6EC',
   ink: '#23291E', inkSoft: '#5E6553', inkFaint: '#8A8E7C',
-  line: '#E7DCC8', lineSoft: '#F0E7D6', navy: '#144682', accent: '#E85A1E',
+  line: '#E7DCC8', lineSoft: '#F0E7D6', navy: '#1B4D8A', accent: '#E85A1E',
   green: '#1F8B4D', greenBg: '#DEF0E4', red: '#C0392B', redBg: '#FBE3E3',
 };
 

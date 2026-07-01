@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 
 /* ── brand tokens ──────────────────────────────────────────────────────────── */
-const NAVY   = '#144682';
+const NAVY   = '#1B4D8A';
 const ORANGE = '#E85A1E';
 
 /* ── inline icon paths ─────────────────────────────────────────────────────── */

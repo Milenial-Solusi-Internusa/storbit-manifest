@@ -265,11 +265,11 @@ function ProductDescInput({ value, products, inputStyle, onChangeText, onPick })
               onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
             >
               <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: C.ink }}>
-                <span style={{ color: '#144682', fontWeight: 700 }}>[{p.code}]</span> {p.name}
+                <span style={{ color: '#1B4D8A', fontWeight: 700 }}>[{p.code}]</span> {p.name}
               </span>
               {p.category && (
                 <span style={{
-                  flex: '0 0 auto', fontSize: 10.5, fontWeight: 600, color: '#144682',
+                  flex: '0 0 auto', fontSize: 10.5, fontWeight: 600, color: '#1B4D8A',
                   background: '#EAF0F8', borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap',
                 }}>
                   {p.category}
@@ -329,14 +329,14 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
         <table className="q-item-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${C.lineSoft}` }}>
-              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Description</th>
-              <th className="no-print" style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Cost Price</th>
-              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Currency</th>
-              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Kurs</th>
-              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Sell Price</th>
-              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Unit Label</th>
-              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>QTY</th>
-              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#144682', whiteSpace: 'nowrap', background: '#F08C7D' }}>Total IDR</th>
+              <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Description</th>
+              <th className="no-print" style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Cost Price</th>
+              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Currency</th>
+              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Kurs</th>
+              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Sell Price</th>
+              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Unit Label</th>
+              <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>QTY</th>
+              <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Total IDR</th>
               <th style={{ padding: '7px 8px', background: '#F08C7D' }}></th>
             </tr>
           </thead>

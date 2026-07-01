@@ -26,7 +26,7 @@ export default function ConfirmModal({
   const colors = {
     danger:  { bg: '#FEE2E2', icon: '#DC2626', btn: '#DC2626', btnHover: '#B91C1C' },
     warning: { bg: '#FEF3C7', icon: '#D97706', btn: '#D97706', btnHover: '#B45309' },
-    info:    { bg: '#EFF6FF', icon: '#2563EB', btn: '#144682', btnHover: '#0f3366' },
+    info:    { bg: '#EFF6FF', icon: '#2563EB', btn: '#1B4D8A', btnHover: '#0f3366' },
   };
   const c = colors[variant] || colors.danger;
 
