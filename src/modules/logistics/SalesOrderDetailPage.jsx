@@ -18,7 +18,7 @@ import {
   ChevronRight, ChevronLeft, Pencil, Trash2, Package,
   Calendar, Clock, Wallet, Receipt, FileText, Send, Truck,
   Check, X, Upload, FolderOpen, History, List,
-  AlertTriangle, Plus,
+  AlertTriangle, Plus, ClipboardList,
 } from 'lucide-react';
 import { listSpBtbs, addSpBtb, deleteSpBtb } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
@@ -570,12 +570,14 @@ export default function SalesOrderDetailPage({
   onSaveItem,
   onDeleteItem,
   onDeleteSP,
+  onGeneratePicking,
   showToast,
   role,
 }) {
   const [tab,          setTab]          = useState('overview');
   const [editingItem,  setEditingItem]  = useState(null);
   const [showDeleteSP, setShowDeleteSP] = useState(false);
+  const [genBusy,      setGenBusy]      = useState(false);
 
   // ── BTB Numbers (SP-level) ───────────────────────────────────────────────
   const [btbs,         setBtbs]         = useState([]);
@@ -730,6 +732,20 @@ export default function SalesOrderDetailPage({
             </div>
           </div>
           <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignSelf: 'flex-start' }}>
+            {group?.spStatus === 'confirmed' && (
+              <button
+                onClick={async () => {
+                  if (genBusy) return;
+                  setGenBusy(true);
+                  await onGeneratePicking?.(spNo);
+                  setGenBusy(false);
+                }}
+                disabled={genBusy}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: genBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: genBusy ? 0.7 : 1 }}
+              >
+                <ClipboardList size={14}/> {genBusy ? 'Membuat…' : 'Generate Picking List'}
+              </button>
+            )}
             <button
               onClick={() => items[0] && setEditingItem(items[0])}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.ink, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
