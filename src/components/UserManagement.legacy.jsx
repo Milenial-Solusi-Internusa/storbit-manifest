@@ -38,7 +38,6 @@ const PASTEL = {
 const ROLES = [
   { id: 'super',       label: 'Super Admin',            color: PASTEL.peachDeep },
   { id: 'operations',  label: 'Operations',             color: PASTEL.skyDeep },    // renamed from 'logistic'
-  { id: 'logistic',    label: 'Admin Logistic (legacy)',color: PASTEL.skyDeep },    // keep during DB transition
   { id: 'procurement', label: 'Procurement',            color: PASTEL.lavenderDeep },
   { id: 'finance',     label: 'Finance',                color: PASTEL.mintDeep },
   { id: 'management',  label: 'Management',             color: PASTEL.butterDeep },
@@ -47,7 +46,6 @@ const ROLES = [
 const ROLE_DESCRIPTIONS = {
   super:       'Akses penuh: semua fitur + user management',
   operations:  'Input SP & shipment, view all',   // renamed from 'logistic'
-  logistic:    'Input SP & shipment, view all (legacy)',
   procurement: 'View + edit SP, manage customers',
   finance:     'Finance fields, AR Tracker, outstanding',
   management:  'Read-only + export reports',

@@ -34,7 +34,6 @@ export const RED    = '#DC2626';
 export const LEGACY_ROLES = [
   { value: 'super',       label: 'Super Admin' },
   { value: 'operations',  label: 'Operations' },      // renamed from 'logistic'
-  { value: 'logistic',    label: 'Admin Logistic (legacy)' }, // keep during DB transition
   { value: 'procurement', label: 'Procurement' },
   { value: 'finance',     label: 'Finance' },
   { value: 'management',  label: 'Management' },
@@ -43,7 +42,6 @@ export const LEGACY_ROLES = [
 export const LEGACY_ROLE_COLOR = {
   super:       PASTEL.peachDeep,
   operations:  PASTEL.skyDeep,    // renamed from 'logistic'
-  logistic:    PASTEL.skyDeep,    // legacy alias
   procurement: PASTEL.lavenderDeep,
   finance:     PASTEL.mintDeep,
   management:  PASTEL.butterDeep,
