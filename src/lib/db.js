@@ -334,6 +334,106 @@ export async function setSpStatus(spNo, status, reason = null) {
 }
 
 // ============================================================
+// PICKING LIST (Fase 2 — fulfillment gudang)
+// ============================================================
+
+// Generate a picking list from a CONFIRMED SP. Atomic via RPC
+// generate_picking_from_sp (validates sp_status='confirmed', idempotency guard,
+// numbering, header + items in one transaction).
+// Returns { data: { picking_list_id, picking_no } | null, error }.
+export async function generatePickingFromSp(spNo, warehouseId = null) {
+  const { data, error } = await supabase.rpc('generate_picking_from_sp', {
+    p_sp_no: spNo,
+    p_warehouse_id: warehouseId,
+  });
+  // RPC RETURNS TABLE → array of rows; unwrap the single row.
+  const row = Array.isArray(data) ? data[0] : data;
+  return { data: row || null, error };
+}
+
+// List picking lists (newest first) with warehouse name embedded.
+export async function listPickingLists() {
+  const { data, error } = await supabase
+    .from('picking_lists')
+    .select('*, warehouses(name, code)')
+    .order('created_at', { ascending: false, nullsFirst: false });
+  return { data: data || [], error };
+}
+
+// Fetch one picking list + its items + resolved customer name (via sp_no → SP).
+// Returns { data: { ...header, warehouse_name, customer_name, items }, error }.
+export async function getPickingListDetail(pickingListId) {
+  const { data: header, error: hErr } = await supabase
+    .from('picking_lists')
+    .select('*, warehouses(name, code)')
+    .eq('id', pickingListId)
+    .single();
+  if (hErr) return { data: null, error: hErr };
+
+  const { data: items, error: iErr } = await supabase
+    .from('picking_list_items')
+    .select('*')
+    .eq('picking_list_id', pickingListId)
+    .order('created_at', { ascending: true, nullsFirst: false });
+  if (iErr) return { data: null, error: iErr };
+
+  // Customer isn't stored on picking_lists (sp_no is free text) — resolve from SP.
+  const { data: spRow } = await supabase
+    .from('sp_items')
+    .select('customers:accounts!sp_items_customer_id_fkey(name)')
+    .eq('sp_no', header.sp_no)
+    .limit(1)
+    .maybeSingle();
+
+  return {
+    data: {
+      ...header,
+      warehouse_name: header.warehouses?.name || null,
+      customer_name: spRow?.customers?.name || null,
+      items: items || [],
+    },
+    error: null,
+  };
+}
+
+// Toggle a single picking_list_items row picked/unpicked. When picked, qty_picked
+// snaps to qty_requested; when unpicked, back to 0.
+export async function setPickingItemPicked(itemId, picked, qtyRequested) {
+  const { data, error } = await supabase
+    .from('picking_list_items')
+    .update({
+      status: picked ? 'picked' : 'pending',
+      qty_picked: picked ? qtyRequested : 0,
+    })
+    .eq('id', itemId)
+    .select('*')
+    .single();
+  return { data, error };
+}
+
+// Start picking: pending → in_progress (+ started_at).
+export async function startPicking(pickingListId) {
+  const { data, error } = await supabase
+    .from('picking_lists')
+    .update({ status: 'in_progress', started_at: new Date().toISOString() })
+    .eq('id', pickingListId)
+    .select('*')
+    .single();
+  return { data, error };
+}
+
+// Complete picking: in_progress → done (+ completed_at).
+export async function completePicking(pickingListId) {
+  const { data, error } = await supabase
+    .from('picking_lists')
+    .update({ status: 'done', completed_at: new Date().toISOString() })
+    .eq('id', pickingListId)
+    .select('*')
+    .single();
+  return { data, error };
+}
+
+// ============================================================
 // AR TTF + BTB (header + nested items)
 // ============================================================
 export async function listTtfs() {
