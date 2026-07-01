@@ -1048,6 +1048,7 @@ const MENU_KEY_MAP = {
   'masterData':    'foundation_master',
   'products':      'foundation_products',
   'schema':        'foundation_schema',
+  'schema-manager':'foundation_schema',
   'adminSettings': 'admin_settings',
 };
 
@@ -2653,7 +2654,11 @@ export default function StorbitManifest() {
               onDeactivate={() => { setActiveMenu('products'); setSelectedProduct(null); }}
             />
           </Suspense>
-          {activeMenu === 'schema-manager' && (hasPermission ? hasPermission('admin', 'view') : role === 'super_admin' || role === 'super') && (
+          {activeMenu === 'schema-manager' && (role !== 'super_admin' ? (
+            /* Defense-in-depth: Schema Manager is a destructive DDL tool → super_admin ONLY,
+               enforced here regardless of sidebar/menu gating (AGENTS.md: don't rely only on FE menu checks). */
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ) : (
             <ErrorBoundary title="Schema Manager temporarily unavailable">
               <Suspense fallback={
                 <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
@@ -2663,7 +2668,7 @@ export default function StorbitManifest() {
                 <SchemaManagerPage showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
-          )}
+          ))}
           {(activeMenu === 'assets' || activeMenu?.startsWith('assets-')) && (
             <ErrorBoundary title="Asset Management section temporarily unavailable">
               <Suspense fallback={
