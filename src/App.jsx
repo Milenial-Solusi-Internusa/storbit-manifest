@@ -997,6 +997,7 @@ const MENU_KEY_MAP = {
   'customer-detail':     'crm_customers',
   // Logistics
   'manifest':            'logistics_sp',
+  'input':               'logistics_sp',
   'trading':             'logistics_general_trading',
   'customers':           'logistics_customer_storbit',
   'job':                 'logistics_job_management',
@@ -1029,6 +1030,7 @@ const MENU_KEY_MAP = {
   'accounting':  'fin_accounting',
   'outstanding': 'fin_outstanding',
   'finDocs':     'fin_docs',
+  'finance':     'fin_docs',
   // HRGA / Service Management
   'hrga': 'hrga_request',
   'it':   'hrga_it',
@@ -1046,10 +1048,12 @@ const MENU_KEY_MAP = {
   'audit':       'report_audit',
   // Foundation
   'masterData':    'foundation_master',
+  'admin':         'foundation_master',
   'products':      'foundation_products',
   'schema':        'foundation_schema',
   'schema-manager':'foundation_schema',
   'adminSettings': 'admin_settings',
+  'admin-settings':'admin_settings',
 };
 
 // canSeeMenuItem — priority: public → hasMenuPermission (per-user) → hasPermission
@@ -1469,6 +1473,15 @@ export default function StorbitManifest() {
     if (!item) return true;
     return canSeeMenuItem(item, role, hasPermission, hasMenuPermission);
   }, [role, hasPermission, hasMenuPermission]);
+
+  // Defense-in-depth for Admin Settings (hub + all admin-settings-* sub-pages):
+  // explicit role gate — super_admin OR admin only. The item's role:['super_admin','admin']
+  // was previously DEAD (module 'admin' gate won → any admin.view holder could open it,
+  // the F3 exposure); this enforces it at the page level for the whole family so a stray
+  // navigation can't render a system-config screen. Task 1 (MENU_KEY_MAP
+  // 'admin-settings'→'admin_settings') separately tightens the sidebar gate to per-menu.
+  // (AGENTS.md: don't rely on menu gating alone.)
+  const canAdminSettings = role === 'super_admin' || role === 'admin';
 
   // ── Navbar: Pending Approval badge (HRGA approver inbox count) ──────────────
   // Lightweight count: HRGA requests in-progress (submitted/under_review) whose
@@ -2993,10 +3006,10 @@ export default function StorbitManifest() {
           {/* Route-guard (defense-in-depth): block the whole admin-settings family
               for roles that can't see it, even if activeMenu is forced
               (FIX-B exempts 'admin-settings-*' from restored-menu validation). */}
-          {activeMenu?.startsWith('admin-settings') && !canRenderPage('admin-settings') && (
+          {activeMenu?.startsWith('admin-settings') && !canAdminSettings && (
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
           )}
-          {activeMenu === 'admin-settings' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings' && canAdminSettings && (
             <ErrorBoundary title="Admin Settings temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <AdminSettingsHub onOpen={(id) => setActiveMenu(
@@ -3014,63 +3027,63 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-entity' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-entity' && canAdminSettings && (
             <ErrorBoundary title="Entity Settings temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <EntitySettingsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-documents' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-documents' && canAdminSettings && (
             <ErrorBoundary title="Document Settings temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <DocumentSettingsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-finance' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-finance' && canAdminSettings && (
             <ErrorBoundary title="Finance Defaults temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <FinanceDefaultsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-approvals' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-approvals' && canAdminSettings && (
             <ErrorBoundary title="Approval Workflows temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <ApprovalWorkflowsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-notifications' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-notifications' && canAdminSettings && (
             <ErrorBoundary title="Notifications temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <NotificationsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-security' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-security' && canAdminSettings && (
             <ErrorBoundary title="Security Policy temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <SecurityPolicyPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-audit' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-audit' && canAdminSettings && (
             <ErrorBoundary title="Audit Log temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <AuditLogPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-general' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-general' && canAdminSettings && (
             <ErrorBoundary title="General Preferences temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <GeneralPreferencesPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
           )}
-          {activeMenu === 'admin-settings-integrations' && canRenderPage('admin-settings') && (
+          {activeMenu === 'admin-settings-integrations' && canAdminSettings && (
             <ErrorBoundary title="Integrations temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <IntegrationsPage onHome={() => setActiveMenu('admin-settings')} />
