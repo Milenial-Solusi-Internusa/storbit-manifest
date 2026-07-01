@@ -21,7 +21,7 @@ import { bulkInsertSpItems, bulkInsertSpBtbs } from '../../lib/db';
 // ─── MSI Brand tokens ─────────────────────────────────────────────────────────
 const C = {
   // Brand
-  navy:       '#144682',
+  navy:       '#1B4D8A',
   navyDark:   '#0f3366',
   navyLight:  '#1a5299',
   orange:     '#E85A1E',
@@ -552,7 +552,7 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
   const inp = (props) => (
     <input
       {...props}
-      onFocus={e => { e.target.style.borderColor = '#144682'; e.target.style.boxShadow = '0 0 0 3px rgba(20,70,130,.1)'; }}
+      onFocus={e => { e.target.style.borderColor = '#1B4D8A'; e.target.style.boxShadow = '0 0 0 3px rgba(20,70,130,.1)'; }}
       onBlur={e  => { e.target.style.borderColor = '#E5E7EB'; e.target.style.boxShadow = 'none'; }}
       style={{
         width: '100%', height: 38, borderRadius: 8,
@@ -591,7 +591,7 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
         {/* Number badge */}
         <span style={{
           width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-          background: '#EBF1FA', color: '#144682',
+          background: '#EBF1FA', color: '#1B4D8A',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 12.5,
         }}>

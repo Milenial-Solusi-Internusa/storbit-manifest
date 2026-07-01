@@ -16,7 +16,7 @@ import {
 const MODULE_CFG = {
   'Core':                   { Icon: Command,     color: '#6B7280', desc: 'Pengguna, peran & konfigurasi'     },
   'Commercial & CRM':       { Icon: Users,       color: '#3B82F6', desc: 'Pipeline, quotation & klien'       },
-  'Logistics':              { Icon: Truck,       color: '#144682', desc: 'SP, Shipment, Freight & Customs'   },
+  'Logistics':              { Icon: Truck,       color: '#1B4D8A', desc: 'SP, Shipment, Freight & Customs'   },
   'Procurement & Vendor':   { Icon: ShoppingCart,color: '#F97316', desc: 'PO, RFQ & manajemen vendor'        },
   'Inventory':      { Icon: Package,     color: '#D97706', desc: 'Stok, aset & depresiasi'           },
   'Finance & Accounting':   { Icon: Receipt,     color: '#059669', desc: 'AR/AP, jurnal & laporan keuangan'  },
@@ -247,13 +247,13 @@ function RestrictedModal({ moduleName, onClose }) {
           onClick={onClose}
           style={{
             padding: '10px 28px', borderRadius: 9,
-            border: '1.5px solid #144682', background: '#fff',
-            color: '#144682', fontSize: 14, fontWeight: 700,
+            border: '1.5px solid #1B4D8A', background: '#fff',
+            color: '#1B4D8A', fontSize: 14, fontWeight: 700,
             cursor: 'pointer', fontFamily: 'inherit',
             transition: 'background .14s, color .14s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#144682'; e.currentTarget.style.color = '#fff'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#144682'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#1B4D8A'; e.currentTarget.style.color = '#fff'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#1B4D8A'; }}
         >
           Tutup
         </button>
@@ -317,7 +317,7 @@ export default function AppLauncher({ moduleGroups, onSelect, profile, hasPermis
             display: 'inline-flex', alignItems: 'center', gap: 8,
             fontFamily: "'IBM Plex Mono', monospace",
             fontSize: 11, fontWeight: 600, letterSpacing: 1.6, textTransform: 'uppercase',
-            color: '#144682', background: '#EEF3FB',
+            color: '#1B4D8A', background: '#EEF3FB',
             border: '1px solid #C5D4ED',
             padding: '5px 14px', borderRadius: 30, marginBottom: 22, whiteSpace: 'nowrap',
           }}>
@@ -332,7 +332,7 @@ export default function AppLauncher({ moduleGroups, onSelect, profile, hasPermis
           <h1 style={{
             fontFamily: "'Montserrat', sans-serif",
             fontSize: 38, fontWeight: 800, letterSpacing: '-1.2px',
-            margin: 0, color: '#144682', lineHeight: 1.08,
+            margin: 0, color: '#1B4D8A', lineHeight: 1.08,
           }}>
             {greeting}, {firstName}.
           </h1>
@@ -341,7 +341,7 @@ export default function AppLauncher({ moduleGroups, onSelect, profile, hasPermis
               fontSize: 15.5, color: '#4B5563', margin: '11px 0 0',
               display: 'inline-flex', alignItems: 'center', gap: 8,
             }}>
-              <Loader2 size={15} style={{ color: '#144682', animation: 'spin 1s linear infinite' }} />
+              <Loader2 size={15} style={{ color: '#1B4D8A', animation: 'spin 1s linear infinite' }} />
               Memuat izin akses…
             </p>
           ) : (

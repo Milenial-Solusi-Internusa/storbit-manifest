@@ -10,6 +10,7 @@ import {
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
   ClipboardList, LayoutList, Archive, UserX, Activity, BookOpen,
+  Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { supabase } from './lib/supabase';
@@ -23,7 +24,7 @@ import { calcItem } from './lib/spCalc';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
-const AppLauncher    = lazy(() => import('./modules/launcher/AppLauncher'));
+const HomeDashboard  = lazy(() => import('./modules/home/HomeDashboard'));
 const AssetShell     = lazy(() => import('./modules/assets/AssetShell'));
 const HrgaShell      = lazy(() => import('./modules/hrga/HrgaShell'));
 const SalesOrderPage       = lazy(() => import('./modules/logistics/SalesOrderPage'));
@@ -71,25 +72,28 @@ const IntegrationsPage       = lazy(() => import('./pages/foundation/admin-setti
 // ============================
 // PASTEL PALETTE
 // ============================
+// Mirrors the CSS :root palette in index.css (soft-navy rebrand). Neutral
+// keys (cream=page bg, ink/line) are now cool-gray instead of warm cream;
+// the pastel accent keys are remapped to the new module pastels.
 const PASTEL = {
-  peach: '#FFD4B8',
-  peachDeep: '#F5A78F',
-  lavender: '#D8C5F0',
-  lavenderDeep: '#A98FD8',
-  mint: '#FFB899',
-  mintDeep: '#7FC9A0',
-  butter: '#FFE9B8',
-  butterDeep: '#E8C168',
-  rose: '#F5C8D5',
-  roseDeep: '#D89AB0',
-  sky: '#C8E4F5',
-  skyDeep: '#8FBCD8',
-  cream: '#FAF6F0',
-  ink: '#2D2A28',
-  inkSoft: '#5C5550',
-  inkMute: '#9C948D',
-  line: '#EDE6DC',
-  lineSoft: '#F5EFE5',
+  peach: '#FDEDE4',
+  peachDeep: '#D4744A',
+  lavender: '#F0EBFB',
+  lavenderDeep: '#7A5EBE',
+  mint: '#E7F4ED',
+  mintDeep: '#479467',
+  butter: '#FCF2E3',
+  butterDeep: '#C0863A',
+  rose: '#F9EBF2',
+  roseDeep: '#B25E94',
+  sky: '#E9F1FC',
+  skyDeep: '#3D6BAB',
+  cream: '#F2F5F9',   // page background (soft gray)
+  ink: '#212A37',
+  inkSoft: '#4A5360',
+  inkMute: '#7E8899',
+  line: '#E8ECF2',
+  lineSoft: '#EDF0F4',
 };
 
 
@@ -800,6 +804,161 @@ const ERP_MENU_GROUPS = [
   },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NEXUS_NAV — curated persistent-sidebar map (restruktur-nexus).
+// 2-level model: group → module → objek. Modules are expandable and reveal the
+// existing objek pages (child ids reference real pages, navigated via navigateTo
+// so activeModule/content-gating keep working). `soon: true` = disabled skeleton.
+// `tone` maps to the per-module pastel (bubble bg + icon color). `target` = a
+// direct-navigate leaf module (no children). Child role-gating is derived from
+// the real ERP_MENU_GROUPS entry (findMenuItemById + canSeeMenuItem); a `role`
+// on a child/module is used as a fallback when the id isn't in that tree.
+// ─────────────────────────────────────────────────────────────────────────────
+const NEXUS_NAV = [
+  {
+    group: 'Beranda',
+    items: [
+      { id: 'nav-home', label: 'Beranda', icon: Home, tone: 'blue', target: 'home' },
+    ],
+  },
+  {
+    group: 'Bisnis',
+    items: [
+      {
+        id: 'nav-crm', label: 'Commercial & CRM', icon: Contact, tone: 'blue',
+        children: [
+          { id: 'crm-dashboard',        label: 'Dashboard',         icon: BarChart2 },
+          { id: 'crm-pipeline',         label: 'Pipeline / Leads',  icon: Users },
+          { id: 'crm-lead-pool',        label: 'Lead Pool',         icon: Archive },
+          { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck },
+          { id: 'crm-prospects',        label: 'Prospects',         icon: Users },
+          { id: 'crm-inquiry',          label: 'Inquiry',           icon: FileText },
+          { id: 'quotation-draft',      label: 'Quotation',         icon: Receipt },
+          { id: 'crm-rate-list',        label: 'Rate List',         icon: Tag },
+          {
+            id: 'crm-customers', label: 'Master Customer', icon: Building2,
+            children: [
+              { id: 'crm-customers-msi',  label: 'Customer MSI', icon: Building2 },
+              { id: 'crm-customers-jci',  label: 'Customer JCI', icon: Building2 },
+              { id: 'crm-customers-soa',  label: 'Customer SOA', icon: Building2 },
+              { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX },
+            ],
+          },
+          { id: 'crm-calls',        label: 'Activities',   icon: Activity },
+          { id: 'crm-activity-log', label: 'Activity Log', icon: History },
+        ],
+      },
+      {
+        id: 'nav-sp', label: 'Daftar Pesanan (Storbit)', icon: ClipboardList, tone: 'violet',
+        children: [
+          { id: 'manifest', label: 'SP Manifest', icon: LayoutList },
+          { id: 'input',    label: 'Input SP',    icon: Plus },
+        ],
+      },
+      {
+        id: 'nav-inv', label: 'Inventory', icon: Package, tone: 'amber',
+        children: [
+          { id: 'inventory-dashboard',   label: 'Dashboard Inventory', icon: LayoutDashboard },
+          { id: 'inventory-stok',        label: 'Stok Barang',         icon: Package },
+          { id: 'inventory-penerimaan',  label: 'Penerimaan Barang',   icon: Download },
+          { id: 'inventory-pengeluaran', label: 'Pengeluaran Barang',  icon: Upload },
+          { id: 'inventory-transfer',    label: 'Transfer Stok',       icon: ArrowUpDown },
+          { id: 'inventory-opname',      label: 'Opname / Adjustment', icon: ClipboardCheck },
+        ],
+      },
+      { id: 'nav-freight', label: 'Freight Forwarding', icon: Ship,      tone: 'teal', soon: true },
+      { id: 'nav-customs', label: 'Customs / PPJK',     icon: FileCheck, tone: 'blue', soon: true },
+    ],
+  },
+  {
+    group: 'Shared Services',
+    items: [
+      {
+        id: 'nav-fin', label: 'Finance & Accounting', icon: CreditCard, tone: 'green',
+        children: [
+          { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt },
+          { id: 'billing',     label: 'Billing / Invoice',   icon: FileText },
+          { id: 'ar',          label: 'AR / Collection',     icon: Wallet },
+          { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet },
+          { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark },
+          { id: 'accounting',  label: 'Accounting',          icon: BarChart3 },
+          { id: 'outstanding', label: 'Outstanding',         icon: Clock },
+          { id: 'finance',     label: 'Finance Docs',        icon: FileText },
+        ],
+      },
+      { id: 'nav-log',  label: 'Logistic',    icon: Truck,        tone: 'teal',  soon: true },
+      { id: 'nav-proc', label: 'Procurement', icon: ShoppingCart, tone: 'peach', soon: true },
+      {
+        id: 'nav-hrga', label: 'HRGA', icon: Users, tone: 'rose',
+        children: [
+          { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList },
+          { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus },
+          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList },
+          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock },
+          { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive },
+        ],
+      },
+      { id: 'nav-it', label: 'IT / Service Management', icon: LifeBuoy, tone: 'slate', soon: true },
+      {
+        id: 'nav-asset', label: 'Asset', icon: Building2, tone: 'amber',
+        children: [
+          { id: 'assets',           label: 'Dashboard',           icon: LayoutDashboard },
+          { id: 'assets-analytics', label: 'Analytics & Reports', icon: BarChart2 },
+          { id: 'assets-kendaraan', label: 'Kendaraan',           icon: Car },
+          { id: 'assets-it',        label: 'IT Equipment',        icon: Monitor },
+          { id: 'assets-furniture', label: 'Furniture & Office',  icon: Sofa },
+          { id: 'assets-properti',  label: 'Properti',            icon: Building2 },
+          { id: 'assets-maint',     label: 'Jadwal Maintenance',  icon: Wrench },
+          { id: 'assets-hist',      label: 'History Maintenance', icon: Clock },
+          { id: 'assets-docs',      label: 'Semua Dokumen',       icon: FolderOpen },
+          { id: 'assets-kategori',  label: 'Kategori Aset',       icon: Tag },
+          { id: 'assets-lokasi',    label: 'Lokasi & Ruangan',    icon: MapPin },
+          { id: 'assets-vendor',    label: 'Vendor & Supplier',   icon: Truck },
+          { id: 'assets-settings',  label: 'Settings',            icon: Settings },
+        ],
+      },
+    ],
+  },
+  {
+    group: 'Foundation',
+    items: [
+      {
+        id: 'nav-report', label: 'Reporting', icon: BarChart3, tone: 'indigo',
+        children: [
+          { id: 'reporting-sales', label: 'Sales Report',          icon: BarChart2 },
+          { id: 'reporting-mom',   label: 'MOM',                   icon: BookOpen },
+          { id: 'reports',         label: 'Reporting & Dashboard', icon: LayoutDashboard },
+          { id: 'performance',     label: 'Performance & Cache',   icon: Zap },
+          { id: 'audit',           label: 'Audit & Compliance',    icon: ScrollText },
+        ],
+      },
+      {
+        id: 'nav-master', label: 'Master Data', icon: Database, tone: 'slate',
+        children: [
+          { id: 'admin',          label: 'Master Data',         icon: Database },
+          { id: 'products',       label: 'Products & Services', icon: Package },
+          { id: 'schema-manager', label: 'Schema Manager',      icon: Database },
+          { id: 'admin-settings', label: 'Admin Settings',      icon: Settings },
+        ],
+      },
+      { id: 'nav-users', label: 'Users & Access', icon: ShieldCheck, tone: 'slate', target: 'users', role: ['super_admin','admin','it'] },
+    ],
+  },
+];
+
+// Per-module pastel tones (bubble bg / icon color) — mirrors index.css --p-*.
+const NAV_TONES = {
+  blue:   ['#E9F1FC', '#3D6BAB'],
+  violet: ['#F0EBFB', '#7A5EBE'],
+  amber:  ['#FCF2E3', '#C0863A'],
+  green:  ['#E7F4ED', '#479467'],
+  peach:  ['#FDEDE4', '#D4744A'],
+  teal:   ['#E5F2F4', '#3F8E9E'],
+  rose:   ['#F9EBF2', '#B25E94'],
+  indigo: ['#EBECF9', '#5B61B4'],
+  slate:  ['#EDF0F4', '#525E70'],
+};
+
 // Menu item id → module_menus.key mapping for hasMenuPermission gating
 const MENU_KEY_MAP = {
   // CRM
@@ -891,19 +1050,6 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
   return false;
 };
 
-// isPlanned — true bila navigasi ke `id` akan me-render ComingSoonPage
-// (mirror PLANNED_MODULES + logika catch-all placeholder di render switch).
-// Item planned ditampilkan disabled + badge "Soon" di sidebar.
-const PLANNED_REAL_IDS = ['dashboard','manifest','input','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales','reporting-mom'];
-const PLANNED_REAL_PREFIXES = ['assets','hrga','crm-','quotation-','inventory-','customer-','admin-settings'];
-const isPlanned = (id) => {
-  if (!id) return false;
-  if (PLANNED_MODULES[id]) return true;
-  if (PLANNED_REAL_IDS.includes(id)) return false;
-  if (PLANNED_REAL_PREFIXES.some(p => id.startsWith(p))) return false;
-  return true;
-};
-
 // collectMenuIds — collect every navigable menu id within a node list
 // (items → children → grandchildren), skipping section headers. Used to
 // validate the restored activeMenu against the full permission-filtered menu
@@ -945,9 +1091,9 @@ function AccessDeniedPage({ onGoHome }) {
     <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem 1rem' }}>
       <div style={{ maxWidth: 420, width: '100%', textAlign: 'center', background: 'white', border: '1px solid #E5E7EB', borderRadius: 20, padding: '40px 32px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div style={{ width: 60, height: 60, borderRadius: 16, background: '#EEF3FB', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
-          <Shield size={28} style={{ color: '#144682' }} />
+          <Shield size={28} style={{ color: '#1B4D8A' }} />
         </div>
-        <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 21, fontWeight: 800, color: '#144682', margin: '0 0 8px' }}>
+        <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 21, fontWeight: 800, color: '#1B4D8A', margin: '0 0 8px' }}>
           Akses Ditolak
         </h2>
         <p style={{ fontSize: 14, color: '#6B7280', margin: '0 0 24px', lineHeight: 1.5 }}>
@@ -956,7 +1102,7 @@ function AccessDeniedPage({ onGoHome }) {
         <button
           type="button"
           onClick={onGoHome}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#144682', color: 'white', border: 'none', borderRadius: 12, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1B4D8A', color: 'white', border: 'none', borderRadius: 12, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
         >
           <ChevronLeft size={16} /> Kembali ke Beranda
         </button>
@@ -969,295 +1115,224 @@ function AccessDeniedPage({ onGoHome }) {
 // ============================
 // Sidebar Helper Components
 // ============================
-function SidebarItem({ item, activeMenu, setActiveMenu }) {
-  const Icon = item.icon;
-  // Planned (Coming Soon) item → tampil disabled + badge "Soon", non-klik.
-  // Short-circuit sebelum logika children agar tidak bisa di-expand.
-  if (isPlanned(item.id)) {
+// ─────────────────────────────────────────────────────────────────────────────
+// NexusSidebar — persistent, labelled 2-level sidebar (restruktur-nexus).
+// White surface, pastel per-module icon bubbles, active item = --p-blue / --navy.
+// Replaces the launcher-gated ModuleSidebar; always visible. Modules expand to
+// reveal existing objek pages (navigated via onNavigate=navigateTo). `soon`
+// modules render as disabled skeletons with a "soon" badge.
+// ─────────────────────────────────────────────────────────────────────────────
+function moduleContainsMenu(m, activeMenu) {
+  if (!m || !activeMenu) return false;
+  if (m.target && m.target === activeMenu) return true;
+  // Synthetic detail pages belong to their parent module.
+  if (m.id === 'nav-asset' && activeMenu.startsWith('assets')) return true;
+  if (m.id === 'nav-crm' && (activeMenu === 'customer-detail' || activeMenu.startsWith('crm-customers'))) return true;
+  if (m.id === 'nav-master' && activeMenu === 'product-detail') return true;
+  return (m.children || []).some(c =>
+    c.id === activeMenu || (c.children || []).some(gc => gc.id === activeMenu));
+}
+
+function NexusSidebar({
+  activeMenu, onNavigate, role, hasPermission, hasMenuPermission,
+  profile, currentRoleLabel,
+  asDrawer = false, isOpen = false, onClose,
+}) {
+  // Gate a real page id via the same rules the old sidebar used.
+  const seeReal = (id) => {
+    const real = findMenuItemById(id);
+    if (real) return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
+    return null; // not in ERP_MENU_GROUPS (e.g. 'users') → caller decides
+  };
+  const childVisible = (c) => {
+    if (c.children) return c.children.some(gc => seeReal(gc.id) !== false) && c.children.some(gc => seeReal(gc.id));
+    const v = seeReal(c.id);
+    return v === null ? true : v;
+  };
+  const moduleVisible = (m) => {
+    if (m.soon) return true; // roadmap skeleton — always shown, disabled
+    if (m.target) {          // direct-navigate leaf (Beranda / Users & Access)
+      if (m.role) return m.role.includes(role);
+      const v = seeReal(m.target);
+      return v === null ? true : v;
+    }
+    return (m.children || []).some(childVisible);
+  };
+
+  const activeModId = (() => {
+    for (const g of NEXUS_NAV) for (const m of g.items) if (moduleContainsMenu(m, activeMenu)) return m.id;
+    return null;
+  })();
+  const [openSet, setOpenSet] = useState({});
+  const expanded = (id) => (openSet[id] !== undefined ? openSet[id] : id === activeModId);
+  const toggle = (id) => setOpenSet(s => ({ ...s, [id]: !(s[id] !== undefined ? s[id] : id === activeModId) }));
+
+  const go = (id) => { onNavigate(id); if (asDrawer) onClose?.(); };
+
+  const asideClass = asDrawer
+    ? 'lg:hidden flex flex-col w-[264px] max-w-[85vw] fixed top-0 left-0 h-screen z-50 transition-transform duration-300 ease-out'
+    : 'hidden lg:flex flex-col w-[248px] flex-shrink-0 sticky top-0 h-screen';
+  const asideStyle = {
+    background: '#FFFFFF',
+    borderRight: '1px solid var(--line)',
+    color: 'var(--ink)',
+    ...(asDrawer ? {
+      transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
+      boxShadow: isOpen ? '0 12px 40px rgba(20,42,80,0.22)' : 'none',
+    } : {}),
+  };
+
+  const NavBubble = ({ Icon, tone, dim }) => {
+    const [bg, fg] = NAV_TONES[tone] || NAV_TONES.slate;
     return (
-      <button type="button" disabled aria-disabled="true" title="Segera hadir"
-        className="w-full flex items-center gap-3 px-3.5 py-[10px] rounded-2xl text-sm font-medium mb-0.5"
-        style={{ background: 'transparent', color: 'rgba(248,245,237,0.40)', fontWeight: 400, border: '1px solid transparent', cursor: 'default', opacity: 0.5, pointerEvents: 'none' }}>
-        {Icon && <Icon size={17} strokeWidth={1.8} style={{ color: 'rgba(248,245,237,0.32)', flexShrink: 0 }}/>}
-        <span className="flex-1 text-left leading-snug">{item.label}</span>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.3px', padding: '1px 7px', borderRadius: 20, background: 'rgba(255,255,255,0.10)', color: 'rgba(248,245,237,0.55)', fontFamily: "'IBM Plex Mono', monospace" }}>Soon</span>
+      <span style={{
+        width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: bg, opacity: dim ? 0.55 : 1,
+      }}>
+        {Icon && <Icon size={16} strokeWidth={1.9} style={{ color: fg }} />}
+      </span>
+    );
+  };
+
+  // Leaf row (objek). `depth` controls indent for grandchildren.
+  const LeafRow = (c, depth = 0) => {
+    const active = activeMenu === c.id ||
+      (depth === 0 && c.id === 'crm-customers' && (activeMenu === 'customer-detail' || activeMenu.startsWith('crm-customers')));
+    const Icon = c.icon;
+    if (c.children) {
+      const subVisible = c.children.filter(childVisible);
+      if (!subVisible.length) return null;
+      const subActive = c.children.some(gc => gc.id === activeMenu) || active;
+      const isExp = openSet[c.id] !== undefined ? openSet[c.id] : subActive;
+      return (
+        <div key={c.id}>
+          <button type="button"
+            onClick={() => setOpenSet(s => ({ ...s, [c.id]: !(s[c.id] !== undefined ? s[c.id] : subActive) }))}
+            className="w-full flex items-center gap-2.5 rounded-[10px] transition-colors"
+            style={{ padding: '7px 10px', marginBottom: 1, background: subActive ? 'var(--p-blue)' : 'transparent', color: subActive ? 'var(--navy)' : 'var(--mute)', fontSize: 12.5, fontWeight: subActive ? 600 : 500, textAlign: 'left' }}
+            onMouseEnter={e => { if (!subActive) e.currentTarget.style.background = '#F5F7FA'; }}
+            onMouseLeave={e => { if (!subActive) e.currentTarget.style.background = 'transparent'; }}
+          >
+            {Icon && <Icon size={15} strokeWidth={1.8} style={{ flexShrink: 0, color: subActive ? 'var(--navy)' : 'var(--faint)' }} />}
+            <span className="flex-1 truncate">{c.label}</span>
+            <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
+          </button>
+          {isExp && (
+            <div style={{ marginLeft: 12, paddingLeft: 8, borderLeft: '1px solid var(--line)' }}>
+              {subVisible.map(gc => LeafRow(gc, depth + 1))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    return (
+      <button key={c.id} type="button" onClick={() => go(c.id)}
+        className="w-full flex items-center gap-2.5 rounded-[10px] transition-colors"
+        style={{ padding: '7px 10px', marginBottom: 1, background: active ? 'var(--p-blue)' : 'transparent', color: active ? 'var(--navy)' : 'var(--mute)', fontSize: 12.5, fontWeight: active ? 600 : 500, textAlign: 'left' }}
+        onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#F5F7FA'; }}
+        onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+      >
+        {Icon
+          ? <Icon size={15} strokeWidth={active ? 2 : 1.8} style={{ flexShrink: 0, color: active ? 'var(--navy)' : 'var(--faint)' }} />
+          : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: active ? 1 : 0.5, flexShrink: 0 }} />}
+        <span className="flex-1 truncate">{c.label}</span>
       </button>
     );
-  }
-  const active = activeMenu === item.id;
-  // The synthetic 'customer-detail' menu belongs to the crm-customers subtree.
-  const isCustomerDetailContext = activeMenu === 'customer-detail';
-  const isCustomersNode = (n) => n.id === 'crm-customers' ||
-    n.children?.some(gc => gc.id?.startsWith('crm-customers-'));
-  // Item is "parent-active" when it has children and any child/grandchild (or itself) matches
-  const childActive = item.children?.some(c => !c.section && (
-    activeMenu === c.id || c.children?.some(gc => !gc.section && activeMenu === gc.id) ||
-    (isCustomerDetailContext && isCustomersNode(c))
-  ));
-  const expanded = item.children && (active || childActive);
+  };
 
-  if (item.children) {
-    // Parent item with expandable children
-    return (
-      <div>
-        <button
-          onClick={() => setActiveMenu(item.id)}
-          className="w-full flex items-center gap-3 px-3.5 py-[10px] rounded-2xl text-sm font-medium mb-0.5 transition-all"
-          style={{
-            background: (active || childActive) ? 'rgba(255,255,255,0.10)' : 'transparent',
-            color: (active || childActive) ? '#FFFDF7' : 'rgba(248,245,237,0.76)',
-            fontWeight: (active || childActive) ? 600 : 400,
-            border: '1px solid transparent',
-          }}
-          onMouseEnter={(e) => { if (!active && !childActive) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
-          onMouseLeave={(e) => { if (!active && !childActive) e.currentTarget.style.background = 'transparent'; }}
-        >
-          <Icon size={17} strokeWidth={(active || childActive) ? 2.1 : 1.8} style={{ color: (active || childActive) ? '#FFB899' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
-          <span className="flex-1 text-left leading-snug">{item.label}</span>
-          <ChevronDown size={13} strokeWidth={2} style={{
-            color: 'rgba(248,245,237,0.40)', flexShrink: 0,
-            transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-            transition: 'transform .15s',
-          }}/>
-        </button>
-        {expanded && (
-          <div style={{
-            marginLeft: 14, paddingLeft: 10,
-            marginBottom: 4,
-          }}>
-            {item.children.map((child, ci) => {
-              if (child.section) {
-                return (
-                  <div key={`sec-${ci}`} style={{
-                    fontSize: 10, fontWeight: 700, letterSpacing: '.7px',
-                    textTransform: 'uppercase', color: 'rgba(248,245,237,0.35)',
-                    padding: '10px 8px 4px',
-                  }}>
-                    {child.section}
-                  </div>
-                );
-              }
-              // Child that itself has children → nested expandable sub-group (3rd level)
-              if (child.children) {
-                const SubIcon = child.icon;
-                const firstGc = child.children.find(gc => !gc.section);
-                const subActive = child.children.some(gc => !gc.section && activeMenu === gc.id) ||
-                  (isCustomerDetailContext && isCustomersNode(child));
-                const subExpanded = activeMenu === child.id || subActive;
-                return (
-                  <div key={child.id}>
-                    <button
-                      onClick={() => setActiveMenu(firstGc ? firstGc.id : child.id)}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-xl text-[13px] font-medium mb-[1px] transition-all"
-                      style={{
-                        background: subActive ? 'rgba(255,255,255,0.10)' : 'transparent',
-                        color: subActive ? '#FFFDF7' : 'rgba(248,245,237,0.65)',
-                        fontWeight: subActive ? 600 : 400,
-                        border: '1px solid transparent',
-                        textAlign: 'left',
-                      }}
-                      onMouseEnter={(e) => { if (!subActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                      onMouseLeave={(e) => { if (!subActive) e.currentTarget.style.background = 'transparent'; }}
+  return (
+    <aside className={asideClass} style={asideStyle}>
+      {/* Brand */}
+      <div className="flex items-center gap-3" style={{ padding: '18px 16px 16px' }}>
+        <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 17, flexShrink: 0 }}>N</div>
+        <div style={{ lineHeight: 1.1 }}>
+          <div style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 16, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Nexus</div>
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--faint)', letterSpacing: '1.5px' }}>BY MSI</div>
+        </div>
+        {asDrawer && (
+          <button type="button" onClick={onClose} aria-label="Tutup menu" className="ml-auto" style={{ background: 'transparent', border: 'none', color: 'var(--mute)', cursor: 'pointer' }}>
+            <X size={18} />
+          </button>
+        )}
+      </div>
+
+      {/* Nav groups */}
+      <nav className="flex-1 overflow-y-auto" style={{ padding: '0 12px 12px' }}>
+        {NEXUS_NAV.map(g => {
+          const mods = g.items.filter(moduleVisible);
+          if (!mods.length) return null;
+          return (
+            <div key={g.group}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--faint)', textTransform: 'uppercase', padding: '14px 10px 7px' }}>{g.group}</div>
+              {mods.map(m => {
+                const Icon = m.icon;
+                // Direct-navigate leaf module (Beranda / Users & Access)
+                if (m.target && !m.children) {
+                  const active = activeMenu === m.target;
+                  return (
+                    <button key={m.id} type="button" onClick={() => go(m.target)}
+                      className="w-full flex items-center gap-3 rounded-[11px] transition-colors"
+                      style={{ padding: '8px 10px', marginBottom: 2, background: active ? 'var(--p-blue)' : 'transparent', color: active ? 'var(--navy)' : 'var(--ink)', fontSize: 13, fontWeight: active ? 600 : 500, textAlign: 'left' }}
+                      onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#F5F7FA'; }}
+                      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
                     >
-                      {SubIcon && <SubIcon size={14} strokeWidth={subActive ? 2.1 : 1.7} style={{ color: subActive ? '#FFB899' : 'rgba(248,245,237,0.45)', flexShrink: 0 }} />}
-                      <span className="flex-1 truncate">{child.label}</span>
-                      <ChevronDown size={12} strokeWidth={2} style={{ color: 'rgba(248,245,237,0.35)', flexShrink: 0, transform: subExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform .15s' }} />
+                      <NavBubble Icon={Icon} tone={m.tone} />
+                      <span className="flex-1 truncate">{m.label}</span>
                     </button>
-                    {subExpanded && (
-                      <div style={{ marginLeft: 12, paddingLeft: 8 }}>
-                        {child.children.filter(gc => !gc.section).map(gc => {
-                          const GcIcon = gc.icon;
-                          const gcActive = activeMenu === gc.id;
-                          return (
-                            <button
-                              key={gc.id}
-                              onClick={() => setActiveMenu(gc.id)}
-                              className="w-full flex items-center gap-2.5 px-2.5 py-[6px] rounded-xl text-[12.5px] font-medium mb-[1px] transition-all"
-                              style={{
-                                background: gcActive ? 'rgba(255,255,255,0.13)' : 'transparent',
-                                color: gcActive ? '#FFFDF7' : 'rgba(248,245,237,0.6)',
-                                fontWeight: gcActive ? 600 : 400,
-                                boxShadow: gcActive ? 'inset 2px 0 0 rgba(255,212,184,0.7)' : 'none',
-                                border: gcActive ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
-                                textAlign: 'left',
-                              }}
-                              onMouseEnter={(e) => { if (!gcActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                              onMouseLeave={(e) => { if (!gcActive) e.currentTarget.style.background = 'transparent'; }}
-                            >
-                              {GcIcon
-                                ? <GcIcon size={13} strokeWidth={gcActive ? 2.1 : 1.7} style={{ color: gcActive ? '#FFB899' : 'rgba(248,245,237,0.4)', flexShrink: 0 }} />
-                                : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: gcActive ? 1 : .45, flexShrink: 0 }} />
-                              }
-                              <span className="flex-1 truncate">{gc.label}</span>
-                            </button>
-                          );
-                        })}
+                  );
+                }
+                // Soon skeleton — disabled
+                if (m.soon) {
+                  return (
+                    <div key={m.id} title="Segera hadir"
+                      className="w-full flex items-center gap-3 rounded-[11px]"
+                      style={{ padding: '8px 10px', marginBottom: 2, color: 'var(--faint)', fontSize: 13, fontWeight: 500, cursor: 'default', opacity: 0.7, pointerEvents: 'none' }}>
+                      <NavBubble Icon={Icon} tone={m.tone} dim />
+                      <span className="flex-1 truncate">{m.label}</span>
+                      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.3px', padding: '1px 7px', borderRadius: 8, background: 'var(--p-slate)', color: 'var(--p-slate-i, #525E70)' }}>soon</span>
+                    </div>
+                  );
+                }
+                // Expandable module
+                const kids = (m.children || []).filter(childVisible);
+                const isExp = expanded(m.id);
+                const modActive = m.id === activeModId;
+                return (
+                  <div key={m.id}>
+                    <button type="button" onClick={() => toggle(m.id)}
+                      className="w-full flex items-center gap-3 rounded-[11px] transition-colors"
+                      style={{ padding: '8px 10px', marginBottom: 2, background: (modActive && !isExp) ? 'var(--p-blue)' : 'transparent', color: modActive ? 'var(--navy)' : 'var(--ink)', fontSize: 13, fontWeight: modActive ? 600 : 500, textAlign: 'left' }}
+                      onMouseEnter={e => { if (!(modActive && !isExp)) e.currentTarget.style.background = '#F5F7FA'; }}
+                      onMouseLeave={e => { if (!(modActive && !isExp)) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <NavBubble Icon={Icon} tone={m.tone} />
+                      <span className="flex-1 truncate">{m.label}</span>
+                      <ChevronDown size={14} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
+                    </button>
+                    {isExp && (
+                      <div style={{ marginLeft: 12, paddingLeft: 8, borderLeft: '1px solid var(--line)', marginBottom: 4 }}>
+                        {kids.map(c => LeafRow(c, 0))}
                       </div>
                     )}
                   </div>
                 );
-              }
-              const ChildIcon = child.icon;
-              // Planned child leaf → disabled + badge "Soon", non-klik.
-              if (isPlanned(child.id)) {
-                return (
-                  <button key={child.id} type="button" disabled aria-disabled="true" title="Segera hadir"
-                    className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-xl text-[13px] font-medium mb-[1px]"
-                    style={{ background: 'transparent', color: 'rgba(248,245,237,0.38)', fontWeight: 400, border: '1px solid transparent', textAlign: 'left', cursor: 'default', opacity: 0.5, pointerEvents: 'none' }}>
-                    {ChildIcon
-                      ? <ChildIcon size={14} strokeWidth={1.7} style={{ color: 'rgba(248,245,237,0.3)', flexShrink: 0 }} />
-                      : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: .4, flexShrink: 0 }} />
-                    }
-                    <span className="flex-1 truncate">{child.label}</span>
-                    <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 20, background: 'rgba(255,255,255,0.10)', color: 'rgba(248,245,237,0.5)', fontFamily: "'IBM Plex Mono', monospace" }}>Soon</span>
-                  </button>
-                );
-              }
-              const childIsActive = activeMenu === child.id;
-              return (
-                <button
-                  key={child.id}
-                  onClick={() => setActiveMenu(child.id)}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-xl text-[13px] font-medium mb-[1px] transition-all"
-                  style={{
-                    background: childIsActive ? 'rgba(255,255,255,0.13)' : 'transparent',
-                    color: childIsActive ? '#FFFDF7' : 'rgba(248,245,237,0.65)',
-                    fontWeight: childIsActive ? 600 : 400,
-                    boxShadow: childIsActive ? 'inset 2px 0 0 rgba(255,212,184,0.7)' : 'none',
-                    border: childIsActive ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
-                    textAlign: 'left',
-                  }}
-                  onMouseEnter={(e) => { if (!childIsActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                  onMouseLeave={(e) => { if (!childIsActive) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  {ChildIcon
-                    ? <ChildIcon size={14} strokeWidth={childIsActive ? 2.1 : 1.7} style={{ color: childIsActive ? '#FFB899' : 'rgba(248,245,237,0.45)', flexShrink: 0 }} />
-                    : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: childIsActive ? 1 : .45, flexShrink: 0 }} />
-                  }
-                  <span className="flex-1 truncate">{child.label}</span>
-                  {child.badge && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 20,
-                      background: 'rgba(143,203,140,.18)', color: 'rgba(168,214,168,.9)',
-                      fontFamily: "'IBM Plex Mono', monospace",
-                    }}>{child.badge}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Regular item (no children)
-  return (
-    <button
-      onClick={() => setActiveMenu(item.id)}
-      className="w-full flex items-center gap-3 px-3.5 py-[10px] rounded-2xl text-sm font-medium mb-0.5 transition-all"
-      style={{
-        background: active ? 'rgba(255,255,255,0.13)' : 'transparent',
-        color: active ? '#FFFDF7' : 'rgba(248,245,237,0.76)',
-        fontWeight: active ? 600 : 400,
-        boxShadow: active ? 'inset 2px 0 0 rgba(255,212,184,0.8), 0 8px 20px rgba(0,0,0,0.12)' : 'none',
-        border: active ? '1px solid rgba(255,255,255,0.10)' : '1px solid transparent',
-      }}
-      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
-      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
-    >
-      <Icon size={17} strokeWidth={active ? 2.2 : 1.8} style={{ color: active ? '#FFB899' : 'rgba(248,245,237,0.54)', flexShrink: 0 }}/>
-      <span className="flex-1 text-left leading-snug">
-        {item.label}
-        {item.note && <span style={{ display: 'block', fontSize: 10, fontStyle: 'italic', color: 'rgba(248,245,237,0.38)', fontWeight: 400, marginTop: 1 }}>{item.note}</span>}
-      </span>
-    </button>
-  );
-}
-
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ModuleSidebar — shown inside a module (Option B layout).
-// Replaces the global accordion sidebar. Renders only the active module's items
-// plus a "← Apps" button to return to the launcher.
-// ─────────────────────────────────────────────────────────────────────────────
-function ModuleSidebar({ moduleGroup, activeMenu, onNavigate, onBackToApps, role, hasPermission, hasMenuPermission, asDrawer = false, isOpen = false, onClose }) {
-  // Planned items selalu lolos filter (ditampilkan disabled + "Soon" oleh SidebarItem),
-  // melewati default-deny — sesuai keputusan: user lihat roadmap.
-  const visibleItems = (moduleGroup?.items || []).filter(item => isPlanned(item.id) || canSeeMenuItem(item, role, hasPermission, hasMenuPermission));
-  const Icon = moduleGroup?.items[0]?.icon;
-
-  // In drawer mode, navigating / going back also closes the drawer.
-  const navigate   = asDrawer ? (id) => { onNavigate(id); onClose?.(); } : onNavigate;
-  const backToApps = asDrawer ? () => { onBackToApps(); onClose?.(); } : onBackToApps;
-
-  // Desktop: static sidebar (hidden lg:flex). Mobile drawer: fixed slide-in (lg:hidden).
-  const asideClass = asDrawer
-    ? 'lg:hidden flex flex-col w-[280px] max-w-[85vw] fixed top-0 left-0 h-screen z-50 border-r transition-transform duration-300 ease-out'
-    : 'hidden lg:flex flex-col w-[260px] flex-shrink-0 sticky top-0 h-screen border-r';
-  const asideStyle = {
-    background: 'linear-gradient(165deg, #144682 0%, #0f3366 100%)',
-    borderColor: 'rgba(255,255,255,0.12)',
-    color: '#F8F5ED',
-    ...(asDrawer ? {
-      transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-      boxShadow: isOpen ? '0 12px 40px rgba(0,0,0,0.35)' : 'none',
-    } : {}),
-  };
-
-  return (
-    <aside
-      className={asideClass}
-      style={asideStyle}
-    >
-      {/* Back to Apps */}
-      <button
-        onClick={backToApps}
-        className="flex items-center gap-2 mx-3 mt-4 mb-1 px-3 py-2.5 rounded-xl transition-all text-sm font-medium flex-shrink-0"
-        style={{ color: 'rgba(248,245,237,0.60)' }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#FFFDF7'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(248,245,237,0.60)'; }}
-      >
-        <LayoutDashboard size={14} strokeWidth={1.8} style={{ flexShrink: 0 }} />
-        <span className="text-xs uppercase tracking-[0.14em] font-semibold">Apps</span>
-      </button>
-
-      {/* Module identity */}
-      <div className="px-5 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.10)' }}>
-        <div className="flex items-center gap-2.5">
-          {Icon && <Icon size={16} strokeWidth={1.8} style={{ color: 'rgba(200,239,217,0.70)', flexShrink: 0 }} />}
-          <span className="text-sm font-semibold leading-snug" style={{ color: '#FFFDF7' }}>
-            {moduleGroup?.label}
-          </span>
-        </div>
-      </div>
-
-      {/* Module items */}
-      <nav className="flex-1 px-3 py-3 overflow-y-auto">
-        {visibleItems.map((item, i) => {
-          if (item.section) {
-            return (
-              <div key={`sec-${i}`} style={{
-                fontSize: 10, fontWeight: 700, letterSpacing: '.7px',
-                textTransform: 'uppercase', color: 'rgba(248,245,237,0.35)',
-                padding: '10px 8px 4px',
-              }}>
-                {item.section}
-              </div>
-            );
-          }
-          return (
-            <SidebarItem
-              key={item.id}
-              item={item}
-              activeMenu={activeMenu}
-              setActiveMenu={navigate}
-            />
+              })}
+            </div>
           );
         })}
       </nav>
+
+      {/* Footer — user */}
+      <div className="flex items-center gap-2.5" style={{ margin: '0 12px', padding: '12px 6px', borderTop: '1px solid var(--line)' }}>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--p-peach)', color: 'var(--p-peach-i, #D4744A)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+          {(profile?.full_name || 'U')[0].toUpperCase()}
+        </div>
+        <div style={{ minWidth: 0, lineHeight: 1.3 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile?.full_name || 'User'}</div>
+          <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentRoleLabel}</div>
+        </div>
+      </div>
     </aside>
   );
 }
@@ -1513,34 +1588,6 @@ export default function StorbitManifest() {
     if (dest) navigateTo(dest);
   }, [navigateTo]);
 
-  // Return to app launcher.
-  const goToLauncher = useCallback(() => { setActiveModule(null); setMobileDrawerOpen(false); }, []);
-
-  // Enter a module group — select the first visible leaf in that group.
-  // Traverses children/grandchildren because some groups (e.g. CRM) wrap their
-  // pages inside a single parent item. Deps include hasPermission/hasMenuPermission
-  // so the closure refreshes once permissions load (otherwise the click stays a
-  // no-op after an in-tab login until a refresh).
-  const enterModule = useCallback((group) => {
-    const findFirstVisible = (items) => {
-      for (const item of items || []) {
-        if (item.section) continue;
-        if (canSeeMenuItem(item, role, hasPermission, hasMenuPermission)) {
-          if (item.children) {
-            const leaf = findFirstVisible(item.children);
-            if (leaf) return leaf;
-            // parent visible but no visible child leaf — fall back to the parent
-          }
-          return item;
-        }
-      }
-      return null;
-    };
-    const first = findFirstVisible(group.items);
-    if (!first) return;
-    setActiveModule(group.label);
-    setActiveMenu(first.id);
-  }, [role, hasPermission, hasMenuPermission]);
   const [editingRow, setEditingRow] = useState(null);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editingAR, setEditingAR] = useState(null);
@@ -1604,7 +1651,7 @@ export default function StorbitManifest() {
 
     // Synthetic / detail pages are navigated to programmatically (not from the
     // sidebar) and are always valid — skip them.
-    const SYNTHETIC = ['home', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
+    const SYNTHETIC = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
     if (SYNTHETIC.includes(activeMenu)) return;
     if (activeMenu?.startsWith('customer-') ||
         activeMenu?.startsWith('assets-') ||
@@ -1920,17 +1967,12 @@ export default function StorbitManifest() {
     );
   }
 
-  const allMenuGroups = ERP_MENU_GROUPS;
   const visibleMenuGroups = ERP_MENU_GROUPS
     .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role, hasPermission, hasMenuPermission)) }))
     .filter(group => group.items.some(i => !i.section));
   const visibleMenus = visibleMenuGroups.flatMap(group => group.items.filter(i => !i.section));
   // eslint-disable-next-line no-unused-vars
   const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
-  // The group corresponding to the currently active module (null in launcher mode).
-  const activeModuleGroup = activeModule
-    ? visibleMenuGroups.find(g => g.label === activeModule) ?? null
-    : null;
   const currentRoleLabel = ROLES.find(r => r.id === role)?.label || role;
 
   // Content-level access gate (Fix C / defense-in-depth): only render a module
@@ -1943,7 +1985,7 @@ export default function StorbitManifest() {
     if (role === 'super_admin' || role === 'super') return true;
     // Synthetic / detail menus are navigated to programmatically from pages that
     // are themselves already gated — always allow.
-    const SYNTHETIC = ['home', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
+    const SYNTHETIC = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
     if (SYNTHETIC.includes(activeMenu)) return true;
     if (activeMenu?.startsWith('customer-') || activeMenu?.startsWith('assets-') || activeMenu?.startsWith('product-') || activeMenu?.startsWith('admin-settings-')) return true;
     const accessibleIds = new Set();
@@ -1997,68 +2039,62 @@ export default function StorbitManifest() {
         }
         .nexus-sidebar-children { animation: accordionDown 0.14s ease-out; }
         .nexus-shell-bg {
-          background: #ffffff;
+          background: #F2F5F9;
         }
       `}</style>
 
       {/* LAYOUT: Sidebar + Content */}
       <div className="flex flex-col lg:flex-row min-h-screen">
-        {/* SIDEBAR — only visible when inside a module (Option B: sidebar-after-launcher) */}
-        {activeModule && (
-          <ModuleSidebar
-            moduleGroup={activeModuleGroup}
+        {/* SIDEBAR — persistent, labelled 2-level (restruktur-nexus) */}
+        <NexusSidebar
+          activeMenu={activeMenu}
+          onNavigate={navigateTo}
+          role={role}
+          hasPermission={hasPermission}
+          hasMenuPermission={hasMenuPermission}
+          profile={profile}
+          currentRoleLabel={currentRoleLabel}
+        />
+
+        {/* MOBILE DRAWER — reuses NexusSidebar (lg:hidden) */}
+        <>
+          <div
+            className="lg:hidden fixed inset-0 z-40 transition-opacity duration-300"
+            style={{
+              background: 'rgba(0,0,0,0.42)',
+              opacity: mobileDrawerOpen ? 1 : 0,
+              pointerEvents: mobileDrawerOpen ? 'auto' : 'none',
+            }}
+            onClick={() => setMobileDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <NexusSidebar
+            asDrawer
+            isOpen={mobileDrawerOpen}
+            onClose={() => setMobileDrawerOpen(false)}
             activeMenu={activeMenu}
             onNavigate={navigateTo}
-            onBackToApps={goToLauncher}
             role={role}
             hasPermission={hasPermission}
             hasMenuPermission={hasMenuPermission}
+            profile={profile}
+            currentRoleLabel={currentRoleLabel}
           />
-        )}
-
-        {/* MOBILE DRAWER — module menu (lg:hidden); reuses ModuleSidebar */}
-        {activeModule && (
-          <>
-            <div
-              className="lg:hidden fixed inset-0 z-40 transition-opacity duration-300"
-              style={{
-                background: 'rgba(0,0,0,0.42)',
-                opacity: mobileDrawerOpen ? 1 : 0,
-                pointerEvents: mobileDrawerOpen ? 'auto' : 'none',
-              }}
-              onClick={() => setMobileDrawerOpen(false)}
-              aria-hidden="true"
-            />
-            <ModuleSidebar
-              asDrawer
-              isOpen={mobileDrawerOpen}
-              onClose={() => setMobileDrawerOpen(false)}
-              moduleGroup={activeModuleGroup}
-              activeMenu={activeMenu}
-              onNavigate={navigateTo}
-              onBackToApps={goToLauncher}
-              role={role}
-              hasPermission={hasPermission}
-              hasMenuPermission={hasMenuPermission}
-            />
-          </>
-        )}
+        </>
 
         {/* MOBILE TOPBAR */}
-        <header className="lg:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: 'rgba(15,42,35,0.12)', background: 'rgba(250, 246, 240, 0.94)' }}>
+        <header className="lg:hidden sticky top-0 z-30 border-b backdrop-blur w-full" style={{ borderColor: 'rgba(15,42,35,0.12)', background: 'rgba(255,255,255,0.94)' }}>
           <div className="px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              {/* Hamburger — only inside a module (opens the module-menu drawer) */}
-              {activeModule && (
-                <button
-                  onClick={() => setMobileDrawerOpen(true)}
-                  aria-label="Buka menu"
-                  className="w-9 h-9 rounded-xl flex items-center justify-center border flex-shrink-0"
-                  style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}
-                >
-                  <Menu size={18} strokeWidth={2}/>
-                </button>
-              )}
+              {/* Hamburger — opens the persistent sidebar drawer */}
+              <button
+                onClick={() => setMobileDrawerOpen(true)}
+                aria-label="Buka menu"
+                className="w-9 h-9 rounded-xl flex items-center justify-center border flex-shrink-0"
+                style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}
+              >
+                <Menu size={18} strokeWidth={2}/>
+              </button>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: PASTEL.ink }}>
                 <Package size={17} style={{ color: 'white' }} strokeWidth={2}/>
               </div>
@@ -2083,7 +2119,7 @@ export default function StorbitManifest() {
         <main className="nexus-shell-bg flex-1 min-w-0 w-full overflow-x-hidden">
           {/* ── DESKTOP STICKY TOPBAR ── */}
           <header className="hidden lg:block sticky top-0 z-20 border-b"
-            style={{ borderColor: '#E8E0D4', background: '#FAFAF8', boxShadow: '0 1px 4px rgba(20,32,28,0.06)' }}
+            style={{ borderColor: '#E8ECF2', background: '#FFFFFF', boxShadow: '0 1px 4px rgba(20,32,28,0.06)' }}
           >
             <div className="flex min-h-[68px] items-center gap-3 px-5 sm:px-7 xl:px-9">
 
@@ -2114,7 +2150,7 @@ export default function StorbitManifest() {
                     }}
                     onFocus={e => {
                       e.currentTarget.style.background = 'white';
-                      e.currentTarget.style.borderColor = '#E8DED0';
+                      e.currentTarget.style.borderColor = '#E8ECF2';
                       e.currentTarget.style.boxShadow = '0 0 0 3px rgba(20,32,28,0.06)';
                     }}
                     onBlur={e => {
@@ -2132,7 +2168,7 @@ export default function StorbitManifest() {
                 {/* Entity selector */}
                 <button type="button"
                   className="nexus-cmd-btn inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
-                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', color: PASTEL.inkSoft, height: '36px' }}>
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8ECF2', color: PASTEL.inkSoft, height: '36px' }}>
                   <Building2 size={13} style={{ color: PASTEL.inkMute }}/>
                   <span className="hidden xl:inline">MSI / JCI / Storbit</span>
                   <span className="xl:hidden">Entity</span>
@@ -2143,7 +2179,7 @@ export default function StorbitManifest() {
                     ('approvals' Approval Center is still a ComingSoon placeholder). */}
                 <button type="button" onClick={() => navigateTo('hrga-pending-approval')}
                   className="nexus-cmd-btn relative inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
-                  style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', color: PASTEL.inkSoft, height: '36px' }}>
+                  style={{ background: PASTEL.lineSoft, borderColor: '#E8ECF2', color: PASTEL.inkSoft, height: '36px' }}>
                   <ClipboardCheck size={13} style={{ color: PASTEL.inkMute }}/>
                   <span className="hidden xl:inline">Pending Approval</span>
                   <span className="xl:hidden">Approvals</span>
@@ -2160,7 +2196,7 @@ export default function StorbitManifest() {
                   <button type="button" title="Notifications"
                     onClick={() => setNotifOpen(o => !o)}
                     className="nexus-cmd-btn relative inline-flex items-center justify-center rounded-[10px] border"
-                    style={{ background: PASTEL.lineSoft, borderColor: '#E8DED0', width: '36px', height: '36px' }}>
+                    style={{ background: PASTEL.lineSoft, borderColor: '#E8ECF2', width: '36px', height: '36px' }}>
                     <Bell size={14} style={{ color: PASTEL.inkSoft }}/>
                     {unreadCount > 0 && (
                       <span className="absolute inline-flex items-center justify-center font-bold"
@@ -2172,9 +2208,9 @@ export default function StorbitManifest() {
                   {notifOpen && (
                     <>
                       <div onClick={() => setNotifOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                      <div style={{ position: 'absolute', top: 44, right: 0, width: 340, maxHeight: 420, overflowY: 'auto', background: '#fff', border: '1px solid #E8E0D4', borderRadius: 12, boxShadow: '0 12px 30px rgba(20,32,28,0.18)', zIndex: 50 }}>
-                        <div className="flex items-center justify-between" style={{ padding: '12px 14px', borderBottom: '1px solid #F0EBE2', position: 'sticky', top: 0, background: '#fff' }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: '#144682' }}>Notifikasi</span>
+                      <div style={{ position: 'absolute', top: 44, right: 0, width: 340, maxHeight: 420, overflowY: 'auto', background: '#fff', border: '1px solid #E8ECF2', borderRadius: 12, boxShadow: '0 12px 30px rgba(20,32,28,0.18)', zIndex: 50 }}>
+                        <div className="flex items-center justify-between" style={{ padding: '12px 14px', borderBottom: '1px solid #F0F2F6', position: 'sticky', top: 0, background: '#fff' }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#1B4D8A' }}>Notifikasi</span>
                           {unreadCount > 0 && (
                             <button type="button" onClick={markAllNotifRead}
                               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, color: '#E85A1E' }}>
@@ -2190,9 +2226,9 @@ export default function StorbitManifest() {
                             return (
                               <button key={n.id} type="button" onClick={() => handleNotifClick(n)}
                                 className="w-full text-left"
-                                style={{ display: 'flex', gap: 10, padding: '11px 14px', borderBottom: '1px solid #F5F1E9', background: '#FBF7EF', borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer' }}>
+                                style={{ display: 'flex', gap: 10, padding: '11px 14px', borderBottom: '1px solid #F0F2F6', background: '#F7F9FC', borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer' }}>
                                 <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: '#EAF0F8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <Ico size={15} style={{ color: '#144682' }} />
+                                  <Ico size={15} style={{ color: '#1B4D8A' }} />
                                 </span>
                                 <span style={{ minWidth: 0, flex: 1 }}>
                                   <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1A2330' }}>{n.title}</span>
@@ -2216,13 +2252,13 @@ export default function StorbitManifest() {
                     className="nexus-cmd-btn inline-flex items-center gap-2 rounded-[10px] border px-2.5 max-w-[190px]"
                     style={{
                       background: profileDropdownOpen ? PASTEL.line : PASTEL.lineSoft,
-                      borderColor: profileDropdownOpen ? 'rgba(15,42,35,0.2)' : '#E8DED0',
+                      borderColor: profileDropdownOpen ? 'rgba(15,42,35,0.2)' : '#E8ECF2',
                       boxShadow: profileDropdownOpen ? '0 0 0 3px rgba(15,42,35,0.06)' : undefined,
                       height: '36px',
                     }}
                   >
                     <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-bold"
-                      style={{ background: 'linear-gradient(135deg, #144682, #1a5299)', color: '#FFB899' }}>
+                      style={{ background: 'linear-gradient(135deg, #1B4D8A, #1a5299)', color: '#FFB899' }}>
                       {(profile?.full_name || 'U')[0].toUpperCase()}
                     </div>
                     <div className="min-w-0 hidden sm:block text-left overflow-hidden">
@@ -2252,7 +2288,7 @@ export default function StorbitManifest() {
                         <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: PASTEL.line }}>
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold"
-                              style={{ background: 'linear-gradient(135deg, #144682, #1a5299)', color: '#FFB899' }}>
+                              style={{ background: 'linear-gradient(135deg, #1B4D8A, #1a5299)', color: '#FFB899' }}>
                               {(profile?.full_name || 'U')[0].toUpperCase()}
                             </div>
                             <div className="min-w-0">
@@ -2313,26 +2349,21 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── APP LAUNCHER (no sidebar, full width) ── */}
-          {!activeModule && (
-            <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center', color: '#9C948D' }}>Loading…</div>}>
-              <AppLauncher
-                moduleGroups={allMenuGroups}
-                onSelect={enterModule}
-                profile={profile}
-                hasPermission={hasPermission}
-                hasMenuPermission={hasMenuPermission}
-                permissionsLoading={permissionsLoading && !(role === 'super_admin')}
-              />
-            </Suspense>
+          {/* ── HOME DASHBOARD (replaces the old app launcher) ── */}
+          {activeMenu === 'home' && (
+            <ErrorBoundary title="Beranda tidak tersedia">
+              <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center', color: '#9C948D' }}>Loading…</div>}>
+                <HomeDashboard profile={profile} currentRoleLabel={currentRoleLabel} onNavigate={navigateTo} />
+              </Suspense>
+            </ErrorBoundary>
           )}
 
-          <div className={`nexus-main-surface w-full min-w-0 ${(activeMenu === 'assets' || activeMenu?.startsWith('assets-')) ? 'px-5 sm:px-7 xl:px-9 py-6 lg:py-7' : 'px-5 sm:px-7 xl:px-9 py-6 lg:py-7'}`} style={{ display: activeModule ? undefined : 'none' }}>
+          <div className={`nexus-main-surface w-full min-w-0 px-5 sm:px-7 xl:px-9 py-6 lg:py-7`} style={{ display: activeMenu === 'home' ? 'none' : undefined }}>
 
           {/* Content-level access gate (Fix C): deny render only once permissions
               have loaded — never during the loading window. */}
           {!canAccessActiveMenu && !permissionsLoading ? (
-            <AccessDeniedPage onGoHome={() => { setActiveModule(null); setActiveMenu('home'); }} />
+            <AccessDeniedPage onGoHome={() => { setActiveMenu('home'); }} />
           ) : (
           <>
 

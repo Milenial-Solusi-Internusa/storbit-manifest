@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 
 const C = {
-  navy: '#144682', accent: '#E85A1E', ink: '#23291E', inkSoft: '#5E6553',
+  navy: '#1B4D8A', accent: '#E85A1E', ink: '#23291E', inkSoft: '#5E6553',
   inkFaint: '#8A8E7C', line: '#E7DCC8', surface: '#FFFDF8', surface2: '#FBF6EC',
 };
 const INDUSTRI = ['Manufacturing', 'Retail / FMCG', 'Otomotif', 'Elektronik', 'Kimia', 'Farmasi', 'Agrikultur', 'Konstruksi', 'Oil & Gas', 'Tekstil / Garmen', 'F&B', 'E-commerce', 'Lainnya'];

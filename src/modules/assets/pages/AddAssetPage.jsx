@@ -29,7 +29,7 @@ import { useAuth } from '../../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../../lib/auditLogger';
 
 /* ---------- brand tokens (MSI Brand Guideline v1.0) ---------- */
-const NAVY = '#144682', ORANGE = '#E85A1E', ORANGE_DK = '#D14E18',
+const NAVY = '#1B4D8A', ORANGE = '#E85A1E', ORANGE_DK = '#D14E18',
   CREAM = '#F6EFE3', SURFACE = '#FFFDF8', LINE = '#E5E0D8', LINE_SOFT = '#EFE9DD',
   INK = '#16243A', INK_SOFT = '#4A5360', MUTED = '#6B7280', FAINT = '#9CA3AF',
   DANGER = '#DC2626', GREEN = '#1F8B4D';

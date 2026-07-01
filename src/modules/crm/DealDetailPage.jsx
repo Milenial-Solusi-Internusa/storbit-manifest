@@ -1,7 +1,7 @@
 // src/modules/crm/DealDetailPage.jsx
 // CRM — Detail Deal (per inquiry). Ported from the Lovable handoff, adapted to
 // Nexus conventions: Lucide icons, shared supabase client, useAuth, brand
-// tokens (navy #144682 / orange #E85A1E), Montserrat/Inter fonts.
+// tokens (navy #1B4D8A / orange #E85A1E), Montserrat/Inter fonts.
 //
 // Props:
 //   inquiryId          : string — inquiry to render
@@ -29,7 +29,7 @@ const HEAD = "'Montserrat', system-ui, sans-serif";
 const BODY = "'Inter', system-ui, sans-serif";
 
 const C = {
-  navy: '#144682', navySoft: '#EAF0F8', orange: '#E85A1E', orangeSoft: '#FEF2EC',
+  navy: '#1B4D8A', navySoft: '#EAF0F8', orange: '#E85A1E', orangeSoft: '#FEF2EC',
   text: '#16243A', textMute: '#5E6553', textFaint: '#8A8E7C',
   surface: '#FFFFFF', surfaceAlt: '#FBF6EC',
   border: '#E7DCC8', borderStrong: '#D9CDB6',

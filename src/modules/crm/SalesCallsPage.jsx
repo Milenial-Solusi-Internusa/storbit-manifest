@@ -36,7 +36,7 @@ const C = {
   inkFaint:  '#8A8E7C',
   line:      '#E7DCC8',
   lineSoft:  '#F0E7D6',
-  navy:      '#144682',
+  navy:      '#1B4D8A',
   accent:    '#E85A1E',
   accentSoft:'#FEF2EC',
   ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',

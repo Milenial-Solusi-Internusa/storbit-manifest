@@ -16,7 +16,7 @@ import ErrorState from '../components/ErrorState';
 
 // ─── Role accent colors ────────────────────────────────────────────────────────
 const ROLE_COLOR = {
-  super_admin:        '#144682',
+  super_admin:        '#1B4D8A',
   ceo:                '#7C3AED',
   gm:                 '#0891B2',
   admin:              '#DC2626',
@@ -34,7 +34,7 @@ function roleColor(code) { return ROLE_COLOR[code] || '#6B7280'; }
 
 // ─── MSI Brand tokens ──────────────────────────────────────────────────────────
 const C = {
-  navy:       '#144682',
+  navy:       '#1B4D8A',
   navyDark:   '#0f3366',
   orange:     '#E85A1E',
   accentSoft: '#FEF2EC',

@@ -11,7 +11,7 @@ import { fetchActivityFeed } from './activityFeed';
    ========================================================================= */
 
 /* ---------- brand tokens ---------- */
-const NAVY = "#144682";
+const NAVY = "#1B4D8A";
 const ORANGE = "#E85A1E";
 
 /* ---------- icons (inline lucide paths) ---------- */
@@ -117,7 +117,7 @@ const SOURCE_PALETTE = [
 ];
 
 /* ---------- avatar helper ---------- */
-const AV_COLORS = ["#144682", "#1E5894", "#1F8B4D", "#6E4B8C", "#C8521B", "#1F6B6B"];
+const AV_COLORS = ["#1B4D8A", "#1E5894", "#1F8B4D", "#6E4B8C", "#C8521B", "#1F6B6B"];
 function initials(name) { return (name || '?').split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 function avatarColor(name) { let h = 0; for (let i = 0; i < (name||'').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return AV_COLORS[h % AV_COLORS.length]; }
 
@@ -442,7 +442,7 @@ function PipelineByStage({ stages = STAGES }) {
             <defs>
               <linearGradient id="navyBar" x1="0" y1="0" x2="1" y2="0">
                 <stop offset="0%" stopColor="#2A6FA8" />
-                <stop offset="100%" stopColor="#144682" />
+                <stop offset="100%" stopColor="#1B4D8A" />
               </linearGradient>
             </defs>
             <CartesianGrid horizontal={false} stroke="#F1F2F5" />
@@ -749,7 +749,7 @@ function DashTabs({ active, onSelect }) {
 const ART_TYPE_META = {
   call:        { label: 'Call',        bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
   visit:       { label: 'Visit',       bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
-  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#144682', bd: '#BAD2E6' },
+  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#1B4D8A', bd: '#BAD2E6' },
   prospecting: { label: 'Prospecting', bg: '#FBE6DA', color: '#C8521B', bd: '#F0C3A8' },
   followup:    { label: 'Follow-up',   bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
 };
@@ -1403,7 +1403,7 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
           <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 9, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Tutup
           </button>
-          <button onClick={onEdit} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#144682', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={onEdit} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#1B4D8A', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Edit
           </button>
         </div>
@@ -1628,7 +1628,7 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
                     {/* Date badge */}
                     <div style={{ textAlign: 'center', minWidth: 40 }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' }}>{dayName}</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: '#144682', fontFamily: "'IBM Plex Mono',monospace", lineHeight: 1.1 }}>{dayNum}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#1B4D8A', fontFamily: "'IBM Plex Mono',monospace", lineHeight: 1.1 }}>{dayNum}</div>
                     </div>
                     {/* Divider */}
                     <div style={{ width: 1, height: 36, background: '#E5E7EB' }} />

@@ -5,7 +5,7 @@
    ========================================================================= */
 
 /* ---------- brand tokens (MSI Brand Guideline v1.0) ---------- */
-export const NAVY      = "#144682";
+export const NAVY      = "#1B4D8A";
 export const NAVY_DK   = "#0F3666";
 export const ORANGE    = "#E85A1E";
 export const ORANGE_DK = "#D14E18";

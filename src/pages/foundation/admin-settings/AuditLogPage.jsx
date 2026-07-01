@@ -39,7 +39,7 @@ function kindOf(action) {
 }
 const AL_KIND_STYLE = {
   create:  { bg: "#E8F3EC", fg: "#1F8B4D", icon: "plus" },
-  update:  { bg: "#EAF0F8", fg: "#144682", icon: "pencil" },
+  update:  { bg: "#EAF0F8", fg: "#1B4D8A", icon: "pencil" },
   delete:  { bg: "#FBE3E3", fg: "#C0392B", icon: "trash" },
   login:   { bg: "#E7EEF1", fg: "#2C6E73", icon: "lock" },
   approve: { bg: "#E8F3EC", fg: "#1F8B4D", icon: "check" },

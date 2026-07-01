@@ -4,10 +4,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────
+   Central brand palette (Nexus rebrand — restruktur-nexus).
+   Single source of truth for the new soft-navy + pastel system.
+   Consumers use var(--x); JS shells mirror these in the PASTEL object.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --navy:   #1B4D8A;   /* soft navy (replaces old pekat #144682) */
+  --navy-d: #143C6E;
+  --ink:    #212A37;   /* primary text            */
+  --mute:   #7E8899;   /* secondary text          */
+  --faint:  #A6AEBD;   /* faintest text           */
+  --orange: #E8703D;   /* accent                  */
+  --bg:     #F2F5F9;   /* page background (soft)   */
+  --card:   #FFFFFF;
+  --line:   #E8ECF2;
+
+  /* Per-module pastels — bg / icon pairs */
+  --p-blue:   #E9F1FC; --p-blue-i:   #3D6BAB;  /* CRM            */
+  --p-violet: #F0EBFB; --p-violet-i: #7A5EBE;  /* Daftar Pesanan */
+  --p-amber:  #FCF2E3; --p-amber-i:  #C0863A;  /* Inventory      */
+  --p-green:  #E7F4ED; --p-green-i:  #479467;  /* Finance        */
+  --p-peach:  #FDEDE4; --p-peach-i:  #D4744A;  /* Procurement    */
+  --p-teal:   #E5F2F4; --p-teal-i:   #3F8E9E;  /* Logistic       */
+  --p-rose:   #F9EBF2; --p-rose-i:   #B25E94;  /* HRGA           */
+  --p-indigo: #EBECF9; --p-indigo-i: #5B61B4;  /* Reporting      */
+  --p-slate:  #EDF0F4; --p-slate-i:  #525E70;  /* Foundation     */
+}
+
 body {
   margin: 0;
   font-family: 'Inter', 'Plus Jakarta Sans', system-ui, sans-serif;
-  color: #3A3A3F;
+  color: #212A37;
+  background: #F2F5F9;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

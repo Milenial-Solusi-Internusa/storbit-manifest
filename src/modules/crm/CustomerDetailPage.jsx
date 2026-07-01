@@ -14,7 +14,7 @@ import { CustomerFormModal } from './CustomerListPage';
 import TOPRequestModal from './TOPRequestModal';
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
-const NAVY = '#144682';
+const NAVY = '#1B4D8A';
 const ORANGE = '#E85A1E';
 const SURFACE = '#FFFDF8';
 const INK = '#1A2330';
@@ -92,7 +92,7 @@ const TIER_CFG = {
 const STATUS_CFG = {
   // accounts.account_status segments
   customer:   { bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D', label: 'Customer'   },
-  prospect:   { bg: '#EAF0F8', fg: '#144682', dot: '#144682', label: 'Prospect'   },
+  prospect:   { bg: '#EAF0F8', fg: '#1B4D8A', dot: '#1B4D8A', label: 'Prospect'   },
   lost:       { bg: '#FBE3E0', fg: '#B23227', dot: '#C0392B', label: 'Lost'       },
   free_agent: { bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E', label: 'Free Agent' },
   // legacy customers.status (fallback)
@@ -116,7 +116,7 @@ const VISIT_STATUS_CFG = {
 const ACT_TYPE_META = {
   call:        { label: 'Call',        bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
   visit:       { label: 'Visit',       bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
-  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#144682', bd: '#BAD2E6' },
+  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#1B4D8A', bd: '#BAD2E6' },
   prospecting: { label: 'Prospecting', bg: '#FBE6DA', color: '#C8521B', bd: '#F0C3A8' },
   followup:    { label: 'Follow-up',   bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
 };

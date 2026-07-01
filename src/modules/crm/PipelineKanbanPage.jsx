@@ -16,16 +16,16 @@ import BantScoreBar from './BantScoreBar';
    Pipeline config — lowercase ids match Supabase pipeline_stage.toLowerCase()
    ========================================================================= */
 const STAGES = [
-  { id: 'new',         name: 'New',         prob: 10,  tone: 'navy', color: '#144682' },
-  { id: 'contacted',   name: 'Contacted',   prob: 20,  tone: 'navy', color: '#144682' },
-  { id: 'qualified',   name: 'Qualified',   prob: 40,  tone: 'navy', color: '#144682' },
-  { id: 'proposal',    name: 'Proposal',    prob: 60,  tone: 'navy', color: '#144682' },
-  { id: 'negotiation', name: 'Negotiation', prob: 80,  tone: 'navy', color: '#144682' },
+  { id: 'new',         name: 'New',         prob: 10,  tone: 'navy', color: '#1B4D8A' },
+  { id: 'contacted',   name: 'Contacted',   prob: 20,  tone: 'navy', color: '#1B4D8A' },
+  { id: 'qualified',   name: 'Qualified',   prob: 40,  tone: 'navy', color: '#1B4D8A' },
+  { id: 'proposal',    name: 'Proposal',    prob: 60,  tone: 'navy', color: '#1B4D8A' },
+  { id: 'negotiation', name: 'Negotiation', prob: 80,  tone: 'navy', color: '#1B4D8A' },
   { id: 'won',         name: 'Won',         prob: 100, tone: 'won',  color: '#1F8B4D' },
   { id: 'lost',        name: 'Lost',        prob: 0,   tone: 'lost', color: '#C0392B' },
 ];
 
-const HEAD_BG = { navy: '#144682', won: '#1F8B4D', lost: '#C0392B' };
+const HEAD_BG = { navy: '#1B4D8A', won: '#1F8B4D', lost: '#C0392B' };
 
 // Service type display config — mapped from prospect.source
 const SVC = {
@@ -36,7 +36,7 @@ const SVC = {
   wh:      { label: 'Warehousing',   bg: '#DCEBEA', fg: '#1F6B6B' },
   project: { label: 'Project Cargo', bg: '#E5EDF7', fg: '#234F86' },
   digital: { label: 'Digital',       bg: '#FBE6DA', fg: '#C8521B' },
-  forwarding: { label: 'Forwarding', bg: '#EEF2FF', fg: '#144682' },
+  forwarding: { label: 'Forwarding', bg: '#EEF2FF', fg: '#1B4D8A' },
   trading:    { label: 'Trading',    bg: '#FEF3EE', fg: '#E85A1E' },
 };
 
@@ -159,12 +159,12 @@ const S = {
   lrCo: { fontWeight: 700, fontSize: 13, color: '#1A2330', letterSpacing: -0.1 },
   lrContact: { fontSize: 11.5, color: '#838A95', marginTop: 1 },
   lrDate: { fontSize: 12, color: '#6B7280', fontVariantNumeric: 'tabular-nums', display: 'inline-flex', alignItems: 'center', gap: 6 },
-  lrVal: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: '#144682', textAlign: 'right', letterSpacing: -0.3 },
+  lrVal: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: '#1B4D8A', textAlign: 'right', letterSpacing: -0.3 },
   lrEmpty: { padding: '18px 16px', fontSize: 11.5, color: '#A6ABB5' },
   toast: { position: 'fixed', right: 24, bottom: 24, display: 'flex', alignItems: 'center', gap: 9, background: '#16243A', color: '#fff', padding: '11px 15px', borderRadius: 10, fontSize: 13, fontWeight: 500, boxShadow: '0 12px 30px rgba(10,20,40,.28)', zIndex: 200, transition: 'opacity .2s ease, transform .2s ease' },
 };
 
-const valColorFor = stage => stage === 'won' ? '#1F8B4D' : stage === 'lost' ? '#9AA0AC' : '#144682';
+const valColorFor = stage => stage === 'won' ? '#1F8B4D' : stage === 'lost' ? '#9AA0AC' : '#1B4D8A';
 
 // Aging limits (hari) per stage — selaras Edge Function aging-pipeline.
 const AGING_LIMITS = { contacted: 5, qualified: 5, proposal: 3, negotiation: 14 };
@@ -181,8 +181,8 @@ function agingBadge(stageId, stageChangedAt) {
 
 /* ── Stage badge config ── */
 const STAGE_BADGE = {
-  new:         { bg: '#EEF3FB', color: '#144682' },
-  contacted:   { bg: '#EEF3FB', color: '#144682' },
+  new:         { bg: '#EEF3FB', color: '#1B4D8A' },
+  contacted:   { bg: '#EEF3FB', color: '#1B4D8A' },
   qualified:   { bg: '#FBE6DA', color: '#C8521B' },
   proposal:    { bg: '#ECE3F4', color: '#6E4B8C' },
   negotiation: { bg: '#FBEFD3', color: '#9A6B12' },
@@ -286,9 +286,9 @@ function MenuOption({ active, onClick, children }) {
     <button
       onClick={onClick}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 7, border: 0, background: active ? '#EEF3FB' : (h ? '#F6F7F9' : 'transparent'), color: active ? '#144682' : '#3C4350', fontWeight: active ? 700 : 500, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 7, border: 0, background: active ? '#EEF3FB' : (h ? '#F6F7F9' : 'transparent'), color: active ? '#1B4D8A' : '#3C4350', fontWeight: active ? 700 : 500, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left' }}
     >
-      <span style={{ width: 16, flex: '0 0 16px', display: 'flex' }}>{active && <Icon name="check" size={15} color="#144682" />}</span>
+      <span style={{ width: 16, flex: '0 0 16px', display: 'flex' }}>{active && <Icon name="check" size={15} color="#1B4D8A" />}</span>
       <span style={{ flex: 1 }}>{children}</span>
     </button>
   );
@@ -302,7 +302,7 @@ function CheckRow({ checked, round, onClick, children }) {
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '6px 8px', borderRadius: 6, border: 0, background: h ? '#F6F7F9' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, color: '#3C4350', textAlign: 'left' }}
     >
-      <span style={{ width: 16, height: 16, flex: '0 0 16px', borderRadius: round ? '50%' : 4, border: `1.5px solid ${checked ? '#144682' : '#C7CBD4'}`, background: checked ? '#144682' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <span style={{ width: 16, height: 16, flex: '0 0 16px', borderRadius: round ? '50%' : 4, border: `1.5px solid ${checked ? '#1B4D8A' : '#C7CBD4'}`, background: checked ? '#1B4D8A' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {checked && (round ? <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} /> : <Icon name="check" size={11} color="#fff" />)}
       </span>
       <span>{children}</span>
@@ -353,7 +353,7 @@ function ProspectDetailModal({ deal, onClose, onEdit }) {
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <button
                 onClick={() => { onEdit(deal); onClose(); }}
-                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#144682', color: 'white', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#1B4D8A', color: 'white', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 Edit
               </button>
@@ -960,7 +960,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
                   Reset
                 </button>
                 <button onClick={() => { setFilters(filterDraft); setOpenMenu(null); }}
-                  style={{ flex: 1, height: 34, borderRadius: 8, border: '1px solid #144682', background: '#144682', color: '#fff', fontWeight: 700, fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer' }}>
+                  style={{ flex: 1, height: 34, borderRadius: 8, border: '1px solid #1B4D8A', background: '#1B4D8A', color: '#fff', fontWeight: 700, fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer' }}>
                   Terapkan
                 </button>
               </div>

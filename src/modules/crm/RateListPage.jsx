@@ -23,7 +23,7 @@ const C = {
   lineSoft:  '#F0E7D6',
   accent:    '#E85A1E',
   accentSoft:'#FEF2EC',
-  navy:      '#144682',
+  navy:      '#1B4D8A',
   navySoft:  '#EAF0F8',
   ok:        '#2E7D4F', okBg: '#E4F0E5', okBd: '#BFDDC4',
   neutral:   '#6B6F5E', neutralBg: '#EEE9DC', neutralBd: '#DDD3BE',

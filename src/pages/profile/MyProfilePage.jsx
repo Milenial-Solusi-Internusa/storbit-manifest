@@ -21,7 +21,7 @@ import { supabase } from '../../lib/supabase';
 
 /* ---------- brand tokens ---------- */
 const T = {
-  navy: '#144682', navySoft: 'rgba(20,70,130,0.06)', navyRing: 'rgba(20,70,130,0.20)',
+  navy: '#1B4D8A', navySoft: 'rgba(20,70,130,0.06)', navyRing: 'rgba(20,70,130,0.20)',
   orange: '#E85A1E', orangeDk: '#D14E18',
   cream: '#F6EFE3', surface: '#FFFDF8', line: '#E5E0D8',
   ink: '#1f2937', inkSoft: '#6b7280', faint: '#9ca3af',

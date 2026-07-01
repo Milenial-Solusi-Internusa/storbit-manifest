@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 
 /* ── brand tokens ──────────────────────────────────────────────────────────── */
-const NAVY   = '#144682';
+const NAVY   = '#1B4D8A';
 const ORANGE = '#E85A1E';
 
 /* ── inline icon paths ─────────────────────────────────────────────────────── */
@@ -47,7 +47,7 @@ const WAREHOUSES = [
 ];
 
 const STATUS_META = {
-  Match:   { label: 'Match',   pill: { background: '#EAF0F8', color: '#144682' }, rowBg: '#FFFFFF' },
+  Match:   { label: 'Match',   pill: { background: '#EAF0F8', color: '#1B4D8A' }, rowBg: '#FFFFFF' },
   Surplus: { label: 'Surplus', pill: { background: '#DEF0E4', color: '#1F8B4D' }, rowBg: '#F0FDF4' },
   Deficit: { label: 'Deficit', pill: { background: '#FEE2E2', color: '#DC2626' }, rowBg: '#FEF2F2' },
 };
