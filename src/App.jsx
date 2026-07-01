@@ -262,7 +262,6 @@ const ROLES = [
   { id: 'viewer',             label: 'Viewer'              },
   // Legacy values — fallback for users not yet migrated to user_roles
   { id: 'super',              label: 'Super Admin (legacy)' },
-  { id: 'logistic',           label: 'Operations (legacy)'  },
   { id: 'management',         label: 'Management (legacy)'  },
 ];
 
@@ -282,7 +281,6 @@ const PERMISSIONS = {
   viewer:             ['view','export'],
   // Legacy fallbacks — coexist during migration period
   super:              ['view','create','edit','delete','shipment','finance','export','import','master'],
-  logistic:           ['view','create','edit','shipment','export'],
   management:         ['view','export'],
 };
 
@@ -638,8 +636,8 @@ const ERP_MENU_GROUPS = [
           { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList, public: true },
           { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus, public: true },
           { section: 'Management' },
-          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList, public: true },
-          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock,    badge: '', public: true },
+          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList, role: ['super_admin','admin','finance','it','hrga','supervisor'] },
+          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock,    badge: '', role: ['super_admin','admin','finance','it','hrga','supervisor'] },
           { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive, public: true },
         ],
       },
@@ -769,7 +767,7 @@ const ERP_MENU_GROUPS = [
           { id: 'reports-custom',      label: 'Custom Report',       icon: FileText        },
         ],
       },
-      { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, public: true },
+      { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, role: ['super_admin','admin','ceo','gm','manager','supervisor'] },
       { id: 'reporting-form-report', label: 'Form Report',  icon: FileText, planned: true },
       { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, public: true },
       {
