@@ -455,12 +455,12 @@ const ERP_MENU_GROUPS = [
         children: [
           { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
           { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
-          { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales','operations'] },
+          { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales'] },
           { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['manager','supervisor','admin','super_admin'] },
           { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
-          { id: 'crm-rate-list',   label: 'Rate List',       icon: Tag, role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
+          { id: 'crm-rate-list',   label: 'Rate List',       icon: Tag, role: ['super_admin','admin','ceo','gm','manager','sales'] },
           {
             id: 'crm-customers', label: 'Master Customer', icon: Building2,
             children: [
@@ -470,8 +470,8 @@ const ERP_MENU_GROUPS = [
               { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX    },
             ],
           },
-          { id: 'crm-calls',      label: 'Activities', icon: Activity, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales','operations'] },
-          { id: 'crm-activity-log', label: 'Activity Log', icon: History, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales','operations'] },
+          { id: 'crm-calls',      label: 'Activities', icon: Activity, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales'] },
+          { id: 'crm-activity-log', label: 'Activity Log', icon: History, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales'] },
         ],
       },
     ],
@@ -1081,18 +1081,6 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
   return false;
 };
 
-// collectMenuIds — collect every navigable menu id within a node list
-// (items → children → grandchildren), skipping section headers. Used to
-// validate the restored activeMenu against the full permission-filtered menu
-// tree, since the flat visibleMenus only covers the top level.
-function collectMenuIds(nodes, acc) {
-  (nodes || []).forEach(n => {
-    if (n.section) return;
-    if (n.id) acc.add(n.id);
-    if (n.children) collectMenuIds(n.children, acc);
-  });
-  return acc;
-}
 
 // findMenuItemById — locate a menu item (item → children → grandchildren) by id
 // across ERP_MENU_GROUPS. Used by the centralized route-guard (canRenderPage)
@@ -1791,21 +1779,31 @@ export default function StorbitManifest() {
         activeMenu?.startsWith('product-') ||
         activeMenu?.startsWith('admin-settings-')) return;
 
-    // Build the permission-filtered menu tree, then collect every navigable id
-    // (top-level items + nested children + grandchildren).
-    const visGroups = ERP_MENU_GROUPS
-      .map(g => ({ ...g, items: g.items.filter(it => canSeeMenuItem(it, role, hasPermission, hasMenuPermission)) }))
-      .filter(g => g.items.some(i => !i.section));
-    const visFlat = visGroups.flatMap(g => g.items.filter(i => !i.section));
-    if (visFlat.length === 0) return;
+    // Validate activeMenu against the SAME per-item gate the sidebar and
+    // canAccessActiveMenu (F4) use: isMenuAccessible. A gated item is judged by
+    // canSeeMenuItem; a gateless child inherits its module's visibility; a
+    // role-gated child (e.g. crm-lead-pool) is judged on ITS OWN gate — not its
+    // container's menu-permission.
+    //
+    // The old logic filtered only TOP-LEVEL items, then collected ALL descendants
+    // of the survivors (collectMenuIds). So a role-gated child was dropped from
+    // accessibleIds whenever its container failed for the user — e.g. crm-dashboard
+    // is gated by the `crm_dashboard` menu-permission, which `operations` lacks, so
+    // crm-lead-pool / crm-rate-list / crm-calls / crm-activity-log all fell through
+    // and this guard bounced the user to the first visible menu (the public
+    // Command Center dashboard). Reusing isMenuAccessible keeps the sidebar, the
+    // content gate, and this redirect perfectly in sync (opsi A).
+    if (isMenuAccessible(activeMenu, role, hasPermission, hasMenuPermission)) return;
 
-    const accessibleIds = collectMenuIds(visGroups.flatMap(g => g.items), new Set());
-    if (!accessibleIds.has(activeMenu)) {
-      // Intentional, self-terminating redirect: after switching to a valid menu
-      // the condition is false on the next run, so this does not loop.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setActiveMenu(visFlat[0]?.id || 'home');
-    }
+    // Not accessible → land on the first visible top-level menu (or home).
+    const visFlat = ERP_MENU_GROUPS
+      .flatMap(g => g.items)
+      .filter(it => !it.section && canSeeMenuItem(it, role, hasPermission, hasMenuPermission));
+    if (visFlat.length === 0) return;
+    // Intentional, self-terminating redirect: after switching to a valid menu the
+    // guard passes on the next run, so this does not loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveMenu(visFlat[0]?.id || 'home');
   }, [profile, role, hasPermission, hasMenuPermission, userPermissions, menuPermissions, activeMenu]);
 
   // Close profile dropdown on Escape
