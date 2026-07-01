@@ -28,12 +28,15 @@ function greeting() {
 }
 
 // Dummy "Perlu tindakan" — action targets navigate into the relevant module.
+// `gate` = the menu id whose access permission decides if the row shows (same
+// gate as the sidebar). Interim gating for dummy data; when wired to real data
+// this must instead filter by approval-assignment (is it actually the user's to act on).
 const TASKS = [
-  { tone: ['#F0EBFB', '#7A5EBE'], icon: Receipt, title: 'Konfirmasi SP baru', sub: 'SP-894688 · Indomarco · 150 unit',
+  { gate: 'manifest', tone: ['#F0EBFB', '#7A5EBE'], icon: Receipt, title: 'Konfirmasi SP baru', sub: 'SP-894688 · Indomarco · 150 unit',
     actions: [{ label: 'Tinjau', kind: 'pri', to: 'manifest' }] },
-  { tone: ['#E9F1FC', '#3D6BAB'], icon: User, title: 'Review akses customer', sub: 'Indomarco minta akses entitas MSI',
+  { gate: 'crm-customers-msi', tone: ['#E9F1FC', '#3D6BAB'], icon: User, title: 'Review akses customer', sub: 'Indomarco minta akses entitas MSI',
     actions: [{ label: 'Tinjau', kind: 'pri', to: 'crm-customers-msi' }] },
-  { tone: ['#E7F4ED', '#479467'], icon: FileText, title: 'Setujui quotation', sub: 'QT-0412 · Martin · MSI',
+  { gate: 'quotation-draft', tone: ['#E7F4ED', '#479467'], icon: FileText, title: 'Setujui quotation', sub: 'QT-0412 · Martin · MSI',
     actions: [{ label: 'Tolak', kind: 'sec', to: 'quotation-draft' }, { label: 'Setujui', kind: 'pri', to: 'quotation-draft' }] },
 ];
 
@@ -59,9 +62,21 @@ function Panel({ children, delay }) {
   );
 }
 
-export default function HomeDashboard({ profile, currentRoleLabel, onNavigate }) {
+export default function HomeDashboard({ profile, currentRoleLabel, onNavigate, canNavigate }) {
   const nav = (id) => id && onNavigate?.(id);
+  // Same access gate as the sidebar (canRenderPage → canSeeMenuItem). Default-allow
+  // if no gate fn is passed so the page never hard-fails. Buttons for pages the
+  // user can't reach are HIDDEN, not disabled.
+  const can = (id) => (typeof canNavigate === 'function' ? !!canNavigate(id) : true);
   const firstName = (profile?.full_name || 'User').split(' ')[0];
+
+  // Quick actions gated to the SAME permission as their target menu item.
+  const QUICK = [
+    { id: 'input',           label: 'Buat SP',        icon: Plus,     solid: true },
+    { id: 'quotation-draft', label: 'Buat Quotation', icon: Plus },
+    { id: 'crm-inquiry',     label: 'Catat Inquiry',  icon: FileText },
+  ].filter(q => can(q.id));
+  const visibleTasks = TASKS.filter(t => can(t.gate));
 
   return (
     <div style={{ padding: '6px 30px 46px', maxWidth: 1240, margin: '0 auto', fontFamily: "'Inter', system-ui, sans-serif", color: INK }}>
@@ -85,22 +100,23 @@ export default function HomeDashboard({ profile, currentRoleLabel, onNavigate })
             {greeting()}, {firstName}
           </div>
           <div style={{ color: '#C9D9EE', fontSize: 13.5, marginTop: 6 }}>
-            Kamu masuk sebagai <b style={{ color: '#fff', fontWeight: 600 }}>Group</b> — <b style={{ color: '#fff', fontWeight: 600 }}>{TASKS.length} hal</b> menunggu tindakanmu hari ini.
+            Kamu masuk sebagai <b style={{ color: '#fff', fontWeight: 600 }}>Group</b> — <b style={{ color: '#fff', fontWeight: 600 }}>{visibleTasks.length} hal</b> menunggu tindakanmu hari ini.
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => nav('input')} className="home-qbtn"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: ORANGE, border: '1px solid transparent', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-              <Plus size={15} strokeWidth={2.2} /> Buat SP
-            </button>
-            <button type="button" onClick={() => nav('quotation-draft')} className="home-qbtn"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,.14)', border: '1px solid rgba(255,255,255,.18)', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-              <Plus size={15} strokeWidth={2.2} /> Buat Quotation
-            </button>
-            <button type="button" onClick={() => nav('crm-inquiry')} className="home-qbtn"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,.14)', border: '1px solid rgba(255,255,255,.18)', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-              <FileText size={15} strokeWidth={2.2} /> Catat Inquiry
-            </button>
-          </div>
+          {QUICK.length > 0 && (
+            <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+              {QUICK.map(q => {
+                const QIcon = q.icon;
+                return (
+                  <button key={q.id} type="button" onClick={() => nav(q.id)} className="home-qbtn"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: '9px 15px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: '#fff',
+                      background: q.solid ? ORANGE : 'rgba(255,255,255,.14)',
+                      border: q.solid ? '1px solid transparent' : '1px solid rgba(255,255,255,.18)' }}>
+                    <QIcon size={15} strokeWidth={2.2} /> {q.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -114,12 +130,15 @@ export default function HomeDashboard({ profile, currentRoleLabel, onNavigate })
               <h4 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 9, margin: 0 }}>
                 <CheckCircle2 size={17} style={{ color: NAVY }} /> Perlu tindakan
               </h4>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: ORANGE, background: '#FDEDE4', padding: '3px 9px', borderRadius: 9 }}>{TASKS.length}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: ORANGE, background: '#FDEDE4', padding: '3px 9px', borderRadius: 9 }}>{visibleTasks.length}</span>
             </div>
-            {TASKS.map((t, i) => {
+            {visibleTasks.length === 0 && (
+              <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 12.5, color: MUTE }}>Tidak ada yang perlu tindakan.</div>
+            )}
+            {visibleTasks.map((t, i) => {
               const Ico = t.icon;
               return (
-                <div key={i} style={{ display: 'flex', gap: 12, padding: '13px 0', borderBottom: i < TASKS.length - 1 ? '1px solid #F3F5F8' : 'none' }}>
+                <div key={i} style={{ display: 'flex', gap: 12, padding: '13px 0', borderBottom: i < visibleTasks.length - 1 ? '1px solid #F3F5F8' : 'none' }}>
                   <div style={{ width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: t.tone[0], color: t.tone[1] }}>
                     <Ico size={18} />
                   </div>
