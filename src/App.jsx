@@ -997,7 +997,7 @@ const MENU_KEY_MAP = {
   'customer-detail':     'crm_customers',
   // Logistics
   'manifest':            'logistics_sp',
-  'input':               'logistics_sp',
+  'input':               'logistics_input',
   'trading':             'logistics_general_trading',
   'customers':           'logistics_customer_storbit',
   'job':                 'logistics_job_management',
