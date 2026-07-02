@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 0O1lSUHuofTBXHaHfpiX8rTtZneNFwRdry9dSZjkfd2bbTBgn6h8KS5hqLZBzHx
+\restrict rb7Umhpimlg1xoaQDfopgAdQpJlRfvShEpp26QEAiTjAIT9fsFhv8W35xYuBhKF
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -138,13 +138,14 @@ BEGIN
   VALUES (v_company_id, v_no, v_sp_no, p_picking_list_id, v_customer, v_cust_name, v_addr, 'draft', v_uid)
   RETURNING id INTO v_dn_id;
 
-  INSERT INTO delivery_note_items (delivery_note_id, picking_list_item_id, product_name, sku, qty)
-  SELECT v_dn_id, pli.id, pli.product_name, pli.sku, pli.qty_picked
+  INSERT INTO delivery_note_items (delivery_note_id, picking_list_item_id, product_id, product_name, sku, qty)
+  SELECT v_dn_id, pli.id, pli.product_id, pli.product_name, pli.sku, pli.qty_picked
   FROM picking_list_items pli
   WHERE pli.picking_list_id = p_picking_list_id AND COALESCE(pli.qty_picked,0) > 0;
 
   RETURN QUERY SELECT v_dn_id, v_no;
-END; $$;
+END;
+$$;
 
 
 --
@@ -156,32 +157,22 @@ CREATE FUNCTION public.generate_picking_from_sp(p_sp_no text, p_warehouse_id uui
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_company_id  uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
-  v_entity      text;
-  v_year        int  := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
-  v_seq         int;
-  v_no          text;
-  v_pl_id       uuid;
-  v_uid         uuid := auth.uid();
-  v_outstanding int;
+  v_company_id uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+  v_entity text;
+  v_year int := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
+  v_seq int; v_no text; v_pl_id uuid; v_uid uuid := auth.uid(); v_outstanding int;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no = p_sp_no AND sp_status = 'confirmed') THEN
-    RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no;
-  END IF;
-
+    RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no; END IF;
   IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no = p_sp_no AND status <> 'cancelled') THEN
-    RAISE EXCEPTION 'Picking list untuk SP % sudah ada', p_sp_no;
-  END IF;
-
-  SELECT count(*) INTO v_outstanding
-  FROM sp_items WHERE sp_no = p_sp_no AND sp_status = 'confirmed' AND (qty - shipped_qty) > 0;
-  IF v_outstanding = 0 THEN
-    RAISE EXCEPTION 'SP % tidak punya item outstanding untuk di-pick', p_sp_no;
-  END IF;
+    RAISE EXCEPTION 'Picking list untuk SP % sudah ada', p_sp_no; END IF;
+  SELECT count(*) INTO v_outstanding FROM sp_items
+    WHERE sp_no = p_sp_no AND sp_status = 'confirmed' AND (qty - shipped_qty) > 0;
+  IF v_outstanding = 0 THEN RAISE EXCEPTION 'SP % tidak punya item outstanding untuk di-pick', p_sp_no; END IF;
 
   SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
   v_seq := increment_document_sequence(v_company_id, 'PICK', 'WH', v_year, 0);
-  v_no  := 'PICK/' || COALESCE(v_entity, 'SOA') || '/WH/' || v_year || '/' || lpad(v_seq::text, 4, '0');
+  v_no  := 'PICK/' || COALESCE(v_entity,'SOA') || '/WH/' || v_year || '/' || lpad(v_seq::text, 4, '0');
 
   INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by)
   VALUES (v_company_id, v_no, p_sp_no, p_warehouse_id, 'pending', v_uid)
@@ -189,7 +180,7 @@ BEGIN
 
   INSERT INTO picking_list_items
     (picking_list_id, sp_item_id, product_id, product_name, sku, qty_requested)
-  SELECT v_pl_id, si.id, NULL, si.product_name, si.sku, GREATEST(si.qty - si.shipped_qty, 0)
+  SELECT v_pl_id, si.id, si.product_id, si.product_name, si.sku, GREATEST(si.qty - si.shipped_qty, 0)
   FROM sp_items si
   WHERE si.sp_no = p_sp_no AND si.sp_status = 'confirmed' AND (si.qty - si.shipped_qty) > 0;
 
@@ -3441,6 +3432,7 @@ CREATE TABLE public.sp_items (
     cancel_reason text,
     sp_category text,
     external_url text,
+    product_id uuid,
     CONSTRAINT sp_items_sp_status_check CHECK ((sp_status = ANY (ARRAY['draft'::text, 'confirmed'::text, 'cancelled'::text])))
 );
 
@@ -8045,6 +8037,14 @@ ALTER TABLE ONLY public.sp_items
 
 
 --
+-- Name: sp_items sp_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_items
+    ADD CONSTRAINT sp_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
 -- Name: stock_ledger stock_ledger_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10661,5 +10661,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 0O1lSUHuofTBXHaHfpiX8rTtZneNFwRdry9dSZjkfd2bbTBgn6h8KS5hqLZBzHx
+\unrestrict rb7Umhpimlg1xoaQDfopgAdQpJlRfvShEpp26QEAiTjAIT9fsFhv8W35xYuBhKF
 
