@@ -397,12 +397,27 @@ export async function getPickingListDetail(pickingListId) {
     .limit(1)
     .maybeSingle();
 
+  // Material packing rows (Fase 3.x) + editable-window flag (locked once a
+  // non-cancelled delivery note exists for this picking).
+  const { data: materials } = await supabase
+    .from('picking_list_materials')
+    .select('*')
+    .eq('picking_list_id', pickingListId)
+    .order('created_at', { ascending: true, nullsFirst: false });
+  const { count: dnCount } = await supabase
+    .from('delivery_notes')
+    .select('id', { count: 'exact', head: true })
+    .eq('picking_list_id', pickingListId)
+    .neq('status', 'cancelled');
+
   return {
     data: {
       ...header,
       warehouse_name: header.warehouses?.name || null,
       customer_name: spRow?.customers?.name || null,
       items: items || [],
+      materials: materials || [],
+      has_delivery: (dnCount || 0) > 0,
     },
     error: null,
   };
@@ -451,6 +466,26 @@ export async function completePicking(pickingListId) {
 export async function cancelPicking(pickingListId) {
   // RPC cancel_picking: set cancelled + release reservation (unreserved) atomically.
   const { error } = await supabase.rpc('cancel_picking', { p_picking_list_id: pickingListId });
+  return { error };
+}
+
+// Record a packing material (kardus/lakban/etc — inventory_class='Inventory') on a
+// picking list. RPC add_picking_material inserts the row + posts an 'outbound'
+// stock_ledger movement (deducts stock) atomically. Returns { data: newId, error }.
+export async function addPickingMaterial(pickingListId, productId, qty) {
+  const { data, error } = await supabase.rpc('add_picking_material', {
+    p_picking_list_id: pickingListId,
+    p_product_id: productId,
+    p_qty: qty,
+  });
+  const id = Array.isArray(data) ? data[0] : data;
+  return { data: id || null, error };
+}
+
+// Remove a recorded packing material. RPC delete_picking_material deletes the row +
+// reverses the stock movement (inbound, reference_type 'material_reverse') atomically.
+export async function deletePickingMaterial(materialId) {
+  const { error } = await supabase.rpc('delete_picking_material', { p_material_id: materialId });
   return { error };
 }
 
