@@ -47,6 +47,7 @@ export function spFromDb(row) {
     confirmedAt: row.confirmed_at || '',
     cancelledAt: row.cancelled_at || '',
     cancelReason: row.cancel_reason || '',
+    externalUrl: row.external_url || '',   // Fase 0.3 — link dokumen SP (Drive dll)
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -331,6 +332,16 @@ export async function setSpStatus(spNo, status, reason = null) {
     p_reason: reason,
   });
   return { data, error }; // data = jumlah baris ter-update
+}
+
+// Set the SP document link (Fase 0.3) across all line items sharing sp_no.
+// external_url is per-SP conceptually; sp_items is line-level → update all rows.
+export async function setSpExternalUrl(spNo, url) {
+  const { error } = await supabase
+    .from('sp_items')
+    .update({ external_url: url || null })
+    .eq('sp_no', spNo);
+  return { error };
 }
 
 // ============================================================
