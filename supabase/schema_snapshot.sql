@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 16mTX4fofcs84JESaPFPT0Y9lXwVslyA6b8GiWbv7IyDZEkgPq9HQmvxOmmi4VY
+\restrict Djaepdt1JxFgdmRWAUaAI6iTbdalBD8P3PcTPGxRAAUuXhuKrFIVlAbVeKRQqNT
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2835,6 +2835,7 @@ CREATE TABLE public.picking_lists (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     started_at timestamp with time zone,
     completed_at timestamp with time zone,
+    cancelled_at timestamp with time zone,
     CONSTRAINT picking_lists_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))
 );
 
@@ -10389,5 +10390,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 16mTX4fofcs84JESaPFPT0Y9lXwVslyA6b8GiWbv7IyDZEkgPq9HQmvxOmmi4VY
+\unrestrict Djaepdt1JxFgdmRWAUaAI6iTbdalBD8P3PcTPGxRAAUuXhuKrFIVlAbVeKRQqNT
 
