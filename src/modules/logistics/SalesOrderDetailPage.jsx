@@ -20,7 +20,7 @@ import {
   Check, X, FolderOpen, History, List,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2,
 } from 'lucide-react';
-import { listSpBtbs, addSpBtb, deleteSpBtb, setSpExternalUrl } from '../../lib/db';
+import { listSpBtbs, addSpBtb, deleteSpBtb, setSpExternalUrl, getStockForProducts } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
@@ -582,6 +582,12 @@ export default function SalesOrderDetailPage({
   const [docUrl,       setDocUrl]       = useState(items[0]?.externalUrl || '');
   const [docEditing,   setDocEditing]   = useState(false);
   const [docSaving,    setDocSaving]    = useState(false);
+  // Fase 1 — stok tersedia (company-level) untuk cek sebelum Generate Picking.
+  const [stockMap,     setStockMap]     = useState({});
+  const productIdsKey = useMemo(
+    () => [...new Set(items.map(i => i.productId).filter(Boolean))].sort().join(','),
+    [items],
+  );
 
   // ── BTB Numbers (SP-level) ───────────────────────────────────────────────
   const [btbs,         setBtbs]         = useState([]);
@@ -593,6 +599,29 @@ export default function SalesOrderDetailPage({
     if (!spNo) return;
     listSpBtbs(spNo).then(({ data }) => setBtbs(data || []));
   }, [spNo]);
+
+  // Fase 1 — fetch stok tersedia (agregat company) saat SP sudah confirmed.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (group?.spStatus !== 'confirmed' || !productIdsKey) { setStockMap({}); return undefined; }
+    let cancelled = false;
+    getStockForProducts(productIdsKey.split(',')).then(({ data }) => { if (!cancelled) setStockMap(data || {}); });
+    return () => { cancelled = true; };
+  }, [group?.spStatus, productIdsKey]);
+
+  // Ringkasan kecukupan stok (per item outstanding vs available company-level).
+  const stockShort = useMemo(() => {
+    if (group?.spStatus !== 'confirmed') return { checked: 0, short: 0 };
+    let checked = 0, short = 0;
+    items.forEach(i => {
+      if (!i.productId) return;
+      checked += 1;
+      const avail = stockMap[i.productId]?.available ?? 0;
+      const out = Number(i.qty) - Number(i.shippedQty);
+      if (avail < out) short += 1;
+    });
+    return { checked, short };
+  }, [items, stockMap, group?.spStatus]);
 
   const handleAddBtb = async () => {
     if (!btbInput.trim()) return;
@@ -735,7 +764,13 @@ export default function SalesOrderDetailPage({
               </Badge>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignSelf: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignSelf: 'flex-start', alignItems: 'center' }}>
+            {group?.spStatus === 'confirmed' && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '5px 10px', borderRadius: 8,
+                background: stockShort.short > 0 ? C.warnBg : C.okBg, color: stockShort.short > 0 ? C.warn : C.ok, border: `1px solid ${stockShort.short > 0 ? C.warnBd : C.okBd}` }}>
+                {stockShort.short > 0 ? <><AlertTriangle size={13}/> {stockShort.short} item stok kurang</> : <><Check size={13}/> Stok cukup</>}
+              </span>
+            )}
             {group?.spStatus === 'confirmed' && (
               <button
                 onClick={async () => {
@@ -996,9 +1031,19 @@ export default function SalesOrderDetailPage({
                         SKU · {item.sku || '—'}
                       </div>
                     </div>
-                    <Badge bg={sm.bg} color={sm.color} bd={sm.bd}>
-                      <StatusDot color={sm.color}/>{sm.label}
-                    </Badge>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {group?.spStatus === 'confirmed' && (() => {
+                        if (!item.productId) return <Badge bg={C.neutralBg} color={C.neutral} bd={C.neutralBd}><span/>Tersedia: —</Badge>;
+                        const av = stockMap[item.productId]?.available ?? 0;
+                        const ok = av >= outQty;
+                        return <Badge bg={ok ? C.okBg : C.dangerBg} color={ok ? C.ok : C.danger} bd={ok ? C.okBd : C.dangerBd}>
+                          <span/>Tersedia: {av.toLocaleString('id-ID')}
+                        </Badge>;
+                      })()}
+                      <Badge bg={sm.bg} color={sm.color} bd={sm.bd}>
+                        <StatusDot color={sm.color}/>{sm.label}
+                      </Badge>
+                    </div>
                   </div>
 
                   {/* it-grid — 6 cells */}

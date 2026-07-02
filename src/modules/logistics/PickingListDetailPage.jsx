@@ -97,6 +97,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   const items = detail?.items || [];
   const pickedCount = items.filter(it => it.status === 'picked').length;
   const allPicked = items.length > 0 && pickedCount === items.length;
+  const shortCount = items.filter(it => (it.qty_short || 0) > 0).length;   // ter-reserve sebagian (stok kurang)
   const locked = status === 'done' || status === 'cancelled';
 
   const togglePicked = useCallback(async (it) => {
@@ -213,8 +214,15 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
           <span style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 14, color: C.ink }}>
             Item yang Diambil
           </span>
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: C.tealI, background: C.teal, padding: '3px 10px', borderRadius: 9 }}>
-            {pickedCount} / {items.length} selesai
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {shortCount > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: C.roseI, background: C.rose, padding: '3px 10px', borderRadius: 9 }}>
+                <AlertTriangle size={12} strokeWidth={2.5} /> {shortCount} item stok kurang
+              </span>
+            )}
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.tealI, background: C.teal, padding: '3px 10px', borderRadius: 9 }}>
+              {pickedCount} / {items.length} selesai
+            </span>
           </span>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -240,7 +248,14 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
                       {picked ? <CheckCircle2 size={20} color={C.greenI} /> : <Circle size={20} color={C.faint} />}
                     </button>
                   </td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: C.ink, fontWeight: 500 }}>{it.product_name || '—'}</td>
+                  <td style={{ padding: '14px 16px', fontSize: 13, color: C.ink, fontWeight: 500 }}>
+                    {it.product_name || '—'}
+                    {(it.qty_short || 0) > 0 && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: C.roseI, background: C.rose, padding: '2px 7px', borderRadius: 7, verticalAlign: 'middle' }}>
+                        <AlertTriangle size={11} strokeWidth={2.5} /> Kurang {Number(it.qty_short).toLocaleString('id-ID')}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: '14px 16px', fontSize: 12, fontFamily: 'IBM Plex Mono, monospace', color: C.mute }}>{it.sku || '—'}</td>
                   <td style={{ padding: '14px 16px', fontSize: 12.5, color: C.mute }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
