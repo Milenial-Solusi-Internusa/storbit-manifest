@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict MwuaZnaBLnRS3iWHWbpHEuC7zJYoDlmiWn0OCPXemfm4WFGSMHTRpV5a0B7fafS
+\restrict PiafDbqiZxVaysH4Bal7Tl4sj8HGiUcJeCl1zKQ2sJrIDiSW85OrgtwForsdmr5
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -66,6 +66,27 @@ BEGIN
 
   RETURN v_mid;
 END; $$;
+
+
+--
+-- Name: attach_price_contract_info(uuid, text, date, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.attach_price_contract_info(p_history_id uuid, p_contract_no text, p_valid_from date, p_valid_until date) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  UPDATE public.product_price_history
+     SET contract_no = p_contract_no,
+         valid_from  = p_valid_from,
+         valid_until = p_valid_until
+   WHERE id = p_history_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Baris riwayat harga % tidak ditemukan', p_history_id;
+  END IF;
+END;
+$$;
 
 
 --
@@ -330,10 +351,13 @@ BEGIN
   ),
   ins_items AS (
     INSERT INTO picking_list_items
-      (picking_list_id, sp_item_id, product_id, product_name, sku, qty_requested, qty_short)
+      (picking_list_id, sp_item_id, product_id, product_name, sku, qty_requested, qty_short, location_detail)
     SELECT v_pl_id, sp_item_id, product_id, product_name, sku, req,
            CASE WHEN product_id IS NULL THEN 0
-                ELSE GREATEST(req - LEAST(req, avail), 0) END
+                ELSE GREATEST(req - LEAST(req, avail), 0) END,
+           (SELECT pwl.rack_location FROM product_warehouse_location pwl
+             WHERE pwl.product_id = av.product_id AND pwl.warehouse_id = v_wh
+             LIMIT 1)
     FROM av
     RETURNING 1
   )
@@ -673,6 +697,24 @@ $$;
 --
 
 COMMENT ON FUNCTION public.is_super_admin() IS 'True if the current user holds super_admin role (new user_roles table) or legacy profiles.role=''super''. Legacy fallback removed after Phase 1.0F.';
+
+
+--
+-- Name: log_product_price_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.log_product_price_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  INSERT INTO public.product_price_history
+    (product_id, company_id, old_price, new_price, changed_by, source)
+  VALUES
+    (NEW.id, NEW.company_id, OLD.default_price, NEW.default_price, auth.uid(), 'product_update');
+  RETURN NEW;
+END;
+$$;
 
 
 --
@@ -3151,6 +3193,42 @@ COMMENT ON COLUMN public.positions.level IS 'Seniority level: Staff, Supervisor,
 
 
 --
+-- Name: product_price_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_price_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    product_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    old_price numeric(18,2),
+    new_price numeric(18,2),
+    changed_by uuid,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    reason text,
+    source text,
+    contract_no text,
+    valid_from date,
+    valid_until date
+);
+
+
+--
+-- Name: product_warehouse_location; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_warehouse_location (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    product_id uuid NOT NULL,
+    warehouse_id uuid NOT NULL,
+    rack_location text,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: products; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4798,6 +4876,22 @@ ALTER TABLE ONLY public.positions
 
 
 --
+-- Name: product_price_history product_price_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_price_history
+    ADD CONSTRAINT product_price_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: product_warehouse_location product_warehouse_location_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_warehouse_location
+    ADD CONSTRAINT product_warehouse_location_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: products products_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4827,6 +4921,14 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT prospects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: product_warehouse_location pwl_uniq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_warehouse_location
+    ADD CONSTRAINT pwl_uniq UNIQUE (product_id, warehouse_id);
 
 
 --
@@ -5910,6 +6012,13 @@ CREATE INDEX idx_positions_deleted_at ON public.positions USING btree (deleted_a
 
 
 --
+-- Name: idx_pph_product_changed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pph_product_changed ON public.product_price_history USING btree (product_id, changed_at DESC);
+
+
+--
 -- Name: idx_products_company_code; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5977,6 +6086,20 @@ CREATE INDEX idx_prospects_company_id ON public.accounts USING btree (company_id
 --
 
 CREATE INDEX idx_prospects_pipeline_stage ON public.accounts USING btree (pipeline_stage);
+
+
+--
+-- Name: idx_pwl_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pwl_product ON public.product_warehouse_location USING btree (product_id);
+
+
+--
+-- Name: idx_pwl_warehouse; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pwl_warehouse ON public.product_warehouse_location USING btree (warehouse_id);
 
 
 --
@@ -6393,6 +6516,13 @@ CREATE TRIGGER trg_positions_updated_at BEFORE UPDATE ON public.positions FOR EA
 
 
 --
+-- Name: product_warehouse_location trg_product_warehouse_location_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_product_warehouse_location_updated_at BEFORE UPDATE ON public.product_warehouse_location FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
 -- Name: products trg_products_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6460,6 +6590,13 @@ CREATE TRIGGER trg_warehouses_updated_at BEFORE UPDATE ON public.warehouses FOR 
 --
 
 CREATE TRIGGER trg_z_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR EACH ROW WHEN ((((new.code IS NULL) OR (new.code = ''::text)) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION public.generate_customer_code();
+
+
+--
+-- Name: products trg_z_products_price_history; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_z_products_price_history AFTER UPDATE OF default_price ON public.products FOR EACH ROW WHEN ((old.default_price IS DISTINCT FROM new.default_price)) EXECUTE FUNCTION public.log_product_price_change();
 
 
 --
@@ -7876,6 +8013,14 @@ ALTER TABLE ONLY public.positions
 
 
 --
+-- Name: product_price_history pph_product_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_price_history
+    ADD CONSTRAINT pph_product_fk FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+
+
+--
 -- Name: products products_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8009,6 +8154,22 @@ ALTER TABLE ONLY public.accounts
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT prospects_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: product_warehouse_location pwl_product_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_warehouse_location
+    ADD CONSTRAINT pwl_product_fk FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: product_warehouse_location pwl_warehouse_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_warehouse_location
+    ADD CONSTRAINT pwl_warehouse_fk FOREIGN KEY (warehouse_id) REFERENCES public.warehouses(id) ON DELETE CASCADE;
 
 
 --
@@ -10223,6 +10384,25 @@ CREATE POLICY positions_update ON public.positions FOR UPDATE USING ((public.is_
 
 
 --
+-- Name: product_price_history pph_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pph_read ON public.product_price_history FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+
+
+--
+-- Name: product_price_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_price_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: product_warehouse_location; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_warehouse_location ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: products; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10246,7 +10426,7 @@ CREATE POLICY products_read ON public.products FOR SELECT USING ((public.is_supe
 -- Name: products products_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY products_update ON public.products FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin()))) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
+CREATE POLICY products_update ON public.products FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin())))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above())));
 
 
 --
@@ -10302,6 +10482,34 @@ CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((((company_id 
 --
 
 CREATE POLICY prospects_update ON public.accounts FOR UPDATE USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
+
+
+--
+-- Name: product_warehouse_location pwl_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pwl_delete ON public.product_warehouse_location FOR DELETE TO authenticated USING (true);
+
+
+--
+-- Name: product_warehouse_location pwl_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pwl_insert ON public.product_warehouse_location FOR INSERT TO authenticated WITH CHECK (true);
+
+
+--
+-- Name: product_warehouse_location pwl_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pwl_read ON public.product_warehouse_location FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: product_warehouse_location pwl_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pwl_update ON public.product_warehouse_location FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
@@ -10910,5 +11118,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict MwuaZnaBLnRS3iWHWbpHEuC7zJYoDlmiWn0OCPXemfm4WFGSMHTRpV5a0B7fafS
+\unrestrict PiafDbqiZxVaysH4Bal7Tl4sj8HGiUcJeCl1zKQ2sJrIDiSW85OrgtwForsdmr5
 
