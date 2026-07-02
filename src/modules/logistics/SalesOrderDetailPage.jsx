@@ -22,6 +22,11 @@ import {
 } from 'lucide-react';
 import { listSpBtbs, addSpBtb, deleteSpBtb, setSpExternalUrl, getStockForProducts } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
+import ProductPicker from '../../components/ProductPicker';
+import { useProducts } from '../../hooks/useProducts';
+
+// SP = entitas Storbit (SOA) → pin katalog produk ke SOA (pola InputSPPage/DeliveryNote).
+const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -196,7 +201,10 @@ function ModalGrid({ cols, children }) {
 }
 
 function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
+  // Katalog produk (dropdown-only) di-pin ke Storbit/SOA.
+  const { products } = useProducts({ companyId: SOA_COMPANY_ID });
   const [draft, setDraft] = useState({
+    productId:    item.productId   ?? null,
     productName: item.productName || '',
     sku:          item.sku         || '',
     dc:           item.dc          || '',
@@ -221,6 +229,10 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
+
+  // Dropdown-only: item yang SUDAH tertaut wajib tetap tertaut (cegah unlink tak sengaja).
+  // Item legacy (product_id null) boleh disimpan tanpa memilih (lenient) — keputusan user.
+  const wasLinked = !!item.productId;
 
   // Auto-calc estimatedDeliveryDate from shippingDate + slaDays
   useEffect(() => {
@@ -304,7 +316,17 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
           <ModalSect>Produk</ModalSect>
           <ModalGrid cols={3}>
             <ModalField label="Product Name" req>
-              <ModalInp value={draft.productName} onChange={e => set('productName', e.target.value)}/>
+              {/* Dropdown-only: produk hanya dari master (SOA). onPick sinkronkan
+                  product_id + SKU + nama (tutup desync). onChangeText batalkan pilihan.
+                  unit_price TIDAK di-prefill di sini (tetap snapshot yang ada). */}
+              <ProductPicker
+                value={draft.productName}
+                products={products}
+                placeholder="Cari produk…"
+                inputStyle={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface, fontSize: 13, color: C.ink, outline: 'none' }}
+                onChangeText={(v) => setDraft(prev => ({ ...prev, productName: v, productId: null, sku: '' }))}
+                onPick={(p) => setDraft(prev => ({ ...prev, productId: p.id, productName: p.name, sku: p.code || '' }))}
+              />
             </ModalField>
             <ModalField label="SKU"><ModalInp value={draft.sku} readOnly mono/></ModalField>
             <ModalField label="DC" req>
@@ -439,8 +461,9 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
           <button onClick={onClose} style={{ height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving}
-            style={{ height: 38, padding: '0 18px', borderRadius: 9, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7, opacity: saving ? .7 : 1 }}>
+          <button onClick={handleSave} disabled={saving || (wasLinked && !draft.productId)}
+            title={wasLinked && !draft.productId ? 'Pilih produk dari dropdown' : undefined}
+            style={{ height: 38, padding: '0 18px', borderRadius: 9, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: (saving || (wasLinked && !draft.productId)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7, opacity: (saving || (wasLinked && !draft.productId)) ? .7 : 1 }}>
             <Check size={15}/>{saving ? 'Menyimpan…' : 'Save'}
           </button>
         </div>

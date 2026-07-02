@@ -22,6 +22,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import { calcItem } from './lib/spCalc';
+import ProductPicker from './components/ProductPicker';
+import { useProducts } from './hooks/useProducts';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
@@ -4245,8 +4247,10 @@ function ModalShell({ title, subtitle, onClose, children, maxWidth = 'max-w-3xl'
 }
 
 function FormModal({ initial, customers = [], onClose, onSave }) {
+  // SP = entitas Storbit (SOA) → pin katalog produk ke SOA (pola InputSPPage/DeliveryNote).
+  const { products } = useProducts({ companyId: 'd2e5e565-5f67-4954-b8d9-5979a2a0c697' });
   const [data, setData] = useState(initial || {
-    spDate: '', spNo: '', customer: '', productName: '', sku: '',
+    spDate: '', spNo: '', customer: '', productId: null, productName: '', sku: '',
     qty: 0, shippedQty: 0, expDate: '', expired_date: '',
     dc: '', shippingDate: '',
     unitPrice: 0, shippingPrice: 0,
@@ -4256,6 +4260,12 @@ function FormModal({ initial, customers = [], onClose, onSave }) {
 
   const calc = calcItem(data);
   const update = (field, val) => setData({ ...data, [field]: val });
+
+  // Dropdown-only enforcement: produk wajib untuk item BARU, dan untuk item lama yang
+  // SUDAH tertaut (cegah unlink tak sengaja). Item legacy (product_id null) boleh disimpan
+  // apa adanya (lenient) — keputusan user.
+  const wasLinked = !!initial?.productId;
+  const requireProduct = !initial || wasLinked;
 
   // When picking customer, auto-fill DC if customer has a default
   const onPickCustomer = (custName) => {
@@ -4268,8 +4278,12 @@ function FormModal({ initial, customers = [], onClose, onSave }) {
   };
 
   const handleSubmit = () => {
-    if (!data.spNo || !data.productName) {
-      alert('SP No dan Product Name wajib diisi');
+    if (!data.spNo) {
+      alert('SP No wajib diisi');
+      return;
+    }
+    if (requireProduct && !data.productId) {
+      alert('Produk wajib dipilih dari dropdown');
       return;
     }
     if (!data.customer) {
@@ -4303,8 +4317,23 @@ function FormModal({ initial, customers = [], onClose, onSave }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
             <Input label="DC" value={data.dc} onChange={v=>update('dc',v)} placeholder="DC BOGOR"/>
-            <Input label="Product Name *" value={data.productName} onChange={v=>update('productName',v)} placeholder="STORBIT LOYANG..."/>
-            <Input label="SKU" value={data.sku} onChange={v=>update('sku',v)} placeholder="BKT-SB43-00001"/>
+            {/* Dropdown-only: produk hanya dari master (SOA). onPick isi SKU + prefill
+                unit_price (nilai awal, tetap editable). onChangeText batalkan pilihan. */}
+            <div>
+              <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Product Name *</label>
+              <ProductPicker
+                value={data.productName}
+                products={products}
+                placeholder="Cari produk…"
+                inputStyle={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${PASTEL.line}`, borderRadius: 12, background: 'white', fontSize: 14, color: PASTEL.ink, outline: 'none' }}
+                onChangeText={(v) => setData(prev => ({ ...prev, productName: v, productId: null, sku: '' }))}
+                onPick={(p) => setData(prev => ({ ...prev, productId: p.id, productName: p.name, sku: p.code || '', unitPrice: Number(p.default_price) || 0 }))}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>SKU</label>
+              <div className="w-full rounded-xl px-3.5 py-2.5 text-sm font-mono" style={{ background: PASTEL.lineSoft, color: PASTEL.inkMute, border: `1px solid ${PASTEL.line}` }}>{data.sku || '—'}</div>
+            </div>
           </div>
         </FormSection>
 
