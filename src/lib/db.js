@@ -433,6 +433,19 @@ export async function completePicking(pickingListId) {
   return { data, error };
 }
 
+// Cancel picking: pending/in_progress → cancelled (+ cancelled_at).
+// The SP stays eligible for a fresh generate_picking_from_sp afterwards
+// (its idempotency guard ignores 'cancelled' rows) — by design.
+export async function cancelPicking(pickingListId) {
+  const { data, error } = await supabase
+    .from('picking_lists')
+    .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+    .eq('id', pickingListId)
+    .select('*')
+    .single();
+  return { data, error };
+}
+
 // ============================================================
 // AR TTF + BTB (header + nested items)
 // ============================================================
