@@ -17,10 +17,10 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   ChevronRight, ChevronLeft, Pencil, Trash2, Package,
   Calendar, Clock, Wallet, Receipt, FileText, Send, Truck,
-  Check, X, Upload, FolderOpen, History, List,
-  AlertTriangle, Plus, ClipboardList,
+  Check, X, FolderOpen, History, List,
+  AlertTriangle, Plus, ClipboardList, ExternalLink, Link2,
 } from 'lucide-react';
-import { listSpBtbs, addSpBtb, deleteSpBtb } from '../../lib/db';
+import { listSpBtbs, addSpBtb, deleteSpBtb, setSpExternalUrl } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
@@ -578,6 +578,10 @@ export default function SalesOrderDetailPage({
   const [editingItem,  setEditingItem]  = useState(null);
   const [showDeleteSP, setShowDeleteSP] = useState(false);
   const [genBusy,      setGenBusy]      = useState(false);
+  // Fase 0.3 — link dokumen SP (Drive dll). Per-SP (semua baris se-sp_no sama).
+  const [docUrl,       setDocUrl]       = useState(items[0]?.externalUrl || '');
+  const [docEditing,   setDocEditing]   = useState(false);
+  const [docSaving,    setDocSaving]    = useState(false);
 
   // ── BTB Numbers (SP-level) ───────────────────────────────────────────────
   const [btbs,         setBtbs]         = useState([]);
@@ -1104,17 +1108,61 @@ export default function SalesOrderDetailPage({
         {/* ── DOKUMEN panel ── */}
         {tab === 'dokumen' && (
           <div style={{ padding: 24 }}>
-            <div
-              onClick={() => showToast('Upload dokumen akan tersedia setelah tabel dokumen dimigrasi', 'success')}
-              style={{ padding: 24, border: `2px dashed ${C.line}`, borderRadius: 12, background: C.surface2, cursor: 'pointer', textAlign: 'center' }}
-            >
-              <div style={{ width: 48, height: 48, borderRadius: 12, background: C.lineSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.inkFaint, margin: '0 auto 12px' }}>
-                <Upload size={22} strokeWidth={1.6}/>
+            <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: C.surface2, padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <Link2 size={16} style={{ color: C.accent }}/>
+                <b style={{ fontSize: 14, color: C.ink }}>Link Dokumen SP</b>
               </div>
-              <b style={{ display: 'block', fontSize: 14, color: C.ink }}>Drag &amp; drop dokumen ke sini</b>
-              <span style={{ display: 'block', fontSize: 12.5, color: C.inkSoft, marginTop: 4 }}>atau klik untuk pilih file · PDF, JPG, XLSX · maks 10 MB</span>
+              <p style={{ fontSize: 12.5, color: C.inkSoft, margin: '0 0 14px' }}>
+                Tautan ke folder/berkas Drive terkait SP ini (Surat Jalan, PO Customer, Rincian Harga, bukti BTB). Berlaku untuk seluruh SP {spNo}.
+              </p>
+
+              {!docEditing && docUrl ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <a href={docUrl} target="_blank" rel="noopener noreferrer"
+                     style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 9, padding: '9px 14px', color: C.accent, fontSize: 13, fontWeight: 600, textDecoration: 'none', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <ExternalLink size={14}/> {docUrl}
+                  </a>
+                  <button onClick={() => setDocEditing(true)}
+                    style={{ height: 36, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface, color: C.ink, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Ubah
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <input
+                    type="url"
+                    value={docUrl}
+                    onChange={e => setDocUrl(e.target.value)}
+                    placeholder="https://drive.google.com/…"
+                    style={{ flex: 1, minWidth: 240, height: 38, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface, fontSize: 13, color: C.ink, outline: 'none', boxSizing: 'border-box' }}
+                  />
+                  <button
+                    disabled={docSaving}
+                    onClick={async () => {
+                      setDocSaving(true);
+                      const { error } = await setSpExternalUrl(spNo, docUrl.trim());
+                      setDocSaving(false);
+                      if (error) { showToast(error.message || 'Gagal menyimpan link', 'error'); return; }
+                      setDocUrl(docUrl.trim());
+                      setDocEditing(false);
+                      showToast(docUrl.trim() ? 'Link dokumen disimpan ✓' : 'Link dokumen dihapus', 'success');
+                    }}
+                    style={{ height: 38, padding: '0 16px', borderRadius: 9, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: docSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: docSaving ? 0.7 : 1 }}>
+                    {docSaving ? 'Menyimpan…' : 'Simpan'}
+                  </button>
+                  {docUrl && !docSaving && (
+                    <button onClick={() => { setDocUrl(items[0]?.externalUrl || ''); setDocEditing(false); }}
+                      style={{ height: 38, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      Batal
+                    </button>
+                  )}
+                </div>
+              )}
+              <p style={{ fontSize: 11.5, color: C.inkFaint, margin: '12px 0 0' }}>
+                Interim MVP: tautan manual (upload berkas ke Storage menyusul).
+              </p>
             </div>
-            <EmptyState icon={FolderOpen} title="Belum ada dokumen" sub="Upload dokumen terkait SP seperti Surat Jalan, PO Customer, atau Rincian Harga."/>
           </div>
         )}
 
