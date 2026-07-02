@@ -578,6 +578,47 @@ export async function getStockForProducts(productIds) {
   return { data: map, error: null };
 }
 
+// ============================================================
+// RACK LOCATION (product_warehouse_location) — per (product × warehouse)
+// ============================================================
+const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+
+// All rack locations for Storbit/SOA. Returns a map keyed by
+// `${product_id}|${warehouse_id}` -> rack_location string.
+export async function getProductRackLocations() {
+  const { data, error } = await supabase
+    .from('product_warehouse_location')
+    .select('product_id, warehouse_id, rack_location')
+    .eq('company_id', SOA_COMPANY_ID)
+    .limit(1000);
+  if (error) return { data: {}, error };
+  const map = {};
+  (data || []).forEach((r) => {
+    map[`${r.product_id}|${r.warehouse_id}`] = r.rack_location || '';
+  });
+  return { data: map, error: null };
+}
+
+// Upsert one rack location (conflict target: product_id + warehouse_id).
+export async function upsertProductRackLocation({ productId, warehouseId, rackLocation, companyId, userId }) {
+  const { data, error } = await supabase
+    .from('product_warehouse_location')
+    .upsert(
+      {
+        company_id: companyId,
+        product_id: productId,
+        warehouse_id: warehouseId,
+        rack_location: rackLocation,
+        updated_by: userId || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'product_id,warehouse_id' },
+    )
+    .select('*')
+    .single();
+  return { data, error };
+}
+
 // --- Delivery note item edits (Fase 3 / Opsi C) — only while DN is 'draft' (gated in UI) ---
 export async function updateDeliveryItemQty(itemId, qty) {
   const { data, error } = await supabase
