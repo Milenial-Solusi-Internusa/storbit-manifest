@@ -7,15 +7,23 @@
 //   - toggle item picked/unpicked (picking_list_items.status + qty_picked)
 //   - once every item picked → "Selesaikan" (in_progress → done, sets completed_at)
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { pdf } from '@react-pdf/renderer';
 import {
   ClipboardList, MapPin, User, Warehouse, Calendar, CheckCircle2, Circle,
   Package, AlertTriangle, Printer, ArrowLeft, Truck, Home, ChevronRight, Ban,
+  Boxes, Plus, Trash2,
 } from 'lucide-react';
 import {
   getPickingListDetail, setPickingItemPicked, startPicking, completePicking, cancelPicking,
+  addPickingMaterial, deletePickingMaterial, getStockForProducts,
 } from '../../lib/db';
+import useProducts from '../../hooks/useProducts';
+import ProductPicker from '../../components/ProductPicker';
 import ConfirmModal from '../../components/ConfirmModal';
+import PickingListPDF from './PickingListPDF';
+
+const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
 
 const C = {
   navy: '#1B4D8A', navyD: '#143C6E',
@@ -78,6 +86,17 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   const [busy, setBusy] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
+  // Material Packing (Fase 3.x) — kardus/lakban/dll (inventory_class='Inventory').
+  // Katalog di-pin ke Storbit/SOA (halaman ini selalu SOA), apapun home user.
+  const { products } = useProducts({ companyId: SOA_COMPANY_ID });
+  const materialProducts = useMemo(
+    () => (products || []).filter((p) => p.inventory_class === 'Inventory'),
+    [products],
+  );
+  const [matStockMap, setMatStockMap] = useState({});
+  const [stockTick, setStockTick] = useState(0);
+  const [newMat, setNewMat] = useState({ productId: null, text: '', sku: '', qty: '' });
+
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await getPickingListDetail(pickingListId);
@@ -99,6 +118,11 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   const allPicked = items.length > 0 && pickedCount === items.length;
   const shortCount = items.filter(it => (it.qty_short || 0) > 0).length;   // ter-reserve sebagian (stok kurang)
   const locked = status === 'done' || status === 'cancelled';
+
+  // Material Packing hanya dicatat saat picking sudah 'done'; bisa diedit selama
+  // Surat Jalan belum dibuat (has_delivery=false), read-only setelahnya.
+  const materials = detail?.materials || [];
+  const matEditable = status === 'done' && !detail?.has_delivery;
 
   const togglePicked = useCallback(async (it) => {
     if (busy || locked) return;
@@ -142,6 +166,61 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
     showToast?.('Picking list dibatalkan.');
     load();
   }, [pickingListId, showToast, load]);
+
+  const handlePrint = useCallback(async () => {
+    if (!detail) return;
+    try {
+      const blob = await pdf(<PickingListPDF pl={detail} generatedAt={new Date().toISOString()} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PickingList-${(detail.picking_no || 'PICK').replace(/\//g, '-')}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      showToast?.('Gagal membuat PDF: ' + (e?.message || e), 'error');
+    }
+  }, [detail, showToast]);
+
+  // Company-level availability for the material catalog (refreshes after add/delete
+  // via stockTick). setState lives inside .then() → not flagged by set-state-in-effect.
+  useEffect(() => {
+    const ids = materialProducts.map((p) => p.id);
+    if (ids.length === 0) return undefined;
+    let cancelled = false;
+    getStockForProducts(ids).then(({ data }) => {
+      if (!cancelled) setMatStockMap(data || {});
+    });
+    return () => { cancelled = true; };
+  }, [materialProducts, stockTick]);
+
+  const selMatAvail = newMat.productId ? (matStockMap[newMat.productId]?.available ?? 0) : null;
+  const matQtyNum = Number(newMat.qty) || 0;
+
+  const handleAddMaterial = useCallback(async () => {
+    if (busy) return;
+    if (!newMat.productId) { showToast?.('Pilih material dulu.', 'error'); return; }
+    if (matQtyNum <= 0) { showToast?.('Qty harus lebih dari 0.', 'error'); return; }
+    setBusy(true);
+    const { error } = await addPickingMaterial(pickingListId, newMat.productId, matQtyNum);
+    setBusy(false);
+    if (error) { showToast?.(error.message || 'Gagal menambah material', 'error'); return; }
+    showToast?.('Material ditambahkan.');
+    setNewMat({ productId: null, text: '', sku: '', qty: '' });
+    setStockTick((t) => t + 1);
+    load();
+  }, [busy, newMat, matQtyNum, pickingListId, showToast, load]);
+
+  const handleDeleteMaterial = useCallback(async (materialId) => {
+    if (busy) return;
+    setBusy(true);
+    const { error } = await deletePickingMaterial(materialId);
+    setBusy(false);
+    if (error) { showToast?.(error.message || 'Gagal menghapus material', 'error'); return; }
+    showToast?.('Material dihapus.');
+    setStockTick((t) => t + 1);
+    load();
+  }, [busy, showToast, load]);
 
   if (loading) {
     return (
@@ -275,10 +354,110 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
         </table>
       </div>
 
+      {/* Material Packing — hanya saat picking sudah 'done' */}
+      {status === 'done' && (
+        <div style={{
+          background: C.card, border: `1px solid ${C.line}`, borderRadius: 16,
+          boxShadow: '0 1px 2px rgba(27,77,138,.04)', overflow: 'hidden', marginBottom: 18,
+        }}>
+          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 14, color: C.ink }}>
+              <Boxes size={16} color={C.slateI} /> Material Packing
+            </span>
+            {!matEditable && (
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: C.slateI, background: C.slate, padding: '3px 10px', borderRadius: 9 }}>
+                Terkunci (Surat Jalan sudah dibuat)
+              </span>
+            )}
+          </div>
+
+          {/* Baris tambah — hanya selama editable (sebelum Surat Jalan) */}
+          {matEditable && (
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.line}`, background: '#FAFBFC', display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 280px', minWidth: 220 }}>
+                <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: C.mute, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 }}>Material</label>
+                <ProductPicker
+                  value={newMat.text}
+                  products={materialProducts}
+                  placeholder="Cari material (kardus, lakban, …)"
+                  onChangeText={(t) => setNewMat((m) => ({ ...m, text: t, productId: null, sku: '' }))}
+                  onPick={(p) => setNewMat((m) => ({ ...m, text: p.name, productId: p.id, sku: p.code }))}
+                  inputStyle={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: 9, fontSize: 13, fontFamily: 'inherit', color: C.ink, background: C.card }}
+                />
+                {newMat.productId && (
+                  <div style={{ marginTop: 6, fontSize: 11.5 }}>
+                    {matQtyNum > selMatAvail ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: C.roseI, fontWeight: 700 }}>
+                        <AlertTriangle size={12} strokeWidth={2.5} /> Tersedia: {Number(selMatAvail).toLocaleString('id-ID')} — kurang dari qty diminta
+                      </span>
+                    ) : (
+                      <span style={{ color: C.mute }}>Tersedia: <b style={{ color: C.ink }}>{Number(selMatAvail).toLocaleString('id-ID')}</b></span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: '0 0 110px' }}>
+                <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: C.mute, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 }}>Qty</label>
+                <input
+                  type="number" min={1} step={1}
+                  value={newMat.qty}
+                  onChange={(e) => setNewMat((m) => ({ ...m, qty: e.target.value }))}
+                  style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: 9, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', color: C.ink }}
+                />
+              </div>
+              <div style={{ flex: '0 0 auto', alignSelf: 'stretch', display: 'flex', alignItems: 'flex-end' }}>
+                <button
+                  onClick={handleAddMaterial}
+                  disabled={busy || !newMat.productId || matQtyNum <= 0}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: C.navy, color: '#fff', fontWeight: 700, fontSize: 13, padding: '9px 16px', borderRadius: 10, border: 'none', cursor: (busy || !newMat.productId || matQtyNum <= 0) ? 'not-allowed' : 'pointer', opacity: (busy || !newMat.productId || matQtyNum <= 0) ? 0.55 : 1 }}
+                >
+                  <Plus size={15} /> Tambah
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Daftar material tercatat */}
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#FAFBFC' }}>
+                {['Material', 'SKU', 'Qty', matEditable ? '' : null].filter(h => h !== null).map((h, i) => (
+                  <th key={i} style={{ textAlign: h === 'Qty' ? 'right' : 'left', padding: '10px 16px', fontSize: 10.5, fontWeight: 700, color: C.mute, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {materials.map((m) => (
+                <tr key={m.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: C.ink, fontWeight: 500 }}>{m.product_name || '—'}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, fontFamily: 'IBM Plex Mono, monospace', color: C.mute }}>{m.sku || '—'}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: C.ink, textAlign: 'right' }}>{Number(m.qty || 0).toLocaleString('id-ID')}</td>
+                  {matEditable && (
+                    <td style={{ padding: '12px 16px', width: 44, textAlign: 'right' }}>
+                      <button
+                        onClick={() => handleDeleteMaterial(m.id)}
+                        disabled={busy}
+                        title="Hapus material"
+                        style={{ background: 'none', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', padding: 4, display: 'inline-flex', color: C.roseI, opacity: busy ? 0.5 : 1 }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {materials.length === 0 && (
+                <tr><td colSpan={matEditable ? 4 : 3} style={{ padding: '24px 16px', textAlign: 'center', color: C.mute, fontSize: 12.5 }}>Belum ada material packing dicatat.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Actions */}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         <button
-          onClick={() => showToast?.('Cetak picking list akan tersedia (Fase 3).')}
+          onClick={handlePrint}
           style={{ display: 'flex', alignItems: 'center', gap: 7, background: C.card, border: `1px solid ${C.line}`, color: C.mute, fontWeight: 600, fontSize: 13, padding: '10px 18px', borderRadius: 11, cursor: 'pointer' }}
         >
           <Printer size={15} /> Cetak Picking List

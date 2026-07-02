@@ -37,7 +37,7 @@ export function useProducts({ activeOnly = true, companyId: companyIdOverride } 
 
     let query = supabase
       .from('products')
-      .select('id, company_id, code, name, category, unit, uom, default_price, is_service, is_active')
+      .select('id, company_id, code, name, category, inventory_class, unit, uom, default_price, is_service, is_active')
       .eq('company_id', companyId)
       .is('deleted_at', null)
       .order('name', { ascending: true })
