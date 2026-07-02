@@ -10,7 +10,7 @@ import {
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
   ClipboardList, LayoutList, Archive, UserX, Activity, BookOpen,
-  Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck,
+  Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck, TrendingUp,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { supabase } from './lib/supabase';
@@ -58,6 +58,7 @@ const ActivityLogPage      = lazy(() => import('./modules/crm/ActivityLogPage'))
 const LeadPoolPage         = lazy(() => import('./modules/crm/LeadPoolPage'));
 const LeadPoolApprovalPage = lazy(() => import('./modules/crm/LeadPoolApprovalPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
+const BulkEditPricePage    = lazy(() => import('./modules/admin/pages/BulkEditPricePage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
 const InventoryDashboardPage = lazy(() => import('./modules/inventory/pages/InventoryDashboardPage'));
 const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
@@ -808,6 +809,7 @@ const ERP_MENU_GROUPS = [
       { section: 'Master Data' },
       { id: 'admin',         label: 'Master Data',       icon: Database, module: 'foundation', role: ['super_admin','admin','it'] },
       { id: 'products',      label: 'Products & Services', icon: Package },
+      { id: 'bulk-edit-price', label: 'Update Harga Massal', icon: TrendingUp, role: ['super_admin'] },
       { id: 'schema-manager',label: 'Schema Manager',    icon: Database, module: 'admin', role: ['super_admin'] },
       { section: 'Admin Settings' },
       { id: 'admin-settings', label: 'Admin Settings', icon: Settings, module: 'admin', role: ['super_admin','admin'] },
@@ -972,6 +974,7 @@ const NEXUS_NAV = [
         children: [
           { id: 'admin',          label: 'Master Data',         icon: Database },
           { id: 'products',       label: 'Products & Services', icon: Package },
+          { id: 'bulk-edit-price', label: 'Update Harga Massal', icon: TrendingUp },
           { id: 'schema-manager', label: 'Schema Manager',      icon: Database },
           { id: 'admin-settings', label: 'Admin Settings',      icon: Settings },
         ],
@@ -2602,7 +2605,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales','reporting-mom'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','reporting-mom'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -2812,6 +2815,19 @@ export default function StorbitManifest() {
               onDeactivate={() => { setActiveMenu('products'); setSelectedProduct(null); }}
             />
           </Suspense>
+          {activeMenu === 'bulk-edit-price' && (!canRenderPage('bulk-edit-price') ? (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ) : (
+            <ErrorBoundary title="Update Harga Massal temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <BulkEditPricePage />
+              </Suspense>
+            </ErrorBoundary>
+          ))}
           {activeMenu === 'schema-manager' && (role !== 'super_admin' ? (
             /* Defense-in-depth: Schema Manager is a destructive DDL tool → super_admin ONLY,
                enforced here regardless of sidebar/menu gating (AGENTS.md: don't rely only on FE menu checks). */

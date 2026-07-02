@@ -62,6 +62,7 @@ export function spToDb(item) {
     sp_date: d(item.spDate),
     sp_no: item.spNo || '',
     customer_id: item.customerId || null,
+    product_id: item.productId || null,
     product_name: item.productName || '',
     sku: item.sku || '',
     qty: Number(item.qty) || 0,
