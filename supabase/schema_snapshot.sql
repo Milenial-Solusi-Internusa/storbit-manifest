@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Djaepdt1JxFgdmRWAUaAI6iTbdalBD8P3PcTPGxRAAUuXhuKrFIVlAbVeKRQqNT
+\restrict 0O1lSUHuofTBXHaHfpiX8rTtZneNFwRdry9dSZjkfd2bbTBgn6h8KS5hqLZBzHx
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -97,6 +97,54 @@ begin
   return NEW;
 end;
 $$;
+
+
+--
+-- Name: generate_delivery_from_picking(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_delivery_from_picking(p_picking_list_id uuid) RETURNS TABLE(delivery_note_id uuid, do_no text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_company_id uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+  v_entity text;
+  v_year int := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
+  v_seq int; v_no text; v_dn_id uuid; v_uid uuid := auth.uid();
+  v_sp_no text; v_pick_status text;
+  v_customer uuid; v_cust_name text; v_addr text;
+  v_item_count int;
+BEGIN
+  SELECT sp_no, status INTO v_sp_no, v_pick_status FROM picking_lists WHERE id = p_picking_list_id;
+  IF v_sp_no IS NULL THEN RAISE EXCEPTION 'Picking list tidak ditemukan'; END IF;
+  IF v_pick_status <> 'done' THEN RAISE EXCEPTION 'Picking list belum selesai (status=%)', v_pick_status; END IF;
+  IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id = p_picking_list_id AND status <> 'cancelled') THEN
+    RAISE EXCEPTION 'Surat jalan untuk picking ini sudah ada'; END IF;
+  SELECT count(*) INTO v_item_count FROM picking_list_items
+    WHERE picking_list_id = p_picking_list_id AND COALESCE(qty_picked,0) > 0;
+  IF v_item_count = 0 THEN RAISE EXCEPTION 'Tak ada item ter-pick untuk dikirim'; END IF;
+
+  SELECT si.customer_id, a.name, a.address INTO v_customer, v_cust_name, v_addr
+  FROM sp_items si LEFT JOIN accounts a ON a.id = si.customer_id
+  WHERE si.sp_no = v_sp_no LIMIT 1;
+
+  SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
+  v_seq := increment_document_sequence(v_company_id, 'SJ', 'WH', v_year, 0);
+  v_no  := 'SJ/' || COALESCE(v_entity,'SOA') || '/WH/' || v_year || '/' || lpad(v_seq::text, 4, '0');
+
+  INSERT INTO delivery_notes
+    (company_id, do_no, sp_no, picking_list_id, customer_id, customer_name, destination_address, status, created_by)
+  VALUES (v_company_id, v_no, v_sp_no, p_picking_list_id, v_customer, v_cust_name, v_addr, 'draft', v_uid)
+  RETURNING id INTO v_dn_id;
+
+  INSERT INTO delivery_note_items (delivery_note_id, picking_list_item_id, product_name, sku, qty)
+  SELECT v_dn_id, pli.id, pli.product_name, pli.sku, pli.qty_picked
+  FROM picking_list_items pli
+  WHERE pli.picking_list_id = p_picking_list_id AND COALESCE(pli.qty_picked,0) > 0;
+
+  RETURN QUERY SELECT v_dn_id, v_no;
+END; $$;
 
 
 --
@@ -1963,6 +2011,53 @@ CREATE TABLE public.deal_handovers (
 
 
 --
+-- Name: delivery_note_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.delivery_note_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    delivery_note_id uuid NOT NULL,
+    picking_list_item_id uuid,
+    product_name text DEFAULT ''::text NOT NULL,
+    sku text DEFAULT ''::text NOT NULL,
+    qty integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    product_id uuid
+);
+
+
+--
+-- Name: delivery_notes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.delivery_notes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid DEFAULT 'd2e5e565-5f67-4954-b8d9-5979a2a0c697'::uuid NOT NULL,
+    do_no text NOT NULL,
+    sp_no text NOT NULL,
+    picking_list_id uuid,
+    customer_id uuid,
+    destination_address text,
+    driver_name text,
+    driver_phone text,
+    vehicle_no text,
+    ship_date date,
+    total_koli integer,
+    total_weight numeric(12,2),
+    status text DEFAULT 'draft'::text NOT NULL,
+    notes text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    dispatched_at timestamp with time zone,
+    delivered_at timestamp with time zone,
+    cancelled_at timestamp with time zone,
+    customer_name text,
+    CONSTRAINT delivery_notes_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'in_transit'::text, 'delivered'::text, 'cancelled'::text])))
+);
+
+
+--
 -- Name: departments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3345,6 +3440,7 @@ CREATE TABLE public.sp_items (
     cancelled_by uuid,
     cancel_reason text,
     sp_category text,
+    external_url text,
     CONSTRAINT sp_items_sp_status_check CHECK ((sp_status = ANY (ARRAY['draft'::text, 'confirmed'::text, 'cancelled'::text])))
 );
 
@@ -4059,6 +4155,30 @@ ALTER TABLE ONLY public.customers
 
 ALTER TABLE ONLY public.deal_handovers
     ADD CONSTRAINT deal_handovers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: delivery_note_items delivery_note_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_note_items
+    ADD CONSTRAINT delivery_note_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: delivery_notes delivery_notes_do_no_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_notes
+    ADD CONSTRAINT delivery_notes_do_no_key UNIQUE (do_no);
+
+
+--
+-- Name: delivery_notes delivery_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_notes
+    ADD CONSTRAINT delivery_notes_pkey PRIMARY KEY (id);
 
 
 --
@@ -5250,6 +5370,34 @@ CREATE INDEX idx_customers_name ON public.customers USING btree (name);
 
 
 --
+-- Name: idx_delivery_note_items_dn; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_delivery_note_items_dn ON public.delivery_note_items USING btree (delivery_note_id);
+
+
+--
+-- Name: idx_delivery_notes_picking; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_delivery_notes_picking ON public.delivery_notes USING btree (picking_list_id);
+
+
+--
+-- Name: idx_delivery_notes_sp_no; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_delivery_notes_sp_no ON public.delivery_notes USING btree (sp_no);
+
+
+--
+-- Name: idx_delivery_notes_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_delivery_notes_status ON public.delivery_notes USING btree (status);
+
+
+--
 -- Name: idx_departments_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5996,6 +6144,13 @@ CREATE TRIGGER trg_currencies_updated_at BEFORE UPDATE ON public.currencies FOR 
 --
 
 CREATE TRIGGER trg_customers_updated_at BEFORE UPDATE ON public.customers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: delivery_notes trg_delivery_notes_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_delivery_notes_updated_at BEFORE UPDATE ON public.delivery_notes FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -6783,6 +6938,54 @@ ALTER TABLE ONLY public.deal_handovers
 
 ALTER TABLE ONLY public.deal_handovers
     ADD CONSTRAINT deal_handovers_kam_assigned_fkey FOREIGN KEY (kam_assigned) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: delivery_note_items delivery_note_items_delivery_note_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_note_items
+    ADD CONSTRAINT delivery_note_items_delivery_note_id_fkey FOREIGN KEY (delivery_note_id) REFERENCES public.delivery_notes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_note_items delivery_note_items_picking_list_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_note_items
+    ADD CONSTRAINT delivery_note_items_picking_list_item_id_fkey FOREIGN KEY (picking_list_item_id) REFERENCES public.picking_list_items(id) ON DELETE SET NULL;
+
+
+--
+-- Name: delivery_note_items delivery_note_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_note_items
+    ADD CONSTRAINT delivery_note_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
+-- Name: delivery_notes delivery_notes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_notes
+    ADD CONSTRAINT delivery_notes_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: delivery_notes delivery_notes_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_notes
+    ADD CONSTRAINT delivery_notes_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: delivery_notes delivery_notes_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_notes
+    ADD CONSTRAINT delivery_notes_picking_list_id_fkey FOREIGN KEY (picking_list_id) REFERENCES public.picking_lists(id);
 
 
 --
@@ -8618,6 +8821,18 @@ CREATE POLICY customers_update ON public.customers FOR UPDATE USING ((company_id
 ALTER TABLE public.deal_handovers ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: delivery_note_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.delivery_note_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: delivery_notes; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.delivery_notes ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: departments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8642,6 +8857,62 @@ CREATE POLICY departments_read ON public.departments FOR SELECT TO authenticated
 --
 
 CREATE POLICY departments_update ON public.departments FOR UPDATE USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
+
+
+--
+-- Name: delivery_notes dn_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dn_delete ON public.delivery_notes FOR DELETE TO authenticated USING (true);
+
+
+--
+-- Name: delivery_notes dn_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dn_insert ON public.delivery_notes FOR INSERT TO authenticated WITH CHECK (true);
+
+
+--
+-- Name: delivery_notes dn_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dn_read ON public.delivery_notes FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: delivery_notes dn_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dn_update ON public.delivery_notes FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: delivery_note_items dni_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dni_delete ON public.delivery_note_items FOR DELETE TO authenticated USING (true);
+
+
+--
+-- Name: delivery_note_items dni_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dni_insert ON public.delivery_note_items FOR INSERT TO authenticated WITH CHECK (true);
+
+
+--
+-- Name: delivery_note_items dni_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dni_read ON public.delivery_note_items FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: delivery_note_items dni_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dni_update ON public.delivery_note_items FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
@@ -10390,5 +10661,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Djaepdt1JxFgdmRWAUaAI6iTbdalBD8P3PcTPGxRAAUuXhuKrFIVlAbVeKRQqNT
+\unrestrict 0O1lSUHuofTBXHaHfpiX8rTtZneNFwRdry9dSZjkfd2bbTBgn6h8KS5hqLZBzHx
 
