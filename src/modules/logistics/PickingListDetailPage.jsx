@@ -72,7 +72,7 @@ function fmtDateTime(iso) {
     ', ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function PickingListDetailPage({ pickingListId, onBack, showToast }) {
+export default function PickingListDetailPage({ pickingListId, onBack, showToast, onCreateDelivery, onGoToSp }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -301,6 +301,17 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
           </span>
         )}
 
+        {/* Buat Surat Jalan — hanya saat picking sudah 'done' */}
+        {status === 'done' && (
+          <button
+            onClick={async () => { if (busy) return; setBusy(true); await onCreateDelivery?.(detail); setBusy(false); }}
+            disabled={busy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.navy, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}
+          >
+            <Truck size={15} /> {busy ? 'Memproses…' : 'Buat Surat Jalan'}
+          </button>
+        )}
+
         {/* Batalkan — hanya saat masih pending / in_progress (tidak untuk done) */}
         {(status === 'pending' || status === 'in_progress') && (
           <button
@@ -312,11 +323,19 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
           </button>
         )}
 
-        {/* Indikator saat sudah dibatalkan */}
+        {/* Indikator saat sudah dibatalkan + jalan pintas regenerate */}
         {status === 'cancelled' && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.rose, color: C.roseI, fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11 }}>
             <Ban size={15} /> Dibatalkan
           </span>
+        )}
+        {status === 'cancelled' && detail.sp_no && (
+          <button
+            onClick={() => onGoToSp?.(detail.sp_no)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.navy, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: 'pointer' }}
+          >
+            <ClipboardList size={15} /> Buat Picking Baru
+          </button>
         )}
       </div>
 

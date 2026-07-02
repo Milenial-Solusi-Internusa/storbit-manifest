@@ -458,6 +458,93 @@ export async function cancelPicking(pickingListId) {
 }
 
 // ============================================================
+// DELIVERY NOTE / SURAT JALAN (Fase 3)
+// ============================================================
+
+// Generate a delivery note (surat jalan) from a DONE picking list. Atomic via
+// RPC generate_delivery_from_picking (validates picking done, idempotency guard,
+// numbering SJ/…, header + items copied from picked qty).
+export async function generateDeliveryFromPicking(pickingListId) {
+  const { data, error } = await supabase.rpc('generate_delivery_from_picking', {
+    p_picking_list_id: pickingListId,
+  });
+  const row = Array.isArray(data) ? data[0] : data;
+  return { data: row || null, error };
+}
+
+export async function listDeliveryNotes() {
+  const { data, error } = await supabase
+    .from('delivery_notes')
+    .select('*')
+    .order('created_at', { ascending: false, nullsFirst: false });
+  return { data: data || [], error };
+}
+
+// Header + items. customer_name is snapshotted on delivery_notes at generate
+// time (by the SECURITY DEFINER RPC) → read directly, RLS-proof (no live
+// accounts query that the operations role can't pass).
+export async function getDeliveryNoteDetail(deliveryNoteId) {
+  const { data: header, error: hErr } = await supabase
+    .from('delivery_notes').select('*').eq('id', deliveryNoteId).single();
+  if (hErr) return { data: null, error: hErr };
+  const { data: items, error: iErr } = await supabase
+    .from('delivery_note_items').select('*')
+    .eq('delivery_note_id', deliveryNoteId)
+    .order('created_at', { ascending: true, nullsFirst: false });
+  if (iErr) return { data: null, error: iErr };
+  return { data: { ...header, items: items || [] }, error: null };
+}
+
+// Update armada + packing + destination fields (partial patch object).
+export async function updateDeliveryArmada(deliveryNoteId, fields) {
+  const { data, error } = await supabase
+    .from('delivery_notes').update(fields).eq('id', deliveryNoteId).select('*').single();
+  return { data, error };
+}
+
+// Status transition: draft → in_transit (dispatched_at) → delivered (delivered_at).
+export async function setDeliveryStatus(deliveryNoteId, status) {
+  const patch = { status };
+  if (status === 'in_transit') patch.dispatched_at = new Date().toISOString();
+  if (status === 'delivered')  patch.delivered_at = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('delivery_notes').update(patch).eq('id', deliveryNoteId).select('*').single();
+  return { data, error };
+}
+
+// Cancel delivery note (draft/in_transit → cancelled + cancelled_at).
+export async function cancelDelivery(deliveryNoteId) {
+  const { data, error } = await supabase
+    .from('delivery_notes')
+    .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+    .eq('id', deliveryNoteId).select('*').single();
+  return { data, error };
+}
+
+// --- Delivery note item edits (Fase 3 / Opsi C) — only while DN is 'draft' (gated in UI) ---
+export async function updateDeliveryItemQty(itemId, qty) {
+  const { data, error } = await supabase
+    .from('delivery_note_items')
+    .update({ qty: Number(qty) || 0 })
+    .eq('id', itemId).select('*').single();
+  return { data, error };
+}
+
+export async function deleteDeliveryItem(itemId) {
+  const { error } = await supabase.from('delivery_note_items').delete().eq('id', itemId);
+  return { error };
+}
+
+// Add an extra item (di luar picking) — product_id snapshot + name/sku; picking_list_item_id NULL.
+export async function addDeliveryItem(deliveryNoteId, { product_id = null, product_name = '', sku = '', qty = 0 }) {
+  const { data, error } = await supabase
+    .from('delivery_note_items')
+    .insert({ delivery_note_id: deliveryNoteId, product_id, product_name, sku, qty: Number(qty) || 0 })
+    .select('*').single();
+  return { data, error };
+}
+
+// ============================================================
 // AR TTF + BTB (header + nested items)
 // ============================================================
 export async function listTtfs() {
