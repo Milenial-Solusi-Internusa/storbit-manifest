@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { supabase } from './lib/supabase';
-import { generatePickingFromSp } from './lib/db';
+import { generatePickingFromSp, generateDeliveryFromPicking } from './lib/db';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
@@ -33,6 +33,8 @@ const SalesOrderDetailPage = lazy(() => import('./modules/logistics/SalesOrderDe
 const InputSPPage          = lazy(() => import('./modules/logistics/InputSPPage'));
 const PickingListPage       = lazy(() => import('./modules/logistics/PickingListPage'));
 const PickingListDetailPage = lazy(() => import('./modules/logistics/PickingListDetailPage'));
+const DeliveryNotePage       = lazy(() => import('./modules/logistics/DeliveryNotePage'));
+const DeliveryNoteDetailPage = lazy(() => import('./modules/logistics/DeliveryNoteDetailPage'));
 const ProspectListPage     = lazy(() => import('./modules/crm/ProspectListPage'));
 const ProspectFormPage     = lazy(() => import('./modules/crm/ProspectFormPage'));
 const InquiryListPage      = lazy(() => import('./modules/crm/InquiryListPage'));
@@ -492,6 +494,7 @@ const ERP_MENU_GROUPS = [
         ],
       },
       { id: 'picking', label: 'Picking List', icon: ClipboardList, role: ['super_admin','admin','ceo','gm','manager','operations'] },
+      { id: 'surat-jalan', label: 'Surat Jalan', icon: Truck, role: ['super_admin','admin','ceo','gm','manager','operations'] },
       {
         id: 'trading', label: 'General Trading', icon: ShoppingCart,
         children: [
@@ -862,6 +865,7 @@ const NEXUS_NAV = [
           { id: 'manifest', label: 'SP Manifest',    icon: LayoutList },
           { id: 'input',    label: 'Input SP',       icon: Plus },
           { id: 'picking',  label: 'Picking List',   icon: ClipboardList },
+          { id: 'surat-jalan', label: 'Surat Jalan', icon: Truck },
           { id: 'shipment', label: 'Pengiriman SP',  icon: Truck },
         ],
       },
@@ -1473,6 +1477,7 @@ export default function StorbitManifest() {
   const [prevCustomerMenu, setPrevCustomerMenu] = useState('crm-customers'); // back target
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
   const [selectedPickingId, setSelectedPickingId] = useState(null);  // picking detail page
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState(null);  // surat jalan detail page
   const [showInputSP,  setShowInputSP]    = useState(false); // Input SP form
   const [prevAssetMenu, setPrevAssetMenu] = useState('assets-it'); // where to go back from detail
   // CRM module state
@@ -1591,6 +1596,7 @@ export default function StorbitManifest() {
     setReportingMomMode('list');
     setReportingMomId(null);
     setSelectedPickingId(null);
+    setSelectedDeliveryId(null);
   }, []);
 
   // Navigate to asset detail — called by list pages on row click.
@@ -1848,6 +1854,18 @@ export default function StorbitManifest() {
     setSelectedSpId(null);        // leave the SP-detail view cleanly
     setActiveMenu('picking');
     setSelectedPickingId(data.picking_list_id);
+  };
+
+  // Generate a surat jalan (delivery note) from a DONE picking list, then jump
+  // to its detail. RPC errors (picking belum done / sudah ada) → toast.
+  const handleCreateDelivery = async (picking) => {
+    const { data, error } = await generateDeliveryFromPicking(picking?.id);
+    if (error) { showToast(error.message || 'Gagal membuat surat jalan', 'error'); return; }
+    if (!data?.delivery_note_id) { showToast('Surat jalan gagal dibuat', 'error'); return; }
+    showToast(`Surat jalan ${data.do_no} dibuat`);
+    setSelectedPickingId(null);
+    setActiveMenu('surat-jalan');
+    setSelectedDeliveryId(data.delivery_note_id);
   };
 
   // ============================
@@ -2584,7 +2602,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales','reporting-mom'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','inventory','reporting-sales','reporting-mom'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -2675,6 +2693,31 @@ export default function StorbitManifest() {
                 <PickingListDetailPage
                   pickingListId={selectedPickingId}
                   onBack={() => setSelectedPickingId(null)}
+                  onCreateDelivery={handleCreateDelivery}
+                  onGoToSp={(spNo) => { setSelectedPickingId(null); setActiveMenu('manifest'); setSelectedSpId(spNo); }}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'surat-jalan' && !selectedDeliveryId && (
+            <ErrorBoundary title="Surat Jalan section temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <DeliveryNotePage
+                  customerBySpNo={customerBySpNo}
+                  onOpenDetail={(id) => setSelectedDeliveryId(id)}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeMenu === 'surat-jalan' && selectedDeliveryId && (
+            <ErrorBoundary title="Surat Jalan Detail section temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <DeliveryNoteDetailPage
+                  deliveryNoteId={selectedDeliveryId}
+                  onBack={() => setSelectedDeliveryId(null)}
+                  onGoToPicking={(pid) => { setSelectedDeliveryId(null); setActiveMenu('picking'); setSelectedPickingId(pid); }}
                   showToast={showToast}
                 />
               </Suspense>
