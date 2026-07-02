@@ -48,6 +48,7 @@ export function spFromDb(row) {
     cancelledAt: row.cancelled_at || '',
     cancelReason: row.cancel_reason || '',
     externalUrl: row.external_url || '',   // Fase 0.3 — link dokumen SP (Drive dll)
+    productId: row.product_id || null,     // Fase 0.2 — link ke katalog produk
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -448,13 +449,9 @@ export async function completePicking(pickingListId) {
 // The SP stays eligible for a fresh generate_picking_from_sp afterwards
 // (its idempotency guard ignores 'cancelled' rows) — by design.
 export async function cancelPicking(pickingListId) {
-  const { data, error } = await supabase
-    .from('picking_lists')
-    .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
-    .eq('id', pickingListId)
-    .select('*')
-    .single();
-  return { data, error };
+  // RPC cancel_picking: set cancelled + release reservation (unreserved) atomically.
+  const { error } = await supabase.rpc('cancel_picking', { p_picking_list_id: pickingListId });
+  return { error };
 }
 
 // ============================================================
@@ -504,21 +501,46 @@ export async function updateDeliveryArmada(deliveryNoteId, fields) {
 
 // Status transition: draft → in_transit (dispatched_at) → delivered (delivered_at).
 export async function setDeliveryStatus(deliveryNoteId, status) {
+  // in_transit → RPC dispatch_delivery (release reservation + post outbound atomically).
+  if (status === 'in_transit') {
+    const { error } = await supabase.rpc('dispatch_delivery', { p_delivery_note_id: deliveryNoteId });
+    return { error };
+  }
+  // delivered → no stock effect (outbound already posted at in_transit); plain update.
   const patch = { status };
-  if (status === 'in_transit') patch.dispatched_at = new Date().toISOString();
-  if (status === 'delivered')  patch.delivered_at = new Date().toISOString();
-  const { data, error } = await supabase
-    .from('delivery_notes').update(patch).eq('id', deliveryNoteId).select('*').single();
-  return { data, error };
+  if (status === 'delivered') patch.delivered_at = new Date().toISOString();
+  const { error } = await supabase
+    .from('delivery_notes').update(patch).eq('id', deliveryNoteId);
+  return { error };
 }
 
 // Cancel delivery note (draft/in_transit → cancelled + cancelled_at).
 export async function cancelDelivery(deliveryNoteId) {
+  // RPC cancel_delivery: cancel + reverse outbound (inbound) if already dispatched.
+  const { error } = await supabase.rpc('cancel_delivery', { p_delivery_note_id: deliveryNoteId });
+  return { error };
+}
+
+// Company-level stock for a set of products (aggregate across ALL warehouses).
+// Returns map product_id -> { on_hand, reserved, available }.
+export async function getStockForProducts(productIds) {
+  const ids = (productIds || []).filter(Boolean);
+  if (ids.length === 0) return { data: {}, error: null };
   const { data, error } = await supabase
-    .from('delivery_notes')
-    .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
-    .eq('id', deliveryNoteId).select('*').single();
-  return { data, error };
+    .from('stock_summary')
+    .select('product_id, on_hand, reserved, available')
+    .eq('company_id', 'd2e5e565-5f67-4954-b8d9-5979a2a0c697')
+    .in('product_id', ids);
+  if (error) return { data: {}, error };
+  const map = {};
+  (data || []).forEach((r) => {
+    const m = map[r.product_id] || { on_hand: 0, reserved: 0, available: 0 };
+    m.on_hand   += Number(r.on_hand)   || 0;   // SUM across warehouses (company-level)
+    m.reserved  += Number(r.reserved)  || 0;
+    m.available += Number(r.available) || 0;
+    map[r.product_id] = m;
+  });
+  return { data: map, error: null };
 }
 
 // --- Delivery note item edits (Fase 3 / Opsi C) — only while DN is 'draft' (gated in UI) ---
