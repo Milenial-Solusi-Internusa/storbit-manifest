@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict AwKQv0mBhQGPl7MXXrvHvHxoGLmIZQbdSevJ0rzakds6H6PJUQ04VMJOE9kDbhr
+\restrict 16mTX4fofcs84JESaPFPT0Y9lXwVslyA6b8GiWbv7IyDZEkgPq9HQmvxOmmi4VY
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -96,6 +96,57 @@ begin
   end if;
   return NEW;
 end;
+$$;
+
+
+--
+-- Name: generate_picking_from_sp(text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.generate_picking_from_sp(p_sp_no text, p_warehouse_id uuid DEFAULT NULL::uuid) RETURNS TABLE(picking_list_id uuid, picking_no text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_company_id  uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+  v_entity      text;
+  v_year        int  := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
+  v_seq         int;
+  v_no          text;
+  v_pl_id       uuid;
+  v_uid         uuid := auth.uid();
+  v_outstanding int;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no = p_sp_no AND sp_status = 'confirmed') THEN
+    RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no = p_sp_no AND status <> 'cancelled') THEN
+    RAISE EXCEPTION 'Picking list untuk SP % sudah ada', p_sp_no;
+  END IF;
+
+  SELECT count(*) INTO v_outstanding
+  FROM sp_items WHERE sp_no = p_sp_no AND sp_status = 'confirmed' AND (qty - shipped_qty) > 0;
+  IF v_outstanding = 0 THEN
+    RAISE EXCEPTION 'SP % tidak punya item outstanding untuk di-pick', p_sp_no;
+  END IF;
+
+  SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
+  v_seq := increment_document_sequence(v_company_id, 'PICK', 'WH', v_year, 0);
+  v_no  := 'PICK/' || COALESCE(v_entity, 'SOA') || '/WH/' || v_year || '/' || lpad(v_seq::text, 4, '0');
+
+  INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by)
+  VALUES (v_company_id, v_no, p_sp_no, p_warehouse_id, 'pending', v_uid)
+  RETURNING id INTO v_pl_id;
+
+  INSERT INTO picking_list_items
+    (picking_list_id, sp_item_id, product_id, product_name, sku, qty_requested)
+  SELECT v_pl_id, si.id, NULL, si.product_name, si.sku, GREATEST(si.qty - si.shipped_qty, 0)
+  FROM sp_items si
+  WHERE si.sp_no = p_sp_no AND si.sp_status = 'confirmed' AND (si.qty - si.shipped_qty) > 0;
+
+  RETURN QUERY SELECT v_pl_id, v_no;
+END;
 $$;
 
 
@@ -520,6 +571,38 @@ BEGIN
     NEW.converted_at       := COALESCE(NEW.converted_at, now());
   END IF;
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_sp_status(text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_sp_status(p_sp_no text, p_status text, p_reason text DEFAULT NULL::text) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_uid   uuid := auth.uid();
+  v_count integer;
+BEGIN
+  IF p_status NOT IN ('draft','confirmed','cancelled') THEN
+    RAISE EXCEPTION 'invalid sp_status: %', p_status;
+  END IF;
+
+  UPDATE public.sp_items
+  SET sp_status     = p_status,
+      confirmed_at  = CASE WHEN p_status = 'confirmed' THEN now()    ELSE confirmed_at  END,
+      confirmed_by  = CASE WHEN p_status = 'confirmed' THEN v_uid    ELSE confirmed_by  END,
+      cancelled_at  = CASE WHEN p_status = 'cancelled' THEN now()    ELSE cancelled_at  END,
+      cancelled_by  = CASE WHEN p_status = 'cancelled' THEN v_uid    ELSE cancelled_by  END,
+      cancel_reason = CASE WHEN p_status = 'cancelled' THEN p_reason ELSE cancel_reason END,
+      updated_at    = now()
+  WHERE sp_no = p_sp_no;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
 END;
 $$;
 
@@ -2715,6 +2798,48 @@ COMMENT ON COLUMN public.permissions.action IS 'Action code: view, create, edit,
 
 
 --
+-- Name: picking_list_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.picking_list_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    picking_list_id uuid NOT NULL,
+    sp_item_id uuid,
+    product_id uuid,
+    product_name text DEFAULT ''::text NOT NULL,
+    sku text DEFAULT ''::text NOT NULL,
+    qty_requested integer DEFAULT 0 NOT NULL,
+    qty_picked integer DEFAULT 0 NOT NULL,
+    location_detail text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT picking_list_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'picked'::text, 'short'::text])))
+);
+
+
+--
+-- Name: picking_lists; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.picking_lists (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid DEFAULT 'd2e5e565-5f67-4954-b8d9-5979a2a0c697'::uuid NOT NULL,
+    picking_no text NOT NULL,
+    sp_no text NOT NULL,
+    warehouse_id uuid,
+    assigned_to uuid,
+    status text DEFAULT 'pending'::text NOT NULL,
+    notes text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    CONSTRAINT picking_lists_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))
+);
+
+
+--
 -- Name: positions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3211,7 +3336,15 @@ CREATE TABLE public.sp_items (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     sla_days integer,
     estimated_delivery_date date,
-    arrival_date date
+    arrival_date date,
+    sp_status text DEFAULT 'draft'::text NOT NULL,
+    confirmed_at timestamp with time zone,
+    confirmed_by uuid,
+    cancelled_at timestamp with time zone,
+    cancelled_by uuid,
+    cancel_reason text,
+    sp_category text,
+    CONSTRAINT sp_items_sp_status_check CHECK ((sp_status = ANY (ARRAY['draft'::text, 'confirmed'::text, 'cancelled'::text])))
 );
 
 
@@ -4328,6 +4461,30 @@ ALTER TABLE ONLY public.permissions
 
 
 --
+-- Name: picking_list_items picking_list_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_list_items
+    ADD CONSTRAINT picking_list_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: picking_lists picking_lists_picking_no_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_lists
+    ADD CONSTRAINT picking_lists_picking_no_key UNIQUE (picking_no);
+
+
+--
+-- Name: picking_lists picking_lists_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_lists
+    ADD CONSTRAINT picking_lists_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: positions positions_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5386,6 +5543,27 @@ CREATE INDEX idx_permissions_module ON public.permissions USING btree (module);
 
 
 --
+-- Name: idx_picking_list_items_pl; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_picking_list_items_pl ON public.picking_list_items USING btree (picking_list_id);
+
+
+--
+-- Name: idx_picking_lists_sp_no; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_picking_lists_sp_no ON public.picking_lists USING btree (sp_no);
+
+
+--
+-- Name: idx_picking_lists_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_picking_lists_status ON public.picking_lists USING btree (status);
+
+
+--
 -- Name: idx_positions_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5859,6 +6037,13 @@ CREATE TRIGGER trg_gen_customer_code_ins BEFORE INSERT ON public.accounts FOR EA
 --
 
 CREATE TRIGGER trg_payment_terms_updated_at BEFORE UPDATE ON public.payment_terms FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: picking_lists trg_picking_lists_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_picking_lists_updated_at BEFORE UPDATE ON public.picking_lists FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -7208,6 +7393,54 @@ ALTER TABLE ONLY public.payment_terms
 
 
 --
+-- Name: picking_list_items picking_list_items_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_list_items
+    ADD CONSTRAINT picking_list_items_picking_list_id_fkey FOREIGN KEY (picking_list_id) REFERENCES public.picking_lists(id) ON DELETE CASCADE;
+
+
+--
+-- Name: picking_list_items picking_list_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_list_items
+    ADD CONSTRAINT picking_list_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
+-- Name: picking_list_items picking_list_items_sp_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_list_items
+    ADD CONSTRAINT picking_list_items_sp_item_id_fkey FOREIGN KEY (sp_item_id) REFERENCES public.sp_items(id) ON DELETE SET NULL;
+
+
+--
+-- Name: picking_lists picking_lists_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_lists
+    ADD CONSTRAINT picking_lists_assigned_to_fkey FOREIGN KEY (assigned_to) REFERENCES auth.users(id);
+
+
+--
+-- Name: picking_lists picking_lists_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_lists
+    ADD CONSTRAINT picking_lists_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: picking_lists picking_lists_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_lists
+    ADD CONSTRAINT picking_lists_warehouse_id_fkey FOREIGN KEY (warehouse_id) REFERENCES public.warehouses(id);
+
+
+--
 -- Name: positions positions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7581,6 +7814,22 @@ ALTER TABLE ONLY public.sales_visits
 
 ALTER TABLE ONLY public.sales_visits
     ADD CONSTRAINT sales_visits_salesperson_id_fkey FOREIGN KEY (salesperson_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: sp_items sp_items_cancelled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_items
+    ADD CONSTRAINT sp_items_cancelled_by_fkey FOREIGN KEY (cancelled_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: sp_items sp_items_confirmed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_items
+    ADD CONSTRAINT sp_items_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES auth.users(id);
 
 
 --
@@ -7992,6 +8241,36 @@ CREATE POLICY approval_rules_update ON public.approval_rules FOR UPDATE TO authe
 
 
 --
+-- Name: approval_workflow_steps; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.approval_workflow_steps ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: approval_workflow_steps approval_workflow_steps_access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY approval_workflow_steps_access ON public.approval_workflow_steps TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.approval_workflows aw
+  WHERE ((aw.id = approval_workflow_steps.workflow_id) AND (((aw.company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.approval_workflows aw
+  WHERE ((aw.id = approval_workflow_steps.workflow_id) AND (((aw.company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())))));
+
+
+--
+-- Name: approval_workflows; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.approval_workflows ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: approval_workflows approval_workflows_access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY approval_workflows_access ON public.approval_workflows TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
+
+
+--
 -- Name: ar_btbs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8365,6 +8644,19 @@ CREATE POLICY departments_update ON public.departments FOR UPDATE USING ((public
 
 
 --
+-- Name: document_numbering; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.document_numbering ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: document_numbering document_numbering_access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY document_numbering_access ON public.document_numbering TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
+
+
+--
 -- Name: document_sequences; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8396,6 +8688,19 @@ COMMENT ON POLICY document_sequences_insert ON public.document_sequences IS 'Any
 --
 
 CREATE POLICY document_sequences_read ON public.document_sequences FOR SELECT TO authenticated USING ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: document_templates; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.document_templates ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: document_templates document_templates_access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY document_templates_access ON public.document_templates TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
@@ -8457,6 +8762,45 @@ CREATE POLICY dropdown_options_read ON public.dropdown_options FOR SELECT TO aut
 --
 
 CREATE POLICY dropdown_options_update ON public.dropdown_options FOR UPDATE TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+
+
+--
+-- Name: entity_bank_accounts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.entity_bank_accounts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: entity_bank_accounts entity_bank_accounts_access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY entity_bank_accounts_access ON public.entity_bank_accounts TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
+
+
+--
+-- Name: entity_finance_settings; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.entity_finance_settings ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: entity_finance_settings entity_finance_settings_access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY entity_finance_settings_access ON public.entity_finance_settings TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
+
+
+--
+-- Name: entity_signatories; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.entity_signatories ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: entity_signatories entity_signatories_access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY entity_signatories_access ON public.entity_signatories TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
@@ -8881,7 +9225,7 @@ ALTER TABLE public.menu_actions ENABLE ROW LEVEL SECURITY;
 -- Name: menu_actions menu_actions_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY menu_actions_admin_only ON public.menu_actions USING (true);
+CREATE POLICY menu_actions_admin_only ON public.menu_actions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
@@ -8901,7 +9245,7 @@ ALTER TABLE public.module_actions ENABLE ROW LEVEL SECURITY;
 -- Name: module_actions module_actions_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY module_actions_admin_only ON public.module_actions USING (true);
+CREATE POLICY module_actions_admin_only ON public.module_actions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
@@ -8921,7 +9265,7 @@ ALTER TABLE public.module_menus ENABLE ROW LEVEL SECURITY;
 -- Name: module_menus module_menus_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY module_menus_admin_only ON public.module_menus USING (true);
+CREATE POLICY module_menus_admin_only ON public.module_menus TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
@@ -8941,7 +9285,7 @@ ALTER TABLE public.modules ENABLE ROW LEVEL SECURITY;
 -- Name: modules modules_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY modules_admin_only ON public.modules USING (true);
+CREATE POLICY modules_admin_only ON public.modules TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
@@ -9169,6 +9513,19 @@ CREATE POLICY network_update ON public.asset_network FOR UPDATE USING ((company_
 
 
 --
+-- Name: notification_rules; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_rules ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notification_rules notification_rules_access; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY notification_rules_access ON public.notification_rules TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
+
+
+--
 -- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9247,6 +9604,74 @@ CREATE POLICY permissions_read_all ON public.permissions FOR SELECT TO authentic
 --
 
 CREATE POLICY permissions_super_admin_write ON public.permissions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+
+
+--
+-- Name: picking_list_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.picking_list_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: picking_lists; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.picking_lists ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: picking_lists picking_lists_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY picking_lists_delete ON public.picking_lists FOR DELETE TO authenticated USING (true);
+
+
+--
+-- Name: picking_lists picking_lists_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY picking_lists_insert ON public.picking_lists FOR INSERT TO authenticated WITH CHECK (true);
+
+
+--
+-- Name: picking_lists picking_lists_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY picking_lists_read ON public.picking_lists FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: picking_lists picking_lists_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY picking_lists_update ON public.picking_lists FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: picking_list_items pli_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pli_delete ON public.picking_list_items FOR DELETE TO authenticated USING (true);
+
+
+--
+-- Name: picking_list_items pli_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pli_insert ON public.picking_list_items FOR INSERT TO authenticated WITH CHECK (true);
+
+
+--
+-- Name: picking_list_items pli_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pli_read ON public.picking_list_items FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: picking_list_items pli_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY pli_update ON public.picking_list_items FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
@@ -9519,7 +9944,7 @@ CREATE POLICY roles_insert ON public.roles FOR INSERT TO authenticated WITH CHEC
 -- Name: roles roles_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY roles_read ON public.roles FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin())));
+CREATE POLICY roles_read ON public.roles FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
 
 
 --
@@ -9533,7 +9958,7 @@ CREATE POLICY roles_update ON public.roles FOR UPDATE TO authenticated USING (((
 -- Name: role_permission_templates rpt_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY rpt_admin_only ON public.role_permission_templates USING (true);
+CREATE POLICY rpt_admin_only ON public.role_permission_templates TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
@@ -9832,7 +10257,7 @@ ALTER TABLE public.top_requests ENABLE ROW LEVEL SECURITY;
 -- Name: user_menu_permissions ump_admin_all; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY ump_admin_all ON public.user_menu_permissions USING (true);
+CREATE POLICY ump_admin_all ON public.user_menu_permissions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
@@ -9964,5 +10389,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict AwKQv0mBhQGPl7MXXrvHvHxoGLmIZQbdSevJ0rzakds6H6PJUQ04VMJOE9kDbhr
+\unrestrict 16mTX4fofcs84JESaPFPT0Y9lXwVslyA6b8GiWbv7IyDZEkgPq9HQmvxOmmi4VY
 
