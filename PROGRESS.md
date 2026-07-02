@@ -1,6 +1,86 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-03
+
+### Fix dropdown Customer kosong — mapping `active` → `is_active` (branch `restruktur-nexus`)
+> Akar masalah (AUDIT.md): `customerFromDb` (`db.js`) memetakan `active: !!row.active`, padahal tabel `accounts` kolomnya **`is_active`** (bukan `active`) → semua customer `active:false` → tersaring habis oleh filter `c.active !== false`. Bug lama dari migrasi `customers→accounts` (Phase 2.5A), **bukan** dari perubahan ProductPicker. 1 baris FE, tanpa ubah DB. Commit `a3f49c8`.
+- [x] `db.js` `customerFromDb`: `active: !!row.active` → `active: row.is_active !== false` (accounts `is_active DEFAULT true`; nama kolom diverifikasi via `schema_snapshot.sql`).
+- [x] Satu titik akar → semua konsumen filter `active` ikut benar: FormModal (`App.jsx:4296`), AR TTF (`:5308`), chip filter customer (`:3552`/`:5027`). Customer yang benar-benar `is_active=false` tetap tersaring.
+- [x] Bukan isu RLS/scope — `listCustomers` sudah ambil customer relevan; array yang sama tampil normal di `InputSPPage`. Build clean (2581 modules). Lint 223 (net-zero).
+- [ ] **Tes manual (belum):** dropdown Customer FormModal terisi (Indomarco/Indogrosir/dll); AR TTF + chip filter + kartu customer tetap benar; customer inactive tetap tak muncul.
+
+### ProductPicker dropdown-only di FormModal & EditItemModal (branch `restruktur-nexus`)
+> Lanjutan fix bug AUDIT.md: ProductPicker sebelumnya diedit di `InputSPPage` yang ternyata SALAH jalur; 2 titik input produk SP lain (FormModal via menu Input SP → "Add New SP", EditItemModal via Detail SP → pencil) masih teks bebas. 2 file FE (`App.jsx`, `SalesOrderDetailPage.jsx`), tanpa ubah DB (`spToDb` sudah petakan `product_id`). Commit `b21bfae`.
+- [x] **FormModal (`App.jsx`)**: import `ProductPicker`+`useProducts({companyId: SOA})`; `data` +`productId:null`; Product Name `<Input>` → ProductPicker (onPick isi productId/name/sku + prefill `unitPrice=default_price` tetap editable; onChangeText batalkan pilihan); SKU jadi read-only display; validasi `handleSubmit` wajib `productId`.
+- [x] **EditItemModal (`SalesOrderDetailPage.jsx`)**: `draft` +`productId`; Product Name `<ModalInp>` → ProductPicker (onPick sinkronkan productId/name/sku — tutup desync nama vs SKU; unitPrice TIDAK di-prefill, tetap snapshot); SKU sudah read-only; field lain (DC/Qty/tanggal/SLA/EstDelivery/Arrival) tak disentuh.
+- [x] **Enforcement lenient legacy (keputusan user):** item BARU + item lama yang sudah tertaut wajib `productId` (cegah unlink); item legacy (`product_id` null) boleh disimpan tanpa memilih. FormModal `requireProduct = !initial || !!initial.productId`; EditItemModal Save `disabled` bila `wasLinked && !draft.productId`.
+- [x] Build clean (2581 modules). Lint 223 (net-zero). Konsolidasi 3 form input produk SP DITUNDA (utang teknis).
+- [ ] **Tes manual (belum):** Add New SP produk cuma dropdown + SKU + prefill harga editable → simpan `product_id` terisi; Detail SP pencil ganti produk → SKU+nama konsisten.
+
+### BulkEditPricePage (bulk update harga) + ProductPicker di Input SP (branch `restruktur-nexus`)
+> Halaman baru update harga massal (super_admin) + picker role-aware lintas entitas; + ganti input produk teks-bebas jadi ProductPicker di InputSPPage. Commit `7dcb3be` (+ snapshot `5a8fba2`). RPC `bulk_update_product_prices` dibuat manual di DB.
+- [x] **BulkEditPricePage** (`src/modules/admin/pages/`): tabel baris dinamis (Produk via shared ProductPicker, Harga Saat Ini read-only, Harga Baru number +anti-scroll onWheel, Nomor Kontrak, Berlaku Sampai); "Simpan Semua" → `rpc('bulk_update_product_prices',{p_rows})` → toast `X diperbarui, Y dilewati (harga sama)` dari `{updated,skipped}`; loading/empty/error + validasi.
+- [x] **Picker role-aware:** super_admin → katalog lintas entitas (query `products` tanpa filter company, RLS izinkan; badge entitas MSI/JCI/SOA dari `companies.code`); non-super → `useProducts` default company-scoped. `useProducts.js` TAK disentuh (query lokal di halaman).
+- [x] **Menu** `bulk-edit-price` (label "Update Harga Massal", icon TrendingUp, role super_admin) di ERP_MENU_GROUPS + NEXUS_NAV (Master Data) + render guard `canRenderPage` + exclusion catch-all ComingSoon.
+- [x] **InputSPPage:** field produk teks-bebas → ProductPicker dropdown-only (pin SOA); onPick isi productId/name/sku + prefill `unitPrice=default_price` (tetap editable → snapshot utuh); `spToDb` +`product_id`; validasi dropdown-only (Submit + Draft). Harga SP tetap snapshot (`sp_items.unit_price`), tidak live.
+- [x] Build clean. Lint 223 (net-zero).
+- [ ] **Tes manual (belum):** menu muncul (bukan Coming Soon); pilih produk lintas entitas + badge; simpan → toast updated/skipped; InputSP dropdown-only + product_id tersimpan.
+
+### Lokasi Rak (Stok Barang) + Riwayat Harga produk (kontrak/PKS) (branch `restruktur-nexus`)
+> 2 fitur; DB dijalankan manual + diverifikasi user (2 tabel + RPC update + trigger). Commit `e739c39` (+ snapshot `5a8fba2`).
+- [x] **DB (manual):** tabel `product_warehouse_location` (rack per produk×gudang, RLS permissive) + RPC `generate_picking_from_sp` di-update (auto-isi `picking_list_items.location_detail` dari rak saat generate); tabel `product_price_history` (+kolom `contract_no`/`valid_from`/`valid_until`, RLS read-only, immutable) + trigger `trg_z_products_price_history` (AFTER UPDATE default_price → log) + RPC `attach_price_contract_info` (audit-safe, hanya kolom kontrak). Fix RLS `products_update` +bypass `is_super_admin()` (USING & WITH CHECK) — akar bug simpan harga gagal senyap.
+- [x] **StokBarangPage:** kolom "Lokasi Rak" inline-edit ikut filter gudang (Semper/Others editable, Semua Gudang read-only + hint); helper `db.js` getProductRackLocations/upsertProductRackLocation.
+- [x] **ProductDetailPage:** section "Riwayat Harga" (Tanggal/Harga Lama/Harga Baru/Selisih/Diubah Oleh/Kontrak/Berlaku Sampai) dari `product_price_history`; info kontrak opsional via RPC saat harga diubah; prefill kontrak terakhir saat buka edit; input angka anti-scroll (onWheel blur); `saveEdit`/`toggleActive` +`.select()` + guard 0-row + toast error (tak gagal senyap).
+- [x] Build clean. Lint 223 (net-zero).
+- [ ] **Tes manual (belum):** isi rak per gudang → persist; edit harga → Riwayat Harga muncul + info kontrak; simpan lintas entitas (super_admin) sukses.
+
+## 2026-07-02
+
+### Material Packing + PDF Picking List (Fase 3.x · branch `restruktur-nexus`)
+> Commit `debb8ed` (+ snapshot `5f16843`).
+- [x] **DB (manual):** tabel `picking_list_materials` + RPC `add_picking_material` (insert + outbound stok) / `delete_picking_material` (delete + reverse stok).
+- [x] **PickingListDetailPage:** section "Material Packing" (muncul saat picking done): ProductPicker filter `inventory_class='Inventory'` + qty + availability (soft-warn) + Tambah/Hapus; editable sebelum Surat Jalan dibuat, read-only setelahnya.
+- [x] **PickingListPDF.jsx** (baru): checklist gudang (kolom checkbox) + section Material Packing; tombol Cetak jadi PDF beneran.
+- [x] Build clean. Lint 223.
+- [ ] **Tes manual (belum):** tambah/hapus material → stok gerak; kunci setelah SJ; cetak PDF.
+
+### Fase 1 — cek stok & reservasi otomatis (branch `restruktur-nexus`)
+> Commit `5322f9c` (+ snapshot `7aae37f`/`8ec957d` untuk Fase 0.2).
+- [x] **DB (manual):** `stock_summary` view (on_hand/reserved/available; fix on_hand exclude reserved); RPC `generate_picking_from_sp` reserve stok; `cancel_picking`→unreserve; `dispatch_delivery`→unreserve+outbound; `cancel_delivery`→reversal. `picking_list_items.qty_short`.
+- [x] **FE:** badge availability/qty_short di SalesOrderDetailPage + PickingListDetailPage; `db.js` getStockForProducts (company-level SOA); dispatch/cancel via RPC.
+- [x] **Fase 0.2 (`8ec957d`):** `sp_items.product_id` backfill + propagate ke picking_list_items/delivery_note_items.
+- [ ] **Tes manual (belum):** reserve saat generate; qty_short saat stok kurang; unreserve saat cancel; outbound saat dispatch.
+
+### Fase 3 — Packing & Surat Jalan (delivery notes) (branch `restruktur-nexus`)
+> Commit `905f99b` (+ snapshot `7aae37f`).
+- [x] **DB (manual):** tabel `delivery_notes`/`delivery_note_items` + RPC `generate_delivery_from_picking` (dari picking done; snapshot customer_name; numbering SJ/…) + item edits (draft only).
+- [x] **FE:** `DeliveryNotePage`/`DeliveryNoteDetailPage`/`DeliveryNotePDF`; komponen `ProductPicker` shared diekstrak dari QuotationFormPage; item editable (Opsi C) via ProductPicker; fix BUG customer_name "—" (snapshot di generate, bukan baca live RLS-blocked).
+- [ ] **Tes manual (belum):** generate SJ dari picking done; edit item draft; PDF.
+
+### Fase 0.3 — SP document link (external_url) (branch `restruktur-nexus`)
+> Commit `1093a67`.
+- [x] `sp_items.external_url` + fallback link dokumen SP di FE.
+
+### Fase 2 — Cancel Picking List (branch `restruktur-nexus`)
+> Commit `2000580` (+ snapshot `5764504` tambah `cancelled_at`).
+- [x] RPC `cancel_picking` (set cancelled + release reservasi) + tombol Batalkan di PickingListDetailPage; SP eligible generate ulang.
+
+### Fase 2 — Picking List + Import Data Produksi Storbit (branch `restruktur-nexus`)
+> Commit `964376f` (Picking) + `dd420e8` (import docs) + snapshot `73ea183`.
+- [x] **Picking List:** tabel `picking_lists`/`picking_list_items` + RPC `generate_picking_from_sp` (atomik, guard idempotensi, numbering `PICK/SOA/WH/{YYYY}/{SEQ}`); `PickingListPage`/`PickingListDetailPage`; tombol "Generate Picking List" di SP detail (saat `sp_status='confirmed'`); menu role-only `operations`.
+- [x] **Import Data Produksi (DB-only via SQL Editor manual):** dari `STORBIT SHIPPING MANIFEST (2).xlsx` + `MSI GROUP WAREHOUSE (1).xlsx`, target entitas SOA. Hasil terverifikasi SQL: **720 baris / 435 SP / qty 984.026 / nilai acuan Rp 7.736.680.654**; 4 accounts (Indomarco existing + 3 baru), 38 products upsert, stock_ledger refresh, sp_items +`sp_category`/`sp_status='confirmed'`, sp_btbs 187. Rancangan: `MVP_STORBIT_RANCANGAN.md`; audit: `MVP_STORBIT_AUDIT.md`/`MVP_STORBIT_IMPORT_AUDIT.md`.
+- [ ] **Perlu konfirmasi:** selisih jumlah SP **431 vs 435** (menunggu konfirmasi sumber angka dari Gigih); verifikasi mapping **30 item kontrak PKS Indomarco**.
+
+### Slice 0.1 — Persistensi status SP + fix rbac (branch `restruktur-nexus`)
+> Commit `3171efb` (SP status) + `e4f448b` (rbac redirect-guard).
+- [x] **Slice 0.1:** `sp_items.sp_status` (draft/confirmed/cancelled) + `confirmed_at/by`, `cancelled_at/by`, `cancel_reason` + RPC `set_sp_status` (atomik per sp_no); FE Konfirmasi/Tolak SP kini persist (bukan toast palsu).
+- [x] **fix(rbac) `e4f448b`:** redirect-guard pakai `isMenuAccessible` (identik sidebar/F4; hilangkan bounce ke Command Center utk child role-gated) + cabut `operations` dari 4 menu CRM (lead-pool/rate-list/calls/activity-log).
+
 ## 2026-07-01
+
+### RBAC hardening — gate MOM/CRM public menus + AdminShell + F4 content-gate (branch `restruktur-nexus`)
+> Commit `3dbbc64`. Penajaman gating pasca restruktur menu 3.0.
+- [x] Gate menu publik MOM/CRM, AdminShell role gate, dan content-level gate (F4) supaya route sensitif tak bisa diakses via URL/redirect tanpa izin.
 
 ### Role-gating Home quick actions (Phase 3.0C · branch `restruktur-nexus`)
 > Access-control gap: tombol quick action Home muncul utk semua role tanpa gating. 2 file (`App.jsx`, `HomeDashboard.jsx`), FE-only. Diverifikasi build/lint + live (super_admin).
