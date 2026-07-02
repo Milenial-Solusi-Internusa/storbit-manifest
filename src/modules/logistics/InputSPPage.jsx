@@ -17,6 +17,12 @@ import {
   Receipt, Check, Save, Package,
 } from 'lucide-react';
 import { bulkInsertSpItems, bulkInsertSpBtbs } from '../../lib/db';
+import { useProducts } from '../../hooks/useProducts';
+import ProductPicker from '../../components/ProductPicker';
+
+// SP (Storbit manifest) selalu entitas Storbit (SOA) → pin katalog produk ke SOA,
+// bukan company home user (pola sama DeliveryNoteDetailPage).
+const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
 
 // ─── MSI Brand tokens ─────────────────────────────────────────────────────────
 const C = {
@@ -62,6 +68,7 @@ const DEFAULT_DCS = [
 let _seq = 0;
 const freshItem = () => ({
   id: ++_seq,
+  productId: null,
   productName: '',
   sku: '',
   qty: 1,
@@ -129,6 +136,9 @@ function Field({ label, req, children, full }) {
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function InputSPPage({ onBack, customers = [], dcList = [], showToast }) {
+  // Product catalog pinned to Storbit/SOA (dropdown-only source for item rows).
+  const { products } = useProducts({ companyId: SOA_COMPANY_ID });
+
   // SP header
   const [spDate,     setSpDate]     = useState(today());
   const [customerId, setCustomerId] = useState('');
@@ -164,7 +174,8 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
 
   // Validation
   const headerOk = spDate && customerId && expiredDate;
-  const itemsOk  = items.length > 0 && items.every(i => i.productName.trim() && Number(i.qty) >= 1 && Number(i.unitPrice) >= 0);
+  // Dropdown-only: item valid hanya bila produk dipilih dari master (productId terisi).
+  const itemsOk  = items.length > 0 && items.every(i => i.productId && Number(i.qty) >= 1 && Number(i.unitPrice) >= 0);
   const isValid  = headerOk && itemsOk;
 
   // Submit helper
@@ -175,6 +186,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
       spDate,
       spNo,
       customerId,
+      productId:     item.productId || null,
       productName:   item.productName.trim(),
       sku:           item.sku || '',
       qty:           Number(item.qty) || 1,
@@ -207,6 +219,11 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
   const handleDraft = useCallback(async () => {
     if (!headerOk || items.length === 0) {
       showToast('Isi SP Date, Customer, dan minimal 1 item untuk draft', 'error');
+      return;
+    }
+    // Dropdown-only juga berlaku untuk draft: tiap item wajib produk dari master.
+    if (items.some(i => !i.productId)) {
+      showToast('Pilih produk dari dropdown untuk setiap item', 'error');
       return;
     }
     // sp_items has no status column — same insert as submit
@@ -416,6 +433,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
                       key={item.id}
                       item={item}
                       idx={idx}
+                      products={products}
                       onChange={setField}
                       onRemove={removeItem}
                       canRemove={items.length > 1}
@@ -545,7 +563,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
 }
 
 // ─── Item sub-card component ───────────────────────────────────────────────────
-function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
+function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
   const grand = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0) + (Number(item.shippingPrice) || 0);
   const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 
@@ -638,11 +656,25 @@ function ItemRow({ item, idx, onChange, onRemove, canRemove }) {
         <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr 0.8fr', gap: '0 12px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {fieldLabel('Product Name', true)}
-            {inp({
-              value: item.productName,
-              placeholder: 'Nama produk…',
-              onChange: e => onChange(item.id, 'productName', e.target.value),
-            })}
+            {/* Dropdown-only: hanya bisa pilih produk master (SOA). onPick prefill SKU +
+                unit_price (nilai awal, tetap editable). onChangeText batalkan pilihan. */}
+            <ProductPicker
+              value={item.productName}
+              products={products}
+              placeholder="Cari produk…"
+              inputStyle={inpStyle()}
+              onChangeText={(v) => {
+                onChange(item.id, 'productName', v);
+                onChange(item.id, 'productId', null);
+                onChange(item.id, 'sku', '');
+              }}
+              onPick={(p) => {
+                onChange(item.id, 'productId', p.id);
+                onChange(item.id, 'productName', p.name);
+                onChange(item.id, 'sku', p.code || '');
+                onChange(item.id, 'unitPrice', Number(p.default_price) || 0);
+              }}
+            />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {fieldLabel('SKU')}
