@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict rb7Umhpimlg1xoaQDfopgAdQpJlRfvShEpp26QEAiTjAIT9fsFhv8W35xYuBhKF
+\restrict MwuaZnaBLnRS3iWHWbpHEuC7zJYoDlmiWn0OCPXemfm4WFGSMHTRpV5a0B7fafS
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -34,6 +34,88 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
+-- Name: add_picking_material(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_company uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+        v_wh uuid; v_status text; v_no text; v_uid uuid := auth.uid();
+        v_pname text; v_sku text; v_mid uuid;
+BEGIN
+  IF p_product_id IS NULL THEN RAISE EXCEPTION 'product_id wajib'; END IF;
+  IF COALESCE(p_qty,0) <= 0 THEN RAISE EXCEPTION 'qty harus > 0'; END IF;
+  SELECT status, warehouse_id, picking_no INTO v_status, v_wh, v_no FROM picking_lists WHERE id=p_picking_list_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
+  IF v_status <> 'done' THEN RAISE EXCEPTION 'Material hanya bisa dicatat saat picking selesai (status=%)', v_status; END IF;
+  IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id=p_picking_list_id AND status <> 'cancelled') THEN
+    RAISE EXCEPTION 'Surat jalan sudah dibuat — material tak bisa ditambah lagi'; END IF;
+  v_wh := COALESCE(v_wh, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+  SELECT name, code INTO v_pname, v_sku FROM products WHERE id=p_product_id;
+  IF v_pname IS NULL THEN RAISE EXCEPTION 'Produk tidak ditemukan'; END IF;
+
+  INSERT INTO picking_list_materials (picking_list_id, product_id, product_name, sku, qty, created_by)
+  VALUES (p_picking_list_id, p_product_id, v_pname, COALESCE(v_sku,''), p_qty, v_uid)
+  RETURNING id INTO v_mid;
+
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  VALUES (v_company, v_wh, p_product_id, 'outbound', -abs(p_qty), 'picking_material', v_mid, v_no, v_uid);
+
+  RETURN v_mid;
+END; $$;
+
+
+--
+-- Name: cancel_delivery(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cancel_delivery(p_delivery_note_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_status text; v_uid uuid := auth.uid();
+BEGIN
+  SELECT status INTO v_status FROM delivery_notes WHERE id=p_delivery_note_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Surat jalan tidak ditemukan'; END IF;
+  IF v_status='cancelled' THEN RAISE EXCEPTION 'Surat jalan sudah dibatalkan'; END IF;
+  IF v_status IN ('in_transit','delivered') THEN
+    INSERT INTO stock_ledger
+      (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+    SELECT company_id, warehouse_id, product_id, 'inbound', abs(qty), 'delivery_cancel', reference_id, reference_no, v_uid
+    FROM stock_ledger
+    WHERE reference_type='delivery' AND reference_id=p_delivery_note_id AND movement_type='outbound';
+  END IF;
+  UPDATE delivery_notes SET status='cancelled', cancelled_at=now() WHERE id=p_delivery_note_id;
+END; $$;
+
+
+--
+-- Name: cancel_picking(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cancel_picking(p_picking_list_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_status text; v_uid uuid := auth.uid();
+BEGIN
+  SELECT status INTO v_status FROM picking_lists WHERE id=p_picking_list_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
+  IF v_status NOT IN ('pending','in_progress') THEN
+    RAISE EXCEPTION 'Hanya picking pending/in_progress yang bisa dibatalkan (status=%)', v_status; END IF;
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT company_id, warehouse_id, product_id, 'unreserved', qty, 'picking', reference_id, reference_no, v_uid
+  FROM stock_ledger
+  WHERE reference_type='picking' AND reference_id=p_picking_list_id AND movement_type='reserved';
+  UPDATE picking_lists SET status='cancelled', cancelled_at=now() WHERE id=p_picking_list_id;
+END; $$;
+
+
+--
 -- Name: capture_login_session(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -51,6 +133,62 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: delete_picking_material(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.delete_picking_material(p_material_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_pick uuid; v_uid uuid := auth.uid();
+BEGIN
+  SELECT picking_list_id INTO v_pick FROM picking_list_materials WHERE id=p_material_id;
+  IF v_pick IS NULL THEN RAISE EXCEPTION 'Material tidak ditemukan'; END IF;
+  IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id=v_pick AND status <> 'cancelled') THEN
+    RAISE EXCEPTION 'Tak bisa hapus material: surat jalan sudah dibuat'; END IF;
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT company_id, warehouse_id, product_id, 'inbound', abs(qty), 'material_reverse', p_material_id, reference_no, v_uid
+  FROM stock_ledger
+  WHERE reference_type='picking_material' AND reference_id=p_material_id AND movement_type='outbound';
+  DELETE FROM public.picking_list_materials WHERE id=p_material_id;
+END; $$;
+
+
+--
+-- Name: dispatch_delivery(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.dispatch_delivery(p_delivery_note_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_company uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+        v_status text; v_pick uuid; v_wh uuid; v_no text; v_uid uuid := auth.uid();
+BEGIN
+  SELECT status, picking_list_id, do_no INTO v_status, v_pick, v_no FROM delivery_notes WHERE id=p_delivery_note_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Surat jalan tidak ditemukan'; END IF;
+  IF v_status <> 'draft' THEN RAISE EXCEPTION 'Hanya surat jalan draft yang bisa diberangkatkan (status=%)', v_status; END IF;
+  SELECT warehouse_id INTO v_wh FROM picking_lists WHERE id=v_pick;
+  v_wh := COALESCE(v_wh, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT company_id, warehouse_id, product_id, 'unreserved', qty, 'picking', reference_id, reference_no, v_uid
+  FROM stock_ledger
+  WHERE reference_type='picking' AND reference_id=v_pick AND movement_type='reserved';
+
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT v_company, v_wh, dni.product_id, 'outbound', -abs(dni.qty), 'delivery', p_delivery_note_id, v_no, v_uid
+  FROM delivery_note_items dni
+  WHERE dni.delivery_note_id=p_delivery_note_id AND dni.product_id IS NOT NULL AND COALESCE(dni.qty,0) > 0;
+
+  UPDATE delivery_notes SET status='in_transit', dispatched_at=now() WHERE id=p_delivery_note_id;
+END; $$;
 
 
 --
@@ -158,31 +296,52 @@ CREATE FUNCTION public.generate_picking_from_sp(p_sp_no text, p_warehouse_id uui
     AS $$
 DECLARE
   v_company_id uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
-  v_entity text;
-  v_year int := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
+  v_wh uuid := COALESCE(p_warehouse_id, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+  v_entity text; v_year int := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
   v_seq int; v_no text; v_pl_id uuid; v_uid uuid := auth.uid(); v_outstanding int;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no = p_sp_no AND sp_status = 'confirmed') THEN
+  IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no=p_sp_no AND sp_status='confirmed') THEN
     RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no; END IF;
-  IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no = p_sp_no AND status <> 'cancelled') THEN
+  IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no=p_sp_no AND status <> 'cancelled') THEN
     RAISE EXCEPTION 'Picking list untuk SP % sudah ada', p_sp_no; END IF;
   SELECT count(*) INTO v_outstanding FROM sp_items
-    WHERE sp_no = p_sp_no AND sp_status = 'confirmed' AND (qty - shipped_qty) > 0;
-  IF v_outstanding = 0 THEN RAISE EXCEPTION 'SP % tidak punya item outstanding untuk di-pick', p_sp_no; END IF;
+    WHERE sp_no=p_sp_no AND sp_status='confirmed' AND (qty - shipped_qty) > 0;
+  IF v_outstanding = 0 THEN RAISE EXCEPTION 'SP % tidak punya item outstanding', p_sp_no; END IF;
 
   SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
-  v_seq := increment_document_sequence(v_company_id, 'PICK', 'WH', v_year, 0);
-  v_no  := 'PICK/' || COALESCE(v_entity,'SOA') || '/WH/' || v_year || '/' || lpad(v_seq::text, 4, '0');
+  v_seq := increment_document_sequence(v_company_id,'PICK','WH',v_year,0);
+  v_no  := 'PICK/'||COALESCE(v_entity,'SOA')||'/WH/'||v_year||'/'||lpad(v_seq::text,4,'0');
 
   INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by)
-  VALUES (v_company_id, v_no, p_sp_no, p_warehouse_id, 'pending', v_uid)
+  VALUES (v_company_id, v_no, p_sp_no, v_wh, 'pending', v_uid)
   RETURNING id INTO v_pl_id;
 
-  INSERT INTO picking_list_items
-    (picking_list_id, sp_item_id, product_id, product_name, sku, qty_requested)
-  SELECT v_pl_id, si.id, si.product_id, si.product_name, si.sku, GREATEST(si.qty - si.shipped_qty, 0)
-  FROM sp_items si
-  WHERE si.sp_no = p_sp_no AND si.sp_status = 'confirmed' AND (si.qty - si.shipped_qty) > 0;
+  WITH src AS (
+    SELECT si.id AS sp_item_id, si.product_id, si.product_name, si.sku,
+           GREATEST(si.qty - si.shipped_qty, 0) AS req
+    FROM sp_items si
+    WHERE si.sp_no=p_sp_no AND si.sp_status='confirmed' AND (si.qty - si.shipped_qty) > 0
+  ),
+  av AS (
+    SELECT src.*,
+           COALESCE((SELECT SUM(ss.available) FROM stock_summary ss
+                     WHERE ss.company_id = v_company_id AND ss.product_id = src.product_id), 0) AS avail
+    FROM src
+  ),
+  ins_items AS (
+    INSERT INTO picking_list_items
+      (picking_list_id, sp_item_id, product_id, product_name, sku, qty_requested, qty_short)
+    SELECT v_pl_id, sp_item_id, product_id, product_name, sku, req,
+           CASE WHEN product_id IS NULL THEN 0
+                ELSE GREATEST(req - LEAST(req, avail), 0) END
+    FROM av
+    RETURNING 1
+  )
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT v_company_id, v_wh, product_id, 'reserved', LEAST(req, avail), 'picking', v_pl_id, v_no, v_uid
+  FROM av
+  WHERE product_id IS NOT NULL AND LEAST(req, avail) > 0;
 
   RETURN QUERY SELECT v_pl_id, v_no;
 END;
@@ -2899,7 +3058,24 @@ CREATE TABLE public.picking_list_items (
     location_detail text,
     status text DEFAULT 'pending'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    qty_short integer DEFAULT 0 NOT NULL,
     CONSTRAINT picking_list_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'picked'::text, 'short'::text])))
+);
+
+
+--
+-- Name: picking_list_materials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.picking_list_materials (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    picking_list_id uuid NOT NULL,
+    product_id uuid NOT NULL,
+    product_name text DEFAULT ''::text NOT NULL,
+    sku text DEFAULT ''::text NOT NULL,
+    qty integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
 );
 
 
@@ -3550,7 +3726,7 @@ CREATE VIEW public.stock_summary WITH (security_invoker='true') AS
  SELECT product_id,
     warehouse_id,
     company_id,
-    sum(qty) AS on_hand,
+    sum(qty) FILTER (WHERE ((movement_type)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying, 'adjustment'::character varying, 'transfer_in'::character varying, 'transfer_out'::character varying])::text[]))) AS on_hand,
     (sum(
         CASE
             WHEN ((movement_type)::text = 'reserved'::text) THEN abs(qty)
@@ -3560,7 +3736,7 @@ CREATE VIEW public.stock_summary WITH (security_invoker='true') AS
             WHEN ((movement_type)::text = 'unreserved'::text) THEN abs(qty)
             ELSE 0
         END)) AS reserved,
-    (sum(qty) - (sum(
+    (sum(qty) FILTER (WHERE ((movement_type)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying, 'adjustment'::character varying, 'transfer_in'::character varying, 'transfer_out'::character varying])::text[]))) - (sum(
         CASE
             WHEN ((movement_type)::text = 'reserved'::text) THEN abs(qty)
             ELSE 0
@@ -4579,6 +4755,14 @@ ALTER TABLE ONLY public.permissions
 
 ALTER TABLE ONLY public.picking_list_items
     ADD CONSTRAINT picking_list_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: picking_list_materials picking_list_materials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_list_materials
+    ADD CONSTRAINT picking_list_materials_pkey PRIMARY KEY (id);
 
 
 --
@@ -5702,6 +5886,13 @@ CREATE INDEX idx_picking_lists_sp_no ON public.picking_lists USING btree (sp_no)
 --
 
 CREATE INDEX idx_picking_lists_status ON public.picking_lists USING btree (status);
+
+
+--
+-- Name: idx_plm_picking; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_plm_picking ON public.picking_list_materials USING btree (picking_list_id);
 
 
 --
@@ -7610,6 +7801,30 @@ ALTER TABLE ONLY public.picking_list_items
 
 ALTER TABLE ONLY public.picking_list_items
     ADD CONSTRAINT picking_list_items_sp_item_id_fkey FOREIGN KEY (sp_item_id) REFERENCES public.sp_items(id) ON DELETE SET NULL;
+
+
+--
+-- Name: picking_list_materials picking_list_materials_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_list_materials
+    ADD CONSTRAINT picking_list_materials_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: picking_list_materials picking_list_materials_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_list_materials
+    ADD CONSTRAINT picking_list_materials_picking_list_id_fkey FOREIGN KEY (picking_list_id) REFERENCES public.picking_lists(id) ON DELETE CASCADE;
+
+
+--
+-- Name: picking_list_materials picking_list_materials_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_list_materials
+    ADD CONSTRAINT picking_list_materials_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id);
 
 
 --
@@ -9885,6 +10100,12 @@ CREATE POLICY permissions_super_admin_write ON public.permissions TO authenticat
 ALTER TABLE public.picking_list_items ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: picking_list_materials; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.picking_list_materials ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: picking_lists; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9944,6 +10165,34 @@ CREATE POLICY pli_read ON public.picking_list_items FOR SELECT TO authenticated 
 --
 
 CREATE POLICY pli_update ON public.picking_list_items FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: picking_list_materials plm_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY plm_delete ON public.picking_list_materials FOR DELETE TO authenticated USING (true);
+
+
+--
+-- Name: picking_list_materials plm_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY plm_insert ON public.picking_list_materials FOR INSERT TO authenticated WITH CHECK (true);
+
+
+--
+-- Name: picking_list_materials plm_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY plm_read ON public.picking_list_materials FOR SELECT TO authenticated USING (true);
+
+
+--
+-- Name: picking_list_materials plm_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY plm_update ON public.picking_list_materials FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
@@ -10661,5 +10910,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict rb7Umhpimlg1xoaQDfopgAdQpJlRfvShEpp26QEAiTjAIT9fsFhv8W35xYuBhKF
+\unrestrict MwuaZnaBLnRS3iWHWbpHEuC7zJYoDlmiWn0OCPXemfm4WFGSMHTRpV5a0B7fafS
 
