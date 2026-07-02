@@ -5,7 +5,7 @@
 //
 // Props: isOpen, onClose, selectedProduct, onDeactivate
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 
 /* ── brand tokens ──────────────────────────────────────────────────────────── */
@@ -111,6 +111,15 @@ const UNITS = {
 };
 function unitLabel(u) { return UNITS[u] || (u ? `per ${u}` : '—'); }
 const rp = (n) => (!n ? '–' : 'Rp ' + Number(n).toLocaleString('id-ID'));
+
+// Indonesian date + time, e.g. "3 Jul 2026, 14:05"
+function fmtHistoryDate(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '–';
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) +
+    ', ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+}
 
 const ID_MONTHS = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 function formatIdDate(val) {
@@ -313,7 +322,63 @@ function ServiceLayout({ product, cat, co }) {
 /* ════════════════════════════════════════════════════════════════════════════
    PHYSICAL LAYOUT (modal body)
    ════════════════════════════════════════════════════════════════════════════ */
-function PhysicalLayout({ product, cat, co }) {
+/* ── price history table ───────────────────────────────────────────────────── */
+function PriceHistoryTable({ rows, loading, names }) {
+  if (loading) return <div style={{ padding: '10px 2px', fontSize: 12.5, color: '#9AA0AC' }}>Memuat…</div>;
+  if (!rows || rows.length === 0)
+    return <div style={{ padding: '10px 2px', fontSize: 12.5, color: '#9AA0AC' }}>Belum ada perubahan harga.</div>;
+
+  const th = { fontSize: 10, fontWeight: 700, color: '#9AA0AC', textTransform: 'uppercase', letterSpacing: .4, padding: '8px 10px', borderBottom: '1px solid #F0F1F4', whiteSpace: 'nowrap', textAlign: 'left' };
+  const thNum = { ...th, textAlign: 'right' };
+  const td = { fontSize: 12, color: '#16243A', padding: '9px 10px', borderBottom: '1px solid #F4F5F7', whiteSpace: 'nowrap' };
+  const tdMono = { ...td, textAlign: 'right', fontFamily: "'IBM Plex Mono', ui-monospace, monospace" };
+
+  return (
+    <div style={{ overflowX: 'auto', marginTop: 4 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={th}>Tanggal</th>
+            <th style={thNum}>Harga Lama</th>
+            <th style={thNum}>Harga Baru</th>
+            <th style={thNum}>Selisih</th>
+            <th style={th}>Diubah Oleh</th>
+            <th style={th}>Kontrak</th>
+            <th style={th}>Berlaku Sampai</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => {
+            const oldP = Number(r.old_price) || 0;
+            const newP = Number(r.new_price) || 0;
+            const diff = newP - oldP;
+            const up = diff > 0;
+            const pct = oldP > 0 ? (diff / oldP) * 100 : null;
+            // Brand-only colours (no dark green): naik → orange, turun → navy.
+            const diffColor = diff === 0 ? '#9AA0AC' : (up ? ORANGE : NAVY);
+            const sign = up ? '+' : (diff < 0 ? '−' : '');
+            const diffLabel = diff === 0
+              ? '–'
+              : `${sign}Rp ${Math.abs(diff).toLocaleString('id-ID')}${pct != null ? ` (${sign}${Math.abs(pct).toFixed(1)}%)` : ''}`;
+            return (
+              <tr key={r.id}>
+                <td style={td}>{fmtHistoryDate(r.changed_at)}</td>
+                <td style={tdMono}>{rp(r.old_price)}</td>
+                <td style={{ ...tdMono, fontWeight: 700 }}>{rp(r.new_price)}</td>
+                <td style={{ ...tdMono, fontWeight: 700, color: diffColor }}>{diffLabel}</td>
+                <td style={{ ...td, color: '#5A626E' }}>{names[r.changed_by] || '–'}</td>
+                <td style={{ ...td, color: '#5A626E' }}>{r.contract_no || '–'}</td>
+                <td style={{ ...td, color: '#5A626E' }}>{r.valid_until ? formatIdDate(r.valid_until) : '–'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PhysicalLayout({ product, cat, co, priceHistory = [], historyLoading = false, historyNames = {} }) {
   const [copied, setCopied] = useState(false);
 
   function copySku() {
@@ -411,6 +476,15 @@ function PhysicalLayout({ product, cat, co }) {
             )}
           </div>
         </NavCard>
+
+        {/* 4 — Riwayat Harga (product_price_history) */}
+        <NavCard icon="tag" title="Riwayat Harga">
+          <PriceHistoryTable
+            rows={priceHistory}
+            loading={historyLoading}
+            names={historyNames}
+          />
+        </NavCard>
       </div>
 
       {/* ── sidebar ── */}
@@ -471,6 +545,9 @@ function FormField({ label, value, onChange, placeholder, type = 'text', readOnl
           style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid #D9D9DC', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 13, color: '#16243A', outline: 'none', background: '#fff' }}
           onFocus={e => { e.target.style.borderColor = NAVY; e.target.style.boxShadow = `0 0 0 3px ${NAVY}14`; }}
           onBlur={e  => { e.target.style.borderColor = '#D9D9DC'; e.target.style.boxShadow = 'none'; }}
+          // Number inputs change value on mouse-wheel by default — blur on wheel so an
+          // accidental scroll over the field can't silently alter the price.
+          onWheel={e => { if (type === 'number') e.currentTarget.blur(); }}
         />
       )}
     </div>
@@ -511,6 +588,11 @@ function EditForm({ product, editForm, setEditForm }) {
 
         <NavCard icon="tag" title="Harga & Pajak">
           <FormField label="Default Price"   value={String(editForm.default_price ?? '')} onChange={set('default_price')} type="number" placeholder="0"/>
+          <div style={{ fontSize: 10.5, color: '#9AA0AC', margin: '-4px 0 8px', fontStyle: 'italic' }}>
+            Opsional — isi kalau perubahan harga ini berdasarkan kontrak / PKS baru.
+          </div>
+          <FormField label="Nomor Kontrak"   value={editForm.contract_no ?? ''}           onChange={set('contract_no')}          placeholder="mis. PKS/2026/001"/>
+          <FormField label="Berlaku Sampai"  value={editForm.contract_valid_until ?? ''}  onChange={set('contract_valid_until')} type="date"/>
           <FormField label="Unit Cost"       value={String(editForm.unit_cost ?? '')}     onChange={set('unit_cost')}     type="number" placeholder="0"/>
           <FormField label="Unit"            value={editForm.unit}         onChange={set('unit')}         placeholder="e.g. pcs"/>
           <FormField label="COGS Account"    value={editForm.cogs_account} onChange={set('cogs_account')} placeholder="–"/>
@@ -559,6 +641,10 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
   const [editing, setEditing]         = useState(false);
   const [editForm, setEditForm]       = useState({});
   const [toast, setToast]             = useState('');
+  // Price history (product_price_history) — read-only, populated by the DB trigger.
+  const [priceHistory, setPriceHistory]   = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyNames, setHistoryNames]   = useState({});   // changed_by uuid -> full_name
 
   useEffect(() => {
     if (!isOpen || !selectedProduct?.id) return;
@@ -582,6 +668,35 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
     });
   }, [isOpen, selectedProduct?.id]);
 
+  /* ── price history — fetch rows + resolve changed_by names separately ────── */
+  const loadPriceHistory = useCallback(async (productId) => {
+    if (!productId) return;
+    setHistoryLoading(true);
+    const { data, error: err } = await supabase
+      .from('product_price_history')
+      .select('id, old_price, new_price, changed_by, changed_at, contract_no, valid_until')
+      .eq('product_id', productId)
+      .order('changed_at', { ascending: false })
+      .limit(1000);
+    if (err) { setPriceHistory([]); setHistoryNames({}); setHistoryLoading(false); return; }
+    const rows = data || [];
+    // changed_by → auth.users; can't embed, fetch names from profiles separately.
+    const ids = [...new Set(rows.map(r => r.changed_by).filter(Boolean))];
+    let names = {};
+    if (ids.length) {
+      const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+      names = Object.fromEntries((profs || []).map(p => [p.id, p.full_name]));
+    }
+    setPriceHistory(rows);
+    setHistoryNames(names);
+    setHistoryLoading(false);
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (isOpen && selectedProduct?.id) loadPriceHistory(selectedProduct.id);
+  }, [isOpen, selectedProduct?.id, loadPriceHistory]);
+
   /* close on Escape */
   useEffect(() => {
     if (!isOpen) return;
@@ -599,14 +714,23 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
     if (toggling) return;
     setToggling(true);
     try {
-      const { error: err } = await supabase
+      const { data, error: err } = await supabase
         .from('products')
         .update({ is_active: !product.is_active })
-        .eq('id', product.id);
+        .eq('id', product.id)
+        .select();
       if (err) throw err;
+      // 0 rows returned = RLS rejected the row → silent-fail guard.
+      if (!data || data.length === 0) {
+        setToast('Gagal mengubah status, periksa hak akses Anda.');
+        setTimeout(() => setToast(''), 4000);
+        return;   // no optimistic update
+      }
       setProduct(prev => ({ ...prev, is_active: !prev.is_active }));
     } catch (err) {
       console.error('Toggle error:', err);
+      setToast('Gagal mengubah status: ' + (err?.message || 'terjadi kesalahan'));
+      setTimeout(() => setToast(''), 4000);
     } finally {
       setToggling(false);
     }
@@ -618,6 +742,9 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
       setTimeout(() => setToast(''), 2500);
       return;
     }
+    // Prefill contract fields from the most recent price-history row (already loaded,
+    // ordered changed_at desc). Editable/clearable — this is only a default, not locked.
+    const latest = priceHistory[0];
     setEditForm({
       name: product.name,
       description: product.description || '',
@@ -631,13 +758,17 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
       min_order_qty: product.min_order_qty || '',
       cogs_account: product.cogs_account || '',
       revenue_account: product.revenue_account || '',
+      // Contract info — prefilled from the latest history row (empty if none). Attached
+      // to the NEW history row on save; user can edit or clear it.
+      contract_no: latest?.contract_no || '',
+      contract_valid_until: latest?.valid_until || '',
     });
     setEditing(true);
   }
 
   async function saveEdit() {
     try {
-      const { error: err } = await supabase
+      const { data, error: err } = await supabase
         .from('products')
         .update({
           name: editForm.name,
@@ -653,16 +784,57 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
           cogs_account: editForm.cogs_account,
           revenue_account: editForm.revenue_account,
         })
-        .eq('id', product.id);
+        .eq('id', product.id)
+        .select();
       if (err) throw err;
+      // 0 rows returned = RLS rejected the row (or it vanished) → silent-fail guard.
+      if (!data || data.length === 0) {
+        setToast('Gagal menyimpan, periksa hak akses Anda.');
+        setTimeout(() => setToast(''), 4000);
+        return;   // keep edit mode open, no optimistic update
+      }
+      const prevPrice = product.default_price;
+      const newPrice = parseFloat(editForm.default_price) || null;
       setProduct(prev => ({
         ...prev, ...editForm,
         default_price: parseFloat(editForm.default_price) || prev.default_price,
         unit_cost: parseFloat(editForm.unit_cost) || null,
       }));
       setEditing(false);
+      // Price changed → the DB trigger logged a new history row; refetch to show it.
+      if (newPrice !== prevPrice) {
+        // If contract info was filled, attach it to the just-logged history row via the
+        // secure RPC (only touches contract_no/valid_from/valid_until — audit-safe).
+        const contractNo = (editForm.contract_no || '').trim();
+        const validUntil = editForm.contract_valid_until || null;
+        if (contractNo || validUntil) {
+          const { data: latest } = await supabase
+            .from('product_price_history')
+            .select('id')
+            .eq('product_id', product.id)
+            .order('changed_at', { ascending: false })
+            .limit(1);
+          const rowId = latest?.[0]?.id;
+          if (rowId) {
+            const { error: rpcErr } = await supabase.rpc('attach_price_contract_info', {
+              p_history_id: rowId,
+              p_contract_no: contractNo || null,
+              p_valid_from: null,
+              p_valid_until: validUntil,
+            });
+            if (rpcErr) {
+              console.error('Attach contract error:', rpcErr);
+              setToast('Harga tersimpan, tapi info kontrak gagal dilekatkan: ' + (rpcErr.message || 'terjadi kesalahan'));
+              setTimeout(() => setToast(''), 4000);
+            }
+          }
+        }
+        loadPriceHistory(product.id);
+      }
     } catch (err) {
       console.error('Save error:', err);
+      setToast('Gagal menyimpan: ' + (err?.message || 'terjadi kesalahan'));
+      setTimeout(() => setToast(''), 4000);
     }
   }
 
@@ -822,7 +994,8 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
                 ? <EditForm product={product} editForm={editForm} setEditForm={setEditForm}/>
                 : product.is_service
                 ? <ServiceLayout  product={product} cat={cat} co={co}/>
-                : <PhysicalLayout product={product} cat={cat} co={co}/>
+                : <PhysicalLayout product={product} cat={cat} co={co}
+                    priceHistory={priceHistory} historyLoading={historyLoading} historyNames={historyNames}/>
             )}
           </div>
         </div>

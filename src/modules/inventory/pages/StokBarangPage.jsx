@@ -8,6 +8,8 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../contexts/useAuth';
+import { getProductRackLocations, upsertProductRackLocation } from '../../../lib/db';
 
 /* ── brand tokens ──────────────────────────────────────────────────────────── */
 const NAVY   = '#1B4D8A';
@@ -103,6 +105,10 @@ const S = {
   classPill:  { display: 'inline-flex', alignItems: 'center', fontSize: 10, fontWeight: 600, color: NAVY, background: '#EAF0F8', padding: '3px 8px', borderRadius: 6, letterSpacing: 0.2, whiteSpace: 'nowrap' },
   qtyCell:    { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums' },
   uomCell:    { fontFamily: "'Inter', system-ui, sans-serif", fontSize: 11, color: '#9AA0AC' },
+  rackEditable:{ display: 'inline-block', fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '2px 8px', borderRadius: 6, border: '1px dashed #D3DEEC', minWidth: 54 },
+  rackReadonly:{ display: 'inline-block', fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12, fontWeight: 600 },
+  rackHint:   { display: 'block', fontSize: 9, color: '#B6BCC6', marginTop: 3, fontStyle: 'italic' },
+  rackInput:  { width: 90, height: 30, borderRadius: 8, border: '1px solid ' + NAVY, background: '#fff', padding: '0 8px', fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12, fontWeight: 600, color: '#16243A', outline: 'none', boxSizing: 'border-box' },
   statusPill: { display: 'inline-flex', alignItems: 'center', fontFamily: "'Inter', system-ui, sans-serif", fontSize: 10, fontWeight: 600, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' },
   lastCell:   { fontFamily: "'Inter', system-ui, sans-serif", fontSize: 11, color: '#9AA0AC' },
 
@@ -151,8 +157,57 @@ function KpiCard({ icon, value, label, accent }) {
   );
 }
 
+/* ── rack location cell ────────────────────────────────────────────────────── */
+// Behaviour follows the active warehouse filter (see main component):
+//  - editable=true  → click to inline-edit (input); Enter/blur save, Escape cancel.
+//  - editable=false → read-only (used in "Semua Gudang") with a small hint.
+function RackCell({ rack, dim, onStartEdit, onEditChange, onSaveEdit, onCancelEdit }) {
+  if (rack.isEditing) {
+    return (
+      <td style={S.td}>
+        <input
+          autoFocus
+          value={rack.editVal}
+          onChange={(e) => onEditChange(e.target.value)}
+          onBlur={onSaveEdit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); onSaveEdit(); }
+            else if (e.key === 'Escape') { e.preventDefault(); onCancelEdit(); }
+          }}
+          placeholder="mis. A-01"
+          style={S.rackInput}
+        />
+      </td>
+    );
+  }
+  const shown = rack.value ? rack.value : '–';
+  if (rack.editable) {
+    return (
+      <td style={S.td}>
+        <span
+          role="button"
+          tabIndex={0}
+          title="Klik untuk edit lokasi rak"
+          onClick={() => onStartEdit()}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStartEdit(); } }}
+          style={{ ...S.rackEditable, color: rack.value ? '#16243A' : '#B6BCC6' }}
+        >
+          {shown}
+        </span>
+      </td>
+    );
+  }
+  // read-only (Semua Gudang) → show Semper rack + hint
+  return (
+    <td style={S.td} title="Pilih gudang untuk edit">
+      <span style={{ ...S.rackReadonly, color: dim || (rack.value ? '#16243A' : '#B6BCC6') }}>{shown}</span>
+      <span style={S.rackHint}>pilih gudang untuk edit</span>
+    </td>
+  );
+}
+
 /* ── table row ─────────────────────────────────────────────────────────────── */
-function StockRow({ r, showSemper, showOthers }) {
+function StockRow({ r, showSemper, showOthers, rack, onStartEdit, onEditChange, onSaveEdit, onCancelEdit }) {
   const [hover, setHover] = useState(false);
   const total  = (r.qty_semper ?? 0) + (r.qty_others ?? 0);
   const isZero = total === 0;
@@ -173,6 +228,7 @@ function StockRow({ r, showSemper, showOthers }) {
       {showSemper && <td style={{ ...S.td, ...S.qtyCell, color: dim || '#16243A' }}>{nf(r.qty_semper)}</td>}
       {showOthers && <td style={{ ...S.td, ...S.qtyCell, color: dim || (r.qty_others > 0 ? '#C8521B' : '#16243A') }}>{nf(r.qty_others)}</td>}
       <td style={{ ...S.td, ...S.qtyCell, color: dim || NAVY, fontWeight: 700 }}>{nf(total)}</td>
+      <RackCell rack={rack} dim={dim} onStartEdit={onStartEdit} onEditChange={onEditChange} onSaveEdit={onSaveEdit} onCancelEdit={onCancelEdit} />
       <td style={{ ...S.td, ...S.uomCell, color: dim || '#9AA0AC' }}>{r.uom || '–'}</td>
       <td style={S.td}><span style={{ ...S.statusPill, ...st.pill }}>{st.label}</span></td>
       <td style={{ ...S.td, ...S.lastCell, color: dim || '#9AA0AC' }}>{r.last}</td>
@@ -181,11 +237,21 @@ function StockRow({ r, showSemper, showOthers }) {
 }
 
 /* ── main component ─────────────────────────────────────────────────────────── */
+const SEMPER_WH_ID = '303c3d4c-570e-40a1-b738-6b0ed1cb5078';
+
 export default function StokBarangPage({ setActiveMenu }) {
+  const { profile } = useAuth();
   const [rows,    setRows]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [lastSync, setLastSync] = useState(todayLabel());
+
+  /* rack location state */
+  const [soaId,   setSoaId]   = useState(null);
+  const [rackMap, setRackMap] = useState({});   // `${product_id}|${warehouse_id}` -> rack string
+  const [editKey, setEditKey] = useState(null); // `${product_id}|${warehouse_id}` currently editing
+  const [editVal, setEditVal] = useState('');
+  const editKeyRef = useRef(null);              // mirror of editKey — guards double-save on Enter+blur
 
   /* filter state */
   const [search,  setSearch]  = useState('');
@@ -221,6 +287,11 @@ export default function StokBarangPage({ setActiveMenu }) {
       if (coErr) throw coErr;
       const soaId = (companies || []).find(c => c.code === 'SOA')?.id;
       if (!soaId) throw new Error('Company SOA tidak ditemukan.');
+      setSoaId(soaId);
+
+      // Rack locations (product_warehouse_location) — parallel, non-fatal.
+      const { data: rackData } = await getProductRackLocations();
+      setRackMap(rackData || {});
 
       // Fetch stock_summary rows with product + warehouse detail
       const { data, error: stockErr } = await supabase
@@ -252,6 +323,8 @@ export default function StokBarangPage({ setActiveMenu }) {
             uom:        row.products?.uom || row.products?.unit || '–',
             qty_semper: 0,
             qty_others: 0,
+            semperWhId: null,   // Semper warehouse id (for rack edit)
+            othersWhId: null,   // first non-Semper warehouse id (for rack edit)
             lastRaw:    null,
           };
         }
@@ -260,8 +333,10 @@ export default function StokBarangPage({ setActiveMenu }) {
         const isSemper = wCode.includes('SEMPER');
         if (isSemper) {
           grouped[pid].qty_semper += (row.on_hand ?? 0);
+          grouped[pid].semperWhId = row.warehouse_id;
         } else {
           grouped[pid].qty_others += (row.on_hand ?? 0);
+          if (!grouped[pid].othersWhId) grouped[pid].othersWhId = row.warehouse_id;
         }
         // Keep the latest last_count_date across warehouses
         if (row.last_count_date) {
@@ -279,6 +354,9 @@ export default function StokBarangPage({ setActiveMenu }) {
         // For now: any stock = Match, no stock = still Match (neutral).
         const status = 'Match';
         return {
+          product_id: r.product_id,
+          semperWhId: r.semperWhId || SEMPER_WH_ID,
+          othersWhId: r.othersWhId,
           sku:        r.sku,
           name:       r.name,
           group:      r.group,
@@ -328,6 +406,40 @@ export default function StokBarangPage({ setActiveMenu }) {
   const totalOnHand    = rows.reduce((s, r) => s + (r.qty_semper ?? 0) + (r.qty_others ?? 0), 0);
   const totalSemper    = rows.reduce((s, r) => s + (r.qty_semper ?? 0), 0);
   const totalOthers    = rows.reduce((s, r) => s + (r.qty_others ?? 0), 0);
+
+  /* ── rack location inline edit ─────────────────────────────────────────── */
+  const startRackEdit = useCallback((productId, whId, currentVal) => {
+    const key = `${productId}|${whId}`;
+    editKeyRef.current = key;
+    setEditKey(key);
+    setEditVal(currentVal || '');
+  }, []);
+
+  const cancelRackEdit = useCallback(() => {
+    editKeyRef.current = null;
+    setEditKey(null);
+    setEditVal('');
+  }, []);
+
+  const saveRackEdit = useCallback(async (productId, whId) => {
+    const key = `${productId}|${whId}`;
+    if (editKeyRef.current !== key) return;   // guard Enter+blur double fire
+    editKeyRef.current = null;
+    const newVal = editVal.trim();
+    const prev = rackMap[key] || '';
+    setEditKey(null);
+    setEditVal('');
+    if (newVal === prev) return;              // nothing changed
+    setRackMap(m => ({ ...m, [key]: newVal }));   // optimistic
+    const { error: upErr } = await upsertProductRackLocation({
+      productId, warehouseId: whId, rackLocation: newVal,
+      companyId: soaId, userId: profile?.id,
+    });
+    if (upErr) {
+      setRackMap(m => ({ ...m, [key]: prev }));   // revert
+      setError('Gagal menyimpan lokasi rak: ' + (upErr.message || upErr));
+    }
+  }, [editVal, rackMap, soaId, profile?.id]);
 
   /* ── render ────────────────────────────────────────────────────────────── */
   return (
@@ -439,7 +551,7 @@ export default function StokBarangPage({ setActiveMenu }) {
               <table style={S.table}>
                 <thead>
                   <tr>
-                    {['SKU','Nama Produk','Group','Inv. Class','Qty Semper','Qty Others','Total Qty','UOM','Status','Last Count'].map(h => (
+                    {['SKU','Nama Produk','Group','Inv. Class','Qty Semper','Qty Others','Total Qty','Lokasi Rak','UOM','Status','Last Count'].map(h => (
                       <th key={h} style={{ ...S.th, ...(h.startsWith('Qty') || h === 'Total Qty' ? S.thNum : {}) }}>{h}</th>
                     ))}
                   </tr>
@@ -447,7 +559,7 @@ export default function StokBarangPage({ setActiveMenu }) {
                 <tbody>
                   {Array.from({ length: 8 }).map((_, i) => (
                     <tr key={i}>
-                      <td colSpan={10} style={{ ...S.td, padding: 0 }}>
+                      <td colSpan={11} style={{ ...S.td, padding: 0 }}>
                         <div style={S.skelRow}/>
                       </td>
                     </tr>
@@ -494,15 +606,35 @@ export default function StokBarangPage({ setActiveMenu }) {
                     {showSemper && <th style={{ ...S.th, ...S.thNum }}>Qty Semper</th>}
                     {showOthers && <th style={{ ...S.th, ...S.thNum }}>Qty Others</th>}
                     <th style={{ ...S.th, ...S.thNum }}>Total Qty</th>
+                    <th style={S.th}>Lokasi Rak</th>
                     <th style={S.th}>UOM</th>
                     <th style={S.th}>Status</th>
                     <th style={S.th}>Last Count</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(r => (
-                    <StockRow key={r.sku} r={r} showSemper={showSemper} showOthers={showOthers}/>
-                  ))}
+                  {filtered.map(r => {
+                    // Rack cell follows the warehouse filter: Semper by default,
+                    // the product's "others" warehouse when Others is selected.
+                    const rackWhId = gudang === 'others' ? r.othersWhId : r.semperWhId;
+                    const key = rackWhId ? `${r.product_id}|${rackWhId}` : null;
+                    const editable = (gudang === 'semper' || gudang === 'others') && !!rackWhId;
+                    const rack = {
+                      value: key ? (rackMap[key] || '') : '',
+                      editable,
+                      isEditing: editable && editKey === key,
+                      editVal,
+                    };
+                    return (
+                      <StockRow key={r.sku} r={r} showSemper={showSemper} showOthers={showOthers}
+                        rack={rack}
+                        onStartEdit={() => startRackEdit(r.product_id, rackWhId, key ? (rackMap[key] || '') : '')}
+                        onEditChange={setEditVal}
+                        onSaveEdit={() => saveRackEdit(r.product_id, rackWhId)}
+                        onCancelEdit={cancelRackEdit}
+                      />
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
