@@ -1,124 +1,104 @@
-# AUDIT: ProductPicker tidak muncul di form Input SP yang dipakai user
+# AUDIT: Dropdown Customer KOSONG di FormModal (Add New SP)
 
 > Auditor mode. **Read-only** — tidak ada kode/DB yang diubah; hanya dokumen ini yang ditulis (menimpa isi lama).
-> Konteks: kemarin ProductPicker dropdown-only dipasang di `InputSPPage.jsx`, tapi di Preview (commit `7dcb3be`) form yang dibuka user masih produk teks bebas.
+> Bug: dropdown "Customer" di `FormModal` (menu Input SP → "Add New SP") hanya menampilkan "— Pilih customer —", tanpa satu pun customer. Product Name (ProductPicker) di form yang sama normal.
 > Semua klaim disertai `file:line`.
 
 ---
 
 ## RINGKASAN
 
-**Kenapa ProductPicker tidak muncul: perubahan kemarin masuk ke KOMPONEN YANG SALAH untuk jalur yang dipakai user.**
+**Dropdown Customer kosong karena BUG PEMETAAN FIELD `active` yang lama (bukan RLS, bukan scope, dan BUKAN akibat perubahan ProductPicker terakhir).**
 
-Ada **tiga** komponen berbeda yang me-render input "Product Name" untuk item SP, dan mereka **tidak berbagi kode**:
+Rantai penyebabnya pasti:
+1. `listCustomers()` membaca tabel **`accounts`** (`src/lib/db.js`), lalu tiap baris dipetakan lewat `customerFromDb()`.
+2. `customerFromDb` menyetel **`active: !!row.active`** (`src/lib/db.js:104`). Tapi tabel `accounts` **tidak punya kolom `active`** — kolomnya bernama **`is_active`** (`supabase/schema_snapshot.sql`, accounts). Jadi `row.active` = `undefined` → `!!undefined` = **`false`** untuk SETIAP customer.
+3. `FormModal` memfilter **`activeCustomers = customers.filter(c => c.active !== false)`** (`src/App.jsx:4296`). Karena semua customer `active === false`, **semua tersaring habis** → dropdown kosong (`src/App.jsx:4314`).
 
-| Komponen | File:line | Status | Dibuka dari |
-|---|---|---|---|
-| `ItemRow` (di `InputSPPage`) | `InputSPPage.jsx:662` | ✅ **ProductPicker** (yang kemarin diedit) | Menu **Daftar Pesanan** (`manifest`) → tombol Add SP (`showInputSP`) |
-| `FormModal` | `App.jsx:4306` | ❌ **teks bebas**, tanpa `product_id` | Menu **Input SP** (`input`) → **"Add New SP"** ← **INI yang diklik user** |
-| `EditItemModal` | `SalesOrderDetailPage.jsx:307` | ❌ **teks bebas** | **Detail SP** → pencil edit item |
+Kenapa Product Name (ProductPicker) jalan tapi Customer tidak: keduanya sumber datanya berbeda. ProductPicker pakai `useProducts` (katalog `products`, tidak kena filter `active` yang salah ini). Dropdown Customer pakai `customers` + filter `c.active` yang rusak.
 
-Jadi ProductPicker **benar-benar ada dan benar**, tapi hanya di jalur "Daftar Pesanan → Add SP". Saat user masuk lewat **menu "Input SP" → card Manual Input → "Add New SP"**, yang terbuka adalah **`FormModal` di `src/App.jsx:4247`** — komponen lain yang tidak pernah disentuh kemarin. Tak ada yang "menimpa"; memang dua komponen berbeda untuk dua tombol berbeda.
+Kenapa dropdown customer di `InputSPPage` (jalur ProductPicker) TIDAK kosong: `InputSPPage` me-render `customers.map(...)` **tanpa** filter `active` (`src/modules/logistics/InputSPPage.jsx:319`) → semua customer tampil. Perbedaannya persis pada ada/tidaknya `.filter(c => c.active !== false)`.
 
-**File yang SEHARUSNYA diedit agar sesuai keluhan user:**
-1. `src/App.jsx` — `FormModal` (Product Name di `:4306`) → untuk "Add New SP" dari menu Input SP.
-2. `src/modules/logistics/SalesOrderDetailPage.jsx` — `EditItemModal` (Product Name di `:307`) → untuk edit item di Detail SP.
-
-`InputSPPage.jsx` sudah benar — biarkan.
-
-**Catatan penting soal daftar field:** field yang kamu sebut ("SLA, Estimated Delivery, Arrival Date") **tidak ada** di `FormModal` (Add New Item) — itu milik `EditItemModal` (`SalesOrderDetailPage.jsx:341-347`). Jadi daftar field yang kamu lihat adalah **gabungan dua modal berbeda** yang kebetulan mirip; keduanya sama-sama masih teks bebas untuk Product Name.
+**Ini bug lama** dari migrasi `customers → accounts` (Phase 2.5A) di mana kolom `active` menjadi `is_active`, tapi `customerFromDb` masih membaca `row.active`. Perubahan ProductPicker terakhir **tidak menyentuh** logika customer sama sekali.
 
 ---
 
 ## TEMUAN PER PERTANYAAN
 
-### 1. Tombol "Add New SP" (card Manual Input, menu Input SP) membuka komponen apa?
+### 1. Dropdown Customer di FormModal ambil data dari mana?
 
-Jalurnya: **menu Input SP → `InputPage` → "Add New SP" → `FormModal`.**
+Rantai: **prop `customers` → `useCustomers()` → `listCustomers()` → tabel `accounts`.**
 
-- Render menu: `src/App.jsx:2729-2737` → `activeMenu === 'input'` → `<InputPage onAdd={() => setShowAdd(true)} … />`.
-- `InputPage` (def `App.jsx:3927`) me-render `ActionCard` "Manual Input" dengan `buttonLabel="Add New SP"` + `onClick={onAdd}` (`App.jsx:3945-3948`).
-- `onAdd` = `setShowAdd(true)` (`App.jsx:2731`).
-- Render modal: `App.jsx:3300-3306` → `{(editingRow || showAdd) && <FormModal initial={editingRow} customers={customers} onClose={…} onSave={handleSave} />}`.
+- `FormModal({ …, customers = [] })` (`src/App.jsx:4249`); di-render dengan `customers={customers}` (`src/App.jsx:3305`).
+- `customers` di App berasal dari `const { customers, … } = useCustomers()` (`src/App.jsx:1462`).
+- `useCustomers` memanggil `listCustomers()` saat mount (`src/hooks/useCustomers.js:26-38`) dan menyimpannya ke state.
+- `listCustomers()` (`src/lib/db.js`): `supabase.from('accounts').select('*').eq('account_status','customer').is('deleted_at', null).order('name')`, lalu `.map(customerFromDb)`.
+- Di FormModal, sebelum dirender difilter: `const activeCustomers = customers.filter(c => c.active !== false)` (`src/App.jsx:4296`), lalu `activeCustomers.map(...)` (`src/App.jsx:4314`).
 
-⇒ Membuka **`FormModal`** (`src/App.jsx:4247`).
+### 2. Query customer di-scope ke company tertentu atau ambil semua?
 
-### 2. Modal "Add New Item" / "Edit Item" (subtitle "Field dengan asterisk wajib diisi") di-render file mana? Sama dengan InputSPPage?
+**Query FE `listCustomers` TIDAK menyaring company secara eksplisit** — hanya `account_status='customer'` + `deleted_at IS NULL` (`src/lib/db.js`, body `listCustomers`). Scoping diserahkan ke RLS `accounts` (lihat Temuan 4). Jadi dari sisi query FE, customer SOA/Storbit **akan ikut terambil** (sepanjang RLS mengizinkan). **Emptiness bukan karena scope company di query**, melainkan filter `active` di FE (Temuan 1 & 5).
 
-**`FormModal` di `src/App.jsx:4247`** — judul di `App.jsx:4285` (`title={initial ? 'Edit Item' : 'Add New Item'}`, subtitle `"Field dengan asterisk wajib diisi"`).
+### 3. owner_company_id customer Storbit — apakah query menemukan mereka?
 
-**BERBEDA** dari `InputSPPage.jsx` (file yang kemarin diedit). Sama sekali komponen lain, didefinisikan inline di `App.jsx`.
+Ya, query **menemukan** mereka (mereka `account_status='customer'`). Dari catatan import (CLAUDE.md): Indomarco `a18fad3c-75ee-4fc6-b3d2-5c5dfa810661`, Indogrosir `92f48635-…`, General Order `7fa6db6c-…`, CK `4c3db412-…` — semuanya di-set `account_status='customer'` + `owner_company_id` + `customer_type='trading'`. `listCustomers` memfilter `account_status='customer'` → baris-baris ini **lolos** query. Mereka **tidak** ter-filter oleh owner_company; mereka ter-filter oleh **`c.active !== false`** di FormModal karena `active` selalu `false` (Temuan 1). Catatan: RLS `accounts` memakai kolom **`company_id`**, bukan `owner_company_id` (lihat Temuan 4) — dua kolom berbeda.
 
-Tambahan (agar tidak keliru): modal **"Edit Item" yang muncul dari Detail Sales Order** adalah komponen **KETIGA** lagi — `EditItemModal` di `src/modules/logistics/SalesOrderDetailPage.jsx:198` (judul `:285`, di-invoke `:1247`). `EditItemModal` inilah yang punya field **SLA / Estimated Delivery / Arrival Date** (`SalesOrderDetailPage.jsx:341-347`); `FormModal` tidak punya field-field itu.
+### 4. Kemungkinan RLS `accounts` menolak baca senyap?
 
-### 3. Perubahan ProductPicker kemarin ada di mana? Apakah komponen itu yang dirender saat "Add New SP"?
+Policy read `accounts` = `prospects_read` (`supabase/schema_snapshot.sql:10477`):
+```sql
+USING (
+  ((company_id = get_user_company_id())
+     AND (is_manager_or_above() OR assigned_to = auth.uid() OR created_by = auth.uid()))
+  OR is_super_admin()
+)
+```
+Jadi RLS **memang company-scoped** dan **bisa** memfilter senyap (mengembalikan lebih sedikit baris tanpa error) — mirip pola bug DeliveryNote dulu. **TAPI ini BUKAN penyebab gejala saat ini**, buktinya: array `customers` yang SAMA dipakai `InputSPPage` (`src/modules/logistics/InputSPPage.jsx:319`) dan di sana customer **tampil**. Kalau RLS memblokir baca, array itu kosong di SEMUA konsumen (termasuk InputSPPage), bukan hanya FormModal. Karena hanya FormModal yang kosong → penyebabnya filter FE `active`, bukan RLS.
 
-- ProductPicker kemarin ada di **`InputSPPage.jsx`**: pemakaian di `:662` (`<ProductPicker value={item.productName} …/>`), `onPick` prefill di `:673-676`, pin SOA `useProducts({ companyId: … })` di `:143`, di dalam `ItemRow` (`:646` dst).
-- Komponen `InputSPPage` **hanya** dirender saat `activeMenu === 'manifest' && !selectedSpId && showInputSP` (`App.jsx:2640-2654`), dan `showInputSP` di-set `true` oleh tombol Add SP di halaman **Daftar Pesanan** (`onAddSP={() => setShowInputSP(true)}`, `App.jsx:2632`).
-- Saat user klik **"Add New SP" dari menu Input SP**, yang dirender adalah **`FormModal`** (Temuan 1), **bukan** `InputSPPage`. Jadi ProductPicker tidak "ditimpa" — memang **komponen & route berbeda**. Perubahan kemarin tidak menyentuh jalur yang dipakai user.
+> Catatan risiko terpisah (bukan penyebab bug ini, tapi patut diperhatikan): RLS memakai `company_id`. Bila user login **non-super_admin** dan `company_id` akun customer SOA ≠ company user, RLS akan menyembunyikan customer itu di SEMUA dropdown (termasuk InputSPPage). Kalau nanti gejalanya berubah jadi "InputSPPage juga kosong untuk user tertentu", itu isu RLS/scope yang berbeda dari bug `active` ini. Untuk sekarang, gejala yang dilaporkan (hanya FormModal kosong) murni bug `active`.
 
-### 4. Ada berapa komponen me-render input "Product Name" item SP? Sebutkan semua + mana yang aktif di mana.
+### 5. Apakah bug ini AKIBAT perubahan ProductPicker terakhir? **TEGAS: TIDAK.**
 
-**Tiga** komponen, tidak berbagi kode:
+- Perubahan ProductPicker di FormModal hanya menyentuh: field **Product Name** (`<Input>` → `ProductPicker`), field **SKU** (jadi read-only), penambahan `productId` di `data`, dan validasi `handleSubmit` soal `productId`.
+- **TIDAK menyentuh** logika customer sama sekali: baris `const activeCustomers = customers.filter(c => c.active !== false)` (`src/App.jsx:4296`) dan `<select>` customer (`src/App.jsx:4293-4302`, opsi di `:4314`) tetap seperti sebelumnya.
+- Akar masalah (`customerFromDb` baca `row.active` yang tak ada di `accounts`, `src/lib/db.js:104`) berasal dari migrasi `customers → accounts` (Phase 2.5A), jauh sebelum perubahan ProductPicker. **Bug lama, tidak berhubungan.**
 
-a. **`InputSPPage.jsx:662`** — `<ProductPicker>` (✅ sudah dropdown-only + prefill). **Aktif:** Daftar Pesanan (`manifest`) → tombol Add SP → `showInputSP` (`App.jsx:2632,2640`).
+### 6. Dropdown Customer yang sama kosong di tempat lain juga?
 
-b. **`App.jsx:4306` (`FormModal`)** — `<Input label="Product Name *" … />` teks bebas (❌). **Aktif:** menu **Input SP** → "Add New SP" (`showAdd`) **dan** edit baris dari list Input Data (`editingRow`) — keduanya render `FormModal` di `App.jsx:3300`.
+Ya — **semua konsumen yang memakai `.filter(c => c.active !== false)`** akan kosong, karena akar masalahnya sama:
+- `src/App.jsx:4296/4314` — **FormModal** (Add/Edit Item SP) ← yang dilaporkan.
+- `src/App.jsx:5308/5338` — modal AR TTF (`activeCustomers`).
+- `src/App.jsx:3552` — chip filter "All Customers" (list customer).
+- `src/App.jsx:5027` — list/filter customer lain.
 
-c. **`SalesOrderDetailPage.jsx:307` (`EditItemModal`)** — `<ModalInp value={draft.productName} …/>` teks bebas (❌). **Aktif:** Detail SP → pencil edit item (`EditItemModal` di-invoke `SalesOrderDetailPage.jsx:1247`).
+Yang **TIDAK kosong** (tidak pakai filter `active`):
+- `src/modules/logistics/InputSPPage.jsx:319` — `customers.map(...)` tanpa filter → tampil.
+- `src/App.jsx:4746` — kartu manajemen customer memakai `opacity` (`c.active === false ? 0.55 : 1`), bukan filter → semua tetap tampil (walau semuanya tampak "redup" karena `active=false`).
 
-Hanya **(a)** yang sudah diperbaiki. **(b)** dan **(c)** — yang user lihat — masih teks bebas.
-
-### 5. Saat item disimpan: product_id ikut ditulis atau hanya product_name? Di jalur mana bahaya desync?
-
-Kolom `product_id` **sudah** dipetakan di write mapping: `src/lib/db.js:65` `product_id: item.productId || null` (dipakai `bulkInsertSpItems` & `updateSpItem`). Tapi apakah terisi bergantung pada apakah komponen mengisi `productId`:
-
-- **`FormModal` (Add New SP) → DESYNC SEJAK AWAL.** State `data` FormModal **tidak punya field `productId`** (`App.jsx:4248-4255`). Simpan: `handleSubmit` (`App.jsx:4270-4280`) → `onSave(data)` → `handleSave` (`App.jsx:2009`) → `dbSaveRow` → `saveRow` → `spToDb`. Karena `data.productId` undefined → **`product_id` ditulis NULL**; `product_name` + `sku` keduanya teks bebas. Item baru dari sini **tak punya link ke master sama sekali**.
-
-- **`EditItemModal` (Detail SP) → DESYNC saat nama diedit.** Simpan: `handleSave` (`SalesOrderDetailPage.jsx:249-262`) kirim `{ ...item, ...draft }` → `handleSaveItem` (`:679-687`) → `onSaveItem` = `dbSaveRow` (`App.jsx:2668`). `product_id` ikut dari `...item` (dipertahankan), **tetapi** `draft.productName` bebas diedit (`:307`) dan `draft` **tidak punya `productId`** (`:199-220`). Akibatnya: ubah nama → `product_name` berubah, sementara `product_id` + `sku` tetap milik produk lama → **nama menyimpang dari product_id/SKU** (persis kasus nama "d" vs SKU `FG.DSP.POP.0006`). Untuk item yang lahir dari FormModal, `product_id` sudah null → tetap null.
-
-**Ringkas bahaya desync:** (b) FormModal = product_id **selalu NULL** + nama/SKU bebas; (c) EditItemModal = product_id lama **dipertahankan** tapi nama bisa menyimpang tanpa memperbarui product_id/SKU.
-
-### 6. Field DC, Arrival Date, Estimated Delivery, Expired Date, SLA — punya kolom DB atau hanya tampil?
-
-**Semua punya kolom DB nyata di `sp_items` dan tersimpan** via `spToDb` (`src/lib/db.js`):
-- `dc` → `sp_items.dc`
-- `expired_date` → `d(item.expired_date ?? item.deadline)` → `sp_items.expired_date`
-- `estimated_delivery_date` → `d(item.estimatedDeliveryDate)` → `sp_items.estimated_delivery_date`
-- `arrival_date` → `d(item.arrival_date ?? item.deliveredDate)` → `sp_items.arrival_date`
-- `sla_days` → `sp_items.sla_days`
-
-Kolom-kolom tersebut ada di `sp_items` (`supabase/schema_snapshot.sql`, tabel `sp_items`). **Bukan tampilan kosong.** Catatan lokasi input: SLA/Estimated Delivery/Arrival hanya ada di **`EditItemModal`** (`SalesOrderDetailPage.jsx:341-347`); `FormModal` hanya punya DC/Expired Date/Shipping Date (`App.jsx:4305,4322,4328`).
+⇒ Bug ini **bukan** khusus FormModal; ia menjangkiti setiap dropdown/list yang menyaring `c.active`. FormModal kebetulan yang diuji user.
 
 ---
 
-## REKOMENDASI FIX (jangan dieksekusi — rekomendasi saja)
+## REKOMENDASI FIX
 
-Tujuan: **SEMUA** titik input produk SP jadi ProductPicker dropdown-only + `product_id` konsisten tersimpan. Yang perlu diubah:
+Ini **masalah pemetaan field (FE), BUKAN RLS dan BUKAN scope query.** Perbaiki di satu titik akar agar semua konsumen ikut benar:
 
-### A. `src/App.jsx` — `FormModal` (jalur "Add New SP" dari menu Input SP) — **prioritas tertinggi (ini yang user pakai)**
-1. Tambah `productId: null` ke state awal `data` (`App.jsx:4248-4255`).
-2. Ganti `<Input label="Product Name *" … />` (`:4306`) → `<ProductPicker>`:
-   - `onPick(p)` → set `productId=p.id`, `productName=p.name`, `sku=p.code`, prefill `unitPrice=p.default_price` (nilai awal, tetap editable).
-   - `onChangeText(v)` → set `productName=v`, `productId=null`, `sku=''` (batalkan pilihan).
-3. Jadikan SKU read-only (isi dari pick), seperti pola InputSPPage.
-4. Validasi `handleSubmit` (`:4270`) → wajib `data.productId` (bukan sekadar `productName`), agar teks bebas tak bisa disimpan.
-5. Import `ProductPicker` + `useProducts({ companyId: SOA })` di `App.jsx` (atau pertimbangkan mengekstrak FormModal ke file sendiri; App.jsx sudah ~4.9k baris).
+### Opsi 1 (REKOMENDASI — perbaiki di akar, satu baris)
+Di `src/lib/db.js`, `customerFromDb` (`:104`): baca kolom yang benar dari `accounts`.
+- Ganti `active: !!row.active` → `active: row.is_active !== false` (atau `!!(row.is_active ?? row.active)` bila mau tetap kompat dengan tabel lama).
+- Efek: semua customer memetakan `active=true` (karena `accounts.is_active DEFAULT true`), sehingga filter `c.active !== false` di FormModal (dan semua konsumen lain) meloloskan mereka. **Satu perubahan menyembuhkan semua titik.**
+- Pertimbangkan juga menambah `'is_active'` ke `CUSTOMER_STANDARD_DB_COLS` (`src/lib/db.js:92`) agar tidak bocor ganda sebagai custom field (kosmetik).
 
-### B. `src/modules/logistics/SalesOrderDetailPage.jsx` — `EditItemModal` (edit item di Detail SP)
-1. Tambah `productId: item.productId ?? null` ke state `draft` (`:199-220`) — agar pilihan produk bisa berubah & tersimpan (bukan cuma warisan `...item`).
-2. Ganti `<ModalInp value={draft.productName} …/>` (`:307`) → `<ProductPicker>` dengan `onPick`/`onChangeText` seperti A (set `draft.productId/productName/sku`, prefill unitPrice opsional).
-3. SKU (`:` field SKU EditItemModal) jadi read-only dari pick.
-4. Pastikan `handleSave` (`:249-262`) tetap kirim `productId` (karena kini ada di `draft`, `{...item,...draft}` akan menuliskannya benar).
+### Opsi 2 (alternatif, lebih sempit — hanya menutup gejala FormModal)
+Hapus/relaksasi filter `activeCustomers` di FormModal (`src/App.jsx:4296`) — mis. samakan dengan InputSPPage yang me-render semua customer. Tapi ini **tidak** memperbaiki konsumen lain (AR TTF, chip filter) yang juga rusak, dan meninggalkan pemetaan `active` yang salah. **Kurang disarankan** dibanding Opsi 1.
 
-### C. `src/lib/db.js`
-- Tidak perlu diubah: `spToDb:65` sudah menulis `product_id: item.productId || null`. Cukup pastikan A & B mengisi `productId`.
+### Bukan solusi
+- **RLS**: tidak perlu diubah — bukan penyebab (Temuan 4). Mengutak-atik RLS di sini salah sasaran.
+- **Scope query company**: tidak perlu ditambah/diubah — query sudah mengambil customer yang relevan (Temuan 2-3).
 
-### D. `src/modules/logistics/InputSPPage.jsx`
-- **Biarkan** — sudah ProductPicker dropdown-only + prefill (Temuan 3).
-
-### Catatan arsitektur (opsional, di luar minimal fix)
-Ada **tiga** form input item SP yang menduplikasi field & logika (`InputSPPage.ItemRow`, `FormModal`, `EditItemModal`). Idealnya dikonsolidasikan ke satu komponen input-item bersama agar perbaikan seperti ini tidak perlu diulang di 3 tempat. Itu refactor besar dan berisiko — di luar scope fix minimal; minimal fix cukup A + B.
+### Catatan verifikasi setelah fix
+- Pastikan `accounts.is_active` untuk customer SOA memang `true` (default kolomnya `true`; kecuali sengaja di-nonaktifkan).
+- Jika nanti user **non-super_admin** melaporkan customer SOA tetap tak muncul di SEMUA dropdown (termasuk InputSPPage), itu isu **RLS company-scope** terpisah (Temuan 4 catatan) — bukan bug `active` ini.
 
 ---
 

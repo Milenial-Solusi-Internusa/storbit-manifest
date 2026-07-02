@@ -107,7 +107,7 @@ export function customerFromDb(row) {
     defaultDc: row.default_dc || '',   // alternative alias
     picName:   row.pic_name   || '',
     picEmail:  row.pic_email  || '',
-    active:    !!row.active,
+    active:    row.is_active !== false,   // accounts uses `is_active` (default true), not `active`
   };
   // Pass through all custom (non-standard) columns unchanged
   for (const [k, v] of Object.entries(row)) {
