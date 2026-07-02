@@ -10,11 +10,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardList, MapPin, User, Warehouse, Calendar, CheckCircle2, Circle,
-  Package, AlertTriangle, Printer, ArrowLeft, Truck, Home, ChevronRight,
+  Package, AlertTriangle, Printer, ArrowLeft, Truck, Home, ChevronRight, Ban,
 } from 'lucide-react';
 import {
-  getPickingListDetail, setPickingItemPicked, startPicking, completePicking,
+  getPickingListDetail, setPickingItemPicked, startPicking, completePicking, cancelPicking,
 } from '../../lib/db';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const C = {
   navy: '#1B4D8A', navyD: '#143C6E',
@@ -75,6 +76,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,6 +129,16 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
     setBusy(false);
     if (error) { showToast?.(error.message || 'Gagal menyelesaikan picking', 'error'); return; }
     showToast?.('Picking list selesai.');
+    load();
+  }, [pickingListId, showToast, load]);
+
+  const handleCancel = useCallback(async () => {
+    setConfirmCancelOpen(false);
+    setBusy(true);
+    const { error } = await cancelPicking(pickingListId);
+    setBusy(false);
+    if (error) { showToast?.(error.message || 'Gagal membatalkan picking list', 'error'); return; }
+    showToast?.('Picking list dibatalkan.');
     load();
   }, [pickingListId, showToast, load]);
 
@@ -288,7 +300,43 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
             <CheckCircle2 size={15} /> Picking selesai
           </span>
         )}
+
+        {/* Batalkan — hanya saat masih pending / in_progress (tidak untuk done) */}
+        {(status === 'pending' || status === 'in_progress') && (
+          <button
+            onClick={() => setConfirmCancelOpen(true)}
+            disabled={busy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.card, border: `1px solid ${C.roseI}55`, color: C.roseI, fontWeight: 700, fontSize: 13, padding: '10px 18px', borderRadius: 11, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1 }}
+          >
+            <Ban size={15} /> Batalkan Picking List
+          </button>
+        )}
+
+        {/* Indikator saat sudah dibatalkan */}
+        {status === 'cancelled' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.rose, color: C.roseI, fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11 }}>
+            <Ban size={15} /> Dibatalkan
+          </span>
+        )}
       </div>
+
+      {/* Catatan bila dibatalkan: SP bisa di-generate ulang */}
+      {status === 'cancelled' && (
+        <p style={{ textAlign: 'right', marginTop: 8, fontSize: 12, color: C.mute }}>
+          Picking list ini dibatalkan. SP <b style={{ fontFamily: 'IBM Plex Mono, monospace', color: C.ink }}>{detail.sp_no}</b> bisa di-generate ulang picking list baru bila diperlukan.
+        </p>
+      )}
+
+      <ConfirmModal
+        open={confirmCancelOpen}
+        title="Batalkan Picking List"
+        message="Yakin batalkan picking list ini? SP terkait bisa di-generate ulang picking list baru setelah dibatalkan."
+        confirmLabel="Ya, Batalkan"
+        cancelLabel="Tidak"
+        variant="danger"
+        onConfirm={handleCancel}
+        onCancel={() => setConfirmCancelOpen(false)}
+      />
     </div>
   );
 }
