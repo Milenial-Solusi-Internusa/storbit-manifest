@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict DiEAKdJXoOpjmDrrBIWWeNbvFTkHF6fn5RVGMhHXPv7OFaOIwgm6jSMNSg9q25i
+\restrict bWF8PVHhN5P2il9QWaaOWybctwIcANI4CpinXYcYj97d4GA0wxqF9cpITaxZ0DS
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -850,7 +850,8 @@ BEGIN
   IF p_items IS NOT NULL AND jsonb_typeof(p_items) = 'array' THEN
     INSERT INTO public.quotation_items (
       quotation_id, sort_order, description, qty, unit, unit_price, notes,
-      group_name, currency, unit_label, exchange_rate, total, cost_price
+      group_name, currency, unit_label, exchange_rate, total, cost_price,
+      if_any
     )
     SELECT p_quotation_id,
       COALESCE(NULLIF(it->>'sort_order','')::int, 0),
@@ -864,7 +865,8 @@ BEGIN
       it->>'unit_label',
       NULLIF(it->>'exchange_rate','')::numeric,
       NULLIF(it->>'total','')::numeric,
-      NULLIF(it->>'cost_price','')::numeric
+      NULLIF(it->>'cost_price','')::numeric,
+      COALESCE((it->>'if_any')::boolean, false)
     FROM jsonb_array_elements(p_items) AS it;
   END IF;
 
@@ -3491,7 +3493,8 @@ CREATE TABLE public.quotation_items (
     unit_label character varying DEFAULT 'Per 20Ft'::character varying,
     exchange_rate numeric(15,2) DEFAULT 1,
     total numeric(15,2) DEFAULT 0,
-    cost_price numeric(15,2) DEFAULT 0
+    cost_price numeric(15,2) DEFAULT 0,
+    if_any boolean DEFAULT false NOT NULL
 );
 
 
@@ -11194,5 +11197,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DiEAKdJXoOpjmDrrBIWWeNbvFTkHF6fn5RVGMhHXPv7OFaOIwgm6jSMNSg9q25i
+\unrestrict bWF8PVHhN5P2il9QWaaOWybctwIcANI4CpinXYcYj97d4GA0wxqF9cpITaxZ0DS
 
