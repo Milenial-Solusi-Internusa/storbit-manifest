@@ -71,6 +71,7 @@ const CARGO_MODES = [
   { value: 'sea_lcl',  label: 'Sea LCL'     },
   { value: 'sea_fcl',  label: 'Sea FCL'     },
   { value: 'trucking', label: 'Trucking'    },
+  { value: 'project',  label: 'Project'     },
 ];
 const CONTAINER_TYPES_FALLBACK = ['20 Feet', '40 Feet', '40 HC', '45 HC'];
 
@@ -108,6 +109,7 @@ const freshRow = () => ({
   unit_label:  'Per 20Ft',
   exchange_rate: 1,
   total:       0,
+  if_any:      false,   // "If Any": baris tetap tampil tapi di-exclude dari semua total
 });
 
 const freshSection = (name = 'ORIGIN CHARGES') => ({
@@ -215,6 +217,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
               <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Unit Label</th>
               <th style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>QTY</th>
               <th style={{ padding: '7px 8px', textAlign: 'right', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>Total IDR</th>
+              <th className="no-print" style={{ padding: '7px 8px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: '#1B4D8A', whiteSpace: 'nowrap', background: '#F08C7D' }}>If Any</th>
               <th style={{ padding: '7px 8px', background: '#F08C7D' }}></th>
             </tr>
           </thead>
@@ -278,13 +281,25 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                     onChange={(e) => onUpdateRow(section.id, row.id, 'qty', e.target.value.replace(/^0+(?=\d)/, ''))}
                     style={cellInp({ textAlign: 'center' })} />
                 </td>
-                <td style={{ padding: '6px 10px', width: 120, fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap', color: row.currency !== 'IDR' ? C.orange : C.ink }}>
+                <td style={{ padding: '6px 10px', width: 120, fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap', color: row.if_any ? C.inkFaint : (row.currency !== 'IDR' ? C.orange : C.ink) }}>
                   {rp(row.total)}
                   {row.currency !== 'IDR' && (
                     <div style={{ fontSize: 10, color: C.inkFaint, fontWeight: 400 }}>
                       {row.currency} {(Number(row.unit_price) || 0).toLocaleString('id-ID')} × {row.qty} × kurs {(Number(row.exchange_rate) || 0).toLocaleString('id-ID')}
                     </div>
                   )}
+                  {row.if_any && (
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px' }}>if any · excl. total</div>
+                  )}
+                </td>
+                <td className="no-print" style={{ padding: '6px 6px', width: 52, textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!row.if_any}
+                    onChange={e => onUpdateRow(section.id, row.id, 'if_any', e.target.checked)}
+                    title="If Any — baris tetap tampil, tapi tidak dijumlahkan ke total mana pun"
+                    style={{ accentColor: '#1B4D8A', width: 15, height: 15, cursor: 'pointer' }}
+                  />
                 </td>
                 <td style={{ padding: '6px 6px', width: 32 }}>
                   {section.rows.length > 1 && (
@@ -303,7 +318,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
       {/* Section subtotal */}
       <div style={{ padding: '8px 14px', borderTop: `1px solid ${C.lineSoft}`, display: 'flex', justifyContent: 'flex-end', background: C.surface2 }}>
         <span style={{ fontSize: 12.5, fontWeight: 700, color: C.inkSoft }}>
-          Section total: {rp(section.rows.reduce((s, r) => s + (r.total || 0), 0))}
+          Section total: {rp(section.rows.reduce((s, r) => s + (r.if_any ? 0 : (Number(r.total) || 0)), 0))}
         </span>
       </div>
     </div>
@@ -450,7 +465,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
     // Load existing items and reconstruct sections
     supabase
       .from('quotation_items')
-      .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes')
+      .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes, if_any')
       .eq('quotation_id', quotation.id)
       .order('sort_order', { ascending: true })
       .then(({ data }) => {
@@ -470,6 +485,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
             qty:         row.qty         || 1,
             exchange_rate: row.exchange_rate ?? 1,
             total:       row.total       || 0,
+            if_any:      !!row.if_any,
           });
         });
         setSections(order.map(name => ({
@@ -523,7 +539,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
     supabase
       .from('quotation_items')
-      .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes')
+      .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes, if_any')
       .eq('quotation_id', src.id)
       .order('sort_order', { ascending: true })
       .then(({ data }) => {
@@ -543,6 +559,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
             qty:         row.qty         || 1,
             exchange_rate: row.exchange_rate ?? 1,
             total:       row.total       || 0,
+            if_any:      !!row.if_any,
           });
         });
         setSections(order.map(name => ({ id: crypto.randomUUID(), name, rows: map[name] })));
@@ -625,7 +642,8 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   const sectionTotals = useMemo(() => sections.map(sec => ({
     id:    sec.id,
     name:  sec.name,
-    total: sec.rows.reduce((s, r) => s + (Number(r.total) || 0), 0),
+    // Baris "If Any" di-exclude dari section total (dan otomatis subtotal/tax/grand).
+    total: sec.rows.reduce((s, r) => s + (r.if_any ? 0 : (Number(r.total) || 0)), 0),
   })), [sections]);
 
   const subtotal       = useMemo(() => sectionTotals.reduce((s, sec) => s + sec.total, 0), [sectionTotals]);
@@ -638,6 +656,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   const totalCost = useMemo(() => {
     return sections.reduce((acc, sec) =>
       acc + sec.rows.reduce((s, row) => {
+        if (row.if_any) return s;   // If Any di-exclude dari cost/margin juga
         const cost  = Number(row.cost_price) || 0;
         const qty   = Number(row.qty) || 0;
         const kurs  = row.currency === 'IDR' ? 1 : (Number(row.exchange_rate) || 0);
@@ -678,6 +697,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
             exchange_rate: row.currency === 'IDR' ? 1 : (Number(row.exchange_rate) || 1),
             total:         Number(row.total)      || 0,
             cost_price:    Number(row.cost_price) || 0,
+            if_any:        !!row.if_any,
           }))
         );
       };
