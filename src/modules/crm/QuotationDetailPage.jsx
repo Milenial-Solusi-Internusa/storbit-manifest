@@ -178,7 +178,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
 
       supabase
         .from('quotation_items')
-        .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes')
+        .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes, if_any')
         .eq('quotation_id', quotationId)
         .order('sort_order', { ascending: true }),
     ]).then(([{ data: qData, error: qErr }, { data: iData, error: iErr }]) => {
@@ -222,11 +222,13 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
     return order.map(name => ({
       name,
       rows:  map[name],
-      total: map[name].reduce((s, r) => s + (Number(r.total) || 0), 0),
+      // Baris "If Any" di-exclude dari section total.
+      total: map[name].reduce((s, r) => s + (r.if_any ? 0 : (Number(r.total) || 0)), 0),
     }));
   }, [items]);
 
-  const subtotal       = useMemo(() => items.reduce((s, r) => s + (Number(r.total) || 0), 0), [items]);
+  // Baris "If Any" di-exclude dari subtotal → tax → grand total.
+  const subtotal       = useMemo(() => items.reduce((s, r) => s + (r.if_any ? 0 : (Number(r.total) || 0)), 0), [items]);
   const discountPct    = Number(quot?.discount_pct) || 0;
   const discountAmount = useMemo(() => Math.round(subtotal * discountPct / 100), [subtotal, discountPct]);
   const effVat         = Number(quot?.vat_rate ?? VAT_RATE); // null (old quotes) → 1.1%
@@ -234,6 +236,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   const grandTotal     = useMemo(() => (subtotal - discountAmount) + tax, [subtotal, discountAmount, tax]);
 
   const totalCost = useMemo(() => items.reduce((s, r) => {
+    if (r.if_any) return s;   // If Any di-exclude dari cost/margin juga
     const cost = Number(r.cost_price) || 0;
     const qty  = Number(r.qty) || 0;
     const rate = Number(r.exchange_rate) || 1;
@@ -398,7 +401,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
             <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: '2rem', textAlign: 'center', color: C.inkFaint }}>Tidak ada item</div>
           ) : sections.map((sec, si) => {
             const secCost = sec.rows.reduce((s, r) =>
-              s + Math.round((Number(r.cost_price) || 0) * (Number(r.qty) || 0) * (Number(r.exchange_rate) || 1)), 0);
+              r.if_any ? s : s + Math.round((Number(r.cost_price) || 0) * (Number(r.qty) || 0) * (Number(r.exchange_rate) || 1)), 0);
             return (
               <div key={si} style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.line}`, overflow: 'hidden', boxShadow: '0 1px 4px rgba(35,41,30,.05)' }}>
                 <div style={{ background: C.surface2, padding: '10px 16px', borderBottom: `1px solid ${C.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
