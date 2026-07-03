@@ -1412,12 +1412,25 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
   );
 }
 
-function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
+function DashCalendar({
+  visits = [], loading = false, isSuper = false,
+  anchor, mode = 'month', range = { from: '', to: '' },
+  onPrevMonth, onNextMonth, onThisMonth, onApplyRange,
+  onAddVisit, onDayClick, onVisitClick,
+}) {
   const isMobile = useIsMobile();
   const [dayPopup, setDayPopup] = useState(null); // mobile day-detail sheet: { label, dateKey, visits }
+  // Client-side filters — all period data is already loaded, so filtering the
+  // calendar needs no refetch (mirrors RiwayatVisitPage's combinable filters).
+  const [fSales,  setFSales]  = useState('all');
+  const [fStatus, setFStatus] = useState('all');
+  const [fEntity, setFEntity] = useState('all');
+  const [fType,   setFType]   = useState('all');
+
   const now = new Date();
-  const year  = now.getFullYear();
-  const month = now.getMonth();
+  const year  = anchor.getFullYear();
+  const month = anchor.getMonth();
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
   const todayDate = now.getDate();
 
   const MONTH_LABELS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
@@ -1427,9 +1440,27 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
   const offset   = (firstDay + 6) % 7;                  // Monday-first offset
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  // Group visits by date string "YYYY-MM-DD"
+  // Filter options derived from the loaded visits
+  const salesMap = {};
+  visits.forEach(v => { if (v.salesperson_id) salesMap[v.salesperson_id] = v.salesperson; });
+  const salesOptions  = Object.entries(salesMap).map(([id, name]) => ({ id, name })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const entityOptions = [...new Set(visits.map(v => v.entity).filter(e => e && e !== '—'))].sort();
+  const typeOptions   = [...new Set(visits.map(v => v.visit_type).filter(Boolean))];
+
+  // Apply client-side filters (combinable)
+  const shown = visits.filter(v => {
+    if (fSales  !== 'all' && v.salesperson_id !== fSales) return false;
+    if (fStatus !== 'all' && (v.status || 'scheduled') !== fStatus) return false;
+    if (isSuper && fEntity !== 'all' && v.entity !== fEntity) return false;
+    if (fType   !== 'all' && v.visit_type !== fType) return false;
+    return true;
+  });
+  const filtersActive = fSales !== 'all' || fStatus !== 'all' || fEntity !== 'all' || fType !== 'all';
+  const resetFilters = () => { setFSales('all'); setFStatus('all'); setFEntity('all'); setFType('all'); };
+
+  // Group filtered visits by date string "YYYY-MM-DD"
   const visitsByDay = {};
-  visits.forEach(v => {
+  shown.forEach(v => {
     if (!v.date) return;
     const key = v.date.slice(0, 10);
     if (!visitsByDay[key]) visitsByDay[key] = [];
@@ -1443,7 +1474,16 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
   while (cells.length % 7 !== 0) cells.push(null);
 
   const pad = (n) => String(n).padStart(2, '0');
-  const totalVisits = visits.length;
+  const totalVisits = shown.length;
+
+  const fmtRangeD = (s) => { const d = new Date(s + 'T00:00:00'); return isNaN(d.getTime()) ? s : `${d.getDate()} ${MONTH_LABELS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`; };
+  const inRange  = mode === 'range' && range.from && range.to;
+  const subLabel = inRange ? `Rentang: ${fmtRangeD(range.from)} – ${fmtRangeD(range.to)}` : `Kunjungan tim sales — ${MONTH_LABELS[month]} ${year}`;
+
+  // control styles (white toolbar below the navy header)
+  const selSm  = { height: 34, border: '1px solid #E3E7EE', borderRadius: 8, background: '#fff', padding: '0 9px', fontSize: 12.5, color: '#2A3340', cursor: 'pointer', outline: 'none', fontFamily: 'inherit' };
+  const dateSm = { height: 34, border: '1px solid #E3E7EE', borderRadius: 8, background: '#fff', padding: '0 8px', fontSize: 12, color: '#2A3340', outline: 'none', fontFamily: 'inherit' };
+  const navBtn = { width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #E3E7EE', borderRadius: 8, background: '#fff', cursor: 'pointer', color: NAVY, fontSize: 18, lineHeight: 1, fontFamily: 'inherit' };
 
   return (
     <div className="om-card" style={D.card}>
@@ -1452,7 +1492,7 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
           <div style={D.cardIco}><Icon name="calendar" size={18} /></div>
           <div>
             <div style={D.cardTitle}>Jadwal Visit Sales</div>
-            <div style={D.cardSub}>Kunjungan tim sales — {MONTH_LABELS[month]} {year}</div>
+            <div style={D.cardSub}>{subLabel}</div>
           </div>
         </div>
         <button
@@ -1463,13 +1503,54 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
         </button>
       </div>
 
+      {/* toolbar — month nav (left) + filters & custom range (right) */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid #F0F1F4" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={onPrevMonth} title="Bulan sebelumnya" style={navBtn}>‹</button>
+          <div style={{ minWidth: 138, textAlign: "center", fontSize: 13, fontWeight: 700, color: "#16243A", fontFamily: "'Montserrat',system-ui,sans-serif" }}>{MONTH_LABELS[month]} {year}</div>
+          <button onClick={onNextMonth} title="Bulan berikutnya" style={navBtn}>›</button>
+          <button onClick={onThisMonth} style={{ height: 34, border: "1px solid #CFDDF0", borderRadius: 8, background: "#EAF0F8", color: NAVY, padding: "0 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Bulan Ini</button>
+        </div>
+
+        <div style={{ flex: 1, minWidth: 8 }} />
+
+        <select value={fSales} onChange={e => setFSales(e.target.value)} style={selSm} title="Sales">
+          <option value="all">Semua Sales</option>
+          {salesOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={selSm} title="Status">
+          <option value="all">Semua Status</option>
+          {VISIT_STAGES.map(s => <option key={s} value={s}>{VISIT_STATUS[s].label}</option>)}
+        </select>
+        <select value={fType} onChange={e => setFType(e.target.value)} style={selSm} title="Tipe visit">
+          <option value="all">Semua Tipe</option>
+          {typeOptions.map(t => <option key={t} value={t}>{VISIT_TYPE_MAP[t]?.label || t}</option>)}
+        </select>
+        {isSuper && (
+          <select value={fEntity} onChange={e => setFEntity(e.target.value)} style={selSm} title="Entitas">
+            <option value="all">Semua Entitas</option>
+            {entityOptions.map(en => <option key={en} value={en}>{en}</option>)}
+          </select>
+        )}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input type="date" value={range.from} max={range.to || undefined} onChange={e => onApplyRange(e.target.value, range.to)} style={dateSm} title="Dari tanggal" />
+          <span style={{ color: "#9AA3B2", fontSize: 12 }}>–</span>
+          <input type="date" value={range.to} min={range.from || undefined} onChange={e => onApplyRange(range.from, e.target.value)} style={dateSm} title="Sampai tanggal" />
+        </div>
+
+        {(filtersActive || inRange) && (
+          <button onClick={() => { resetFilters(); if (mode === 'range') onThisMonth(); }} style={{ height: 34, border: "1px solid #E3E7EE", borderRadius: 8, background: "#fff", color: "#6B7686", padding: "0 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reset</button>
+        )}
+      </div>
+
       {/* stats row */}
-      <div style={{ display: "flex", gap: 20, padding: "10px 16px 0", borderBottom: "1px solid #F0F1F4" }}>
+      <div style={{ display: "flex", gap: 20, padding: "10px 16px 0", borderBottom: "1px solid #F0F1F4", flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ padding: "8px 0", fontSize: 12, color: "#7A828E" }}>
-          <b style={{ color: NAVY, fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800 }}>{totalVisits}</b> jadwal bulan ini
+          <b style={{ color: NAVY, fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800 }}>{totalVisits}</b> {inRange ? "jadwal pada rentang" : "jadwal bulan ini"}
         </div>
         {Object.entries(VISIT_STATUS).map(([key, meta]) => {
-          const cnt = visits.filter(v => (v.status || 'scheduled') === key).length;
+          const cnt = shown.filter(v => (v.status || 'scheduled') === key).length;
           if (cnt === 0) return null;
           return (
             <div key={key} style={{ padding: "8px 0", display: "flex", alignItems: "center", gap: 5 }}>
@@ -1478,6 +1559,7 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
             </div>
           );
         })}
+        {loading && <div style={{ padding: "8px 0", fontSize: 12, color: "#9AA3B2" }}>Memuat…</div>}
       </div>
 
       {/* day headers */}
@@ -1488,7 +1570,7 @@ function DashCalendar({ visits = [], onAddVisit, onDayClick, onVisitClick }) {
       {/* grid — desktop: event text in cell; mobile (<1024px): pastel dots, tap → day sheet */}
       <div style={D.calGrid}>
         {cells.map((d, i) => {
-          const isToday = d === todayDate;
+          const isToday = isCurrentMonth && d === todayDate;
           const dateKey = d ? `${year}-${pad(month + 1)}-${pad(d)}` : null;
           const dayVisits = dateKey ? (visitsByDay[dateKey] || []) : [];
           return (
@@ -1746,6 +1828,17 @@ function CRMDashboardPage() {
   const [visitDetail,      setVisitDetail]      = useState(null);
   const [editVisitId,      setEditVisitId]      = useState(null);
 
+  // ── calendar period state (decoupled from fetchDash) ─────────────────────
+  // ONE active period source at a time: month-mode (calAnchor) OR range-mode
+  // (calRange). Arrow/Bulan Ini → month-mode + clear range; applying a full
+  // range → range-mode. calAnchor = first-of-displayed-month.
+  const isSuper = erpRole === 'super_admin';
+  const [calAnchor, setCalAnchor] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); });
+  const [calMode,   setCalMode]   = useState('month');           // 'month' | 'range'
+  const [calRange,  setCalRange]  = useState({ from: '', to: '' });
+  const [calVisits, setCalVisits] = useState([]);
+  const [calLoading, setCalLoading] = useState(true);
+
   function showToast(msg, icon) {
     setToast({ msg, icon: icon || "info", show: true });
     clearTimeout(toastTimer.current);
@@ -1764,8 +1857,6 @@ function CRMDashboardPage() {
       const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const endLastMonth   = new Date(startThisMonth.getTime() - 1);
-      const startOfMonth   = startThisMonth.toISOString().slice(0, 10);
-      const endOfMonth     = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
 
       // S2 — current ISO week (Monday start) + today, for personal activity KPIs.
       // Use LOCAL date parts (not toISOString/UTC) so WIB pre-07:00 doesn't shift
@@ -1787,7 +1878,7 @@ function CRMDashboardPage() {
       // widget is always single-entity (isAllEntities:false) — consistent with fetchDash.
       const feedPromise = fetchActivityFeed({ companyId: cid, uid, isAllEntities: false, isSalesOnly });
 
-      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, visitsRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes] = await Promise.all([
+      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes] = await Promise.all([
         // Full prospects for this company — all fields needed for multiple computations
         ownProspects(supabase
           .from('accounts')
@@ -1830,19 +1921,6 @@ function CRMDashboardPage() {
           .is('deleted_at', null)
           .not('assigned_to', 'is', null)
           .limit(1000)),
-
-        // Sales visits calendar — activities (type='visit'). account name embeds via
-        // FK; salesperson name resolved by client map after fetch (no profiles FK).
-        ownBySales(supabase
-          .from('activities')
-          .select('id, scheduled_for, activity_time, status, notes, next_action, account_id, assigned_to, details, prospects:accounts!activities_account_id_fkey(name)')
-          .eq('company_id', cid)
-          .eq('type', 'visit')
-          .is('deleted_at', null)
-          .gte('scheduled_for', startOfMonth)
-          .lte('scheduled_for', endOfMonth)
-          .order('scheduled_for', { ascending: true })
-          .limit(100)),
 
         // S2 Query A — calls this week (personal KPI) — activities type='call'
         ownBySales(supabase
@@ -1979,35 +2057,6 @@ function CRMDashboardPage() {
         })
         .sort((a, b) => b.prospek - a.prospek);
 
-      // ── Calendar visits ────────────────────────────────────────────────────
-      // From activities (type='visit'). Resolve salesperson names via client map
-      // (no profiles FK on assigned_to) — all profiles, no active filter so
-      // inactive/legacy sales still resolve.
-      const visitRows = visitsRes.data || [];
-      const visitSalesIds = [...new Set(visitRows.map(v => v.assigned_to).filter(Boolean))];
-      const visitNameMap = {};
-      if (visitSalesIds.length) {
-        const { data: vProfs } = await supabase
-          .from('profiles').select('id, full_name').in('id', visitSalesIds);
-        (vProfs || []).forEach(p => { visitNameMap[p.id] = p.full_name; });
-      }
-      const visitsData = visitRows.map(v => ({
-        id:               v.id,
-        date:             v.scheduled_for,
-        time:             v.activity_time,
-        prospect:         v.prospects?.name    || '—',
-        prospect_id:      v.account_id         || '',
-        salesperson:      (v.assigned_to && visitNameMap[v.assigned_to]) || '—',
-        salesperson_id:   v.assigned_to,
-        location:         v.details?.location  || '—',
-        notes:            v.notes              || '',
-        status:           ACT_TO_VISIT_STATUS[v.status] || 'scheduled',
-        visit_type:       v.details?.visit_type        || '',
-        point_of_meeting: v.details?.point_of_meeting   || '',
-        mom:              v.details?.mom               || '',
-        follow_up:        v.next_action               || '',
-      }));
-
       // ── Recent activity (unified feed: prospect/inquiry/quotation/activity) ──
       const feedEvents = await feedPromise;
       const recentActivity = feedEvents.slice(0, 7).map(ev => ({
@@ -2031,7 +2080,7 @@ function CRMDashboardPage() {
       setDashData({
         totalProspects, totalInquiries, totalQuotations, winRate,
         stagesData, recentActivity,
-        trendData, leadSourceData, salesPerfData, visitsData,
+        trendData, leadSourceData, salesPerfData,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
       });
     } catch (err) {
@@ -2043,6 +2092,87 @@ function CRMDashboardPage() {
   }, [profile?.company_id, profile?.id, isSalesOnly]);
 
   useEffect(() => { fetchDash(); }, [fetchDash]);
+
+  // ── calendar visits fetch (decoupled) ────────────────────────────────────
+  // Follows the active period: range-mode → [from..to], else month-mode → the
+  // whole calAnchor month. NO company filter — RLS scopes (super=all entities,
+  // manager/ceo=company, sales=own), same pattern as RiwayatVisitPage. Salesperson
+  // names resolved via profiles map (assigned_to has no FK). limit(1000).
+  const fetchCalVisits = useCallback(async () => {
+    if (!profile?.company_id) return;
+    setCalLoading(true);
+    try {
+      let startStr, endStr;
+      if (calMode === 'range' && calRange.from && calRange.to) {
+        startStr = calRange.from;
+        endStr   = calRange.to;
+      } else {
+        const y = calAnchor.getFullYear(), m = calAnchor.getMonth();
+        const p = (n) => String(n).padStart(2, '0');
+        startStr = `${y}-${p(m + 1)}-01`;
+        endStr   = `${y}-${p(m + 1)}-${p(new Date(y, m + 1, 0).getDate())}`;
+      }
+      const { data, error: err } = await supabase
+        .from('activities')
+        .select('id, scheduled_for, activity_time, status, notes, next_action, account_id, assigned_to, details, prospects:accounts!activities_account_id_fkey(name), company:companies!activities_company_id_fkey(code)')
+        .eq('type', 'visit')
+        .is('deleted_at', null)
+        .gte('scheduled_for', startStr)
+        .lte('scheduled_for', endStr)
+        .order('scheduled_for', { ascending: true })
+        .limit(1000);
+      if (err) throw err;
+      const rows = data || [];
+      const ids = [...new Set(rows.map(v => v.assigned_to).filter(Boolean))];
+      const nameMap = {};
+      if (ids.length) {
+        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+        (profs || []).forEach(p => { nameMap[p.id] = p.full_name; });
+      }
+      setCalVisits(rows.map(v => ({
+        id:               v.id,
+        date:             v.scheduled_for,
+        time:             v.activity_time,
+        prospect:         v.prospects?.name    || '—',
+        prospect_id:      v.account_id         || '',
+        salesperson:      (v.assigned_to && nameMap[v.assigned_to]) || '—',
+        salesperson_id:   v.assigned_to,
+        location:         v.details?.location  || '—',
+        notes:            v.notes              || '',
+        status:           ACT_TO_VISIT_STATUS[v.status] || 'scheduled',
+        visit_type:       v.details?.visit_type        || '',
+        point_of_meeting: v.details?.point_of_meeting  || '',
+        mom:              v.details?.mom               || '',
+        follow_up:        v.next_action               || '',
+        entity:           v.company?.code             || '—',
+      })));
+    } catch {
+      setCalVisits([]);
+    } finally {
+      setCalLoading(false);
+    }
+  // calAnchor (new Date on month nav) keys the month; calMode/calRange key range vs month.
+  }, [profile?.company_id, calMode, calRange.from, calRange.to, calAnchor]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchCalVisits(); }, [fetchCalVisits]);
+
+  // Month navigation — always month-mode (clears any custom range).
+  const goPrevMonth = useCallback(() => { setCalMode('month'); setCalRange({ from: '', to: '' }); setCalAnchor(a => new Date(a.getFullYear(), a.getMonth() - 1, 1)); }, []);
+  const goNextMonth = useCallback(() => { setCalMode('month'); setCalRange({ from: '', to: '' }); setCalAnchor(a => new Date(a.getFullYear(), a.getMonth() + 1, 1)); }, []);
+  const goThisMonth = useCallback(() => { setCalMode('month'); setCalRange({ from: '', to: '' }); const n = new Date(); setCalAnchor(new Date(n.getFullYear(), n.getMonth(), 1)); }, []);
+  // Range picker — full range (from ≤ to) → range-mode + anchor jumps to `from`'s
+  // month; clearing/incomplete → back to month-mode.
+  const applyCalRange = useCallback((from, to) => {
+    setCalRange({ from, to });
+    if (from && to && from <= to) {
+      setCalMode('range');
+      const d = new Date(from + 'T00:00:00');
+      if (!isNaN(d.getTime())) setCalAnchor(new Date(d.getFullYear(), d.getMonth(), 1));
+    } else {
+      setCalMode('month');
+    }
+  }, []);
 
   // ── fetch options for AddVisitModal ─────────────────────────────────────
   // Salesperson dropdown = active 'sales' users in the current entity only
@@ -2092,7 +2222,7 @@ function CRMDashboardPage() {
       let visitId = editVisitId;
       let error;
       // find previous status for log (only relevant in edit mode)
-      const prevVisit = editVisitId ? (dashData?.visitsData || []).find(v => v.id === editVisitId) : null;
+      const prevVisit = editVisitId ? calVisits.find(v => v.id === editVisitId) : null;
       const prevStatus = prevVisit?.status || null;
 
       if (editVisitId) {
@@ -2124,12 +2254,13 @@ function CRMDashboardPage() {
       setEditVisitId(null);
       setVisitDraft(EMPTY_DRAFT);
       fetchDash();
+      fetchCalVisits();
     } catch (err) {
       setVisitError('Gagal simpan: ' + err.message);
     } finally {
       setVisitSaving(false);
     }
-  }, [visitDraft, editVisitId, dashData, profile, fetchDash]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visitDraft, editVisitId, calVisits, profile, fetchDash, fetchCalVisits]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── KPI cards from real data ─────────────────────────────────────────────
   const kpisReal = dashData ? [
@@ -2214,7 +2345,16 @@ function CRMDashboardPage() {
         {tab === "calendar" ? (
           <>
             <DashCalendar
-              visits={dashData?.visitsData || []}
+              visits={calVisits}
+              loading={calLoading}
+              isSuper={isSuper}
+              anchor={calAnchor}
+              mode={calMode}
+              range={calRange}
+              onPrevMonth={goPrevMonth}
+              onNextMonth={goNextMonth}
+              onThisMonth={goThisMonth}
+              onApplyRange={applyCalRange}
               onAddVisit={() => {
                 setEditVisitId(null);
                 setVisitDraft({ ...EMPTY_DRAFT, visit_date: '' });
