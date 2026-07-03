@@ -110,7 +110,8 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
   const validStr = fmtDateShort(quot.valid_until);
 
   // Totals — prefer stored values, fall back to derived (mirror on-screen PDF).
-  const subtotalCalc = items.reduce((s, r) => s + (Number(r.total) || 0), 0);
+  // Baris "If Any" di-exclude dari fallback subtotal (stored quot.subtotal sudah exclude).
+  const subtotalCalc = items.reduce((s, r) => s + (r.if_any ? 0 : (Number(r.total) || 0)), 0);
   const subtotal     = quot.subtotal ?? subtotalCalc;
   const discountPct    = Number(quot.discount_pct) || 0;
   const discountAmount = Math.round(subtotal * discountPct / 100);
@@ -222,11 +223,15 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
                 <Text style={[styles.td, styles.cPrice]}>{rpN(r.unit_price)}</Text>
                 <Text style={[styles.td, styles.cUnit]}>{r.unit_label || '—'}</Text>
                 <Text style={[styles.td, styles.cQty]}>{r.qty || 1}</Text>
-                <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>Rp {rpN(r.total)}
-                  {r.currency !== 'IDR' && (
-                    <Text style={{ fontFamily: 'Helvetica', fontSize: 6.5, color: '#777' }}>{'\n'}× kurs {rpN(r.exchange_rate)}</Text>
-                  )}
-                </Text>
+                {r.if_any ? (
+                  <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Oblique', color: '#777' }]}>(if any)</Text>
+                ) : (
+                  <Text style={[styles.td, styles.cTotal, { fontFamily: 'Helvetica-Bold' }]}>Rp {rpN(r.total)}
+                    {r.currency !== 'IDR' && (
+                      <Text style={{ fontFamily: 'Helvetica', fontSize: 6.5, color: '#777' }}>{'\n'}× kurs {rpN(r.exchange_rate)}</Text>
+                    )}
+                  </Text>
+                )}
               </View>
             ))}
             <View wrap={false} style={[styles.row, styles.secTotalRow]}>
