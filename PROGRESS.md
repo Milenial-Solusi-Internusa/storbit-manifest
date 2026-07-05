@@ -1,5 +1,19 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-05
+
+### Halaman baru "Indomarco Dashboard" — INTERNAL, lintas-modul CRM + data SP (branch `restruktur-nexus`)
+> Dashboard presentasi tim MSI ke Indomarco (meeting 14 Jul 2026). Framing customer-facing, tapi **halaman internal** (role-gated manager-or-above; isi bisa terlihat customer saat meeting → sembunyikan harga/margin/cost). Acuan visual mockup `IndomarcoDashboard.jsx` (LAYOUT saja; warna/font dari token brand repo). Rencana disetujui user (PLAN). 1 file baru + `App.jsx` + docs, **tanpa ubah DB**.
+- [x] **Page** `src/modules/crm/IndomarcoDashboardPage.jsx`: fetch `sp_items` `.eq('customer_id','a18fad3c-…')` `.limit(1000)` — **tanpa `deleted_at`/`company_id`** (kolom tak ada; RLS `sp_items_read`=`USING(true)` → scope via customer_id + role-gate). Agregasi client-side (satu fetch ~708 baris). Loading/empty/error state.
+- [x] **4 zona:** header + badge; 4 KPI (Total SP=COUNT DISTINCT sp_no, Unit Dipesan=Σqty, **Volume Terealisasi=Σshipped_qty [absolut, bukan %/on-time]**, Jangkauan DC=COUNT DISTINCT dc); baris donut "Jangkauan per Wilayah" (center=dcCount LIVE; **pembagian wilayah DUMMY**, komentar `// DUMMY`) + bar "DC Teratas" (GROUP BY dc, Σqty, top 6, top-3 orange); area "Tren SP per Bulan" (COUNT DISTINCT sp_no per bulan sp_date, Jan–Jul 2026).
+- [x] **Role gate INTERNAL:** menu `role:['super_admin','admin','ceo','gm','manager','supervisor']` + render guard `canRenderPage`→`AccessDeniedPage` (pola `riwayat-visit`). Sales/customer tak akses. Charts recharts (pola CRMReportPage); grid responsif reuse `nx-grid-kpi`/`nx-grid-2`.
+- [x] **Menu (`App.jsx`):** lazy import + item `indomarco-dashboard` (icon `Building2`) di CRM group (ERP_MENU_GROUPS + NEXUS_NAV) + `'indomarco-dashboard'` ke exclusion ComingSoon + render block.
+- [x] **TIDAK ditampilkan:** harga/margin/cost/%/on-time. Warna/font dari token brand (navy `#1B4D8A`/orange `#E85A1E`, Montserrat/Inter/IBM Plex Mono), bukan hex mockup.
+- [x] Build clean (2584 modules, 1.59s). Lint **223 (net-zero; file baru 0)**.
+- [ ] **⚠️ KPI belum diverifikasi live** (no DB creds di sesi + page di balik login). SQL verifikasi KPI + `SELECT DISTINCT dc` diserahkan ke user; target ~425 SP / 981.332 dipesan / 798.502 realisasi / 36 DC.
+- [ ] **TODO donut:** ganti `REGION_DATA` dummy → agregasi wilayah asli setelah user kasih daftar `DISTINCT dc` + mapping dc→wilayah (Jawa/Sumatera/Sulawesi/Bali & Nusa Tenggara/Kalimantan).
+- [ ] **Tes manual (belum, perlu login manager+):** menu muncul (bukan ComingSoon); 4 KPI live masuk akal; bar/area + tooltip; donut dummy; sales tak bisa akses; tak ada harga/%/on-time; responsif layar kecil.
+
 ## 2026-07-03
 
 ### Fix dropdown Customer kosong — mapping `active` → `is_active` (branch `restruktur-nexus`)

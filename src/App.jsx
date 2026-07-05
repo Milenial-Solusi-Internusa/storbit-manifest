@@ -50,6 +50,7 @@ const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage')
 const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
 const CRMReportPage        = lazy(() => import('./modules/crm/CRMReportPage'));
 const RiwayatVisitPage     = lazy(() => import('./modules/crm/RiwayatVisitPage'));
+const IndomarcoDashboardPage = lazy(() => import('./modules/crm/IndomarcoDashboardPage'));
 const RateListPage         = lazy(() => import('./modules/crm/RateListPage'));
 const MOMListPage          = lazy(() => import('./modules/reporting/MOMListPage'));
 const MOMFormPage          = lazy(() => import('./modules/reporting/MOMFormPage'));
@@ -786,6 +787,7 @@ const ERP_MENU_GROUPS = [
       },
       { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, role: ['super_admin','admin','ceo','gm','manager','supervisor'] },
       { id: 'riwayat-visit',         label: 'Riwayat Visit', icon: History, role: ['super_admin','ceo'] },
+      { id: 'indomarco-dashboard',   label: 'Indomarco Dashboard', icon: Building2, role: ['super_admin','admin','ceo','gm','manager','supervisor'] },
       { id: 'reporting-form-report', label: 'Form Report',  icon: FileText, planned: true },
       { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, role: ['super_admin','admin','ceo','gm','manager','supervisor','sales','operations'] },
       {
@@ -968,6 +970,7 @@ const NEXUS_NAV = [
         children: [
           { id: 'reporting-sales', label: 'Sales Report',          icon: BarChart2 },
           { id: 'riwayat-visit',   label: 'Riwayat Visit',         icon: History },
+          { id: 'indomarco-dashboard', label: 'Indomarco Dashboard', icon: Building2 },
           { id: 'reporting-mom',   label: 'MOM',                   icon: BookOpen },
           { id: 'reports',         label: 'Reporting & Dashboard', icon: LayoutDashboard },
           { id: 'performance',     label: 'Performance & Cache',   icon: Zap },
@@ -2610,7 +2613,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','reporting-mom'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3121,6 +3124,17 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Riwayat Visit temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <RiwayatVisitPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+
+          {/* ── CRM: Indomarco Dashboard (internal — manager-or-above) ───────── */}
+          {activeMenu === 'indomarco-dashboard' && (canRenderPage('indomarco-dashboard') ? (
+            <ErrorBoundary title="Indomarco Dashboard temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <IndomarcoDashboardPage />
               </Suspense>
             </ErrorBoundary>
           ) : (
