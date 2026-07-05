@@ -1,7 +1,8 @@
 // src/modules/crm/IndomarcoDashboardPage.jsx
-// Dashboard Indomarco — INTERNAL (dipakai tim MSI untuk presentasi ke Indomarco,
+// Dashboard Customer (default Indomarco) — INTERNAL (dipakai tim MSI untuk presentasi,
 // bukan diakses customer). Lintas-modul: CRM + data SP (tabel sp_items).
-// Sumber data: sp_items (flat, 1 baris = 1 line item) difilter customer_id Indomarco.
+// Sumber data: sp_items (flat, 1 baris = 1 line item) difilter customer_id yang dipilih
+// via dropdown (default Indomarco). SEMUA KPI/chart ikut customer terpilih.
 // Layout mengacu prototipe visual IndomarcoDashboard.jsx; WARNA/FONT diambil dari
 // token brand repo (navy/orange, Montserrat/Inter/IBM Plex Mono) — bukan dari mockup.
 // TIDAK menampilkan: harga, margin, cost, on-time rate, atau rasio % fulfillment.
@@ -112,7 +113,34 @@ export default function IndomarcoDashboardPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Customer selector — default Indomarco. Opsi = customer yang punya data di sp_items.
+  const [customerId, setCustomerId] = useState(INDOMARCO_ID);
+  const [customerOptions, setCustomerOptions] = useState([]);
 
+  // Opsi dropdown: DISTINCT customer_id dari sp_items → resolve nama via accounts
+  // (sp_items.customer_id → accounts.id; accounts.name). Sekali saat mount.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data: idRows, error: e1 } = await supabase
+          .from("sp_items").select("customer_id").not("customer_id", "is", null).limit(5000);
+        if (e1) throw e1;
+        const ids = [...new Set((idRows || []).map((r) => r.customer_id).filter(Boolean))];
+        if (!ids.length) { if (alive) setCustomerOptions([]); return; }
+        const { data: accs, error: e2 } = await supabase
+          .from("accounts").select("id, name").in("id", ids);
+        if (e2) throw e2;
+        const opts = (accs || [])
+          .map((a) => ({ id: a.id, name: a.name || "(Tanpa nama)" }))
+          .sort((a, b) => a.name.localeCompare(b.name, "id"));
+        if (alive) setCustomerOptions(opts);
+      } catch { /* dropdown fallback ke opsi terpilih; data utama tetap jalan */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Data dashboard — ikut customer terpilih; re-fetch tiap ganti customer.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -120,22 +148,22 @@ export default function IndomarcoDashboardPage() {
       setError(null);
       try {
         // sp_items: tak ada company_id/deleted_at; RLS read = USING(true). Scope via
-        // customer_id + role-gate menu (manager-or-above). limit(1000) ≥ ~708 baris Indomarco.
+        // customer_id (dropdown) + role-gate menu (manager-or-above). limit(1000).
         const { data, error: err } = await supabase
           .from("sp_items")
           .select("sp_no, qty, shipped_qty, dc, sp_date, sp_status")
-          .eq("customer_id", INDOMARCO_ID)
+          .eq("customer_id", customerId)
           .limit(1000);
         if (err) throw err;
         if (alive) setRows(data || []);
       } catch (e) {
-        if (alive) { setError(e.message || "Gagal memuat data Indomarco."); setRows([]); }
+        if (alive) { setError(e.message || "Gagal memuat data."); setRows([]); }
       } finally {
         if (alive) setLoading(false);
       }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [customerId]);
 
   // ── agregasi (client-side, dari satu fetch) ──────────────────────────────
   const spSet = new Set();
@@ -164,6 +192,7 @@ export default function IndomarcoDashboardPage() {
   dateStrs.sort();
   const periodLabel = dateStrs.length ? `${fmtLongDate(dateStrs[0])} – ${fmtLongDate(dateStrs[dateStrs.length - 1])}` : "—";
   const generatedAt = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  const selectedName = customerOptions.find((c) => c.id === customerId)?.name || (customerId === INDOMARCO_ID ? "Indomarco" : "Customer");
 
   const KPI = [
     { key: "sp",       label: "Total Sales Plan",   value: fmt(totalSP),       unit: "SP tercatat",      icon: Package },
@@ -181,7 +210,7 @@ export default function IndomarcoDashboardPage() {
         <div>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: tint(C.navy, 0.06), color: C.navy, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, letterSpacing: "0.03em", marginBottom: 12 }}>
             <ShieldCheck size={14} strokeWidth={2.2} />
-            Ringkasan Kemitraan Indomarco
+            Ringkasan Kemitraan {selectedName}
           </div>
           <h1 style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 30, color: C.ink, margin: 0, letterSpacing: "-0.02em" }}>
             Pesanan Anda, Terkontrol &amp; Terlacak
@@ -191,9 +220,27 @@ export default function IndomarcoDashboardPage() {
             {periodLabel !== "—" && <> Periode data {periodLabel}.</>}
           </p>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 16, color: C.navy }}>Nexus by MSI</div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.slate }}>Data per {generatedAt}</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label htmlFor="indomarco-cust" style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: C.slate }}>Customer</label>
+            <select
+              id="indomarco-cust"
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+              style={{ height: 40, minWidth: 240, border: `1px solid ${C.line}`, borderRadius: 10, background: C.card, padding: "0 12px", fontSize: 13.5, color: C.ink, cursor: "pointer", outline: "none", fontFamily: FONT_BODY }}
+            >
+              {!customerOptions.some((c) => c.id === customerId) && (
+                <option value={customerId}>{selectedName}</option>
+              )}
+              {customerOptions.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 16, color: C.navy }}>Nexus by MSI</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.slate }}>Data per {generatedAt}</div>
+          </div>
         </div>
       </div>
 
@@ -204,10 +251,10 @@ export default function IndomarcoDashboardPage() {
         </div>
       )}
       {loading && (
-        <div style={{ padding: "48px 0", textAlign: "center", color: C.slate, fontSize: 14, fontFamily: FONT_BODY }}>Memuat data Indomarco…</div>
+        <div style={{ padding: "48px 0", textAlign: "center", color: C.slate, fontSize: 14, fontFamily: FONT_BODY }}>Memuat data {selectedName}…</div>
       )}
       {isEmpty && (
-        <div style={{ padding: "48px 0", textAlign: "center", color: C.slate, fontSize: 14, fontFamily: FONT_BODY }}>Belum ada data SP untuk Indomarco.</div>
+        <div style={{ padding: "48px 0", textAlign: "center", color: C.slate, fontSize: 14, fontFamily: FONT_BODY }}>Belum ada data SP untuk {selectedName}.</div>
       )}
 
       {!loading && !error && !isEmpty && (
