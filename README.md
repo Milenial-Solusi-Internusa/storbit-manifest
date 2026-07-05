@@ -53,6 +53,16 @@ Nexus by MSI is the unified internal business platform covering master data, tra
 
 Auth + RLS · Master Data (Companies, Branches, Departments, Positions, Roles, Users, Products) · CRM (Pipeline, Inquiry, Quotation, Dashboard, Master Customer, Lead Pool, Sales Calls) · Logistics (Sales Order / SP) · Inventory (Dashboard, Stok Barang, Penerimaan) · Asset Management (IT/Kendaraan detail + inline edit) · HRGA Request · App Launcher.
 
+### Indomarco Dashboard (cross-module: CRM + SP data)
+
+Internal presentation dashboard for the Indomarco account (used by the MSI team when meeting Indomarco — **not** customer-accessible). Aggregates the `sp_items` table (filtered by Indomarco's `customer_id`) into four KPI cards (Total SP, Unit Dipesan, Volume Terealisasi, Jangkauan DC), a "DC Teratas" bar, a per-month SP trend area, and a per-region reach donut.
+
+- **Page:** [`src/modules/crm/IndomarcoDashboardPage.jsx`](src/modules/crm/IndomarcoDashboardPage.jsx) · menu id `indomarco-dashboard` (under CRM).
+- **Access:** manager-or-above only (`super_admin`, `admin`, `ceo`, `gm`, `manager`, `supervisor`) via the existing menu `role` gate + `canRenderPage`. Sales and customers have no access.
+- **Data:** live from `sp_items` (`.limit(1000)`, no company filter — RLS is permissive, scope is by `customer_id`). Aggregation is client-side.
+- **Deliberately hidden:** prices, margin, cost, on-time rate, and any % fulfillment. `shipped_qty` is shown only as an absolute "Volume Terealisasi".
+- **Pending:** the region donut uses placeholder data until the free-text `dc` → region mapping is finalized (see `PROGRESS.md`).
+
 ---
 
 ## Setup
