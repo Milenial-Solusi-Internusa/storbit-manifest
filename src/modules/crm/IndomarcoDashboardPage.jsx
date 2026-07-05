@@ -56,16 +56,19 @@ const fmtLongDate = (s) => {
   return `${Number(d)} ${MONTHS_ID[Number(m) - 1] || m} ${y}`;
 };
 
-// DUMMY - ganti setelah mapping wilayah final (dc → wilayah dari SELECT DISTINCT dc).
-// Center donut ("DC aktif") memakai angka LIVE dari data; hanya pembagian wilayah ini dummy.
-const REGION_DATA = [
-  { name: "Jawa", value: 622000 },
-  { name: "Sulawesi", value: 141000 },
-  { name: "Sumatera", value: 118000 },
-  { name: "Bali & Nusa Tenggara", value: 62000 },
-  { name: "Kalimantan", value: 38000 },
-];
-const totalRegion = REGION_DATA.reduce((a, b) => a + b.value, 0);
+// DC → wilayah (mapping tetap). Perbandingan aman: trim + uppercase kedua sisi supaya
+// varian penulisan tetap kena. DC yang tak cocok → bucket "Lainnya" (tak dibuang).
+const REGION_ORDER = ["Jawa", "Sumatera", "Sulawesi", "Kalimantan", "Bali & Nusa Tenggara"];
+const REGION_DC = {
+  "Jawa": ["DC JAKARTA 1", "DC JAKARTA 2", "DC PURWAKARTA", "DC SURABAYA", "DC GRESIK", "DC KLATEN", "DC YOGYAKARTA", "DC MALANG", "DC BEKASI", "DC CIREBON", "DC TANGERANG 1", "DC TANGERANG 2", "DC BOGOR", "DC BOGOR 2", "DC BANDUNG", "DC BANDUNG II", "DC JEMBER", "DC LEBAK", "DC SEMARANG", "DC PARUNG", "SATO CK ANCOL"],
+  "Sulawesi": ["DC PALOPO", "DC KENDARI", "DC MAKASAR", "DC MANADO"],
+  "Kalimantan": ["DC PONTIANAK", "DC BANJARMASIN"],
+  "Sumatera": ["DC BENGKULU", "DC MEDAN", "DC PALEMBANG", "DC BANDAR LAMPUNG", "DC PEKANBARU", "DC BATAM", "DC JAMBI"],
+  "Bali & Nusa Tenggara": ["DC LOMBOK", "DC BALI"],
+};
+const REGION_OF = {};
+Object.entries(REGION_DC).forEach(([region, names]) => names.forEach((n) => { REGION_OF[n.trim().toUpperCase()] = region; }));
+const regionForDc = (dc) => REGION_OF[String(dc || "").trim().toUpperCase()] || "Lainnya";
 
 /* ---------------- presentational bits ---------------- */
 function KpiCard({ item }) {
@@ -188,6 +191,17 @@ export default function IndomarcoDashboardPage() {
   const totalSP = spSet.size;
   const dcCount = dcSet.size;
   const dcData = Object.entries(dcVol).map(([name, volume]) => ({ name, volume })).sort((a, b) => b.volume - a.volume).slice(0, 6);
+
+  // Donut: COUNT DISTINCT dc per wilayah — dihitung dari dcSet (distinct dc), jadi
+  // Σ wilayah = dcCount (konsisten dgn angka tengah donut). Urut value desc, tiebreak
+  // urutan kanonik; "Lainnya" (dc tak terpetakan) selalu di akhir & hanya bila ada.
+  const regionCount = {};
+  dcSet.forEach((dc) => { const reg = regionForDc(dc); regionCount[reg] = (regionCount[reg] || 0) + 1; });
+  const regionRank = (name) => { const i = REGION_ORDER.indexOf(name); return i === -1 ? 999 : i; };
+  const regionData = REGION_ORDER.filter((r) => regionCount[r]).map((r) => ({ name: r, value: regionCount[r] }))
+    .sort((a, b) => b.value - a.value || regionRank(a.name) - regionRank(b.name));
+  if (regionCount["Lainnya"]) regionData.push({ name: "Lainnya", value: regionCount["Lainnya"] });
+  const totalRegion = regionData.reduce((a, b) => a + b.value, 0);
   const trendData = trendSets.map((s, i) => ({ bulan: MONTHS_ID[i], sp: s.size }));
   dateStrs.sort();
   const periodLabel = dateStrs.length ? `${fmtLongDate(dateStrs[0])} – ${fmtLongDate(dateStrs[dateStrs.length - 1])}` : "—";
@@ -266,12 +280,12 @@ export default function IndomarcoDashboardPage() {
 
           {/* ── Row: donut wilayah + bar top DC ─────────────────────────── */}
           <div className="nx-grid-2" style={{ display: "grid", gridTemplateColumns: "minmax(320px, 1fr) minmax(340px, 1.3fr)", gap: 20 }}>
-            <Panel title="Jangkauan per Wilayah" subtitle="Sebaran volume pesanan di 5 wilayah, dari total DC aktif." icon={Globe2}>
+            <Panel title="Jangkauan per Wilayah" subtitle="Jumlah DC unik per wilayah, dari total DC aktif customer terpilih." icon={Globe2}>
               <div style={{ position: "relative" }}>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
-                    <Pie data={REGION_DATA} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={2} stroke="none">
-                      {REGION_DATA.map((entry, i) => <Cell key={i} fill={REGION_COLORS[i % REGION_COLORS.length]} />)}
+                    <Pie data={regionData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={2} stroke="none">
+                      {regionData.map((entry, i) => <Cell key={i} fill={REGION_COLORS[i % REGION_COLORS.length]} />)}
                     </Pie>
                     <Tooltip content={<SimpleTooltip titleKey="name" valueSuffix="unit" />} />
                   </PieChart>
@@ -283,7 +297,7 @@ export default function IndomarcoDashboardPage() {
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-                {REGION_DATA.map((r, i) => (
+                {regionData.map((r, i) => (
                   <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ width: 10, height: 10, borderRadius: 3, background: REGION_COLORS[i % REGION_COLORS.length], flexShrink: 0 }} />
                     <span style={{ fontFamily: FONT_BODY, fontSize: 13, color: C.ink, flex: 1 }}>{r.name}</span>
