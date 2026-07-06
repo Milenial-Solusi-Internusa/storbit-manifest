@@ -811,3 +811,27 @@ export async function bulkInsertSpBtbs(spNo, btbRows) {
   const { error } = await supabase.from('sp_btbs').insert(rows);
   return { error };
 }
+
+// Dual-write (Fase 0 lanjutan, D2-A): tulis header + items ke skema SP BARU
+// (sp_orders + sp_order_items) secara atomik via RPC create_sp_order_dual.
+// Dipanggil SETELAH bulkInsertSpItems (yang tetap sumber sp_items lama) agar
+// legacy_sp_item_id bisa menunjuk ke baris sp_items yang bersesuaian.
+// `items` = array of { product_id, product_name, sku, qty, unit_price,
+//   price_category (null|'semester'|'tahunan'|'project'), shipping_price,
+//   legacy_sp_item_id }. Duplikat (customer_id, sp_no) → RPC RAISE unique_violation.
+export async function createSpOrderDual({
+  companyId, customerId, spNo, spDate, dcId, status, expiredDate, notes, items,
+}) {
+  const { data, error } = await supabase.rpc('create_sp_order_dual', {
+    p_company_id:   companyId,
+    p_customer_id:  customerId,
+    p_sp_no:        spNo,
+    p_sp_date:      spDate || null,
+    p_dc_id:        dcId,
+    p_status:       status || 'DRAFT',
+    p_expired_date: expiredDate || null,
+    p_notes:        notes || null,
+    p_items:        items,
+  });
+  return { data, error };
+}
