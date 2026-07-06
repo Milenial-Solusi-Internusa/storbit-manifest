@@ -146,6 +146,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
 
   // SP header
   const [spDate,     setSpDate]     = useState(today());
+  const [spNo,       setSpNo]       = useState('');   // nomor SP asli dari customer (manual, wajib)
   const [customerId, setCustomerId] = useState('');
   const [dc,         setDc]         = useState('');   // nama DC — dipakai submit legacy (TIDAK diubah)
   const [dcId,       setDcId]       = useState('');   // id dc_master (dropdown baru; belum disimpan — TASK 2)
@@ -207,18 +208,38 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
   }, [items]);
 
   // Validation — DC (dcId) wajib: sp_orders.dc_id NOT NULL (dual-write ke skema baru).
-  const headerOk = spDate && customerId && dcId && expiredDate;
+  // SP No (spNo) wajib: nomor asli customer, diketik manual (bukan auto-generate).
+  const headerOk = spDate && customerId && dcId && expiredDate && spNo.trim();
   // Dropdown-only: item valid hanya bila produk dipilih dari master (productId terisi).
   const itemsOk  = items.length > 0 && items.every(i => i.productId && Number(i.qty) >= 1 && Number(i.unitPrice) >= 0);
   const isValid  = headerOk && itemsOk;
 
   // Submit helper
   const doInsert = useCallback(async () => {
+    const spNoValue = spNo.trim();
+    // Benteng pertama: cek duplikat (customer_id, sp_no) di sp_orders (sumber unik)
+    // SEBELUM menulis apa pun. Filter customer_id + sp_no (bukan sp_no saja) → nomor
+    // sama beda-customer tetap boleh. Tanpa filter deleted_at → cermin persis constraint
+    // UNIQUE(customer_id, sp_no) yang mencakup baris soft-deleted.
+    const { data: dup, error: dupErr } = await supabase
+      .from('sp_orders')
+      .select('id')
+      .eq('customer_id', customerId)
+      .eq('sp_no', spNoValue)
+      .limit(1)
+      .maybeSingle();
+    if (dupErr) {
+      showToast('Gagal cek nomor SP: ' + (dupErr.message || 'unknown'), 'error');
+      return false;
+    }
+    if (dup) {
+      showToast(`Nomor SP ${spNoValue} sudah ada untuk customer ini`, 'error');
+      return false;
+    }
     setSaving(true);
-    const spNo = `SP-${Date.now().toString().slice(-6)}`;
     const rows = items.map(item => ({
       spDate,
-      spNo,
+      spNo: spNoValue,
       customerId,
       productId:     item.productId || null,
       productName:   item.productName.trim(),
@@ -257,7 +278,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
     const { error: dualErr } = await createSpOrderDual({
       companyId:   SOA_COMPANY_ID,
       customerId,
-      spNo,
+      spNo:        spNoValue,
       spDate,
       dcId,
       status:      'DRAFT',       // parity dgn legacy (Submit & Draft sama-sama DRAFT)
@@ -269,17 +290,17 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
       // sp_items lama SUDAH tertulis (aplikasi tetap baca sp_items → SP tampil normal),
       // tapi sinkron ke skema baru gagal. Surface JELAS (bukan gagal senyap); tetap
       // return true agar tak retry & bikin sp_items dobel (sp_no di-generate ulang tiap insert).
-      showToast(`${spNo} tersimpan, tapi gagal sinkron ke skema baru: ` + (dualErr.message || 'unknown'), 'error');
-      await bulkInsertSpBtbs(spNo, btbRows);
+      showToast(`${spNoValue} tersimpan, tapi gagal sinkron ke skema baru: ` + (dualErr.message || 'unknown'), 'error');
+      await bulkInsertSpBtbs(spNoValue, btbRows);
       setSaving(false);
       return true;
     }
     // 3) Insert BTB numbers (SP-level) — ignore errors to not block SP creation
-    await bulkInsertSpBtbs(spNo, btbRows);
+    await bulkInsertSpBtbs(spNoValue, btbRows);
     setSaving(false);
-    showToast(`${spNo} berhasil dibuat ✓`, 'success');
+    showToast(`${spNoValue} berhasil dibuat ✓`, 'success');
     return true;
-  }, [items, spDate, customerId, dc, dcId, expiredDate, notes, btbRows, showToast]);
+  }, [items, spDate, spNo, customerId, dc, dcId, expiredDate, notes, btbRows, showToast]);
 
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;
@@ -289,7 +310,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
 
   const handleDraft = useCallback(async () => {
     if (!headerOk || items.length === 0) {
-      showToast('Isi SP Date, Customer, DC, dan minimal 1 item untuk draft', 'error');
+      showToast('Isi SP Date, No SP, Customer, DC, dan minimal 1 item untuk draft', 'error');
       return;
     }
     // Dropdown-only juga berlaku untuk draft: tiap item wajib produk dari master.
@@ -408,8 +429,16 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
                 </Field>
               </div>
 
-              {/* Row 2: Deadline (alone) */}
+              {/* Row 2: SP No | Expired Date */}
               <div className="nx-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 16px', marginBottom: 14 }}>
+                <Field label="SP No" req>
+                  {inp({
+                    value: spNo,
+                    placeholder: 'mis. 2229073',
+                    onChange: e => setSpNo(e.target.value),
+                    style: { fontFamily: "'IBM Plex Mono',monospace", fontSize: 13 },
+                  })}
+                </Field>
                 <Field label="Expired Date" req>
                   {inp({ type: 'date', value: expiredDate, min: today(), onChange: e => setExpiredDate(e.target.value) })}
                 </Field>
