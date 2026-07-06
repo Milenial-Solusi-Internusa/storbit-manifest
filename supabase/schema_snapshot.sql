@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict PiafDbqiZxVaysH4Bal7Tl4sj8HGiUcJeCl1zKQ2sJrIDiSW85OrgtwForsdmr5
+\restrict faqWtnOe0ovag9TaHbBt04WD8MYKqvP5Lr2gwNgPMeIQZBg23Sh0gg8TkVjZok5
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -86,6 +86,83 @@ BEGIN
     RAISE EXCEPTION 'Baris riwayat harga % tidak ditemukan', p_history_id;
   END IF;
 END;
+$$;
+
+
+--
+-- Name: bulk_update_product_prices(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bulk_update_product_prices(p_rows jsonb) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_row jsonb; v_product_id uuid; v_new_price numeric; v_category text;
+  v_contract text; v_valid_until date; v_current numeric; v_company uuid; v_history_id uuid;
+  v_updated int := 0; v_skipped int := 0; v_results jsonb := '[]'::jsonb;
+begin
+  if not is_super_admin() then
+    raise exception 'Tidak diizinkan: hanya super_admin yang boleh bulk update harga';
+  end if;
+  for v_row in select * from jsonb_array_elements(p_rows)
+  loop
+    v_product_id  := (v_row->>'product_id')::uuid;
+    v_new_price   := (v_row->>'new_price')::numeric;
+    v_category    := coalesce(nullif(v_row->>'category',''), 'default');
+    v_contract    := nullif(v_row->>'contract_no', '');
+    v_valid_until := nullif(v_row->>'valid_until', '')::date;
+    if v_product_id is null or v_new_price is null or v_new_price < 0 then
+      raise exception 'Baris tidak valid (product_id/new_price kosong atau negatif): %', v_row;
+    end if;
+    if v_category not in ('default','semester','tahunan','project') then
+      raise exception 'Kategori harga tidak valid: %', v_category;
+    end if;
+    select company_id,
+           case v_category
+             when 'semester' then price_semester
+             when 'tahunan'  then price_tahunan
+             when 'project'  then price_project
+             else default_price
+           end
+      into v_company, v_current
+      from products where id = v_product_id;
+    if not found then
+      raise exception 'Produk tidak ditemukan: %', v_product_id;
+    end if;
+    if v_current is distinct from v_new_price then
+      if v_category = 'default' then
+        update products set default_price = v_new_price where id = v_product_id;
+        if v_contract is not null then
+          select id into v_history_id from product_price_history
+            where product_id = v_product_id order by changed_at desc limit 1;
+          perform attach_price_contract_info(v_history_id, v_contract, current_date, v_valid_until);
+        end if;
+      else
+        if v_category = 'semester' then
+          update products set price_semester = v_new_price where id = v_product_id;
+        elsif v_category = 'tahunan' then
+          update products set price_tahunan = v_new_price where id = v_product_id;
+        else
+          update products set price_project = v_new_price where id = v_product_id;
+        end if;
+        insert into product_price_history
+          (product_id, company_id, old_price, new_price, changed_by, source, price_category, contract_no, valid_from, valid_until)
+        values
+          (v_product_id, v_company, v_current, v_new_price, auth.uid(), 'bulk_category', v_category, v_contract, current_date, v_valid_until);
+      end if;
+      v_updated := v_updated + 1;
+      v_results := v_results || jsonb_build_object(
+        'product_id', v_product_id, 'category', v_category, 'status', 'updated',
+        'old_price', v_current, 'new_price', v_new_price);
+    else
+      v_skipped := v_skipped + 1;
+      v_results := v_results || jsonb_build_object(
+        'product_id', v_product_id, 'category', v_category, 'status', 'skipped_same_price');
+    end if;
+  end loop;
+  return jsonb_build_object('updated', v_updated, 'skipped', v_skipped, 'rows', v_results);
+end;
 $$;
 
 
@@ -774,7 +851,8 @@ BEGIN
   IF p_items IS NOT NULL AND jsonb_typeof(p_items) = 'array' THEN
     INSERT INTO public.quotation_items (
       quotation_id, sort_order, description, qty, unit, unit_price, notes,
-      group_name, currency, unit_label, exchange_rate, total, cost_price
+      group_name, currency, unit_label, exchange_rate, total, cost_price,
+      if_any
     )
     SELECT p_quotation_id,
       COALESCE(NULLIF(it->>'sort_order','')::int, 0),
@@ -788,7 +866,8 @@ BEGIN
       it->>'unit_label',
       NULLIF(it->>'exchange_rate','')::numeric,
       NULLIF(it->>'total','')::numeric,
-      NULLIF(it->>'cost_price','')::numeric
+      NULLIF(it->>'cost_price','')::numeric,
+      COALESCE((it->>'if_any')::boolean, false)
     FROM jsonb_array_elements(p_items) AS it;
   END IF;
 
@@ -2143,6 +2222,27 @@ COMMENT ON COLUMN public.customers.updated_by IS 'User who last updated this rec
 
 
 --
+-- Name: dc_master; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dc_master (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    customer_id uuid,
+    kode text,
+    nama text NOT NULL,
+    wilayah text,
+    alamat text,
+    is_active boolean DEFAULT true NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT dc_master_wilayah_check CHECK ((wilayah = ANY (ARRAY['Jawa'::text, 'Sumatera'::text, 'Sulawesi'::text, 'Kalimantan'::text, 'Bali & Nusa Tenggara'::text, 'Lainnya'::text])))
+);
+
+
+--
 -- Name: deal_handovers; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2214,7 +2314,8 @@ CREATE TABLE public.delivery_note_items (
     sku text DEFAULT ''::text NOT NULL,
     qty integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    product_id uuid
+    product_id uuid,
+    sp_order_item_id uuid
 );
 
 
@@ -2245,6 +2346,7 @@ CREATE TABLE public.delivery_notes (
     delivered_at timestamp with time zone,
     cancelled_at timestamp with time zone,
     customer_name text,
+    sp_order_id uuid,
     CONSTRAINT delivery_notes_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'in_transit'::text, 'delivered'::text, 'cancelled'::text])))
 );
 
@@ -3140,6 +3242,7 @@ CREATE TABLE public.picking_lists (
     started_at timestamp with time zone,
     completed_at timestamp with time zone,
     cancelled_at timestamp with time zone,
+    sp_order_id uuid,
     CONSTRAINT picking_lists_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))
 );
 
@@ -3208,7 +3311,8 @@ CREATE TABLE public.product_price_history (
     source text,
     contract_no text,
     valid_from date,
-    valid_until date
+    valid_until date,
+    price_category text
 );
 
 
@@ -3262,7 +3366,10 @@ CREATE TABLE public.products (
     packaging text,
     min_order_qty text,
     cogs_account text,
-    revenue_account text
+    revenue_account text,
+    price_semester numeric(18,2),
+    price_tahunan numeric(18,2),
+    price_project numeric(18,2)
 );
 
 
@@ -3415,7 +3522,8 @@ CREATE TABLE public.quotation_items (
     unit_label character varying DEFAULT 'Per 20Ft'::character varying,
     exchange_rate numeric(15,2) DEFAULT 1,
     total numeric(15,2) DEFAULT 0,
-    cost_price numeric(15,2) DEFAULT 0
+    cost_price numeric(15,2) DEFAULT 0,
+    if_any boolean DEFAULT false NOT NULL
 );
 
 
@@ -3634,6 +3742,28 @@ CREATE TABLE public.sales_visits (
 
 
 --
+-- Name: sp_btb; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sp_btb (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    sp_order_id uuid NOT NULL,
+    delivery_note_id uuid,
+    customer_id uuid NOT NULL,
+    btb_no text NOT NULL,
+    btb_date date,
+    qty integer,
+    received_at timestamp with time zone,
+    received_by uuid,
+    remarks text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT sp_btb_qty_check CHECK (((qty IS NULL) OR (qty >= 0)))
+);
+
+
+--
 -- Name: sp_btbs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3717,6 +3847,67 @@ COMMENT ON COLUMN public.sp_items.fp IS 'Faktur Pajak (tax invoice) issued flag.
 --
 
 COMMENT ON COLUMN public.sp_items.email_status IS 'Stored as text (not date). App renders it in a date input (type=date) but treats it as a string. Empty string stored as NULL.';
+
+
+--
+-- Name: sp_order_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sp_order_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    sp_order_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    product_id uuid NOT NULL,
+    product_name text DEFAULT ''::text NOT NULL,
+    sku text DEFAULT ''::text NOT NULL,
+    qty integer DEFAULT 0 NOT NULL,
+    shipped_qty integer DEFAULT 0 NOT NULL,
+    unit_price numeric(18,2) DEFAULT 0 NOT NULL,
+    price_category text,
+    shipping_price numeric(18,2) DEFAULT 0 NOT NULL,
+    sla_days integer,
+    estimated_delivery_date date,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    legacy_sp_item_id uuid,
+    CONSTRAINT sp_order_items_check CHECK (((shipped_qty >= 0) AND (shipped_qty <= qty))),
+    CONSTRAINT sp_order_items_price_category_check CHECK ((price_category = ANY (ARRAY['semester'::text, 'tahunan'::text, 'project'::text]))),
+    CONSTRAINT sp_order_items_qty_check CHECK ((qty >= 1))
+);
+
+
+--
+-- Name: sp_orders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sp_orders (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    customer_id uuid NOT NULL,
+    sp_no text NOT NULL,
+    sp_date date,
+    dc_id uuid NOT NULL,
+    status text DEFAULT 'DRAFT'::text NOT NULL,
+    is_disputed boolean DEFAULT false NOT NULL,
+    dispute_reason text,
+    disputed_at timestamp with time zone,
+    disputed_by uuid,
+    expired_date date,
+    sp_category text,
+    external_url text,
+    notes text,
+    confirmed_at timestamp with time zone,
+    confirmed_by uuid,
+    cancelled_at timestamp with time zone,
+    cancelled_by uuid,
+    cancel_reason text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT sp_orders_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'CONFIRMED'::text, 'MENUNGGU_STOK'::text, 'PICKING'::text, 'PACKED'::text, 'DIKIRIM'::text, 'SAMPAI'::text, 'BTB_TERBIT'::text, 'TERKIRIM_PENUH'::text, 'INVOICED'::text, 'SUBMITTED'::text, 'LUNAS'::text, 'CANCELLED'::text])))
+);
 
 
 --
@@ -4396,6 +4587,14 @@ ALTER TABLE ONLY public.customers
 
 
 --
+-- Name: dc_master dc_master_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dc_master
+    ADD CONSTRAINT dc_master_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: deal_handovers deal_handovers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5036,6 +5235,22 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
+-- Name: sp_btb sp_btb_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_btb
+    ADD CONSTRAINT sp_btb_no_unique UNIQUE (customer_id, btb_no);
+
+
+--
+-- Name: sp_btb sp_btb_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_btb
+    ADD CONSTRAINT sp_btb_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sp_btbs sp_btbs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5049,6 +5264,30 @@ ALTER TABLE ONLY public.sp_btbs
 
 ALTER TABLE ONLY public.sp_items
     ADD CONSTRAINT sp_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sp_order_items sp_order_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_order_items
+    ADD CONSTRAINT sp_order_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sp_orders sp_orders_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_orders
+    ADD CONSTRAINT sp_orders_no_unique UNIQUE (customer_id, sp_no);
+
+
+--
+-- Name: sp_orders sp_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_orders
+    ADD CONSTRAINT sp_orders_pkey PRIMARY KEY (id);
 
 
 --
@@ -7205,6 +7444,22 @@ ALTER TABLE ONLY public.customers
 
 
 --
+-- Name: dc_master dc_master_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dc_master
+    ADD CONSTRAINT dc_master_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: dc_master dc_master_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dc_master
+    ADD CONSTRAINT dc_master_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: deal_handovers deal_handovers_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7285,6 +7540,14 @@ ALTER TABLE ONLY public.delivery_note_items
 
 
 --
+-- Name: delivery_note_items delivery_note_items_sp_order_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_note_items
+    ADD CONSTRAINT delivery_note_items_sp_order_item_id_fkey FOREIGN KEY (sp_order_item_id) REFERENCES public.sp_order_items(id) ON DELETE SET NULL;
+
+
+--
 -- Name: delivery_notes delivery_notes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7306,6 +7569,14 @@ ALTER TABLE ONLY public.delivery_notes
 
 ALTER TABLE ONLY public.delivery_notes
     ADD CONSTRAINT delivery_notes_picking_list_id_fkey FOREIGN KEY (picking_list_id) REFERENCES public.picking_lists(id);
+
+
+--
+-- Name: delivery_notes delivery_notes_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_notes
+    ADD CONSTRAINT delivery_notes_sp_order_id_fkey FOREIGN KEY (sp_order_id) REFERENCES public.sp_orders(id);
 
 
 --
@@ -7981,6 +8252,14 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
+-- Name: picking_lists picking_lists_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_lists
+    ADD CONSTRAINT picking_lists_sp_order_id_fkey FOREIGN KEY (sp_order_id) REFERENCES public.sp_orders(id);
+
+
+--
 -- Name: picking_lists picking_lists_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8389,6 +8668,38 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
+-- Name: sp_btb sp_btb_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_btb
+    ADD CONSTRAINT sp_btb_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: sp_btb sp_btb_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_btb
+    ADD CONSTRAINT sp_btb_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: sp_btb sp_btb_delivery_note_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_btb
+    ADD CONSTRAINT sp_btb_delivery_note_id_fkey FOREIGN KEY (delivery_note_id) REFERENCES public.delivery_notes(id);
+
+
+--
+-- Name: sp_btb sp_btb_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_btb
+    ADD CONSTRAINT sp_btb_sp_order_id_fkey FOREIGN KEY (sp_order_id) REFERENCES public.sp_orders(id);
+
+
+--
 -- Name: sp_items sp_items_cancelled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8418,6 +8729,54 @@ ALTER TABLE ONLY public.sp_items
 
 ALTER TABLE ONLY public.sp_items
     ADD CONSTRAINT sp_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
+-- Name: sp_order_items sp_order_items_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_order_items
+    ADD CONSTRAINT sp_order_items_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: sp_order_items sp_order_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_order_items
+    ADD CONSTRAINT sp_order_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
+-- Name: sp_order_items sp_order_items_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_order_items
+    ADD CONSTRAINT sp_order_items_sp_order_id_fkey FOREIGN KEY (sp_order_id) REFERENCES public.sp_orders(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sp_orders sp_orders_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_orders
+    ADD CONSTRAINT sp_orders_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: sp_orders sp_orders_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_orders
+    ADD CONSTRAINT sp_orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: sp_orders sp_orders_dc_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_orders
+    ADD CONSTRAINT sp_orders_dc_id_fkey FOREIGN KEY (dc_id) REFERENCES public.dc_master(id);
 
 
 --
@@ -9188,6 +9547,40 @@ CREATE POLICY customers_read ON public.customers FOR SELECT USING (((company_id 
 --
 
 CREATE POLICY customers_update ON public.customers FOR UPDATE USING ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: dc_master; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.dc_master ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: dc_master dc_master_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dc_master_delete ON public.dc_master FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: dc_master dc_master_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dc_master_insert ON public.dc_master FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
+
+
+--
+-- Name: dc_master dc_master_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dc_master_read ON public.dc_master FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+
+
+--
+-- Name: dc_master dc_master_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY dc_master_update ON public.dc_master FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
@@ -10793,6 +11186,40 @@ CREATE POLICY software_update ON public.asset_software_licenses FOR UPDATE USING
 
 
 --
+-- Name: sp_btb; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sp_btb ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sp_btb sp_btb_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_btb_delete ON public.sp_btb FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: sp_btb sp_btb_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_btb_insert ON public.sp_btb FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
+
+
+--
+-- Name: sp_btb sp_btb_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_btb_read ON public.sp_btb FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+
+
+--
+-- Name: sp_btb sp_btb_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_btb_update ON public.sp_btb FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
+
+
+--
 -- Name: sp_btbs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10858,6 +11285,74 @@ CREATE POLICY sp_items_read ON public.sp_items FOR SELECT TO authenticated USING
 --
 
 CREATE POLICY sp_items_update ON public.sp_items FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sp_order_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sp_order_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sp_order_items sp_order_items_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_order_items_delete ON public.sp_order_items FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: sp_order_items sp_order_items_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_order_items_insert ON public.sp_order_items FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
+
+
+--
+-- Name: sp_order_items sp_order_items_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_order_items_read ON public.sp_order_items FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+
+
+--
+-- Name: sp_order_items sp_order_items_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_order_items_update ON public.sp_order_items FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
+
+
+--
+-- Name: sp_orders; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sp_orders ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sp_orders sp_orders_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_orders_delete ON public.sp_orders FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: sp_orders sp_orders_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_orders_insert ON public.sp_orders FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
+
+
+--
+-- Name: sp_orders sp_orders_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_orders_read ON public.sp_orders FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+
+
+--
+-- Name: sp_orders sp_orders_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_orders_update ON public.sp_orders FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
@@ -11118,5 +11613,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict PiafDbqiZxVaysH4Bal7Tl4sj8HGiUcJeCl1zKQ2sJrIDiSW85OrgtwForsdmr5
+\unrestrict faqWtnOe0ovag9TaHbBt04WD8MYKqvP5Lr2gwNgPMeIQZBg23Sh0gg8TkVjZok5
 
