@@ -11,11 +11,12 @@
 //       SP number is generated client-side as SP-{6-digit-timestamp}.
 //       Upgrade to increment_document_sequence RPC in Phase 2.0D.
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   ChevronRight, ChevronLeft, Plus, Trash2,
   Receipt, Check, Save, Package,
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import { bulkInsertSpItems, bulkInsertSpBtbs } from '../../lib/db';
 import { useProducts } from '../../hooks/useProducts';
 import ProductPicker from '../../components/ProductPicker';
@@ -58,11 +59,14 @@ const C = {
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 const today = () => new Date().toISOString().slice(0, 10);
 
-// DC options — merged with dcList from existing rows
-const DEFAULT_DCS = [
-  'DC Cibitung','DC Cikarang','DC Bekasi',
-  'DC Tangerang','DC Depok','DC Bogor','DC Bandung',
+// Kategori harga produk → kolom di master products (Fase 0). Hanya yang non-null yang ditawarkan.
+const CAT_DEFS = [
+  { key: 'default',  label: 'Default',  col: 'default_price'  },
+  { key: 'semester', label: 'Semester', col: 'price_semester' },
+  { key: 'tahunan',  label: 'Tahunan',  col: 'price_tahunan'  },
+  { key: 'project',  label: 'Project',  col: 'price_project'  },
 ];
+const availCatsOf = (p) => (p ? CAT_DEFS.filter(c => p[c.col] != null) : []);
 
 // ─── Item row counter ─────────────────────────────────────────────────────────
 let _seq = 0;
@@ -73,6 +77,7 @@ const freshItem = () => ({
   sku: '',
   qty: 1,
   unitPrice: 0,
+  priceCategory: '',      // '' | 'default' | 'semester' | 'tahunan' | 'project' (state only; belum disimpan — TASK 2)
   shippingPrice: 0,
   expDate: '',
   expired_date: '',
@@ -135,14 +140,16 @@ function Field({ label, req, children, full }) {
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
-export default function InputSPPage({ onBack, customers = [], dcList = [], showToast }) {
+export default function InputSPPage({ onBack, customers = [], showToast }) {
   // Product catalog pinned to Storbit/SOA (dropdown-only source for item rows).
   const { products } = useProducts({ companyId: SOA_COMPANY_ID });
 
   // SP header
   const [spDate,     setSpDate]     = useState(today());
   const [customerId, setCustomerId] = useState('');
-  const [dc,         setDc]         = useState('');
+  const [dc,         setDc]         = useState('');   // nama DC — dipakai submit legacy (TIDAK diubah)
+  const [dcId,       setDcId]       = useState('');   // id dc_master (dropdown baru; belum disimpan — TASK 2)
+  const [dcOptions,  setDcOptions]  = useState([]);
   const [expiredDate, setExpiredDate] = useState('');
   const [notes,      setNotes]      = useState('');
 
@@ -153,10 +160,37 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
   // BTB Numbers (SP-level)
   const [btbRows, setBtbRows] = useState([{ btb_no: '', remarks: '' }]);
 
-  const allDcs = useMemo(
-    () => [...new Set([...DEFAULT_DCS, ...dcList])].sort(),
-    [dcList],
-  );
+  // DC dari master dc_master, difilter per customer (+ DC umum customer_id NULL). Re-fetch saat ganti customer.
+  // Reset dcId/dc/dcOptions ditangani di handleCustomerChange (bukan di effect) — hindari setState sinkron di effect.
+  useEffect(() => {
+    if (!customerId) return;
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('dc_master')
+        .select('id, kode, nama')
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .or(`customer_id.eq.${customerId},customer_id.is.null`)
+        .order('nama', { ascending: true });
+      if (alive) setDcOptions(data || []);
+    })();
+    return () => { alive = false; };
+  }, [customerId]);
+
+  // Ganti customer → reset DC (DC lama mungkin tak relevan utk customer baru).
+  const handleCustomerChange = (e) => {
+    setCustomerId(e.target.value);
+    setDcId(''); setDc(''); setDcOptions([]);
+  };
+
+  // Pilih DC: simpan id (dcId) + mirror nama (dc) supaya submit legacy tetap menulis nama DC ke sp_items.dc.
+  const handleDcChange = (e) => {
+    const id = e.target.value;
+    setDcId(id);
+    const opt = dcOptions.find(o => o.id === id);
+    setDc(opt ? opt.nama : '');
+  };
 
   // Item mutations
   const addItem    = ()           => setItems(p => [...p, freshItem()]);
@@ -312,7 +346,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
                 <Field label="Customer" req>
                   {sel({
                     value: customerId,
-                    onChange: e => setCustomerId(e.target.value),
+                    onChange: handleCustomerChange,
                     children: (
                       <>
                         <option value="">Pilih customer…</option>
@@ -321,14 +355,16 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
                     ),
                   })}
                 </Field>
-                <Field label="Distribution Center">
+                <Field label="Distribution Center" req>
                   {sel({
-                    value: dc,
-                    onChange: e => setDc(e.target.value),
+                    value: dcId,
+                    onChange: handleDcChange,
                     children: (
                       <>
-                        <option value="">Pilih DC…</option>
-                        {allDcs.map(d => <option key={d} value={d}>{d}</option>)}
+                        <option value="">{customerId ? 'Pilih DC…' : 'Pilih customer dulu'}</option>
+                        {dcOptions.map(o => (
+                          <option key={o.id} value={o.id}>{o.kode ? `${o.kode} · ${o.nama}` : o.nama}</option>
+                        ))}
                       </>
                     ),
                   })}
@@ -567,6 +603,10 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
   const grand = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0) + (Number(item.shippingPrice) || 0);
   const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 
+  // Kategori harga yang tersedia utk produk terpilih (hanya kolom harga non-null).
+  const prod = products.find(p => p.id === item.productId) || null;
+  const availCats = availCatsOf(prod);
+
   const inp = (props) => (
     <input
       {...props}
@@ -667,12 +707,22 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
                 onChange(item.id, 'productName', v);
                 onChange(item.id, 'productId', null);
                 onChange(item.id, 'sku', '');
+                onChange(item.id, 'priceCategory', '');   // batalkan kategori + kunci harga (0) sampai produk dipilih
+                onChange(item.id, 'unitPrice', 0);
               }}
               onPick={(p) => {
                 onChange(item.id, 'productId', p.id);
                 onChange(item.id, 'productName', p.name);
                 onChange(item.id, 'sku', p.code || '');
-                onChange(item.id, 'unitPrice', Number(p.default_price) || 0);
+                // Harga ikut kategori: kalau produk cuma punya 1 kategori harga → auto-pilih; kalau banyak → user pilih.
+                const avail = availCatsOf(p);
+                if (avail.length === 1) {
+                  onChange(item.id, 'priceCategory', avail[0].key);
+                  onChange(item.id, 'unitPrice', Number(p[avail[0].col]) || 0);
+                } else {
+                  onChange(item.id, 'priceCategory', '');
+                  onChange(item.id, 'unitPrice', 0);
+                }
               }}
             />
           </div>
@@ -696,16 +746,41 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
           </div>
         </div>
 
-        {/* Row 2: Unit Price | Ongkos Kirim | Exp Date | Deadline */}
-        <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 12px' }}>
+        {/* Row 2: Kategori Harga | Unit Price | Ongkos Kirim | Exp Date | Deadline */}
+        <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '0 12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {fieldLabel('Kategori Harga', true)}
+            <select
+              value={item.priceCategory || ''}
+              disabled={!item.productId || availCats.length === 0}
+              onChange={e => {
+                const cat = e.target.value;
+                onChange(item.id, 'priceCategory', cat);
+                const def = CAT_DEFS.find(c => c.key === cat);
+                onChange(item.id, 'unitPrice', (def && prod) ? (Number(prod[def.col]) || 0) : 0);
+              }}
+              onFocus={e => { e.target.style.borderColor = '#1B4D8A'; e.target.style.boxShadow = '0 0 0 3px rgba(20,70,130,.1)'; }}
+              onBlur={e  => { e.target.style.borderColor = '#E5E7EB'; e.target.style.boxShadow = 'none'; }}
+              style={{
+                width: '100%', height: 38, borderRadius: 8,
+                border: '1.5px solid #E5E7EB', background: item.productId ? '#FFFFFF' : '#F7F7F8',
+                padding: '0 11px', fontSize: 13, color: '#1A1A1E',
+                outline: 'none', fontFamily: "'Inter', sans-serif", boxSizing: 'border-box',
+                cursor: (!item.productId || availCats.length === 0) ? 'not-allowed' : 'pointer',
+                transition: 'border-color .14s, box-shadow .14s',
+              }}
+            >
+              <option value="">{!item.productId ? 'Pilih produk dulu' : (availCats.length ? 'Pilih kategori…' : 'Tak ada harga')}</option>
+              {availCats.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {fieldLabel('Unit Price', true)}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <span style={{ position: 'absolute', left: 10, fontSize: 11.5, color: '#9CA3AF', pointerEvents: 'none', fontFamily: "'Inter',sans-serif" }}>Rp</span>
               {inp({
-                type: 'number', min: 0, value: item.unitPrice,
-                onChange: e => onChange(item.id, 'unitPrice', e.target.value),
-                style: { paddingLeft: 30, fontFamily: "'IBM Plex Mono', monospace" },
+                type: 'number', value: item.unitPrice, readOnly: true,   // terkunci — nilainya ikut kategori harga
+                style: { paddingLeft: 30, fontFamily: "'IBM Plex Mono', monospace", background: '#F7F7F8', color: '#4B5563', cursor: 'not-allowed' },
               })}
             </div>
           </div>
