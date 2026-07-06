@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
-  Search, Download, Upload, Eye, Edit3, Trash2, X,
+  Search, Download, Upload, Edit3, Trash2, X,
   Package, AlertTriangle, CheckCircle2,
-  ChevronRight, Save, RefreshCw, Calendar, Building2, User,
+  ChevronRight, Save, Calendar, Building2, User,
   ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, Menu,
   Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
@@ -22,8 +22,6 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import { calcItem } from './lib/spCalc';
-import ProductPicker from './components/ProductPicker';
-import { useProducts } from './hooks/useProducts';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
@@ -1469,7 +1467,6 @@ export default function StorbitManifest() {
     saveRow: dbSaveRow,
     removeRow: dbRemoveRow,
     removeRowsBySp: dbRemoveRowsBySp,
-    bulkAdd: dbBulkAdd,
   } = useSpItems({ customers });
   const { arData, saveTtf: dbSaveTtf, removeTtf: dbRemoveTtf } = useTtfs({ customers });
   const loading = false;
@@ -1524,8 +1521,8 @@ export default function StorbitManifest() {
 
   // Defense-in-depth for Input SP (create SP — Storbit ops). Require BOTH the
   // per-menu permission (logistics_input via canRenderPage) AND an operational
-  // role (admin/manager/operations/super_admin). InputPage has no guard of its
-  // own (F5), so this stops a stray navigation from rendering the create form.
+  // role (admin/manager/operations/super_admin). InputSPPage has no guard of its
+  // own, so this stops a stray navigation from rendering the create form.
   const canInputSP = canRenderPage('input')
     && ['admin', 'manager', 'operations', 'super_admin'].includes(role);
 
@@ -1730,17 +1727,13 @@ export default function StorbitManifest() {
     if (dest) navigateTo(dest);
   }, [navigateTo]);
 
-  const [editingRow, setEditingRow] = useState(null);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editingAR, setEditingAR] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [showAddAR, setShowAddAR] = useState(false);
-  const [viewingSP, setViewingSP] = useState(null);
   const [viewingAR, setViewingAR] = useState(null);
   const [shipmentRow, setShipmentRow] = useState(null);
   const [financeRow, setFinanceRow] = useState(null);
-  const [showImport, setShowImport] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
   const [toast, setToast] = useState(null);
 
   // SP list filters — setters kept for future SP detail / legacy support (SalesOrderPage handles its own state)
@@ -2016,10 +2009,8 @@ export default function StorbitManifest() {
       const isUpdate = data.id && rows.find(r => r.id === data.id);
       await dbSaveRow(data);
       showToast(isUpdate ? 'Data berhasil diupdate ✨' : 'Data berhasil ditambahkan ✨');
-      setEditingRow(null);
       setShipmentRow(null);
       setFinanceRow(null);
-      setShowAdd(false);
     } catch (err) {
       showToast('Gagal menyimpan: ' + (err.message || 'unknown error'), 'error');
     }
@@ -2032,27 +2023,6 @@ export default function StorbitManifest() {
       showToast('Item dihapus');
     } catch (err) {
       showToast('Gagal hapus: ' + (err.message || 'unknown error'), 'error');
-    }
-  };
-
-  const handleDeleteSP = async (spNo) => {
-    if (!confirm(`Yakin hapus seluruh SP ${spNo}? Semua item akan terhapus.`)) return;
-    try {
-      await dbRemoveRowsBySp(spNo);
-      setViewingSP(null);
-      showToast(`SP ${spNo} dihapus`);
-    } catch (err) {
-      showToast('Gagal hapus SP: ' + (err.message || 'unknown error'), 'error');
-    }
-  };
-
-  const handleImport = async (importedRows) => {
-    try {
-      await dbBulkAdd(importedRows);
-      showToast(`${importedRows.length} baris berhasil diimport`);
-      setShowImport(false);
-    } catch (err) {
-      showToast('Gagal import: ' + (err.message || 'unknown error'), 'error');
     }
   };
 
@@ -2110,14 +2080,6 @@ export default function StorbitManifest() {
     }
   };
 
-  const handleResetData = async () => {
-    showToast('Reset data tidak tersedia di mode multi-user. Hubungi admin.', 'error');
-  };
-
-  const handleClearAll = async () => {
-    showToast('Clear all tidak tersedia di mode multi-user. Hubungi admin.', 'error');
-  };
-
   const exportCSV = () => {
     const headers = ['SP DATE','SP NO','Product Name','SKU','QTY','SHIPPED QTY','OUTSTANDING QTY','EXP Date','Expired Date','STATUS','DC','Shipping Date','BTB NO','Unit Price','Shipping Price','TOTAL','PPN','GRAND TOTAL','INV','FP','SUBMIT','KIRIM','SUBMIT DATE','Email Status','Notes'];
     const lines = [headers.join(',')];
@@ -2141,7 +2103,6 @@ export default function StorbitManifest() {
     showToast('CSV berhasil diexport ⬇');
   };
 
-  const viewingSPGroup = viewingSP ? groupedSP.find(g => g.spNo === viewingSP) : null;
 
   if (loading) {
     return (
@@ -2732,14 +2693,20 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
           {activeMenu === 'input' && (canInputSP ? (
-            <InputPage
-              onAdd={() => setShowAdd(true)}
-              onImport={() => setShowImport(true)}
-              onReset={handleResetData}
-              onClear={handleClearAll}
-              rowCount={rows.length}
-              spCount={groupedSP.length}
-            />
+            <ErrorBoundary title="Input SP section temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <InputSPPage
+                  onBack={() => setActiveMenu('manifest')}
+                  customers={customers}
+                  dcList={dcList}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
           ) : (
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
           ))}
@@ -3298,29 +3265,7 @@ export default function StorbitManifest() {
         </main>
       </div>
 
-      {/* SIDE PANEL - SP Detail (legacy; suppressed when new SalesOrderDetailPage is open) */}
-      {viewingSPGroup && !selectedSpId && (
-        <SPSidePanel
-          group={viewingSPGroup}
-          onClose={() => setViewingSP(null)}
-          onEditItem={(item) => can(role,'edit') && setEditingRow(item)}
-          onDeleteItem={(id) => can(role,'delete') && handleDelete(id)}
-          onDeleteSP={() => can(role,'delete') && handleDeleteSP(viewingSP)}
-          onShipment={(item) => can(role,'shipment') && setShipmentRow(item)}
-          onFinance={(item) => can(role,'finance') && setFinanceRow(item)}
-          role={role}
-        />
-      )}
-
       {/* MODALS */}
-      {(editingRow || showAdd) && (
-        <FormModal
-          initial={editingRow}
-          customers={customers}
-          onClose={() => { setEditingRow(null); setShowAdd(false); }}
-          onSave={handleSave}
-        />
-      )}
       {(editingCustomer || showAddCustomer) && (
         <CustomerModal
           initial={editingCustomer}
@@ -3349,7 +3294,6 @@ export default function StorbitManifest() {
       )}
       {shipmentRow && <ShipmentModal row={shipmentRow} onClose={() => setShipmentRow(null)} onSave={handleSave}/>}
       {financeRow && <FinanceModal row={financeRow} onClose={() => setFinanceRow(null)} onSave={handleSave}/>}
-      {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={handleImport}/>}
 
       {/* TOAST */}
       {toast && (
@@ -3722,190 +3666,11 @@ function FilterPill({ value, onChange, options }) {
   );
 }
 
-// ============================
-// SP Side Panel (slide-in)
-// ============================
-function SPSidePanel({ group, onClose, onEditItem, onDeleteItem, onDeleteSP, onShipment, onFinance, role }) {
-  return (
-    <>
-      <div className="fixed inset-0 z-40 animate-fade-in" style={{ background: 'rgba(45, 42, 40, 0.4)', backdropFilter: 'blur(4px)' }} onClick={onClose}/>
-      <div className="fixed top-0 right-0 bottom-0 w-full md:w-[640px] z-50 overflow-y-auto animate-slide-in shadow-2xl" style={{ background: PASTEL.cream }}>
-        {/* Header */}
-        <div className="sticky top-0 z-10 px-6 py-5 border-b backdrop-blur" style={{ borderColor: PASTEL.line, background: 'rgba(250, 246, 240, 0.92)' }}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <button onClick={onClose} className="p-1 -ml-1 rounded hover:bg-black/5 transition-colors">
-                  <ChevronLeft size={18}/>
-                </button>
-                <span className="text-[10px] uppercase tracking-[0.2em] font-semibold" style={{ color: PASTEL.inkMute }}>SP Detail</span>
-              </div>
-              <h2 className="font-numeric text-4xl font-bold tracking-tight">SP-{group.spNo}</h2>
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                <StatusBadge status={group.status} overdue={group.isOverdue} large/>
-                {group.customer && (
-                  <span className="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1" style={{ background: PASTEL.peach, color: '#5C2F12' }}>
-                    <User size={11}/>{group.customer}
-                  </span>
-                )}
-                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
-                  {group.itemCount} {group.itemCount > 1 ? 'items' : 'item'}
-                </span>
-                {group.dc && (
-                  <span className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1" style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>
-                    <Building2 size={11}/>{group.dc}
-                  </span>
-                )}
-              </div>
-            </div>
-            <button onClick={onClose} className="p-2 rounded-xl hover:bg-black/5 transition-colors">
-              <X size={18}/>
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6 space-y-5">
-          {/* Summary */}
-          <div className="grid grid-cols-3 gap-3">
-            <SummaryStat label="SP Date" value={formatDateID(group.spDate)} bg={PASTEL.peach}/>
-            <SummaryStat label="Expired Date" value={formatDateID(group.expired_date || group.deadline)} bg={PASTEL.butter}/>
-            <SummaryStat label="Finance Progress" value={`${Math.round(group.financePct)}%`} bg={group.financePct === 100 ? PASTEL.mint : PASTEL.lavender}/>
-          </div>
-
-          {/* Money summary */}
-          <div className="rounded-2xl p-5" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
-            <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-3" style={{ color: PASTEL.inkMute }}>Financial Summary</div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span style={{ color: PASTEL.inkSoft }}>Total Items</span><span className="font-mono">{group.itemCount}</span></div>
-              <div className="flex justify-between"><span style={{ color: PASTEL.inkSoft }}>Total QTY</span><span className="font-mono">{formatNumber(group.totalQty)}</span></div>
-              <div className="flex justify-between"><span style={{ color: PASTEL.inkSoft }}>Shipped</span><span className="font-mono" style={{ color: PASTEL.mintDeep }}>{formatNumber(group.totalShipped)}</span></div>
-              <div className="flex justify-between"><span style={{ color: PASTEL.inkSoft }}>Outstanding</span><span className="font-mono" style={{ color: PASTEL.peachDeep }}>{formatNumber(group.totalOutstanding)}</span></div>
-              <div className="flex justify-between pt-2 border-t" style={{ borderColor: PASTEL.line }}>
-                <span style={{ color: PASTEL.inkSoft }}>Subtotal</span><span className="font-mono">{formatRupiah(group.totalAmount)}</span>
-              </div>
-              <div className="flex justify-between"><span style={{ color: PASTEL.inkSoft }}>PPN (11%)</span><span className="font-mono">{formatRupiah(group.totalPPN)}</span></div>
-              <div className="flex justify-between pt-2 border-t" style={{ borderColor: PASTEL.line }}>
-                <span className="font-semibold">Grand Total</span>
-                <span className="font-numeric text-xl font-bold" style={{ color: PASTEL.mintDeep }}>{formatRupiah(group.grandTotal)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Finance dots overview */}
-          <div className="rounded-2xl p-5" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
-            <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-3" style={{ color: PASTEL.inkMute }}>Finance Status</div>
-            <div className="grid grid-cols-4 gap-2">
-              <FinTile label="Invoice" done={group.invDone} total={group.itemCount} bg={PASTEL.peach}/>
-              <FinTile label="Faktur Pajak" done={group.fpDone} total={group.itemCount} bg={PASTEL.lavender}/>
-              <FinTile label="Submit" done={group.submitDone} total={group.itemCount} bg={PASTEL.butter}/>
-              <FinTile label="Kirim" done={group.kirimDone} total={group.itemCount} bg={PASTEL.rose}/>
-            </div>
-          </div>
-
-          {/* Items list */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-display text-xl font-semibold">Items</h3>
-              <span className="text-xs" style={{ color: PASTEL.inkMute }}>{group.itemCount} produk</span>
-            </div>
-            <div className="space-y-3">
-              {group.items.map((item, idx) => (
-                <div key={item.id} className="rounded-2xl p-4 transition-all" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-semibold flex-shrink-0 mt-0.5" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
-                      {idx+1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm leading-snug">{item.productName}</div>
-                      <div className="text-xs font-mono mt-0.5" style={{ color: PASTEL.inkMute }}>
-                        <span className="font-sans uppercase tracking-wider text-[9px] font-semibold mr-1">SKU:</span>
-                        {item.sku || '—'}
-                      </div>
-                    </div>
-                    <StatusBadge status={item.status} overdue={item.isOverdue}/>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-2 mb-3">
-                    <MiniStat label="Qty" value={formatNumber(item.qty)}/>
-                    <MiniStat label="Shipped" value={formatNumber(item.shippedQty)} color={PASTEL.mintDeep}/>
-                    <MiniStat label="Outstanding" value={formatNumber(item.outstandingQty)} color={item.outstandingQty > 0 ? PASTEL.peachDeep : PASTEL.inkSoft}/>
-                    <MiniStat label="Grand Total" value={formatRupiahShort(item.grandTotal)}/>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <MiniStat label="Unit Price" value={formatRupiah(item.unitPrice)}/>
-                    <MiniStat label="Shipping" value={formatRupiah(item.shippingPrice)}/>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    <DocChip label="INV" active={item.inv}/>
-                    <DocChip label="FP" active={item.fp}/>
-                    <DocChip label="SUB" active={item.submit}/>
-                    <DocChip label="KRM" active={item.kirim}/>
-                    {item.btbNo && <span className="px-2 py-0.5 rounded-md text-[10px] font-mono" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>BTB: {item.btbNo}</span>}
-                  </div>
-
-                  {item.notes && (
-                    <div className="text-xs p-2 rounded-lg mb-3" style={{ background: PASTEL.butter, color: '#5C4416' }}>
-                      💡 {item.notes}
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-1.5 pt-2 border-t" style={{ borderColor: PASTEL.line }}>
-                    {can(role,'shipment') && (
-                      <button onClick={() => onShipment(item)} className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors" style={{ background: PASTEL.peach, color: '#5C2F12' }}>
-                        <Truck size={12} className="inline mr-1"/> Shipment
-                      </button>
-                    )}
-                    {can(role,'finance') && (
-                      <button onClick={() => onFinance(item)} className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors" style={{ background: PASTEL.mint, color: '#1B5739' }}>
-                        <Wallet size={12} className="inline mr-1"/> Finance
-                      </button>
-                    )}
-                    {can(role,'edit') && (
-                      <button onClick={() => onEditItem(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
-                        <Edit3 size={12}/>
-                      </button>
-                    )}
-                    {can(role,'delete') && (
-                      <button onClick={() => onDeleteItem(item.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: PASTEL.rose, color: '#7A2240' }}>
-                        <Trash2 size={12}/>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Danger zone */}
-          {can(role, 'delete') && (
-            <div className="pt-4 border-t" style={{ borderColor: PASTEL.line }}>
-              <button onClick={onDeleteSP} className="w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-colors" style={{ background: PASTEL.rose, color: '#7A2240' }}>
-                <Trash2 size={14} className="inline mr-2"/> Delete entire SP-{group.spNo}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 function SummaryStat({ label, value, bg }) {
   return (
     <div className="rounded-2xl p-3.5" style={{ background: bg }}>
       <div className="text-[9px] uppercase tracking-[0.18em] font-semibold opacity-75" style={{ color: PASTEL.ink }}>{label}</div>
       <div className="text-sm font-semibold mt-1" style={{ color: PASTEL.ink }}>{value}</div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, color }) {
-  return (
-    <div>
-      <div className="text-[9px] uppercase tracking-[0.18em] font-semibold" style={{ color: PASTEL.inkMute }}>{label}</div>
-      <div className="text-sm font-mono font-semibold mt-0.5" style={{ color: color || PASTEL.ink }}>{value}</div>
     </div>
   );
 }
@@ -3918,96 +3683,6 @@ function DocChip({ label, active }) {
     }}>
       {active ? '✓' : '○'} {label}
     </span>
-  );
-}
-
-function FinTile({ label, done, total, bg }) {
-  const pct = total > 0 ? (done/total) * 100 : 0;
-  const complete = done === total && total > 0;
-  return (
-    <div className="rounded-xl p-3" style={{ background: complete ? bg : PASTEL.lineSoft }}>
-      <div className="text-[9px] uppercase tracking-wider font-semibold mb-1" style={{ color: complete ? PASTEL.ink : PASTEL.inkMute }}>{label}</div>
-      <div className="font-mono text-base font-semibold" style={{ color: complete ? PASTEL.ink : PASTEL.inkSoft }}>
-        {done}/{total}
-      </div>
-      <div className="h-1 mt-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.08)' }}>
-        <div className="h-full" style={{ width: `${pct}%`, background: complete ? PASTEL.ink : PASTEL.inkMute }}/>
-      </div>
-    </div>
-  );
-}
-
-// ============================
-// Input page
-// ============================
-function InputPage({ onAdd, onImport, onReset, onClear, rowCount, spCount }) {
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
-            style={{ background: PASTEL.peach, color: '#5C2F12' }}>
-            <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.peachDeep }}/>
-            Logistics · Input SP
-          </span>
-        </div>
-        <h2 className="font-display text-3xl font-semibold tracking-tight">Input Data</h2>
-        <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>Tambah SP secara manual atau bulk import dari spreadsheet</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ActionCard
-          icon={Plus}
-          title="Manual Input"
-          desc="Tambah 1 baris SP dengan form lengkap. Auto-calculate total, PPN, grand total, dan status."
-          buttonLabel="Add New SP"
-          onClick={onAdd}
-          bg={PASTEL.peach}
-          accent={PASTEL.peachDeep}
-        />
-        <ActionCard
-          icon={Upload}
-          title="Bulk Import"
-          desc="Paste data dari Excel atau Google Sheets. Sistem auto-deteksi kolom dan validasi format."
-          buttonLabel="Import from Excel"
-          onClick={onImport}
-          bg={PASTEL.lavender}
-          accent={PASTEL.lavenderDeep}
-        />
-      </div>
-
-      <div className="rounded-3xl p-5 border" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <h3 className="font-display text-lg font-semibold mb-4">Data Management</h3>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="text-sm" style={{ color: PASTEL.inkSoft }}>
-            <span className="font-mono font-semibold" style={{ color: PASTEL.ink }}>{spCount}</span> SP · <span className="font-mono font-semibold" style={{ color: PASTEL.ink }}>{rowCount}</span> items di local storage
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={onReset} className="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-medium" style={{ background: PASTEL.cream, border: `1px solid ${PASTEL.line}` }}>
-              <RefreshCw size={12}/> Reset to Sample
-            </button>
-            <button onClick={onClear} className="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-medium" style={{ background: PASTEL.rose, color: '#7A2240' }}>
-              <Trash2 size={12}/> Clear All
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ActionCard({ icon: Icon, title, desc, buttonLabel, onClick, bg, accent }) {
-  return (
-    <div className="rounded-3xl p-6 border transition-all hover:shadow-lg" style={{ background: 'white', borderColor: PASTEL.line }}>
-      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4" style={{ background: bg }}>
-        <Icon size={22} style={{ color: accent }}/>
-      </div>
-      <h3 className="font-display text-xl font-semibold mb-1.5">{title}</h3>
-      <p className="text-sm mb-5" style={{ color: PASTEL.inkSoft }}>{desc}</p>
-      <button onClick={onClick} className="px-5 py-2.5 rounded-full text-sm font-semibold transition-colors" style={{ background: PASTEL.ink, color: PASTEL.cream }}>
-        {buttonLabel} →
-      </button>
-    </div>
   );
 }
 
@@ -4260,166 +3935,6 @@ function ModalShell({ title, subtitle, onClose, children, maxWidth = 'max-w-3xl'
   );
 }
 
-function FormModal({ initial, customers = [], onClose, onSave }) {
-  // SP = entitas Storbit (SOA) → pin katalog produk ke SOA (pola InputSPPage/DeliveryNote).
-  const { products } = useProducts({ companyId: 'd2e5e565-5f67-4954-b8d9-5979a2a0c697' });
-  const [data, setData] = useState(initial || {
-    spDate: '', spNo: '', customer: '', productId: null, productName: '', sku: '',
-    qty: 0, shippedQty: 0, expDate: '', expired_date: '',
-    dc: '', shippingDate: '',
-    unitPrice: 0, shippingPrice: 0,
-    inv: false, fp: false, submit: false, kirim: false,
-    submitDate: '', emailStatus: '', notes: ''
-  });
-
-  const calc = calcItem(data);
-  const update = (field, val) => setData({ ...data, [field]: val });
-
-  // Dropdown-only enforcement: produk wajib untuk item BARU, dan untuk item lama yang
-  // SUDAH tertaut (cegah unlink tak sengaja). Item legacy (product_id null) boleh disimpan
-  // apa adanya (lenient) — keputusan user.
-  const wasLinked = !!initial?.productId;
-  const requireProduct = !initial || wasLinked;
-
-  // When picking customer, auto-fill DC if customer has a default
-  const onPickCustomer = (custName) => {
-    const c = customers.find(x => x.name === custName);
-    setData(prev => ({
-      ...prev,
-      customer: custName,
-      dc: prev.dc || (c?.defaultDC || '')
-    }));
-  };
-
-  const handleSubmit = () => {
-    if (!data.spNo) {
-      alert('SP No wajib diisi');
-      return;
-    }
-    if (requireProduct && !data.productId) {
-      alert('Produk wajib dipilih dari dropdown');
-      return;
-    }
-    if (!data.customer) {
-      alert('Customer wajib dipilih');
-      return;
-    }
-    onSave(data);
-  };
-
-  const activeCustomers = customers.filter(c => c.active !== false);
-
-  return (
-    <ModalShell title={initial ? 'Edit Item' : 'Add New Item'} subtitle="Field dengan asterisk wajib diisi" onClose={onClose}>
-      <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-        <FormSection label="SP Information">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <Input label="SP Date" type="date" value={data.spDate} onChange={v=>update('spDate',v)}/>
-            <Input label="SP No *" value={data.spNo} onChange={v=>update('spNo',v)} placeholder="2020577"/>
-            <div>
-              <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Customer *</label>
-              <select
-                value={data.customer}
-                onChange={e => onPickCustomer(e.target.value)}
-                className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none transition-colors"
-                style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}
-              >
-                <option value="">— Pilih customer —</option>
-                {activeCustomers.map(c => <option key={c.id} value={c.name}>{c.code} · {c.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-            <Input label="DC" value={data.dc} onChange={v=>update('dc',v)} placeholder="DC BOGOR"/>
-            {/* Dropdown-only: produk hanya dari master (SOA). onPick isi SKU + prefill
-                unit_price (nilai awal, tetap editable). onChangeText batalkan pilihan. */}
-            <div>
-              <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Product Name *</label>
-              <ProductPicker
-                value={data.productName}
-                products={products}
-                placeholder="Cari produk…"
-                inputStyle={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${PASTEL.line}`, borderRadius: 12, background: 'white', fontSize: 14, color: PASTEL.ink, outline: 'none' }}
-                onChangeText={(v) => setData(prev => ({ ...prev, productName: v, productId: null, sku: '' }))}
-                onPick={(p) => setData(prev => ({ ...prev, productId: p.id, productName: p.name, sku: p.code || '', unitPrice: Number(p.default_price) || 0 }))}
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>SKU</label>
-              <div className="w-full rounded-xl px-3.5 py-2.5 text-sm font-mono" style={{ background: PASTEL.lineSoft, color: PASTEL.inkMute, border: `1px solid ${PASTEL.line}` }}>{data.sku || '—'}</div>
-            </div>
-          </div>
-        </FormSection>
-
-        <FormSection label="Quantity">
-          <div className="grid grid-cols-3 gap-3">
-            <Input label="QTY" type="number" value={data.qty} onChange={v=>update('qty', Number(v))}/>
-            <Input label="Shipped QTY" type="number" value={data.shippedQty} onChange={v=>update('shippedQty', Number(v))}/>
-            <div>
-              <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Outstanding</label>
-              <div className="rounded-xl px-3.5 py-2.5 text-sm font-mono font-semibold" style={{ background: PASTEL.peach, color: '#5C2F12' }}>{formatNumber(calc.outstandingQty)}</div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <Input label="EXP Date" type="date" value={data.expDate} onChange={v=>update('expDate',v)}/>
-            <Input label="Expired Date" type="date" value={data.expired_date} onChange={v=>update('expired_date',v)}/>
-          </div>
-        </FormSection>
-
-        <FormSection label="Shipping">
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Shipping Date" type="date" value={data.shippingDate} onChange={v=>update('shippingDate',v)}/>
-          </div>
-        </FormSection>
-
-        <FormSection label="Pricing">
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Unit Price (Rp)" type="number" value={data.unitPrice} onChange={v=>update('unitPrice', Number(v))}/>
-            <Input label="Shipping Price (Rp)" type="number" value={data.shippingPrice} onChange={v=>update('shippingPrice', Number(v))}/>
-          </div>
-          <div className="mt-3 p-4 rounded-2xl space-y-1.5" style={{ background: PASTEL.lineSoft }}>
-            <CalcRow label="Subtotal = Unit Price × QTY" value={calc.subtotal}/>
-            <CalcRow label="PPN (11%)" value={calc.ppn}/>
-            <CalcRow label="Grand Total" value={calc.grandTotal} highlight/>
-            <div className="pt-2 mt-2 border-t flex items-center justify-between text-xs" style={{ borderColor: PASTEL.line }}>
-              <span style={{ color: PASTEL.inkMute }}>Auto Status:</span>
-              <StatusBadge status={calc.status} overdue={calc.isOverdue}/>
-            </div>
-          </div>
-        </FormSection>
-
-        <FormSection label="Finance & Documents">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-            <Toggle label="INV" value={data.inv} onChange={v=>update('inv',v)}/>
-            <Toggle label="FP" value={data.fp} onChange={v=>update('fp',v)}/>
-            <Toggle label="SUBMIT" value={data.submit} onChange={v=>update('submit',v)}/>
-            <Toggle label="KIRIM" value={data.kirim} onChange={v=>update('kirim',v)}/>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Submit Date" type="date" value={data.submitDate} onChange={v=>update('submitDate',v)}/>
-            <Input label="Email Status" type="date" value={data.emailStatus} onChange={v=>update('emailStatus',v)}/>
-          </div>
-        </FormSection>
-
-        <FormSection label="Notes">
-          <textarea value={data.notes || ''} onChange={e => update('notes', e.target.value)} rows={2}
-            className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
-            style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}
-            placeholder="Catatan tambahan..."
-          />
-        </FormSection>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>Cancel</button>
-          <button type="button" onClick={handleSubmit} className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold" style={{ background: PASTEL.ink, color: PASTEL.cream }}>
-            <Save size={14}/> Save
-          </button>
-        </div>
-      </div>
-    </ModalShell>
-  );
-}
-
 function FormSection({ label, children }) {
   return (
     <div>
@@ -4457,15 +3972,6 @@ function Toggle({ label, value, onChange }) {
     >
       {value ? '✓ ' : '○ '}{label}
     </button>
-  );
-}
-
-function CalcRow({ label, value, highlight }) {
-  return (
-    <div className={`flex items-center justify-between text-sm ${highlight ? 'pt-2 mt-1 border-t font-semibold' : ''}`} style={highlight ? { borderColor: PASTEL.line } : {}}>
-      <span className="text-xs" style={{ color: PASTEL.inkSoft }}>{label}</span>
-      <span className={`font-mono ${highlight ? 'text-base' : ''}`} style={{ color: highlight ? PASTEL.mintDeep : PASTEL.ink }}>{formatRupiah(value)}</span>
-    </div>
   );
 }
 
@@ -4553,166 +4059,6 @@ function FinanceModal({ row, onClose, onSave }) {
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>Cancel</button>
           <button onClick={submit} className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold" style={{ background: PASTEL.mintDeep, color: 'white' }}>
             <Save size={14}/> Save
-          </button>
-        </div>
-      </div>
-    </ModalShell>
-  );
-}
-
-function ImportModal({ onClose, onImport }) {
-  const [text, setText] = useState('');
-  const [preview, setPreview] = useState(null);
-  const [error, setError] = useState('');
-
-  const parseDate = (s) => {
-    if (!s || s === '-') return '';
-    s = s.trim();
-    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-    if (m) {
-      let [, d, mo, y] = m;
-      if (y.length === 2) y = '20' + y;
-      return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    return '';
-  };
-  const parseNumber = (s) => {
-    if (!s) return 0;
-    const cleaned = String(s).replace(/[.\s]/g,'').replace(/,/g,'.');
-    const n = Number(cleaned);
-    return isNaN(n) ? 0 : n;
-  };
-  const parseBool = (s) => {
-    if (!s) return false;
-    const v = String(s).trim().toUpperCase();
-    return v === 'TRUE' || v === 'YES' || v === '1' || v === '✓';
-  };
-
-  const handleParse = () => {
-    setError('');
-    try {
-      const lines = text.trim().split('\n').filter(l => l.trim());
-      if (lines.length < 2) { setError('Minimal harus ada header + 1 baris data'); setPreview(null); return; }
-      const sep = lines[0].includes('\t') ? '\t' : ',';
-      const splitLine = (line) => {
-        if (sep === '\t') return line.split('\t');
-        const result = []; let cur = '', inQ = false;
-        for (let i = 0; i < line.length; i++) {
-          const ch = line[i];
-          if (ch === '"') inQ = !inQ;
-          else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
-          else cur += ch;
-        }
-        result.push(cur);
-        return result;
-      };
-      const headers = splitLine(lines[0]).map(h => h.trim().toLowerCase());
-      const rows = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cells = splitLine(lines[i]);
-        const obj = {};
-        headers.forEach((h, idx) => obj[h] = (cells[idx] || '').trim());
-        rows.push({
-          spDate: parseDate(obj['sp date']),
-          spNo: obj['sp no'] || '',
-          productName: obj['product name'] || '',
-          sku: obj['sku'] || '',
-          qty: parseNumber(obj['qty']),
-          shippedQty: parseNumber(obj['shipped qty']),
-          expDate: parseDate(obj['exp date']),
-          expired_date: parseDate(obj['deadline'] || obj['expired_date']),
-          dc: obj['dc'] || '',
-          shippingDate: parseDate(obj['shipping date']),
-          btbNo: obj['btb no'] || '',
-          unitPrice: parseNumber(obj['unit price']),
-          shippingPrice: parseNumber(obj['shipping price']),
-          inv: parseBool(obj['inv']),
-          fp: parseBool(obj['fp']),
-          submit: parseBool(obj['submit']),
-          kirim: parseBool(obj['kirim']),
-          submitDate: parseDate(obj['submit date']),
-          emailStatus: parseDate(obj['email status']) || obj['email status'] || '',
-          notes: obj['notes'] || ''
-        });
-      }
-      setPreview(rows);
-    } catch (e) { setError('Gagal parse data: ' + e.message); }
-  };
-
-  const sampleData = `SP DATE\tSP NO\tProduct Name\tSKU\tQTY\tSHIPPED QTY\tOUTSTANDING QTY\tEXP Date\tDeadline\tSTATUS\tDC\tShipping Date\tBTB NO\tUnit Price\tShipping Price\tTOTAL\tPPN\tGRAND TOTAL\tINV\tFP\tSUBMIT\tKIRIM\tSUBMIT DATE\tEmail Status
-14/1/26\t2020577\tSTORBIT LOYANG 46 X 33 CM ( SAYBREAD )\tBKT-SB43-00001\t10\t10\t0\t11/6/26\t-\tClosed\tDC BOGOR\t29/4/26\t2015214\t120.000\t600.000\t1.800.000\t198.000\t1.998.000\tTRUE\tTRUE\tTRUE\tTRUE\t07/05/2026\t`;
-
-  return (
-    <ModalShell title="Bulk Import" subtitle="Paste data dari Excel atau CSV" onClose={onClose} maxWidth="max-w-4xl">
-      <div className="p-6 space-y-4">
-        <div className="rounded-2xl p-4 text-xs" style={{ background: PASTEL.lavender }}>
-          <div className="font-semibold mb-2" style={{ color: '#3D2B5C' }}>Cara import:</div>
-          <ol className="list-decimal ml-4 space-y-1" style={{ color: '#3D2B5C' }}>
-            <li>Buka Excel/Google Sheet, copy seluruh data termasuk header</li>
-            <li>Paste ke textarea di bawah</li>
-            <li>Klik "Parse & Preview" untuk validasi</li>
-            <li>Klik "Import" jika preview sudah benar</li>
-          </ol>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <label className="text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkMute }}>Data (paste here)</label>
-          <button onClick={()=>setText(sampleData)} className="text-xs underline font-medium" style={{ color: PASTEL.peachDeep }}>Load sample</button>
-        </div>
-        <textarea value={text} onChange={e=>setText(e.target.value)} rows={8}
-          placeholder="Paste data dari Excel di sini..."
-          className="w-full rounded-2xl px-4 py-3 text-xs font-mono focus:outline-none"
-          style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}
-        />
-
-        <div className="flex items-center gap-2">
-          <button onClick={handleParse} disabled={!text.trim()}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold disabled:opacity-50"
-            style={{ background: PASTEL.lavenderDeep, color: 'white' }}>
-            <Eye size={14}/> Parse & Preview
-          </button>
-          {error && <span className="text-xs" style={{ color: PASTEL.roseDeep }}>{error}</span>}
-        </div>
-
-        {preview && (
-          <div className="rounded-2xl border overflow-hidden" style={{ borderColor: PASTEL.line }}>
-            <div className="px-4 py-2.5 text-xs flex items-center justify-between border-b" style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft }}>
-              <span className="font-semibold">Preview: {preview.length} rows</span>
-            </div>
-            <div className="max-h-[260px] overflow-auto" style={{ background: 'white' }}>
-              <table className="w-full text-xs">
-                <thead className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: PASTEL.inkMute, background: PASTEL.lineSoft }}>
-                  <tr>
-                    <th className="px-3 py-2 text-left">SP No</th>
-                    <th className="px-3 py-2 text-left">Product</th>
-                    <th className="px-3 py-2 text-right">QTY</th>
-                    <th className="px-3 py-2 text-right">Unit Price</th>
-                    <th className="px-3 py-2 text-left">DC</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.slice(0,20).map((r,i) => (
-                    <tr key={i} className="border-t" style={{ borderColor: PASTEL.line }}>
-                      <td className="px-3 py-2 font-mono">{r.spNo}</td>
-                      <td className="px-3 py-2 max-w-[200px] truncate">{r.productName}</td>
-                      <td className="px-3 py-2 text-right font-mono">{r.qty}</td>
-                      <td className="px-3 py-2 text-right font-mono">{formatRupiah(r.unitPrice)}</td>
-                      <td className="px-3 py-2">{r.dc}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>Cancel</button>
-          <button onClick={() => preview && onImport(preview)} disabled={!preview}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold disabled:opacity-50"
-            style={{ background: PASTEL.ink, color: PASTEL.cream }}>
-            <Upload size={14}/> Import {preview && `(${preview.length})`}
           </button>
         </div>
       </div>
