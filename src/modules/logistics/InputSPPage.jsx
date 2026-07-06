@@ -17,7 +17,7 @@ import {
   Receipt, Check, Save, Package,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { bulkInsertSpItems, bulkInsertSpBtbs } from '../../lib/db';
+import { bulkInsertSpItems, bulkInsertSpBtbs, createSpOrderDual } from '../../lib/db';
 import { useProducts } from '../../hooks/useProducts';
 import ProductPicker from '../../components/ProductPicker';
 
@@ -206,8 +206,8 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
     return { qty, subtotal, shipping, ppn, grand: subtotal + shipping + ppn };
   }, [items]);
 
-  // Validation
-  const headerOk = spDate && customerId && expiredDate;
+  // Validation — DC (dcId) wajib: sp_orders.dc_id NOT NULL (dual-write ke skema baru).
+  const headerOk = spDate && customerId && dcId && expiredDate;
   // Dropdown-only: item valid hanya bila produk dipilih dari master (productId terisi).
   const itemsOk  = items.length > 0 && items.every(i => i.productId && Number(i.qty) >= 1 && Number(i.unitPrice) >= 0);
   const isValid  = headerOk && itemsOk;
@@ -231,18 +231,55 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
       dc:            dc || '',
       notes:         notes || '',
     }));
-    const { error } = await bulkInsertSpItems(rows);
+    // 1) Tulis ke sp_items lama (TIDAK diubah) — juga sumber legacy_sp_item_id.
+    const { data: inserted, error } = await bulkInsertSpItems(rows);
     if (error) {
       setSaving(false);
       showToast('Gagal membuat SP: ' + (error.message || 'unknown'), 'error');
       return false;
     }
-    // Insert BTB numbers (SP-level) — ignore errors to not block SP creation
+    // 2) Dual-write (D2-A) ke sp_orders + sp_order_items via RPC atomik.
+    //    Zip legacy_sp_item_id per index (PostgREST kembalikan baris urut input).
+    //    price_category CHECK hanya semester/tahunan/project → 'default'/'' → null.
+    const dualItems = items.map((item, i) => {
+      const pc = item.priceCategory;
+      return {
+        product_id:        item.productId,
+        product_name:      item.productName.trim(),
+        sku:               item.sku || '',
+        qty:               Number(item.qty) || 1,
+        unit_price:        Number(item.unitPrice) || 0,
+        price_category:    (pc === 'semester' || pc === 'tahunan' || pc === 'project') ? pc : null,
+        shipping_price:    Number(item.shippingPrice) || 0,
+        legacy_sp_item_id: inserted?.[i]?.id ?? null,
+      };
+    });
+    const { error: dualErr } = await createSpOrderDual({
+      companyId:   SOA_COMPANY_ID,
+      customerId,
+      spNo,
+      spDate,
+      dcId,
+      status:      'DRAFT',       // parity dgn legacy (Submit & Draft sama-sama DRAFT)
+      expiredDate,
+      notes,
+      items: dualItems,
+    });
+    if (dualErr) {
+      // sp_items lama SUDAH tertulis (aplikasi tetap baca sp_items → SP tampil normal),
+      // tapi sinkron ke skema baru gagal. Surface JELAS (bukan gagal senyap); tetap
+      // return true agar tak retry & bikin sp_items dobel (sp_no di-generate ulang tiap insert).
+      showToast(`${spNo} tersimpan, tapi gagal sinkron ke skema baru: ` + (dualErr.message || 'unknown'), 'error');
+      await bulkInsertSpBtbs(spNo, btbRows);
+      setSaving(false);
+      return true;
+    }
+    // 3) Insert BTB numbers (SP-level) — ignore errors to not block SP creation
     await bulkInsertSpBtbs(spNo, btbRows);
     setSaving(false);
     showToast(`${spNo} berhasil dibuat ✓`, 'success');
     return true;
-  }, [items, spDate, customerId, dc, expiredDate, notes, btbRows, showToast]);
+  }, [items, spDate, customerId, dc, dcId, expiredDate, notes, btbRows, showToast]);
 
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;
@@ -252,7 +289,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
 
   const handleDraft = useCallback(async () => {
     if (!headerOk || items.length === 0) {
-      showToast('Isi SP Date, Customer, dan minimal 1 item untuk draft', 'error');
+      showToast('Isi SP Date, Customer, DC, dan minimal 1 item untuk draft', 'error');
       return;
     }
     // Dropdown-only juga berlaku untuk draft: tiap item wajib produk dari master.
