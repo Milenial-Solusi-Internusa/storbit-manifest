@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict i48oqbynntGhrynid8ckIqHSOJLUTTaQJud74VOImYwOTwTMOolsYAvYv9O3Dqu
+\restrict hqeGvgzaQHpDrctQgCjDL9Ixd1eucschnhyhlkQuedLXoCSZiZ4Mi8EgOGfycRe
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -198,10 +198,10 @@ CREATE FUNCTION public.cancel_picking(p_picking_list_id uuid) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-DECLARE v_status text; v_uid uuid := auth.uid();
+DECLARE v_status text; v_uid uuid := auth.uid(); v_cust uuid; v_sp text;
 BEGIN
-  SELECT status INTO v_status FROM picking_lists WHERE id=p_picking_list_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
+  SELECT status, customer_id, sp_no INTO v_status, v_cust, v_sp FROM picking_lists WHERE id=p_picking_list_id;
+  IF v_sp IS NULL THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
   IF v_status NOT IN ('pending','in_progress') THEN
     RAISE EXCEPTION 'Hanya picking pending/in_progress yang bisa dibatalkan (status=%)', v_status; END IF;
   INSERT INTO stock_ledger
@@ -210,6 +210,9 @@ BEGIN
   FROM stock_ledger
   WHERE reference_type='picking' AND reference_id=p_picking_list_id AND movement_type='reserved';
   UPDATE picking_lists SET status='cancelled', cancelled_at=now() WHERE id=p_picking_list_id;
+  UPDATE public.sp_orders SET had_cancelled_picking=true, updated_at=now()
+    WHERE customer_id=v_cust AND sp_no=v_sp;
+  PERFORM sp_recompute_status(v_cust, v_sp);
 END; $$;
 
 
@@ -231,6 +234,25 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: complete_picking(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.complete_picking(p_picking_list_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_status text; v_cust uuid; v_sp text;
+BEGIN
+  SELECT status, customer_id, sp_no INTO v_status, v_cust, v_sp FROM picking_lists WHERE id=p_picking_list_id;
+  IF v_sp IS NULL THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
+  IF v_status NOT IN ('pending','in_progress') THEN
+    RAISE EXCEPTION 'Hanya picking pending/in_progress yang bisa diselesaikan (status=%)', v_status; END IF;
+  UPDATE picking_lists SET status='done', completed_at=now(), updated_at=now() WHERE id=p_picking_list_id;
+  PERFORM sp_recompute_status(v_cust, v_sp);
+END; $$;
 
 
 --
@@ -450,15 +472,12 @@ BEGIN
   SELECT count(*) INTO v_outstanding FROM sp_items
     WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed' AND (qty - shipped_qty) > 0;
   IF v_outstanding = 0 THEN RAISE EXCEPTION 'SP % tidak punya item outstanding', p_sp_no; END IF;
-
   SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
   v_seq := increment_document_sequence(v_company_id,'PICK','WH',v_year,0);
   v_no  := 'PICK/'||COALESCE(v_entity,'SOA')||'/WH/'||v_year||'/'||lpad(v_seq::text,4,'0');
-
   INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by, customer_id)
   VALUES (v_company_id, v_no, p_sp_no, v_wh, 'pending', v_uid, p_customer_id)
   RETURNING id INTO v_pl_id;
-
   WITH src AS (
     SELECT si.id AS sp_item_id, si.product_id, si.product_name, si.sku,
            GREATEST(si.qty - si.shipped_qty, 0) AS req
@@ -475,11 +494,9 @@ BEGIN
     INSERT INTO picking_list_items
       (picking_list_id, sp_item_id, product_id, product_name, sku, qty_requested, qty_short, location_detail)
     SELECT v_pl_id, sp_item_id, product_id, product_name, sku, req,
-           CASE WHEN product_id IS NULL THEN 0
-                ELSE GREATEST(req - LEAST(req, avail), 0) END,
+           CASE WHEN product_id IS NULL THEN 0 ELSE GREATEST(req - LEAST(req, avail), 0) END,
            (SELECT pwl.rack_location FROM product_warehouse_location pwl
-             WHERE pwl.product_id = av.product_id AND pwl.warehouse_id = v_wh
-             LIMIT 1)
+             WHERE pwl.product_id = av.product_id AND pwl.warehouse_id = v_wh LIMIT 1)
     FROM av
     RETURNING 1
   )
@@ -488,10 +505,9 @@ BEGIN
   SELECT v_company_id, v_wh, product_id, 'reserved', LEAST(req, avail), 'picking', v_pl_id, v_no, v_uid
   FROM av
   WHERE product_id IS NOT NULL AND LEAST(req, avail) > 0;
-
+  PERFORM sp_recompute_status(p_customer_id, p_sp_no);
   RETURN QUERY SELECT v_pl_id, v_no;
-END;
-$$;
+END; $$;
 
 
 --
@@ -988,29 +1004,33 @@ CREATE FUNCTION public.set_sp_status(p_sp_no text, p_status text, p_reason text,
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-DECLARE
-  v_uid   uuid := auth.uid();
-  v_count integer;
+DECLARE v_uid uuid := auth.uid(); v_count integer;
 BEGIN
-  IF p_status NOT IN ('draft','confirmed','cancelled') THEN
-    RAISE EXCEPTION 'invalid sp_status: %', p_status;
-  END IF;
-
+  IF p_status NOT IN ('draft','confirmed','cancelled') THEN RAISE EXCEPTION 'invalid sp_status: %', p_status; END IF;
   UPDATE public.sp_items
-  SET sp_status     = p_status,
-      confirmed_at  = CASE WHEN p_status = 'confirmed' THEN now()    ELSE confirmed_at  END,
-      confirmed_by  = CASE WHEN p_status = 'confirmed' THEN v_uid    ELSE confirmed_by  END,
-      cancelled_at  = CASE WHEN p_status = 'cancelled' THEN now()    ELSE cancelled_at  END,
-      cancelled_by  = CASE WHEN p_status = 'cancelled' THEN v_uid    ELSE cancelled_by  END,
-      cancel_reason = CASE WHEN p_status = 'cancelled' THEN p_reason ELSE cancel_reason END,
-      updated_at    = now()
-  WHERE sp_no = p_sp_no
-    AND customer_id = p_customer_id;
-
+     SET sp_status=p_status,
+         confirmed_at = CASE WHEN p_status='confirmed' THEN now()    ELSE confirmed_at  END,
+         confirmed_by = CASE WHEN p_status='confirmed' THEN v_uid    ELSE confirmed_by  END,
+         cancelled_at = CASE WHEN p_status='cancelled' THEN now()    ELSE cancelled_at  END,
+         cancelled_by = CASE WHEN p_status='cancelled' THEN v_uid    ELSE cancelled_by  END,
+         cancel_reason= CASE WHEN p_status='cancelled' THEN p_reason ELSE cancel_reason END,
+         updated_at   = now()
+   WHERE sp_no = p_sp_no AND customer_id = p_customer_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF p_status = 'cancelled' THEN
+    UPDATE public.sp_orders
+       SET status='CANCELLED', cancelled_at=now(), cancelled_by=v_uid, cancel_reason=p_reason, updated_at=now()
+     WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status <> 'CANCELLED';
+  ELSE
+    IF p_status='confirmed' THEN
+      UPDATE public.sp_orders
+         SET confirmed_at=COALESCE(confirmed_at,now()), confirmed_by=COALESCE(confirmed_by,v_uid), updated_at=now()
+       WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status <> 'CANCELLED';
+    END IF;
+    PERFORM sp_recompute_status(p_customer_id, p_sp_no);
+  END IF;
   RETURN v_count;
-END;
-$$;
+END; $$;
 
 
 --
@@ -1032,6 +1052,46 @@ $$;
 --
 
 COMMENT ON FUNCTION public.set_updated_at() IS 'Trigger function: sets updated_at = now() before every UPDATE. Defined in migration 000 (legacy baseline) and reused by all subsequent migrations via CREATE OR REPLACE — safe to re-run.';
+
+
+--
+-- Name: sp_recompute_status(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sp_recompute_status(p_customer_id uuid, p_sp_no text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_company uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+  v_id uuid; v_status text; v_new text;
+  v_confirmed bool; v_has_done bool; v_has_active bool; v_short bool;
+BEGIN
+  SELECT id, status INTO v_id, v_status
+    FROM sp_orders WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND deleted_at IS NULL;
+  IF v_id IS NULL THEN RETURN; END IF;
+  IF v_status = 'CANCELLED' THEN RETURN; END IF;
+  IF v_status NOT IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED') THEN RETURN; END IF;
+  v_confirmed  := EXISTS(SELECT 1 FROM sp_items WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND sp_status='confirmed');
+  v_has_done   := EXISTS(SELECT 1 FROM picking_lists WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status='done');
+  v_has_active := EXISTS(SELECT 1 FROM picking_lists WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status IN ('pending','in_progress'));
+  v_short := EXISTS(
+    SELECT 1 FROM sp_items si
+     WHERE si.customer_id=p_customer_id AND si.sp_no=p_sp_no
+       AND si.sp_status='confirmed' AND (si.qty - si.shipped_qty) > 0
+       AND (si.qty - si.shipped_qty) > COALESCE(
+             (SELECT SUM(ss.available) FROM stock_summary ss
+               WHERE ss.company_id=v_company AND ss.product_id=si.product_id), 0));
+  v_new := CASE
+    WHEN v_has_done              THEN 'PACKED'
+    WHEN v_has_active            THEN 'PICKING'
+    WHEN v_confirmed AND v_short THEN 'MENUNGGU_STOK'
+    WHEN v_confirmed             THEN 'CONFIRMED'
+    ELSE 'DRAFT' END;
+  IF v_new IS DISTINCT FROM v_status THEN
+    UPDATE sp_orders SET status=v_new, updated_at=now() WHERE id=v_id AND status <> 'CANCELLED';
+  END IF;
+END; $$;
 
 
 --
@@ -3994,6 +4054,7 @@ CREATE TABLE public.sp_orders (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     deleted_at timestamp with time zone,
+    had_cancelled_picking boolean DEFAULT false NOT NULL,
     CONSTRAINT sp_orders_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'CONFIRMED'::text, 'MENUNGGU_STOK'::text, 'PICKING'::text, 'PACKED'::text, 'DIKIRIM'::text, 'SAMPAI'::text, 'BTB_TERBIT'::text, 'TERKIRIM_PENUH'::text, 'INVOICED'::text, 'SUBMITTED'::text, 'LUNAS'::text, 'CANCELLED'::text])))
 );
 
@@ -11709,5 +11770,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict i48oqbynntGhrynid8ckIqHSOJLUTTaQJud74VOImYwOTwTMOolsYAvYv9O3Dqu
+\unrestrict hqeGvgzaQHpDrctQgCjDL9Ixd1eucschnhyhlkQuedLXoCSZiZ4Mi8EgOGfycRe
 
