@@ -429,10 +429,11 @@ export default function SalesOrderPage({
   }, []);
 
   // Modal
-  const openModal = (no, action) => {
-    const group = augmented.find(g => g.spNo === no);
+  const openModal = (group, action) => {
     if (!group) return;
-    setModal({ no, action, group });
+    // Identitas komposit: simpan group utuh (bawa spNo + customerId) supaya aksi status
+    // hanya mengenai SP milik customer yang benar (nomor SP bisa kembar antar customer).
+    setModal({ no: group.spNo, action, group });
     setRejectReason('');
     setRejectErr(false);
   };
@@ -447,7 +448,7 @@ export default function SalesOrderPage({
     const status  = action === 'confirm' ? 'confirmed' : 'cancelled';
     const reason  = action === 'reject' ? rejectReason.trim() : null;
     setStatusBusy(true);
-    const { error } = await setSpStatus(no, status, reason);
+    const { error } = await setSpStatus(no, status, reason, modal.group.customerId);
     setStatusBusy(false);
     if (error) {
       showToast(`Gagal memperbarui status SP ${no}: ${error.message || error}`, 'error');
@@ -639,8 +640,8 @@ export default function SalesOrderPage({
               const td = { padding: '0 18px', height: 54, fontSize: 13.5, color: C.ink, borderBottom: `1px solid ${C.lineSoft}`, verticalAlign: 'middle' };
               return (
                 <tr
-                  key={g.spNo}
-                  onClick={() => onSelectSP(g.spNo)}
+                  key={g.uid}
+                  onClick={() => onSelectSP(g)}
                   style={{ background: C.bg, transition: 'background .1s', cursor: 'pointer' }}
                   onMouseEnter={e => { e.currentTarget.style.background = C.hover; }}
                   onMouseLeave={e => { e.currentTarget.style.background = C.bg; }}
@@ -652,8 +653,8 @@ export default function SalesOrderPage({
                     <span
                       role="button"
                       tabIndex={0}
-                      onClick={(e) => { e.stopPropagation(); onSelectSP(g.spNo); }}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectSP(g.spNo); } }}
+                      onClick={(e) => { e.stopPropagation(); onSelectSP(g); }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectSP(g); } }}
                       style={{ cursor: 'pointer', fontWeight: 700, color: C.navy, fontSize: 14, fontVariantNumeric: 'tabular-nums', letterSpacing: '.01em', whiteSpace: 'nowrap' }}
                     >
                       <span style={{ color: C.faint, fontWeight: 400, marginRight: 1 }}>#</span>{g.spNo}
@@ -684,8 +685,8 @@ export default function SalesOrderPage({
                   <td style={{ ...td, textAlign: 'center' }}>
                     <AksiCell
                       dstatus={g.dstatus}
-                      onConfirm={() => openModal(g.spNo, 'confirm')}
-                      onReject={() => openModal(g.spNo, 'reject')}
+                      onConfirm={() => openModal(g, 'confirm')}
+                      onReject={() => openModal(g, 'reject')}
                       onManifest={() => handleManifest(g.spNo)}
                     />
                   </td>

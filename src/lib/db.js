@@ -327,11 +327,12 @@ export async function deleteSpItem(id) {
 // Set SP lifecycle status (confirm/cancel) atomically across all line items
 // sharing the same sp_no. Backed by RPC set_sp_status (SECURITY DEFINER).
 // status: 'draft' | 'confirmed' | 'cancelled'. reason optional (for cancel).
-export async function setSpStatus(spNo, status, reason = null) {
+export async function setSpStatus(spNo, status, reason = null, customerId) {
   const { data, error } = await supabase.rpc('set_sp_status', {
     p_sp_no: spNo,
     p_status: status,
     p_reason: reason,
+    p_customer_id: customerId,   // identitas komposit (customer_id, sp_no)
   });
   return { data, error }; // data = jumlah baris ter-update
 }
@@ -354,9 +355,10 @@ export async function setSpExternalUrl(spNo, url) {
 // generate_picking_from_sp (validates sp_status='confirmed', idempotency guard,
 // numbering, header + items in one transaction).
 // Returns { data: { picking_list_id, picking_no } | null, error }.
-export async function generatePickingFromSp(spNo, warehouseId = null) {
+export async function generatePickingFromSp(spNo, customerId, warehouseId = null) {
   const { data, error } = await supabase.rpc('generate_picking_from_sp', {
     p_sp_no: spNo,
+    p_customer_id: customerId,   // identitas komposit (customer_id, sp_no)
     p_warehouse_id: warehouseId,
   });
   // RPC RETURNS TABLE → array of rows; unwrap the single row.
@@ -810,4 +812,28 @@ export async function bulkInsertSpBtbs(spNo, btbRows) {
   if (!rows.length) return { error: null };
   const { error } = await supabase.from('sp_btbs').insert(rows);
   return { error };
+}
+
+// Dual-write (Fase 0 lanjutan, D2-A): tulis header + items ke skema SP BARU
+// (sp_orders + sp_order_items) secara atomik via RPC create_sp_order_dual.
+// Dipanggil SETELAH bulkInsertSpItems (yang tetap sumber sp_items lama) agar
+// legacy_sp_item_id bisa menunjuk ke baris sp_items yang bersesuaian.
+// `items` = array of { product_id, product_name, sku, qty, unit_price,
+//   price_category (null|'semester'|'tahunan'|'project'), shipping_price,
+//   legacy_sp_item_id }. Duplikat (customer_id, sp_no) → RPC RAISE unique_violation.
+export async function createSpOrderDual({
+  companyId, customerId, spNo, spDate, dcId, status, expiredDate, notes, items,
+}) {
+  const { data, error } = await supabase.rpc('create_sp_order_dual', {
+    p_company_id:   companyId,
+    p_customer_id:  customerId,
+    p_sp_no:        spNo,
+    p_sp_date:      spDate || null,
+    p_dc_id:        dcId,
+    p_status:       status || 'DRAFT',
+    p_expired_date: expiredDate || null,
+    p_notes:        notes || null,
+    p_items:        items,
+  });
+  return { data, error };
 }

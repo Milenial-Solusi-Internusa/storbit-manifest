@@ -11,12 +11,13 @@
 //       SP number is generated client-side as SP-{6-digit-timestamp}.
 //       Upgrade to increment_document_sequence RPC in Phase 2.0D.
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   ChevronRight, ChevronLeft, Plus, Trash2,
   Receipt, Check, Save, Package,
 } from 'lucide-react';
-import { bulkInsertSpItems, bulkInsertSpBtbs } from '../../lib/db';
+import { supabase } from '../../lib/supabase';
+import { bulkInsertSpItems, bulkInsertSpBtbs, createSpOrderDual } from '../../lib/db';
 import { useProducts } from '../../hooks/useProducts';
 import ProductPicker from '../../components/ProductPicker';
 
@@ -58,11 +59,14 @@ const C = {
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 const today = () => new Date().toISOString().slice(0, 10);
 
-// DC options — merged with dcList from existing rows
-const DEFAULT_DCS = [
-  'DC Cibitung','DC Cikarang','DC Bekasi',
-  'DC Tangerang','DC Depok','DC Bogor','DC Bandung',
+// Kategori harga produk → kolom di master products (Fase 0). Hanya yang non-null yang ditawarkan.
+const CAT_DEFS = [
+  { key: 'default',  label: 'Default',  col: 'default_price'  },
+  { key: 'semester', label: 'Semester', col: 'price_semester' },
+  { key: 'tahunan',  label: 'Tahunan',  col: 'price_tahunan'  },
+  { key: 'project',  label: 'Project',  col: 'price_project'  },
 ];
+const availCatsOf = (p) => (p ? CAT_DEFS.filter(c => p[c.col] != null) : []);
 
 // ─── Item row counter ─────────────────────────────────────────────────────────
 let _seq = 0;
@@ -73,6 +77,7 @@ const freshItem = () => ({
   sku: '',
   qty: 1,
   unitPrice: 0,
+  priceCategory: '',      // '' | 'default' | 'semester' | 'tahunan' | 'project' (state only; belum disimpan — TASK 2)
   shippingPrice: 0,
   expDate: '',
   expired_date: '',
@@ -135,14 +140,17 @@ function Field({ label, req, children, full }) {
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
-export default function InputSPPage({ onBack, customers = [], dcList = [], showToast }) {
+export default function InputSPPage({ onBack, customers = [], showToast }) {
   // Product catalog pinned to Storbit/SOA (dropdown-only source for item rows).
   const { products } = useProducts({ companyId: SOA_COMPANY_ID });
 
   // SP header
   const [spDate,     setSpDate]     = useState(today());
+  const [spNo,       setSpNo]       = useState('');   // nomor SP asli dari customer (manual, wajib)
   const [customerId, setCustomerId] = useState('');
-  const [dc,         setDc]         = useState('');
+  const [dc,         setDc]         = useState('');   // nama DC — dipakai submit legacy (TIDAK diubah)
+  const [dcId,       setDcId]       = useState('');   // id dc_master (dropdown baru; belum disimpan — TASK 2)
+  const [dcOptions,  setDcOptions]  = useState([]);
   const [expiredDate, setExpiredDate] = useState('');
   const [notes,      setNotes]      = useState('');
 
@@ -153,10 +161,37 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
   // BTB Numbers (SP-level)
   const [btbRows, setBtbRows] = useState([{ btb_no: '', remarks: '' }]);
 
-  const allDcs = useMemo(
-    () => [...new Set([...DEFAULT_DCS, ...dcList])].sort(),
-    [dcList],
-  );
+  // DC dari master dc_master, difilter per customer (+ DC umum customer_id NULL). Re-fetch saat ganti customer.
+  // Reset dcId/dc/dcOptions ditangani di handleCustomerChange (bukan di effect) — hindari setState sinkron di effect.
+  useEffect(() => {
+    if (!customerId) return;
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('dc_master')
+        .select('id, kode, nama')
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .or(`customer_id.eq.${customerId},customer_id.is.null`)
+        .order('nama', { ascending: true });
+      if (alive) setDcOptions(data || []);
+    })();
+    return () => { alive = false; };
+  }, [customerId]);
+
+  // Ganti customer → reset DC (DC lama mungkin tak relevan utk customer baru).
+  const handleCustomerChange = (e) => {
+    setCustomerId(e.target.value);
+    setDcId(''); setDc(''); setDcOptions([]);
+  };
+
+  // Pilih DC: simpan id (dcId) + mirror nama (dc) supaya submit legacy tetap menulis nama DC ke sp_items.dc.
+  const handleDcChange = (e) => {
+    const id = e.target.value;
+    setDcId(id);
+    const opt = dcOptions.find(o => o.id === id);
+    setDc(opt ? opt.nama : '');
+  };
 
   // Item mutations
   const addItem    = ()           => setItems(p => [...p, freshItem()]);
@@ -172,19 +207,39 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
     return { qty, subtotal, shipping, ppn, grand: subtotal + shipping + ppn };
   }, [items]);
 
-  // Validation
-  const headerOk = spDate && customerId && expiredDate;
+  // Validation — DC (dcId) wajib: sp_orders.dc_id NOT NULL (dual-write ke skema baru).
+  // SP No (spNo) wajib: nomor asli customer, diketik manual (bukan auto-generate).
+  const headerOk = spDate && customerId && dcId && expiredDate && spNo.trim();
   // Dropdown-only: item valid hanya bila produk dipilih dari master (productId terisi).
   const itemsOk  = items.length > 0 && items.every(i => i.productId && Number(i.qty) >= 1 && Number(i.unitPrice) >= 0);
   const isValid  = headerOk && itemsOk;
 
   // Submit helper
   const doInsert = useCallback(async () => {
+    const spNoValue = spNo.trim();
+    // Benteng pertama: cek duplikat (customer_id, sp_no) di sp_orders (sumber unik)
+    // SEBELUM menulis apa pun. Filter customer_id + sp_no (bukan sp_no saja) → nomor
+    // sama beda-customer tetap boleh. Tanpa filter deleted_at → cermin persis constraint
+    // UNIQUE(customer_id, sp_no) yang mencakup baris soft-deleted.
+    const { data: dup, error: dupErr } = await supabase
+      .from('sp_orders')
+      .select('id')
+      .eq('customer_id', customerId)
+      .eq('sp_no', spNoValue)
+      .limit(1)
+      .maybeSingle();
+    if (dupErr) {
+      showToast('Gagal cek nomor SP: ' + (dupErr.message || 'unknown'), 'error');
+      return false;
+    }
+    if (dup) {
+      showToast(`Nomor SP ${spNoValue} sudah ada untuk customer ini`, 'error');
+      return false;
+    }
     setSaving(true);
-    const spNo = `SP-${Date.now().toString().slice(-6)}`;
     const rows = items.map(item => ({
       spDate,
-      spNo,
+      spNo: spNoValue,
       customerId,
       productId:     item.productId || null,
       productName:   item.productName.trim(),
@@ -197,18 +252,55 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
       dc:            dc || '',
       notes:         notes || '',
     }));
-    const { error } = await bulkInsertSpItems(rows);
+    // 1) Tulis ke sp_items lama (TIDAK diubah) — juga sumber legacy_sp_item_id.
+    const { data: inserted, error } = await bulkInsertSpItems(rows);
     if (error) {
       setSaving(false);
       showToast('Gagal membuat SP: ' + (error.message || 'unknown'), 'error');
       return false;
     }
-    // Insert BTB numbers (SP-level) — ignore errors to not block SP creation
-    await bulkInsertSpBtbs(spNo, btbRows);
+    // 2) Dual-write (D2-A) ke sp_orders + sp_order_items via RPC atomik.
+    //    Zip legacy_sp_item_id per index (PostgREST kembalikan baris urut input).
+    //    price_category CHECK hanya semester/tahunan/project → 'default'/'' → null.
+    const dualItems = items.map((item, i) => {
+      const pc = item.priceCategory;
+      return {
+        product_id:        item.productId,
+        product_name:      item.productName.trim(),
+        sku:               item.sku || '',
+        qty:               Number(item.qty) || 1,
+        unit_price:        Number(item.unitPrice) || 0,
+        price_category:    (pc === 'semester' || pc === 'tahunan' || pc === 'project') ? pc : null,
+        shipping_price:    Number(item.shippingPrice) || 0,
+        legacy_sp_item_id: inserted?.[i]?.id ?? null,
+      };
+    });
+    const { error: dualErr } = await createSpOrderDual({
+      companyId:   SOA_COMPANY_ID,
+      customerId,
+      spNo:        spNoValue,
+      spDate,
+      dcId,
+      status:      'DRAFT',       // parity dgn legacy (Submit & Draft sama-sama DRAFT)
+      expiredDate,
+      notes,
+      items: dualItems,
+    });
+    if (dualErr) {
+      // sp_items lama SUDAH tertulis (aplikasi tetap baca sp_items → SP tampil normal),
+      // tapi sinkron ke skema baru gagal. Surface JELAS (bukan gagal senyap); tetap
+      // return true agar tak retry & bikin sp_items dobel (sp_no di-generate ulang tiap insert).
+      showToast(`${spNoValue} tersimpan, tapi gagal sinkron ke skema baru: ` + (dualErr.message || 'unknown'), 'error');
+      await bulkInsertSpBtbs(spNoValue, btbRows);
+      setSaving(false);
+      return true;
+    }
+    // 3) Insert BTB numbers (SP-level) — ignore errors to not block SP creation
+    await bulkInsertSpBtbs(spNoValue, btbRows);
     setSaving(false);
-    showToast(`${spNo} berhasil dibuat ✓`, 'success');
+    showToast(`${spNoValue} berhasil dibuat ✓`, 'success');
     return true;
-  }, [items, spDate, customerId, dc, expiredDate, notes, btbRows, showToast]);
+  }, [items, spDate, spNo, customerId, dc, dcId, expiredDate, notes, btbRows, showToast]);
 
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;
@@ -218,7 +310,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
 
   const handleDraft = useCallback(async () => {
     if (!headerOk || items.length === 0) {
-      showToast('Isi SP Date, Customer, dan minimal 1 item untuk draft', 'error');
+      showToast('Isi SP Date, No SP, Customer, DC, dan minimal 1 item untuk draft', 'error');
       return;
     }
     // Dropdown-only juga berlaku untuk draft: tiap item wajib produk dari master.
@@ -312,7 +404,7 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
                 <Field label="Customer" req>
                   {sel({
                     value: customerId,
-                    onChange: e => setCustomerId(e.target.value),
+                    onChange: handleCustomerChange,
                     children: (
                       <>
                         <option value="">Pilih customer…</option>
@@ -321,22 +413,32 @@ export default function InputSPPage({ onBack, customers = [], dcList = [], showT
                     ),
                   })}
                 </Field>
-                <Field label="Distribution Center">
+                <Field label="Distribution Center" req>
                   {sel({
-                    value: dc,
-                    onChange: e => setDc(e.target.value),
+                    value: dcId,
+                    onChange: handleDcChange,
                     children: (
                       <>
-                        <option value="">Pilih DC…</option>
-                        {allDcs.map(d => <option key={d} value={d}>{d}</option>)}
+                        <option value="">{customerId ? 'Pilih DC…' : 'Pilih customer dulu'}</option>
+                        {dcOptions.map(o => (
+                          <option key={o.id} value={o.id}>{o.kode ? `${o.kode} · ${o.nama}` : o.nama}</option>
+                        ))}
                       </>
                     ),
                   })}
                 </Field>
               </div>
 
-              {/* Row 2: Deadline (alone) */}
+              {/* Row 2: SP No | Expired Date */}
               <div className="nx-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 16px', marginBottom: 14 }}>
+                <Field label="SP No" req>
+                  {inp({
+                    value: spNo,
+                    placeholder: 'mis. 2229073',
+                    onChange: e => setSpNo(e.target.value),
+                    style: { fontFamily: "'IBM Plex Mono',monospace", fontSize: 13 },
+                  })}
+                </Field>
                 <Field label="Expired Date" req>
                   {inp({ type: 'date', value: expiredDate, min: today(), onChange: e => setExpiredDate(e.target.value) })}
                 </Field>
@@ -567,6 +669,10 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
   const grand = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0) + (Number(item.shippingPrice) || 0);
   const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 
+  // Kategori harga yang tersedia utk produk terpilih (hanya kolom harga non-null).
+  const prod = products.find(p => p.id === item.productId) || null;
+  const availCats = availCatsOf(prod);
+
   const inp = (props) => (
     <input
       {...props}
@@ -667,12 +773,22 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
                 onChange(item.id, 'productName', v);
                 onChange(item.id, 'productId', null);
                 onChange(item.id, 'sku', '');
+                onChange(item.id, 'priceCategory', '');   // batalkan kategori + kunci harga (0) sampai produk dipilih
+                onChange(item.id, 'unitPrice', 0);
               }}
               onPick={(p) => {
                 onChange(item.id, 'productId', p.id);
                 onChange(item.id, 'productName', p.name);
                 onChange(item.id, 'sku', p.code || '');
-                onChange(item.id, 'unitPrice', Number(p.default_price) || 0);
+                // Harga ikut kategori: kalau produk cuma punya 1 kategori harga → auto-pilih; kalau banyak → user pilih.
+                const avail = availCatsOf(p);
+                if (avail.length === 1) {
+                  onChange(item.id, 'priceCategory', avail[0].key);
+                  onChange(item.id, 'unitPrice', Number(p[avail[0].col]) || 0);
+                } else {
+                  onChange(item.id, 'priceCategory', '');
+                  onChange(item.id, 'unitPrice', 0);
+                }
               }}
             />
           </div>
@@ -696,16 +812,41 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
           </div>
         </div>
 
-        {/* Row 2: Unit Price | Ongkos Kirim | Exp Date | Deadline */}
-        <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 12px' }}>
+        {/* Row 2: Kategori Harga | Unit Price | Ongkos Kirim | Exp Date | Deadline */}
+        <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '0 12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {fieldLabel('Kategori Harga', true)}
+            <select
+              value={item.priceCategory || ''}
+              disabled={!item.productId || availCats.length === 0}
+              onChange={e => {
+                const cat = e.target.value;
+                onChange(item.id, 'priceCategory', cat);
+                const def = CAT_DEFS.find(c => c.key === cat);
+                onChange(item.id, 'unitPrice', (def && prod) ? (Number(prod[def.col]) || 0) : 0);
+              }}
+              onFocus={e => { e.target.style.borderColor = '#1B4D8A'; e.target.style.boxShadow = '0 0 0 3px rgba(20,70,130,.1)'; }}
+              onBlur={e  => { e.target.style.borderColor = '#E5E7EB'; e.target.style.boxShadow = 'none'; }}
+              style={{
+                width: '100%', height: 38, borderRadius: 8,
+                border: '1.5px solid #E5E7EB', background: item.productId ? '#FFFFFF' : '#F7F7F8',
+                padding: '0 11px', fontSize: 13, color: '#1A1A1E',
+                outline: 'none', fontFamily: "'Inter', sans-serif", boxSizing: 'border-box',
+                cursor: (!item.productId || availCats.length === 0) ? 'not-allowed' : 'pointer',
+                transition: 'border-color .14s, box-shadow .14s',
+              }}
+            >
+              <option value="">{!item.productId ? 'Pilih produk dulu' : (availCats.length ? 'Pilih kategori…' : 'Tak ada harga')}</option>
+              {availCats.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {fieldLabel('Unit Price', true)}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <span style={{ position: 'absolute', left: 10, fontSize: 11.5, color: '#9CA3AF', pointerEvents: 'none', fontFamily: "'Inter',sans-serif" }}>Rp</span>
               {inp({
-                type: 'number', min: 0, value: item.unitPrice,
-                onChange: e => onChange(item.id, 'unitPrice', e.target.value),
-                style: { paddingLeft: 30, fontFamily: "'IBM Plex Mono', monospace" },
+                type: 'number', value: item.unitPrice, readOnly: true,   // terkunci — nilainya ikut kategori harga
+                style: { paddingLeft: 30, fontFamily: "'IBM Plex Mono', monospace", background: '#F7F7F8', color: '#4B5563', cursor: 'not-allowed' },
               })}
             </div>
           </div>
