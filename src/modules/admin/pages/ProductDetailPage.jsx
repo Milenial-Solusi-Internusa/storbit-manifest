@@ -475,6 +475,12 @@ function PhysicalLayout({ product, cat, co, priceHistory = [], historyLoading = 
               </div>
             )}
           </div>
+          {/* Harga per kategori — NULL = "Belum diatur" (bedakan dari Rp 0) */}
+          <div style={{ marginTop: 10 }}>
+            <InfoRow label="Harga Semester" value={product.price_semester != null ? rp(product.price_semester) : 'Belum diatur'} mono/>
+            <InfoRow label="Harga Tahunan"  value={product.price_tahunan  != null ? rp(product.price_tahunan)  : 'Belum diatur'} mono/>
+            <InfoRow label="Harga Project"  value={product.price_project  != null ? rp(product.price_project)  : 'Belum diatur'} mono last/>
+          </div>
         </NavCard>
 
         {/* 4 — Riwayat Harga (product_price_history) */}
@@ -588,6 +594,9 @@ function EditForm({ product, editForm, setEditForm }) {
 
         <NavCard icon="tag" title="Harga & Pajak">
           <FormField label="Default Price"   value={String(editForm.default_price ?? '')} onChange={set('default_price')} type="number" placeholder="0"/>
+          <FormField label="Harga Semester"  value={String(editForm.price_semester ?? '')} onChange={set('price_semester')} type="number" placeholder="Kosongkan = belum diatur"/>
+          <FormField label="Harga Tahunan"   value={String(editForm.price_tahunan ?? '')}  onChange={set('price_tahunan')}  type="number" placeholder="Kosongkan = belum diatur"/>
+          <FormField label="Harga Project"   value={String(editForm.price_project ?? '')}  onChange={set('price_project')}  type="number" placeholder="Kosongkan = belum diatur"/>
           <div style={{ fontSize: 10.5, color: '#9AA0AC', margin: '-4px 0 8px', fontStyle: 'italic' }}>
             Opsional — isi kalau perubahan harga ini berdasarkan kontrak / PKS baru.
           </div>
@@ -656,7 +665,7 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
       supabase.from('companies').select('id, code').eq('is_active', true),
       supabase
         .from('products')
-        .select('id, code, name, category, unit, description, is_service, default_price, company_id, is_active, inventory_class, main_group, registered_date, operational_function, uom, unit_cost, weight, dimensions, packaging, min_order_qty, cogs_account, revenue_account')
+        .select('id, code, name, category, unit, description, is_service, default_price, price_semester, price_tahunan, price_project, company_id, is_active, inventory_class, main_group, registered_date, operational_function, uom, unit_cost, weight, dimensions, packaging, min_order_qty, cogs_account, revenue_account')
         .eq('id', selectedProduct.id)
         .single(),
     ]).then(([{ data: cos }, { data: prod, error: err }]) => {
@@ -749,6 +758,10 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
       name: product.name,
       description: product.description || '',
       default_price: product.default_price || '',
+      // Kategori: '' bila NULL (belum diatur) — dibedakan dari 0 saat simpan.
+      price_semester: product.price_semester ?? '',
+      price_tahunan:  product.price_tahunan  ?? '',
+      price_project:  product.price_project  ?? '',
       unit: product.unit || '',
       unit_cost: product.unit_cost || '',
       operational_function: product.operational_function || '',
@@ -768,6 +781,16 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
 
   async function saveEdit() {
     try {
+      // Harga kategori: '' → null (belum diatur); validasi non-negatif SEBELUM simpan apa pun.
+      const parseCat = (v) => { const s = String(v ?? '').trim(); return s === '' ? null : parseFloat(s); };
+      const catSem = parseCat(editForm.price_semester);
+      const catTah = parseCat(editForm.price_tahunan);
+      const catPro = parseCat(editForm.price_project);
+      if ([catSem, catTah, catPro].some(v => v != null && (Number.isNaN(v) || v < 0))) {
+        setToast('Harga kategori tidak boleh negatif');
+        setTimeout(() => setToast(''), 4000);
+        return;
+      }
       const { data, error: err } = await supabase
         .from('products')
         .update({
@@ -793,14 +816,40 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
         setTimeout(() => setToast(''), 4000);
         return;   // keep edit mode open, no optimistic update
       }
+      // Harga kategori → RPC set_product_category_prices (mencatat product_price_history
+      // per kategori; trigger DB hanya meng-cover default_price). NULL = kosongkan.
+      const { error: catErr } = await supabase.rpc('set_product_category_prices', {
+        p_product_id: product.id,
+        p_semester: catSem,
+        p_tahunan:  catTah,
+        p_project:  catPro,
+      });
+      const catOk = !catErr;
+      if (catErr) {
+        console.error('Category price error:', catErr);
+        setToast('Harga tersimpan, tapi harga kategori gagal: ' + (catErr.message || 'terjadi kesalahan'));
+        setTimeout(() => setToast(''), 4000);
+      }
       const prevPrice = product.default_price;
       const newPrice = parseFloat(editForm.default_price) || null;
+      const catChanged = catOk && (
+        catSem !== (product.price_semester ?? null) ||
+        catTah !== (product.price_tahunan  ?? null) ||
+        catPro !== (product.price_project  ?? null)
+      );
       setProduct(prev => ({
         ...prev, ...editForm,
         default_price: parseFloat(editForm.default_price) || prev.default_price,
         unit_cost: parseFloat(editForm.unit_cost) || null,
+        price_semester: catOk ? catSem : prev.price_semester,
+        price_tahunan:  catOk ? catTah : prev.price_tahunan,
+        price_project:  catOk ? catPro : prev.price_project,
       }));
       setEditing(false);
+      // Refresh riwayat bila HANYA kategori berubah (default-change punya blok sendiri di bawah).
+      if (catChanged && newPrice === prevPrice) {
+        loadPriceHistory(product.id);
+      }
       // Price changed → the DB trigger logged a new history row; refetch to show it.
       if (newPrice !== prevPrice) {
         // If contract info was filled, attach it to the just-logged history row via the
