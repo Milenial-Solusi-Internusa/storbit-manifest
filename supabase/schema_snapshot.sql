@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict faqWtnOe0ovag9TaHbBt04WD8MYKqvP5Lr2gwNgPMeIQZBg23Sh0gg8TkVjZok5
+\restrict YRxIefYHvII6GZvx2WNHtsR51vDsyvxcwK4ohNsRYceIXkkqcpDuhudBphSSkmg
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -234,6 +234,49 @@ $$;
 
 
 --
+-- Name: create_sp_order_dual(uuid, uuid, text, date, uuid, text, date, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_order_id uuid;
+BEGIN
+  INSERT INTO public.sp_orders
+    (company_id, customer_id, sp_no, sp_date, dc_id, status, expired_date, notes, created_by)
+  VALUES
+    (p_company_id, p_customer_id, p_sp_no, p_sp_date, p_dc_id,
+     COALESCE(NULLIF(p_status,''),'DRAFT'), p_expired_date, p_notes, auth.uid())
+  RETURNING id INTO v_order_id;
+
+  INSERT INTO public.sp_order_items
+    (sp_order_id, company_id, product_id, product_name, sku, qty, shipped_qty,
+     unit_price, price_category, shipping_price, legacy_sp_item_id)
+  SELECT
+    v_order_id, p_company_id,
+    (e->>'product_id')::uuid,
+    COALESCE(e->>'product_name',''),
+    COALESCE(e->>'sku',''),
+    (e->>'qty')::int,
+    0,
+    COALESCE((e->>'unit_price')::numeric, 0),
+    NULLIF(e->>'price_category',''),
+    COALESCE((e->>'shipping_price')::numeric, 0),
+    NULLIF(e->>'legacy_sp_item_id','')::uuid
+  FROM jsonb_array_elements(p_items) AS e;
+
+  RETURN v_order_id;
+EXCEPTION
+  WHEN unique_violation THEN
+    RAISE EXCEPTION 'SP % sudah ada untuk customer ini (duplikat)', p_sp_no
+      USING ERRCODE = 'unique_violation';
+END;
+$$;
+
+
+--
 -- Name: delete_picking_material(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -352,7 +395,8 @@ DECLARE
   v_customer uuid; v_cust_name text; v_addr text;
   v_item_count int;
 BEGIN
-  SELECT sp_no, status INTO v_sp_no, v_pick_status FROM picking_lists WHERE id = p_picking_list_id;
+  SELECT sp_no, status, customer_id INTO v_sp_no, v_pick_status, v_customer
+    FROM picking_lists WHERE id = p_picking_list_id;
   IF v_sp_no IS NULL THEN RAISE EXCEPTION 'Picking list tidak ditemukan'; END IF;
   IF v_pick_status <> 'done' THEN RAISE EXCEPTION 'Picking list belum selesai (status=%)', v_pick_status; END IF;
   IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id = p_picking_list_id AND status <> 'cancelled') THEN
@@ -361,9 +405,10 @@ BEGIN
     WHERE picking_list_id = p_picking_list_id AND COALESCE(qty_picked,0) > 0;
   IF v_item_count = 0 THEN RAISE EXCEPTION 'Tak ada item ter-pick untuk dikirim'; END IF;
 
-  SELECT si.customer_id, a.name, a.address INTO v_customer, v_cust_name, v_addr
-  FROM sp_items si LEFT JOIN accounts a ON a.id = si.customer_id
-  WHERE si.sp_no = v_sp_no LIMIT 1;
+  IF v_customer IS NULL THEN
+    SELECT si.customer_id INTO v_customer FROM sp_items si WHERE si.sp_no = v_sp_no LIMIT 1;
+  END IF;
+  SELECT a.name, a.address INTO v_cust_name, v_addr FROM accounts a WHERE a.id = v_customer;
 
   SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
   v_seq := increment_document_sequence(v_company_id, 'SJ', 'WH', v_year, 0);
@@ -385,10 +430,10 @@ $$;
 
 
 --
--- Name: generate_picking_from_sp(text, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: generate_picking_from_sp(text, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.generate_picking_from_sp(p_sp_no text, p_warehouse_id uuid DEFAULT NULL::uuid) RETURNS TABLE(picking_list_id uuid, picking_no text)
+CREATE FUNCTION public.generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid DEFAULT NULL::uuid) RETURNS TABLE(picking_list_id uuid, picking_no text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
@@ -398,27 +443,27 @@ DECLARE
   v_entity text; v_year int := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
   v_seq int; v_no text; v_pl_id uuid; v_uid uuid := auth.uid(); v_outstanding int;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no=p_sp_no AND sp_status='confirmed') THEN
+  IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed') THEN
     RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no; END IF;
-  IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no=p_sp_no AND status <> 'cancelled') THEN
+  IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND status <> 'cancelled') THEN
     RAISE EXCEPTION 'Picking list untuk SP % sudah ada', p_sp_no; END IF;
   SELECT count(*) INTO v_outstanding FROM sp_items
-    WHERE sp_no=p_sp_no AND sp_status='confirmed' AND (qty - shipped_qty) > 0;
+    WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed' AND (qty - shipped_qty) > 0;
   IF v_outstanding = 0 THEN RAISE EXCEPTION 'SP % tidak punya item outstanding', p_sp_no; END IF;
 
   SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
   v_seq := increment_document_sequence(v_company_id,'PICK','WH',v_year,0);
   v_no  := 'PICK/'||COALESCE(v_entity,'SOA')||'/WH/'||v_year||'/'||lpad(v_seq::text,4,'0');
 
-  INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by)
-  VALUES (v_company_id, v_no, p_sp_no, v_wh, 'pending', v_uid)
+  INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by, customer_id)
+  VALUES (v_company_id, v_no, p_sp_no, v_wh, 'pending', v_uid, p_customer_id)
   RETURNING id INTO v_pl_id;
 
   WITH src AS (
     SELECT si.id AS sp_item_id, si.product_id, si.product_name, si.sku,
            GREATEST(si.qty - si.shipped_qty, 0) AS req
     FROM sp_items si
-    WHERE si.sp_no=p_sp_no AND si.sp_status='confirmed' AND (si.qty - si.shipped_qty) > 0
+    WHERE si.sp_no=p_sp_no AND si.customer_id=p_customer_id AND si.sp_status='confirmed' AND (si.qty - si.shipped_qty) > 0
   ),
   av AS (
     SELECT src.*,
@@ -895,10 +940,10 @@ $$;
 
 
 --
--- Name: set_sp_status(text, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: set_sp_status(text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.set_sp_status(p_sp_no text, p_status text, p_reason text DEFAULT NULL::text) RETURNS integer
+CREATE FUNCTION public.set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
@@ -918,7 +963,8 @@ BEGIN
       cancelled_by  = CASE WHEN p_status = 'cancelled' THEN v_uid    ELSE cancelled_by  END,
       cancel_reason = CASE WHEN p_status = 'cancelled' THEN p_reason ELSE cancel_reason END,
       updated_at    = now()
-  WHERE sp_no = p_sp_no;
+  WHERE sp_no = p_sp_no
+    AND customer_id = p_customer_id;
 
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
@@ -3243,6 +3289,7 @@ CREATE TABLE public.picking_lists (
     completed_at timestamp with time zone,
     cancelled_at timestamp with time zone,
     sp_order_id uuid,
+    customer_id uuid,
     CONSTRAINT picking_lists_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))
 );
 
@@ -8252,6 +8299,14 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
+-- Name: picking_lists picking_lists_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.picking_lists
+    ADD CONSTRAINT picking_lists_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: picking_lists picking_lists_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10867,7 +10922,7 @@ CREATE POLICY prospects_insert ON public.accounts FOR INSERT WITH CHECK ((compan
 -- Name: accounts prospects_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
+CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()) OR (public.has_role('operations'::text) AND ((account_status)::text = 'customer'::text))))));
 
 
 --
@@ -11613,5 +11668,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict faqWtnOe0ovag9TaHbBt04WD8MYKqvP5Lr2gwNgPMeIQZBg23Sh0gg8TkVjZok5
+\unrestrict YRxIefYHvII6GZvx2WNHtsR51vDsyvxcwK4ohNsRYceIXkkqcpDuhudBphSSkmg
 
