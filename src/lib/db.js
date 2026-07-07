@@ -453,13 +453,23 @@ export async function startPicking(pickingListId) {
 }
 
 // Complete picking: in_progress → done (+ completed_at).
+// FASE 1: picking selesai → RPC complete_picking (set done + PERFORM sp_recompute_status
+// → sp_orders.status jadi PACKED). Server-side supaya status header ikut sinkron.
 export async function completePicking(pickingListId) {
+  const { error } = await supabase.rpc('complete_picking', { p_picking_list_id: pickingListId });
+  return { data: null, error };
+}
+
+// FASE 1: status headline SP (sp_orders 12-tahap) + flag pernah picking dibatalkan,
+// untuk badge Detail SP. Kunci komposit (customer_id, sp_no). Read-only.
+export async function getSpOrderStatus(customerId, spNo) {
   const { data, error } = await supabase
-    .from('picking_lists')
-    .update({ status: 'done', completed_at: new Date().toISOString() })
-    .eq('id', pickingListId)
-    .select('*')
-    .single();
+    .from('sp_orders')
+    .select('status, had_cancelled_picking')
+    .eq('customer_id', customerId)
+    .eq('sp_no', spNo)
+    .is('deleted_at', null)
+    .maybeSingle();
   return { data, error };
 }
 
