@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict hqeGvgzaQHpDrctQgCjDL9Ixd1eucschnhyhlkQuedLXoCSZiZ4Mi8EgOGfycRe
+\restrict btAHLJTMe7YAhlT9oIDbtSuNFBrOD5LzEiTjX925qOPUYHBKAm0lIn26FqnHDJV
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1066,12 +1066,12 @@ DECLARE
   v_company uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
   v_id uuid; v_status text; v_new text;
   v_confirmed bool; v_has_done bool; v_has_active bool; v_short bool;
+  v_ordered int; v_shipped int; v_has_dispatch bool; v_has_delivered bool;
 BEGIN
   SELECT id, status INTO v_id, v_status
     FROM sp_orders WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND deleted_at IS NULL;
   IF v_id IS NULL THEN RETURN; END IF;
-  IF v_status = 'CANCELLED' THEN RETURN; END IF;
-  IF v_status NOT IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED') THEN RETURN; END IF;
+  IF v_status IN ('CANCELLED','BTB_TERBIT','INVOICED','SUBMITTED','LUNAS') THEN RETURN; END IF;
   v_confirmed  := EXISTS(SELECT 1 FROM sp_items WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND sp_status='confirmed');
   v_has_done   := EXISTS(SELECT 1 FROM picking_lists WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status='done');
   v_has_active := EXISTS(SELECT 1 FROM picking_lists WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status IN ('pending','in_progress'));
@@ -1082,11 +1082,18 @@ BEGIN
        AND (si.qty - si.shipped_qty) > COALESCE(
              (SELECT SUM(ss.available) FROM stock_summary ss
                WHERE ss.company_id=v_company AND ss.product_id=si.product_id), 0));
+  SELECT COALESCE(SUM(qty),0), COALESCE(SUM(shipped_qty),0) INTO v_ordered, v_shipped
+    FROM sp_items WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND sp_status='confirmed';
+  v_has_dispatch  := EXISTS(SELECT 1 FROM delivery_notes WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status IN ('in_transit','delivered'));
+  v_has_delivered := EXISTS(SELECT 1 FROM delivery_notes WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status='delivered');
   v_new := CASE
-    WHEN v_has_done              THEN 'PACKED'
-    WHEN v_has_active            THEN 'PICKING'
-    WHEN v_confirmed AND v_short THEN 'MENUNGGU_STOK'
-    WHEN v_confirmed             THEN 'CONFIRMED'
+    WHEN v_ordered > 0 AND v_shipped >= v_ordered THEN 'TERKIRIM_PENUH'
+    WHEN v_has_delivered                          THEN 'SAMPAI'
+    WHEN v_has_dispatch                           THEN 'DIKIRIM'
+    WHEN v_has_done                               THEN 'PACKED'
+    WHEN v_has_active                             THEN 'PICKING'
+    WHEN v_confirmed AND v_short                  THEN 'MENUNGGU_STOK'
+    WHEN v_confirmed                              THEN 'CONFIRMED'
     ELSE 'DRAFT' END;
   IF v_new IS DISTINCT FROM v_status THEN
     UPDATE sp_orders SET status=v_new, updated_at=now() WHERE id=v_id AND status <> 'CANCELLED';
@@ -11770,5 +11777,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict hqeGvgzaQHpDrctQgCjDL9Ixd1eucschnhyhlkQuedLXoCSZiZ4Mi8EgOGfycRe
+\unrestrict btAHLJTMe7YAhlT9oIDbtSuNFBrOD5LzEiTjX925qOPUYHBKAm0lIn26FqnHDJV
 
