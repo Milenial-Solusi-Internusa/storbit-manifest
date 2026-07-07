@@ -20,7 +20,7 @@ import {
   Check, X, FolderOpen, History, List,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2,
 } from 'lucide-react';
-import { listSpBtbs, addSpBtb, deleteSpBtb, setSpExternalUrl, getStockForProducts } from '../../lib/db';
+import { listSpBtbs, addSpBtb, deleteSpBtb, setSpExternalUrl, getStockForProducts, getSpOrderStatus } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
@@ -617,11 +617,21 @@ export default function SalesOrderDetailPage({
   const [btbInput,     setBtbInput]     = useState('');
   const [btbRemarks,   setBtbRemarks]   = useState('');
   const [btbSaving,    setBtbSaving]    = useState(false);
+  const [spOrder,      setSpOrder]      = useState(null);  // Fase 1: headline sp_orders (status + flag)
 
   useEffect(() => {
     if (!spNo) return;
     listSpBtbs(spNo).then(({ data }) => setBtbs(data || []));
   }, [spNo]);
+
+  // Fase 1 — headline status sp_orders (12-tahap) + flag pernah picking dibatalkan (badge additive).
+  useEffect(() => {
+    const cust = group?.customerId;
+    if (!spNo || !cust) return undefined;
+    let cancelled = false;
+    getSpOrderStatus(cust, spNo).then(({ data }) => { if (!cancelled) setSpOrder(data || null); });
+    return () => { cancelled = true; };
+  }, [spNo, group?.customerId]);
 
   // Fase 1 — fetch stok tersedia (agregat company) saat SP sudah confirmed.
   useEffect(() => {
@@ -774,6 +784,17 @@ export default function SalesOrderDetailPage({
               {headerStatus && (
                 <Badge bg={headerStatus.bg} color={headerStatus.color} bd={headerStatus.bd}>
                   <StatusDot color={headerStatus.color}/>{headerStatus.label}
+                </Badge>
+              )}
+              {/* Fase 1 — headline 12-tahap dari sp_orders (di samping pill lama, read-only) */}
+              {spOrder?.status && (
+                <Badge bg={C.neutralBg} color={C.neutral} bd={C.neutralBd}>
+                  <span/>Tahap: {spOrder.status}
+                </Badge>
+              )}
+              {spOrder?.had_cancelled_picking && (
+                <Badge bg={C.warnBg} color={C.warn} bd={C.warnBd}>
+                  <AlertTriangle size={12}/>Pernah picking dibatalkan
                 </Badge>
               )}
               <span style={{ display: 'inline-flex', fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 6, background: cust.bg, color: cust.ink, border: '1px solid transparent', whiteSpace: 'nowrap' }}>
