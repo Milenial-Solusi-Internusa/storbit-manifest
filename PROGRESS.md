@@ -1,5 +1,16 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-07
+
+### ProductDetailPage — tampil + edit 3 harga kategori (semester/tahunan/project) — branch `feat/sp-schema`
+> **Konteks (DESIGN #13):** kolom `products.price_semester/tahunan/project` + dropdown kategori InputSPPage sudah ada, TAPI ProductDetailPage cuma tampil/edit `default_price` → semua produk cuma punya "Default", dropdown kategori Input SP cuma "Default". 1 file FE (`ProductDetailPage.jsx`) + 1 RPC baru. **Tidak mengisi angka harga apa pun** (produk existing tak berubah nilai). Keputusan user (AskUserQuestion): RPC baru (bukan `bulk_update_product_prices`) + kontrak tidak per-kategori.
+- [x] **TASK 1 (tampil)** — fetch produk `.select()` +`price_semester,price_tahunan,price_project`; di kartu "Harga & Pajak" **di bawah box Default Price** +3 `InfoRow` ringkas (Harga Semester/Tahunan/Project); NULL → **"Belum diatur"** (cek `!= null`, bedakan dari Rp 0). Box Default Price tetap menonjol.
+- [x] **TASK 2 (edit)** — lewat form Edit yang ADA (bukan tombol terpisah): `EditForm` +3 `FormField type="number"` (boleh kosong=NULL) setelah Default Price; `startEdit` prefill `?? ''`.
+- [x] **Jalur simpan (KRITIS)** — trigger DB `trg_z_products_price_history` **hanya cover `default_price`** → simpan kategori via **RPC baru `set_product_category_prices(p_product_id,p_semester,p_tahunan,p_project)`** (SECURITY DEFINER; authz mirror `products_update` = super ATAU admin-same-company; terima NULL utk clear; log `product_price_history` per kategori yg berubah, `source='category_edit'`, `price_category`). Dibuat & dijalankan manual di SQL Editor, **terverifikasi jalan**. **Kenapa bukan `bulk_update_product_prices`:** super-only + tolak NULL (raise) → tak bisa clear + pecah parity.
+- [x] **`saveEdit`** — parse `'' → null`, guard non-negatif SEBELUM simpan; `default_price` path **100% tak berubah** (direct update + trigger + attach kontrak); SETELAH itu panggil RPC kategori → `catErr` → toast "harga tersimpan, kategori gagal" (default tetap tersimpan); `setProduct` set kategori hanya bila RPC sukses; `loadPriceHistory` refresh bila default **atau** kategori berubah. **Kontrak per-kategori TIDAK ditambah** (tetap utk default saja). **TIDAK disentuh:** InputSPPage, dropdown kategori, BulkEditPricePage, `bulk_update_product_prices`, jalur default_price. Build clean (~2583 modules, 1.48s). Lint **223 (net-zero)**; no console error.
+- [x] **File migrasi rekaman** dibuat: `supabase/migrations/20260707000001_set_product_category_prices_rpc.sql` — header (tujuan + tanggal 7 Jul 2026 + "SUDAH LIVE, rekaman, bukan untuk dijalankan lagi") + definisi RPC + GRANT byte-exact dari histori sesi. Tidak ada file lain disentuh; tidak ada SQL dijalankan.
+- [ ] **Belum:** refresh `schema_snapshot.sql` via `pg_dump` (RPC baru belum masuk snapshot). Tes manual (perlu login admin+): buka produk → 3 harga "Belum diatur"; isi 1 kategori → tersimpan + tampil + `product_price_history` nambah 1 baris kategori itu; kosongkan lagi → "Belum diatur"; angka negatif ditolak.
+
 ## 2026-07-06
 
 ### MVP Storbit SP — FASE 0 (fondasi skema DB) SELESAI & TERVERIFIKASI (branch `feat/sp-schema`)
