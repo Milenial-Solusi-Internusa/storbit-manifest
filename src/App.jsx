@@ -161,9 +161,14 @@ const groupBySP = (rows) => {
   const enriched = rows.map(r => { const c = calcItem(r); return { ...r, ...c, total: c.subtotal }; });
   const groups = {};
   enriched.forEach(r => {
-    if (!groups[r.spNo]) {
-      groups[r.spNo] = {
+    // Identitas SP = komposit (customer_id, sp_no). Nomor SP kini manual → bisa kembar
+    // antar customer; key by uid supaya SP beda-customer tak tergabung.
+    const uid = `${r.customerId}|${r.spNo}`;
+    if (!groups[uid]) {
+      groups[uid] = {
+        uid,
         spNo: r.spNo,
+        customerId: r.customerId,
         spDate: r.spDate,
         dc: r.dc,
         customer: r.customer || '',
@@ -177,7 +182,7 @@ const groupBySP = (rows) => {
         submitDates: [], emailDates: []
       };
     }
-    const g = groups[r.spNo];
+    const g = groups[uid];
     g.items.push(r);
     g.totalQty += r.qty;
     g.totalShipped += r.shippedQty;
@@ -1841,8 +1846,8 @@ export default function StorbitManifest() {
   // Generate a picking list from a confirmed SP, then jump to its detail.
   // Errors from the RPC (belum confirmed / tidak ada outstanding / sudah ada)
   // surface as a toast instead of crashing.
-  const handleGeneratePicking = async (spNo) => {
-    const { data, error } = await generatePickingFromSp(spNo);
+  const handleGeneratePicking = async (spNo, customerId) => {
+    const { data, error } = await generatePickingFromSp(spNo, customerId);
     if (error) {
       showToast(error.message || 'Gagal membuat picking list', 'error');
       return;
@@ -1878,9 +1883,16 @@ export default function StorbitManifest() {
 
   const groupedSP = useMemo(() => groupBySP(rows), [rows]);
 
-  // sp_no → customer name, for the Picking List view (picking_lists has no customer).
+  // sp_no → customer name (fallback), dipakai DeliveryNotePage (delivery_notes punya
+  // customer_name sendiri; map ini hanya cadangan + search).
   const customerBySpNo = useMemo(
     () => Object.fromEntries(groupedSP.map(g => [g.spNo, g.customer])),
+    [groupedSP],
+  );
+  // uid (customer_id|sp_no) → customer name, untuk Picking List (identitas komposit —
+  // tahan tabrakan nomor SP kembar antar customer).
+  const customerByUid = useMemo(
+    () => Object.fromEntries(groupedSP.map(g => [g.uid, g.customer])),
     [groupedSP],
   );
 
@@ -2594,7 +2606,7 @@ export default function StorbitManifest() {
                   customers={customers}
                   dcList={dcList}
                   role={role}
-                  onSelectSP={(spNo) => setSelectedSpId(spNo)}
+                  onSelectSP={(g) => setSelectedSpId({ spNo: g.spNo, customerId: g.customerId })}
                   onAddSP={() => setShowInputSP(true)}
                   onExport={exportCSV}
                   onRefresh={refreshSp}
@@ -2627,9 +2639,9 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <SalesOrderDetailPage
-                  spNo={selectedSpId}
-                  items={enrichedRows.filter(r => r.spNo === selectedSpId)}
-                  group={groupedSP.find(g => g.spNo === selectedSpId) || null}
+                  spNo={selectedSpId.spNo}
+                  items={enrichedRows.filter(r => r.spNo === selectedSpId.spNo && r.customerId === selectedSpId.customerId)}
+                  group={groupedSP.find(g => g.uid === `${selectedSpId.customerId}|${selectedSpId.spNo}`) || null}
                   onBack={() => setSelectedSpId(null)}
                   onSaveItem={dbSaveRow}
                   onDeleteItem={handleDelete}
@@ -2649,7 +2661,7 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Picking List section temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <PickingListPage
-                  customerBySpNo={customerBySpNo}
+                  customerByUid={customerByUid}
                   onOpenDetail={(id) => setSelectedPickingId(id)}
                   showToast={showToast}
                 />
@@ -2663,7 +2675,7 @@ export default function StorbitManifest() {
                   pickingListId={selectedPickingId}
                   onBack={() => setSelectedPickingId(null)}
                   onCreateDelivery={handleCreateDelivery}
-                  onGoToSp={(spNo) => { setSelectedPickingId(null); setActiveMenu('manifest'); setSelectedSpId(spNo); }}
+                  onGoToSp={(spNo, customerId) => { setSelectedPickingId(null); setActiveMenu('manifest'); setSelectedSpId({ spNo, customerId }); }}
                   showToast={showToast}
                 />
               </Suspense>
