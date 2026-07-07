@@ -554,11 +554,15 @@ export async function setDeliveryStatus(deliveryNoteId, status) {
     const { error } = await supabase.rpc('dispatch_delivery', { p_delivery_note_id: deliveryNoteId });
     return { error };
   }
-  // delivered → no stock effect (outbound already posted at in_transit); plain update.
-  const patch = { status };
-  if (status === 'delivered') patch.delivered_at = new Date().toISOString();
+  // delivered → RPC mark_delivery_delivered (FASE 2C: set delivered + delivered_at +
+  // PERFORM sp_recompute_status → status SP naik ke SAMPAI). Guard in_transit-only di RPC.
+  if (status === 'delivered') {
+    const { error } = await supabase.rpc('mark_delivery_delivered', { p_delivery_note_id: deliveryNoteId });
+    return { error };
+  }
+  // status lain (tak dipakai saat ini) → plain update sebagai fallback.
   const { error } = await supabase
-    .from('delivery_notes').update(patch).eq('id', deliveryNoteId);
+    .from('delivery_notes').update({ status }).eq('id', deliveryNoteId);
   return { error };
 }
 
