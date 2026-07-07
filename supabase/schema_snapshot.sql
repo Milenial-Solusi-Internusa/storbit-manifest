@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict btAHLJTMe7YAhlT9oIDbtSuNFBrOD5LzEiTjX925qOPUYHBKAm0lIn26FqnHDJV
+\restrict cpSpHS4heekLSj5VZarinfc7ZvXaWd0JCBbkabMvOsRzDF7Am7Qs2lrnTG2JcrK
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -853,6 +853,26 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: mark_delivery_delivered(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_delivery_delivered(p_delivery_note_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_status text; v_cust uuid; v_sp text;
+BEGIN
+  SELECT status, customer_id, sp_no INTO v_status, v_cust, v_sp
+    FROM delivery_notes WHERE id=p_delivery_note_id;
+  IF v_sp IS NULL THEN RAISE EXCEPTION 'Surat jalan tidak ditemukan'; END IF;
+  IF v_status <> 'in_transit' THEN
+    RAISE EXCEPTION 'Hanya surat jalan in_transit yang bisa ditandai terkirim (status=%)', v_status; END IF;
+  UPDATE delivery_notes SET status='delivered', delivered_at=now() WHERE id=p_delivery_note_id;
+  PERFORM sp_recompute_status(v_cust, v_sp);
+END; $$;
 
 
 --
@@ -11777,5 +11797,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict btAHLJTMe7YAhlT9oIDbtSuNFBrOD5LzEiTjX925qOPUYHBKAm0lIn26FqnHDJV
+\unrestrict cpSpHS4heekLSj5VZarinfc7ZvXaWd0JCBbkabMvOsRzDF7Am7Qs2lrnTG2JcrK
 
