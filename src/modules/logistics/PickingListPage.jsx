@@ -68,7 +68,7 @@ function fmtDateTime(iso) {
     ', ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function PickingListPage({ onOpenDetail, customerBySpNo = {}, showToast }) {
+export default function PickingListPage({ onOpenDetail, customerByUid = {}, showToast }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -92,14 +92,14 @@ export default function PickingListPage({ onOpenDetail, customerBySpNo = {}, sho
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter(r => {
-      const cust = customerBySpNo[r.sp_no] || '';
+      const cust = customerByUid[`${r.customer_id}|${r.sp_no}`] || '';
       return (
         r.picking_no?.toLowerCase().includes(q) ||
         r.sp_no?.toLowerCase().includes(q) ||
         cust.toLowerCase().includes(q)
       );
     });
-  }, [rows, search, customerBySpNo]);
+  }, [rows, search, customerByUid]);
 
   return (
     <div style={{ fontFamily: 'Inter, system-ui, sans-serif', background: C.bg, minHeight: '100%', padding: 28 }}>
@@ -186,7 +186,7 @@ export default function PickingListPage({ onOpenDetail, customerBySpNo = {}, sho
                 <td style={{ padding: '14px 16px', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12.5, color: C.ink }}>
                   {row.sp_no}
                 </td>
-                <td style={{ padding: '14px 16px', fontSize: 13, color: C.ink, fontWeight: 500 }}>{customerBySpNo[row.sp_no] || '—'}</td>
+                <td style={{ padding: '14px 16px', fontSize: 13, color: C.ink, fontWeight: 500 }}>{customerByUid[`${row.customer_id}|${row.sp_no}`] || '—'}</td>
                 <td style={{ padding: '14px 16px', fontSize: 12.5, color: C.mute }}>{row.warehouses?.name || '—'}</td>
                 <td style={{ padding: '14px 16px' }}><StatusBadge status={row.status} /></td>
                 {/* PIC: assign feature deferred (Fase 5 role gudang) → placeholder */}

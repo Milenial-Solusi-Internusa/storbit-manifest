@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   listSpItems,
   insertSpItem,
-  bulkInsertSpItems,
   updateSpItem,
   deleteSpItem,
 } from '../lib/db';
@@ -141,38 +140,6 @@ export function useSpItems({ customers = [] } = {}) {
     [rows, refresh]
   );
 
-  // Bulk import (CSV)
-  const bulkAdd = useCallback(
-    async (importedRows) => {
-      // Resolve customer names to IDs
-      const payload = importedRows.map((r) => ({
-        ...r,
-        customerId: r.customerId || resolveCustomerId(r.customer),
-      }));
-
-      const { data: saved, error: err } = await bulkInsertSpItems(payload);
-      if (err) {
-        console.error('[useSpItems] bulk insert error:', err);
-        throw err;
-      }
-      setRows((prev) => [...(saved || []), ...prev]);
-      return saved;
-    },
-    [resolveCustomerId]
-  );
-
-  // Reset to seed (for handleResetData) — kita gak bisa "reset" Supabase data dari client
-  // Jadi handler ini disabled, atau kasih warning ke admin.
-  // Untuk Phase 5 awal, kita keep disabled. Bisa di-implement lewat Supabase Edge Function nanti.
-  const resetData = useCallback(async () => {
-    throw new Error('Reset data tidak tersedia di mode multi-user. Hubungi admin.');
-  }, []);
-
-  // Clear all — same reasoning
-  const clearAll = useCallback(async () => {
-    throw new Error('Clear all tidak tersedia di mode multi-user. Hubungi admin.');
-  }, []);
-
   return {
     rows,
     loading,
@@ -181,8 +148,5 @@ export function useSpItems({ customers = [] } = {}) {
     saveRow,
     removeRow,
     removeRowsBySp,
-    bulkAdd,
-    resetData,
-    clearAll,
   };
 }

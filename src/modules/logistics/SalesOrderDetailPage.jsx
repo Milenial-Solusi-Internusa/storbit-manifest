@@ -799,7 +799,7 @@ export default function SalesOrderDetailPage({
                 onClick={async () => {
                   if (genBusy) return;
                   setGenBusy(true);
-                  await onGeneratePicking?.(spNo);
+                  await onGeneratePicking?.(spNo, group?.customerId);
                   setGenBusy(false);
                 }}
                 disabled={genBusy}
