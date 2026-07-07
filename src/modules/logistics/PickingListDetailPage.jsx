@@ -525,7 +525,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
         )}
         {status === 'cancelled' && detail.sp_no && (
           <button
-            onClick={() => onGoToSp?.(detail.sp_no)}
+            onClick={() => onGoToSp?.(detail.sp_no, detail.customer_id)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.navy, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: 'pointer' }}
           >
             <ClipboardList size={15} /> Buat Picking Baru
