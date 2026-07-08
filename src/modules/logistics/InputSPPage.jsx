@@ -17,7 +17,7 @@ import {
   Receipt, Check, Save, Package,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { bulkInsertSpItems, bulkInsertSpBtbs, createSpOrderDual } from '../../lib/db';
+import { bulkInsertSpItems, createSpOrderDual } from '../../lib/db';
 import { useProducts } from '../../hooks/useProducts';
 import ProductPicker from '../../components/ProductPicker';
 
@@ -158,9 +158,6 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
   const [items,   setItems]   = useState([freshItem()]);
   const [saving,  setSaving]  = useState(false);
 
-  // BTB Numbers (SP-level)
-  const [btbRows, setBtbRows] = useState([{ btb_no: '', remarks: '' }]);
-
   // DC dari master dc_master, difilter per customer (+ DC umum customer_id NULL). Re-fetch saat ganti customer.
   // Reset dcId/dc/dcOptions ditangani di handleCustomerChange (bukan di effect) — hindari setState sinkron di effect.
   useEffect(() => {
@@ -291,16 +288,13 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
       // tapi sinkron ke skema baru gagal. Surface JELAS (bukan gagal senyap); tetap
       // return true agar tak retry & bikin sp_items dobel (sp_no di-generate ulang tiap insert).
       showToast(`${spNoValue} tersimpan, tapi gagal sinkron ke skema baru: ` + (dualErr.message || 'unknown'), 'error');
-      await bulkInsertSpBtbs(spNoValue, btbRows);
       setSaving(false);
       return true;
     }
-    // 3) Insert BTB numbers (SP-level) — ignore errors to not block SP creation
-    await bulkInsertSpBtbs(spNoValue, btbRows);
     setSaving(false);
     showToast(`${spNoValue} berhasil dibuat ✓`, 'success');
     return true;
-  }, [items, spDate, spNo, customerId, dc, dcId, expiredDate, notes, btbRows, showToast]);
+  }, [items, spDate, spNo, customerId, dc, dcId, expiredDate, notes, showToast]);
 
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;
@@ -455,65 +449,6 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
                   style={{ ...inpStyle({ height: 'auto', padding: '10px 12px', resize: 'vertical', minHeight: 72 }) }}
                 />
               </Field>
-            </div>
-          </Card>
-
-          {/* ── BTB Numbers card ── */}
-          <Card>
-            <CardHeader
-              title="BTB Numbers"
-              sub={`Opsional — ${btbRows.filter(r => r.btb_no?.trim()).length} nomor BTB`}
-            />
-            <div style={{ padding: '18px 22px' }}>
-              {btbRows.map((row, idx) => (
-                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {inp({
-                      value: row.btb_no,
-                      placeholder: `Nomor BTB ${idx + 1}…`,
-                      style: { fontFamily: "'IBM Plex Mono',monospace", fontSize: 13 },
-                      onChange: e => setBtbRows(prev => prev.map((r, i) => i === idx ? { ...r, btb_no: e.target.value } : r)),
-                    })}
-                    {btbRows.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setBtbRows(prev => prev.filter((_, i) => i !== idx))}
-                        style={{
-                          height: 40, width: 40, borderRadius: 8, flexShrink: 0,
-                          border: `1.5px solid ${C.dangerBd}`, background: C.dangerBg,
-                          color: C.danger, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: '.12s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = '#FECACA'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = C.dangerBg; }}
-                      >
-                        <Trash2 size={14}/>
-                      </button>
-                    )}
-                  </div>
-                  {inp({
-                    value: row.remarks,
-                    placeholder: 'Remarks (opsional)…',
-                    onChange: e => setBtbRows(prev => prev.map((r, i) => i === idx ? { ...r, remarks: e.target.value } : r)),
-                  })}
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setBtbRows(prev => [...prev, { btb_no: '', remarks: '' }])}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, marginTop: 4,
-                  padding: '7px 14px', borderRadius: 8,
-                  border: `1.5px dashed ${C.line}`, background: 'transparent',
-                  color: C.inkSoft, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-                  transition: '.12s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = C.navy; e.currentTarget.style.color = C.navy; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.color = C.inkSoft; }}
-              >
-                <Plus size={13}/> Tambah BTB
-              </button>
             </div>
           </Card>
 
