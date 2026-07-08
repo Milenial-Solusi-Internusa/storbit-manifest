@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict cpSpHS4heekLSj5VZarinfc7ZvXaWd0JCBbkabMvOsRzDF7Am7Qs2lrnTG2JcrK
+\restrict 9yIDwCjW53OkA40O5SupLs5UpKltzzidGcLLbO2x5JpdRXwPAh8gDJJHoJqgT98
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -174,9 +174,9 @@ CREATE FUNCTION public.cancel_delivery(p_delivery_note_id uuid) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-DECLARE v_status text; v_uid uuid := auth.uid();
+DECLARE v_status text; v_uid uuid := auth.uid(); v_cust uuid; v_sp text;
 BEGIN
-  SELECT status INTO v_status FROM delivery_notes WHERE id=p_delivery_note_id;
+  SELECT status, customer_id, sp_no INTO v_status, v_cust, v_sp FROM delivery_notes WHERE id=p_delivery_note_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Surat jalan tidak ditemukan'; END IF;
   IF v_status='cancelled' THEN RAISE EXCEPTION 'Surat jalan sudah dibatalkan'; END IF;
   IF v_status IN ('in_transit','delivered') THEN
@@ -185,8 +185,23 @@ BEGIN
     SELECT company_id, warehouse_id, product_id, 'inbound', abs(qty), 'delivery_cancel', reference_id, reference_no, v_uid
     FROM stock_ledger
     WHERE reference_type='delivery' AND reference_id=p_delivery_note_id AND movement_type='outbound';
+
+    WITH agg AS (
+      SELECT pli.sp_item_id AS sp_item_id, SUM(dni.qty) AS qty
+      FROM delivery_note_items dni
+      JOIN picking_list_items pli ON pli.id = dni.picking_list_item_id
+      WHERE dni.delivery_note_id = p_delivery_note_id AND COALESCE(dni.qty,0) > 0 AND pli.sp_item_id IS NOT NULL
+      GROUP BY pli.sp_item_id
+    )
+    UPDATE sp_items si SET shipped_qty = GREATEST(si.shipped_qty - agg.qty, 0), updated_at = now()
+    FROM agg WHERE si.id = agg.sp_item_id;
   END IF;
+
   UPDATE delivery_notes SET status='cancelled', cancelled_at=now() WHERE id=p_delivery_note_id;
+
+  IF v_cust IS NOT NULL AND v_sp IS NOT NULL THEN
+    PERFORM sp_recompute_status(v_cust, v_sp);
+  END IF;
 END; $$;
 
 
@@ -331,8 +346,11 @@ CREATE FUNCTION public.dispatch_delivery(p_delivery_note_id uuid) RETURNS void
     AS $$
 DECLARE v_company uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
         v_status text; v_pick uuid; v_wh uuid; v_no text; v_uid uuid := auth.uid();
+        v_cust uuid; v_sp text;
 BEGIN
-  SELECT status, picking_list_id, do_no INTO v_status, v_pick, v_no FROM delivery_notes WHERE id=p_delivery_note_id;
+  SELECT status, picking_list_id, do_no, customer_id, sp_no
+    INTO v_status, v_pick, v_no, v_cust, v_sp
+    FROM delivery_notes WHERE id=p_delivery_note_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Surat jalan tidak ditemukan'; END IF;
   IF v_status <> 'draft' THEN RAISE EXCEPTION 'Hanya surat jalan draft yang bisa diberangkatkan (status=%)', v_status; END IF;
   SELECT warehouse_id INTO v_wh FROM picking_lists WHERE id=v_pick;
@@ -351,6 +369,18 @@ BEGIN
   WHERE dni.delivery_note_id=p_delivery_note_id AND dni.product_id IS NOT NULL AND COALESCE(dni.qty,0) > 0;
 
   UPDATE delivery_notes SET status='in_transit', dispatched_at=now() WHERE id=p_delivery_note_id;
+
+  WITH agg AS (
+    SELECT pli.sp_item_id AS sp_item_id, SUM(dni.qty) AS qty
+    FROM delivery_note_items dni
+    JOIN picking_list_items pli ON pli.id = dni.picking_list_item_id
+    WHERE dni.delivery_note_id = p_delivery_note_id AND COALESCE(dni.qty,0) > 0 AND pli.sp_item_id IS NOT NULL
+    GROUP BY pli.sp_item_id
+  )
+  UPDATE sp_items si SET shipped_qty = si.shipped_qty + agg.qty, updated_at = now()
+  FROM agg WHERE si.id = agg.sp_item_id;
+
+  PERFORM sp_recompute_status(v_cust, v_sp);
 END; $$;
 
 
@@ -11797,5 +11827,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict cpSpHS4heekLSj5VZarinfc7ZvXaWd0JCBbkabMvOsRzDF7Am7Qs2lrnTG2JcrK
+\unrestrict 9yIDwCjW53OkA40O5SupLs5UpKltzzidGcLLbO2x5JpdRXwPAh8gDJJHoJqgT98
 
