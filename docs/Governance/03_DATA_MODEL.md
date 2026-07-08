@@ -1,6 +1,8 @@
 # DATA MODEL — Nexus by MSI
 
 > Referensi database. Sumber kebenaran struktur = **`supabase/schema_snapshot.sql`** (`pg_dump` full). Migrasi formal berhenti 3 Jun 2026 — banyak perubahan via SQL Editor (snapshot bisa lag; lihat §6).
+>
+> **Diperbarui 2026-07-08 — mencerminkan FASE 0-3 mesin status SP** (skema `sp_orders`/`sp_order_items`/`sp_btb`/`dc_master` + mesin status 12-tahap `sp_recompute_status`). Bagian non-SP (RBAC, master data, HRGA, Asset, CRM) belum ditinjau ulang di update ini. Hitungan tabel/RPC kanonik: `supabase/schema_snapshot.sql`.
 
 ---
 
@@ -8,8 +10,8 @@
 
 - **Supabase project ref:** `untmpqceexwxzuhlmyrg`
 - **Pooler:** `aws-1-ap-northeast-2.pooler.supabase.com:5432` (region Seoul)
-- **Total tabel:** 73 (schema `public`)
-- **Fungsi DB:** 17 · **RLS policy:** 182 · **Trigger:** ~40 (mayoritas `set_updated_at`)
+- **Total tabel:** ~60+ tabel business (schema `public`) — bertambah sejak FASE 0 (SP: `sp_orders`, `sp_order_items`, `sp_btb`, `dc_master`). Hitungan persis: `supabase/schema_snapshot.sql`.
+- **Fungsi DB:** ~37 RPC/fungsi (mesin status SP menambah ~10-12) · **RLS policy:** ~60 tabel ber-RLS (⚠️ ~48 policy `USING(true)` → isolasi company via filter aplikasi, bukan DB) · **Trigger:** ~42 (mayoritas `set_updated_at` + 7 `trg_z_*`)
 - Skema: multi-company (semua tabel business punya `company_id` / `owner_company_id`), soft-delete (`deleted_at`), RLS company- + role-scoped.
 
 ---
@@ -36,6 +38,9 @@ Branch MSI Head Office: `ef2594db…` (asset_locations "Head Office BSD" terkait
 - **`activities`** — modul Activity terpadu (gantikan `sales_calls`+`sales_visits`). `type` (call/whatsapp/visit/meeting/email/followup), `status` (todo/done/cancelled), `account_id`/`inquiry_id`/`quotation_id`, `assigned_to`, `scheduled_for`, `details jsonb`, `migrated_from`. RLS niru accounts.
 - **`activity_logs`** — audit status activity: `activity_id` (FK CASCADE), `changed_by`, `from_status`, `to_status`, `notes`. RLS via parent activity (EXISTS), bukan `company_id`.
 - **`user_login_logs`** — sumber feed "Login" (`user_id, logged_in_at, ip, …`). **Tanpa `company_id`** → RLS sendiri (manager+/super/own). Diisi fungsi `capture_login_session()`.
+- **`rate_sheets`** — rate card / pricing sheet dinamis (`columns`/`rows` jsonb, `valid_until`, `note`); soft-delete. Modul Rate List (CRM).
+- **`deal_handovers`** — form handover deal WON (`handover_type` light/strategic by nilai deal, `status`); gate WON → customer (lihat `05_WORKFLOW_MAP`).
+- **`top_requests`** — pengajuan Terms of Payment customer (`status='submitted'`; approval finance downstream). Dari CustomerDetailPage / WON flow.
 - **DORMANT:** `sales_calls`, `sales_visits`, `sales_visit_logs` (digantikan activities/activity_logs sejak cutover 2.9D; belum di-drop). `customers` (digantikan `accounts`; pensiun, tak dihapus).
 
 ### Foundation / Master Data
@@ -43,6 +48,8 @@ Branch MSI Head Office: `ef2594db…` (asset_locations "Head Office BSD" terkait
 - **`currencies`** — `code, name, symbol, decimal_places, is_active`. Isi: USD/IDR/EUR/SGD/JPY/MYR. RLS `currencies_read_all` = `USING(true)` (semua authenticated baca).
 - **`exchange_rates`**, **`code_counters`** (counter generate code customer), **`document_sequences`** / **`document_numbering`** / **`document_templates`**.
 - **Entity settings:** `entity_bank_accounts`, `entity_signatories`, `entity_finance_settings` (Admin Settings).
+- **`products`** — **4 tier harga** (FASE 0): `default_price` + **`price_semester`/`price_tahunan`/`price_project`** (nullable). Riwayat perubahan `default_price` → `product_price_history` (trigger `trg_z_products_price_history`); harga kategori di-log manual via RPC `set_product_category_prices` (§5). Lokasi rak per (product × warehouse) → `product_warehouse_location`.
+- **`dc_master`** [BARU FASE 0] — master Distribution Center + wilayah (dipakai `sp_orders.dc_id`; `is_active`, soft-delete `deleted_at`).
 
 ### RBAC / Access Control
 - **`user_roles`** — sumber role user (13 ERP role). `user_id` (→ `auth.users`, BUKAN profiles), `role_id`, `company_id`, `is_active`, `revoked_at`, `valid_until`. RLS: own row, atau admin se-company, atau super.
@@ -62,12 +69,42 @@ Branch MSI Head Office: `ef2594db…` (asset_locations "Head Office BSD" terkait
 ### Asset Management
 - `assets` (+ kolom SQL-Editor: `condition`, `department_id` FK, `brand`, `assignment_status`), `asset_categories`, `asset_locations` (`branch_id` NOT NULL), `asset_specifications`, `asset_network`, `asset_software_licenses`, `asset_maintenance_records`, `asset_fuel_logs`. **Belum ada:** `asset_documents`, `asset_work_orders`, `asset_routes` (UI placeholder).
 
-### Inventory & Logistics (Storbit SP/AR)
-- `stock_ledger`, `products`, `warehouses`.
-- `sp_items` (Sales Order / Surat Pesanan; FK `sp_items_customer_id_fkey` → `accounts`), `sp_btbs`, `ar_ttfs` (FK `ar_ttfs_customer_id_fkey` → `accounts`), `ar_btbs`.
+### Inventory & Logistics (Storbit SP + fulfillment)
+
+**Skema SP baru (FASE 0-3, LIVE) — identitas komposit `(customer_id, sp_no)`:**
+- **`sp_orders`** [BARU] — **header SP** (satu baris per SP). Kolom kunci: `company_id`, `customer_id`, `sp_no`, `sp_date`, `dc_id` (FK `dc_master`, NOT NULL), **`status`** (12-tahap, CHECK — lihat Mesin Status di bawah), `is_disputed`/`dispute_reason`/`disputed_at`/`disputed_by` (overlay dispute), `expired_date`, `sp_category`, `external_url`, `notes`, `confirmed_at/by`, `cancelled_at/by`, `cancel_reason`, **`had_cancelled_picking`** (flag permanen bila picking pernah dibatalkan), `created_by`, soft-delete `deleted_at`. **UNIQUE(customer_id, sp_no)** (nomor SP milik customer; boleh sama antar-customer). RLS company- + role-scoped (`operations`/manager+/`is_super_admin`).
+- **`sp_order_items`** [BARU] — **item kanonik** per SP. `sp_order_id` (FK), `company_id`, `product_id`, `product_name`, `sku`, `qty`, `shipped_qty` (CHECK `shipped_qty <= qty`), `unit_price` (snapshot), `price_category` (CHECK null/semester/tahunan/project), **`legacy_sp_item_id`** (map 1:1 ke `sp_items.id`, dipakai audit/bridge — JANGAN drop). ⚠️ **`shipped_qty` kanonik belum di-sync** dari dispatch (2D pending) — dispatch saat ini menulis `sp_items.shipped_qty`, bukan yang ini.
+- **`sp_btb`** [BARU] — **BTB (Bukti Terima Barang) entitas benar**, qty-only tanpa nilai pajak. `company_id`, `sp_order_id` (FK NOT NULL), `delivery_note_id` (FK nullable — BTB per batch bila dipetakan), `customer_id`, `btb_no`, `btb_date`, `qty` (nullable, CHECK `>= 0`), `received_at/by`, `remarks`, soft-delete `deleted_at`. **Partial UNIQUE `(customer_id, btb_no) WHERE deleted_at IS NULL`** (FASE 3 — re-issue nomor pasca soft-delete tak bentrok). RLS company/role-scoped.
+
+**Rantai fulfillment (picking → surat jalan):**
+- **`picking_lists`** / **`picking_list_items`** / **`picking_list_materials`** — manifest picking gudang (status `pending/in_progress/done/cancelled`; bawa `sp_no`+`customer_id`+`sp_order_id`). Reservasi stok via `stock_ledger`.
+- **`delivery_notes`** / **`delivery_note_items`** — Surat Jalan (`do_no`, `sp_no`, `picking_list_id`, `customer_id`, `sp_order_id`, status `draft/in_transit/delivered/cancelled`).
+
+**LEGACY (koeksis, belum di-drop):**
+- **`sp_items`** — item SP generasi lama; **MASIH DIBACA** reader fulfillment (list/detail, `shipped_qty`). Create SP = **dual-write** (`create_sp_order_dual` tulis `sp_items` LAMA **dan** `sp_orders`/`sp_order_items` baru). FK `sp_items_customer_id_fkey` → `accounts`. RLS ⚠️ `USING(true)`.
+- **`sp_btbs`** — BTB legacy (hanya `sp_no`+`btb_no`, buta identitas); **0 penulis FE** sejak FASE 3 (helper `db.js` tinggal definisi). Data delta sudah dimigrasi ke `sp_btb`; **tinggal di-drop**. RLS ⚠️ `USING(true)`.
+- **`ar_ttfs`** (FK `ar_ttfs_customer_id_fkey` → `accounts`), **`ar_btbs`** — AR Tracker (TTF + baris BTB finance) — **domain terpisah** dari `sp_btb` (BTB Storbit).
+- **`stock_ledger`** (append-only: `reserved`/`unreserved`/`outbound`/`inbound`/`adjustment`), view **`stock_summary`** (on_hand/reserved/available per product × warehouse × company), **`products`**, **`warehouses`**, `product_warehouse_location`.
+
+**Mesin Status SP (12 tahap — LIVE s/d BTB_TERBIT):**
+
+Kolom `sp_orders.status`, **fact-derived** (di-maintain otomatis oleh event, bukan diketik) via fungsi **`sp_recompute_status(customer_id, sp_no)`** (§5). Progresi:
+
+`DRAFT → CONFIRMED → MENUNGGU_STOK → PICKING → PACKED → DIKIRIM → SAMPAI → TERKIRIM_PENUH → BTB_TERBIT → INVOICED → SUBMITTED → LUNAS` (+ terminal **`CANCELLED`**).
+
+- **Live sekarang:** DRAFT s/d **BTB_TERBIT**. **INVOICED/SUBMITTED/LUNAS belum dibangun** (FASE 4-5 — butuh modul invoice/payment).
+- **KEPUTUSAN BISNIS:** **BTB_TERBIT = rank TERTINGGI di band terkelola** (di ATAS TERKIRIM_PENUH) — *"puncak sebelum invoice"*, karena invoice ditagih atas BTB bertandatangan customer (Indomarco). Di recompute, cabang `v_has_btb` dicek **paling atas** (mengalahkan TERKIRIM_PENUH). ⚠️ *Array literal di CHECK constraint masih mengurut `…SAMPAI, BTB_TERBIT, TERKIRIM_PENUH…` — inkonsistensi kosmetik; yang menentukan status tampil = urutan CASE recompute, BUKAN urutan array. (`DESIGN_SP_SCHEMA.md` juga masih memuat urutan lama — perlu update terpisah.)*
+- **CASE recompute (prioritas tertinggi → terendah):** `v_has_btb` → **BTB_TERBIT** · `Σshipped ≥ Σqty` (item confirmed) → TERKIRIM_PENUH · DN delivered → SAMPAI · DN in_transit/delivered → DIKIRIM · picking done → PACKED · picking active → PICKING · confirmed + stok kurang → MENUNGGU_STOK · confirmed → CONFIRMED · else DRAFT.
+- **Guard (recompute early-return, tak menyentuh):** `status IN ('CANCELLED','INVOICED','SUBMITTED','LUNAS')`. **BTB_TERBIT TIDAK di-freeze** (bisa naik/turun mengikuti fakta BTB).
+- **Recompute dipanggil (`PERFORM`)** dari RPC confirm/picking/delivery/BTB (lihat §5). `stock_summary.available` company-wide dipakai untuk MENUNGGU_STOK.
+- **UI:** headline badge Detail SP + pill/tabs/filter list baca `sp_orders.status` (pasca-2E). Tombol Konfirmasi/Tolak hanya `DRAFT`; Generate Picking hanya `CONFIRMED`/`MENUNGGU_STOK`.
 
 ### Notifications
 - `notifications`, `notification_rules`.
+
+### Reporting / Governance (MOM)
+- **`meeting_moms`** — header Minutes of Meeting (`mom_no`, `mom_type` weekly/project/probation/board/departmental/adhoc, `status` draft/submitted/approved/rejected). Approval CEO/admin.
+- Child: **`mom_action_plans`** (action item: owner/due/priority), **`mom_issues`** (isu), **`mom_progress_updates`** (progress action plan), **`mom_improvements`** (usulan perbaikan). Semua RLS company-scoped.
 
 ---
 
@@ -94,12 +131,30 @@ Branch MSI Head Office: `ef2594db…` (asset_locations "Head Office BSD" terkait
 | RPC | Signature | Tujuan |
 |-----|-----------|--------|
 | `save_quotation` | `(p_quotation_id uuid, p_header jsonb, p_items jsonb)` | Simpan quotation atomik: UPDATE header (COALESCE per field) + DELETE+INSERT items dalam 1 txn; RAISE bila RLS tolak / 0-row. Terima `p_header.vat_rate`. |
+| **SP — mesin status & fulfillment (FASE 1-3)** | | *(semua SECURITY DEFINER; recompute REVOKE dari PUBLIC — internal via PERFORM)* |
+| `sp_recompute_status` | `(p_customer_id uuid, p_sp_no text)` | Recompute `sp_orders.status` fact-derived (BTB_TERBIT rank tertinggi). Guard `CANCELLED/INVOICED/SUBMITTED/LUNAS`. |
+| `set_sp_status` | `(p_sp_no text, p_status text, p_reason text, p_customer_id uuid)` → int | Set `sp_items.sp_status` (draft/confirmed/cancelled) per (sp_no,customer_id) + stamp; confirm → recompute, cancel → CANCELLED. |
+| `create_sp_order_dual` | `(p_company_id, p_customer_id, p_sp_no, p_sp_date, p_dc_id, p_status, p_expired_date, p_notes, p_items jsonb)` → uuid | Dual-write header+item ke `sp_orders`+`sp_order_items`; RAISE `unique_violation` bila `(customer_id,sp_no)` dobel. |
+| `generate_picking_from_sp` | `(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid=NULL)` → `TABLE(picking_list_id, picking_no)` | Buat picking dari SP confirmed + reserve stok → recompute PICKING. |
+| `complete_picking` | `(p_picking_list_id uuid)` | Picking → done → recompute PACKED. |
+| `cancel_picking` | `(p_picking_list_id uuid)` | Picking → cancelled, release reservasi, set `had_cancelled_picking` → recompute mundur. |
+| `generate_delivery_from_picking` | `(p_picking_list_id uuid)` → `TABLE(delivery_note_id, do_no)` | Buat Surat Jalan dari picking done. |
+| `dispatch_delivery` | `(p_delivery_note_id uuid)` | DN → in_transit; ledger unreserve+outbound; **+`sp_items.shipped_qty` (FASE 2A)** → recompute DIKIRIM/TERKIRIM_PENUH. |
+| `mark_delivery_delivered` | `(p_delivery_note_id uuid)` | DN → delivered → recompute SAMPAI. |
+| `cancel_delivery` | `(p_delivery_note_id uuid)` | DN → cancelled; reverse outbound + reverse `shipped_qty` → recompute mundur. |
+| `sp_issue_btb` | `(p_customer_id, p_sp_no, p_btb_no, p_qty=NULL, p_btb_date=NULL, p_delivery_note_id=NULL, p_remarks=NULL)` → uuid | Terbitkan BTB ke `sp_btb` (idempoten per btb_no hidup) + recompute → **BTB_TERBIT**. |
+| `sp_delete_btb` | `(p_btb_id uuid)` | Soft-delete `sp_btb` + recompute (mundur). |
+| `set_product_category_prices` | `(p_product_id, p_semester, p_tahunan, p_project)` | Set harga kategori produk + log `product_price_history`; authz super ATAU admin-same-company (terima NULL utk clear). |
+| `bulk_update_product_prices` | `(p_rows jsonb)` → `{updated, skipped}` | Update harga produk massal (super_admin only). |
+| `add_picking_material` | `(p_picking_list_id, p_product_id, p_qty)` → uuid | Tambah baris material packing ke picking + post `stock_ledger` outbound (atomik). |
+| `delete_picking_material` | `(p_material_id)` | Hapus baris material packing + reverse `stock_ledger` (inbound `material_reverse`). |
+| `attach_price_contract_info` | `(p_history_id, p_contract_no, p_valid_from, p_valid_until)` | Lampirkan info kontrak/PKS ke baris `product_price_history` (audit harga). |
 | `increment_document_sequence` | `(p_company_id, p_document_type, p_department_code, p_year, p_month=0)` | Generate nomor dokumen sekuensial atomik (SECURITY DEFINER). |
 | `is_super_admin` / `get_user_company_id` / `is_admin_or_above` / `is_manager_or_above` / `has_permission` / `has_role` / `get_user_role_code` | — | Helper RLS (lihat §4). Bisa dipanggil `supabase.rpc(...)` dari frontend (mis. gating super-admin). |
 | `get_table_columns` | `(p_table text)` | Introspeksi kolom (dipakai Schema Manager + custom fields). |
 | `exec_sql` | `(sql text)` | Eksekusi SQL arbitrer (Edge Function `manage-schema`; service-role only). |
 | `int_to_roman` | `(num integer)` | Helper (code customer pakai angka romawi). |
-| **Trigger fns** | — | `generate_customer_code()`, `set_customer_on_won()`, `handle_new_user()`, `set_updated_at()`, `capture_login_session()`. |
+| **Trigger fns** | — | `generate_customer_code()`, `set_customer_on_won()`, `track_stage_change()` (log pipeline stage → `activity_logs`), `handle_new_user()`, `set_updated_at()`, `capture_login_session()`, `sync_deal_value_on_quotation_accept()` (quotation ACCEPTED → `accounts.estimated_value`), `sync_profile_email()` (sinkron `profiles.email` ← `auth.users`), `log_product_price_change()` (AFTER UPDATE `products.default_price` → `product_price_history`). |
 
 ---
 
@@ -113,3 +168,5 @@ Branch MSI Head Office: `ef2594db…` (asset_locations "Head Office BSD" terkait
 6. **`is_admin_or_above()` tidak kenal manager/ceo** → ~51 policy memakainya, tak sinkron dgn RBAC granular UI. Pemicu bug akses (mis. CEO ke-block baca profiles → stopgap `profiles_read USING(true)`; dropdown sales kosong untuk manager). Lihat tech debt RBAC RLS migration.
 7. **`profiles` tanpa `deleted_at`** → pakai `active`. **`user_roles.user_id` → `auth.users`** (bukan profiles) → tak bisa embed user_roles dari profiles; query terpisah lalu map.
 8. **Dormant tables** belum di-drop: `sales_calls`/`sales_visits`/`sales_visit_logs` (frontend sudah pindah ke activities), `customers` (sudah pindah ke accounts), kolom `profiles.role` (frontend/EF sudah berhenti baca).
+9. **Dua generasi SP (transisi FASE 0-3):** create SP = **dual-write** (`sp_items` lama + `sp_orders`/`sp_order_items` baru via `create_sp_order_dual`). Reader fulfillment (list/detail, `shipped_qty`) **masih baca `sp_items`**; **headline status baca `sp_orders.status`** (mesin 12-tahap). `sp_btbs` legacy sudah 0-penulis FE (bermigrasi ke `sp_btb`, tinggal drop). `sp_order_items.shipped_qty` kanonik **belum di-sync** dari dispatch (2D pending). ⚠️ **RLS `sp_items`/`sp_btbs`/picking/delivery = `USING(true)`** → isolasi company bergantung filter aplikasi (lihat `08_TECH_DEBT.md` **TD-39**, ~48 policy permisif + daftar tabel).
+10. **Snapshot sudah di-refresh** (`pg_dump`, 8 Jul 2026) memuat FASE 0-3 (`sp_orders`, `sp_btb`, `sp_recompute_status`, `sp_issue_btb`, dll) → **abaikan TODO "refresh snapshot"** di changelog/audit lama.

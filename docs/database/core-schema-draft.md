@@ -1,3 +1,5 @@
+> ⚠️ SUPERSEDED — draft desain pra-Phase 1.0B (24 Mei 2026). Skema live = schema_snapshot.sql + docs/Governance/03_DATA_MODEL.md. Jangan dijadikan acuan.
+
 # Nexus by MSI — Core Schema Draft
 
 **Last Updated:** 2026-05-24

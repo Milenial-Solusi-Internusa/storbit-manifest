@@ -1,6 +1,6 @@
 # ROLE PERMISSION MATRIX — Nexus by MSI
 
-> Matrix RBAC. Sumber: `CLAUDE.md` (Roles & Permission Structure, kini di `docs/00_ARCHIVE_PHASES.md`), `docs/03_DATA_MODEL.md` (RLS), `docs/08_TECH_DEBT.md` (gaps). ⚠️ RLS DB belum sepenuhnya sinkron dengan matrix UI — lihat §5.
+> Matrix RBAC. Sumber: `CLAUDE.md` (Roles & Permission Structure, kini di `docs/00_DEV_JOURNEY.md`), `docs/03_DATA_MODEL.md` (RLS), `docs/08_TECH_DEBT.md` (gaps). ⚠️ RLS DB belum sepenuhnya sinkron dengan matrix UI — lihat §5.
 
 ---
 
@@ -66,6 +66,47 @@ Sumber: matrix permission `CLAUDE.md`. **CRUD** = full, **R** = read-only, **-**
 | HRGA | CRUD | R | R | CRUD | R | R | - | - | - | CRUD | R | R |
 | Assets | CRUD | R | R | R | R | R | R | R | CRUD | R | CRUD | R |
 | Admin | CRUD | - | - | - | - | - | - | - | - | - | CRUD | - |
+
+### Peta Menu → Halaman → Role-gate (visibilitas)
+
+> **Beda dari matriks granular di bawah:** ini peta **visibilitas** (menu → halaman + siapa boleh lihat), dari `ERP_MENU_GROUPS`/`NEXUS_NAV` + `canSeeMenuItem` (**default-deny**) di `App.jsx`. Jenis gate: `public` · `menuKey` (via `hasMenuPermission`) · `module` (via `hasPermission`) · `role[...]` (array). **📋 soon** = `PLANNED_MODULES` → ComingSoonPage. *(Sumber terkini: `App.jsx` `ERP_MENU_GROUPS`/`NEXUS_NAV`.)*
+
+| Grup | Menu / Halaman | Komponen | Role-gate | Status |
+|---|---|---|---|---|
+| CORE | Command Center · Home | Dashboard · HomeDashboard | public | LIVE |
+| CRM | CRM Dashboard | CRMDashboardPage | menuKey `crm_dashboard` | LIVE |
+| CRM | Pipeline / Leads | PipelineKanbanPage | menuKey | LIVE |
+| CRM | Lead Pool | LeadPoolPage | role[super_admin,admin,ceo,gm,manager,supervisor,sales] | LIVE |
+| CRM | Approval Lead Pool | LeadPoolApprovalPage | role[manager,supervisor,admin,super_admin] | LIVE |
+| CRM | Prospects | ProspectListPage/FormPage | module `crm` + role | LIVE |
+| CRM | Inquiry | InquiryListPage/FormPage/DealDetailPage | via crm | LIVE |
+| CRM | Quotation | QuotationList/Detail/FormPage | via crm | LIVE |
+| CRM | Rate List | RateListPage | role[…,sales] | LIVE |
+| CRM | Master Customer (MSI/JCI/SOA/Free) + Detail | CustomerListPage · CustomerDetailPage | menuKey `crm_customers` | LIVE |
+| CRM | Activities · Activity Log | ActivitiesPage · ActivityLogPage | role | LIVE |
+| LOGISTICS | Sales Order / SP (list + detail) | SalesOrderPage · SalesOrderDetailPage | menuKey `logistics_sp` | LIVE |
+| LOGISTICS | Input SP | InputSPPage | module `logistics` + **canInputSP** (permission AND operational role) | LIVE |
+| LOGISTICS | Picking List (+Detail) | PickingListPage · DetailPage | role[…,operations] | LIVE |
+| LOGISTICS | Surat Jalan (+Detail) | DeliveryNotePage · DetailPage | role[…,operations] | LIVE |
+| LOGISTICS | Shipment Mgmt | ShipmentPage (inline) | module `logistics` + role | LIVE |
+| LOGISTICS | General Trading · Job · Freight · Customs(PPJK) | ComingSoon | — | 📋 soon |
+| INVENTORY | Dashboard · Stok Barang · Penerimaan | InventoryDashboard · StokBarang · PenerimaanBarangPage | via inventory | LIVE |
+| INVENTORY | Pengeluaran · Transfer · Opname | — | — | 📋 menu ada, tanpa render block |
+| FINANCE | AR/Collection · Outstanding · Finance Docs | ARTracker · Outstanding · FinancePage (inline) | module `finance` + role | LIVE |
+| FINANCE | Job Costing · Billing · AP · Cash/Bank · Accounting | ComingSoon | — | 📋 soon |
+| SERVICE | HRGA Request | HrgaShell (My/Buat/Semua[role]/Pending Approval[role]/Arsip) | mixed per sub-page | LIVE |
+| SERVICE | Asset Management | AssetShell (16 sub-objek) | inherit | LIVE |
+| SERVICE | IT Service Mgmt | ComingSoon | — | 📋 soon |
+| REPORTING | Sales Report | CRMReportPage | role[…,supervisor] | LIVE |
+| REPORTING | Riwayat Visit | RiwayatVisitPage | role[super_admin,ceo] | LIVE |
+| REPORTING | Indomarco Dashboard | IndomarcoDashboardPage | role (manager-or-above) | LIVE |
+| REPORTING | MOM | MOMListPage/FormPage/DetailPage | role | LIVE |
+| REPORTING | Reports · Performance · Audit | ComingSoon | — | 📋 soon |
+| FOUNDATION | Master Data | AdminShell | module `foundation` + role[super_admin,admin,it] | LIVE |
+| FOUNDATION | Products & Services (+Detail) | ProductsPage · ProductDetailPage | canRenderPage | LIVE |
+| FOUNDATION | Update Harga Massal | BulkEditPricePage | role[super_admin] | LIVE |
+| FOUNDATION | Schema Manager | SchemaManagerPage | **super_admin only** (enforced at render) | LIVE |
+| FOUNDATION | Admin Settings (hub + 9 sub-page) | AdminSettingsHub + admin-settings-* | canAdminSettings (super/admin) | LIVE |
 
 ### Matrix granular per action (VIEW/CREATE/EDIT/DELETE/APPROVE/EXPORT/PRINT)
 

@@ -1,8 +1,114 @@
-# ARCHIVE — Phase History & Implementation Notes — Nexus by MSI
+# DEV JOURNEY — Perjalanan Pembangunan Nexus by MSI
 
-> **Arsip verbatim.** Catatan implementasi granular per-fase (Phase Roadmap 0.0–2.0C + tabel fase 2.0A–2.10F + seluruh dated technical sections: Security Hardening, DB Changes via SQL Editor, Status Nggantung, Backlog RBAC, Asset Deep Audit, Debugging Field Notes, Master Data, Brand, Roles, CRM Schema Notes) yang dipindahkan dari `CLAUDE.md` saat di-rewrite jadi lean entry point.
+> **Diperbarui 2026-07-08.** Satu dokumen tiga lapis: **Bagian 1** = timeline kronologis pembangunan (ringkas); **Bagian 2** = inventaris fitur LIVE per domain (ringkas — detail teknis di `03`/`04`/`06`/`07` + `schema_snapshot.sql`); **Bagian 3** = arsip fase verbatim (histori granular, dipindah dari `CLAUDE.md` lama, **tak diubah sebaris pun**).
 >
-> Disalin **apa adanya** dari `git HEAD:CLAUDE.md` (sebelum rewrite). Ini arsip historis — referensi terkini ada di `CLAUDE.md`, `docs/02_RULES_GOVERNANCE.md`, `docs/03_DATA_MODEL.md`, `docs/08_TECH_DEBT.md`, `docs/09_ROADMAP.md`. Sebagian konten di sini sengaja duplikat dengan docs/ tsb (arsip, bukan ringkasan).
+> **Cara pakai:** butuh gambaran perjalanan → **Bagian 1**; "fitur apa yang sudah jalan" → **Bagian 2**; detail implementasi fase lama → **Bagian 3**. Referensi terkini tetap: `CLAUDE.md`, `03_DATA_MODEL`, `05_WORKFLOW_MAP`, `08_TECH_DEBT`, `09_ROADMAP`, `schema_snapshot.sql`.
+>
+> *(File ini sebelumnya `00_ARCHIVE_PHASES.md` — di-rename jadi `00_DEV_JOURNEY.md`.)*
+
+---
+
+## BAGIAN 1 — Timeline Kronologis
+
+> "Kapan → fase → output". Detail granular: Bagian 3 (fase lama) + `PROGRESS.md` (FASE 0-3).
+
+| Periode | Fase / milestone | Output utama | Status |
+|---|---|---|---|
+| ~2026-05/06 | Phase 0.0–2.0C — fondasi | CLAUDE.md awal, skema master data (draft), brand system, RBAC menu-permission, App Launcher | ✅ |
+| 2026-06 | 2.x — modul & UI | Unifikasi `accounts` (prospects+customers), modul Activity terpadu (`activities`/`activity_logs`), overhaul Quotation (SLA/diskon/currency/VAT/PDF @react-pdf), Suite Admin Settings, Org Chart, Auth hardening | ✅ |
+| 2026-06-22..24 | Dok governance + Admin Settings lanjutan | `docs/Governance/` 00-12, Dropdown DB-driven, Security/Audit/Integrations pages | ✅ |
+| 2026-07-01..05 | Persiapan MVP Storbit | Import data produksi (720 baris / 435 SP), master-data tooling, ProductPicker, harga kontrak/PKS | ✅ |
+| **2026-07-06** | **FASE 0 — fondasi skema SP** | Tabel `sp_orders`/`sp_order_items`/`sp_btb`/`dc_master`, harga kategori produk, RLS+backfill, dual-write InputSPPage | ✅ LIVE |
+| **2026-07-07** | **FASE 1 — mesin status bawah** | `sp_recompute_status` (fact-derived) + DRAFT→CONFIRMED→MENUNGGU_STOK→PICKING→PACKED + RPC picking | ✅ LIVE |
+| **2026-07-07** | **FASE 2 — jembatan pengiriman** | dispatch/cancel isi `shipped_qty` + DIKIRIM/SAMPAI/TERKIRIM_PENUH + `mark_delivery_delivered` + reader status → `sp_orders.status` (2E) | ✅ LIVE |
+| **2026-07-08** | **FASE 3 — BTB_TERBIT** | RPC `sp_issue_btb`/`sp_delete_btb` → `sp_btb`; **BTB_TERBIT rank tertinggi**; kartu BTB pindah Detail SP; migrasi `sp_btbs`→`sp_btb` (186→205) | ✅ LIVE |
+| (next) | **FASE 4 — INVOICED** | Modul invoice baru (tabel invoice+line, penomoran, relasi SP/BTB, UI terbit) | 📋 planned |
+| (next) | **FASE 5 — LUNAS** | Modul payment (pembayaran → LUNAS) | 📋 planned |
+
+**Mesin status SP 12 tahap (LIVE s/d BTB_TERBIT):** `DRAFT → CONFIRMED → MENUNGGU_STOK → PICKING → PACKED → DIKIRIM → SAMPAI → TERKIRIM_PENUH → BTB_TERBIT` → (INVOICED → SUBMITTED → LUNAS = FASE 4-5, belum dibangun) + terminal `CANCELLED`. Detail: `03_DATA_MODEL`/`05_WORKFLOW_MAP`.
+
+---
+
+## BAGIAN 2 — Inventaris Fitur LIVE per Domain
+
+> Ringkas dari audit inventaris fitur LIVE (sumber: `App.jsx`/`db.js`/`schema_snapshot.sql`). Status: **LIVE** · **📋 planned** · **⚠️ perlu konfirmasi**. Detail teknis tidak diulang di sini.
+
+### SP / Mesin Status (Logistics)
+| Fitur | Fungsi | Status |
+|---|---|---|
+| Mesin status 12 tahap | `sp_orders.status` fact-derived via `sp_recompute_status` (BTB_TERBIT rank tertinggi) | **LIVE** (s/d BTB_TERBIT) |
+| Input SP single-door | InputSPPage: penomoran manual, DC wajib, identitas komposit `(customer_id,sp_no)`, dual-write | **LIVE** |
+| Sales Order list + Detail SP | pill/tabs/filter status; tombol per-status (Konfirmasi DRAFT, Generate Picking CONFIRMED/MENUNGGU_STOK) | **LIVE** |
+| Picking List | generate / complete / cancel + reservasi stok | **LIVE** |
+| Surat Jalan | generate / dispatch (isi `shipped_qty`) / mark-delivered / cancel | **LIVE** |
+| BTB | terbit/hapus (`sp_issue_btb`/`sp_delete_btb`) → `sp_btb`, di Detail SP | **LIVE** |
+| RPC SP (~14) | set_sp_status, generate_picking_from_sp, complete/cancel_picking, generate_delivery, dispatch/cancel_delivery, mark_delivery_delivered, sp_issue/delete_btb, create_sp_order_dual, sp_recompute_status | **LIVE** |
+| Invoice / Payment | INVOICED / SUBMITTED / LUNAS | 📋 planned (FASE 4-5) |
+
+### CRM
+| Fitur | Fungsi | Status |
+|---|---|---|
+| Pipeline / Kanban | 7 stage drag + badge aging + lead-pool exclude | **LIVE** |
+| BANT gate (CONTACTED→QUALIFIED) | skor 0-12; <5 blok total, 5-7 ConfirmModal, ≥8 lolos | **LIVE** |
+| Prospect + Win/Loss | form BANT, dup-check, WON→customer (trigger) | **LIVE** |
+| Inquiry (RFQ) | pol/pod, incoterms, cargo, HS, weight/volume + PDF | **LIVE** |
+| Activities + Activity Log | call/visit/meeting/email/wa/followup; todo/done/cancelled + feed | **LIVE** |
+| Lead Pool + Approval | pull → pending → manager approve → balik pipeline | **LIVE** |
+| Handover (WON) | Light ≤Rp100jt / Strategic > (hard gate sebelum finalizeWon) | **LIVE** |
+| MOM (Minutes of Meeting) | list/form/detail + approval CEO | **LIVE** |
+| Rate List | `rate_sheets` CRUD + PDF | **LIVE** |
+| CRM Report + Dashboard | KPI / trend / per-sales + kalender visit | **LIVE** |
+
+### Quotation
+| Fitur | Fungsi | Status |
+|---|---|---|
+| Line items multi-section | currency + kurs per-baris, VAT 0/1.1/11% dari `taxes` | **LIVE** |
+| Duplicate | clone header+items → DRAFT baru | **LIVE** |
+| PDF (@react-pdf) | cost/margin disembunyikan dari customer | **LIVE** |
+| Matriks otoritas DISKON | badge hijau/oranye/merah per (diskon × role) | **LIVE** (display-only, tak memblokir) |
+| **Margin floor** | kolom `quotations.margin_floor` ada + dibaca payload | **⚠️ TAK di-enforce** (tanpa validasi/blok save) → **TD-38** |
+
+### RBAC / Security
+| Fitur | Fungsi | Status |
+|---|---|---|
+| 14 role kanonik | super_admin … viewer (`ERP_ROLE_PRIORITY` + tabel `roles`) | **LIVE** |
+| Helper security (7) | is_super_admin / is_admin_or_above / is_manager_or_above / has_role / has_permission / get_user_company_id / get_user_role_code | **LIVE** |
+| RLS ~60 tabel | company- + role-scoped | **LIVE** |
+| **~48 policy `USING(true)`** | sp_items / picking / delivery / stock_ledger / dll — isolasi via filter aplikasi, bukan DB | **⚠️ security smell** → **TD-39** |
+| Audit log | `audit_logs` + `logAudit()` (`auditLogger.js`), ~19 event | **LIVE** (TD-05 done; AuditLogPage masih login-only, TD-37) |
+
+### Master Data
+| Fitur | Fungsi | Status |
+|---|---|---|
+| Produk 4-tier harga | `default_price` + semester/tahunan/project (`set_product_category_prices`, bulk update) + riwayat harga | **LIVE** |
+| `accounts` (master customer tunggal) | lifecycle prospect → customer | **LIVE** |
+| `dc_master` | master Distribution Center + wilayah | **LIVE** |
+| Dropdown management | `dropdown_options` DB-driven + `useDropdownOptions` | **LIVE** |
+| Penomoran dokumen | `increment_document_sequence` + `document_sequences` | **LIVE** |
+
+### Admin
+| Fitur | Fungsi | Status |
+|---|---|---|
+| Admin Settings | Entity / Document / Finance / Approval / Notifications / General / Security / Integrations | **LIVE** (sebagian localStorage fallback) |
+| Schema Manager | DDL tool super_admin-only | **LIVE** |
+| Users & Access | user/role/permission matrix, Org Chart | **LIVE** |
+
+### Integrasi & Automation
+| Fitur | Fungsi | Status |
+|---|---|---|
+| PDF (@react-pdf) | Quotation / Inquiry / RateSheet / VisitHistory / PickingList / DeliveryNote | **LIVE** |
+| Notifications | tabel `notifications` + bell polling 60s | **LIVE** |
+| Email SMTP | config di IntegrationsPage | **⚠️ perlu konfirmasi** (tak ada bukti pengiriman) → TD-43 |
+| n8n webhook | config `crm-events` | **⚠️ perlu konfirmasi** (tak ada trigger di modul) → TD-43 |
+| Edge Functions | `reset-password` (LIVE), `create-user`/`delete-user`/`manage-schema` | **LIVE tapi tak terdokumentasi** (TD-44; status deploy = TD-21/22) |
+
+---
+
+## BAGIAN 3 — Arsip Fase (verbatim)
+
+> **Histori granular, dipindah dari `CLAUDE.md` lama — TIDAK diubah sebaris pun.** Sebagian konten sengaja duplikat dengan `docs/` (arsip, bukan ringkasan). Referensi terkini tetap di `CLAUDE.md` + `03`/`08`/`09`.
+>
+> **Lanjutan FASE 0-3 (Jul 2026) — TIDAK diulang di sini** (hindari duplikasi): detail granular ada di **`PROGRESS.md`** (2026-07-06 FASE 0 · 2026-07-07 FASE 1/2/2C · 2026-07-08 FASE 3). Rekaman migrasi SQL: `supabase/migrations/20260706000001_sp_schema_mvp_fase0.sql` … `20260707000002_sp_status_machine_fase1.sql` · `20260707000003_sp_fase2_pengiriman.sql` · `20260707000004_mark_delivery_delivered_rpc.sql` · `20260708000001_sp_fase3_btb.sql` · `20260708000002_sp_fase3_btb_data_migrasi.sql` (rentang `20260706000001`…`20260708000002`). Arsip di bawah berhenti di ~2.10F (Jun 2026).
 
 ---
 

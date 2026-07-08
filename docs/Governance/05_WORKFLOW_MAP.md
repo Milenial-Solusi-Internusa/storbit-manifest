@@ -1,6 +1,8 @@
 # WORKFLOW MAP — Nexus by MSI
 
 > Alur bisnis per modul live. Sumber: `CLAUDE.md` (CRM Flow, phase notes), `docs/03_DATA_MODEL.md`. Notasi: **[role]** = pelaku, **⚙** = trigger/otomatis DB.
+>
+> **Diperbarui 2026-07-08 — alur SP 12 tahap FASE 0-3** (mesin status `sp_orders.status` via `sp_recompute_status`, LIVE s/d BTB_TERBIT). Bagian non-SP belum ditinjau ulang di update ini.
 
 ---
 
@@ -48,6 +50,14 @@ Lead Pool ──┐
 - `trg_set_customer_on_won` — WON → customer.
 - `trg_z_gen_customer_code_upd` / `trg_gen_customer_code_ins` — generate `code` customer (prefix entity + `/CUST/` + tahun + romawi) saat jadi customer & code kosong (guard `deleted_at IS NULL`).
 - `capture_login_session()` — catat login ke `user_login_logs` (sumber feed "Login").
+
+**Gate & Approval (pipeline / WON / lead pool)** — terverifikasi di kode (`PipelineKanbanPage.jsx`, dll):
+- **CONTACTED → QUALIFIED — BANT gate:** saat drag ke Qualified, hitung skor BANT (0-12): **<5 = BLOK total** (toast, batal — tak bisa lanjut) · **5-7 = ConfirmModal** (soft, boleh lanjut) · **≥8 = lolos** langsung.
+- **→ PROPOSAL / → WON — soft gate:** PROPOSAL tanpa Inquiry / WON tanpa Quotation → ConfirmModal (boleh lanjut). *(lihat juga catatan soft-gate di diagram atas)*
+- **WON → Handover — HARD gate by nilai deal:** `estimated_value` **≤ Rp100jt → Light Handover** / **> Rp100jt → Strategic Handover**; WON resmi (`finalizeWon`: convert ke customer) **hanya jalan setelah** form handover tersimpan (`deal_handovers`).
+- **Lead Pool → Pipeline — HARD (butuh approval):** [sales] "Tarik ke Pipeline" → `pull_status='pending'` → [manager/supervisor/admin] **approve** (Approval Lead Pool) → balik ke pipeline stage sebelumnya. Reject → tetap di pool.
+- **TOP Request — soft:** [sales/manager] ajukan Terms of Payment → insert `top_requests` status='submitted' → approval finance (proses downstream, di luar FE).
+- **MOM approval — HARD:** MOM `submitted` → [CEO/admin] **approve/reject** (MOMDetailPage).
 
 ---
 
@@ -97,16 +107,52 @@ Lead Pool ──┐
 
 ---
 
-## Logistics (Storbit SP/AR) Flow
+## Logistics (Storbit SP) Flow — Mesin Status 12 Tahap (FASE 0-3, LIVE)
+
+Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_status(customer_id, sp_no)` (di-maintain otomatis oleh event, BUKAN diketik). Detail skema/RPC: `docs/03_DATA_MODEL.md §3 (Inventory & Logistics) + §5`.
 
 ```
-[Sales/Operations] Sales Order (SP) — list + detail
-   → customer dari accounts (account_status='customer')
-   → finance stages per item: INV → FP → SUB → KRM (progress bar)
-   → BTB numbers (sp_btbs, per-SP) + remarks
-   → AR/TTF (ar_ttfs) untuk penagihan
+[Sales/Operations] Input SP (single door: InputSPPage)
+   → penomoran MANUAL (nomor dari customer), DC WAJIB, identitas komposit (customer_id, sp_no)
+   → dual-write: sp_items (lama) + sp_orders/sp_order_items (baru, ⚙ create_sp_order_dual)
+   ══►  status = DRAFT
+         │
+ [Ops/Manager] Konfirmasi SP (set_sp_status 'confirmed') ─⚙ recompute─►  CONFIRMED
+         │                                                (stok kurang → MENUNGGU_STOK)
+         │  [Ops] Tolak SP (set_sp_status 'cancelled') ──►  CANCELLED (terminal)
+         ▼
+ [Ops] Generate Picking (generate_picking_from_sp; hanya saat CONFIRMED/MENUNGGU_STOK)
+         │   → picking_lists + items + reservasi stok  ─⚙ recompute─►  PICKING
+         ▼
+ [Ops] Selesai picking/packing (complete_picking)      ─⚙ recompute─►  PACKED
+         ▼
+ [Ops] Buat Surat Jalan (generate_delivery_from_picking) → delivery_notes (draft)
+ [Ops] Berangkatkan (dispatch_delivery)
+         │   → ledger outbound + isi sp_items.shipped_qty ─⚙ recompute─►  DIKIRIM
+         ▼
+ [Ops] Tandai sampai (mark_delivery_delivered)          ─⚙ recompute─►  SAMPAI
+         │   (bila Σshipped ≥ Σqty)                      ─⚙ recompute─►  TERKIRIM_PENUH
+         ▼
+ [Ops] Terbit BTB di Detail SP (sp_issue_btb) → sp_btb  ─⚙ recompute─►  BTB_TERBIT ★ PUNCAK
+         │   (BTB_TERBIT = rank TERTINGGI, MENGALAHKAN TERKIRIM_PENUH — "puncak sebelum invoice")
+         ▼
+ ─────────── FASE 4-5 (📋 PLANNED — belum dibangun, butuh modul invoice/payment) ───────────
+ [Finance] Terbit invoice        →  INVOICED   📋
+ [Finance] Submit/serah faktur   →  SUBMITTED  📋
+ [Finance] Lunas (payment)       →  LUNAS      📋
 ```
-[TODO: detail status lifecycle SP/AR — sebagian di db.js legacy Storbit; perlu konfirmasi alur finance INV/FP/SUB/KRM secara bisnis].
+
+**Aksi mundur (fact-derived — recompute otomatis balik ke tahap fakta tertinggi):**
+- **Batal picking** (`cancel_picking`): picking → cancelled, release reservasi, set flag **`had_cancelled_picking`** (permanen) → status **mundur ke CONFIRMED**.
+- **Batal Surat Jalan** (`cancel_delivery`): reverse ledger + **kembalikan `sp_items.shipped_qty`** → status mundur (mis. TERKIRIM_PENUH → SAMPAI/DIKIRIM).
+- **Hapus BTB** (`sp_delete_btb`, soft-delete): status **mundur** dari BTB_TERBIT ke tahap fakta tertinggi berikutnya.
+
+**Guard recompute:** `status IN ('CANCELLED','INVOICED','SUBMITTED','LUNAS')` → beku (recompute tak menyentuh). **BTB_TERBIT TIDAK beku** (ikut fakta BTB).
+
+**Catatan transisi & yang USANG:**
+- Live sekarang **DRAFT s/d BTB_TERBIT**; **INVOICED/SUBMITTED/LUNAS = FASE 4-5 (planned)**.
+- ⚠️ **USANG (flag finance lama):** progress per-item **INV → FP → SUB → KRM** (kolom `sp_items.inv/fp/submit/kirim`) = generasi lama, **BUKAN sumber kebenaran status** — digantikan mesin status + (nanti) modul invoice FASE 4-5.
+- ⚠️ `sp_btbs` (BTB legacy per-SP) digantikan `sp_btb`; **AR/TTF (`ar_ttfs`/`ar_btbs`) = domain finance/penagihan terpisah**, bukan status SP.
 
 ---
 
