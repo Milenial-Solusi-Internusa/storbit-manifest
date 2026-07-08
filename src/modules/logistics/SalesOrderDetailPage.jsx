@@ -114,6 +114,24 @@ function Badge({ bg, color, bd, children }) {
   );
 }
 
+// FASE 2E — status headline SP (sp_orders 12 tahap) → badge Detail SP. Warna kalem,
+// tanpa dark green (done = solid navy). Selaras STATUS_META di SalesOrderPage.
+const HEADLINE_META = {
+  DRAFT:          { label: 'Draft',          bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
+  CONFIRMED:      { label: 'Dikonfirmasi',   bg: C.infoBg,    color: C.info,    bd: C.infoBd },
+  MENUNGGU_STOK:  { label: 'Menunggu Stok',  bg: C.warnBg,    color: C.warn,    bd: C.warnBd },
+  PICKING:        { label: 'Picking',        bg: C.infoBg,    color: C.info,    bd: C.infoBd },
+  PACKED:         { label: 'Dikemas',        bg: C.infoBg,    color: C.info,    bd: C.infoBd },
+  DIKIRIM:        { label: 'Dikirim',        bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
+  SAMPAI:         { label: 'Sampai',         bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
+  BTB_TERBIT:     { label: 'BTB Terbit',     bg: C.warnBg,    color: C.warn,    bd: C.warnBd },
+  TERKIRIM_PENUH: { label: 'Terkirim Penuh', bg: C.info,      color: '#FFFFFF', bd: C.info },
+  INVOICED:       { label: 'Invoiced',       bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
+  SUBMITTED:      { label: 'Submitted',      bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
+  LUNAS:          { label: 'Lunas',          bg: C.info,      color: '#FFFFFF', bd: C.info },
+  CANCELLED:      { label: 'Dibatalkan',     bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd },
+};
+
 function FinPill({ label, active }) {
   return (
     <span style={{
@@ -744,15 +762,13 @@ export default function SalesOrderDetailPage({
   const cust = custColor(customer);
 
   // ── Header status (spStatus lifecycle + qty-derived, precedence high→low) ──
+  // FASE 2E — headline dari sp_orders.status (12 tahap), fallback DRAFT bila belum termuat.
   const headerStatus = (() => {
     if (!group) return null;
-    if (group.spStatus === 'cancelled') return { bg: C.dangerBg, color: C.danger, bd: C.dangerBd, label: 'Cancelled' };
-    const s = group.status;
-    if (s === 'Closed')  return { bg: C.okBg,   color: C.ok,   bd: C.okBd,   label: 'Closed'  };
-    if (s === 'Partial') return { bg: C.warnBg, color: C.warn, bd: C.warnBd, label: 'Partial' };
-    if (group.spStatus === 'confirmed') return { bg: C.okBg, color: C.ok, bd: C.okBd, label: 'Confirmed' };
-    return                      { bg: C.infoBg, color: C.info, bd: C.infoBd, label: 'Open'    };
+    return HEADLINE_META[spOrder?.status] || HEADLINE_META.DRAFT;
   })();
+  // Aksi gudang (Generate Picking + indikator stok) hanya di tahap awal, belum picking.
+  const canGeneratePicking = spOrder?.status === 'CONFIRMED' || spOrder?.status === 'MENUNGGU_STOK';
 
   if (!spNo) return null;
 
@@ -786,12 +802,6 @@ export default function SalesOrderDetailPage({
                   <StatusDot color={headerStatus.color}/>{headerStatus.label}
                 </Badge>
               )}
-              {/* Fase 1 — headline 12-tahap dari sp_orders (di samping pill lama, read-only) */}
-              {spOrder?.status && (
-                <Badge bg={C.neutralBg} color={C.neutral} bd={C.neutralBd}>
-                  <span/>Tahap: {spOrder.status}
-                </Badge>
-              )}
               {spOrder?.had_cancelled_picking && (
                 <Badge bg={C.warnBg} color={C.warn} bd={C.warnBd}>
                   <AlertTriangle size={12}/>Pernah picking dibatalkan
@@ -809,13 +819,13 @@ export default function SalesOrderDetailPage({
             </div>
           </div>
           <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignSelf: 'flex-start', alignItems: 'center' }}>
-            {group?.spStatus === 'confirmed' && (
+            {canGeneratePicking && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '5px 10px', borderRadius: 8,
                 background: stockShort.short > 0 ? C.warnBg : C.okBg, color: stockShort.short > 0 ? C.warn : C.ok, border: `1px solid ${stockShort.short > 0 ? C.warnBd : C.okBd}` }}>
                 {stockShort.short > 0 ? <><AlertTriangle size={13}/> {stockShort.short} item stok kurang</> : <><Check size={13}/> Stok cukup</>}
               </span>
             )}
-            {group?.spStatus === 'confirmed' && (
+            {canGeneratePicking && (
               <button
                 onClick={async () => {
                   if (genBusy) return;
@@ -1076,7 +1086,7 @@ export default function SalesOrderDetailPage({
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      {group?.spStatus === 'confirmed' && (() => {
+                      {canGeneratePicking && (() => {
                         if (!item.productId) return <Badge bg={C.neutralBg} color={C.neutral} bd={C.neutralBd}><span/>Tersedia: —</Badge>;
                         const av = stockMap[item.productId]?.available ?? 0;
                         const ok = av >= outQty;

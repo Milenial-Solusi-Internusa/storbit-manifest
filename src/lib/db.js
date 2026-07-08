@@ -473,6 +473,17 @@ export async function getSpOrderStatus(customerId, spNo) {
   return { data, error };
 }
 
+// FASE 2E (LANGKAH 0 plumbing): status headline sp_orders (12-tahap) + flag untuk
+// SEMUA SP, di-merge ke groupedSP via kunci komposit (customer_id, sp_no). RLS-scoped.
+export async function listSpOrderStatuses() {
+  const { data, error } = await supabase
+    .from('sp_orders')
+    .select('customer_id, sp_no, status, had_cancelled_picking')
+    .is('deleted_at', null)
+    .limit(2000);
+  return { data: data || [], error };
+}
+
 // Cancel picking: pending/in_progress → cancelled (+ cancelled_at).
 // The SP stays eligible for a fresh generate_picking_from_sp afterwards
 // (its idempotency guard ignores 'cancelled' rows) — by design.
