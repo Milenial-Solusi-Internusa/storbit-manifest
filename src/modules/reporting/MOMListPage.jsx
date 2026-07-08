@@ -9,7 +9,7 @@ import ConfirmModal from '../../components/ConfirmModal';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { C, MOM_TYPES, MOM_STATUS_META, momTypeLabel, fmtDate } from './momConstants';
 
-const SEE_ALL_ROLES = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'supervisor'];
+const SEE_ALL_ROLES = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
 const PAGE_SIZE = 25;
 
 function StatusBadge({ status }) {

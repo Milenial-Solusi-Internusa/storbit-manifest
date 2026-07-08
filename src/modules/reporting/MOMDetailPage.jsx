@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { C, MOM_STATUS_META, momTypeLabel, statusLabel, statusColor, prioritasLabel, fmtDate } from './momConstants';
 
-const APPROVER_ROLES = ['ceo', 'admin', 'super_admin'];
+const APPROVER_ROLES = ['ceo', 'gm_bd', 'admin', 'super_admin'];
 
 function StatusBadge({ status, big }) {
   const m = MOM_STATUS_META[status] || MOM_STATUS_META.draft;
