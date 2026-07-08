@@ -24,7 +24,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | `AGENTS.md` | Identitas produk, prinsip, 15 safety rules, workflow per task | 2026-06-14 |
 | `PROGRESS.md` (root) | Dev log kronologis per-tanggal | tiap session |
 | `docs/00_INDEX_README.md` | **(file ini)** Master index dokumentasi | 2026-06-22 |
-| `docs/00_ARCHIVE_PHASES.md` | Arsip verbatim histori fase 2.0A–2.10F + dated technical sections + field notes (dipindah dari CLAUDE.md lama) | 2026-06-22 |
+| `docs/00_DEV_JOURNEY.md` | **DEV JOURNEY** — timeline kronologis + inventaris fitur LIVE per domain + arsip fase verbatim (eks `00_ARCHIVE_PHASES`) | 2026-07-08 |
 | `docs/01_PRD_NEXUS.md` | Product Requirements — vision, entitas, modul, NFR, out of scope | 2026-06-22 |
 | `docs/02_RULES_GOVERNANCE.md` | Konvensi kode, pola wajib FE/DB, brand, Do/Don't, workflow | 2026-06-22 |
 | `docs/03_DATA_MODEL.md` | Referensi DB: 73 tabel per modul, entity UUID, RLS, RPC, gotchas | 2026-06-22 |
@@ -53,7 +53,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | **DB / schema / RLS change** | `docs/02_RULES_GOVERNANCE.md §4` → `docs/03_DATA_MODEL.md` → `docs/04_ROLE_PERMISSION_MATRIX.md` → `docs/11_QA_CHECKLIST.md` (DB Change Checklist) → `docs/12_CHANGE_REQUEST.md` (kalau besar) |
 | **Kerja UI / styling / PDF** | `docs/06_UI_UX_FLOW.md` → `docs/02_RULES_GOVERNANCE.md §5` |
 | **Sebelum push/deploy** | `docs/11_QA_CHECKLIST.md` |
-| **Cari histori implementasi fase lama** | `docs/00_ARCHIVE_PHASES.md` + git history `CLAUDE.md` + `PROGRESS.md` |
+| **Cari histori implementasi fase lama** | `docs/00_DEV_JOURNEY.md` (Bagian 3 arsip) + git history `CLAUDE.md` + `PROGRESS.md` |
 
 **Prinsip:** saat dokumen & `CLAUDE.md` berbeda, **defer ke `CLAUDE.md`** (paling dinamis). Untuk struktur DB, sumber kebenaran = `supabase/schema_snapshot.sql`. Untuk safety rules, sumber = `AGENTS.md`.
 
@@ -64,7 +64,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | Dokumen | Status |
 |---------|--------|
 | 02, 03, 08, 09 (Fase 1) | ✅ Complete |
-| 00_ARCHIVE, 01, 04, 05, 06, 07, 10, 11, 12 (Fase 2) | ✅ Complete |
+| 00_DEV_JOURNEY, 01, 04, 05, 06, 07, 10, 11, 12 (Fase 2) | ✅ Complete |
 | CLAUDE.md (lean) | ✅ Complete |
 
 **`[TODO]` yang perlu diisi manual (tersebar di docs):**

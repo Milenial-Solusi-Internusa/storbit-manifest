@@ -1,6 +1,8 @@
 # TASK BREAKDOWN — Nexus by MSI
 
 > Breakdown task aktif & backlog jadi unit yang bisa langsung dikerjakan Claude Code. Sumber: `docs/09_ROADMAP.md` (Next Up), `docs/08_TECH_DEBT.md`. Update saat task selesai / prioritas berubah.
+>
+> **Diperbarui 2026-07-08 — +section H (FASE 4-5 + tech debt FASE 0-3); +Completed FASE 0-3; E1 (audit logging) DONE.** Catatan kejujuran: task A–G lain (CRM/RBAC/foundation) **tidak** disentuh FASE 0-3 → tetap OPEN.
 
 ---
 
@@ -30,7 +32,7 @@
 - [ ] **D3.** Migrasi RLS RBAC-driven (4-fase, TD-01) — **prasyarat HRIS, sesi fresh, risiko tinggi**. Perketat `profiles_read` (TD-04) bersamaan modul HRIS.
 
 ### E. Foundation reliability
-- [ ] **E1.** Implement `audit_logs` + `logAudit()` (19 event wajib; TD-05).
+- [x] **E1.** ~~Implement `audit_logs` + `logAudit()`~~ **DONE (2.11J)** — tabel `audit_logs` + `src/lib/auditLogger.js` live, ~19 event di-wire (TD-05 DONE). Sisa: `AuditLogPage` switch sumber `user_login_logs`→`audit_logs` + diff viewer (TD-37).
 - [ ] **E2.** Setup Vitest + RTL mulai dari util murni (`spCalc`, `bant`, format) (TD-07) — prasyarat pecah App.jsx.
 - [ ] **E3.** Pasang Sentry + ErrorBoundary report (TD-08).
 
@@ -51,6 +53,28 @@
 - [ ] **G2.** **Entity switcher navbar** — Step 3 dari 4 fitur topbar (setelah notification bell + pending approval badge). Switch entity aktif MSI/JCI/SOA dari topbar.
 - [ ] **G3.** **Search bar navbar** — Step 4 topbar. Global search (debounce ≥300ms; scope per modul/role).
 - [ ] **G4.** **Seed status/stage CRM ke `status_catalog`** (pipeline/inquiry/quotation/activity/hrga status) + konsumsi via fetch. Tabel `status_catalog` sudah ada (generic, `applicable_modules` jsonb). Lanjutan migrasi dropdown hardcoded.
+
+### H. Storbit SP — FASE 4-5 + tech debt FASE 0-3 (aktif/next)
+> Kondisi: FASE 0-3 (mesin status s/d BTB_TERBIT) LIVE. Detail: `03_DATA_MODEL`/`05_WORKFLOW_MAP`/`09_ROADMAP`.
+- [ ] **H1. FASE 4 — invoice (AUDIT + DESAIN dulu, bukan wiring).** Bangun ENTITAS baru: tabel invoice + line (nilai/pajak), penomoran via `increment_document_sequence`, relasi `sp_order_id`/`sp_btb`, gate SP TERKIRIM_PENUH/BTB_TERBIT → status INVOICED. Mulai dari audit alur finance + desain skema (pola FASE 0). *(planned)*
+- [ ] **H2. FASE 5 — payment/LUNAS** (setelah H1): modul pembayaran → status LUNAS. *(planned)*
+- [ ] **H3. Enforce margin floor** (TD-38, HIGH) — blok/warn save quotation bila margin < `margin_floor` (idealnya server-side di RPC `save_quotation`). Approval diskon downstream: **perlu konfirmasi**.
+- [ ] **H4. RLS proper (company-scoped)** (TD-39, HIGH) — perketat ~48 policy `USING(true)`; prioritas SP/gudang (`sp_items`/`picking_lists`/`delivery_notes`/`stock_ledger`). Superset TD-04.
+- [ ] **H5. Drop `sp_btbs` + dead code SP** (TD-41) — hapus 4 helper legacy `db.js` (0 caller: `listSpBtbs`/`addSpBtb`/`deleteSpBtb`/`bulkInsertSpBtbs`) + drop tabel `sp_btbs` (data sudah migrasi) + hapus `AppLauncher.jsx`. (`*.legacy.jsx` = **F6**/TD-15.)
+- [ ] **H6. Loose ends FASE 0-3** — sync `sp_order_items.shipped_qty` kanonik dari dispatch (TD-40, low); update `DESIGN_SP_SCHEMA.md` rank BTB (TD-42); dokumentasi Edge Functions (TD-44); verifikasi integrasi email/n8n (TD-43).
+
+---
+
+## Completed (FASE 0-3 — Storbit SP mesin status, ~Jul 2026)
+
+> Detail: `PROGRESS.md` (2026-07-06…08) + `09_ROADMAP`. Rekaman SQL: `supabase/migrations/20260706*…20260708000002`.
+
+- [x] **FASE 0** — skema baru `sp_orders`/`sp_order_items`/`sp_btb`/`dc_master` + harga kategori produk + RLS + backfill (lama=baru) + dual-write InputSPPage.
+- [x] **FASE 1** — `sp_recompute_status` (fact-derived) + DRAFT→…→PACKED + RPC picking (generate/complete/cancel) + fix desync.
+- [x] **FASE 2** — jembatan `sp_items.shipped_qty` (dispatch/cancel) + DIKIRIM/SAMPAI/TERKIRIM_PENUH + `mark_delivery_delivered` + reader status list → `sp_orders.status` (2E).
+- [x] **FASE 3** — RPC `sp_issue_btb`/`sp_delete_btb` → `sp_btb`; **BTB_TERBIT rank tertinggi**; kartu BTB pindah ke Detail SP; migrasi `sp_btbs`→`sp_btb` (186→205).
+
+> ⚠️ Sebagian "terverifikasi user" (2C, 3 Step E/G); sisanya "belum tes runtime penuh". Debt: `08_TECH_DEBT` TD-38…TD-44.
 
 ---
 

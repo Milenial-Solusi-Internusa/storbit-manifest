@@ -3,6 +3,8 @@
 > Status fitur & modul. Sumber: `CLAUDE.md` (roadmap fase 2.0A–2.10F) + `PROGRESS.md` + `AGENTS.md` (arah produk). Detail per-fase granular ada di **git history `CLAUDE.md`** + `PROGRESS.md`.
 >
 > **Legenda:** ✅ Done · 🔄 In Progress · 📋 Planned · ⏸ Deferred
+>
+> **Diperbarui 2026-07-08 — FASE 0-3 done (mesin status SP LIVE s/d BTB_TERBIT), FASE 4-5 + tech debt next.** Fakta: `03_DATA_MODEL`/`05_WORKFLOW_MAP`/`08_TECH_DEBT`.
 
 ---
 
@@ -35,8 +37,12 @@
 | | Master Customer (list + detail page + health score) | ✅ | per-entitas + Free Agent (2.1C–G) |
 | | Lead Pool | ✅ | 2.4A |
 | | Activities (unified call/visit/meeting/email/followup/wa) + Activity Log feed | ✅ | gantikan sales_calls/visits (2.9D–N) |
-| **Logistics (Storbit SP/AR)** | Sales Order / SP (list + detail, INV/FP/SUB/KRM, BTB, edit/delete item) | ✅ | 2.0C/I; baca customer dari `accounts` |
-| | AR / TTF | ✅ | db.js (legacy Storbit) |
+| **Logistics (Storbit SP)** | **Mesin status SP 12 tahap** (FASE 0-3): skema baru `sp_orders`/`sp_order_items`/`sp_btb`/`dc_master` + `sp_recompute_status` (fact-derived) | ✅ | **LIVE s/d BTB_TERBIT**; INVOICED/SUBMITTED/LUNAS = FASE 4-5 📋. Detail: `03_DATA_MODEL`/`05_WORKFLOW_MAP` |
+| | Input SP single-door + penomoran manual + DC wajib + identitas komposit `(customer_id,sp_no)` + dual-write | ✅ | InputSPPage (FASE 0) |
+| | Picking → Surat Jalan → Dispatch (isi `shipped_qty`) → BTB (`sp_issue_btb`, Detail SP) | ✅ | FASE 1-3; picking/delivery RPC |
+| | Harga kategori produk (semester/tahunan/project) | ✅ | FASE 0 (`set_product_category_prices`) |
+| | Sales Order legacy — flag finance per item INV/FP/SUB/KRM | ⏸ | flag lama, **bukan** sumber status (lihat `05` §USANG) |
+| | AR / TTF (`ar_ttfs`/`ar_btbs`) | ✅ | db.js (legacy Storbit, domain finance terpisah) |
 | **Inventory / Warehouse** | Stok Barang, Penerimaan Barang (→ stock_ledger), Inventory Dashboard | ✅ | 2.0D/E, 2.8N |
 | | Master Item / Kategori | ⏸ | redirect ke Stok Barang |
 | **Asset Management** | IT/Kendaraan/Furniture/Properti (list + detail), Dashboard, Add Asset wizard, inline-edit IT | ✅ | dalam grup Service Management (2.7A); save wizard masih dummy |
@@ -50,6 +56,19 @@
 | **Approval Center** | Reusable approval engine | 🔄 | tabel + Admin Settings UI ada; engine runtime belum |
 | **Document Mgmt / API / Portal / Reporting / Audit** | — | 📋 | arah jangka panjang (`AGENTS.md`) |
 | **App Launcher** | Bento module grid + permission gating | ✅ | 2.0H |
+
+---
+
+## Selesai Terbaru (FASE 0-3 — Storbit SP mesin status, ~Jul 2026)
+
+Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alur: `03_DATA_MODEL`/`05_WORKFLOW_MAP`. Semua SQL dijalankan manual (rekaman `supabase/migrations/20260706*…20260708000002`).
+
+- ✅ **FASE 0 — fondasi skema DB:** tabel baru `sp_orders` (header, identitas komposit `(customer_id,sp_no)`, status 12-tahap, `had_cancelled_picking`), `sp_order_items` (kanonik), `sp_btb` (BTB benar), `dc_master`; harga kategori produk `price_semester/tahunan/project`; RLS + backfill (lama=baru). Dual-write InputSPPage.
+- ✅ **FASE 1 — mesin status bawah:** `sp_recompute_status` (fact-derived) + tahap DRAFT→CONFIRMED→MENUNGGU_STOK→PICKING→PACKED; RPC picking (generate/complete/cancel) + fix desync.
+- ✅ **FASE 2 — jembatan pengiriman:** dispatch/cancel isi `sp_items.shipped_qty`; tahap DIKIRIM/SAMPAI/TERKIRIM_PENUH; `mark_delivery_delivered`. Reader status list pindah ke `sp_orders.status` (2E).
+- ✅ **FASE 3 — BTB_TERBIT:** RPC `sp_issue_btb`/`sp_delete_btb` → tabel `sp_btb`; **BTB_TERBIT = rank tertinggi** (mengalahkan TERKIRIM_PENUH — "puncak sebelum invoice"); kartu BTB pindah ke Detail SP; migrasi `sp_btbs`→`sp_btb` (186→205).
+
+> ⚠️ Sebagian "terverifikasi user" (FASE 2C, 3 Step E/G); sisanya "build clean, belum tes runtime penuh". Debt FASE 0-3: `08_TECH_DEBT.md` (TD-38…TD-44).
 
 ---
 
@@ -114,12 +133,24 @@
 
 ## Next Up
 
-Berdasarkan `CLAUDE.md` "Next recommended step" + Status Nggantung:
+Berdasarkan kondisi LIVE (FASE 0-3 selesai) + `08_TECH_DEBT.md`:
 
-1. **Runtime-verify staging** migrasi `accounts` (Pipeline/Prospect/Dashboard/Inquiry/Calls/Quotation/Master Customer) + cutover Activity (call/visit/log, dropdown sales) — banyak fitur "build clean, belum tes manual".
-2. **Deploy Edge Functions** `delete-user`, `reset-password`, re-deploy `manage-schema`/`create-user` (TD-21/22).
-3. **Drop tabel/kolom dormant** setelah verifikasi: `sales_calls`/`sales_visits`/`sales_visit_logs` (TD-18), `customers` (TD-19), `profiles.role` (TD-20).
-4. **Migrasi RLS RBAC-driven** (sesi fresh, prasyarat HRIS) (TD-01) + audit CRUD/DELETE policy semua tabel (TD-03).
-5. **Audit logging** `audit_logs` + `logAudit()` (TD-05).
-6. **Modul Finance** transaksi (Billing/AR) — arah berikutnya setelah foundation matang.
+**Storbit SP — lanjutan mesin status (bangun entitas baru, bukan wiring):**
+1. **FASE 4 — INVOICED** 📋 (belum dibangun): modul invoice baru — tabel invoice + line, penomoran (`increment_document_sequence`), relasi ke SP/BTB (`sp_order_id`/`sp_btb`), UI terbit invoice; gate = SP di TERKIRIM_PENUH/BTB_TERBIT. **Mulai dari AUDIT + DESAIN.**
+2. **FASE 5 — LUNAS** 📋 (setelah FASE 4): modul payment baru (pembayaran → status LUNAS).
+
+**Prioritas tech debt (detail: `08_TECH_DEBT.md`):**
+3. **Enforce margin floor** (TD-38, HIGH) — quotation harus blok/warn bila margin < `margin_floor` (idealnya server-side di `save_quotation`); matriks diskon kini display-only.
+4. **RLS hardening** (TD-39, HIGH) — perketat ~48 policy `USING(true)` (SP/gudang/dll) → company- + role-scoped (superset TD-04) + audit CRUD/DELETE (TD-03) + migrasi RBAC-driven (TD-01).
+5. **Drop `sp_btbs` + dead code cleanup** (TD-41) — 4 helper legacy `db.js` (0 caller) + tabel `sp_btbs` (data migrasi) + `AppLauncher.jsx`.
+6. Sisanya (TD-40 2D sync · TD-42 rank doc/`DESIGN_SP_SCHEMA` · TD-43 integrasi email/n8n · TD-44 EF docs) → rujuk `08_TECH_DEBT.md`.
+
+**Backlog domain lain (open):**
+- **CRM/Quotation gates** — verifikasi enforcement approval diskon/margin (downstream?) + BANT gate (`05_WORKFLOW_MAP.md` — Gate & Approval).
+- **RBAC/RLS `accounts`** + dropdown role-scope (TD-01/04/06).
+- **Runtime-verify staging** (accounts/Activity cutover) + **deploy Edge Functions** (TD-21/22) + **drop dormant** `sales_calls`/`visits`/`customers`/`profiles.role` (TD-18/19/20).
+- **Modul Finance** transaksi umum (Billing/AR-AP) — arah setelah foundation matang. **Audit logging** (TD-05) ✅ done.
+
+**Near-term:** dashboard Indomarco — halaman `IndomarcoDashboardPage` sudah **LIVE**; polish/iterasi sesuai kebutuhan presentasi.
+
 7. [TODO: konfirmasi prioritas bisnis berikutnya dengan product owner].

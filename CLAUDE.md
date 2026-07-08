@@ -12,7 +12,7 @@
 - **Sumber kebenaran DB:** `supabase/schema_snapshot.sql` (73 tabel) — BUKAN `migrations/` (berhenti 3 Jun 2026).
 - **Brand:** navy `#144682` · orange `#E85A1E` · coral `#F08C7D` · app shell putih `#ffffff` · Montserrat (heading) + Inter (body) · Lucide icons · **no emoji, no dark green**.
 
-## Aturan Wajib (ringkasan — detail: `docs/02_RULES_GOVERNANCE.md`)
+## Aturan Wajib (ringkasan — detail: `docs/Governance/02_RULES_GOVERNANCE.md`)
 
 - **Fetch:** selalu `.limit(1000)` (default PostgREST 10) · `.is('deleted_at', null)` · scope `company_id` + role-aware (`isAllEntities=['super_admin']`, `isSalesOnly=['sales','operations']`).
 - **`profiles`** pakai kolom **`active`** (TIDAK ada `deleted_at`). · **`showToast?.(message, type)`** (urutan message dulu).
@@ -28,10 +28,10 @@
 | File | Isi |
 |------|-----|
 | `AGENTS.md` | Identitas produk, prinsip engineering, 15 safety rules, workflow per tipe task |
-| `docs/02_RULES_GOVERNANCE.md` | Konvensi kode, pola wajib frontend/DB, brand, Do/Don't, workflow |
-| `docs/03_DATA_MODEL.md` | Referensi DB: 73 tabel per modul, entity UUID, RLS patterns, RPC, gotchas |
-| `docs/08_TECH_DEBT.md` | Daftar tech debt (TD-01…TD-31) + prioritas fix |
-| `docs/09_ROADMAP.md` | Status modul, milestone, next up |
+| `docs/Governance/02_RULES_GOVERNANCE.md` | Konvensi kode, pola wajib frontend/DB, brand, Do/Don't, workflow |
+| `docs/Governance/03_DATA_MODEL.md` | Referensi DB per modul, entity UUID, RLS patterns, RPC, gotchas (incl. mesin status SP 12-tahap) |
+| `docs/Governance/08_TECH_DEBT.md` | Daftar tech debt (TD-01…TD-44) + prioritas fix |
+| `docs/Governance/09_ROADMAP.md` | Status modul, milestone, next up |
 | `PROGRESS.md` | Dev log kronologis per-tanggal (jangan dihapus) |
 | `docs/architecture/`, `docs/security/`, `docs/database/`, dll | Blueprint, baseline keamanan/performa, dll (lihat AGENTS.md "Required Reading") |
 
@@ -131,7 +131,7 @@ Recent (terbaru → lama; detail granular di git history & `PROGRESS.md`):
 
 > ⚠️ Banyak fase "build clean, **belum tes manual runtime**" — selalu cek sebelum anggap fitur jalan. Update bagian ini + `PROGRESS.md` tiap akhir task.
 
-## Known Issues (Quick Ref — detail: `docs/08_TECH_DEBT.md`)
+## Known Issues (Quick Ref — detail: `docs/Governance/08_TECH_DEBT.md`)
 
 - **CRITICAL** — Migrasi RLS RBAC-driven belum jalan; ~51 policy pakai `is_admin_or_above()` (tak kenal manager/ceo) → bug akses (TD-01, **PARTIAL**: 3 oversight-read sudah +`is_manager_or_above`+STABLE). `has_permission()` flagged broken/unseeded (TD-02).
 - **HIGH** — Audit CRUD/DELETE policy semua tabel (silent 0-row; TD-03, **PARTIAL**: 4 tabel transaksional sudah dpt DELETE policy). Write non-atomik ar_btbs/permission-diff (TD-33). `profiles_read = USING(true)` stopgap CEO (perketat saat HRIS; TD-04). Edge Functions delete-user/reset-password belum di-deploy (TD-21). Belum ada audit logging / test / Sentry (TD-05/07/08).

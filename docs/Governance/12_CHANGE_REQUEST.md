@@ -83,4 +83,4 @@
 
 **Definition of Done:** [ ] `has_permission()` benar & ter-seed · [ ] semua policy `is_admin_or_above` diganti & ter-test · [ ] cross-entity benar per role · [ ] test 7 role lulus · [ ] `profiles_read` diperketat (TD-04) · [ ] snapshot refresh.
 
-**Catatan:** **Eksekusi sesi fresh, jangan disambi.** Audit-before-execute. Lihat `docs/00_ARCHIVE_PHASES.md` "Backlog — Migrasi RLS Proper".
+**Catatan:** **Eksekusi sesi fresh, jangan disambi.** Audit-before-execute. Lihat `docs/00_DEV_JOURNEY.md` "Backlog — Migrasi RLS Proper" (Bagian 3 arsip).
