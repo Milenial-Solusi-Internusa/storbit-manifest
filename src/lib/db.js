@@ -465,7 +465,7 @@ export async function completePicking(pickingListId) {
 export async function getSpOrderStatus(customerId, spNo) {
   const { data, error } = await supabase
     .from('sp_orders')
-    .select('status, had_cancelled_picking')
+    .select('id, status, had_cancelled_picking')
     .eq('customer_id', customerId)
     .eq('sp_no', spNo)
     .is('deleted_at', null)
@@ -837,6 +837,44 @@ export async function bulkInsertSpBtbs(spNo, btbRows) {
   if (!rows.length) return { error: null };
   const { error } = await supabase.from('sp_btbs').insert(rows);
   return { error };
+}
+
+// ─── sp_btb — BTB entitas (FASE 3) ───────────────────────────────────────
+// Tabel benar (FK sp_order_id/delivery_note_id/customer_id, qty, RLS scoped).
+// Ditulis/dihapus via RPC (sp_issue_btb/sp_delete_btb) yang set fakta +
+// PERFORM sp_recompute_status → BTB_TERBIT (rank tertinggi, kalahkan
+// TERKIRIM_PENUH). Menggantikan jalur sp_btbs legacy (helper lama ditahan
+// sampai cutover Step E/F).
+
+/** Terbitkan BTB untuk sebuah SP via RPC (idempoten per btb_no hidup). Returns { data: btb_id, error }. */
+export async function issueSpBtb({ customerId, spNo, btbNo, qty = null, btbDate = null, deliveryNoteId = null, remarks = null }) {
+  const { data, error } = await supabase.rpc('sp_issue_btb', {
+    p_customer_id: customerId,   // identitas komposit (customer_id, sp_no)
+    p_sp_no: spNo,
+    p_btb_no: btbNo,
+    p_qty: qty,
+    p_btb_date: btbDate,
+    p_delivery_note_id: deliveryNoteId,
+    p_remarks: remarks,
+  });
+  return { data, error }; // data = uuid baris sp_btb (baru atau existing bila idempoten)
+}
+
+/** Soft-delete BTB by row id via RPC (+recompute mundur). Returns { error }. */
+export async function deleteSpBtbNew(id) {
+  const { error } = await supabase.rpc('sp_delete_btb', { p_btb_id: id });
+  return { error };
+}
+
+/** Fetch BTB hidup untuk sebuah SP (via sp_order_id). Returns { data: [], error }. */
+export async function listSpBtbNew(spOrderId) {
+  const { data, error } = await supabase
+    .from('sp_btb')
+    .select('id, btb_no, qty, btb_date, remarks, created_at')
+    .eq('sp_order_id', spOrderId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true });
+  return { data: data || [], error };
 }
 
 // Dual-write (Fase 0 lanjutan, D2-A): tulis header + items ke skema SP BARU

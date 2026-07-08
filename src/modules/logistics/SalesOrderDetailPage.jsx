@@ -20,7 +20,7 @@ import {
   Check, X, FolderOpen, History, List,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2,
 } from 'lucide-react';
-import { listSpBtbs, addSpBtb, deleteSpBtb, setSpExternalUrl, getStockForProducts, getSpOrderStatus } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
@@ -637,10 +637,14 @@ export default function SalesOrderDetailPage({
   const [btbSaving,    setBtbSaving]    = useState(false);
   const [spOrder,      setSpOrder]      = useState(null);  // Fase 1: headline sp_orders (status + flag)
 
+  // FASE 3 — baca BTB dari sp_btb (tabel benar) via sp_order_id (dari spOrder.id).
   useEffect(() => {
-    if (!spNo) return;
-    listSpBtbs(spNo).then(({ data }) => setBtbs(data || []));
-  }, [spNo]);
+    const oid = spOrder?.id;
+    if (!oid) return undefined;
+    let cancelled = false;
+    listSpBtbNew(oid).then(({ data }) => { if (!cancelled) setBtbs(data || []); });
+    return () => { cancelled = true; };
+  }, [spOrder?.id]);
 
   // Fase 1 — headline status sp_orders (12-tahap) + flag pernah picking dibatalkan (badge additive).
   useEffect(() => {
@@ -674,21 +678,31 @@ export default function SalesOrderDetailPage({
     return { checked, short };
   }, [items, stockMap, group?.spStatus]);
 
+  // Refetch BTB list (sp_btb) + headline status (BTB terbit/hapus menggerakkan
+  // sp_orders.status via recompute → BTB_TERBIT rank tertinggi / mundur).
+  const refreshBtbAndStatus = async () => {
+    const cust = group?.customerId;
+    if (spOrder?.id) { const { data } = await listSpBtbNew(spOrder.id); setBtbs(data || []); }
+    if (cust) { const { data } = await getSpOrderStatus(cust, spNo); setSpOrder(data || null); }
+  };
+
   const handleAddBtb = async () => {
     if (!btbInput.trim()) return;
+    const cust = group?.customerId;
+    if (!cust) { showToast?.('Customer SP tidak diketahui', 'error'); return; }
     setBtbSaving(true);
-    const { data, error } = await addSpBtb(spNo, btbInput, btbRemarks);
+    const { error } = await issueSpBtb({ customerId: cust, spNo, btbNo: btbInput, remarks: btbRemarks });
     setBtbSaving(false);
     if (error) { showToast?.('Gagal tambah BTB: ' + error.message, 'error'); return; }
-    setBtbs(prev => [...prev, data]);
     setBtbInput('');
     setBtbRemarks('');
+    await refreshBtbAndStatus();
   };
 
   const handleDeleteBtb = async (id) => {
-    const { error } = await deleteSpBtb(id);
+    const { error } = await deleteSpBtbNew(id);
     if (error) { showToast?.('Gagal hapus BTB: ' + error.message, 'error'); return; }
-    setBtbs(prev => prev.filter(b => b.id !== id));
+    await refreshBtbAndStatus();
   };
 
   // ── Finance stage stats (computed from items) ──────────────────────────
