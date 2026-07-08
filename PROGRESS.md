@@ -1,5 +1,20 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-09
+
+### Role baru `gm_bd` (GM Business Development) — Paket 1 (frontend) + bug fix CEO Approval Lead Pool
+> **Konteks (AUDIT.md Bagian 9-24):** role baru `gm_bd`, posisi hierarki setara/dekat `gm` (`ceo > gm/gm_bd > manager`). GM BD fokus commercial/CRM. **DB sudah dieksekusi user manual** (tabel `roles` MSI + permission + fungsi `is_manager_or_above()` sudah +`gm_bd`) — sesi ini HANYA bagian KODE (frontend). Single-entity MSI; RLS lintas-3-entitas = Paket 2 (belum). **Sekalian BUG FIX:** `ceo` (dan `gm`) sebelumnya KELEWAT di gate Approval Lead Pool (`App.jsx:472`) — manager bisa approve tapi CEO tidak (keluhan CEO nyata; "T2" di AUDIT.md). Sudah dibenerin.
+- [x] **`AuthContext.jsx:11`** — `ERP_ROLE_PRIORITY`: sisip `'gm_bd'` setelah `'gm'`, sebelum `'manager'` (highest-privilege-wins tetap konsisten).
+- [x] **`App.jsx` (ROLES const ~:268)** — +`{ id: 'gm_bd', label: 'GM Business Development' }` setelah entri `gm`.
+- [x] **`App.jsx:472` (Approval Lead Pool)** — `['manager','supervisor','admin','super_admin']` → `['ceo','gm','gm_bd','manager','supervisor','admin','super_admin']`. **+ceo = BUG FIX (CEO kelewat)**, +gm, +gm_bd.
+- [x] **`App.jsx` — full CRM untuk gm_bd** — masing-masing +`'gm_bd'`: Lead Pool view (`:471`→472 di code), Rate List (`:476`→477), Activities (`:486`→487), Activity Log (`:487`→488).
+- [x] **`App.jsx` — Reporting** — +`'gm_bd'`: reporting-sales (`:791`→792), indomarco-dashboard (`:793`→794), reporting-mom menu (`:795`→796). **riwayat-visit** (`:792`→793): `['super_admin','ceo']` → `['super_admin','ceo','gm_bd']` (gm_bd only; **gm SENGAJA tidak** ditambah).
+- [x] **`MOMDetailPage.jsx:10`** — `APPROVER_ROLES`: `['ceo','admin','super_admin']` → `['ceo','gm_bd','admin','super_admin']` (+gm_bd saja; **gm SENGAJA tidak** — GM SCM tak approve MOM untuk sekarang).
+- [x] **`MOMListPage.jsx:12`** — `SEE_ALL_ROLES`: +`'gm_bd'`.
+- **SENGAJA TIDAK disentuh (keputusan scope):** Logistics/finance gates (`App.jsx:501,504,505,533,634,639,641`) + `canInputSP` (`App.jsx:1536`) — gm_bd TIDAK dapat akses gudang/finance (by design). Role `gm` tak diberi akses baru yang aneh (hanya +Lead Pool approval). DB/migration + cross-entity RLS = Paket 2 (belum). MOM approve untuk `gm` sengaja tidak ditambah.
+- [x] **Verifikasi:** `npm run build` clean (1.47s, hanya warning chunk-size pre-existing). **Belum tes manual runtime** (perlu login ceo & gm_bd) — cek: ceo bisa approve Lead Pool; gm_bd lihat full CRM + Sales Report + Indomarco Dashboard + Riwayat Visit + MOM (lihat semua + approve); gm_bd TIDAK lihat gudang/finance/Input SP.
+- **Housekeeping:** perubahan KODE ini **belum di-commit**. DB Paket 1 sudah live (bukan urusan snapshot struktur — tak ada perubahan tabel/kolom, hanya row `roles` + fungsi `is_manager_or_above()` di-replace) → refresh `schema_snapshot.sql` opsional (fungsi RLS ikut ter-dump bila di-refresh).
+
 ## 2026-07-08
 
 ### MVP Storbit SP — FASE 3 BTB SELESAI TOTAL (Step A-G) — branch `feat/sp-schema`

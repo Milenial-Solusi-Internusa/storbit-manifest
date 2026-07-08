@@ -71,7 +71,7 @@
 ### RBAC / Security
 | Fitur | Fungsi | Status |
 |---|---|---|
-| 14 role kanonik | super_admin … viewer (`ERP_ROLE_PRIORITY` + tabel `roles`) | **LIVE** |
+| 15 role kanonik | super_admin … viewer (+`gm_bd` GM Business Development, ditambah 9 Jul 2026; `ERP_ROLE_PRIORITY` + tabel `roles`) | **LIVE** |
 | Helper security (7) | is_super_admin / is_admin_or_above / is_manager_or_above / has_role / has_permission / get_user_company_id / get_user_role_code | **LIVE** |
 | RLS ~60 tabel | company- + role-scoped | **LIVE** |
 | **~48 policy `USING(true)`** | sp_items / picking / delivery / stock_ledger / dll — isolasi via filter aplikasi, bukan DB | **⚠️ security smell** → **TD-39** |
