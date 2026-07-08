@@ -10,7 +10,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { calcItem } from '../../lib/spCalc'; // eslint-disable-line no-unused-vars
 import { setSpStatus } from '../../lib/db';
 import {
-  Search, Download, Plus, Check, X, Truck, ChevronRight,
+  Search, Download, Plus, Check, X, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 
 // ─── Brand tokens (Nexus by MSI — cool/navy, from SalesOrderClean mockup) ─────
@@ -67,27 +67,37 @@ function CustPill({ name }) {
   );
 }
 
-// ─── Status model ──────────────────────────────────────────────────────────
-// Precedence high→low: cancelled > Closed > Partial(Manifest) > confirmed > open.
-function toDesignStatus(g) {
-  if (g.spStatus === 'cancelled') return 'CANCELLED';
-  if (g.status === 'Closed')      return 'CLOSED';
-  if (g.status === 'Partial')     return 'MANIFEST';
-  if (g.spStatus === 'confirmed') return 'CONFIRMED';
-  return 'OPEN';
-}
-
+// ─── Status model — sp_orders.status (12 tahap). Warna brand kalem (navy/orange/
+// amber/abu), tanpa dark green (tahap "done" = solid navy). ────────────────────
 const STATUS_META = {
-  OPEN:      { label: 'Open',      t: C.amberT,  bg: C.amberBg  },
-  CONFIRMED: { label: 'Confirmed', t: C.navy,    bg: C.navyBg   },
-  MANIFEST:  { label: 'Manifest',  t: C.indigoT, bg: C.indigoBg },
-  CLOSED:    { label: 'Closed',    t: C.greenT,  bg: C.greenBg  },
-  CANCELLED: { label: 'Cancelled', t: C.redT,    bg: C.redBg    },
+  DRAFT:          { label: 'Draft',          t: C.mute,     bg: C.lineSoft },
+  CONFIRMED:      { label: 'Dikonfirmasi',   t: C.navy,     bg: C.navyBg   },
+  MENUNGGU_STOK:  { label: 'Menunggu Stok',  t: C.amberT,   bg: C.amberBg  },
+  PICKING:        { label: 'Picking',        t: C.indigoT,  bg: C.indigoBg },
+  PACKED:         { label: 'Dikemas',        t: C.indigoT,  bg: C.indigoBg },
+  DIKIRIM:        { label: 'Dikirim',        t: C.orange,   bg: '#FEF2EC'  },
+  SAMPAI:         { label: 'Sampai',         t: C.orange,   bg: '#FEF2EC'  },
+  BTB_TERBIT:     { label: 'BTB Terbit',     t: C.amberT,   bg: C.amberBg  },
+  TERKIRIM_PENUH: { label: 'Terkirim Penuh', t: '#FFFFFF',  bg: C.navy     },
+  INVOICED:       { label: 'Invoiced',       t: C.orange,   bg: '#FEF2EC'  },
+  SUBMITTED:      { label: 'Submitted',      t: C.orange,   bg: '#FEF2EC'  },
+  LUNAS:          { label: 'Lunas',          t: '#FFFFFF',  bg: C.navy     },
+  CANCELLED:      { label: 'Dibatalkan',     t: C.redT,     bg: C.redBg    },
 };
-const STATUS_ORDER = ['OPEN', 'CONFIRMED', 'MANIFEST', 'CLOSED', 'CANCELLED'];
+// FASE 2E LANGKAH 2 — urutan 12 tahap (untuk filter dropdown) + grup tab.
+const STATUS_ORDER = ['DRAFT', 'CONFIRMED', 'MENUNGGU_STOK', 'PICKING', 'PACKED',
+  'DIKIRIM', 'SAMPAI', 'BTB_TERBIT', 'TERKIRIM_PENUH', 'INVOICED', 'SUBMITTED', 'LUNAS', 'CANCELLED'];
+const TAB_GROUPS = {
+  pending:   ['DRAFT'],
+  gudang:    ['CONFIRMED', 'MENUNGGU_STOK', 'PICKING', 'PACKED'],
+  kirim:     ['DIKIRIM', 'SAMPAI', 'BTB_TERBIT', 'TERKIRIM_PENUH', 'INVOICED', 'SUBMITTED', 'LUNAS'],
+  cancelled: ['CANCELLED'],
+};
+// status headline SP (fallback DRAFT bila belum ada baris sp_orders).
+const osOf = (g) => g.orderStatus || 'DRAFT';
 
 function Pill({ st }) {
-  const m = STATUS_META[st] || STATUS_META.OPEN;
+  const m = STATUS_META[st] || STATUS_META.DRAFT;
   return (
     <span style={{
       display: 'inline-block', fontSize: 11.5, fontWeight: 600, letterSpacing: '.01em',
@@ -152,19 +162,15 @@ function AksiBtn({ label, icon: Icon, bg, color, bd, onClick: oc }) {
 }
 
 // Kolom Aksi = hanya tombol operasional. Detail dibuang karena seluruh baris clickable.
-function AksiCell({ dstatus, onConfirm, onReject, onManifest }) {
-  if (dstatus === 'OPEN') return (
+// FASE 2E: baca sp_orders.status. Konfirmasi/Tolak hanya di DRAFT; tahap lain tak ada aksi
+// (Generate Picking dst ada di Detail SP). Tombol "Manifest" (stub) dihapus.
+function AksiCell({ status, onConfirm, onReject }) {
+  if (status === 'DRAFT') return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
       <AksiBtn label="Konfirmasi" icon={Check} bg={C.orange} color="#fff"    bd={C.orange} onClick={onConfirm}/>
       <AksiBtn label="Tolak"      icon={X}     bg={C.bg}     color={C.redT}   bd={C.line}   onClick={onReject}/>
     </div>
   );
-  if (dstatus === 'MANIFEST') return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
-      <AksiBtn label="Manifest" icon={Truck} bg={C.navy} color="#fff" bd={C.navy} onClick={onManifest}/>
-    </div>
-  );
-  // Confirmed / Closed / Cancelled → tak ada aksi operasional (baris tetap clickable ke Detail).
   return <span style={{ color: C.faint }}>—</span>;
 }
 
@@ -341,32 +347,30 @@ export default function SalesOrderPage({
   const [rejectReason, setRejectReason]     = useState('');
   const [rejectErr, setRejectErr]           = useState(false);
 
-  // Augment with design status
-  const augmented = useMemo(
-    () => groupedSP.map(g => ({ ...g, dstatus: toDesignStatus(g) })),
-    [groupedSP],
-  );
+  // FASE 2E — status headline langsung dari g.orderStatus (sp_orders); tak ada lagi
+  // turunan design-status lama. `augmented` = alias groupedSP (dipertahankan sbg nama).
+  const augmented = groupedSP;
 
-  // Tab counts
+  // Tab counts — FASE 2E: grup 12 tahap dari sp_orders.status (g.orderStatus).
   const counts = useMemo(() => ({
-    all:      augmented.length,
-    pending:  augmented.filter(g => g.dstatus === 'OPEN').length,
-    manifest: augmented.filter(g => g.dstatus === 'MANIFEST').length,
-    history:  augmented.filter(g => g.dstatus === 'CLOSED' || g.dstatus === 'CANCELLED').length,
+    all:       augmented.length,
+    pending:   augmented.filter(g => TAB_GROUPS.pending.includes(osOf(g))).length,
+    gudang:    augmented.filter(g => TAB_GROUPS.gudang.includes(osOf(g))).length,
+    kirim:     augmented.filter(g => TAB_GROUPS.kirim.includes(osOf(g))).length,
+    cancelled: augmented.filter(g => TAB_GROUPS.cancelled.includes(osOf(g))).length,
   }), [augmented]);
 
-  // Status filter options — only values that actually exist in the data
+  // Status filter options — 12 tahap yang benar-benar ada di data (urut STATUS_ORDER)
   const statusOptions = useMemo(() => {
-    const present = new Set(augmented.map(g => g.dstatus));
+    const present = new Set(augmented.map(g => osOf(g)));
     return STATUS_ORDER.filter(s => present.has(s));
   }, [augmented]);
 
-  // Tab filter
+  // Tab filter — grup 12 tahap
   const tabFiltered = useMemo(() => {
-    if (tab === 'pending')  return augmented.filter(g => g.dstatus === 'OPEN');
-    if (tab === 'manifest') return augmented.filter(g => g.dstatus === 'MANIFEST');
-    if (tab === 'history')  return augmented.filter(g => g.dstatus === 'CLOSED' || g.dstatus === 'CANCELLED');
-    return augmented;
+    if (tab === 'all') return augmented;
+    const grp = TAB_GROUPS[tab] || [];
+    return augmented.filter(g => grp.includes(osOf(g)));
   }, [augmented, tab]);
 
   // Search + filter (client-side — Customer/DC/Overdue existing + Status/Periode baru)
@@ -380,7 +384,7 @@ export default function SalesOrderPage({
       )) return false;
       if (filterCustomer !== 'all' && g.customer !== filterCustomer) return false;
       if (filterDC !== 'all' && g.dc !== filterDC) return false;
-      if (filterStatus !== 'all' && g.dstatus !== filterStatus) return false;
+      if (filterStatus !== 'all' && osOf(g) !== filterStatus) return false;
       if (filterOverdue && !g.isOverdue) return false;
       // Periode berdasarkan SP Date (normalisasi ke YYYY-MM-DD)
       if (filterFrom || filterTo) {
@@ -463,10 +467,6 @@ export default function SalesOrderPage({
       'success',
     );
   };
-  const handleManifest = (no) => {
-    // TODO: needs sp_items.status migration
-    showToast(`Manifest ${no} dibuat ✓`, 'success');
-  };
 
   // Unique customer names for filter dropdown
   const customerNames = useMemo(
@@ -547,10 +547,11 @@ export default function SalesOrderPage({
       {/* ── Tabs ──────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${C.line}` }}>
         {[
-          { k: 'all',      l: 'Semua SP' },
-          { k: 'pending',  l: 'Pending Konfirmasi' },
-          { k: 'manifest', l: 'Manifest' },
-          { k: 'history',  l: 'History' },
+          { k: 'all',       l: 'Semua SP' },
+          { k: 'pending',   l: 'Pending Konfirmasi' },
+          { k: 'gudang',    l: 'Diproses Gudang' },
+          { k: 'kirim',     l: 'Pengiriman & Selesai' },
+          { k: 'cancelled', l: 'Dibatalkan' },
         ].map(({ k, l }) => {
           const active = tab === k;
           return (
@@ -669,8 +670,18 @@ export default function SalesOrderPage({
                   <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: g.isOverdue ? C.red : C.ink, fontWeight: g.isOverdue ? 600 : 400 }}>
                     {nf(g.totalOutstanding)}
                   </td>
-                  {/* Status */}
-                  <td style={td}><Pill st={g.dstatus}/></td>
+                  {/* Status — FASE 2E: baca sp_orders.status (12 tahap), fallback DRAFT */}
+                  <td style={td}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Pill st={g.orderStatus || 'DRAFT'}/>
+                      {g.hadCancelledPicking && (
+                        <span title="Pernah picking dibatalkan"
+                          style={{ display: 'inline-flex', alignItems: 'center', color: C.amberT }}>
+                          <AlertTriangle size={13}/>
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   {/* DC Tujuan */}
                   <td style={{ ...td, color: C.mute, whiteSpace: 'nowrap' }}>{g.dc || '—'}</td>
                   {/* Expired — amber HANYA jika overdue */}
@@ -684,10 +695,9 @@ export default function SalesOrderPage({
                   {/* Aksi */}
                   <td style={{ ...td, textAlign: 'center' }}>
                     <AksiCell
-                      dstatus={g.dstatus}
+                      status={g.orderStatus || 'DRAFT'}
                       onConfirm={() => openModal(g, 'confirm')}
                       onReject={() => openModal(g, 'reject')}
-                      onManifest={() => handleManifest(g.spNo)}
                     />
                   </td>
                 </tr>

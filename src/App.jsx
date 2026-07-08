@@ -4,7 +4,7 @@ import {
   Search, Download, Upload, Edit3, Trash2, X,
   Package, AlertTriangle, CheckCircle2,
   ChevronRight, Save, Calendar, Building2, User,
-  ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronLeft, LogOut, Menu,
+  ArrowUpDown, Sparkles, ChevronLeft, LogOut, Menu,
   Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { supabase } from './lib/supabase';
-import { generatePickingFromSp, generateDeliveryFromPicking } from './lib/db';
+import { generatePickingFromSp, generateDeliveryFromPicking, listSpOrderStatuses } from './lib/db';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
@@ -1489,6 +1489,7 @@ export default function StorbitManifest() {
   const [activeCustomerId, setActiveCustomerId] = useState(null); // for customer-detail page
   const [prevCustomerMenu, setPrevCustomerMenu] = useState('crm-customers'); // back target
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
+  const [spOrderMap, setSpOrderMap]       = useState({});    // FASE 2E L0: uid → {status, hadCancelledPicking}
   const [selectedPickingId, setSelectedPickingId] = useState(null);  // picking detail page
   const [selectedDeliveryId, setSelectedDeliveryId] = useState(null);  // surat jalan detail page
   const [showInputSP,  setShowInputSP]    = useState(false); // Input SP form
@@ -1884,7 +1885,25 @@ export default function StorbitManifest() {
     rows.map(r => { const c = calcItem(r); return { ...r, ...c, total: c.subtotal }; })
   , [rows]);
 
-  const groupedSP = useMemo(() => groupBySP(rows), [rows]);
+  // FASE 2E (LANGKAH 0, additive): merge status headline sp_orders ke tiap grup via uid.
+  // Fallback null/false untuk SP tanpa baris sp_orders. Belum mengganti reader mana pun.
+  const groupedSP = useMemo(() => groupBySP(rows).map(g => ({
+    ...g,
+    orderStatus: spOrderMap[g.uid]?.status ?? null,
+    hadCancelledPicking: spOrderMap[g.uid]?.hadCancelledPicking ?? false,
+  })), [rows, spOrderMap]);
+
+  // Fetch status headline sp_orders → spOrderMap (keyed uid). Re-fetch saat rows berubah
+  // (sinkron dgn refreshSp setelah confirm/picking). setState di async callback → lint-safe.
+  useEffect(() => {
+    let alive = true;
+    listSpOrderStatuses().then(({ data }) => {
+      if (!alive) return;
+      setSpOrderMap(Object.fromEntries(data.map(o =>
+        [`${o.customer_id}|${o.sp_no}`, { status: o.status, hadCancelledPicking: o.had_cancelled_picking }])));
+    });
+    return () => { alive = false; };
+  }, [rows]);
 
   // sp_no → customer name (fallback), dipakai DeliveryNotePage (delivery_notes punya
   // customer_name sendiri; map ini hanya cadangan + search).
@@ -3481,203 +3500,6 @@ function ComingSoonPage({ title, description, capabilities }) {
   );
 }
 
-// ============================
-// Manifest (grouped table)
-// ============================
-function SortIcon({ field, sortBy }) {
-  if (sortBy.field !== field) return <ArrowUpDown size={11} style={{ opacity: 0.3 }}/>;
-  return sortBy.dir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>;
-}
-
-// Manifest kept for backward compatibility — replaced in render by SalesOrderPage.
-// eslint-disable-next-line no-unused-vars
-function Manifest({ grouped, allCount, search, setSearch, filterStatus, setFilterStatus, filterDC, setFilterDC, filterCustomer, setFilterCustomer, filterOverdue, setFilterOverdue, dcList, customers, sortBy, setSortBy, onView, onExport }) {
-  const toggleSort = (field) => {
-    if (sortBy.field === field) setSortBy({ field, dir: sortBy.dir === 'asc' ? 'desc' : 'asc' });
-    else setSortBy({ field, dir: 'asc' });
-  };
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-end justify-between flex-wrap gap-3">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.12em]"
-              style={{ background: PASTEL.sky, color: '#1F4D6B' }}>
-              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: PASTEL.skyDeep }}/>
-              Logistics · Sales Order
-            </span>
-          </div>
-          <h2 className="font-display text-3xl font-semibold tracking-tight">SP Manifest</h2>
-          <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{grouped.length} dari {allCount} SP</p>
-        </div>
-        <button
-          onClick={onExport}
-          className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all"
-          style={{ background: PASTEL.ink, color: PASTEL.cream }}
-        >
-          <Download size={14}/> Export CSV
-        </button>
-      </div>
-
-      {/* Customer tabs (kategori SP) */}
-      <div className="flex items-center gap-2 flex-wrap pb-1">
-        <button
-          onClick={() => setFilterCustomer('all')}
-          className="px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-wider transition-all"
-          style={{
-            background: filterCustomer === 'all' ? PASTEL.ink : 'white',
-            color: filterCustomer === 'all' ? PASTEL.cream : PASTEL.inkSoft,
-            border: `1px solid ${filterCustomer === 'all' ? PASTEL.ink : PASTEL.line}`
-          }}
-        >
-          All Customers
-        </button>
-        {customers.filter(c => c.active !== false).map(c => {
-          const active = filterCustomer === c.name;
-          const count = grouped.filter(g => g.customer === c.name).length;
-          return (
-            <button
-              key={c.id}
-              onClick={() => setFilterCustomer(c.name)}
-              className="px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2"
-              style={{
-                background: active ? PASTEL.peach : 'white',
-                color: active ? PASTEL.ink : PASTEL.inkSoft,
-                border: `1px solid ${active ? PASTEL.peachDeep : PASTEL.line}`
-              }}
-            >
-              <span>SP {c.name}</span>
-              <span className="font-numeric font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: active ? PASTEL.cream : PASTEL.lineSoft }}>{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Filters */}
-      <div className="rounded-3xl p-4 border flex flex-wrap items-center gap-3" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <div className="relative flex-1 min-w-[260px]">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: PASTEL.inkMute }}/>
-          <input
-            type="text"
-            placeholder="Cari SP, product, SKU, BTB..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none"
-            style={{ background: PASTEL.cream, border: `1px solid ${PASTEL.line}` }}
-          />
-        </div>
-        <FilterPill label="Status" value={filterStatus} onChange={setFilterStatus} options={[
-          { v: 'all', l: 'All Status' },
-          { v: 'Open', l: 'Open' },
-          { v: 'Partial', l: 'Partial' },
-          { v: 'Closed', l: 'Closed' },
-        ]}/>
-        <FilterPill label="DC" value={filterDC} onChange={setFilterDC} options={[
-          { v: 'all', l: 'All DC' },
-          ...dcList.map(d => ({ v: d, l: d }))
-        ]}/>
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none px-3 py-2">
-          <input type="checkbox" checked={filterOverdue} onChange={e=>setFilterOverdue(e.target.checked)} className="rounded" style={{ accentColor: PASTEL.roseDeep }}/>
-          <span>Overdue only</span>
-        </label>
-        {(search || filterStatus !== 'all' || filterDC !== 'all' || filterCustomer !== 'all' || filterOverdue) && (
-          <button onClick={() => { setSearch(''); setFilterStatus('all'); setFilterDC('all'); setFilterCustomer('all'); setFilterOverdue(false); }}
-            className="text-xs underline" style={{ color: PASTEL.inkMute }}>
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* Table - 1 row per SP */}
-      <div className="rounded-3xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: PASTEL.lineSoft }}>
-                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('spDate')}>
-                  <div className="flex items-center gap-1">SP Date <SortIcon field="spDate" sortBy={sortBy}/></div>
-                </th>
-                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('spNo')}>
-                  <div className="flex items-center gap-1">SP No <SortIcon field="spNo" sortBy={sortBy}/></div>
-                </th>
-                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Customer</th>
-                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Items</th>
-                <th className="px-5 py-3.5 text-right text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Total Qty</th>
-                <th className="px-5 py-3.5 text-right text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Outstanding</th>
-                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Status</th>
-                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>DC</th>
-                <th className="px-5 py-3.5 text-left text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('expired_date')}>
-                  <div className="flex items-center gap-1">Expired Date <SortIcon field="expired_date" sortBy={sortBy}/></div>
-                </th>
-                <th className="px-5 py-3.5 text-right text-[10px] uppercase tracking-[0.15em] font-semibold cursor-pointer" style={{ color: PASTEL.inkSoft }} onClick={()=>toggleSort('grandTotal')}>
-                  <div className="flex items-center justify-end gap-1">Grand Total <SortIcon field="grandTotal" sortBy={sortBy}/></div>
-                </th>
-                <th className="px-5 py-3.5 text-center text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: PASTEL.inkSoft }}>Finance</th>
-                <th className="px-5 py-3.5 w-12"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {grouped.length === 0 && (
-                <tr><td colSpan={12} className="text-center py-16 text-sm" style={{ color: PASTEL.inkMute }}>Tidak ada SP yang cocok</td></tr>
-              )}
-              {grouped.map(g => (
-                <tr
-                  key={g.spNo}
-                  onClick={() => onView(g.spNo)}
-                  className="cursor-pointer transition-colors border-t"
-                  style={{
-                    borderColor: PASTEL.line,
-                    background: g.isOverdue ? `${PASTEL.rose}25` : 'white'
-                  }}
-                  onMouseEnter={(e) => { if (!g.isOverdue) e.currentTarget.style.background = PASTEL.lineSoft; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = g.isOverdue ? `${PASTEL.rose}25` : 'white'; }}
-                >
-                  <td className="px-5 py-4 text-xs font-mono whitespace-nowrap" style={{ color: PASTEL.inkSoft }}>{formatDateID(g.spDate)}</td>
-                  <td className="px-5 py-4 font-mono font-semibold whitespace-nowrap">{g.spNo}</td>
-                  <td className="px-5 py-4">
-                    {g.customer ? (
-                      <span className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>
-                        {g.customer}
-                      </span>
-                    ) : <span className="text-xs" style={{ color: PASTEL.inkMute }}>-</span>}
-                  </td>
-                  <td className="px-5 py-4 whitespace-nowrap">
-                    <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap inline-block" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
-                      {g.itemCount} {g.itemCount > 1 ? 'items' : 'item'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 text-right font-mono">{formatNumber(g.totalQty)}</td>
-                  <td className="px-5 py-4 text-right font-mono font-semibold" style={{ color: g.totalOutstanding > 0 ? PASTEL.peachDeep : PASTEL.mintDeep }}>
-                    {formatNumber(g.totalOutstanding)}
-                  </td>
-                  <td className="px-5 py-4"><StatusBadge status={g.status} overdue={g.isOverdue}/></td>
-                  <td className="px-5 py-4 text-xs" style={{ color: PASTEL.inkSoft }}>{g.dc || '-'}</td>
-                  <td className="px-5 py-4 text-xs font-mono whitespace-nowrap" style={{ color: PASTEL.inkSoft }}>{formatDateID(g.expired_date || g.deadline)}</td>
-                  <td className="px-5 py-4 text-right font-semibold whitespace-nowrap">{formatRupiah(g.grandTotal)}</td>
-                  <td className="px-5 py-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: PASTEL.line }}>
-                        <div className="h-full transition-all" style={{ width: `${g.financePct}%`, background: g.financePct === 100 ? PASTEL.mintDeep : PASTEL.lavenderDeep }}/>
-                      </div>
-                      <span className="text-[10px] font-mono w-8" style={{ color: PASTEL.inkMute }}>{Math.round(g.financePct)}%</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4">
-                    <ChevronRight size={16} style={{ color: PASTEL.inkMute }}/>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div className="text-[11px]" style={{ color: PASTEL.inkMute }}>
-        Klik baris SP untuk melihat detail item · status overall: All closed → Closed · All open → Open · Mix → Partial
-      </div>
-    </div>
-  );
-}
 
 function FilterPill({ value, onChange, options }) {
   return (
