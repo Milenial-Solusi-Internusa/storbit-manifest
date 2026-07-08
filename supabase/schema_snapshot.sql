@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 9yIDwCjW53OkA40O5SupLs5UpKltzzidGcLLbO2x5JpdRXwPAh8gDJJHoJqgT98
+\restrict wBBGJ3rXWNNBe8pcxeIXrLrr2yv5EkfRLZSnvvdXWsJanq9x0efCkaYZj0O2yOS
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1105,6 +1105,62 @@ COMMENT ON FUNCTION public.set_updated_at() IS 'Trigger function: sets updated_a
 
 
 --
+-- Name: sp_delete_btb(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sp_delete_btb(p_btb_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_cust uuid; v_sp text;
+BEGIN
+  SELECT b.customer_id, o.sp_no INTO v_cust, v_sp
+    FROM sp_btb b JOIN sp_orders o ON o.id = b.sp_order_id
+   WHERE b.id = p_btb_id AND b.deleted_at IS NULL;
+  IF v_sp IS NULL THEN RAISE EXCEPTION 'BTB tidak ditemukan atau sudah dihapus.'; END IF;
+  UPDATE sp_btb SET deleted_at = now() WHERE id = p_btb_id;
+  PERFORM sp_recompute_status(v_cust, v_sp);
+END; $$;
+
+
+--
+-- Name: sp_issue_btb(uuid, text, text, integer, date, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sp_issue_btb(p_customer_id uuid, p_sp_no text, p_btb_no text, p_qty integer DEFAULT NULL::integer, p_btb_date date DEFAULT NULL::date, p_delivery_note_id uuid DEFAULT NULL::uuid, p_remarks text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_company uuid; v_sp_order_id uuid; v_uid uuid := auth.uid();
+  v_btb_id uuid; v_existing uuid;
+BEGIN
+  IF btrim(COALESCE(p_btb_no,'')) = '' THEN
+    RAISE EXCEPTION 'Nomor BTB wajib diisi.'; END IF;
+  SELECT id, company_id INTO v_sp_order_id, v_company
+    FROM sp_orders
+   WHERE customer_id = p_customer_id AND sp_no = p_sp_no AND deleted_at IS NULL;
+  IF v_sp_order_id IS NULL THEN
+    RAISE EXCEPTION 'SP % untuk customer ini tidak ditemukan.', p_sp_no; END IF;
+  IF p_delivery_note_id IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM delivery_notes
+        WHERE id = p_delivery_note_id AND customer_id = p_customer_id AND sp_no = p_sp_no) THEN
+    RAISE EXCEPTION 'Surat jalan bukan milik SP ini.'; END IF;
+  SELECT id INTO v_existing FROM sp_btb
+   WHERE customer_id = p_customer_id AND btb_no = btrim(p_btb_no) AND deleted_at IS NULL;
+  IF v_existing IS NOT NULL THEN RETURN v_existing; END IF;
+  INSERT INTO sp_btb (company_id, sp_order_id, delivery_note_id, customer_id,
+                      btb_no, btb_date, qty, received_at, received_by, remarks)
+  VALUES (v_company, v_sp_order_id, p_delivery_note_id, p_customer_id,
+          btrim(p_btb_no), p_btb_date, p_qty, now(), v_uid,
+          NULLIF(btrim(COALESCE(p_remarks,'')),''))
+  RETURNING id INTO v_btb_id;
+  PERFORM sp_recompute_status(p_customer_id, p_sp_no);
+  RETURN v_btb_id;
+END; $$;
+
+
+--
 -- Name: sp_recompute_status(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1117,11 +1173,12 @@ DECLARE
   v_id uuid; v_status text; v_new text;
   v_confirmed bool; v_has_done bool; v_has_active bool; v_short bool;
   v_ordered int; v_shipped int; v_has_dispatch bool; v_has_delivered bool;
+  v_has_btb bool;
 BEGIN
   SELECT id, status INTO v_id, v_status
     FROM sp_orders WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND deleted_at IS NULL;
   IF v_id IS NULL THEN RETURN; END IF;
-  IF v_status IN ('CANCELLED','BTB_TERBIT','INVOICED','SUBMITTED','LUNAS') THEN RETURN; END IF;
+  IF v_status IN ('CANCELLED','INVOICED','SUBMITTED','LUNAS') THEN RETURN; END IF;
   v_confirmed  := EXISTS(SELECT 1 FROM sp_items WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND sp_status='confirmed');
   v_has_done   := EXISTS(SELECT 1 FROM picking_lists WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status='done');
   v_has_active := EXISTS(SELECT 1 FROM picking_lists WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status IN ('pending','in_progress'));
@@ -1136,7 +1193,9 @@ BEGIN
     FROM sp_items WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND sp_status='confirmed';
   v_has_dispatch  := EXISTS(SELECT 1 FROM delivery_notes WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status IN ('in_transit','delivered'));
   v_has_delivered := EXISTS(SELECT 1 FROM delivery_notes WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status='delivered');
+  v_has_btb := EXISTS(SELECT 1 FROM sp_btb WHERE sp_order_id=v_id AND deleted_at IS NULL);
   v_new := CASE
+    WHEN v_has_btb                                THEN 'BTB_TERBIT'
     WHEN v_ordered > 0 AND v_shipped >= v_ordered THEN 'TERKIRIM_PENUH'
     WHEN v_has_delivered                          THEN 'SAMPAI'
     WHEN v_has_dispatch                           THEN 'DIKIRIM'
@@ -5441,14 +5500,6 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
--- Name: sp_btb sp_btb_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.sp_btb
-    ADD CONSTRAINT sp_btb_no_unique UNIQUE (customer_id, btb_no);
-
-
---
 -- Name: sp_btb sp_btb_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6734,6 +6785,13 @@ CREATE INDEX idx_vendors_deleted_at ON public.vendors USING btree (deleted_at) W
 --
 
 CREATE INDEX idx_vendors_is_active ON public.vendors USING btree (is_active);
+
+
+--
+-- Name: sp_btb_no_unique_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX sp_btb_no_unique_live ON public.sp_btb USING btree (customer_id, btb_no) WHERE (deleted_at IS NULL);
 
 
 --
@@ -11827,5 +11885,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9yIDwCjW53OkA40O5SupLs5UpKltzzidGcLLbO2x5JpdRXwPAh8gDJJHoJqgT98
+\unrestrict wBBGJ3rXWNNBe8pcxeIXrLrr2yv5EkfRLZSnvvdXWsJanq9x0efCkaYZj0O2yOS
 
