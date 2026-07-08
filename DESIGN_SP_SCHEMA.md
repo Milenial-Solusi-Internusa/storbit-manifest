@@ -6,6 +6,8 @@
 > **12 keputusan final** (lihat bagian "KEPUTUSAN FINAL (TERKUNCI)" di bawah).
 > Prinsip AGENTS.md dipatuhi: multi-company, soft-delete, FK & constraint, RLS company-scoped, deploy-code-sebelum-drop-column.
 > ⚠️ Semua langkah migrasi **wajib diverifikasi ulang saat eksekusi** (di branch + staging).
+>
+> **✅ Diperbarui 2026-07-08 — sinkron dengan kode LIVE (resolusi TD-42).** FASE 0-3 sudah **[IMPLEMENTED]** (skema `sp_orders`/`sp_order_items`/`sp_btb`/`dc_master`, mesin status 12-tahap, `sp_recompute_status`, BTB) — bagian yang sudah live ditandai **[IMPLEMENTED]**; invoice/payment (FASE 4-5) + `sp_audit_log` masih rancangan. **KOREKSI RANK: `BTB_TERBIT` = rank TERTINGGI di band terkelola (di ATAS `TERKIRIM_PENUH`)** — "puncak sebelum invoice" (invoice ditagih atas BTB bertandatangan). Sinkron dengan `docs/Governance/03_DATA_MODEL` + `05_WORKFLOW_MAP`.
 
 ## Ringkasan keputusan desain (TL;DR)
 1. **Pisah header/items (SEKARANG, penuh):** `sp_orders` (header) + `sp_order_items` (baris) menggantikan `sp_items` flat.
@@ -43,6 +45,7 @@ status text NOT NULL DEFAULT 'DRAFT'
     'CANCELLED'
   ))
 ```
+> **[IMPLEMENTED]** Kolom `status` + CHECK 12-tahap sudah live di `sp_orders`. ⚠️ **Urutan nilai dalam array CHECK = KOSMETIK** (daftar nilai sah, BUKAN rank). **Rank ditentukan urutan CASE di `sp_recompute_status`** → `BTB_TERBIT` dicek paling atas (**tertinggi, mengalahkan `TERKIRIM_PENUH`**). Array live sengaja tetap `…SAMPAI, BTB_TERBIT, TERKIRIM_PENUH…` (tak diubah — hanya kosmetik, tak memengaruhi perilaku).
 
 ### 1.3 Transisi sah (state machine)
 ```
@@ -52,15 +55,15 @@ status text NOT NULL DEFAULT 'DRAFT'
  PICKING ──(picking done + material packed, AUTO)──► PACKED
  PACKED ──(dispatch SJ pertama = in_transit, AUTO)──► DIKIRIM
  DIKIRIM ──(SJ delivered, AUTO)──► SAMPAI
- SAMPAI ──(BTB batch terbit, AUTO)──► BTB_TERBIT
- BTB_TERBIT / DIKIRIM ──(Σshipped = Σqty, AUTO)──► TERKIRIM_PENUH
- TERKIRIM_PENUH ──(invoice terbit; hanya boleh saat Σshipped=Σqty)──► INVOICED
+ SAMPAI / DIKIRIM ──(Σshipped = Σqty, AUTO)──► TERKIRIM_PENUH
+ SAMPAI / TERKIRIM_PENUH ──(BTB batch terbit, AUTO — RANK TERTINGGI, di ATAS TERKIRIM_PENUH)──► BTB_TERBIT
+ BTB_TERBIT ──(invoice terbit; gate Σshipped=Σqty; FASE 4 planned)──► INVOICED
  INVOICED ──(submit ke Indomarco, MANUAL)──► SUBMITTED
  SUBMITTED ──(Σpayment ≥ total, AUTO)──► LUNAS
  (any non-terminal) ──(MANUAL)──► CANCELLED   [terminal]
  (any) ──(MANUAL, overlay)──► is_disputed = true/false  [tidak mengganti status]
 ```
-- **AUTO** (via `sp_recompute_status`): PICKING, MENUNGGU_STOK, PACKED, DIKIRIM, SAMPAI, BTB_TERBIT, TERKIRIM_PENUH, INVOICED, LUNAS.
+- **AUTO** (via `sp_recompute_status`): PICKING, MENUNGGU_STOK, PACKED, DIKIRIM, SAMPAI, TERKIRIM_PENUH, **BTB_TERBIT (rank tertinggi)**, INVOICED, LUNAS.
 - **MANUAL** (RPC eksplisit + audit): CONFIRMED, SUBMITTED, CANCELLED, set/clear DISPUTE.
 - Partial: `status` = tahap **paling maju yang relevan**; detail per-batch ada di `delivery_notes`/`sp_btb`. `TERKIRIM_PENUH` hanya saat Σshipped = Σqty.
 
@@ -375,8 +378,8 @@ BEGIN
      WHEN v_paid AND v_has_invoice THEN 'LUNAS'
      WHEN v_submitted              THEN 'SUBMITTED'
      WHEN v_has_invoice            THEN 'INVOICED'
+     WHEN v_has_btb                THEN 'BTB_TERBIT'                        -- RANK TERTINGGI (di atas TERKIRIM_PENUH)
      WHEN v_ordered IS NOT NULL AND v_shipped >= v_ordered THEN 'TERKIRIM_PENUH'
-     WHEN v_has_btb                THEN 'BTB_TERBIT'
      WHEN v_has_delivered          THEN 'SAMPAI'
      WHEN v_has_dispatch           THEN 'DIKIRIM'
      ELSE status END,               -- tahap ≤ PACKED dikelola RPC picking/confirm
@@ -385,6 +388,8 @@ BEGIN
 END; $$ LANGUAGE plpgsql SECURITY DEFINER;
 ```
 (PACKED/PICKING/MENUNGGU_STOK di-set oleh RPC picking; CONFIRMED/CANCELLED/SUBMITTED manual; INVOICED/LUNAS via recompute setelah event invoice/payment.)
+
+> **[IMPLEMENTED]** `sp_recompute_status` sudah LIVE (FASE 1-3) dengan **`BTB_TERBIT` sebagai cabang CASE paling atas** (rank tertinggi, mengalahkan `TERKIRIM_PENUH`). ⚠️ **Beda dari draf di atas:** versi live keyed **`(customer_id, sp_no)`** (bukan `p_sp uuid`), baca `sp_items.shipped_qty` (masa transisi dua generasi), dan **guard** `IN ('CANCELLED','INVOICED','SUBMITTED','LUNAS')` (INVOICED/SUBMITTED/LUNAS = FASE 4-5, belum dibangun → cabang finance di draf ini masih rancangan). Signature persis: `docs/Governance/03_DATA_MODEL §5` + `schema_snapshot.sql`.
 
 ### 4.3 Perbaikan integritas stok (S-1, S-2)
 - **Reserved nyangkut:** `cancel_delivery` untuk DN `draft` → lepaskan reservasi picking terkait (`unreserved`); tambah RPC `release_picking_reservation(picking_id)` untuk picking `done` yang diterlantarkan.
