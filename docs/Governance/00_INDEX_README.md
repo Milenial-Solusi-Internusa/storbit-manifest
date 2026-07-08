@@ -37,8 +37,6 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | `docs/10_TASK_BREAKDOWN.md` | Task aktif & backlog konkret + template task baru | 2026-06-22 |
 | `docs/11_QA_CHECKLIST.md` | Checklist QA pre-deploy, per-modul, DB change, PDF | 2026-06-22 |
 | `docs/12_CHANGE_REQUEST.md` | Template Change Request + contoh (PDF migration, RBAC plan) | 2026-06-22 |
-| `docs/progress.md` | (pre-existing) progress/audit lama | [TODO: konfirmasi status vs root PROGRESS.md] |
-| `docs/project-audit.md` | (pre-existing) audit proyek | [TODO: konfirmasi isi/relevansi] |
 | `docs/architecture/`, `docs/database/`, `docs/security/`, `docs/workflow/`, `docs/integration/`, `docs/performance/`, `docs/operations/`, `docs/modules/` | (pre-existing, Fase 0.1) blueprint, baseline, dll — lihat "Required Reading" di `AGENTS.md` | [TODO: verifikasi keberadaan/isi tiap file referenced di AGENTS.md] |
 
 ---
@@ -75,4 +73,4 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 - **05** — detail status lifecycle SP/AR (INV/FP/SUB/KRM), modul Finance/Procurement/Approval engine (belum dibangun).
 - **07 §2** — SECURITY DEFINER/INVOKER `save_quotation`.
 - **08 TD-02 / TD-23** — verifikasi `has_permission()` seed + deactivate-revoke-session.
-- **00 (file ini)** — status `docs/progress.md`, `docs/project-audit.md`, dan isi subfolder `docs/*/` (Fase 0.1).
+- **00 (file ini)** — verifikasi keberadaan/isi subfolder `docs/*/` (Fase 0.1) yang direferensikan AGENTS.md. *(`docs/progress.md` & `docs/project-audit.md` sudah dihapus — superseded oleh root `PROGRESS.md` + `08_TECH_DEBT`/`09_ROADMAP`.)*
