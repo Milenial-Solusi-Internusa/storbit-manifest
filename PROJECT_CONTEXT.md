@@ -72,6 +72,6 @@ snapshot via pg_dump, rekam migrasi, commit).
 ## 7. FILE ATTACH DI PROJECT (timeless saja)
 | File | Sifat |
 |---|---|
-| PROMPTS.md | template prompt CC — timeless |
+| PROMPTS.md | template prompt CC — cuma dipakai di web (Project chat), sengaja nggak ditaruh di repo |
 | PROJECT_CONTEXT.md | konteks + penunjuk ke repo — timeless |
 Snapshot lama (handover fase, planning bertanggal) TIDAK di-attach — basi tiap kerjaan maju.
