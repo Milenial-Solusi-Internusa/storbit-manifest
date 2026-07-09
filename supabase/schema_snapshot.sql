@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict gWzcc6QhOwd0NLaoSKZkHscAhnPsAPM0JL9fVA479bNzuZEQd8M4Y4MEgANPhgh
+\restrict 5bLoKIDiqxxlImwIpBFh9GOKvpoqStF9gbF6SNu7WzOsXPtSMTUNkU7e5Ozylz6
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -11198,28 +11198,28 @@ ALTER TABLE public.prf ENABLE ROW LEVEL SECURITY;
 -- Name: prf prf_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_insert ON public.prf FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND (public.has_role('sales'::text) OR public.has_role('gm_bd'::text))));
+CREATE POLICY prf_insert ON public.prf FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND (public.has_role('sales'::text) OR public.has_role('gm_bd'::text)))));
 
 
 --
 -- Name: prf prf_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_select ON public.prf FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) AND ((created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above())));
+CREATE POLICY prf_select ON public.prf FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND ((created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above()))));
 
 
 --
 -- Name: prf prf_update_draft; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_update_draft ON public.prf FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND ((status)::text = 'DRAFT'::text))) WITH CHECK (((company_id = public.get_user_company_id()) AND (created_by = auth.uid())));
+CREATE POLICY prf_update_draft ON public.prf FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND ((status)::text = 'DRAFT'::text)))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()))));
 
 
 --
 -- Name: prf prf_update_status; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((status)::text = 'SUBMITTED'::text))) WITH CHECK ((company_id = public.get_user_company_id()));
+CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((status)::text = 'SUBMITTED'::text)))) WITH CHECK ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
@@ -12052,5 +12052,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict gWzcc6QhOwd0NLaoSKZkHscAhnPsAPM0JL9fVA479bNzuZEQd8M4Y4MEgANPhgh
+\unrestrict 5bLoKIDiqxxlImwIpBFh9GOKvpoqStF9gbF6SNu7WzOsXPtSMTUNkU7e5Ozylz6
 

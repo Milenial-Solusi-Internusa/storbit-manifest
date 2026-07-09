@@ -64,6 +64,7 @@
 
 **Procurement greenfield — PRF (Price Request Form):**
 - ✅ **Fase 0 (DB, live)** — tabel `prf` (52 kolom, child fields Sea/Air/Inland/Custom/Project sebagai kolom nullable) + trigger `set_prf_updated_at` + 4 RLS policy single-entity. Rekaman: `20260710000001_prf_fase0.sql`.
+- ✅ **Fix RLS super_admin (DB, live)** — 4 policy `prf` di-DROP + CREATE ulang, tiap kondisi dibungkus `is_super_admin() OR (…)` (Fase 0 keliru tanpa cabang ini → super_admin ditolak saat INSERT). super_admin kini bypass company scope (LIHAT PRF lintas-3-entitas, standar). BEDA dari cross-entity inbox procurement (Fase 3b, masih ditunda). Rekaman: `20260710000003_prf_rls_super_admin.sql`.
 - ✅ **Fase 1 (KODE)** — `PRFFormPage.jsx` (Section 01 Informasi Dasar + 02 Inquiry Details; conditional logic incoterm/DG/domestic; sumber inquiry auto-isi account) + menu `prf` di ERP_MENU_GROUPS/NEXUS_NAV (role[]) + render block + nomor auto `PRF/{ENTITAS}/{TAHUN}/{ROMAWI}/{URUT}`.
 - ✅ **Fase 2 (KODE, same file)** — Section 03 "Detail Layanan" child fields dinamis per `service_type` (Sea FCL/LCL + container qty jsonb, Air, Inland 25 armada, Custom PIB/PEB auto, Project); Notes digeser → Section 04; koreksi daftar add-on 6→11 opsi. Ganti `service_type` reset semua child; payload null-out per visibilitas. **Tanpa ubah DB** (kolom sudah ada Fase 0).
 - 📋 **Belum:** list/inbox procurement (Fase 3a), cross-entity inbox (Fase 3b). **⚠️ FLAG UX:** Custom butuh 2 syarat (service=custom DAN add-on Custom Clearance) — perlu konfirmasi user testing.

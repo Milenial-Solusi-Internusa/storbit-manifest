@@ -20,6 +20,14 @@
 - [x] **Verifikasi:** `npm run build` clean (1.51s). Lint 223 (net-zero; PRFFormPage 0 error). **Belum tes manual runtime** (perlu login sales/gm_bd) — cek: pilih tiap service_type → Section 03 tampil child sesuai; ganti service_type → child lama tereset; FCL container qty per tipe tersimpan jsonb; validasi mandatory child memblok Submit; custom tanpa add-on Custom Clearance → hint muncul.
 - **Housekeeping:** perubahan KODE ini **belum di-commit**. `schema_snapshot.sql` tetap STALE (belum ada tabel `prf`, `inquiry_id`, maupun `is_manager_or_above()` +gm_bd) → refresh via `pg_dump`. (Fase 2 tak ubah DB — kolom child sudah ada sejak Fase 0.)
 
+### Modul PRF — fix RLS super_admin (DB manual, sudah live)
+> **Konteks:** Policy RLS `prf` (Fase 0) TIDAK punya cabang `is_super_admin()` → super_admin (role tertinggi) DITOLAK saat INSERT PRF. Itu salah — super_admin harus bisa semua, konsisten pola tabel lain (mis. `hrga_requests` yang punya cabang `is_super_admin()`). **DB-only, kecil**; diperbaiki manual di SQL Editor & terverifikasi. **Tidak ada perubahan KODE** (`PRFFormPage.jsx` tak disentuh).
+- [x] **4 policy `prf` di-DROP + CREATE ulang** — tiap kondisi lama dibungkus `public.is_super_admin() OR (…)` sesuai jenis policy: `prf_insert` (WITH CHECK saja), `prf_select` (USING saja), `prf_update_draft` (USING & WITH CHECK), `prf_update_status` (USING & WITH CHECK).
+- [x] **Verifikasi (saat eksekusi manual):** `pg_policies` count=4; `is_super_admin` muncul di qual/with_check sesuai jenis (insert=check-only, select=using-only, update=keduanya).
+- **Konsekuensi:** super_admin kini LIHAT PRF lintas-3-entitas (wajar — super_admin bypass company scope di semua modul, sama seperti tabel lain). **BEDA dari Fase 3b** (inbox procurement lintas-entitas untuk role `procurement`, yang masih ditunda & butuh cabang RLS custom). Ini BUKAN membuka cross-entity untuk procurement — hanya memulihkan bypass super_admin standar.
+- **Rekaman:** `supabase/migrations/20260710000003_prf_rls_super_admin.sql`.
+- **Housekeeping:** **belum di-commit**. `schema_snapshot.sql` tetap STALE (belum ada `prf`/policy-nya/`inquiry_id`/`is_manager_or_above` +gm_bd) → refresh via `pg_dump`.
+
 ## 2026-07-09
 
 ### Role baru `gm_bd` (GM Business Development) — Paket 1 (frontend) + bug fix CEO Approval Lead Pool
