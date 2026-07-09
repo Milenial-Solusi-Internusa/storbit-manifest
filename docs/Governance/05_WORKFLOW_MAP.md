@@ -167,7 +167,7 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 
 ---
 
-## Procurement — PRF (Price Request Form) Flow (Fase 1 LIVE; Fase 2-3 belum)
+## Procurement — PRF (Price Request Form) Flow (Fase 1+2 LIVE; Fase 3 belum)
 
 ```
 [Sales / GM BD] Buat PRF (PRFFormPage)
@@ -175,8 +175,15 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
    → Section 01 Informasi Dasar (stream, deadline_quotation)
    → Section 02 Inquiry Details (direction, commodity, HS Code, MSDS jika DG,
        service_type, incoterms, commercial value/currency jika CIF/CIP/DDP,
-       pickup/delivery address per incoterm, add-on services, cargo_ready_date)
-   → Section 03 Notes
+       pickup/delivery address per incoterm, add-on services [11 opsi], cargo_ready_date)
+   → Section 03 Detail Layanan (child fields dinamis per service_type — MUNCUL saat service_type dipilih):
+       • Sea → Freight Type FCL/LCL; FCL → container types (multi) + qty per tipe; LCL → gw/dimension/volume/koli
+       • Air → gw/dimension/volume/koli
+       • Inland (service=inland ATAU add-on 'inland') → fleet types (multi) + pickup/delivery (wajib) + gw/dim (opsional)
+       • Custom (service=custom DAN add-on Custom Clearance) → doc type AUTO PIB/PEB dari direction
+       • Project → freight types (multi) + qty  (note: penentuan project masih sementara)
+       ganti service_type → reset semua field child; field tak relevan → payload null
+   → Section 04 Notes
    → nomor auto PRF/{ENTITAS}/{TAHUN}/{ROMAWI}/{URUT} (increment_document_sequence, reset per-bulan)
    → Simpan Draft (status=DRAFT) ATAU Submit (status=SUBMITTED + submitted_at)
    → INSERT prf (RLS prf_insert: hanya sales/gm_bd se-company)
@@ -185,8 +192,8 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
    → RLS prf_select (own OR procurement OR manager+); prf_update_status (procurement, saat SUBMITTED)
 ```
 
-- **Live sekarang:** FORM + menu + nomor auto (Fase 1). Sumber inquiry mengisi `inquiry_id` + auto `account_id`.
-- **Belum:** child fields Sea/Air/Inland/Project/Custom (Fase 2 — kolom DB sudah ada), list/inbox procurement (Fase 3a), cross-entity inbox (Fase 3b). Status QUOTED/EXPIRED disiapkan di CHECK tapi belum ada transisinya.
+- **Live sekarang:** FORM lengkap (Section 01/02/03/04) + menu + nomor auto (Fase 1+2). Sumber inquiry mengisi `inquiry_id` + auto `account_id`. Section 03 child fields dinamis per `service_type` (Fase 2).
+- **Belum:** list/inbox procurement (Fase 3a), cross-entity inbox (Fase 3b). Status QUOTED/EXPIRED disiapkan di CHECK tapi belum ada transisinya. **⚠️ FLAG UX (perlu konfirmasi user testing):** Custom butuh 2 syarat (service=custom DAN add-on Custom Clearance) — jika custom tanpa add-on, blok tak muncul + hint.
 - **Gate role:** menu terlihat sales/gm_bd/procurement/manager+; **hanya sales/gm_bd yang bisa Submit/Draft** (RLS `prf_insert`). Detail: `04_ROLE_PERMISSION_MATRIX`. Skema: `03_DATA_MODEL` (tabel `prf`). Rujukan desain: `AUDIT_PROCUREMENT.md`.
 
 ---
