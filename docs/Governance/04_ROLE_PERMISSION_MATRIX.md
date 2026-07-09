@@ -101,6 +101,8 @@ Sumber: matrix permission `CLAUDE.md`. **CRUD** = full, **R** = read-only, **-**
 | SERVICE | HRGA Request | HrgaShell (My/Buat/Semua[role]/Pending Approval[role]/Arsip) | mixed per sub-page | LIVE |
 | SERVICE | Asset Management | AssetShell (16 sub-objek) | inherit | LIVE |
 | SERVICE | IT Service Mgmt | ComingSoon | — | 📋 soon |
+| PROCUREMENT | PRF (Price Request Form — form) | PRFFormPage | role[sales,gm_bd,procurement,manager,ceo,admin,super_admin] | LIVE (Fase 1; menu terlihat semua role di list, tapi **hanya sales/gm_bd bisa Submit/Draft** — dijaga RLS `prf_insert`; role lain submit → toast error) |
+| PROCUREMENT | PR · PO · Vendor Mgmt | ComingSoon | — | 📋 soon |
 | REPORTING | Sales Report | CRMReportPage | role[super_admin,admin,ceo,gm,gm_bd,manager,supervisor] | LIVE |
 | REPORTING | Riwayat Visit | RiwayatVisitPage | role[super_admin,ceo,gm_bd] | LIVE (**gm_bd ditambah 9 Jul; gm SENGAJA tidak**) |
 | REPORTING | Indomarco Dashboard | IndomarcoDashboardPage | role[super_admin,admin,ceo,gm,gm_bd,manager,supervisor] (manager-or-above) | LIVE |

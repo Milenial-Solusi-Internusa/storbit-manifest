@@ -167,6 +167,30 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 
 ---
 
+## Procurement — PRF (Price Request Form) Flow (Fase 1 LIVE; Fase 2-3 belum)
+
+```
+[Sales / GM BD] Buat PRF (PRFFormPage)
+   → pilih Sumber (Customer / Prospect / Inquiry) → account_id / inquiry_id (+ auto-isi account dari inquiry)
+   → Section 01 Informasi Dasar (stream, deadline_quotation)
+   → Section 02 Inquiry Details (direction, commodity, HS Code, MSDS jika DG,
+       service_type, incoterms, commercial value/currency jika CIF/CIP/DDP,
+       pickup/delivery address per incoterm, add-on services, cargo_ready_date)
+   → Section 03 Notes
+   → nomor auto PRF/{ENTITAS}/{TAHUN}/{ROMAWI}/{URUT} (increment_document_sequence, reset per-bulan)
+   → Simpan Draft (status=DRAFT) ATAU Submit (status=SUBMITTED + submitted_at)
+   → INSERT prf (RLS prf_insert: hanya sales/gm_bd se-company)
+
+[Procurement] lihat PRF submitted → acknowledge (status=ACKNOWLEDGED)   ← Fase 3a (list/inbox) BELUM
+   → RLS prf_select (own OR procurement OR manager+); prf_update_status (procurement, saat SUBMITTED)
+```
+
+- **Live sekarang:** FORM + menu + nomor auto (Fase 1). Sumber inquiry mengisi `inquiry_id` + auto `account_id`.
+- **Belum:** child fields Sea/Air/Inland/Project/Custom (Fase 2 — kolom DB sudah ada), list/inbox procurement (Fase 3a), cross-entity inbox (Fase 3b). Status QUOTED/EXPIRED disiapkan di CHECK tapi belum ada transisinya.
+- **Gate role:** menu terlihat sales/gm_bd/procurement/manager+; **hanya sales/gm_bd yang bisa Submit/Draft** (RLS `prf_insert`). Detail: `04_ROLE_PERMISSION_MATRIX`. Skema: `03_DATA_MODEL` (tabel `prf`). Rujukan desain: `AUDIT_PROCUREMENT.md`.
+
+---
+
 ## [Modul lain]
 
 - **Finance (transaksi), Procurement/PO, Approval engine runtime, Billing/AR-AP, Reporting konsolidasi** — [TODO: belum cukup info / belum dibangun. Lihat `docs/09_ROADMAP.md` status 📋].

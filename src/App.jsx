@@ -39,6 +39,7 @@ const ProspectListPage     = lazy(() => import('./modules/crm/ProspectListPage')
 const ProspectFormPage     = lazy(() => import('./modules/crm/ProspectFormPage'));
 const InquiryListPage      = lazy(() => import('./modules/crm/InquiryListPage'));
 const InquiryFormPage      = lazy(() => import('./modules/crm/InquiryFormPage'));
+const PRFFormPage          = lazy(() => import('./modules/procurement/PRFFormPage'));
 const QuotationFormPage    = lazy(() => import('./modules/crm/QuotationFormPage'));
 const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'));
 const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
@@ -577,6 +578,7 @@ const ERP_MENU_GROUPS = [
     label: 'Procurement & Vendor',
     items: [
       { section: 'Direct Procurement' },
+      { id: 'prf', label: 'PRF', icon: FileText, role: ['sales','gm_bd','procurement','manager','ceo','admin','super_admin'] },
       {
         id: 'procRequest', label: 'Procurement Request', icon: ClipboardCheck,
         children: [
@@ -931,7 +933,12 @@ const NEXUS_NAV = [
           { id: 'log-pengiriman', label: 'Pengiriman', icon: Truck, soon: true },
         ],
       },
-      { id: 'nav-proc', label: 'Procurement', icon: ShoppingCart, tone: 'peach', soon: true },
+      {
+        id: 'nav-proc', label: 'Procurement', icon: ShoppingCart, tone: 'peach',
+        children: [
+          { id: 'prf', label: 'PRF', icon: FileText },
+        ],
+      },
       {
         id: 'nav-hrga', label: 'HRGA', icon: Users, tone: 'rose',
         children: [
@@ -2606,7 +2613,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3108,6 +3115,17 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
+
+          {/* ── Procurement: PRF (Price Request Form) ───────────────────────── */}
+          {activeMenu === 'prf' && (canRenderPage('prf') ? (
+            <ErrorBoundary title="PRF temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <PRFFormPage onBack={() => setActiveMenu('home')} showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
 
           {/* ── Reporting & Governance: Sales Report ────────────────────────── */}
           {activeMenu === 'reporting-sales' && (
