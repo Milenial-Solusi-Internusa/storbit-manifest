@@ -12,9 +12,9 @@
 | Styling | TailwindCSS 3 + inline-style tokens (`PASTEL` / per-modul `C`/`D`/`S`) |
 | Backend | Supabase — PostgreSQL + Auth + RLS + Edge Functions (Deno) + Storage |
 | Deploy | Vercel — auto-deploy dari branch `main` → production |
-| Live URL | `nexus.dli.my.id` (production) |
-| Repo | GitHub `mhmmdjaelaniii/storbit-manifest`, branch `main` = integrasi + production (solo dev; `fix/*` untuk hotfix) |
-| Supabase project ref | `untmpqceexwxzuhlmyrg` |
+| Live URL | `nexus.msigroup.co.id` (production; lama `nexus.dli.my.id` dibiarkan hidup sementara sbg safety net) |
+| Repo | GitHub `Milenial-Solusi-Internusa/storbit-manifest` (pasca-migrasi org 10 Jul; ⚠️ masih PUBLIC), branch `main` = integrasi + production (solo dev; `fix/*` untuk hotfix) |
+| Supabase project ref | `untmpqceexwxzuhlmyrg` (org "Milenial Solusi Internusa"; ref tak berubah pasca-migrasi) |
 | DB pooler | `aws-1-ap-northeast-2.pooler.supabase.com:5432` (region Seoul) |
 | Storage bucket publik | `assets` (logo MSI), `avatars` (foto profil) |
 

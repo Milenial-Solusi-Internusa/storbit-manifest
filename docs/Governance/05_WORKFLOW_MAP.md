@@ -2,7 +2,7 @@
 
 > Alur bisnis per modul live. Sumber: `CLAUDE.md` (CRM Flow, phase notes), `docs/03_DATA_MODEL.md`. Notasi: **[role]** = pelaku, **⚙** = trigger/otomatis DB.
 >
-> **Diperbarui 2026-07-08 — alur SP 12 tahap FASE 0-3** (mesin status `sp_orders.status` via `sp_recompute_status`, LIVE s/d BTB_TERBIT). Bagian non-SP belum ditinjau ulang di update ini.
+> **Diperbarui 2026-07-10 (audit CRM E2E) — koreksi mesin status QUOTATION** (DRAFT→SUBMITTED→SENT, bukan DRAFT→SENT) + struktur pipeline (tabel `accounts`, tak ada `deals`) + section **Aging Pipeline** (EF `aging-pipeline`, belum deploy ulang/belum dijadwalkan) + trigger `trg_z_sync_last_activity`. Sebelumnya: alur SP 12 tahap FASE 0-3 (mesin status `sp_orders.status` via `sp_recompute_status`, LIVE s/d BTB_TERBIT). Bagian non-CRM/non-SP belum ditinjau ulang.
 
 ---
 
@@ -28,7 +28,8 @@ Lead Pool ──┐
  [Sales] buat INQUIRY  (inquiry_no, service_type, route, commodity)  →  prospect_id → accounts
             ▼
  [Sales] buat QUOTATION dari Inquiry  (quotation_no, items per-section, currency, discount, VAT)
-            │   status: DRAFT → SUBMITTED → SENT (Kirim ke Customer, ⚙ quote_sent_at) → ACCEPTED/REJECTED
+            │   status: DRAFT → SUBMITTED → SENT (Kirim ke Customer, ⚙ quote_sent_at)
+            │            ACCEPTED / REJECTED / EXPIRED = label display, TANPA transisi UI (lihat catatan)
             │   SLA dihitung pricing_done_at → quote_sent_at (target per service_type)
             │   simpan via RPC save_quotation (atomik); PDF via @react-pdf/renderer
             ▼
@@ -43,12 +44,24 @@ Lead Pool ──┐
 - **Prospect → stage**: [sales] drag Kanban / edit form. Manager+ bisa semua; sales hanya miliknya (RLS).
 - **WON → customer**: **otomatis DB** (`trg_set_customer_on_won`, BEFORE INSERT OR UPDATE) — sumber kebenaran tunggal; menutup semua jalur (drag/edit/import). Frontend `WinLossModal` collect alasan WON/LOST (redundan tapi dipertahankan).
 - **LOST**: account_status='lost' + lost_reason (kategori).
-- **Lead Pool** (`account_status='lead_pool'`): arsip lead → [sales] "Tarik ke Pipeline" → account_status='prospect'.
+- **Lead Pool** (`account_status='lead_pool'` **DAN** `is_in_lead_pool=true` — dua kolom kini disinkron, lihat TD-50): arsip lead → [sales] "Tarik ke Pipeline" → butuh approval → account_status='prospect'. ⚠️ **479 baris pool seluruhnya hasil migrasi 13 Jun 2026 18:59:03** (satu timestamp, `lead_pool_reason='Migrasi dari sistem lama'`) — **nol baris berformat "Aging N hari di stage X"**. EF aging-pipeline ADA sejak 25 Jun tapi **TAK PERNAH DIJADWALKAN** (pg_cron tak terpasang, schema `cron` tak ada). Lihat "Aging Pipeline" di bawah.
 - **Activities** (call/visit/meeting/email/WA/followup): [sales] catat; status todo→done/cancelled; tiap transisi tulis `activity_logs` (feed). Convert-to-prospect dari activity tanpa account.
+
+**Mesin status QUOTATION (terverifikasi kode):**
+- **DRAFT → SUBMITTED**: [sales] tombol **"Submit Quotation"** (`QuotationFormPage.jsx:730,790`, `status='SUBMITTED'`). Tombol **disabled sampai `inquiry_id` terisi** — HARD gate **ketertautan inquiry** (bukan gate diskon/margin). Simpan Draft = `status='DRAFT'`.
+- **SUBMITTED → SENT**: [sales] tombol **"Kirim ke Customer"** (`QuotationDetailPage.jsx:258`, `status='SENT'` + ⚙ `quote_sent_at`); tombol muncul saat `status='SUBMITTED'`.
+- **ACCEPTED / REJECTED / EXPIRED** = **label display saja, TANPA transisi UI** — tak ada aksi/tombol yang menulis status ini (nol baris ACCEPTED di DB). ⚠️ Konsekuensi: trigger `sync_deal_value_on_quotation_accept` (nyala hanya saat ACCEPTED) **tak pernah jalan** → 88% deal WON `estimated_value` kosong (lihat `08_TECH_DEBT.md` **TD-54**).
+
+**Struktur pipeline (koreksi — TIDAK ada tabel `deals`/`pipeline`):**
+- Pipeline = tabel **`accounts`**, kolom **`pipeline_stage`**. Nilai deal disimpan di **`accounts.estimated_value`** (BUKAN `deal_value`).
+- Trigger di `accounts`: `trg_set_customer_on_won` (WON → customer) + `trg_z_track_stage_change` (log perubahan stage → `activity_logs`). Trigger di `quotations`: `trg_z_sync_deal_value_on_quotation_accept` (quotation ACCEPTED → `accounts.estimated_value`; lihat catatan TD-54 di atas).
+- **`set_customer_on_won` terbukti sehat** (audit 10 Jul): 33 WON, nol `account_status` bukan 'customer', nol `became_customer_at` NULL.
 
 **Trigger otomatis terkait:**
 - `trg_set_customer_on_won` — WON → customer.
 - `trg_z_gen_customer_code_upd` / `trg_gen_customer_code_ins` — generate `code` customer (prefix entity + `/CUST/` + tahun + romawi) saat jadi customer & code kosong (guard `deleted_at IS NULL`).
+- `trg_z_track_stage_change` — log perubahan `pipeline_stage` ke `activity_logs`.
+- `trg_z_sync_last_activity` [BARU 10 Jul] — sinkron `accounts.last_activity_at` dari tabel `activities` (AFTER INSERT/UPDATE/DELETE) = `max(COALESCE(completed_at, created_at))`. Menggantikan penulisan sekali-saat-buat yang tak jujur (lihat TD-52/TD-59).
 - `capture_login_session()` — catat login ke `user_login_logs` (sumber feed "Login").
 
 **Gate & Approval (pipeline / WON / lead pool)** — terverifikasi di kode (`PipelineKanbanPage.jsx`, dll):
@@ -58,6 +71,39 @@ Lead Pool ──┐
 - **Lead Pool → Pipeline — HARD (butuh approval):** [sales] "Tarik ke Pipeline" → `pull_status='pending'` → [manager/supervisor/admin] **approve** (Approval Lead Pool) → balik ke pipeline stage sebelumnya. Reject → tetap di pool.
 - **TOP Request — soft:** [sales/manager] ajukan Terms of Payment → insert `top_requests` status='submitted' → approval finance (proses downstream, di luar FE).
 - **MOM approval — HARD:** MOM `submitted` → [CEO/admin] **approve/reject** (MOMDetailPage).
+
+---
+
+## Aging Pipeline (Lead idle → Lead Pool) — Edge Function (BELUM DI-DEPLOY ULANG / BELUM DIJADWALKAN)
+
+Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`) — pindahkan lead yang terlalu lama diam ke Lead Pool + notifikasi ke sales pemilik. Sebelumnya ter-deploy dgn slug auto `bright-handler` & **tak ada di version control**; kini di-commit (branch `feat/aging-pipeline`, belum merge).
+
+**Batas diam per stage (hari):** NEW 7 · CONTACTED 5 · QUALIFIED 5 · PROPOSAL 3 · NEGOTIATION 14.
+
+**Perhitungan:** `diamHari = Math.floor((now − MAX(stage_changed_at, last_activity_at)) / hari)`. Lead dianggap "disentuh" bila **stage naik ATAU ada aktivitas** (pakai yang paling baru dari keduanya). `Math.floor` (pembulatan ke bawah) → lead dapat jatah hari penuh. Bila `diamHari > batas`:
+- `is_in_lead_pool=true`, `account_status='lead_pool'` (kedua kolom serempak — fix TD-50), `lead_pool_at=now`, `lead_pool_reason='Aging N hari di stage X'`, + notifikasi ke `assigned_to` (`event_type='crm.lead_idle'`).
+- **Mode kering** (`?dry_run=true`) → laporkan kandidat (diperiksa/memenuhi/per-stage/daftar), **tak memindahkan** apa pun.
+
+**Perbaikan EF (commit `ca7aad3`, `9f59f8c`, `96974bb`):**
+1. +aturan **NEW:7** (sebelumnya 157 lead NEW tanpa aturan → tak pernah diperiksa).
+2. Aging dari **`MAX(stage_changed_at, last_activity_at)`** (bukan `stage_changed_at` saja) — menyelamatkan lead yang digarap meski stage tak berubah (mitigasi TD-51).
+3. **Fix insert notifikasi** — kolom `message`→`body`, buang `type`, +`event_type='crm.lead_idle'` +`reference_type`/`reference_id`. Insert LAMA **PASTI GAGAL** (kolom `message`/`type` tak ada di `notifications`) dan gagal diam-diam (tak ada cek error).
+4. Buang `PREV_STAGE` dead code.
+5. +mode kering (`dry_run`).
+6. +`.is('deleted_at', null)`.
+7. `Math.floor` (jatah hari penuh).
+8. Set `account_status` bareng `is_in_lead_pool` (TD-50).
+
+**Simulasi `dry_run` (10 Jul, SEBELUM `Math.floor`):** 472 diperiksa, **332 memenuhi syarat**. Sebaran: CONTACTED 129 · NEW 124 · QUALIFIED 53 · PROPOSAL 20 · NEGOTIATION 6. Setelah `Math.floor` angkanya akan turun (lead yang belum genap harinya tak ikut), tapi **angka pasti BELUM DIUJI** — EF dihapus sebelum sempat dijalankan ulang. **Uji ulang `dry_run` setelah TD-60 beres.**
+
+**Rencana peluncuran (BELUM dijalankan — urut):**
+1. Selidiki **TD-60** (`verify_jwt` tak berlaku) — **prasyarat** (function dihapus sbg mitigasi; tanpa proteksi, siapa pun yang tahu URL bisa memicu pemindahan 332 lead).
+2. Deploy ulang `aging-pipeline` dgn JWT aktif.
+3. Mode kering, ekspor daftar kandidat.
+4. Beri sales tenggat **~1 minggu** ("catat aktivitas kalau lead masih digarap").
+5. Pasang **pg_cron** harian, matikan `dry_run`.
+
+> ⚠️ Alasan tenggat: 332 lead (**70% pipeline aktif** — 332 dari 472) bisa pindah dalam semalam — sales perlu peringatan lebih dulu, bukan kejutan.
 
 ---
 

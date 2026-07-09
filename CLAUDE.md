@@ -5,9 +5,11 @@
 ## Quick Reference
 
 - **Stack:** React 19 + Vite 8 · TailwindCSS 3 · Supabase (PostgreSQL + Auth + RLS + Edge Functions + Storage) · Vercel auto-deploy dari `main` (= production).
-- **Supabase ref:** `untmpqceexwxzuhlmyrg` · pooler `aws-1-ap-northeast-2.pooler.supabase.com:5432`.
-- **Live URL:** `nexus.dli.my.id` (production).
-- **Repo:** GitHub `mhmmdjaelaniii/storbit-manifest`, branch `main` (solo dev; `fix/*` hotfix).
+- **Supabase ref:** `untmpqceexwxzuhlmyrg` (org "Milenial Solusi Internusa", project `nexus-msi`; ref TIDAK berubah pasca-migrasi) · pooler/`pg_dump` host **`aws-1-ap-northeast-2.pooler.supabase.com:5432`** (region Seoul — ⚠️ BUKAN `ap-southeast-1`; catatan lama yang salah menyebabkan gagal koneksi backup).
+- **Live URL:** `nexus.msigroup.co.id` (production, CNAME via Domainesia) · **lama `nexus.dli.my.id` sengaja dibiarkan hidup** sbg safety net (hapus ~1 minggu setelah domain baru stabil).
+- **Repo:** GitHub `Milenial-Solusi-Internusa/storbit-manifest`, branch `main` (solo dev; `fix/*` hotfix). ⚠️ **repo masih PUBLIC** (backlog keamanan — kode ERP 3 entitas + schema terbuka).
+- **Deploy:** Vercel team "MSI Group" (Hobby), project `nexus` · project Vercel lama (akun pribadi Hobby, `storbit-manifest`) dibiarkan hidup sementara (safety net).
+- **Migrasi kepemilikan (9-10 Jul 2026):** Supabase/GitHub/Vercel/domain dipindah dari akun pribadi ke org MSI. Backup penuh (schema+data, 3.5 MB, 96 tabel) diambil sebelum migrasi. **Backlog keamanan (belum dikerjakan):** repo PUBLIC → private; 2FA 2 Owner org GitHub (mhmmdjaelaniii, msigroup-sys); Vercel Hobby → paid (pemakaian komersial); Supabase Auth Site URL masih `localhost:3000` + Redirect URLs kosong (rapikan); rename repo→`nexus` (opsional).
 - **Entity UUID:** MSI `0e1840d8-e6fb-4190-bd09-88338e68b492` · JCI `42569e7c-531b-4d2b-832a-d5a7268c455b` · SOA `d2e5e565-5f67-4954-b8d9-5979a2a0c697`.
 - **Sumber kebenaran DB:** `supabase/schema_snapshot.sql` (73 tabel) — BUKAN `migrations/` (berhenti 3 Jun 2026).
 - **Brand:** navy `#144682` · orange `#E85A1E` · coral `#F08C7D` · app shell putih `#ffffff` · Montserrat (heading) + Inter (body) · Lucide icons · **no emoji, no dark green**.
