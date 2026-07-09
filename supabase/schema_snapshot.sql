@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict J9QjJqC3wRYhULAj7u1LP0Wh9naqapspW8a5VP8MsdQJmmjNFYKEyvArrzGG7L0
+\restrict gWzcc6QhOwd0NLaoSKZkHscAhnPsAPM0JL9fVA479bNzuZEQd8M4Y4MEgANPhgh
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -3616,6 +3616,7 @@ CREATE TABLE public.prf (
     project_freight_types text[],
     project_qty integer,
     notes text,
+    inquiry_id uuid,
     CONSTRAINT prf_status_check CHECK (((status)::text = ANY (ARRAY['DRAFT'::text, 'SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'CANCELLED'::text, 'QUOTED'::text, 'EXPIRED'::text])))
 );
 
@@ -8688,6 +8689,14 @@ ALTER TABLE ONLY public.prf
 
 
 --
+-- Name: prf prf_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_inquiry_id_fkey FOREIGN KEY (inquiry_id) REFERENCES public.inquiries(id);
+
+
+--
 -- Name: prf prf_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12043,5 +12052,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict J9QjJqC3wRYhULAj7u1LP0Wh9naqapspW8a5VP8MsdQJmmjNFYKEyvArrzGG7L0
+\unrestrict gWzcc6QhOwd0NLaoSKZkHscAhnPsAPM0JL9fVA479bNzuZEQd8M4Y4MEgANPhgh
 

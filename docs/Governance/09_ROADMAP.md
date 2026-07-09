@@ -4,7 +4,7 @@
 >
 > **Legenda:** ✅ Done · 🔄 In Progress · 📋 Planned · ⏸ Deferred
 >
-> **Diperbarui 2026-07-08 — FASE 0-3 done (mesin status SP LIVE s/d BTB_TERBIT), FASE 4-5 + tech debt next.** Fakta: `03_DATA_MODEL`/`05_WORKFLOW_MAP`/`08_TECH_DEBT`.
+> **Diperbarui 2026-07-10 — Modul PRF (Procurement) Fase 1 LIVE (form + menu + nomor auto); FASE 0-3 SP done (mesin status LIVE s/d BTB_TERBIT), FASE 4-5 + tech debt next.** Fakta: `03_DATA_MODEL`/`05_WORKFLOW_MAP`/`08_TECH_DEBT`.
 
 ---
 
@@ -52,10 +52,22 @@
 | **Service Management** | IT Service Management (ticketing) | 📋 | |
 | **Finance** | COA, Cost Centers, Currencies, Exchange Rates, Taxes | 🔄 | tabel ada; UI Finance defaults (Admin Settings) ✅, modul transaksi belum |
 | | Billing/Invoice, AR Collection, AP, Cash/Bank, Accounting | 📋 | |
-| **Procurement** | PR, PO, Vendor Mgmt | 📋 | tabel `vendors` ada |
+| **Procurement** | **PRF (Price Request Form)** — form + menu + nomor auto (Fase 1) | ✅ | tabel `prf` (FASE 0) + `PRFFormPage`; sales/gm_bd bikin, procurement lihat. Child fields (Fase 2) + list/inbox (Fase 3a) + cross-entity (Fase 3b) belum. **Belum tes manual runtime.** |
+| | PR, PO, Vendor Mgmt | 📋 | tabel `vendors` ada |
 | **Approval Center** | Reusable approval engine | 🔄 | tabel + Admin Settings UI ada; engine runtime belum |
 | **Document Mgmt / API / Portal / Reporting / Audit** | — | 📋 | arah jangka panjang (`AGENTS.md`) |
 | **App Launcher** | Bento module grid + permission gating | ✅ | 2.0H |
+
+---
+
+## Selesai Terbaru (10 Jul 2026 — Modul PRF Fase 1)
+
+**Procurement greenfield — PRF (Price Request Form):**
+- ✅ **Fase 0 (DB, live)** — tabel `prf` (52 kolom, child fields Sea/Air/Inland/Custom/Project sebagai kolom nullable) + trigger `set_prf_updated_at` + 4 RLS policy single-entity. Rekaman: `20260710000001_prf_fase0.sql`.
+- ✅ **Fase 1 (KODE)** — `PRFFormPage.jsx` (Section 01 Informasi Dasar + 02 Inquiry Details + 03 Notes; conditional logic incoterm/DG/domestic; sumber inquiry auto-isi account) + menu `prf` di ERP_MENU_GROUPS/NEXUS_NAV (role[]) + render block + nomor auto `PRF/{ENTITAS}/{TAHUN}/{ROMAWI}/{URUT}`.
+- 📋 **Belum:** child fields form (Fase 2), list/inbox procurement (Fase 3a), cross-entity inbox (Fase 3b).
+
+> ⚠️ **Belum tes manual runtime** (perlu login sales/gm_bd). Hanya sales/gm_bd bisa Submit/Draft (RLS). ⚠️ Kolom `inquiry_id` ditambah Den manual — direkam di `supabase/migrations/20260710000002_prf_add_inquiry_id.sql`. `schema_snapshot.sql` STALE. Detail: `PROGRESS.md` 2026-07-10 + `AUDIT_PROCUREMENT.md`.
 
 ---
 
@@ -146,6 +158,7 @@ Berdasarkan kondisi LIVE (FASE 0-3 selesai) + `08_TECH_DEBT.md`:
 6. Sisanya (TD-40 2D sync · TD-42 rank doc/`DESIGN_SP_SCHEMA` · TD-43 integrasi email/n8n · TD-44 EF docs) → rujuk `08_TECH_DEBT.md`.
 
 **Backlog domain lain (open):**
+- **Procurement PRF lanjutan** — Fase 2 (child fields Sea/Air/Inland/Project/Custom di form; kolom DB sudah ada), Fase 3a (list/inbox procurement + acknowledge), Fase 3b (cross-entity inbox). Rujukan: `AUDIT_PROCUREMENT.md`.
 - **CRM/Quotation gates** — verifikasi enforcement approval diskon/margin (downstream?) + BANT gate (`05_WORKFLOW_MAP.md` — Gate & Approval).
 - **RBAC/RLS `accounts`** + dropdown role-scope (TD-01/04/06).
 - **Runtime-verify staging** (accounts/Activity cutover) + **deploy Edge Functions** (TD-21/22) + **drop dormant** `sales_calls`/`visits`/`customers`/`profiles.role` (TD-18/19/20).
