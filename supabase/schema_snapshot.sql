@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 7G3lhM7H8tdYOgAkfRLlItTIO3EiHlXcvpBUi0FYDSYaPb2y9AMcOhIDXkFJkRp
+\restrict MRHh6L8pFD7DUoPVyiN4V7MioBsaF0t1332LfqxVg902GH9peNi3nGyBHwwctnD
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1269,6 +1269,36 @@ BEGIN
     END IF;
   END IF;
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: sync_last_activity_on_account(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_last_activity_on_account() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account_id uuid;
+BEGIN
+  v_account_id := COALESCE(NEW.account_id, OLD.account_id);
+  IF v_account_id IS NULL THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  UPDATE accounts a
+  SET last_activity_at = (
+    SELECT max(COALESCE(act.completed_at, act.created_at))
+    FROM activities act
+    WHERE act.account_id = v_account_id
+      AND act.deleted_at IS NULL
+  )
+  WHERE a.id = v_account_id;
+
+  RETURN COALESCE(NEW, OLD);
 END;
 $$;
 
@@ -7227,6 +7257,13 @@ CREATE TRIGGER trg_z_sync_deal_value_on_quotation_accept AFTER UPDATE ON public.
 
 
 --
+-- Name: activities trg_z_sync_last_activity; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_z_sync_last_activity AFTER INSERT OR DELETE OR UPDATE ON public.activities FOR EACH ROW EXECUTE FUNCTION public.sync_last_activity_on_account();
+
+
+--
 -- Name: profiles trg_z_sync_profile_email; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12084,5 +12121,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 7G3lhM7H8tdYOgAkfRLlItTIO3EiHlXcvpBUi0FYDSYaPb2y9AMcOhIDXkFJkRp
+\unrestrict MRHh6L8pFD7DUoPVyiN4V7MioBsaF0t1332LfqxVg902GH9peNi3nGyBHwwctnD
 
