@@ -48,14 +48,14 @@ Deno.serve(async (req) => {
 
     if (terakhirDisentuh === 0) continue // tak ada acuan waktu, lewati
 
-    const diamHari = (now.getTime() - terakhirDisentuh) / (1000 * 60 * 60 * 24)
+    const diamHari = Math.floor((now.getTime() - terakhirDisentuh) / (1000 * 60 * 60 * 24))
     if (diamHari <= limit) continue
 
     kandidat.push({
       id: p.id,
       nama: p.name,
       stage: p.pipeline_stage,
-      diam_hari: Math.floor(diamHari),
+      diam_hari: diamHari,
       assigned_to: p.assigned_to,
       company_id: p.company_id,
     })
