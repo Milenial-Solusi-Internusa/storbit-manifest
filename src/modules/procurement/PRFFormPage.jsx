@@ -1,7 +1,8 @@
 // src/modules/procurement/PRFFormPage.jsx
-// PRF (Price Request Form) — Fase 1: Section 01 Informasi Dasar + 02 Inquiry Details.
+// PRF (Price Request Form) — Fase 1+2: Section 01 Informasi Dasar + 02 Inquiry Details
+// + 03 Detail Layanan (child fields dinamis per service_type: Sea/Air/Inland/Custom/Project).
 // UI mirrors InquiryFormPage (slate/white, navy/orange, Montserrat/Inter/IBM Plex Mono).
-// Child fields (Sea/Air/Inland/Project/Custom) = Fase 2 (NOT here). No list/inbox (Fase 3a).
+// No list/inbox (Fase 3a).
 // Style tokens (C, S) + helpers (Field/Pill/Chevron) copied from InquiryFormPage per pattern.
 import { useState, useEffect } from 'react';
 import {
@@ -48,15 +49,37 @@ const STREAM_FALLBACK = [
   { value: 'Project', label: 'Project' }, { value: 'Domestic', label: 'Domestic' },
   { value: 'Warehouse', label: 'Warehouse' },
 ];
-// Add-on services. Customs-family (disabled when direction = domestic) + Others.
+// Add-on services (11). Customs-family (disabled when direction = domestic) marked customs:true.
 const ADD_ONS = [
   { value: 'custom_clearance', label: 'Custom Clearance', customs: true },
+  { value: 'inland', label: 'Inland', customs: false },
   { value: 'import_license_undername', label: 'Import License (Undername)', customs: true },
   { value: 'import_license_pi', label: 'Import License (PI)', customs: true },
   { value: 'export_license', label: 'Export License', customs: true },
   { value: 'ls', label: 'LS', customs: true },
+  { value: 'warehouse_umum', label: 'Warehouse Umum', customs: false },
+  { value: 'warehouse_reefer', label: 'Warehouse Reefer', customs: false },
+  { value: 'tkbm', label: 'TKBM', customs: false },
+  { value: 'insurance', label: 'Insurance', customs: false },
   { value: 'others', label: 'Others', customs: false },
 ];
+// ── Child field option lists (Fase 2) ──
+const SEA_CONTAINERS = [
+  { code: '20', label: "20'" }, { code: '40', label: "40'" }, { code: '40HC', label: "40'HC" },
+  { code: '20RF', label: "20' Reefer" }, { code: '40RF', label: "40' Reefer" },
+];
+const SEA_FREIGHT_TYPES = [{ value: 'fcl', label: 'FCL' }, { value: 'lcl', label: 'LCL' }];
+const INLAND_FLEETS = [
+  'Blind Van', 'Pick Up (Bak)', 'Pick Up (Box)', 'Pick Up (Reefer)',
+  'CDE (Bak)', 'CDE (Box)', 'CDE (Reefer)',
+  'CDD (Bak)', 'CDD (Box)', 'CDD (Reefer)', 'CDD Long',
+  'Fuso (Bak)', 'Fuso (Box)', 'Fuso (Reefer)',
+  'Tronton (Bak)', 'Tronton (Box)', 'Tronton (Reefer)', 'Trinton', 'Tronton Wingbox',
+  'Trailer Container 20 Feet (Dry)', 'Trailer Container 20 Feet (Reefer)',
+  'Trailer Container 40 Feet (Dry)', 'Trailer Container 40 Feet (Reefer)',
+  'Truk Gandeng', 'Lowbed Trailer',
+];
+const PROJECT_FREIGHTS = ["20' OT", "40' OT", "20' FR", "40' FR", 'RORO', 'Breakbulk'];
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const toRoman = (m) => ROMAN[m] || String(m);
@@ -127,6 +150,12 @@ export default function PRFFormPage({ onBack, showToast }) {
     service_type: '', incoterms: '', commercial_value: '', commercial_currency: '',
     origin: '', destination: '', pickup_address: '', delivery_address: '',
     add_on_services: [], add_on_others: '', cargo_ready_date: '',
+    // Section 03 — child fields (per service_type)
+    sea_freight_type: '', sea_container_types: [], sea_container_qty: {},
+    sea_lcl_gw: '', sea_lcl_dimension: '', sea_lcl_volume: '', sea_lcl_koli: '',
+    air_gw: '', air_dimension: '', air_volume: '', air_koli: '',
+    inland_fleet_types: [], inland_pickup_address: '', inland_delivery_address: '', inland_gw: '', inland_dimension: '',
+    project_freight_types: [], project_qty: '',
     notes: '',
   });
   const [customers, setCustomers] = useState([]);
@@ -155,7 +184,30 @@ export default function PRFFormPage({ onBack, showToast }) {
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const setNum = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value.replace(/[^\d.]/g, '') }));
+  const setInt = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value.replace(/\D/g, '') }));
   const toggleArr = (k, v) => setForm(f => ({ ...f, [k]: f[k].includes(v) ? f[k].filter(x => x !== v) : [...f[k], v] }));
+
+  // Child reset defaults — applied on service_type change (spec: reset state child).
+  const CHILD_RESET = {
+    sea_freight_type: '', sea_container_types: [], sea_container_qty: {},
+    sea_lcl_gw: '', sea_lcl_dimension: '', sea_lcl_volume: '', sea_lcl_koli: '',
+    air_gw: '', air_dimension: '', air_volume: '', air_koli: '',
+    inland_fleet_types: [], inland_pickup_address: '', inland_delivery_address: '', inland_gw: '', inland_dimension: '',
+    project_freight_types: [], project_qty: '',
+  };
+  const onServiceTypeChange = (e) => setForm(f => ({ ...f, ...CHILD_RESET, service_type: e.target.value }));
+  // Sea FCL container: toggle type + manage per-type qty key.
+  const toggleContainer = (code) => setForm(f => {
+    const has = f.sea_container_types.includes(code);
+    const types = has ? f.sea_container_types.filter(x => x !== code) : [...f.sea_container_types, code];
+    const qty = { ...f.sea_container_qty };
+    if (has) delete qty[code]; else if (qty[code] == null) qty[code] = '';
+    return { ...f, sea_container_types: types, sea_container_qty: qty };
+  });
+  const setContainerQty = (code) => (e) => {
+    const v = e.target.value.replace(/\D/g, '');
+    setForm(f => ({ ...f, sea_container_qty: { ...f.sea_container_qty, [code]: v } }));
+  };
 
   // Direction change: domestic disables Custom Only + customs add-ons → clear if selected.
   const onDirectionChange = (e) => {
@@ -184,6 +236,15 @@ export default function PRFFormPage({ onBack, showToast }) {
   const pickupReq = INCOTERMS_PICKUP.includes(form.incoterms);
   const deliveryReq = INCOTERMS_DELIVERY.includes(form.incoterms);
   const showOthers = form.add_on_services.includes('others');
+  // Section 03 — child visibility (decision tree)
+  const showSea = form.service_type === 'sea';
+  const showAir = form.service_type === 'air';
+  const showProject = form.service_type === 'project';
+  const showInland = form.service_type === 'inland' || form.add_on_services.includes('inland');
+  const showCustom = form.service_type === 'custom' && form.add_on_services.includes('custom_clearance');
+  const isFCL = form.sea_freight_type === 'fcl';
+  const isLCL = form.sea_freight_type === 'lcl';
+  const customDocType = form.direction === 'import' ? 'PIB' : form.direction === 'export' ? 'PEB' : null;
 
   const validate = () => {
     const e = {};
@@ -201,6 +262,35 @@ export default function PRFFormPage({ onBack, showToast }) {
     if (pickupReq && !form.pickup_address.trim()) e.pickup_address = 'Wajib untuk incoterm ini';
     if (deliveryReq && !form.delivery_address.trim()) e.delivery_address = 'Wajib untuk incoterm ini';
     if (!form.cargo_ready_date) e.cargo_ready_date = 'Wajib diisi';
+    // Section 03 — child mandatory (gated by visibility)
+    if (showSea) {
+      if (!form.sea_freight_type) e.sea_freight_type = 'Wajib diisi';
+      if (isFCL) {
+        if (!form.sea_container_types.length) e.sea_container_types = 'Pilih minimal 1 tipe kontainer';
+        else if (form.sea_container_types.some(c => !form.sea_container_qty[c] || Number(form.sea_container_qty[c]) < 1)) e.sea_container_qty = 'Isi qty tiap tipe kontainer (min 1)';
+      }
+      if (isLCL) {
+        if (form.sea_lcl_gw === '') e.sea_lcl_gw = 'Wajib diisi';
+        if (!form.sea_lcl_dimension.trim()) e.sea_lcl_dimension = 'Wajib diisi';
+        if (form.sea_lcl_volume === '') e.sea_lcl_volume = 'Wajib diisi';
+        if (form.sea_lcl_koli === '') e.sea_lcl_koli = 'Wajib diisi';
+      }
+    }
+    if (showAir) {
+      if (form.air_gw === '') e.air_gw = 'Wajib diisi';
+      if (!form.air_dimension.trim()) e.air_dimension = 'Wajib diisi';
+      if (form.air_volume === '') e.air_volume = 'Wajib diisi';
+      if (form.air_koli === '') e.air_koli = 'Wajib diisi';
+    }
+    if (showInland) {
+      if (!form.inland_fleet_types.length) e.inland_fleet_types = 'Pilih minimal 1 armada';
+      if (!form.inland_pickup_address.trim()) e.inland_pickup_address = 'Wajib diisi';
+      if (!form.inland_delivery_address.trim()) e.inland_delivery_address = 'Wajib diisi';
+    }
+    if (showProject) {
+      if (!form.project_freight_types.length) e.project_freight_types = 'Pilih minimal 1 tipe';
+      if (form.project_qty === '') e.project_qty = 'Wajib diisi';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -221,6 +311,12 @@ export default function PRFFormPage({ onBack, showToast }) {
     setSaving(true);
     try {
       const prf_no = await generatePrfNo(profile.company_id, companyCode);
+      // Sea FCL qty jsonb — only checked types, numeric.
+      const qtyClean = {};
+      if (showSea && isFCL) form.sea_container_types.forEach(c => {
+        const v = form.sea_container_qty[c];
+        if (v !== '' && v != null && !Number.isNaN(Number(v))) qtyClean[c] = Number(v);
+      });
       const payload = {
         prf_no,
         company_id: profile.company_id,
@@ -250,6 +346,26 @@ export default function PRFFormPage({ onBack, showToast }) {
         add_on_services: form.add_on_services.length ? form.add_on_services : null,
         add_on_others: showOthers ? (form.add_on_others.trim() || null) : null,
         cargo_ready_date: form.cargo_ready_date || null,
+        // Section 03 — child fields (null bila section tak visible)
+        sea_freight_type: showSea ? (form.sea_freight_type || null) : null,
+        sea_container_types: (showSea && isFCL && form.sea_container_types.length) ? form.sea_container_types : null,
+        sea_container_qty: (showSea && isFCL && Object.keys(qtyClean).length) ? qtyClean : null,
+        sea_lcl_gw: (showSea && isLCL && form.sea_lcl_gw !== '') ? Number(form.sea_lcl_gw) : null,
+        sea_lcl_dimension: (showSea && isLCL) ? (form.sea_lcl_dimension.trim() || null) : null,
+        sea_lcl_volume: (showSea && isLCL && form.sea_lcl_volume !== '') ? Number(form.sea_lcl_volume) : null,
+        sea_lcl_koli: (showSea && isLCL && form.sea_lcl_koli !== '') ? Number(form.sea_lcl_koli) : null,
+        air_gw: (showAir && form.air_gw !== '') ? Number(form.air_gw) : null,
+        air_dimension: showAir ? (form.air_dimension.trim() || null) : null,
+        air_volume: (showAir && form.air_volume !== '') ? Number(form.air_volume) : null,
+        air_koli: (showAir && form.air_koli !== '') ? Number(form.air_koli) : null,
+        inland_fleet_types: (showInland && form.inland_fleet_types.length) ? form.inland_fleet_types : null,
+        inland_pickup_address: showInland ? (form.inland_pickup_address.trim() || null) : null,
+        inland_delivery_address: showInland ? (form.inland_delivery_address.trim() || null) : null,
+        inland_gw: (showInland && form.inland_gw !== '') ? Number(form.inland_gw) : null,
+        inland_dimension: showInland ? (form.inland_dimension.trim() || null) : null,
+        custom_doc_type: showCustom ? customDocType : null,
+        project_freight_types: (showProject && form.project_freight_types.length) ? form.project_freight_types : null,
+        project_qty: (showProject && form.project_qty !== '') ? Number(form.project_qty) : null,
         notes: form.notes.trim() || null,
       };
       const { error } = await supabase.from('prf').insert(payload);
@@ -400,7 +516,7 @@ export default function PRFFormPage({ onBack, showToast }) {
               <div style={grid2}>
                 <Field label="Service Type" required>
                   <div style={{ position: 'relative' }}>
-                    <select value={form.service_type} onChange={set('service_type')} style={selInput}>
+                    <select value={form.service_type} onChange={onServiceTypeChange} style={selInput}>
                       <option value="">— Pilih service type —</option>
                       {SERVICE_TYPES.map(s => {
                         const disabled = s.value === 'custom' && form.direction === 'domestic';
@@ -479,10 +595,122 @@ export default function PRFFormPage({ onBack, showToast }) {
           </div>
         </section>
 
-        {/* SECTION 03 — Catatan */}
+        {/* SECTION 03 — Detail Layanan (child fields per service_type) */}
+        {form.service_type && (
+          <section style={S.card}>
+            <div style={S.secBar}>
+              <div style={S.secNum}>03</div><div style={S.secTitle}>Detail Layanan</div>
+              <div style={S.secSub}>Detail spesifik sesuai service type</div>
+            </div>
+            <div style={S.secBody}>
+              <div style={{ display: 'grid', gap: 18 }}>
+                {/* SEA */}
+                {showSea && (
+                  <>
+                    <div style={grid2}>
+                      <Field label="Freight Type" required>
+                        <div style={{ position: 'relative' }}>
+                          <select value={form.sea_freight_type} onChange={set('sea_freight_type')} style={selInput}>
+                            <option value="">— Pilih —</option>
+                            {SEA_FREIGHT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          </select><Chevron />
+                        </div>
+                        {errText('sea_freight_type')}
+                      </Field>
+                    </div>
+                    {isFCL && (
+                      <div>
+                        <div style={S.label}>Container Type<span style={S.req}>*</span></div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                          {SEA_CONTAINERS.map(ct => (
+                            <div key={ct.code}>
+                              <Pill active={form.sea_container_types.includes(ct.code)} onClick={() => toggleContainer(ct.code)}>{ct.label}</Pill>
+                              {form.sea_container_types.includes(ct.code) && (
+                                <input value={form.sea_container_qty[ct.code] ?? ''} onChange={setContainerQty(ct.code)} style={{ ...S.input, marginTop: 8 }} placeholder={`Qty ${ct.label}`} inputMode="numeric" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {errText('sea_container_types')}
+                        {errText('sea_container_qty')}
+                      </div>
+                    )}
+                    {isLCL && (
+                      <div style={grid2}>
+                        <Field label="GW (kgs)" required><input value={form.sea_lcl_gw} onChange={setNum('sea_lcl_gw')} style={S.input} placeholder="0" inputMode="decimal" />{errText('sea_lcl_gw')}</Field>
+                        <Field label="Dimension (PxLxT)" required><input value={form.sea_lcl_dimension} onChange={set('sea_lcl_dimension')} style={S.input} placeholder="cth: 120x80x100 cm" />{errText('sea_lcl_dimension')}</Field>
+                        <Field label="Volume (m³)" required><input value={form.sea_lcl_volume} onChange={setNum('sea_lcl_volume')} style={S.input} placeholder="0" inputMode="decimal" />{errText('sea_lcl_volume')}</Field>
+                        <Field label="Koli" required><input value={form.sea_lcl_koli} onChange={setInt('sea_lcl_koli')} style={S.input} placeholder="0" inputMode="numeric" />{errText('sea_lcl_koli')}</Field>
+                      </div>
+                    )}
+                  </>
+                )}
+                {/* AIR */}
+                {showAir && (
+                  <div style={grid2}>
+                    <Field label="GW (kgs)" required><input value={form.air_gw} onChange={setNum('air_gw')} style={S.input} placeholder="0" inputMode="decimal" />{errText('air_gw')}</Field>
+                    <Field label="Dimension (PxLxT)" required><input value={form.air_dimension} onChange={set('air_dimension')} style={S.input} placeholder="cth: 120x80x100 cm" />{errText('air_dimension')}</Field>
+                    <Field label="Volume (m³)" required><input value={form.air_volume} onChange={setNum('air_volume')} style={S.input} placeholder="0" inputMode="decimal" />{errText('air_volume')}</Field>
+                    <Field label="Koli" required><input value={form.air_koli} onChange={setInt('air_koli')} style={S.input} placeholder="0" inputMode="numeric" />{errText('air_koli')}</Field>
+                  </div>
+                )}
+                {/* INLAND */}
+                {showInland && (
+                  <>
+                    <div>
+                      <div style={S.label}>Fleet Type<span style={S.req}>*</span></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                        {INLAND_FLEETS.map(fl => <Pill key={fl} active={form.inland_fleet_types.includes(fl)} onClick={() => toggleArr('inland_fleet_types', fl)}>{fl}</Pill>)}
+                      </div>
+                      {errText('inland_fleet_types')}
+                    </div>
+                    <div style={grid2}>
+                      <Field label="Pickup Address" required><textarea value={form.inland_pickup_address} onChange={set('inland_pickup_address')} rows={2} style={S.textarea} placeholder="Alamat penjemputan…" />{errText('inland_pickup_address')}</Field>
+                      <Field label="Delivery Address" required><textarea value={form.inland_delivery_address} onChange={set('inland_delivery_address')} rows={2} style={S.textarea} placeholder="Alamat pengiriman…" />{errText('inland_delivery_address')}</Field>
+                    </div>
+                    <div style={grid2}>
+                      <Field label="GW (kgs)" hint={<span style={S.hint}> (opsional)</span>}><input value={form.inland_gw} onChange={setNum('inland_gw')} style={S.input} placeholder="0" inputMode="decimal" /></Field>
+                      <Field label="Dimension" hint={<span style={S.hint}> (opsional)</span>}><input value={form.inland_dimension} onChange={set('inland_dimension')} style={S.input} placeholder="PxLxT" /></Field>
+                    </div>
+                  </>
+                )}
+                {/* CUSTOM */}
+                {showCustom && (
+                  <Field label="Tipe Dokumen" span>
+                    <div style={{ ...S.input, display: 'flex', alignItems: 'center', background: C.navySoft, borderColor: C.navy, color: C.navy, fontWeight: 700 }}>
+                      {customDocType ? `${customDocType} + Handling` : '—'}
+                    </div>
+                    <span style={S.hint}>Otomatis dari Direction ({customDocType || 'pilih Import/Export'}).</span>
+                  </Field>
+                )}
+                {form.service_type === 'custom' && !showCustom && (
+                  <div style={{ ...S.hint, marginTop: 0 }}>Centang add-on Custom Clearance untuk detail dokumen.</div>
+                )}
+                {/* PROJECT */}
+                {showProject && (
+                  <>
+                    <div>
+                      <div style={S.label}>Freight Type<span style={S.req}>*</span></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+                        {PROJECT_FREIGHTS.map(pf => <Pill key={pf} active={form.project_freight_types.includes(pf)} onClick={() => toggleArr('project_freight_types', pf)}>{pf}</Pill>)}
+                      </div>
+                      {errText('project_freight_types')}
+                    </div>
+                    <div style={grid2}>
+                      <Field label="Qty" required><input value={form.project_qty} onChange={setInt('project_qty')} style={S.input} placeholder="0" inputMode="numeric" />{errText('project_qty')}</Field>
+                    </div>
+                    <span style={S.hint}>Penentuan Project Shipment masih sementara — perlu kesepakatan procurement &amp; sales.</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* SECTION 04 — Catatan */}
         <section style={S.card}>
           <div style={S.secBar}>
-            <div style={S.secNum}>03</div><div style={S.secTitle}>Catatan Tambahan</div>
+            <div style={S.secNum}>04</div><div style={S.secTitle}>Catatan Tambahan</div>
             <div style={S.secSub}>Instruksi khusus untuk tim procurement (opsional)</div>
           </div>
           <div style={S.secBody}>
