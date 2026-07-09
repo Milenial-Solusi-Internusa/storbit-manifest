@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict wBBGJ3rXWNNBe8pcxeIXrLrr2yv5EkfRLZSnvvdXWsJanq9x0efCkaYZj0O2yOS
+\restrict J9QjJqC3wRYhULAj7u1LP0Wh9naqapspW8a5VP8MsdQJmmjNFYKEyvArrzGG7L0
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -834,7 +834,7 @@ CREATE FUNCTION public.is_manager_or_above() RETURNS boolean
     SELECT 1 FROM user_roles ur
     JOIN roles r ON r.id = ur.role_id
     WHERE ur.user_id = auth.uid()
-      AND r.code IN ('super_admin','admin','ceo','gm','manager','supervisor')
+      AND r.code IN ('super_admin','admin','ceo','gm','gm_bd','manager','supervisor')
       AND ur.is_active = true
       AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
   );
@@ -3560,6 +3560,67 @@ COMMENT ON COLUMN public.positions.level IS 'Seniority level: Staff, Supervisor,
 
 
 --
+-- Name: prf; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prf (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    prf_no text NOT NULL,
+    status character varying DEFAULT 'DRAFT'::character varying,
+    created_by uuid,
+    updated_by uuid,
+    submitted_at timestamp with time zone,
+    acknowledged_by uuid,
+    acknowledged_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    deleted_at timestamp with time zone,
+    customer_source text,
+    account_id uuid,
+    account_name_manual text,
+    stream text,
+    deadline_quotation date,
+    direction text,
+    commodity text,
+    hs_code text,
+    msds_available boolean DEFAULT false,
+    service_type text,
+    incoterms text,
+    commercial_value numeric(14,2),
+    commercial_currency text,
+    origin text,
+    destination text,
+    pickup_address text,
+    delivery_address text,
+    add_on_services text[],
+    add_on_others text,
+    cargo_ready_date date,
+    sea_freight_type text,
+    sea_container_types text[],
+    sea_container_qty jsonb,
+    sea_lcl_gw numeric(12,2),
+    sea_lcl_dimension text,
+    sea_lcl_volume numeric(12,2),
+    sea_lcl_koli integer,
+    air_gw numeric(12,2),
+    air_dimension text,
+    air_volume numeric(12,2),
+    air_koli integer,
+    inland_fleet_types text[],
+    inland_pickup_address text,
+    inland_delivery_address text,
+    inland_gw numeric(12,2),
+    inland_dimension text,
+    custom_doc_type text,
+    project_freight_types text[],
+    project_qty integer,
+    notes text,
+    CONSTRAINT prf_status_check CHECK (((status)::text = ANY (ARRAY['DRAFT'::text, 'SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'CANCELLED'::text, 'QUOTED'::text, 'EXPIRED'::text])))
+);
+
+
+--
 -- Name: product_price_history; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5340,6 +5401,22 @@ ALTER TABLE ONLY public.positions
 
 
 --
+-- Name: prf prf_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_no_unique UNIQUE (company_id, prf_no);
+
+
+--
+-- Name: prf prf_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: product_price_history product_price_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6834,6 +6911,13 @@ CREATE TRIGGER set_hrga_request_types_updated_at BEFORE UPDATE ON public.hrga_re
 --
 
 CREATE TRIGGER set_hrga_requests_updated_at BEFORE UPDATE ON public.hrga_requests FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: prf set_prf_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_prf_updated_at BEFORE UPDATE ON public.prf FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -8569,6 +8653,46 @@ ALTER TABLE ONLY public.positions
 
 ALTER TABLE ONLY public.product_price_history
     ADD CONSTRAINT pph_product_fk FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: prf prf_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: prf prf_acknowledged_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_acknowledged_by_fkey FOREIGN KEY (acknowledged_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: prf prf_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: prf prf_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: prf prf_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.profiles(id);
 
 
 --
@@ -11056,6 +11180,40 @@ CREATE POLICY pph_read ON public.product_price_history FOR SELECT USING ((public
 
 
 --
+-- Name: prf; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.prf ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: prf prf_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_insert ON public.prf FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND (public.has_role('sales'::text) OR public.has_role('gm_bd'::text))));
+
+
+--
+-- Name: prf prf_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_select ON public.prf FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) AND ((created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above())));
+
+
+--
+-- Name: prf prf_update_draft; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_update_draft ON public.prf FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND ((status)::text = 'DRAFT'::text))) WITH CHECK (((company_id = public.get_user_company_id()) AND (created_by = auth.uid())));
+
+
+--
+-- Name: prf prf_update_status; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((status)::text = 'SUBMITTED'::text))) WITH CHECK ((company_id = public.get_user_company_id()));
+
+
+--
 -- Name: product_price_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -11885,5 +12043,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict wBBGJ3rXWNNBe8pcxeIXrLrr2yv5EkfRLZSnvvdXWsJanq9x0efCkaYZj0O2yOS
+\unrestrict J9QjJqC3wRYhULAj7u1LP0Wh9naqapspW8a5VP8MsdQJmmjNFYKEyvArrzGG7L0
 
