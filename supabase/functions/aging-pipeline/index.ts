@@ -1,20 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// Batas hari per stage. Lead yang diam lebih lama dari ini masuk Lead Pool.
 const AGING_RULES: Record<string, number> = {
+  NEW: 7,
   CONTACTED: 5,
   QUALIFIED: 5,
   PROPOSAL: 3,
   NEGOTIATION: 14,
 }
 
-const PREV_STAGE: Record<string, string> = {
-  CONTACTED: 'NEW',
-  QUALIFIED: 'CONTACTED',
-  PROPOSAL: 'QUALIFIED',
-  NEGOTIATION: 'PROPOSAL',
-}
+Deno.serve(async (req) => {
+  const url = new URL(req.url)
+  const dryRun = url.searchParams.get('dry_run') === 'true'
 
-Deno.serve(async () => {
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -24,9 +22,10 @@ Deno.serve(async () => {
 
   const { data: prospects, error } = await supabase
     .from('accounts')
-    .select('id, pipeline_stage, stage_changed_at, assigned_to, company_id, name')
+    .select('id, name, pipeline_stage, stage_changed_at, last_activity_at, assigned_to, company_id')
     .eq('is_in_lead_pool', false)
     .eq('is_active', true)
+    .is('deleted_at', null)
     .in('pipeline_stage', stages)
     .limit(1000)
 
@@ -35,44 +34,95 @@ Deno.serve(async () => {
   }
 
   const now = new Date()
-  const toPool: string[] = []
+  const kandidat: Array<Record<string, unknown>> = []
 
   for (const p of prospects ?? []) {
     const limit = AGING_RULES[p.pipeline_stage]
     if (!limit) continue
-    const changedAt = new Date(p.stage_changed_at)
-    const diffDays = (now.getTime() - changedAt.getTime()) / (1000 * 60 * 60 * 24)
-    if (diffDays > limit) {
-      toPool.push(p.id)
 
-      // Update ke lead pool
-      await supabase
-        .from('accounts')
-        .update({
-          is_in_lead_pool: true,
-          lead_pool_at: now.toISOString(),
-          lead_pool_reason: `Aging ${Math.floor(diffDays)} hari di stage ${p.pipeline_stage}`,
+    // Lead dianggap "disentuh" kalau stage-nya naik ATAU ada aktivitas tercatat.
+    // Ambil yang paling baru di antara keduanya.
+    const tglStage = p.stage_changed_at ? new Date(p.stage_changed_at).getTime() : 0
+    const tglAktivitas = p.last_activity_at ? new Date(p.last_activity_at).getTime() : 0
+    const terakhirDisentuh = Math.max(tglStage, tglAktivitas)
+
+    if (terakhirDisentuh === 0) continue // tak ada acuan waktu, lewati
+
+    const diamHari = (now.getTime() - terakhirDisentuh) / (1000 * 60 * 60 * 24)
+    if (diamHari <= limit) continue
+
+    kandidat.push({
+      id: p.id,
+      nama: p.name,
+      stage: p.pipeline_stage,
+      diam_hari: Math.floor(diamHari),
+      assigned_to: p.assigned_to,
+      company_id: p.company_id,
+    })
+  }
+
+  // Mode kering: laporkan siapa yang memenuhi syarat, jangan pindahkan apa pun.
+  if (dryRun) {
+    return new Response(
+      JSON.stringify({
+        dry_run: true,
+        diperiksa: prospects?.length ?? 0,
+        memenuhi_syarat: kandidat.length,
+        per_stage: kandidat.reduce((acc: Record<string, number>, k) => {
+          const s = k.stage as string
+          acc[s] = (acc[s] ?? 0) + 1
+          return acc
+        }, {}),
+        daftar: kandidat,
+      }, null, 2),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  let dipindahkan = 0
+
+  for (const k of kandidat) {
+    const { error: errUpdate } = await supabase
+      .from('accounts')
+      .update({
+        is_in_lead_pool: true,
+        lead_pool_at: now.toISOString(),
+        lead_pool_reason: `Aging ${k.diam_hari} hari di stage ${k.stage}`,
+      })
+      .eq('id', k.id)
+
+    if (errUpdate) {
+      console.error(`Gagal memindahkan ${k.id}:`, errUpdate.message)
+      continue
+    }
+    dipindahkan++
+
+    if (k.assigned_to) {
+      const { error: errNotif } = await supabase
+        .from('notifications')
+        .insert({
+          company_id: k.company_id,
+          user_id: k.assigned_to,
+          event_type: 'crm.lead_idle',
+          title: 'Prospect Masuk Lead Pool',
+          body: `${k.nama} diam ${k.diam_hari} hari di stage ${k.stage} dan dipindahkan ke Lead Pool.`,
+          reference_type: 'account',
+          reference_id: k.id,
+          is_read: false,
         })
-        .eq('id', p.id)
 
-      // Kirim notifikasi ke sales (assigned_to)
-      if (p.assigned_to) {
-        await supabase
-          .from('notifications')
-          .insert({
-            company_id: p.company_id,
-            user_id: p.assigned_to,
-            title: 'Prospect Masuk Lead Pool',
-            message: `${p.name} telah aging di stage ${p.pipeline_stage} dan dipindahkan ke Lead Pool.`,
-            type: 'warning',
-            is_read: false,
-          })
+      if (errNotif) {
+        console.error(`Gagal mengirim notifikasi untuk ${k.id}:`, errNotif.message)
       }
     }
   }
 
   return new Response(
-    JSON.stringify({ processed: prospects?.length, moved_to_pool: toPool.length }),
-    { status: 200 }
+    JSON.stringify({
+      diperiksa: prospects?.length ?? 0,
+      dipindahkan,
+      gagal: kandidat.length - dipindahkan,
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
   )
 })
