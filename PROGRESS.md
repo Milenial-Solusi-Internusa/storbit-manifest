@@ -40,6 +40,38 @@
 - **Rekaman:** `supabase/migrations/20260710000003_prf_rls_super_admin.sql`.
 - **Housekeeping:** **belum di-commit**. `schema_snapshot.sql` tetap STALE (belum ada `prf`/policy-nya/`inquiry_id`/`is_manager_or_above` +gm_bd) → refresh via `pg_dump`.
 
+### Audit CRM end-to-end + perbaikan Lead Pool aging + migrasi infrastruktur (sesi 9-10 Jul) — branch `feat/aging-pipeline`
+> **Konteks:** audit menyeluruh alur CRM (prospect → pipeline → inquiry → quotation → WON/lead pool → aging) untuk memvalidasi kesiapan sebelum aging-pipeline dijadwalkan. Temuan → TD-50…TD-60. Sekaligus: Edge Function `aging-pipeline` di-version-control + 8 perbaikan, 3 migrasi baru, koreksi mesin status quotation, dan migrasi kepemilikan infrastruktur ke org MSI. **Semua di branch `feat/aging-pipeline` (7 commit) — BELUM merge; EF belum deploy ulang; pg_cron belum dipasang.**
+
+**A. Audit CRM E2E (temuan → tech debt, rujukan `AUDIT_CRM_E2E.md`):**
+- **TD-50 [SELESAI]** dua sumber status Lead Pool (`account_status='lead_pool'` vs `is_in_lead_pool`) desync 8 baris → lead tampil di Kanban tapi hilang dari Dashboard.
+- **TD-51 [TERIMA]** `stage_changed_at` 727/997 = backfill 25 Jun; sejarah stage pra-25 Jun hilang permanen (`audit_logs` nol). Tidak di-reset.
+- **TD-52 [SELESAI]** `last_activity_at` tak jujur di 817/997 (ditulis sekali saat prospect dibuat, `ProspectFormPage.jsx:231`).
+- **TD-53 [OPEN]** `notification_rules` yatim (11 rule, tak ada consumer). **TD-54 [OPEN]** trigger `sync_deal_value_on_quotation_accept` tanpa jalan masuk (nol ACCEPTED → 88% WON `estimated_value` kosong). **TD-55 [OPEN]** RLS `rate_sheets` tak filter `company_id` (laten). **TD-56 [OPEN]** teks UI "Submit → inquiry QUOTED" tapi tak ada kodenya. **TD-57 [OPEN]** kolom `is_odoo_customer` mati. **TD-58 [OPEN]** lead LOST tanpa lifecycle (7/997). **TD-59 [OPEN]** `last_activity_at` pakai `COALESCE(completed_at, created_at)` (45% aktivitas ber-`completed_at`). **TD-60 [OPEN — BELUM DISELIDIKI]** EF `verify_jwt` tak berlaku (balas 200 utk token sembarang) → EF aging-pipeline **DIHAPUS** sbg mitigasi.
+- **Koreksi struktur (terverifikasi kode):** pipeline = tabel `accounts.pipeline_stage` (TIDAK ada `deals`/`pipeline`); nilai deal = `accounts.estimated_value`. `set_customer_on_won` sehat (33 WON, nol anomali).
+
+**B. Perbaikan Lead Pool aging — EF `aging-pipeline` (`supabase/functions/aging-pipeline/index.ts`):**
+- EF di-version-control (dulu deployed slug auto `bright-handler`, tak ada di git). Commit `4b27553` (apa adanya), `ca7aad3`/`9f59f8c`/`96974bb` (8 fix).
+- **8 fix:** (1) +aturan NEW:7 (157 lead NEW dulu tak diperiksa); (2) aging dari `MAX(stage_changed_at, last_activity_at)` bukan `stage_changed_at` saja; (3) fix insert notifikasi (`message`→`body`, buang `type`, +`event_type='crm.lead_idle'`+ref — insert lama PASTI GAGAL diam-diam); (4) buang PREV_STAGE dead code; (5) +mode kering `?dry_run=true`; (6) +`.is('deleted_at', null)`; (7) `Math.floor` (jatah hari penuh); (8) set `account_status` bareng `is_in_lead_pool` (TD-50).
+- Batas diam: NEW 7 / CONTACTED 5 / QUALIFIED 5 / PROPOSAL 3 / NEGOTIATION 14.
+- **Simulasi dry_run 10 Jul:** 472 diperiksa, 332 memenuhi (sebelum floor), ~304 (setelah floor). Sebaran CONTACTED 121 / NEW 118 / QUALIFIED 45 / PROPOSAL 20 / NEGOTIATION 0.
+- **Rencana peluncuran (BELUM jalan):** (1) selidiki TD-60 [prasyarat]; (2) deploy ulang JWT aktif; (3) dry_run + ekspor kandidat; (4) beri sales tenggat ~1 minggu; (5) pasang pg_cron harian, matikan dry_run. Alasan tenggat: 304 lead = 64% pipeline aktif pindah semalam.
+
+**C. 3 migrasi baru (rekaman SQL yang dijalankan manual):**
+- [x] `20260710000005_fix_lead_pool_desync.sql` — bersihkan 8 baris lead pool desync (UPDATE 8, verified; TD-50).
+- [x] `20260710000006_null_last_activity_tanpa_aktivitas.sql` — NULL-kan 817 baris `last_activity_at` palsu (TD-52).
+- [x] `20260710000007_trigger_last_activity.sql` — trigger `trg_z_sync_last_activity` di `activities` (AFTER INSERT/UPDATE/DELETE, `max(COALESCE(completed_at, created_at))`) + selaraskan 180 baris lama. Verifikasi: 180 terisi, 817 NULL, 0 meleset (TD-52).
+
+**D. Koreksi mesin status quotation (dokumentasi):** `DRAFT → SUBMITTED → SENT` (bukan DRAFT→SENT). SUBMITTED via "Submit Quotation" (`QuotationFormPage.jsx:730,790`, disabled sampai `inquiry_id` terisi = HARD gate ketertautan inquiry). SENT via "Kirim ke Customer" (`QuotationDetailPage.jsx:258`, saat status=SUBMITTED). ACCEPTED/REJECTED/EXPIRED = label display tanpa transisi UI (→ TD-54).
+
+**E. Migrasi infrastruktur (kepemilikan → MSI) — detail di `CLAUDE.md` Quick Reference:**
+- Supabase project → org "Milenial Solusi Internusa" (`nexus-msi`); GitHub repo → `Milenial-Solusi-Internusa/storbit-manifest`; Vercel → team "MSI Group" (`nexus`); domain prod → `nexus.msigroup.co.id` (CNAME Domainesia). **Supabase ref TIDAK berubah** (`untmpqceexwxzuhlmyrg`).
+- Project Vercel lama + `nexus.dli.my.id` sengaja dibiarkan hidup (safety net; hapus ~1 minggu setelah domain baru stabil). Backup penuh (3.5 MB, 96 tabel) diambil sebelum migrasi.
+- **KOREKSI:** host `pg_dump`/pooler yang BENAR = `aws-1-ap-northeast-2.pooler.supabase.com` (bukan `ap-southeast-1` — catatan lama salah → gagal koneksi).
+- **Backlog keamanan (belum dikerjakan):** repo GitHub masih PUBLIC (kode ERP 3 entitas + schema terbuka); 2FA belum aktif utk 2 Owner org (mhmmdjaelaniii, msigroup-sys); Vercel masih Hobby (pemakaian komersial); Supabase Auth Site URL masih `http://localhost:3000` + Redirect URLs kosong (tak masalah utk login email+password, tapi perlu dirapikan); rename repo `storbit-manifest`→`nexus` (opsional).
+
+- **Housekeeping (⚠️ untuk Den):** (1) branch `feat/aging-pipeline` (9 commit di atas `main`) **belum merge**; (2) EF aging-pipeline **belum deploy ulang** + **pg_cron belum dipasang** (prasyarat: TD-60 `verify_jwt`); (3) migrasi `20260710000005/6/7` sudah direkam di `supabase/migrations/`; (4) `schema_snapshot.sql` **sudah di-refresh** 10 Jul (commit `67c600d`, memuat trigger `trg_z_sync_last_activity` + `prf` + `delete_sp_dual`) — **TIDAK stale** untuk perubahan ini, hanya hidup di branch yang belum merge; (5) `AUDIT_CRM_E2E.md` & `AUDIT_PROCUREMENT.md` masih di root sbg scratch — fakta bernilai sudah diserap ke Governance, bisa dibuang/dipindah.
+
 ## 2026-07-09
 
 ### Role baru `gm_bd` (GM Business Development) — Paket 1 (frontend) + bug fix CEO Approval Lead Pool
