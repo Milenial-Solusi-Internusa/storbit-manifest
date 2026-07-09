@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 5bLoKIDiqxxlImwIpBFh9GOKvpoqStF9gbF6SNu7WzOsXPtSMTUNkU7e5Ozylz6
+\restrict 7G3lhM7H8tdYOgAkfRLlItTIO3EiHlXcvpBUi0FYDSYaPb2y9AMcOhIDXkFJkRp
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -334,6 +334,38 @@ BEGIN
   WHERE reference_type='picking_material' AND reference_id=p_material_id AND movement_type='outbound';
   DELETE FROM public.picking_list_materials WHERE id=p_material_id;
 END; $$;
+
+
+--
+-- Name: delete_sp_dual(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.delete_sp_dual(p_customer_id uuid, p_sp_no text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_status text;
+BEGIN
+  -- Guard 1: hanya super_admin
+  IF NOT public.is_super_admin() THEN
+    RAISE EXCEPTION 'Hanya super_admin yang boleh menghapus SP';
+  END IF;
+
+  -- Guard 2 (STRICT): hanya DRAFT
+  SELECT status INTO v_status
+  FROM sp_orders
+  WHERE customer_id = p_customer_id AND sp_no = p_sp_no AND deleted_at IS NULL;
+
+  IF v_status IS DISTINCT FROM 'DRAFT' THEN
+    RAISE EXCEPTION 'SP % hanya bisa dihapus saat DRAFT (status: %)',
+      p_sp_no, COALESCE(v_status, 'TIDAK ADA');
+  END IF;
+
+  DELETE FROM sp_orders WHERE customer_id = p_customer_id AND sp_no = p_sp_no;
+  DELETE FROM sp_items  WHERE customer_id = p_customer_id AND sp_no = p_sp_no;
+END;
+$$;
 
 
 --
@@ -12052,5 +12084,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 5bLoKIDiqxxlImwIpBFh9GOKvpoqStF9gbF6SNu7WzOsXPtSMTUNkU7e5Ozylz6
+\unrestrict 7G3lhM7H8tdYOgAkfRLlItTIO3EiHlXcvpBUi0FYDSYaPb2y9AMcOhIDXkFJkRp
 

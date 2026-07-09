@@ -89,6 +89,8 @@ Sumber: matrix permission `CLAUDE.md`. **CRUD** = full, **R** = read-only, **-**
 | CRM | Master Customer (MSI/JCI/SOA/Free) + Detail | CustomerListPage · CustomerDetailPage | menuKey `crm_customers` | LIVE |
 | CRM | Activities · Activity Log | ActivitiesPage · ActivityLogPage | role[super_admin,admin,ceo,gm,gm_bd,manager,supervisor,sales] | LIVE |
 | LOGISTICS | Sales Order / SP (list + detail) | SalesOrderPage · SalesOrderDetailPage | menuKey `logistics_sp` | LIVE |
+| LOGISTICS | ↳ Hapus SP (Danger Zone, Detail) | SalesOrderDetailPage | **role `super_admin` + status `DRAFT`** (RPC `delete_sp_dual` guard `is_super_admin()` + DRAFT) | ⚠️ RPC belum live (dijalankan manual). Dulu `[super_admin,operations]` tanpa gate status → operations dicabut akses hapus |
+| LOGISTICS | ↳ Batalkan SP (header actions, Detail) | SalesOrderDetailPage | role[super_admin,operations,manager,gm] + status `DRAFT` (`set_sp_status 'cancelled'`, alasan wajib) | LIVE |
 | LOGISTICS | Input SP | InputSPPage | module `logistics` + **canInputSP** (permission AND operational role) | LIVE |
 | LOGISTICS | Picking List (+Detail) | PickingListPage · DetailPage | role[…,operations] | LIVE |
 | LOGISTICS | Surat Jalan (+Detail) | DeliveryNotePage · DetailPage | role[…,operations] | LIVE |

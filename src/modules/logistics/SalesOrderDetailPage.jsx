@@ -20,7 +20,7 @@ import {
   Check, X, FolderOpen, History, List,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2,
 } from 'lucide-react';
-import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
@@ -567,6 +567,69 @@ function DeleteModal({ spNo, group, onClose, onConfirm }) {
   );
 }
 
+// ─── Cancel SP modal (status → CANCELLED; minta alasan) ──────────────────────
+function CancelModal({ spNo, group, onClose, onConfirm }) {
+  const [reason, setReason]   = useState('');
+  const [loading, setLoading] = useState(false);
+  const ok = reason.trim().length > 0;
+
+  const handleConfirm = async () => {
+    if (!ok) return;
+    setLoading(true);
+    await onConfirm(reason.trim());
+    setLoading(false);
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(28,24,14,.42)', backdropFilter: 'blur(2px)', zIndex: 80 }}/>
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+        zIndex: 81, width: '100%', maxWidth: 440,
+        background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14,
+        boxShadow: '0 12px 34px rgba(40,34,18,.18)', overflow: 'hidden',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, padding: '20px 22px 14px' }}>
+          <span style={{ width: 42, height: 42, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.dangerBg, color: C.danger }}>
+            <X size={21}/>
+          </span>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, letterSpacing: '-.3px', lineHeight: 1.25 }}>
+              Batalkan {spNo} dari {group?.customer}?
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12.5, color: C.inkSoft, lineHeight: 1.45 }}>
+              Status SP akan menjadi <b>Dibatalkan</b>. Data SP tetap tersimpan (bukan dihapus). Tindakan ini dicatat di history.
+            </p>
+          </div>
+        </div>
+        <div style={{ padding: '0 22px 4px' }}>
+          <label style={{ fontSize: 12.5, fontWeight: 600, color: C.inkSoft, display: 'block', marginBottom: 6 }}>
+            Alasan pembatalan <span style={{ color: C.danger }}>*</span>
+          </label>
+          <textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            rows={3}
+            placeholder="Tuliskan alasan SP dibatalkan…"
+            style={{ width: '100%', borderRadius: 9, border: `1px solid ${ok ? C.line : C.dangerBd}`, background: C.surface, padding: '10px 12px', fontFamily: 'inherit', fontSize: 13.5, color: C.ink, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.5 }}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '18px 22px 20px' }}>
+          <button onClick={onClose} style={{ height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Batal
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={!ok || loading}
+            style={{ height: 38, padding: '0 18px', borderRadius: 9, border: 'none', background: C.danger, color: '#fff', fontSize: 13, fontWeight: 700, cursor: ok && !loading ? 'pointer' : 'not-allowed', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7, opacity: ok && !loading ? 1 : .45 }}>
+            <X size={15}/>{loading ? 'Membatalkan…' : 'Ya, Batalkan SP'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Tab button ─────────────────────────────────────────────────────────────
 function TabBtn({ active, onClick, icon: Icon, label, count }) {
   return (
@@ -618,6 +681,7 @@ export default function SalesOrderDetailPage({
   const [tab,          setTab]          = useState('overview');
   const [editingItem,  setEditingItem]  = useState(null);
   const [showDeleteSP, setShowDeleteSP] = useState(false);
+  const [showCancelSP, setShowCancelSP] = useState(false);
   const [genBusy,      setGenBusy]      = useState(false);
   // Fase 0.3 — link dokumen SP (Drive dll). Per-SP (semua baris se-sp_no sama).
   const [docUrl,       setDocUrl]       = useState(items[0]?.externalUrl || '');
@@ -766,12 +830,22 @@ export default function SalesOrderDetailPage({
   const handleDeleteSP = useCallback(async () => {
     setShowDeleteSP(false);
     try {
-      await onDeleteSP(spNo);
+      await onDeleteSP(spNo, group?.customerId);
       // NOTE: onDeleteSP should call setSelectedSpId(null) → navigates back automatically
     } catch (err) {
       showToast('Gagal hapus SP: ' + (err?.message || 'unknown error'), 'error');
     }
-  }, [onDeleteSP, spNo, showToast]);
+  }, [onDeleteSP, spNo, group, showToast]);
+
+  // ── Cancel SP handler (status → CANCELLED via set_sp_status; dual-table + komposit) ──
+  const handleCancelSP = useCallback(async (reason) => {
+    setShowCancelSP(false);
+    const cust = group?.customerId;
+    const { error } = await setSpStatus(spNo, 'cancelled', reason, cust);
+    if (error) { showToast('Gagal membatalkan SP: ' + (error.message || 'unknown error'), 'error'); return; }
+    if (cust) { const { data } = await getSpOrderStatus(cust, spNo); setSpOrder(data || null); }
+    showToast(`SP ${spNo} dibatalkan`);
+  }, [spNo, group, showToast]);
 
   const cust = custColor(customer);
 
@@ -859,6 +933,15 @@ export default function SalesOrderDetailPage({
             >
               <Pencil size={14}/> Edit
             </button>
+            {['super_admin', 'operations', 'manager', 'gm'].includes(role) && spOrder?.status === 'DRAFT' && (
+              <button
+                onClick={() => setShowCancelSP(true)}
+                title="Batalkan SP (status → Dibatalkan)"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.dangerBd}`, background: C.surface, color: C.danger, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                <X size={14}/> Batalkan SP
+              </button>
+            )}
             <button
               onClick={onBack}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
@@ -1287,8 +1370,8 @@ export default function SalesOrderDetailPage({
         )}
       </div>
 
-      {/* ── Danger zone ───────────────────────────────────────────────── */}
-      {(role === 'super_admin' || role === 'operations') && (
+      {/* ── Danger zone ── super_admin only + hanya saat DRAFT ──────────── */}
+      {role === 'super_admin' && spOrder?.status === 'DRAFT' && (
         <div style={{
           border: `1px solid ${C.dangerBd}`, borderRadius: 12, background: C.dangerBg,
           padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 4,
@@ -1327,6 +1410,14 @@ export default function SalesOrderDetailPage({
           group={group}
           onClose={() => setShowDeleteSP(false)}
           onConfirm={handleDeleteSP}
+        />
+      )}
+      {showCancelSP && (
+        <CancelModal
+          spNo={spNo}
+          group={group}
+          onClose={() => setShowCancelSP(false)}
+          onConfirm={handleCancelSP}
         />
       )}
     </div>

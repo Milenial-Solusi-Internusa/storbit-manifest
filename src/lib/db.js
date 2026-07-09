@@ -324,6 +324,14 @@ export async function deleteSpItem(id) {
   return { error };
 }
 
+// Delete SELURUH SP secara atomik & konsisten (dual-table) via RPC delete_sp_dual
+// (SECURITY DEFINER): hapus sp_orders (+ sp_order_items via FK CASCADE) DAN sp_items,
+// di-kunci komposit (customer_id, sp_no). Guard di RPC: super_admin only + status DRAFT.
+export async function deleteSpDual(customerId, spNo) {
+  const { error } = await supabase.rpc('delete_sp_dual', { p_customer_id: customerId, p_sp_no: spNo });
+  return { error };
+}
+
 // Set SP lifecycle status (confirm/cancel) atomically across all line items
 // sharing the same sp_no. Backed by RPC set_sp_status (SECURITY DEFINER).
 // status: 'draft' | 'confirmed' | 'cancelled'. reason optional (for cancel).
