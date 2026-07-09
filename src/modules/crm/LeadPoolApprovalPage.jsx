@@ -120,6 +120,7 @@ export default function LeadPoolApprovalPage({ showToast }) {
       pull_approved_by: profile.id,
       pull_approved_at: nowIso,
       is_in_lead_pool: false,
+      account_status: 'prospect',
       pipeline_stage: newStage,
       stage_changed_at: nowIso,
     }).eq('id', account.id);

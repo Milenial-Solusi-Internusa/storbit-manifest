@@ -86,6 +86,7 @@ Deno.serve(async (req) => {
       .from('accounts')
       .update({
         is_in_lead_pool: true,
+        account_status: 'lead_pool',
         lead_pool_at: now.toISOString(),
         lead_pool_reason: `Aging ${k.diam_hari} hari di stage ${k.stage}`,
       })
