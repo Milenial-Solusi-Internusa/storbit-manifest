@@ -2675,8 +2675,8 @@ export default function StorbitManifest() {
                   onBack={() => setSelectedSpId(null)}
                   onSaveItem={dbSaveRow}
                   onDeleteItem={handleDelete}
-                  onDeleteSP={async (spNo) => {
-                    await dbRemoveRowsBySp(spNo);
+                  onDeleteSP={async (spNo, customerId) => {
+                    await dbRemoveRowsBySp(spNo, customerId);
                     setSelectedSpId(null);
                     showToast(`SP ${spNo} dihapus`);
                   }}

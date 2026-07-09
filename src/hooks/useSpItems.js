@@ -8,6 +8,7 @@ import {
   insertSpItem,
   updateSpItem,
   deleteSpItem,
+  deleteSpDual,
 } from '../lib/db';
 
 export function useSpItems({ customers = [] } = {}) {
@@ -114,27 +115,23 @@ export function useSpItems({ customers = [] } = {}) {
     [rows]
   );
 
-  // Delete all rows in a given SP (bulk delete by sp_no)
+  // Delete entire SP — dual-table (sp_orders + sp_order_items + sp_items) atomik via
+  // RPC delete_sp_dual, di-kunci komposit (customer_id, sp_no). Guard super_admin + DRAFT
+  // ada di RPC. Pengganti loop deleteSpItem lama yang cuma hapus legacy + abai customer_id.
   const removeRowsBySp = useCallback(
-    async (spNo) => {
-      const targets = rows.filter((r) => r.spNo === spNo);
+    async (spNo, customerId) => {
+      const targets = rows.filter((r) => r.spNo === spNo && r.customerId === customerId);
       if (targets.length === 0) return;
 
-      // Optimistic: remove from state
-      const remaining = rows.filter((r) => r.spNo !== spNo);
+      // Optimistic: remove matching rows (composite identity)
+      const remaining = rows.filter((r) => !(r.spNo === spNo && r.customerId === customerId));
       setRows(remaining);
 
-      // Delete one-by-one (Supabase doesn't bulk-delete by filter from client easily)
-      const errors = [];
-      for (const t of targets) {
-        const { error: err } = await deleteSpItem(t.id);
-        if (err) errors.push(err);
-      }
-      if (errors.length > 0) {
-        console.error('[useSpItems] bulk delete errors:', errors);
-        // Refresh from DB to recover from partial failure
-        await refresh();
-        throw errors[0];
+      const { error: err } = await deleteSpDual(customerId, spNo);
+      if (err) {
+        console.error('[useSpItems] delete SP error:', err);
+        await refresh(); // recover from failure (nothing deleted — RPC atomik)
+        throw err;
       }
     },
     [rows, refresh]
