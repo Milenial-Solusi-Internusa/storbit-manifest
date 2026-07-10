@@ -94,16 +94,16 @@ Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`
 7. `Math.floor` (jatah hari penuh).
 8. Set `account_status` bareng `is_in_lead_pool` (TD-50).
 
-**Simulasi `dry_run` (10 Jul, SEBELUM `Math.floor`):** 472 diperiksa, **332 memenuhi syarat**. Sebaran: CONTACTED 129 · NEW 124 · QUALIFIED 53 · PROPOSAL 20 · NEGOTIATION 6. Setelah `Math.floor` angkanya akan turun (lead yang belum genap harinya tak ikut), tapi **angka pasti BELUM DIUJI** — EF dihapus sebelum sempat dijalankan ulang. **Uji ulang `dry_run` setelah TD-60 beres.**
+**Simulasi `dry_run` — terverifikasi 10 Jul (`verify_jwt` aktif):** 472 diperiksa, **304 memenuhi syarat** (setelah `Math.floor`). Sebaran: CONTACTED 121 · NEW 118 · QUALIFIED 45 · PROPOSAL 20 · NEGOTIATION 0. Sebelum `Math.floor` angkanya **332** (termasuk 6 NEGOTIATION); pembulatan ke bawah menyelamatkan **28 lead** yang harinya belum genap — seluruhnya deal NEGOTIATION aman.
 
-**Rencana peluncuran (BELUM dijalankan — urut):**
-1. Selidiki **TD-60** (`verify_jwt` tak berlaku) — **prasyarat** (function dihapus sbg mitigasi; tanpa proteksi, siapa pun yang tahu URL bisa memicu pemindahan 332 lead).
-2. Deploy ulang `aging-pipeline` dgn JWT aktif.
-3. Mode kering, ekspor daftar kandidat.
-4. Beri sales tenggat **~1 minggu** ("catat aktivitas kalau lead masih digarap").
-5. Pasang **pg_cron** harian, matikan `dry_run`.
+**Rencana peluncuran (status per-langkah — urut):**
+1. ✅ **SELESAI (10 Jul)** — TD-60 `verify_jwt` beres; `config.toml` diberi entri `[functions.aging-pipeline]` `verify_jwt=true`. Terverifikasi: **401** tanpa key sah, **200** dgn anon key.
+2. ✅ **SELESAI (10 Jul)** — `aging-pipeline` di-deploy ulang dgn slug benar (sebelumnya `bright-handler`). **Live, tapi TIDAK dijadwalkan.**
+3. ✅ **SELESAI (10 Jul)** — `dry_run` dijalankan manual: 472 diperiksa, **304 memenuhi syarat**.
+4. ⬜ Beri sales tenggat **~1 minggu**: ekspor daftar 304 kandidat, sampaikan "catat aktivitas kalau lead masih digarap".
+5. ⬜ Pasang **pg_cron** harian. **Sampai langkah ini dijalankan, TIDAK ADA lead yang berpindah otomatis** — function hanya jalan bila dipanggil manual.
 
-> ⚠️ Alasan tenggat: 332 lead (**70% pipeline aktif** — 332 dari 472) bisa pindah dalam semalam — sales perlu peringatan lebih dulu, bukan kejutan.
+> ⚠️ Alasan tenggat: 304 lead (**64% pipeline aktif** — 304 dari 472) bisa pindah dalam semalam — sales perlu peringatan lebih dulu, bukan kejutan.
 
 ---
 
