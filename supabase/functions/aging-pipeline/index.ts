@@ -20,6 +20,26 @@ Deno.serve(async (req) => {
 
   const stages = Object.keys(AGING_RULES)
 
+  // Hanya entitas dengan aging_enabled=true yang lead-nya boleh dipindahkan.
+  // EF memakai service role key sehingga menembus RLS — filter ini WAJIB eksplisit.
+  const { data: companies, error: errCompanies } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("aging_enabled", true)
+    .eq("is_active", true)
+
+  if (errCompanies) {
+    return new Response(JSON.stringify({ error: errCompanies.message }), { status: 500 })
+  }
+
+  const companyIds = (companies ?? []).map((c) => c.id)
+  if (companyIds.length === 0) {
+    return new Response(
+      JSON.stringify({ pesan: "Tak ada entitas dengan aging_enabled=true", diperiksa: 0 }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )
+  }
+
   const { data: prospects, error } = await supabase
     .from('accounts')
     .select('id, name, pipeline_stage, stage_changed_at, last_activity_at, assigned_to, company_id')
@@ -27,6 +47,7 @@ Deno.serve(async (req) => {
     .eq('is_active', true)
     .is('deleted_at', null)
     .in('pipeline_stage', stages)
+    .in('company_id', companyIds)
     .limit(1000)
 
   if (error) {
