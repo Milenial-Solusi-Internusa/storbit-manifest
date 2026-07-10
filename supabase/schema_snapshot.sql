@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict MRHh6L8pFD7DUoPVyiN4V7MioBsaF0t1332LfqxVg902GH9peNi3nGyBHwwctnD
+\restrict GYkRHYKHgrVNBjcIECaadBUJFPIa6h5RUZvBdWRdAybfMoP6yFWB7PWdFKKumgl
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2311,7 +2311,8 @@ CREATE TABLE public.companies (
     postal_code character varying,
     fiscal_year_start integer DEFAULT 1,
     default_currency character varying(3) DEFAULT 'IDR'::character varying,
-    timezone character varying DEFAULT 'Asia/Jakarta'::character varying
+    timezone character varying DEFAULT 'Asia/Jakarta'::character varying,
+    aging_enabled boolean DEFAULT false NOT NULL
 );
 
 
@@ -12121,5 +12122,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict MRHh6L8pFD7DUoPVyiN4V7MioBsaF0t1332LfqxVg902GH9peNi3nGyBHwwctnD
+\unrestrict GYkRHYKHgrVNBjcIECaadBUJFPIa6h5RUZvBdWRdAybfMoP6yFWB7PWdFKKumgl
 
