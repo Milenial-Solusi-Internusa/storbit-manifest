@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict WZFaufcQt9GkTO2f0cHGGWp9jagIzZBXldVgNdt5JjEhr19eB4uTHzBJ67ulYTJ
+\restrict SuNspGhu3Vi5GAcggAqh9hUuImUmQNVKNzcrZp2st7A8iwSWaSPqgq7C5gk4fen
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1293,6 +1293,30 @@ BEGIN
     UPDATE sp_orders SET status=v_new, updated_at=now() WHERE id=v_id AND status <> 'CANCELLED';
   END IF;
 END; $$;
+
+
+--
+-- Name: storbit_sp_customers(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.storbit_sp_customers() RETURNS jsonb
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object('customer_id', customer_id, 'name', name)
+      ORDER BY name
+    ),
+    '[]'::jsonb
+  )
+  FROM (
+    SELECT DISTINCT a.id AS customer_id, a.name AS name
+    FROM public.sp_items s
+    JOIN public.accounts a ON a.id = s.customer_id
+    WHERE s.customer_id IS NOT NULL
+      AND a.company_id = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697'
+  ) t;
+$$;
 
 
 --
@@ -12175,5 +12199,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict WZFaufcQt9GkTO2f0cHGGWp9jagIzZBXldVgNdt5JjEhr19eB4uTHzBJ67ulYTJ
+\unrestrict SuNspGhu3Vi5GAcggAqh9hUuImUmQNVKNzcrZp2st7A8iwSWaSPqgq7C5gk4fen
 
