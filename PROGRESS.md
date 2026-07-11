@@ -1,5 +1,19 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-12
+
+### Dashboard Indomarco — dropdown selector customer pindah ke RPC `storbit_sp_customers` (buang 2 query + `.limit(5000)`)
+> **Konteks:** dropdown selector customer masih pakai **2 query**: Query A scan `sp_items.select("customer_id").limit(5000)` + dedup `Set`; Query B resolve nama via `accounts.select("id,name").in("id",ids)`. Dua query menarik ribuan baris `sp_items` hanya untuk daftar customer unik, dan `.limit(5000)` rapuh (cap default PostgREST 1000). Dipindah ke satu RPC. 1 file FE (`src/modules/crm/IndomarcoDashboardPage.jsx`), **tanpa ubah DB di sesi ini** (RPC dibuat & diverifikasi terpisah). Build clean (2585 modules, ~1.72s).
+- [x] **useEffect dropdown** (mount, deps `[]`): isi try-block diganti → `supabase.rpc("storbit_sp_customers")` → `data.map((c) => ({ id: c.customer_id, name: c.name || "(Tanpa nama)" }))` → `setCustomerOptions(opts)` (`IndomarcoDashboardPage.jsx:126-137`). Struktur `alive`/IIFE async/`catch` silent-swallow/cleanup dipertahankan. `.sort()` client dihapus (RPC sudah urut). State `customerOptions` bentuk `{id,name}` TIDAK berubah → render dropdown tak disentuh.
+- [x] **RPC `storbit_sp_customers() → jsonb`** (TANPA argumen; dibuat & terverifikasi di DB, di luar task ini): return jsonb array `[{customer_id:uuid, name:text}]`, DISTINCT customer yang punya SP, difilter company **SOA**, urut alfabet by name. Sumber: `sp_items` join `accounts`. Dicatat di `03_DATA_MODEL.md` §5.
+- [x] **Data sekarang:** dropdown balik PERSIS 4 customer (urut alfabet): CK - Central Kitchen, General Order, Indogrosir, INDOMARCO. Customer MSI/JCI tak muncul (filter SOA di RPC).
+- [x] **Sengaja TIDAK disentuh:** Query C (RPC `indomarco_dashboard_stats` untuk KPI/chart), logika setelah customer dipilih, default `customerId=INDOMARCO_ID`, semua KPI/chart/styling/layout. Komponen tetap pakai `supabase` langsung (bukan `db.js`).
+- [x] **Catatan tech debt (jangan overclaim):** perubahan ini menghapus instance `.limit(5000)` di **jalur dropdown Indomarco** (dulu A-11 di `TECH_DEBT_AUDIT.md` — file audit, BUKAN `08_TECH_DEBT.md`). **TD-11 tetap OPEN** — masih umum (mis. `db.js` `listCustomers`/`listSpItems` tanpa limit). Hanya instance dropdown Indomarco ini yang teratasi; TD-11/A-11 global belum tuntas.
+- [ ] **⚠️ RPC `storbit_sp_customers` belum ada file migrasi** di `supabase/migrations/` → rekam (pola `20260711000000_indomarco_dashboard_stats.sql`).
+- [ ] **⚠️ `schema_snapshot.sql` STALE** terhadap RPC ini → refresh `pg_dump` (pooler Seoul `aws-1-ap-northeast-2.pooler.supabase.com`). (Beda dari `indomarco_dashboard_stats` yang sudah termuat.)
+- [ ] **⚠️ Belum di-commit.**
+- [ ] **Tes manual (belum, perlu login manager+ / Vercel preview):** dropdown 4 customer (CK/General Order/Indogrosir/INDOMARCO); pilih INDOMARCO → KPI tetap 429 / 984.706 / 798.502 / 36; tak ada MSI/JCI.
+
 ## 2026-07-11
 
 ### Dashboard Indomarco — pindah agregasi KPI ke DB (RPC `indomarco_dashboard_stats`), hilangkan potong-1000
