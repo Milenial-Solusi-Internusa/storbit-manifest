@@ -59,7 +59,7 @@ Internal presentation dashboard for the Indomarco account (used by the MSI team 
 
 - **Page:** [`src/modules/crm/IndomarcoDashboardPage.jsx`](src/modules/crm/IndomarcoDashboardPage.jsx) · menu id `indomarco-dashboard` (under CRM).
 - **Access:** manager-or-above only (`super_admin`, `admin`, `ceo`, `gm`, `manager`, `supervisor`) via the existing menu `role` gate + `canRenderPage`. Sales and customers have no access.
-- **Data:** live from `sp_items` (`.limit(1000)`, no company filter — RLS is permissive, scope is by `customer_id`). Aggregation is client-side.
+- **Data:** the four KPIs and all charts come from the DB RPC `indomarco_dashboard_stats(p_customer_id)` — aggregation (`COUNT DISTINCT` / `SUM`) runs in the database over `sp_items` scoped by `customer_id`, replacing the earlier client-side aggregation over raw rows that was capped at `.limit(1000)` (which silently understated totals above 1000 rows). The customer-selector dropdown still reads `sp_items` directly.
 - **Deliberately hidden:** prices, margin, cost, on-time rate, and any % fulfillment. `shipped_qty` is shown only as an absolute "Volume Terealisasi".
 - **Pending:** the region donut uses placeholder data until the free-text `dc` → region mapping is finalized (see `PROGRESS.md`).
 

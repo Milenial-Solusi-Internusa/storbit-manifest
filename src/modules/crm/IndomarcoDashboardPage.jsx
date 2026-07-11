@@ -113,7 +113,7 @@ function SimpleTooltip({ active, payload, titleKey, valueSuffix }) {
 
 /* ---------------- main ---------------- */
 export default function IndomarcoDashboardPage() {
-  const [rows, setRows] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   // Customer selector — default Indomarco. Opsi = customer yang punya data di sp_items.
@@ -150,17 +150,14 @@ export default function IndomarcoDashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        // sp_items: tak ada company_id/deleted_at; RLS read = USING(true). Scope via
-        // customer_id (dropdown) + role-gate menu (manager-or-above). limit(1000).
+        // Agregasi dipindah ke DB (RPC indomarco_dashboard_stats) — hindari potong
+        // diam-diam di 1000 baris (dulu fetch sp_items mentah + hitung client-side).
         const { data, error: err } = await supabase
-          .from("sp_items")
-          .select("sp_no, qty, shipped_qty, dc, sp_date, sp_status")
-          .eq("customer_id", customerId)
-          .limit(1000);
+          .rpc("indomarco_dashboard_stats", { p_customer_id: customerId });
         if (err) throw err;
-        if (alive) setRows(data || []);
+        if (alive) setStats(data || null);
       } catch (e) {
-        if (alive) { setError(e.message || "Gagal memuat data."); setRows([]); }
+        if (alive) { setError(e.message || "Gagal memuat data."); setStats(null); }
       } finally {
         if (alive) setLoading(false);
       }
@@ -168,43 +165,40 @@ export default function IndomarcoDashboardPage() {
     return () => { alive = false; };
   }, [customerId]);
 
-  // ── agregasi (client-side, dari satu fetch) ──────────────────────────────
-  const spSet = new Set();
-  const dcSet = new Set();
-  const dcVol = {};                          // dc → Σ qty (Bar DC Teratas)
-  const trendSets = Array.from({ length: 7 }, () => new Set()); // Jan–Jul 2026, distinct sp_no
-  let totalOrdered = 0;
-  let totalRealized = 0;
-  const dateStrs = [];
-  rows.forEach((r) => {
-    if (r.sp_no) spSet.add(r.sp_no);
-    totalOrdered += r.qty || 0;
-    totalRealized += r.shipped_qty || 0;
-    const dc = (r.dc || "").trim();
-    if (dc) { dcSet.add(dc); dcVol[dc] = (dcVol[dc] || 0) + (r.qty || 0); }
-    if (r.sp_date) {
-      dateStrs.push(String(r.sp_date).slice(0, 10));
-      const [y, m] = String(r.sp_date).slice(0, 10).split("-");
-      if (y === "2026" && r.sp_no) { const idx = Number(m) - 1; if (idx >= 0 && idx <= 6) trendSets[idx].add(r.sp_no); }
-    }
-  });
-  const totalSP = spSet.size;
-  const dcCount = dcSet.size;
-  const dcData = Object.entries(dcVol).map(([name, volume]) => ({ name, volume })).sort((a, b) => b.volume - a.volume).slice(0, 6);
+  // ── agregasi (dari RPC indomarco_dashboard_stats) ────────────────────────
+  // KPI langsung dari output RPC (SUM/COUNT DISTINCT dihitung di DB).
+  const totalSP = stats?.total_sp || 0;
+  const totalOrdered = stats?.total_ordered || 0;
+  const totalRealized = stats?.total_realized || 0;
+  const dcCount = stats?.dc_count || 0;
 
-  // Donut: COUNT DISTINCT dc per wilayah — dihitung dari dcSet (distinct dc), jadi
+  // Bar "DC Teratas": dc_volumes (1 baris/DC, tak terurut) → sort volume desc → top 6.
+  const dcData = (stats?.dc_volumes || [])
+    .map((d) => ({ name: d.dc, volume: d.volume }))
+    .sort((a, b) => b.volume - a.volume).slice(0, 6);
+
+  // Donut: COUNT DISTINCT dc per wilayah — dc_volumes sudah 1 baris per DC (distinct).
   // Σ wilayah = dcCount (konsisten dgn angka tengah donut). Urut value desc, tiebreak
   // urutan kanonik; "Lainnya" (dc tak terpetakan) selalu di akhir & hanya bila ada.
   const regionCount = {};
-  dcSet.forEach((dc) => { const reg = regionForDc(dc); regionCount[reg] = (regionCount[reg] || 0) + 1; });
+  (stats?.dc_volumes || []).forEach((d) => { const reg = regionForDc(d.dc); regionCount[reg] = (regionCount[reg] || 0) + 1; });
   const regionRank = (name) => { const i = REGION_ORDER.indexOf(name); return i === -1 ? 999 : i; };
   const regionData = REGION_ORDER.filter((r) => regionCount[r]).map((r) => ({ name: r, value: regionCount[r] }))
     .sort((a, b) => b.value - a.value || regionRank(a.name) - regionRank(b.name));
   if (regionCount["Lainnya"]) regionData.push({ name: "Lainnya", value: regionCount["Lainnya"] });
   const totalRegion = regionData.reduce((a, b) => a + b.value, 0);
-  const trendData = trendSets.map((s, i) => ({ bulan: MONTHS_ID[i], sp: s.size }));
-  dateStrs.sort();
-  const periodLabel = dateStrs.length ? `${fmtLongDate(dateStrs[0])} – ${fmtLongDate(dateStrs[dateStrs.length - 1])}` : "—";
+
+  // Tren SP per bulan: monthly (1 baris/bulan) → tetap difilter ke 2026 bulan Jan–Jul
+  // (index 0–6) → isi 7 bucket.
+  const trendBuckets = Array.from({ length: 7 }, () => 0);
+  (stats?.monthly || []).forEach((m) => {
+    const [y, mo] = String(m.ym).slice(0, 7).split("-");
+    if (y === "2026") { const idx = Number(mo) - 1; if (idx >= 0 && idx <= 6) trendBuckets[idx] = m.sp_count || 0; }
+  });
+  const trendData = trendBuckets.map((cnt, i) => ({ bulan: MONTHS_ID[i], sp: cnt }));
+  const periodLabel = (stats?.period_min && stats?.period_max)
+    ? `${fmtLongDate(stats.period_min)} – ${fmtLongDate(stats.period_max)}`
+    : "—";
   const generatedAt = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
   const selectedName = customerOptions.find((c) => c.id === customerId)?.name || (customerId === INDOMARCO_ID ? "Indomarco" : "Customer");
 
@@ -215,7 +209,7 @@ export default function IndomarcoDashboardPage() {
     { key: "dc",       label: "Jangkauan DC",       value: fmt(dcCount),       unit: "titik se-Indonesia", icon: MapPin },
   ];
 
-  const isEmpty = !loading && !error && rows.length === 0;
+  const isEmpty = !loading && !error && (!stats || (Number(stats.total_sp) === 0 && Number(stats.total_ordered) === 0));
 
   return (
     <div className="nx-page-pad" style={{ display: "flex", flexDirection: "column", gap: 20, fontFamily: FONT_BODY }}>
