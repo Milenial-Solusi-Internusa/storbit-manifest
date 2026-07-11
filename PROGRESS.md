@@ -1,6 +1,43 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-11
+
+### Dashboard Indomarco — pindah agregasi KPI ke DB (RPC `indomarco_dashboard_stats`), hilangkan potong-1000
+> **Konteks:** Query lama menarik baris mentah `sp_items` ber-`.limit(1000)` lalu agregasi client-side (`rows.forEach`). Begitu baris customer >1000, **semua KPI understate diam-diam tanpa error**. Agregasi dipindah ke DB via RPC tunggal — angka tampil harus identik. 1 file FE (`src/modules/crm/IndomarcoDashboardPage.jsx`), **tanpa ubah DB di sesi ini** (RPC dibuat & diverifikasi terpisah). Build clean (2585 modules, ~1.25s).
+- [x] **State:** `rows`/`setRows` → `stats`/`setStats` (satu objek jsonb, bukan array baris).
+- [x] **Query C** (`useEffect [customerId]`): `supabase.from("sp_items").select(...).eq("customer_id",...).limit(1000)` → `supabase.rpc("indomarco_dashboard_stats", { p_customer_id: customerId })` → `setStats(data||null)`. Loading/error/empty dipertahankan.
+- [x] **Derivasi dari `stats`** (logika display TAK diubah — hanya sumbernya): `total_sp/total_ordered/total_realized/dc_count` langsung; `dc_volumes` → bar DC (sort volume desc, top 6) + donut wilayah (group `regionForDc`, distinct DC/wilayah); `monthly` → tren (filter 2026 Jan–Jul, index 0–6); `period_min/period_max` → label periode via `fmtLongDate`.
+- [x] **`isEmpty`:** `rows.length===0` → `!stats || (Number(stats.total_sp)===0 && Number(stats.total_ordered)===0)`.
+- [x] **RPC `indomarco_dashboard_stats(p_customer_id uuid) → jsonb`** (dibuat & terverifikasi di DB, di luar task ini): `total_sp` (COUNT DISTINCT sp_no), `total_ordered` (SUM qty), `total_realized` (SUM shipped_qty), `dc_count` (COUNT DISTINCT dc trimmed), `period_min/period_max`, `dc_volumes` (1/DC, tak terurut), `monthly` (1/bulan ada). Sumber: agregasi `sp_items` per `customer_id`. Dicatat di `03_DATA_MODEL.md` §5.
+- [x] **Sengaja TIDAK disentuh:** Query A (dropdown customer, scan `sp_items` `.limit(5000)` — **potong 5000 MASIH ADA**, bukan bagian task ini), Query B (resolve nama via `accounts .in(ids)`), semua JSX/chart/styling/warna/ikon/label. Komponen tetap pakai `supabase` langsung (bukan `db.js`).
+- [x] **`schema_snapshot.sql` sudah di-refresh** (`pg_dump`, commit `6c68642`) → RPC `indomarco_dashboard_stats` termuat (baris 811); RPC juga direkam migrasi `20260711000000_indomarco_dashboard_stats.sql` (commit `1a22d98`). Snapshot tak lagi stale untuk RPC ini.
+- [ ] **⚠️ Belum di-commit.**
+- [ ] **Tes manual (belum, perlu login manager+ / Vercel preview):** 4 KPI 429 / 984.706 / 798.502 / 36; bar 6 DC (Jakarta 2/Purwakarta/Jakarta 1/Surabaya/Gresik/Klaten); donut center 36; tren Jan 116…Jul 5; periode 8 Jan – 9 Jul 2026.
+- **Catatan doc:** `README.md` (~baris 62) **sudah dikoreksi** (diedit manual di sesi ini, di luar doc-keeper) — bullet Data kini menyebut KPI & chart bersumber dari RPC `indomarco_dashboard_stats(p_customer_id)` dengan agregasi (`COUNT DISTINCT`/`SUM`) di DB atas `sp_items` scoped `customer_id`; dropdown selector masih baca `sp_items` langsung.
+
 ## 2026-07-10
+
+### Peluncuran aging-pipeline: TD-60 beres + filter per-entitas + pg_cron harian (sesi pagi) — branch `feat/aging-pipeline`
+> **Konteks:** melanjutkan sesi audit CRM E2E (9-10 Jul). Aging-pipeline dibawa dari "belum dijadwalkan" ke **LIVE + terjadwal harian**. Tiga blokir dibereskan: keamanan EF (TD-60), scope entitas (aging = aturan MSI, bukan Storbit/JCI), dan penjadwalan (pg_cron). **Semua di branch `feat/aging-pipeline` — belum merge.**
+
+- **TD-60 [DONE — verifikasi commit `1a83c2d`/`5ee5047`]** EF `verify_jwt` tak berlaku (toggle dashboard tersimpan tapi function tetap balas 200 utk token sembarang). **Akar:** `supabase/config.toml` tak punya entri `[functions.aging-pipeline]`; deploy pertama pakai `--no-verify-jwt` (setting menempel), deploy berikutnya tanpa entri config tak menimpanya. **Fix:** +blok `[functions.aging-pipeline]` `verify_jwt=true` ke `config.toml` + deploy ulang. Verified: **401** tanpa key sah, **200** dgn anon key. Pelajaran: setting EF WAJIB di `config.toml`, bukan toggle dashboard. (`manage-schema` sengaja `verify_jwt=false` — jangan ikut diubah.)
+
+- **Filter aging per-entitas — `companies.aging_enabled` (migrasi `20260710000008`, commit `78cc14d`):** EF pakai service role key → menembus RLS → melihat SELURUH entitas. Tapi aturan aging (NEW 7 / CONTACTED 5 / QUALIFIED 5 / PROPOSAL 3 / NEGOTIATION 14) = aturan sales **MSI**. Terbukti: dry_run periksa 472 lead, **3 milik PT Stuja Orbit Abadi** (General Order, Indogrosir, CK — `assigned_to` NULL). **Perbaikan:** kolom `companies.aging_enabled boolean NOT NULL DEFAULT false` (default false = aktivasi keputusan sadar); **MSI=true, JCI/SOA=false**; EF baca daftar `company_id` `aging_enabled=true` lalu `.in('company_id', companyIds)`. +GRANT SELECT `companies` ke `service_role` (fix `permission denied for table companies` → **TD-62**). Dry_run pasca-filter: **469 diperiksa** (turun dari 472), **304 memenuhi** (tak berubah — 3 lead Storbit diam 7 hari di NEW, batas 7, belum lewat).
+
+- **pg_cron harian (migrasi `20260710000009`, commit `56280f1`):** job **`aging-pipeline-harian`**, schedule `0 18 * * *` (18:00 UTC = **01:00 WIB**); panggil EF via `net.http_post` (`pg_net`); **service role key di Vault** (`aging_pipeline_key`), BUKAN hardcode di `cron.job` (tabel `cron` terbaca siapa pun yang punya akses schema). Diverifikasi: `net.http_post` manual `?dry_run=true` → 200, memenuhi 304.
+- **Rencana peluncuran — langkah 4 & 5 SELESAI:** (4) sales diberi tahu **sebelum** cron; **TIDAK** pakai tenggat seminggu (keputusan Den: sales perlu melihat pipeline punya konsekuensi nyata) — pemberitahuan pagi, cron jalan 01:00 WIB malam yang sama. (5) pg_cron terjadwal.
+- **Dampak malam pertama (11 Jul 01:00 WIB):** pipeline aktif **469 → 165**; Lead Pool **479 → 783**; ~303 notifikasi. Malam berikutnya diperkirakan mendekati nol — "aging jadi aliran, bukan gelombang".
+
+- **Tech debt baru:**
+  - **TD-62 [MEDIUM/PARTIAL]** 47/96 tabel tak beri SELECT ke `service_role` (akar = GRANT, bukan RLS; `has_table_privilege` false:47 / true:49; termasuk `sp_orders`/`sp_items`/`ar_ttfs`/`customers`/`hrga_*`/`asset_*`). Hanya `companies` diperbaiki. ⚠️ JANGAN GRANT massal sebelum penyebab diketahui (bisa REVOKE disengaja).
+  - **TD-63 [LOW/OPEN]** `pg_dump --no-privileges` sembunyikan GRANT/REVOKE dari snapshot → TD-62 tak terlihat dari `schema_snapshot.sql`. Putuskan: buang flag atau catat eksplisit snapshot tak memuat privileges.
+
+- **Perintah darurat (dicatat di `05_WORKFLOW_MAP` §Aging Pipeline):** (a) `cron.unschedule('aging-pipeline-harian')`; (b) `UPDATE accounts … WHERE lead_pool_reason LIKE 'Aging%' AND lead_pool_at >= '2026-07-10 18:00:00+00'`; (c) pantau harian `count(*) GROUP BY date_trunc('day', lead_pool_at)`.
+
+- **Konteks adopsi (BUKAN kinerja):** sebaran pencatatan sales (269 aktivitas / 469 lead aktif) dicatat di `05_WORKFLOW_MAP` **dengan disclaimer eksplisit** — mengukur pencatatan di Nexus, bukan kinerja; masalah adopsi/desain, bukan orang.
+
+- **Dokumentasi diperbarui:** `08_TECH_DEBT` (+TD-62/63, TD-60→DONE, header), `03_DATA_MODEL` (kolom `companies.aging_enabled`), `05_WORKFLOW_MAP` (§Aging Pipeline LIVE + langkah 4-5 + detail cron + perintah darurat + konteks adopsi).
+- **Housekeeping (⚠️ untuk Den):** (1) branch `feat/aging-pipeline` **belum merge**; (2) migrasi `20260710000008/9` sudah direkam di `supabase/migrations/`; (3) `schema_snapshot.sql` — `aging_enabled` (kolom) akan terlihat setelah refresh, tapi **GRANT SELECT companies TIDAK** (TD-63, `--no-privileges`); (4) draft dokumentasi ini **belum di-commit**; (5) `AUDIT_PROCUREMENT.md` masih scratch di root; **repo kini PRIVATE (10 Jul)** — catatan lama "PUBLIC" di `CLAUDE.md` perlu diperbarui.
 
 ### Fix bug Hapus SP (dual-table + komposit + gate super_admin/DRAFT) + Batalkan SP untuk operations
 > **Konteks bug:** Hapus SP dulu cuma menghapus `sp_items` (legacy) → `sp_orders`+`sp_order_items` (kanonik) nyangkut → tak bisa bikin ulang SP nomor sama (UNIQUE `customer_id,sp_no`). Juga: delete **tak pakai `customer_id`** (bisa hapus SP customer lain bernomor sama — CRITICAL), dan tombol delete gated `['super_admin','operations']` **tanpa gate status** (operations bisa hapus; SP jalan bisa dihapus). **Keputusan:** delete = **super_admin-only + hanya DRAFT** + identitas komposit + dual-table atomik. **Cancel** (`set_sp_status`) sudah benar (dual-table + komposit) — tak disentuh. Sesi ini = **KODE (4 file)** + **1 RPC baru** (SQL, dijalankan user manual — **BELUM live saat entri ini dibuat**).
