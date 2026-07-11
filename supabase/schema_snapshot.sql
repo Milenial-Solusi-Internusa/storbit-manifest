@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict SuNspGhu3Vi5GAcggAqh9hUuImUmQNVKNzcrZp2st7A8iwSWaSPqgq7C5gk4fen
+\restrict mBXbz0f9nwWze4qHQtoTwBaO9g9kuThUgOxWxwxkegBvoyocD4dmFadDfTWyLFk
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -12199,5 +12199,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict SuNspGhu3Vi5GAcggAqh9hUuImUmQNVKNzcrZp2st7A8iwSWaSPqgq7C5gk4fen
+\unrestrict mBXbz0f9nwWze4qHQtoTwBaO9g9kuThUgOxWxwxkegBvoyocD4dmFadDfTWyLFk
 
