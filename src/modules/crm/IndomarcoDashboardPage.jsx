@@ -120,23 +120,16 @@ export default function IndomarcoDashboardPage() {
   const [customerId, setCustomerId] = useState(INDOMARCO_ID);
   const [customerOptions, setCustomerOptions] = useState([]);
 
-  // Opsi dropdown: DISTINCT customer_id dari sp_items → resolve nama via accounts
-  // (sp_items.customer_id → accounts.id; accounts.name). Sekali saat mount.
+  // Opsi dropdown via RPC storbit_sp_customers — sudah DISTINCT + bawa name + urut
+  // alfabet + difilter company SOA (gantikan scan sp_items .limit(5000) + resolve
+  // accounts). Sekali saat mount.
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const { data: idRows, error: e1 } = await supabase
-          .from("sp_items").select("customer_id").not("customer_id", "is", null).limit(5000);
+        const { data, error: e1 } = await supabase.rpc("storbit_sp_customers");
         if (e1) throw e1;
-        const ids = [...new Set((idRows || []).map((r) => r.customer_id).filter(Boolean))];
-        if (!ids.length) { if (alive) setCustomerOptions([]); return; }
-        const { data: accs, error: e2 } = await supabase
-          .from("accounts").select("id, name").in("id", ids);
-        if (e2) throw e2;
-        const opts = (accs || [])
-          .map((a) => ({ id: a.id, name: a.name || "(Tanpa nama)" }))
-          .sort((a, b) => a.name.localeCompare(b.name, "id"));
+        const opts = (data || []).map((c) => ({ id: c.customer_id, name: c.name || "(Tanpa nama)" }));
         if (alive) setCustomerOptions(opts);
       } catch { /* dropdown fallback ke opsi terpilih; data utama tetap jalan */ }
     })();
