@@ -120,7 +120,7 @@ Kolom `sp_orders.status`, **fact-derived** (di-maintain otomatis oleh event, buk
 | `is_super_admin()` | `super_admin` (via `user_roles`) | Top-level bypass. JANGAN nest di dalam filter company. |
 | `get_user_company_id()` | — | `SELECT company_id FROM profiles WHERE id=auth.uid()`. Null sebelum backfill / di SQL Editor. |
 | `is_admin_or_above()` | `super_admin`, `admin` **saja** | ⚠️ TIDAK termasuk manager/ceo — dipakai ~51 policy; sumber banyak bug akses (lihat tech debt). |
-| `is_manager_or_above()` | super_admin, admin, ceo, gm, manager, sales_head | Dipakai RLS accounts/activities. |
+| `is_manager_or_above()` | super_admin, admin, ceo, gm, gm_bd, manager, supervisor | Dipakai RLS accounts/activities. (Verified `schema_snapshot.sql` fungsi `is_manager_or_above`, `code IN (…)` — TIDAK ada `sales_head`.) |
 | `has_permission(module, action)` | query `user_roles→roles→role_permissions→permissions` | ⚠️ Lihat §6 — `CLAUDE.md` menandai BROKEN/unseeded. |
 | `has_role(role_code)` | cek role di `user_roles` | — |
 | `get_user_role_code()` | role code user | — |
