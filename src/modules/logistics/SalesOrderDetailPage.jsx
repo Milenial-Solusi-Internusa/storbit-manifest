@@ -877,7 +877,7 @@ export default function SalesOrderDetailPage({
           <ChevronRight size={12}/>
           <span style={{ fontFamily: "'IBM Plex Mono',monospace", color: C.ink, fontWeight: 600 }}>{spNo}</span>
         </nav>
-        <h1 style={{ margin: 0, fontFamily: "'Montserrat', sans-serif", fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', lineHeight: 1.15 }}>
+        <h1 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', lineHeight: 1.15 }}>
           Detail Sales Order
         </h1>
       </div>
@@ -1018,7 +1018,7 @@ export default function SalesOrderDetailPage({
 
             {/* Financial Summary */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14 }}>Financial Summary</div>
+              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14 }}>Financial Summary</div>
               <div style={{ padding: '6px 18px 18px' }}>
                 {[
                   { k: 'Total Items',    v: `${totalItems} produk`, color: null },
@@ -1046,7 +1046,7 @@ export default function SalesOrderDetailPage({
 
             {/* Finance Status */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14 }}>Finance Status</div>
+              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14 }}>Finance Status</div>
               <div style={{ padding: '6px 18px 18px' }}>
                 {/* Overall bar */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 14px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface2, marginBottom: 14 }}>
@@ -1106,7 +1106,7 @@ export default function SalesOrderDetailPage({
             </div>
             {/* BTB Numbers — SP-level */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden', gridColumn: '1 / -1' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>BTB Numbers</span>
                 <span style={{ fontSize: 12, fontWeight: 500, color: C.inkFaint }}>{btbs.length} nomor BTB</span>
               </div>
@@ -1291,7 +1291,7 @@ export default function SalesOrderDetailPage({
           <div style={{ padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
               <div>
-                <b style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 14.5 }}>Riwayat Pengiriman</b>
+                <b style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 14.5 }}>Riwayat Pengiriman</b>
                 <div style={{ fontSize: 12.5, color: C.inkFaint, marginTop: 3 }}>
                   {shippedQty > 0 ? `${shippedQty.toLocaleString('id-ID')} dari ${totalQty.toLocaleString('id-ID')} qty terkirim` : 'Belum ada pengiriman tercatat'}
                 </div>
@@ -1313,7 +1313,7 @@ export default function SalesOrderDetailPage({
             <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: C.surface2, padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <Link2 size={16} style={{ color: C.accent }}/>
-                <b style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 14, color: C.ink }}>Link Dokumen SP</b>
+                <b style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, color: C.ink }}>Link Dokumen SP</b>
               </div>
               <p style={{ fontSize: 12.5, color: C.inkSoft, margin: '0 0 14px' }}>
                 Tautan ke folder/berkas Drive terkait SP ini (Surat Jalan, PO Customer, Rincian Harga, bukti BTB). Berlaku untuk seluruh SP {spNo}.
