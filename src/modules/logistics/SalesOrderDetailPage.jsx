@@ -884,40 +884,12 @@ export default function SalesOrderDetailPage({
 
       {/* ── Header card ───────────────────────────────────────────────── */}
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(20,30,45,.05)' }}>
+        {/* Row 1: nomor SP (kiri) + tombol aksi (kanan) */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-          <div>
-            <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 30, fontWeight: 600, letterSpacing: '.5px', lineHeight: 1, color: C.ink }}>
-              {spNo}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 13, alignItems: 'center' }}>
-              {headerStatus && (
-                <Badge bg={headerStatus.bg} color={headerStatus.color} bd={headerStatus.bd}>
-                  <StatusDot color={headerStatus.color}/>{headerStatus.label}
-                </Badge>
-              )}
-              {spOrder?.had_cancelled_picking && (
-                <Badge bg={C.warnBg} color={C.warn} bd={C.warnBd}>
-                  <AlertTriangle size={12}/>Pernah picking dibatalkan
-                </Badge>
-              )}
-              <span style={{ display: 'inline-flex', fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 6, background: cust.bg, color: cust.ink, border: '1px solid transparent', whiteSpace: 'nowrap' }}>
-                {customer}
-              </span>
-              <Badge bg={C.neutralBg} color={C.neutral} bd={C.neutralBd}>
-                <span/>{totalItems} produk
-              </Badge>
-              <Badge bg={C.orangeBg} color={C.orange} bd={C.orangeBd}>
-                <Package size={12}/>{totalQty.toLocaleString('id-ID')} qty
-              </Badge>
-            </div>
+          <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 30, fontWeight: 600, letterSpacing: '.5px', lineHeight: 1, color: C.ink }}>
+            {spNo}
           </div>
           <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignSelf: 'flex-start', alignItems: 'center' }}>
-            {canGeneratePicking && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '5px 10px', borderRadius: 8,
-                background: stockShort.short > 0 ? C.warnBg : C.okBg, color: stockShort.short > 0 ? C.warn : C.ok, border: `1px solid ${stockShort.short > 0 ? C.warnBd : C.okBd}` }}>
-                {stockShort.short > 0 ? <><AlertTriangle size={13}/> {stockShort.short} item stok kurang</> : <><Check size={13}/> Stok cukup</>}
-              </span>
-            )}
             {canGeneratePicking && (
               <button
                 onClick={async () => {
@@ -954,6 +926,35 @@ export default function SalesOrderDetailPage({
               <ChevronLeft size={14}/> Back to List
             </button>
           </div>
+        </div>
+
+        {/* Row 2: badge — STATUS (Dikonfirmasi, flag, Stok cukup) lalu META (customer, produk, qty) */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 13, alignItems: 'center' }}>
+          {headerStatus && (
+            <Badge bg={headerStatus.bg} color={headerStatus.color} bd={headerStatus.bd}>
+              <StatusDot color={headerStatus.color}/>{headerStatus.label}
+            </Badge>
+          )}
+          {spOrder?.had_cancelled_picking && (
+            <Badge bg={C.warnBg} color={C.warn} bd={C.warnBd}>
+              <AlertTriangle size={12}/>Pernah picking dibatalkan
+            </Badge>
+          )}
+          {canGeneratePicking && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '5px 10px', borderRadius: 8,
+              background: stockShort.short > 0 ? C.warnBg : C.okBg, color: stockShort.short > 0 ? C.warn : C.ok, border: `1px solid ${stockShort.short > 0 ? C.warnBd : C.okBd}` }}>
+              {stockShort.short > 0 ? <><AlertTriangle size={13}/> {stockShort.short} item stok kurang</> : <><Check size={13}/> Stok cukup</>}
+            </span>
+          )}
+          <span style={{ display: 'inline-flex', fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 6, background: cust.bg, color: cust.ink, border: '1px solid transparent', whiteSpace: 'nowrap' }}>
+            {customer}
+          </span>
+          <Badge bg={C.neutralBg} color={C.neutral} bd={C.neutralBd}>
+            <span/>{totalItems} produk
+          </Badge>
+          <Badge bg={C.orangeBg} color={C.orange} bd={C.orangeBd}>
+            <Package size={12}/>{totalQty.toLocaleString('id-ID')} qty
+          </Badge>
         </div>
       </div>
 
