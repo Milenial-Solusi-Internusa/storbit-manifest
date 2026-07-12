@@ -29,24 +29,28 @@ import { useProducts } from '../../hooks/useProducts';
 const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
+// Cool/navy palette — senyawa dengan SalesOrderPage (list SP) + DealDetailPage (detail
+// Inquiry). Semantik lama (green/steel-blue/mustard/purple/brown) di-remap ke brand
+// navy #1B4D8A / orange #E85A1E / amber. Tanpa dark green, ungu, mustard, teal, coklat.
 const C = {
-  surface:   '#FFFDF8',
-  surface2:  '#FBF6EC',
-  ink:       '#23291E',
-  inkSoft:   '#5E6553',
-  inkFaint:  '#8A8E7C',
-  line:      '#E7DCC8',
-  lineSoft:  '#F0E7D6',
+  surface:   '#FFFFFF',
+  surface2:  '#F4F6F9',
+  ink:       '#2A3340',
+  inkSoft:   '#6B7686',
+  inkFaint:  '#9AA3B2',
+  line:      '#E7EAF0',
+  lineSoft:  '#EEF1F5',
   accent:    '#E85A1E',
   accentSoft:'#FEF2EC',
-  ok:        '#2E7D4F', okBg:  '#E4F0E5', okBd:  '#BFDDC4',
-  warn:      '#9A6B0E', warnBg:'#F8ECCF', warnBd:'#E6CE94',
-  danger:    '#B23227', dangerBg:'#F6E0DB', dangerBd:'#E6BBB2',
-  info:      '#2A5B8C', infoBg:'#E1ECF5', infoBd:'#BAD2E6',
-  neutral:   '#6B6F5E', neutralBg:'#EEE9DC', neutralBd:'#DDD3BE',
-  orange:    '#A45A22', orangeBg:'#F6E8D6', orangeBd:'#E7CDA9',
-  yellow:    '#9A6B0E', yellowBg:'#F8ECCF', yellowBd:'#E6CE94',
-  purple:    '#6E4B8C', purpleBg:'#ECE3F4', purpleBd:'#D6C6E4',
+  ok:        '#1B4D8A', okBg:  '#EAF0F8', okBd:  '#CFDDF0',   // positive/done → navy (was dark green)
+  warn:      '#B5772A', warnBg:'#FBEEDD', warnBd:'#E6CE94',   // amber (list SP)
+  danger:    '#C0392B', dangerBg:'#FBEAE8', dangerBd:'#E6BBB2',
+  info:      '#1B4D8A', infoBg:'#EAF0F8', infoBd:'#CFDDF0',   // navy (was steel-blue)
+  neutral:   '#6B7686', neutralBg:'#EEF1F5', neutralBd:'#DDE2EA',
+  orange:    '#E85A1E', orangeBg:'#FEF2EC', orangeBd:'#F6C9AE',   // brand orange (was coklat)
+  yellow:    '#B5772A', yellowBg:'#FBEEDD', yellowBd:'#E6CE94',   // amber (was mustard)
+  purple:    '#B5772A', purpleBg:'#FBEEDD', purpleBd:'#E6CE94',   // amber (was ungu; sisa: stage Faktur Pajak)
+  indigo:    '#5A5B9A', indigoBg:'#ECEDF8', indigoBd:'#D2D3EC',   // TRIAL: PICKING/PACKED (samain list SP)
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -74,15 +78,16 @@ function finColor(pct) {
 }
 
 function custColor(name) {
+  // Tint chip customer — cool/navy only (navy/orange/amber/red/indigo/slate), no teal/coklat/ungu.
   const PALETTE = [
-    { bg: '#E1ECF5', ink: '#2A5B8C' },
-    { bg: '#F6E0DB', ink: '#B23227' },
-    { bg: '#DCEBEA', ink: '#1F6B6B' },
-    { bg: '#ECE3F4', ink: '#6E4B8C' },
-    { bg: '#F6E8D6', ink: '#A45A22' },
+    { bg: '#EAF0F8', ink: '#1B4D8A' },
+    { bg: '#FBEAE8', ink: '#C0392B' },
     { bg: '#FEF2EC', ink: '#E85A1E' },
-    { bg: '#ECE1D2', ink: '#6B4A2C' },
-    { bg: '#EDE3F0', ink: '#7A4E8C' },
+    { bg: '#FBEEDD', ink: '#B5772A' },
+    { bg: '#ECEDF8', ink: '#5A5B9A' },
+    { bg: '#EEF1F5', ink: '#6B7686' },
+    { bg: '#FCEAE6', ink: '#C15A44' },
+    { bg: '#EAF0F8', ink: '#143C6E' },
   ];
   if (!name) return { bg: C.neutralBg, ink: C.neutral };
   let h = 0;
@@ -120,8 +125,8 @@ const HEADLINE_META = {
   DRAFT:          { label: 'Draft',          bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
   CONFIRMED:      { label: 'Dikonfirmasi',   bg: C.infoBg,    color: C.info,    bd: C.infoBd },
   MENUNGGU_STOK:  { label: 'Menunggu Stok',  bg: C.warnBg,    color: C.warn,    bd: C.warnBd },
-  PICKING:        { label: 'Picking',        bg: C.infoBg,    color: C.info,    bd: C.infoBd },
-  PACKED:         { label: 'Dikemas',        bg: C.infoBg,    color: C.info,    bd: C.infoBd },
+  PICKING:        { label: 'Picking',        bg: C.indigoBg,  color: C.indigo,  bd: C.indigoBd },
+  PACKED:         { label: 'Dikemas',        bg: C.indigoBg,  color: C.indigo,  bd: C.indigoBd },
   DIKIRIM:        { label: 'Dikirim',        bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
   SAMPAI:         { label: 'Sampai',         bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
   BTB_TERBIT:     { label: 'BTB Terbit',     bg: C.warnBg,    color: C.warn,    bd: C.warnBd },
@@ -301,7 +306,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
         zIndex: 81, width: '100%', maxWidth: 760, maxHeight: '90vh',
         background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14,
-        boxShadow: '0 12px 34px rgba(40,34,18,.18)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        boxShadow: '0 12px 34px rgba(20,30,45,.18)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Sticky header */}
         <div style={{
@@ -510,7 +515,7 @@ function DeleteModal({ spNo, group, onClose, onConfirm }) {
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
         zIndex: 81, width: '100%', maxWidth: 440,
         background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14,
-        boxShadow: '0 12px 34px rgba(40,34,18,.18)', overflow: 'hidden',
+        boxShadow: '0 12px 34px rgba(20,30,45,.18)', overflow: 'hidden',
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, padding: '20px 22px 14px' }}>
           <span style={{ width: 42, height: 42, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.dangerBg, color: C.danger }}>
@@ -587,7 +592,7 @@ function CancelModal({ spNo, group, onClose, onConfirm }) {
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
         zIndex: 81, width: '100%', maxWidth: 440,
         background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14,
-        boxShadow: '0 12px 34px rgba(40,34,18,.18)', overflow: 'hidden',
+        boxShadow: '0 12px 34px rgba(20,30,45,.18)', overflow: 'hidden',
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, padding: '20px 22px 14px' }}>
           <span style={{ width: 42, height: 42, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.dangerBg, color: C.danger }}>
@@ -636,15 +641,15 @@ function TabBtn({ active, onClick, icon: Icon, label, count }) {
     <button onClick={onClick} style={{
       background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
       padding: '14px 16px', fontSize: 13, fontWeight: active ? 700 : 500,
-      color: active ? C.accent : C.inkSoft,
-      borderBottom: active ? `2.5px solid ${C.accent}` : '2.5px solid transparent',
+      color: active ? C.info : C.inkSoft,
+      borderBottom: active ? `2.5px solid ${C.info}` : '2.5px solid transparent',
       whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 7,
       marginBottom: -1,
     }}>
       <Icon size={15} strokeWidth={active ? 2.2 : 1.8}/>
       {label}
       {count != null && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, borderRadius: 20, padding: '0 5px', fontSize: 11, fontWeight: 700, background: active ? C.accentSoft : C.lineSoft, color: active ? C.accent : C.inkFaint }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, borderRadius: 20, padding: '0 5px', fontSize: 11, fontWeight: 700, background: active ? C.infoBg : C.lineSoft, color: active ? C.info : C.inkFaint }}>
           {count}
         </span>
       )}
@@ -809,7 +814,7 @@ export default function SalesOrderDetailPage({
     try {
       await onSaveItem(data);
       setEditingItem(null);
-      showToast('Item berhasil diperbarui ✨', 'success');
+      showToast('Item berhasil diperbarui', 'success');
     } catch (err) {
       showToast('Gagal menyimpan: ' + (err?.message || 'unknown error'), 'error');
     }
@@ -872,13 +877,13 @@ export default function SalesOrderDetailPage({
           <ChevronRight size={12}/>
           <span style={{ fontFamily: "'IBM Plex Mono',monospace", color: C.ink, fontWeight: 600 }}>{spNo}</span>
         </nav>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', lineHeight: 1.15 }}>
+        <h1 style={{ margin: 0, fontFamily: "'Montserrat', sans-serif", fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', lineHeight: 1.15 }}>
           Detail Sales Order
         </h1>
       </div>
 
       {/* ── Header card ───────────────────────────────────────────────── */}
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(40,34,18,.05)' }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(20,30,45,.05)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 30, fontWeight: 600, letterSpacing: '.5px', lineHeight: 1, color: C.ink }}>
@@ -952,51 +957,52 @@ export default function SalesOrderDetailPage({
         </div>
       </div>
 
-      {/* ── Pastel stat cards (3) ─────────────────────────────────────── */}
+      {/* ── Stat cards (3) — satu keluarga navy; pembeda hanya ikon + label.
+             Aksen semantik ke angka (Expired mepet → amber; bar Finance navy/amber/red). ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-        {/* SP Date — orange */}
-        <div style={{ background: C.orangeBg, border: `1px solid ${C.orangeBd}`, borderRadius: 12, padding: '16px 18px' }}>
+        {/* SP Date */}
+        <div style={{ background: C.infoBg, border: `1px solid ${C.infoBd}`, borderRadius: 12, padding: '16px 18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.orange, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>SP Date</span>
-            <span style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.55)', color: C.orange, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.info, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>SP Date</span>
+            <span style={{ width: 34, height: 34, borderRadius: 9, background: '#FFFFFF', color: C.info, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Calendar size={17} strokeWidth={1.8}/>
             </span>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: C.orange, letterSpacing: '-.3px', lineHeight: 1.1 }}>{fmtDate(spDate)}</div>
-          <div style={{ fontSize: 12, color: C.orange, opacity: .8, marginTop: 4 }}>Diterima dari customer</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: C.info, letterSpacing: '-.3px', lineHeight: 1.1 }}>{fmtDate(spDate)}</div>
+          <div style={{ fontSize: 12, color: C.info, opacity: .8, marginTop: 4 }}>Diterima dari customer</div>
         </div>
 
-        {/* Deadline — yellow */}
-        <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBd}`, borderRadius: 12, padding: '16px 18px' }}>
+        {/* Expired Date */}
+        <div style={{ background: C.infoBg, border: `1px solid ${C.infoBd}`, borderRadius: 12, padding: '16px 18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.yellow, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>Expired Date</span>
-            <span style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.55)', color: C.yellow, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.info, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>Expired Date</span>
+            <span style={{ width: 34, height: 34, borderRadius: 9, background: '#FFFFFF', color: C.info, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Clock size={17} strokeWidth={1.8}/>
             </span>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: days != null && days < 2 ? C.danger : C.yellow, letterSpacing: '-.3px', lineHeight: 1.1 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: days != null && days < 2 ? C.warn : C.info, letterSpacing: '-.3px', lineHeight: 1.1 }}>
             {fmtDate(firstDeadline)}
           </div>
-          <div style={{ fontSize: 12, color: C.yellow, opacity: .8, marginTop: 4 }}>{deadlineSub}</div>
+          <div style={{ fontSize: 12, color: C.info, opacity: .8, marginTop: 4 }}>{deadlineSub}</div>
         </div>
 
-        {/* Finance Progress — purple */}
-        <div style={{ background: C.purpleBg, border: `1px solid ${C.purpleBd}`, borderRadius: 12, padding: '16px 18px' }}>
+        {/* Finance Progress */}
+        <div style={{ background: C.infoBg, border: `1px solid ${C.infoBd}`, borderRadius: 12, padding: '16px 18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.purple, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>Finance Progress</span>
-            <span style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.55)', color: C.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.info, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>Finance Progress</span>
+            <span style={{ width: 34, height: 34, borderRadius: 9, background: '#FFFFFF', color: C.info, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Wallet size={17} strokeWidth={1.8}/>
             </span>
           </div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: C.purple, letterSpacing: '-.3px', lineHeight: 1.1 }}>{finOverallPct}%</div>
-          <div style={{ height: 7, marginTop: 9, borderRadius: 4, background: 'rgba(255,255,255,.55)', overflow: 'hidden' }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: C.info, letterSpacing: '-.3px', lineHeight: 1.1 }}>{finOverallPct}%</div>
+          <div style={{ height: 7, marginTop: 9, borderRadius: 4, background: '#FFFFFF', overflow: 'hidden' }}>
             <div style={{ width: `${finOverallPct}%`, height: '100%', background: finOverallColor, borderRadius: 4 }}/>
           </div>
         </div>
       </div>
 
       {/* ── Tabbed card ───────────────────────────────────────────────── */}
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 8px rgba(40,34,18,.06)' }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 8px rgba(20,30,45,.06)' }}>
         {/* Tab bar */}
         <div style={{ display: 'flex', borderBottom: `1px solid ${C.lineSoft}`, padding: '0 6px', overflowX: 'auto', flexShrink: 0 }}>
           <TabBtn active={tab==='overview'} onClick={() => setTab('overview')} icon={List}       label="Overview"/>
@@ -1012,7 +1018,7 @@ export default function SalesOrderDetailPage({
 
             {/* Financial Summary */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontWeight: 700, fontSize: 14 }}>Financial Summary</div>
+              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14 }}>Financial Summary</div>
               <div style={{ padding: '6px 18px 18px' }}>
                 {[
                   { k: 'Total Items',    v: `${totalItems} produk`, color: null },
@@ -1040,7 +1046,7 @@ export default function SalesOrderDetailPage({
 
             {/* Finance Status */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontWeight: 700, fontSize: 14 }}>Finance Status</div>
+              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14 }}>Finance Status</div>
               <div style={{ padding: '6px 18px 18px' }}>
                 {/* Overall bar */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 14px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface2, marginBottom: 14 }}>
@@ -1100,7 +1106,7 @@ export default function SalesOrderDetailPage({
             </div>
             {/* BTB Numbers — SP-level */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden', gridColumn: '1 / -1' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>BTB Numbers</span>
                 <span style={{ fontSize: 12, fontWeight: 500, color: C.inkFaint }}>{btbs.length} nomor BTB</span>
               </div>
@@ -1285,7 +1291,7 @@ export default function SalesOrderDetailPage({
           <div style={{ padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
               <div>
-                <b style={{ fontSize: 14.5 }}>Riwayat Pengiriman</b>
+                <b style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 14.5 }}>Riwayat Pengiriman</b>
                 <div style={{ fontSize: 12.5, color: C.inkFaint, marginTop: 3 }}>
                   {shippedQty > 0 ? `${shippedQty.toLocaleString('id-ID')} dari ${totalQty.toLocaleString('id-ID')} qty terkirim` : 'Belum ada pengiriman tercatat'}
                 </div>
@@ -1307,7 +1313,7 @@ export default function SalesOrderDetailPage({
             <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: C.surface2, padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <Link2 size={16} style={{ color: C.accent }}/>
-                <b style={{ fontSize: 14, color: C.ink }}>Link Dokumen SP</b>
+                <b style={{ fontFamily: "'Montserrat', sans-serif", fontSize: 14, color: C.ink }}>Link Dokumen SP</b>
               </div>
               <p style={{ fontSize: 12.5, color: C.inkSoft, margin: '0 0 14px' }}>
                 Tautan ke folder/berkas Drive terkait SP ini (Surat Jalan, PO Customer, Rincian Harga, bukti BTB). Berlaku untuk seluruh SP {spNo}.
@@ -1342,7 +1348,7 @@ export default function SalesOrderDetailPage({
                       if (error) { showToast(error.message || 'Gagal menyimpan link', 'error'); return; }
                       setDocUrl(docUrl.trim());
                       setDocEditing(false);
-                      showToast(docUrl.trim() ? 'Link dokumen disimpan ✓' : 'Link dokumen dihapus', 'success');
+                      showToast(docUrl.trim() ? 'Link dokumen disimpan' : 'Link dokumen dihapus', 'success');
                     }}
                     style={{ height: 38, padding: '0 16px', borderRadius: 9, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: docSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: docSaving ? 0.7 : 1 }}>
                     {docSaving ? 'Menyimpan…' : 'Simpan'}
