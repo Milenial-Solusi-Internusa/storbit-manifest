@@ -2,7 +2,7 @@
 
 > Alur bisnis per modul live. Sumber: `CLAUDE.md` (CRM Flow, phase notes), `docs/03_DATA_MODEL.md`. Notasi: **[role]** = pelaku, **⚙** = trigger/otomatis DB.
 >
-> **Diperbarui 2026-07-10 (audit CRM E2E) — koreksi mesin status QUOTATION** (DRAFT→SUBMITTED→SENT, bukan DRAFT→SENT) + struktur pipeline (tabel `accounts`, tak ada `deals`) + section **Aging Pipeline** (EF `aging-pipeline`, belum deploy ulang/belum dijadwalkan) + trigger `trg_z_sync_last_activity`. Sebelumnya: alur SP 12 tahap FASE 0-3 (mesin status `sp_orders.status` via `sp_recompute_status`, LIVE s/d BTB_TERBIT). Bagian non-CRM/non-SP belum ditinjau ulang.
+> **Diperbarui 2026-07-10 (peluncuran aging-pipeline, pagi) — section Aging Pipeline: LIVE + terjadwal.** Filter per-entitas via `companies.aging_enabled` (hanya MSI); pg_cron harian 01:00 WIB (Vault key); verify_jwt beres (TD-60 DONE); dry_run pasca-filter 469 diperiksa / 304 memenuhi. + KONTEKS ADOPSI sebaran pencatatan sales (bukan kinerja). Sebelumnya (audit CRM E2E): koreksi mesin status QUOTATION (DRAFT→SUBMITTED→SENT) + struktur pipeline (tabel `accounts`, tak ada `deals`) + trigger `trg_z_sync_last_activity`. Alur SP 12 tahap FASE 0-3 (mesin status `sp_orders.status` via `sp_recompute_status`, LIVE s/d BTB_TERBIT). Bagian non-CRM/non-SP belum ditinjau ulang.
 
 ---
 
@@ -44,7 +44,7 @@ Lead Pool ──┐
 - **Prospect → stage**: [sales] drag Kanban / edit form. Manager+ bisa semua; sales hanya miliknya (RLS).
 - **WON → customer**: **otomatis DB** (`trg_set_customer_on_won`, BEFORE INSERT OR UPDATE) — sumber kebenaran tunggal; menutup semua jalur (drag/edit/import). Frontend `WinLossModal` collect alasan WON/LOST (redundan tapi dipertahankan).
 - **LOST**: account_status='lost' + lost_reason (kategori).
-- **Lead Pool** (`account_status='lead_pool'` **DAN** `is_in_lead_pool=true` — dua kolom kini disinkron, lihat TD-50): arsip lead → [sales] "Tarik ke Pipeline" → butuh approval → account_status='prospect'. ⚠️ **479 baris pool seluruhnya hasil migrasi 13 Jun 2026 18:59:03** (satu timestamp, `lead_pool_reason='Migrasi dari sistem lama'`) — **nol baris berformat "Aging N hari di stage X"**. EF aging-pipeline ADA sejak 25 Jun tapi **TAK PERNAH DIJADWALKAN** (pg_cron tak terpasang, schema `cron` tak ada). Lihat "Aging Pipeline" di bawah.
+- **Lead Pool** (`account_status='lead_pool'` **DAN** `is_in_lead_pool=true` — dua kolom kini disinkron, lihat TD-50): arsip lead → [sales] "Tarik ke Pipeline" → butuh approval → account_status='prospect'. ⚠️ **479 baris pool (per 10 Jul pagi) seluruhnya hasil migrasi 13 Jun 2026 18:59:03** (satu timestamp, `lead_pool_reason='Migrasi dari sistem lama'`) — belum ada baris "Aging N hari di stage X" sampai cron nyala. **Sejak 11 Jul cron aging berjalan** → pool tumbuh via aging (lihat "Aging Pipeline" di bawah; dampak malam pertama 479 → 783).
 - **Activities** (call/visit/meeting/email/WA/followup): [sales] catat; status todo→done/cancelled; tiap transisi tulis `activity_logs` (feed). Convert-to-prospect dari activity tanpa account.
 
 **Mesin status QUOTATION (terverifikasi kode):**
@@ -74,11 +74,13 @@ Lead Pool ──┐
 
 ---
 
-## Aging Pipeline (Lead idle → Lead Pool) — Edge Function (BELUM DI-DEPLOY ULANG / BELUM DIJADWALKAN)
+## Aging Pipeline (Lead idle → Lead Pool) — Edge Function (LIVE + TERJADWAL harian 01:00 WIB)
 
 Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`) — pindahkan lead yang terlalu lama diam ke Lead Pool + notifikasi ke sales pemilik. Sebelumnya ter-deploy dgn slug auto `bright-handler` & **tak ada di version control**; kini di-commit (branch `feat/aging-pipeline`, belum merge).
 
 **Batas diam per stage (hari):** NEW 7 · CONTACTED 5 · QUALIFIED 5 · PROPOSAL 3 · NEGOTIATION 14.
+
+**Filter per-entitas (`companies.aging_enabled`) — HANYA MSI:** EF pakai **service role key** → menembus RLS → semula melihat SELURUH entitas. Tapi aturan aging di atas adalah aturan sales **MSI**, bukan Storbit (SOA)/JCI. Terbukti dry_run: dari 472 lead, **3 milik PT Stuja Orbit Abadi** (General Order, Indogrosir, CK — Central Kitchen; ketiganya `assigned_to` NULL). **Perbaikan** (migrasi `20260710000008`): kolom `companies.aging_enabled boolean NOT NULL DEFAULT false` (MSI=true, JCI/SOA=false); EF baca daftar `company_id` yang `aging_enabled=true` lalu `.in('company_id', companyIds)` di query accounts; +GRANT SELECT `companies` ke `service_role` (fix `permission denied for table companies` — lihat TD-62). Hasil dry_run pasca-filter: diperiksa **469** (turun dari 472), memenuhi **304** (tak berubah — 3 lead Storbit diam 7 hari di NEW, batas 7, belum lewat).
 
 **Perhitungan:** `diamHari = Math.floor((now − MAX(stage_changed_at, last_activity_at)) / hari)`. Lead dianggap "disentuh" bila **stage naik ATAU ada aktivitas** (pakai yang paling baru dari keduanya). `Math.floor` (pembulatan ke bawah) → lead dapat jatah hari penuh. Bila `diamHari > batas`:
 - `is_in_lead_pool=true`, `account_status='lead_pool'` (kedua kolom serempak — fix TD-50), `lead_pool_at=now`, `lead_pool_reason='Aging N hari di stage X'`, + notifikasi ke `assigned_to` (`event_type='crm.lead_idle'`).
@@ -94,16 +96,63 @@ Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`
 7. `Math.floor` (jatah hari penuh).
 8. Set `account_status` bareng `is_in_lead_pool` (TD-50).
 
-**Simulasi `dry_run` — terverifikasi 10 Jul (`verify_jwt` aktif):** 472 diperiksa, **304 memenuhi syarat** (setelah `Math.floor`). Sebaran: CONTACTED 121 · NEW 118 · QUALIFIED 45 · PROPOSAL 20 · NEGOTIATION 0. Sebelum `Math.floor` angkanya **332** (termasuk 6 NEGOTIATION); pembulatan ke bawah menyelamatkan **28 lead** yang harinya belum genap — seluruhnya deal NEGOTIATION aman.
+**Simulasi `dry_run` — terverifikasi 10 Jul (`verify_jwt` aktif, pasca-filter per-entitas):** **469 diperiksa** (hanya MSI), **304 memenuhi syarat** (setelah `Math.floor`). Sebaran: CONTACTED 121 · NEW 118 · QUALIFIED 45 · PROPOSAL 20 · NEGOTIATION 0. Sebelum `Math.floor` angkanya **332** (termasuk 6 NEGOTIATION); pembulatan ke bawah menyelamatkan **28 lead** yang harinya belum genap — seluruhnya deal NEGOTIATION aman.
 
 **Rencana peluncuran (status per-langkah — urut):**
 1. ✅ **SELESAI (10 Jul)** — TD-60 `verify_jwt` beres; `config.toml` diberi entri `[functions.aging-pipeline]` `verify_jwt=true`. Terverifikasi: **401** tanpa key sah, **200** dgn anon key.
-2. ✅ **SELESAI (10 Jul)** — `aging-pipeline` di-deploy ulang dgn slug benar (sebelumnya `bright-handler`). **Live, tapi TIDAK dijadwalkan.**
-3. ✅ **SELESAI (10 Jul)** — `dry_run` dijalankan manual: 472 diperiksa, **304 memenuhi syarat**.
-4. ⬜ Beri sales tenggat **~1 minggu**: ekspor daftar 304 kandidat, sampaikan "catat aktivitas kalau lead masih digarap".
-5. ⬜ Pasang **pg_cron** harian. **Sampai langkah ini dijalankan, TIDAK ADA lead yang berpindah otomatis** — function hanya jalan bila dipanggil manual.
+2. ✅ **SELESAI (10 Jul)** — `aging-pipeline` di-deploy ulang dgn slug benar (sebelumnya `bright-handler`). Live.
+3. ✅ **SELESAI (10 Jul)** — `dry_run` dijalankan manual: 469 diperiksa, **304 memenuhi syarat**.
+4. ✅ **SELESAI (10 Jul)** — sales diberi tahu **sebelum** cron berjalan. **TIDAK** pakai tenggat seminggu; keputusan Den: sales perlu melihat pipeline punya konsekuensi nyata. Pemberitahuan dikirim pagi, cron jalan 01:00 WIB (malam yang sama).
+5. ✅ **SELESAI (10 Jul)** — pg_cron terjadwal (migrasi `20260710000009`). Sejak ini **lead berpindah otomatis tiap malam**.
 
-> ⚠️ Alasan tenggat: 304 lead (**64% pipeline aktif** — 304 dari 472) bisa pindah dalam semalam — sales perlu peringatan lebih dulu, bukan kejutan.
+**Mekanisme cron (migrasi `20260710000009`):**
+- Job **`aging-pipeline-harian`**, schedule **`0 18 * * *`** (18:00 UTC = **01:00 WIB**), harian.
+- Panggil EF via **`net.http_post`** (extension `pg_net`).
+- **Service role key disimpan di Vault** (nama `aging_pipeline_key`), BUKAN hardcode di `cron.job` — tabel itu terbaca siapa pun yang punya akses schema `cron`.
+- Prasyarat terpenuhi: `pg_cron` 1.6.4 + `pg_net` aktif, EF `verify_jwt=true`, `aging_enabled=true` hanya MSI, GRANT SELECT `companies` ke `service_role`.
+- Diverifikasi: `net.http_post` manual `?dry_run=true` → status **200**, memenuhi **304**.
+
+**Dampak malam pertama (11 Jul 01:00 WIB):** pipeline aktif **469 → 165**; Lead Pool **479 → 783**; **~303 notifikasi**. Malam berikutnya diperkirakan mendekati nol (sisa lead belum lewat batas) — **"aging jadi aliran, bukan gelombang"**.
+
+**Perintah darurat:**
+```sql
+-- (a) matikan cron
+SELECT cron.unschedule('aging-pipeline-harian');
+
+-- (b) kembalikan lead yang dipindah malam pertama
+UPDATE accounts
+SET is_in_lead_pool = false, account_status = 'prospect',
+    lead_pool_at = NULL, lead_pool_reason = NULL
+WHERE lead_pool_reason LIKE 'Aging%'
+  AND lead_pool_at >= '2026-07-10 18:00:00+00';
+
+-- (c) pantau harian berapa lead masuk pool via aging
+SELECT date_trunc('day', lead_pool_at) AS tanggal, count(*)
+FROM accounts
+WHERE lead_pool_reason LIKE 'Aging%'
+GROUP BY 1 ORDER BY 1 DESC;
+```
+
+---
+
+## Sebaran pencatatan sales — KONTEKS ADOPSI (⚠️ BUKAN penilaian kinerja)
+
+> **DISCLAIMER WAJIB DIBACA.** Angka di bawah **mengukur PENCATATAN di Nexus, BUKAN KINERJA sales.** Sales bisa menggarap lead lewat WhatsApp/telepon tanpa mencatatnya di Nexus; data ini **tak bisa membedakan** keduanya. **Jangan jadikan dasar penilaian kinerja / evaluasi orang.** Yang bisa disimpulkan hanya: **Nexus belum menjadi tempat sales mencatat kerja** → ini masalah **adopsi/desain produk, bukan orang**. Tindak lanjut = perbaikan proses/UX, bukan teguran individu (dibahas terpisah).
+
+Konteks saat cron aging dinyalakan (10 Jul): rasio aktivitas tercatat per lead vs proporsi lead yang akan terbuang ke Lead Pool. Total: **269 aktivitas tercatat untuk 469 lead aktif** dalam sebulan.
+
+| Sales | Lead | Aktivitas/lead | Akan terbuang |
+|---|---|---|---|
+| Rossy Siregar | 30 | 1.83 | 33% |
+| F Ayumurni Hartanti | 27 | 0.89 | 74% |
+| Nurul Andini Karina | 96 | 0.78 | 67% |
+| Martin | 12 | 0.50 | 67% |
+| Maria Marcia Mannuela | 23 | 0.39 | 96% |
+| Gusti Raharjo | 94 | 0.32 | 65% |
+| Endang Kumolo Ratih | 66 | 0.14 | 92% |
+| Suhana Nia | 120 | 0.10 | 48% |
+
+> Baca sebagai sinyal adopsi: jumlah aktivitas tercatat jauh di bawah jumlah lead → alat belum melekat di kebiasaan kerja. Ini bahan diagnosa produk, sekali lagi **bukan rapor sales.**
 
 ---
 
