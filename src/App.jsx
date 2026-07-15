@@ -3811,12 +3811,16 @@ function FormSection({ label, children }) {
   );
 }
 
+// Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
+const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
+
 function Input({ label, type='text', value, onChange, placeholder }) {
   return (
     <div>
       <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>{label}</label>
       <input
         type={type} value={value ?? ''}
+        onWheel={blurOnWheel}
         onChange={e => onChange(e.target.value)} placeholder={placeholder}
         className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none transition-colors"
         style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}
@@ -4598,14 +4602,14 @@ function ARModal({ initial, customers, onClose, onSave }) {
                 <div key={b.id} className="grid gap-2 items-center" style={{ gridTemplateColumns: '2fr 1.2fr 1fr 1.2fr 1.2fr 1.2fr 32px' }}>
                   <input value={b.noBTB} onChange={e=>updateBTB(idx,'noBTB',e.target.value)} placeholder="2025-BTB-..."
                     className="rounded-lg px-2.5 py-2 text-xs font-mono focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
-                  <input type="number" value={b.dppPPN} onChange={e=>updateBTB(idx,'dppPPN',e.target.value)}
+                  <input type="number" value={b.dppPPN} onChange={e=>updateBTB(idx,'dppPPN',e.target.value)} onWheel={blurOnWheel}
                     className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
-                  <input type="number" value={b.pph} onChange={e=>updateBTB(idx,'pph',e.target.value)}
+                  <input type="number" value={b.pph} onChange={e=>updateBTB(idx,'pph',e.target.value)} onWheel={blurOnWheel}
                     className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
                   <div className="rounded-lg px-2.5 py-2 text-xs font-numeric font-semibold text-right" style={{ background: PASTEL.lineSoft }}>
                     {formatRupiah(total)}
                   </div>
-                  <input type="number" value={b.payment} onChange={e=>updateBTB(idx,'payment',e.target.value)}
+                  <input type="number" value={b.payment} onChange={e=>updateBTB(idx,'payment',e.target.value)} onWheel={blurOnWheel}
                     className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
                   <div className="rounded-lg px-2.5 py-2 text-xs font-numeric font-semibold text-right" style={{ background: Math.abs(os) <= 1 ? PASTEL.mint : os > 0 ? PASTEL.peach : PASTEL.rose, color: PASTEL.ink }}>
                     {formatRupiahShort(os)}
