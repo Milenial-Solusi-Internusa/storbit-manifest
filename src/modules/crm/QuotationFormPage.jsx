@@ -10,6 +10,9 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { useProducts } from '../../hooks/useProducts';
 
+// Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
+const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
+
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
   bg:        '#F6EFE3',
@@ -241,6 +244,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 </td>
                 <td className="no-print" style={{ padding: '6px 6px', width: 100 }}>
                   <input type="number" min="0" value={row.cost_price}
+                    onWheel={blurOnWheel}
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => onUpdateRow(section.id, row.id, 'cost_price', e.target.value.replace(/^0+(?=\d)/, ''))}
                     style={cellInp({ textAlign: 'right', borderColor: '#E6BBB2', background: '#FFF6F5' })} />
@@ -254,6 +258,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 <td style={{ padding: '6px 6px', width: 96 }}>
                   {row.currency !== 'IDR' ? (
                     <input type="number" min="0" step="any" value={row.exchange_rate ?? ''}
+                      onWheel={blurOnWheel}
                       onFocus={(e) => e.target.select()}
                       onChange={(e) => onUpdateRow(section.id, row.id, 'exchange_rate', e.target.value.replace(/^0+(?=\d)/, ''))}
                       style={cellInp({ textAlign: 'right' })} placeholder="kurs ke IDR" />
@@ -263,6 +268,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 </td>
                 <td style={{ padding: '6px 6px', width: 110 }}>
                   <input type="number" min="0" value={row.unit_price}
+                    onWheel={blurOnWheel}
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => onUpdateRow(section.id, row.id, 'unit_price', e.target.value.replace(/^0+(?=\d)/, ''))}
                     style={cellInp({ textAlign: 'right' })} />
@@ -277,6 +283,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 <td style={{ padding: '6px 6px', width: 60 }}>
                   <input type="number" min="0" step="any" value={row.qty}
                     className="qty-input"
+                    onWheel={blurOnWheel}
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => onUpdateRow(section.id, row.id, 'qty', e.target.value.replace(/^0+(?=\d)/, ''))}
                     style={cellInp({ textAlign: 'center' })} />
@@ -923,6 +930,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                 <input
                   type="number" min="0" max="100" step="0.1"
                   value={header.discount_pct}
+                  onWheel={blurOnWheel}
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => setHeader(h => ({ ...h, discount_pct: e.target.value }))}
                   style={inpStyle({ textAlign: 'right' })}
@@ -1039,6 +1047,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
               {header.cargo_mode === 'sea_fcl' && (
                 <Field label="Quantity">
                   <input type="number" min="0" value={header.container_qty}
+                    onWheel={blurOnWheel}
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => setHeader(h => ({ ...h, container_qty: e.target.value.replace(/^0+(?=\d)/, '') }))}
                     style={inpStyle({ textAlign: 'right' })} placeholder="0" />

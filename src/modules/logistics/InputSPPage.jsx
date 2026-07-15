@@ -83,6 +83,9 @@ const freshItem = () => ({
   expired_date: '',
 });
 
+// Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
+const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
+
 // ─── Shared input style ───────────────────────────────────────────────────────
 const inpStyle = (extra = {}) => ({
   width: '100%', height: 40, borderRadius: 8,
@@ -742,6 +745,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
             {inp({
               type: 'number', min: 1, value: item.qty,
               onChange: e => onChange(item.id, 'qty', e.target.value),
+              onWheel: blurOnWheel,
               style: { textAlign: 'center', fontFamily: "'IBM Plex Mono', monospace" },
             })}
           </div>
@@ -792,6 +796,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
               {inp({
                 type: 'number', min: 0, value: item.shippingPrice,
                 onChange: e => onChange(item.id, 'shippingPrice', e.target.value),
+                onWheel: blurOnWheel,
                 style: { paddingLeft: 30, fontFamily: "'IBM Plex Mono', monospace" },
               })}
             </div>
