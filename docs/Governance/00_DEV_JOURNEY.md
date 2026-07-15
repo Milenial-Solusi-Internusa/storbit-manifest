@@ -22,6 +22,7 @@
 | **2026-07-07** | **FASE 1 — mesin status bawah** | `sp_recompute_status` (fact-derived) + DRAFT→CONFIRMED→MENUNGGU_STOK→PICKING→PACKED + RPC picking | ✅ LIVE |
 | **2026-07-07** | **FASE 2 — jembatan pengiriman** | dispatch/cancel isi `shipped_qty` + DIKIRIM/SAMPAI/TERKIRIM_PENUH + `mark_delivery_delivered` + reader status → `sp_orders.status` (2E) | ✅ LIVE |
 | **2026-07-08** | **FASE 3 — BTB_TERBIT** | RPC `sp_issue_btb`/`sp_delete_btb` → `sp_btb`; **BTB_TERBIT rank tertinggi**; kartu BTB pindah Detail SP; migrasi `sp_btbs`→`sp_btb` (186→205) | ✅ LIVE |
+| **2026-07-15** | **Re-skin Detail SP** (branch `feat/detail-sp-reskin`, UI-only) | `SalesOrderDetailPage.jsx`: palet warm/cream → cool/navy (navy `#1B4D8A`/orange `#E85A1E`/amber); heading font Space Grotesk (final); reposisi header card; **soft-tone pass** (indigo→slate soft, badge `TERKIRIM_PENUH`/`LUNAS` solid→tint, tombol primer orange solid→soft; tombol DANGER tetap solid merah). Build clean. | ⚠️ **di branch, belum merge, belum tes runtime** |
 | (next) | **FASE 4 — INVOICED** | Modul invoice baru (tabel invoice+line, penomoran, relasi SP/BTB, UI terbit) | 📋 planned |
 | (next) | **FASE 5 — LUNAS** | Modul payment (pembayaran → LUNAS) | 📋 planned |
 

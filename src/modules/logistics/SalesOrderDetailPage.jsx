@@ -50,7 +50,7 @@ const C = {
   orange:    '#E85A1E', orangeBg:'#FEF2EC', orangeBd:'#F6C9AE',   // brand orange (was coklat)
   yellow:    '#B5772A', yellowBg:'#FBEEDD', yellowBd:'#E6CE94',   // amber (was mustard)
   purple:    '#B5772A', purpleBg:'#FBEEDD', purpleBd:'#E6CE94',   // amber (was ungu; sisa: stage Faktur Pajak)
-  indigo:    '#5A5B9A', indigoBg:'#ECEDF8', indigoBd:'#D2D3EC',   // TRIAL: PICKING/PACKED (samain list SP)
+  slate:     '#525E70', slateBg:'#EDF0F4', slateBd:'#D7DDE6',   // PICKING/PACKED — slate-blue soft (samain badge Picking List)
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -78,13 +78,13 @@ function finColor(pct) {
 }
 
 function custColor(name) {
-  // Tint chip customer — cool/navy only (navy/orange/amber/red/indigo/slate), no teal/coklat/ungu.
+  // Tint chip customer — cool/navy only (navy/orange/amber/red/slate), no teal/coklat/ungu.
   const PALETTE = [
     { bg: '#EAF0F8', ink: '#1B4D8A' },
     { bg: '#FBEAE8', ink: '#C0392B' },
     { bg: '#FEF2EC', ink: '#E85A1E' },
     { bg: '#FBEEDD', ink: '#B5772A' },
-    { bg: '#ECEDF8', ink: '#5A5B9A' },
+    { bg: '#EDF0F4', ink: '#525E70' },
     { bg: '#EEF1F5', ink: '#6B7686' },
     { bg: '#FCEAE6', ink: '#C15A44' },
     { bg: '#EAF0F8', ink: '#143C6E' },
@@ -120,20 +120,20 @@ function Badge({ bg, color, bd, children }) {
 }
 
 // FASE 2E — status headline SP (sp_orders 12 tahap) → badge Detail SP. Warna kalem,
-// tanpa dark green (done = solid navy). Selaras STATUS_META di SalesOrderPage.
+// semua badge tint + teks senada (tanpa blok solid, tanpa dark green). Selaras STATUS_META di SalesOrderPage.
 const HEADLINE_META = {
   DRAFT:          { label: 'Draft',          bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
   CONFIRMED:      { label: 'Dikonfirmasi',   bg: C.infoBg,    color: C.info,    bd: C.infoBd },
   MENUNGGU_STOK:  { label: 'Menunggu Stok',  bg: C.warnBg,    color: C.warn,    bd: C.warnBd },
-  PICKING:        { label: 'Picking',        bg: C.indigoBg,  color: C.indigo,  bd: C.indigoBd },
-  PACKED:         { label: 'Dikemas',        bg: C.indigoBg,  color: C.indigo,  bd: C.indigoBd },
+  PICKING:        { label: 'Picking',        bg: C.slateBg,   color: C.slate,   bd: C.slateBd },
+  PACKED:         { label: 'Dikemas',        bg: C.slateBg,   color: C.slate,   bd: C.slateBd },
   DIKIRIM:        { label: 'Dikirim',        bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
   SAMPAI:         { label: 'Sampai',         bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
   BTB_TERBIT:     { label: 'BTB Terbit',     bg: C.warnBg,    color: C.warn,    bd: C.warnBd },
-  TERKIRIM_PENUH: { label: 'Terkirim Penuh', bg: C.info,      color: '#FFFFFF', bd: C.info },
+  TERKIRIM_PENUH: { label: 'Terkirim Penuh', bg: C.infoBg,    color: C.info,    bd: C.infoBd },
   INVOICED:       { label: 'Invoiced',       bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
   SUBMITTED:      { label: 'Submitted',      bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
-  LUNAS:          { label: 'Lunas',          bg: C.info,      color: '#FFFFFF', bd: C.info },
+  LUNAS:          { label: 'Lunas',          bg: C.infoBg,    color: C.info,    bd: C.infoBd },
   CANCELLED:      { label: 'Dibatalkan',     bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd },
 };
 
@@ -486,7 +486,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
           </button>
           <button onClick={handleSave} disabled={saving || (wasLinked && !draft.productId)}
             title={wasLinked && !draft.productId ? 'Pilih produk dari dropdown' : undefined}
-            style={{ height: 38, padding: '0 18px', borderRadius: 9, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: (saving || (wasLinked && !draft.productId)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7, opacity: (saving || (wasLinked && !draft.productId)) ? .7 : 1 }}>
+            style={{ height: 38, padding: '0 18px', borderRadius: 9, border: `1px solid ${C.orangeBd}`, background: C.accentSoft, color: C.accent, fontSize: 13, fontWeight: 700, cursor: (saving || (wasLinked && !draft.productId)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7, opacity: (saving || (wasLinked && !draft.productId)) ? .7 : 1 }}>
             <Check size={15}/>{saving ? 'Menyimpan…' : 'Save'}
           </button>
         </div>
@@ -877,6 +877,7 @@ export default function SalesOrderDetailPage({
           <ChevronRight size={12}/>
           <span style={{ fontFamily: "'IBM Plex Mono',monospace", color: C.ink, fontWeight: 600 }}>{spNo}</span>
         </nav>
+        {/* Heading pakai Space Grotesk — keputusan final (bukan trial), aksen tipografi khas Detail SP. */}
         <h1 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', lineHeight: 1.15 }}>
           Detail Sales Order
         </h1>
@@ -899,7 +900,7 @@ export default function SalesOrderDetailPage({
                   setGenBusy(false);
                 }}
                 disabled={genBusy}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: genBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: genBusy ? 0.7 : 1 }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.orangeBd}`, background: C.accentSoft, color: C.accent, fontSize: 13, fontWeight: 700, cursor: genBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: genBusy ? 0.7 : 1 }}
               >
                 <ClipboardList size={14}/> {genBusy ? 'Membuat…' : 'Generate Picking List'}
               </button>
@@ -1351,7 +1352,7 @@ export default function SalesOrderDetailPage({
                       setDocEditing(false);
                       showToast(docUrl.trim() ? 'Link dokumen disimpan' : 'Link dokumen dihapus', 'success');
                     }}
-                    style={{ height: 38, padding: '0 16px', borderRadius: 9, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: docSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: docSaving ? 0.7 : 1 }}>
+                    style={{ height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.orangeBd}`, background: C.accentSoft, color: C.accent, fontSize: 13, fontWeight: 700, cursor: docSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: docSaving ? 0.7 : 1 }}>
                     {docSaving ? 'Menyimpan…' : 'Simpan'}
                   </button>
                   {docUrl && !docSaving && (

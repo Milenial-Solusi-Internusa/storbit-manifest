@@ -145,6 +145,14 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 
 ---
 
+## Branch Aktif (belum merge)
+
+> Branch kerja yang belum masuk `main` — dicatat agar tidak "hilang" dari governance.
+
+- **`feat/detail-sp-reskin`** (UI-only, 1 file: `src/modules/logistics/SalesOrderDetailPage.jsx`) — re-skin halaman Detail Sales Order dari palet warm/cream → cool/navy brand (navy `#1B4D8A`/orange `#E85A1E`/amber), heading font Space Grotesk (keputusan final — lihat pengecualian di **TD-70**), reposisi header card, + **soft-tone pass** (indigo→slate soft, badge `TERKIRIM_PENUH`/`LUNAS` solid→tint, tombol primer orange solid→soft; tombol DANGER sengaja tetap solid merah). **Status: di branch, 0 di belakang `main`, BELUM merge, BELUM tes runtime** (build clean). Sebelumnya branch ini **tidak tercatat di governance mana pun**. Detail kronologis: `00_DEV_JOURNEY.md` (Bagian 1, 2026-07-15).
+
+---
+
 ## Next Up
 
 Berdasarkan kondisi LIVE (FASE 0-3 selesai) + `08_TECH_DEBT.md`:
