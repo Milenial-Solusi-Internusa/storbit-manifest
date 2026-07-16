@@ -403,9 +403,11 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
             <ModalField label="Unit Price (Rp)" req>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.inkFaint, pointerEvents: 'none' }}>Rp</span>
-                <input type="number" value={draft.unitPrice} onChange={e => set('unitPrice', e.target.value)} onWheel={blurOnWheel}
-                  style={{ height: 38, paddingLeft: 32, paddingRight: 11, border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface, fontSize: 13, color: C.ink, outline: 'none', fontFamily: "'IBM Plex Mono',monospace", width: '100%', boxSizing: 'border-box' }}/>
+                {/* Terkunci — menampilkan snapshot tersimpan (draft.unitPrice); harga hanya berubah lewat Master Product. */}
+                <input type="number" value={draft.unitPrice} readOnly onWheel={blurOnWheel}
+                  style={{ height: 38, paddingLeft: 32, paddingRight: 11, border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface2, fontSize: 13, color: C.inkSoft, outline: 'none', fontFamily: "'IBM Plex Mono',monospace", width: '100%', boxSizing: 'border-box', cursor: 'not-allowed' }}/>
               </div>
+              <div style={{ fontSize: 11, color: C.inkFaint }}>Terkunci — ubah lewat Master Product</div>
             </ModalField>
             <ModalField label="Shipping Price (Rp)">
               <div style={{ position: 'relative' }}>
