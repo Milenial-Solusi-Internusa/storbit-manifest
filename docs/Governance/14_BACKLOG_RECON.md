@@ -1,6 +1,6 @@
 # BACKLOG RECON — pencocokan 20 item vs dokumen
 
-> **Sifat:** rekonsiliasi read-only. Mencocokkan 20 item lapangan dengan yang SUDAH tercatat di `08_TECH_DEBT.md`, `10_TASK_BREAKDOWN.md`, `09_ROADMAP.md`, `CRM_FLOW_AUDIT.md`. Bukan mengerjakan, bukan menilai.
+> **Sifat:** rekonsiliasi read-only. Mencocokkan 20 item lapangan dengan yang SUDAH tercatat di `08_TECH_DEBT.md`, `10_TASK_BREAKDOWN.md`, `09_ROADMAP.md`, `13_CRM_FLOW_AUDIT.md`. Bukan mengerjakan, bukan menilai.
 > **Klasifikasi:** SUDAH (tercatat, ada ID) · SEBAGIAN (terkait/tak persis) · BELUM (tak ada jejak) · BUKAN TASK (keputusan strategis/produk).
 > **⚠️ Tidak menjalankan app.** Murni pencocokan dokumen + peek kode seperlunya (item 5 & 15 diverifikasi ke kode).
 
@@ -49,7 +49,7 @@
 
 ## ⚠️ Sudah kesinggung di CRM_FLOW_AUDIT tapi BELUM masuk 08_TECH_DEBT — KANDIDAT tech-debt baru
 
-Item berikut kondisinya **sudah dipetakan di `CRM_FLOW_AUDIT.md`** tapi **belum ada TD-xx** yang mencatatnya sebagai utang/task:
+Item berikut kondisinya **sudah dipetakan di `13_CRM_FLOW_AUDIT.md`** tapi **belum ada TD-xx** yang mencatatnya sebagai utang/task:
 
 | Kandidat | Dari CRM_FLOW_AUDIT | Kenapa layak jadi TD baru |
 |----------|---------------------|----------------------------|

@@ -85,6 +85,8 @@ const freshItem = () => ({
 
 // Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
 const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
+// Pilih seluruh isi saat focus → ketikan menimpa nilai default (0/1), tak ter-append.
+const selectOnFocus = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.select(); };
 
 // ─── Shared input style ───────────────────────────────────────────────────────
 const inpStyle = (extra = {}) => ({
@@ -614,7 +616,12 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
   const inp = (props) => (
     <input
       {...props}
-      onFocus={e => { e.target.style.borderColor = '#1B4D8A'; e.target.style.boxShadow = '0 0 0 3px rgba(20,70,130,.1)'; }}
+      onFocus={e => {
+        // Styling border (perilaku lama) + select-all utk number + teruskan onFocus caller.
+        e.target.style.borderColor = '#1B4D8A'; e.target.style.boxShadow = '0 0 0 3px rgba(20,70,130,.1)';
+        selectOnFocus(e);
+        props.onFocus?.(e);
+      }}
       onBlur={e  => { e.target.style.borderColor = '#E5E7EB'; e.target.style.boxShadow = 'none'; }}
       style={{
         width: '100%', height: 38, borderRadius: 8,
@@ -744,7 +751,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
             {fieldLabel('QTY', true)}
             {inp({
               type: 'number', min: 1, value: item.qty,
-              onChange: e => onChange(item.id, 'qty', e.target.value),
+              onChange: e => onChange(item.id, 'qty', e.target.value.replace(/^0+(?=\d)/, '')),
               onWheel: blurOnWheel,
               style: { textAlign: 'center', fontFamily: "'IBM Plex Mono', monospace" },
             })}
@@ -795,7 +802,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
               <span style={{ position: 'absolute', left: 10, fontSize: 11.5, color: '#9CA3AF', pointerEvents: 'none', fontFamily: "'Inter',sans-serif" }}>Rp</span>
               {inp({
                 type: 'number', min: 0, value: item.shippingPrice,
-                onChange: e => onChange(item.id, 'shippingPrice', e.target.value),
+                onChange: e => onChange(item.id, 'shippingPrice', e.target.value.replace(/^0+(?=\d)/, '')),
                 onWheel: blurOnWheel,
                 style: { paddingLeft: 30, fontFamily: "'IBM Plex Mono', monospace" },
               })}

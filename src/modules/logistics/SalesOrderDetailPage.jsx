@@ -56,6 +56,8 @@ const C = {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 // Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
 const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
+// Pilih seluruh isi saat focus → ketikan menimpa nilai default (0), tak ter-append.
+const selectOnFocus = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.select(); };
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 
 function fmtDate(iso) {
@@ -364,7 +366,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
           <ModalSect>Quantity</ModalSect>
           <ModalGrid cols={3}>
             <ModalField label="QTY" req>
-              <ModalInp type="number" value={draft.qty} onChange={e => set('qty', e.target.value)}/>
+              <ModalInp type="number" value={draft.qty} onFocus={selectOnFocus} onChange={e => set('qty', e.target.value.replace(/^0+(?=\d)/, ''))}/>
             </ModalField>
             <ModalField label="Shipped QTY"><ModalInp value={draft.shippedQty} readOnly/></ModalField>
             <ModalField label="Outstanding">
@@ -412,7 +414,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
             <ModalField label="Shipping Price (Rp)">
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.inkFaint, pointerEvents: 'none' }}>Rp</span>
-                <input type="number" value={draft.shippingPrice} onChange={e => set('shippingPrice', e.target.value)} onWheel={blurOnWheel}
+                <input type="number" value={draft.shippingPrice} onFocus={selectOnFocus} onChange={e => set('shippingPrice', e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
                   style={{ height: 38, paddingLeft: 32, paddingRight: 11, border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface, fontSize: 13, color: C.ink, outline: 'none', fontFamily: "'IBM Plex Mono',monospace", width: '100%', boxSizing: 'border-box' }}/>
               </div>
             </ModalField>

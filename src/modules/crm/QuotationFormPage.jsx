@@ -932,7 +932,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                   value={header.discount_pct}
                   onWheel={blurOnWheel}
                   onFocus={(e) => e.target.select()}
-                  onChange={(e) => setHeader(h => ({ ...h, discount_pct: e.target.value }))}
+                  onChange={(e) => setHeader(h => ({ ...h, discount_pct: e.target.value.replace(/^0+(?=\d)/, '') }))}
                   style={inpStyle({ textAlign: 'right' })}
                   placeholder="0"
                 />
