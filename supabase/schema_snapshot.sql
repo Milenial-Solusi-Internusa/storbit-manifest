@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict mBXbz0f9nwWze4qHQtoTwBaO9g9kuThUgOxWxwxkegBvoyocD4dmFadDfTWyLFk
+\restrict AbrUJNacY7qMtbmtVAbYFtnd92yeS49caWPyLjRIf9CPDHo5QqQs0UDrYhy4O6z
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -4283,6 +4283,8 @@ CREATE TABLE public.sp_items (
     sp_category text,
     external_url text,
     product_id uuid,
+    price_category text,
+    review_status text,
     CONSTRAINT sp_items_sp_status_check CHECK ((sp_status = ANY (ARRAY['draft'::text, 'confirmed'::text, 'cancelled'::text])))
 );
 
@@ -12199,5 +12201,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict mBXbz0f9nwWze4qHQtoTwBaO9g9kuThUgOxWxwxkegBvoyocD4dmFadDfTWyLFk
+\unrestrict AbrUJNacY7qMtbmtVAbYFtnd92yeS49caWPyLjRIf9CPDHo5QqQs0UDrYhy4O6z
 
