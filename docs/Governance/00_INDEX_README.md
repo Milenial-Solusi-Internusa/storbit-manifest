@@ -41,6 +41,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | `docs/14_BACKLOG_RECON.md` | **Rekonsiliasi read-only** — pencocokan 20 item lapangan vs dokumen (`08`/`09`/`10`/`13`); klasifikasi SUDAH/SEBAGIAN/BELUM/BUKAN TASK + kandidat tech-debt baru. | 2026-07-15 |
 | `docs/15_INPUT_CONTROL_AUDIT.md` | **Audit read-only** — 2 misi kontrol input SP: (Misi 1) jalur harga Master Product sebagai sumber tunggal + kesiapan kunci harga Edit Item SP; (Misi 2) pola input lain. Per branch `feat/detail-sp-reskin`. | 2026-07-15 |
 | `docs/16_SP_TABLES_SYNC_AUDIT.md` | **Audit read-only** — hubungan `sp_items` (legacy) ↔ `sp_orders`/`sp_order_items` (kanonik): dual-write hanya saat CREATE, `sp_items` = sumber kebenaran tunggal, `sp_order_items` = mirror write-once cabang mati (basi setelah edit). Sumber `schema_snapshot.sql` + `db.js`. | 2026-07-15 |
+| `docs/17_ZERO_INPUT_AUDIT.md` | **Audit read-only** — nilai default `0`/`1` di `<input type="number">` tak ke-clear saat user mengetik ("05"/"50" bukan "5"); sebab dominan tak ada select-on-focus, diperparah handling `onChange` mentah. 9 field CRM + Logistics/SP; pola sumber `QuotationFormPage`. Kerabat isu scroll (`15`). Reproduksi wajib diverifikasi runtime. | 2026-07-16 |
 | `docs/architecture/`, `docs/database/`, `docs/security/`, `docs/workflow/`, `docs/integration/`, `docs/performance/`, `docs/operations/`, `docs/modules/` | (pre-existing, Fase 0.1) blueprint, baseline, dll — lihat "Required Reading" di `AGENTS.md` | [TODO: verifikasi keberadaan/isi tiap file referenced di AGENTS.md] |
 
 ---
