@@ -62,6 +62,19 @@
 - [ ] **H4. RLS proper (company-scoped)** (TD-39, HIGH) — perketat ~48 policy `USING(true)`; prioritas SP/gudang (`sp_items`/`picking_lists`/`delivery_notes`/`stock_ledger`). Superset TD-04.
 - [ ] **H5. Drop `sp_btbs` + dead code SP** (TD-41) — hapus 4 helper legacy `db.js` (0 caller: `listSpBtbs`/`addSpBtb`/`deleteSpBtb`/`bulkInsertSpBtbs`) + drop tabel `sp_btbs` (data sudah migrasi) + hapus `AppLauncher.jsx`. (`*.legacy.jsx` = **F6**/TD-15.)
 - [ ] **H6. Loose ends FASE 0-3** — sync `sp_order_items.shipped_qty` kanonik dari dispatch (TD-40, low); update `DESIGN_SP_SCHEMA.md` rank BTB (TD-42); dokumentasi Edge Functions (TD-44); verifikasi integrasi email/n8n (TD-43).
+- [ ] **H7. Level 2 — Kunci Harga Edit Item SP (🟡 PERENCANAAN / BELUM DIEKSEKUSI).** Hasil sesi perancangan; **belum ada kode/backfill dijalankan** (kecuali 1 ALTER TABLE, lihat status). Direkam agar konteks tak hilang antar-sesi.
+  - **Tujuan/keputusan desain (final):** Di **EditItemModal** (`SalesOrderDetailPage.jsx`) kolom harga `unit_price` jadi **READ-ONLY, autofill dari Master Product sesuai kategori**. Operations hanya bisa ganti **KATEGORI**, tak bisa ketik harga manual. **Shipping price TIDAK dikunci** (tetap editable).
+  - **Sifat harga:** **snapshot di `sp_items`** (terverifikasi: tak ada trigger sync antar-tabel; `sp_order_items` = cabang mati write-once — lihat `16_SP_TABLES_SYNC_AUDIT.md` + **TD-49**/**TD-40**). Referensi audit kesiapan: `15_INPUT_CONTROL_AUDIT.md` (Misi 1) + `16_SP_TABLES_SYNC_AUDIT.md`.
+  - **Role yang boleh ganti kategori:** **Super Admin + Operations** (perluasan dari rencana awal "super admin saja"). **Enforcement sampai RLS** (bukan client-only). RBAC company-scoped 3 entitas (MSI/JCI/SOA) — role diduplikat per company (by design) → RLS harus **company-aware** (contoh nyata: **Gigih Rizky = Operations @ PT Stuja Orbit Abadi / SOA**).
+  - **Dependency (sudah ada, tinggal di-port):** mekanisme kategori sudah jalan di **Input SP** (`CAT_DEFS`/`availCatsOf`, per `15_INPUT_CONTROL_AUDIT.md`) — tinggal di-port ke EditItemModal.
+  - **STATUS EKSEKUSI:**
+    - ✅ Kolom **`price_category` SUDAH ditambah ke `sp_items`** (ALTER manual). ⚠️ `schema_snapshot.sql` belum memuatnya (stale) + ALTER **belum direkam migrasi** (lihat TD-72). Domain nilai (`default`/`semester`/`legacy` …) **berbeda** dari CHECK `sp_order_items.price_category` (`semester/tahunan/project`) → **perlu konfirmasi user**, jangan diputuskan sepihak.
+    - Preview backfill SP lama: **727 SP → 142 match** (140 `default`, 2 `semester`); **585 TIDAK match**. Keputusan: 585 tak-match ditandai **`'legacy'`, `unit_price` TIDAK diubah**; hanya 142 diberi kategori beneran.
+  - **BELUM dikerjakan (sesi berikutnya):**
+    - [ ] Backfill beneran (UPDATE) sesuai keputusan di atas — perlu SQL + preview per baris.
+    - [ ] RLS company-aware "hanya Super Admin + Operations boleh ubah `price_category`".
+    - [ ] Refresh `schema_snapshot.sql` + rekam migrasi (ALTER `price_category` yang sudah jalan belum direkam — TD-72).
+    - [ ] UI: dropdown kategori + harga read-only di EditItemModal (`SalesOrderDetailPage.jsx`).
 
 ---
 

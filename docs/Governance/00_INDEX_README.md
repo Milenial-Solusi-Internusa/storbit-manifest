@@ -39,6 +39,8 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | `docs/12_CHANGE_REQUEST.md` | Template Change Request + contoh (PDF migration, RBAC plan) | 2026-06-22 |
 | `docs/13_CRM_FLOW_AUDIT.md` | **Audit read-only** — potret alur CRM apa-adanya di kode (stage machine, transisi, gap) vs rancangan CRM (diagram asli `crm_workflow.md` sudah dihapus — rekaman historis). Per commit `dbfd868`. | 2026-07-15 |
 | `docs/14_BACKLOG_RECON.md` | **Rekonsiliasi read-only** — pencocokan 20 item lapangan vs dokumen (`08`/`09`/`10`/`13`); klasifikasi SUDAH/SEBAGIAN/BELUM/BUKAN TASK + kandidat tech-debt baru. | 2026-07-15 |
+| `docs/15_INPUT_CONTROL_AUDIT.md` | **Audit read-only** — 2 misi kontrol input SP: (Misi 1) jalur harga Master Product sebagai sumber tunggal + kesiapan kunci harga Edit Item SP; (Misi 2) pola input lain. Per branch `feat/detail-sp-reskin`. | 2026-07-15 |
+| `docs/16_SP_TABLES_SYNC_AUDIT.md` | **Audit read-only** — hubungan `sp_items` (legacy) ↔ `sp_orders`/`sp_order_items` (kanonik): dual-write hanya saat CREATE, `sp_items` = sumber kebenaran tunggal, `sp_order_items` = mirror write-once cabang mati (basi setelah edit). Sumber `schema_snapshot.sql` + `db.js`. | 2026-07-15 |
 | `docs/architecture/`, `docs/database/`, `docs/security/`, `docs/workflow/`, `docs/integration/`, `docs/performance/`, `docs/operations/`, `docs/modules/` | (pre-existing, Fase 0.1) blueprint, baseline, dll — lihat "Required Reading" di `AGENTS.md` | [TODO: verifikasi keberadaan/isi tiap file referenced di AGENTS.md] |
 
 ---
