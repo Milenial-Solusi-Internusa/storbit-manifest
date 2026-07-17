@@ -286,6 +286,7 @@ const PERMISSIONS = {
   admin:              ['view','create','edit','delete','shipment','finance','export','import','master'],
   ceo:                ['view','create','edit','shipment','finance','export','master'],
   gm:                 ['view','create','edit','shipment','finance','export','master'],
+  gm_bd:              ['view','create','edit','export'],   // identik `sales` — BD jualan setara sales
   manager:            ['view','create','edit','export','master'],
   finance_controller: ['view','create','edit','finance','export'],
   finance:            ['view','finance','export'],
