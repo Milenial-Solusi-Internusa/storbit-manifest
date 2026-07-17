@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict AbrUJNacY7qMtbmtVAbYFtnd92yeS49caWPyLjRIf9CPDHo5QqQs0UDrYhy4O6z
+\restrict CFHtZ9rM3BthMA7xDZpbPm1dcXUGtNxYCggDdVTpooBg6bOkCnUlTcvsIlRpStt
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1010,6 +1010,7 @@ BEGIN
     valid_until      = COALESCE(NULLIF(p_header->>'valid_until','')::date, valid_until),
     payment_terms_id = COALESCE(NULLIF(p_header->>'payment_terms_id','')::uuid, payment_terms_id),
     currency_code    = COALESCE(p_header->>'currency_code', currency_code),
+    exchange_rates   = CASE WHEN p_header ? 'exchange_rates' THEN p_header->'exchange_rates' ELSE exchange_rates END,
     notes            = CASE WHEN p_header ? 'notes'          THEN p_header->>'notes'          ELSE notes          END,
     terms            = CASE WHEN p_header ? 'terms'          THEN p_header->>'terms'          ELSE terms          END,
     internal_notes   = CASE WHEN p_header ? 'internal_notes' THEN p_header->>'internal_notes' ELSE internal_notes END,
@@ -4039,8 +4040,16 @@ CREATE TABLE public.quotations (
     cw text,
     cbm text,
     container_type text,
-    container_qty integer
+    container_qty integer,
+    exchange_rates jsonb DEFAULT '{}'::jsonb NOT NULL
 );
+
+
+--
+-- Name: COLUMN quotations.exchange_rates; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quotations.exchange_rates IS 'Tabel kurs manual per-quotation: {"USD":16200,"SGD":12000}. IDR implisit = 1 (tak disimpan). Sumber kebenaran kurs; quotation_items.exchange_rate = salinan materialized (write-through) yang dibaca Detail & PDF. Input manual, tanpa lookup FX.';
 
 
 --
@@ -12201,5 +12210,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict AbrUJNacY7qMtbmtVAbYFtnd92yeS49caWPyLjRIf9CPDHo5QqQs0UDrYhy4O6z
+\unrestrict CFHtZ9rM3BthMA7xDZpbPm1dcXUGtNxYCggDdVTpooBg6bOkCnUlTcvsIlRpStt
 

@@ -88,6 +88,37 @@ const UNIT_LABELS_FALLBACK = [
 
 const CURRENCIES = ['IDR', 'USD']; // fallback before DB currencies load
 
+// Kurs baris = TURUNAN dari tabel kurs header (`quotations.exchange_rates`) — satu sumber
+// kebenaran. IDR selalu 1. Currency lain diambil dari tabel kurs header; kosong bila currency
+// itu belum didaftarkan di header → ditangkap validasi SUBMIT (draft tetap boleh disimpan).
+const rateFromRates = (code, rates) => (code === 'IDR' ? 1 : (rates?.[code] ?? ''));
+
+// Buka quotation LAMA: tabel kurs header di-seed dari kurs baris yang sudah tersimpan.
+//  • kurs seragam untuk satu currency → seed senyap (total baris TIDAK berubah).
+//  • kurs BEDA antar-baris → JANGAN pilih otomatis: currency itu dikosongkan + dilaporkan
+//    sbg warning, user memilih satu kurs secara sadar (total baris terdampak akan berubah,
+//    tapi user melihatnya — bukan diam-diam).
+// Kurs yang SUDAH tersimpan di header tak pernah ditimpa oleh seed.
+function seedRatesFromRows(rows, storedRates) {
+  const rates    = { ...(storedRates || {}) };
+  const warnings = [];
+  const byCode   = {};
+  rows.forEach(r => {
+    const code = r.currency;
+    if (!code || code === 'IDR') return;
+    const v = Number(r.exchange_rate);
+    if (!v) return;
+    (byCode[code] = byCode[code] || new Set()).add(v);
+  });
+  Object.keys(byCode).forEach(code => {
+    if (rates[code] != null && rates[code] !== '') return; // sudah ada di header → hormati
+    const vals = [...byCode[code]].sort((a, b) => a - b);
+    if (vals.length === 1) rates[code] = vals[0];
+    else warnings.push({ code, values: vals });
+  });
+  return { rates, warnings };
+}
+
 // VAT/PPN options + service-type → default rate (customs = 11%, else 1.1%).
 const VAT_OPTIONS_FALLBACK = [
   { value: 0,     label: '0%' },
@@ -257,11 +288,11 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                 </td>
                 <td style={{ padding: '6px 6px', width: 96 }}>
                   {row.currency !== 'IDR' ? (
-                    <input type="number" min="0" step="any" value={row.exchange_rate ?? ''}
-                      onWheel={blurOnWheel}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => onUpdateRow(section.id, row.id, 'exchange_rate', e.target.value.replace(/^0+(?=\d)/, ''))}
-                      style={cellInp({ textAlign: 'right' })} placeholder="kurs ke IDR" />
+                    // Kurs = turunan tabel kurs header (satu sumber kebenaran) → read-only di baris.
+                    <input type="number" value={row.exchange_rate ?? ''} readOnly
+                      title="Kurs diambil dari tabel kurs di header quotation. Ubah nilainya di header."
+                      placeholder="isi di header"
+                      style={cellInp({ textAlign: 'right', background: C.surface2, color: C.inkSoft, cursor: 'default' })} />
                   ) : (
                     <span style={{ display: 'block', textAlign: 'center', color: C.inkFaint, fontSize: 11 }}>—</span>
                   )}
@@ -348,6 +379,8 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
     notes:            '',
     terms:            '',
     internal_notes:   '',
+    // Tabel kurs manual per-quotation: {"USD":16200}. IDR implisit = 1 (tak disimpan di sini).
+    exchange_rates:   {},
     usd_rate:         DEFAULT_USD,
     vat_rate:         VAT_RATE,
     quote_date:       today(),
@@ -372,6 +405,8 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   const [inquiries,    setInquiries]    = useState([]);
   const [paymentTerms, setPaymentTerms] = useState([]);
   const [currencies,   setCurrencies]   = useState([]);
+  // Peringatan seed kurs quotation lama: [{ code, values:[16000,16200] }] — user pilih sadar.
+  const [rateWarnings, setRateWarnings] = useState([]);
   const [saving,       setSaving]       = useState(false);
   const [errors,       setErrors]       = useState({});
 
@@ -452,6 +487,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       notes:            quotation.notes             || '',
       terms:            quotation.terms             || '',
       internal_notes:   quotation.internal_notes    || '',
+      exchange_rates:   quotation.exchange_rates    || {},
       usd_rate:         quotation.usd_rate          || DEFAULT_USD,
       vat_rate:         quotation.vat_rate          ?? VAT_RATE,
       quote_date:       quotation.quote_date || quotation.created_at?.slice(0, 10) || today(),
@@ -500,6 +536,13 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           name,
           rows: map[name],
         })));
+        // Seed tabel kurs header dari kurs baris quotation lama (lihat seedRatesFromRows).
+        const { rates, warnings } = seedRatesFromRows(
+          order.flatMap(name => map[name]),
+          quotation.exchange_rates,
+        );
+        setHeader(h => ({ ...h, exchange_rates: rates }));
+        setRateWarnings(warnings);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, quotation?.id]);
@@ -522,6 +565,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       notes:            src.notes             || '',
       terms:            src.terms             || '',
       internal_notes:   src.internal_notes    || '',
+      exchange_rates:   src.exchange_rates    || {},
       usd_rate:         src.usd_rate          || DEFAULT_USD,
       vat_rate:         src.vat_rate          ?? VAT_RATE,
       quote_date:       today(),
@@ -570,6 +614,13 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           });
         });
         setSections(order.map(name => ({ id: crypto.randomUUID(), name, rows: map[name] })));
+        // Duplicate: sama seperti edit — seed dari kurs baris sumber bila header belum punya.
+        const { rates, warnings } = seedRatesFromRows(
+          order.flatMap(name => map[name]),
+          src.exchange_rates,
+        );
+        setHeader(h => ({ ...h, exchange_rates: rates }));
+        setRateWarnings(warnings);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, duplicateFrom?.id]);
@@ -630,10 +681,9 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         rows: sec.rows.map(row => {
           if (row.id !== rowId) return row;
           const updated = { ...row, [key]: value };
-          // Ganti currency → reset kurs per baris: IDR→1, USD→pre-fill 16000
-          // (user bisa override), lainnya→kosong (user isi manual).
+          // Ganti currency → kurs baris di-refresh dari tabel kurs header (read-only, satu sumber).
           if (key === 'currency') {
-            updated.exchange_rate = value === 'IDR' ? 1 : value === 'USD' ? DEFAULT_USD : '';
+            updated.exchange_rate = rateFromRates(value, header.exchange_rates);
           }
           // Recalc sell total only — cost_price does not affect it
           if (['unit_price', 'qty', 'currency', 'exchange_rate'].includes(key)) {
@@ -643,6 +693,60 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         }),
       };
     }));
+  };
+
+  // Opsi currency header — sumber SAMA dgn dropdown per-baris (DB `currencies`, fallback CURRENCIES).
+  const currencyCodes = (currencies && currencies.length) ? currencies.map(c => c.code) : CURRENCIES;
+
+  // Currency yang masih dipakai baris (non-IDR) → dipakai guard hapus + validasi submit.
+  const usedCurrencies = useMemo(() => {
+    const m = {};
+    sections.forEach(sec => sec.rows.forEach(r => {
+      if (r.currency && r.currency !== 'IDR') m[r.currency] = (m[r.currency] || 0) + 1;
+    }));
+    return m;
+  }, [sections]);
+
+  // Write-through: kurs header berubah → SEMUA baris ber-currency itu ikut ter-update
+  // (exchange_rate + total). Menjaga quotation_items.exchange_rate tetap koheren dgn header,
+  // sehingga Detail & PDF (yang membaca kolom itu) tak perlu diubah.
+  const syncRowsForCurrency = (code, rate) => {
+    setSections(s => s.map(sec => ({
+      ...sec,
+      rows: sec.rows.map(row => {
+        if (row.currency !== code) return row;
+        const updated = { ...row, exchange_rate: rate };
+        updated.total = calcRowTotal(updated);
+        return updated;
+      }),
+    })));
+  };
+
+  const addRateCurrency = (code) => {
+    if (!code) return;
+    setHeader(h => ({ ...h, exchange_rates: { ...h.exchange_rates, [code]: '' } }));
+    setRateWarnings(w => w.filter(x => x.code !== code)); // user sudah menangani currency ini
+  };
+
+  const updateRate = (code, value) => {
+    const rate = value === '' ? '' : Number(value);
+    setHeader(h => ({ ...h, exchange_rates: { ...h.exchange_rates, [code]: rate } }));
+    syncRowsForCurrency(code, rate);
+  };
+
+  // Guard hapus: currency yang masih dipakai baris → cegah (konsisten dgn aturan submit-blocking;
+  // kalau dibolehkan, kurs baris jadi kosong dan baru ketahuan saat submit).
+  const removeRate = (code) => {
+    const n = usedCurrencies[code] || 0;
+    if (n > 0) {
+      showToast?.(`Kurs ${code} masih dipakai ${n} baris item. Ganti currency baris itu dulu sebelum menghapus kursnya.`, 'error');
+      return;
+    }
+    setHeader(h => {
+      const next = { ...h.exchange_rates };
+      delete next[code];
+      return { ...h, exchange_rates: next };
+    });
   };
 
   // ── Derived totals ──────────────────────────────────────────────────────
@@ -676,6 +780,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   const marginPct     = subtotal > 0 ? (grossProfit / subtotal * 100).toFixed(1) : '0.0';
 
   // ── Validation ──────────────────────────────────────────────────────────
+  // Draft: syarat minimum saja — kurs boleh belum lengkap (user simpan dulu, lengkapi nanti).
   const validate = () => {
     const e = {};
     if (!header.inquiry_id) e.inquiry_id = 'Pilih inquiry';
@@ -683,9 +788,29 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
     return Object.keys(e).length === 0;
   };
 
+  // Currency baris yang belum punya kurs sah di tabel kurs header (kosong/0/NaN).
+  const missingRates = useMemo(
+    () => Object.keys(usedCurrencies).filter(c => !(Number(header.exchange_rates?.[c]) > 0)),
+    [usedCurrencies, header.exchange_rates],
+  );
+
+  // Submit: selain syarat draft, kurs SEMUA currency baris wajib ada di tabel kurs header.
+  const validateSubmit = () => {
+    if (!validate()) return false;
+    if (missingRates.length > 0) {
+      showToast?.(
+        `Tambahkan kurs ${missingRates.join(', ')} di tabel kurs header dulu sebelum submit.`,
+        'error',
+      );
+      return false;
+    }
+    return true;
+  };
+
   // ── Save (create or update) ───────────────────────────────────────────
   const handleSave = useCallback(async (submitNow) => {
-    if (!validate()) return;
+    // G-3: blokir hanya SUBMIT; Simpan Draft tetap boleh walau kurs belum lengkap.
+    if (submitNow ? !validateSubmit() : !validate()) return;
     setSaving(true);
     try {
       // Item rows in DB-column shape (no quotation_id — RPC / create-insert add it).
@@ -716,6 +841,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         // ── Atomic save via RPC: update header + replace items in one txn ──
         // internal_notes / currency_code / margin_floor are read from the (real)
         // quotation prop, NOT form defaults, so they aren't overwritten by ''/0.
+        // exchange_rates (tabel kurs header) punya UI sendiri → dibaca dari header state.
         // prospect/customer: keep existing unless user re-picked an inquiry.
         const p_header = {
           quotation_no:     quotation.quotation_no,
@@ -728,6 +854,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           pricing_done_at:  header.pricing_done_at         || null,
           payment_terms_id: header.payment_terms_id        || null,
           currency_code:    quotation.currency_code        || 'IDR',
+          exchange_rates:   header.exchange_rates          || {},
           notes:            header.notes                   || null,
           terms:            header.terms                   || null,
           internal_notes:   header.internal_notes          || null,
@@ -789,6 +916,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           notes:            header.notes                  || null,
           terms:            header.terms                  || null,
           internal_notes:   header.internal_notes         || null,
+          exchange_rates:   header.exchange_rates         || {},
           usd_rate:         Number(header.usd_rate)        || DEFAULT_USD,
           vat_rate:         Number(header.vat_rate)        || 0,
           subtotal,
@@ -924,6 +1052,56 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                   style={inpStyle()}
                   title="Kapan tim pricing selesai input harga?"
                 />
+              </Field>
+
+              <Field label="Kurs (ke IDR)" full>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {Object.keys(header.exchange_rates || {}).length === 0 && (
+                    <div style={{ fontSize: 12, color: C.inkFaint }}>
+                      Belum ada kurs. Tambahkan currency yang dipakai baris item (IDR selalu 1).
+                    </div>
+                  )}
+                  {Object.entries(header.exchange_rates || {}).map(([code, rate]) => (
+                    <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ minWidth: 46, fontWeight: 700, fontSize: 13 }}>{code}</span>
+                      <input
+                        type="number" min="0" step="any" value={rate ?? ''}
+                        onWheel={blurOnWheel}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => updateRate(code, e.target.value.replace(/^0+(?=\d)/, ''))}
+                        style={inpStyle({ textAlign: 'right', flex: 1 })}
+                        placeholder="cth: 16200"
+                      />
+                      <button type="button" onClick={() => removeRate(code)} title={`Hapus kurs ${code}`}
+                        style={{ border: `1px solid ${C.line}`, background: C.surface, color: C.danger, borderRadius: 8, height: 34, padding: '0 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+                        Hapus
+                      </button>
+                    </div>
+                  ))}
+                  <select
+                    value=""
+                    onChange={(e) => { addRateCurrency(e.target.value); e.target.value = ''; }}
+                    style={selStyle}
+                    title="Tambahkan currency ke tabel kurs. Kurs diisi manual per-quotation (tidak ada kurs otomatis)."
+                  >
+                    <option value="">+ Tambah Currency…</option>
+                    {currencyCodes
+                      .filter(c => c !== 'IDR' && !(c in (header.exchange_rates || {})))
+                      .map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+
+                  {rateWarnings.map(w => (
+                    <div key={w.code} style={{ fontSize: 12, fontWeight: 700, color: C.warn, background: '#FBEEDD', border: '1px solid #E6CE94', borderRadius: 8, padding: '8px 10px' }}>
+                      Kurs {w.code} pada quotation ini berbeda antar-baris ({w.values.map(v => Number(v).toLocaleString('id-ID')).join(' vs ')}).
+                      Pilih satu kurs {w.code} di atas — total baris yang kursnya berubah akan ikut menyesuaikan.
+                    </div>
+                  ))}
+                  {missingRates.length > 0 && (
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.danger }}>
+                      Kurs belum diisi: {missingRates.join(', ')} — Submit akan diblokir (Simpan Draft tetap bisa).
+                    </div>
+                  )}
+                </div>
               </Field>
 
               <Field label="Diskon (%)" full>
