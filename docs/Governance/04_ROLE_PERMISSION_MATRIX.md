@@ -27,7 +27,7 @@
 | `viewer` | Viewer | — | Read-only semua modul. |
 
 **Catatan role lain:**
-- `gm_bd` — role baru (Paket 1, 9 Jul 2026). Dieksekusi di DB MSI (tabel `roles` + permission + fungsi `is_manager_or_above()` sudah +`gm_bd`, dijalankan user manual). Single-entity MSI; RLS lintas-3-entitas = Paket 2 (belum). Prioritas frontend: disisipkan di `ERP_ROLE_PRIORITY` setelah `gm`, sebelum `manager` (`AuthContext.jsx:11`).
+- `gm_bd` — role baru (Paket 1, 9 Jul 2026). Dieksekusi di DB MSI (tabel `roles` + permission + fungsi `is_manager_or_above()` sudah +`gm_bd`, dijalankan user manual). Single-entity MSI; RLS lintas-3-entitas = Paket 2 (belum). Prioritas frontend: disisipkan di `ERP_ROLE_PRIORITY` setelah `gm`, sebelum `manager` (`AuthContext.jsx:11`). **Roster CRM: lihat §3.1** (gm_bd boleh di-assign sbg pelaksana, TIDAK dihitung sbg performa sales). ⚠️ `gm_bd` absen dari map `PERMISSIONS` FE → `can()` = `false` untuk semua aksi; fix sudah ada (`App.jsx:289`) tapi **belum di-commit** — lihat **TD-64** / `18_…:D-01`.
 - `sales_head` — muncul di fungsi RLS `is_manager_or_above()` tapi tidak ada di daftar role aktif standar. [TODO: konfirmasi apakah `sales_head` masih dipakai sebagai role aktif atau sisa migrasi].
 - `operator` — adalah **position level** (Operator: driver/OB), **bukan** role RBAC.
 - Legacy enum `profiles.role` (`super`/`logistic`/`management`) — **deprecated**, frontend & Edge Functions tak baca lagi (lihat TECH_DEBT TD-20).
@@ -70,6 +70,25 @@ Sumber: matrix permission `CLAUDE.md`. **CRUD** = full, **R** = read-only, **-**
 | HRGA | CRUD | R | R | CRUD | R | R | - | - | - | CRUD | R | R |
 | Assets | CRUD | R | R | R | R | R | R | R | CRUD | R | CRUD | R |
 | Admin | CRUD | - | - | - | - | - | - | - | - | - | CRUD | - |
+
+### 3.1 Roster CRM — OPERASIONAL vs LAPORAN (dua konsep, sengaja terpisah)
+
+> **Ini BUKAN gate menu** (siapa boleh buka halaman), tapi **isi dropdown/agregasi** (siapa muncul sbg pilihan / siapa dihitung). Keputusan bisnis, 17 Jul 2026 — **jangan disatukan.**
+
+| Roster | Kriteria (`roles.code`) | Sumber | Dipakai di | `gm_bd`? |
+|---|---|---|---|---|
+| **OPERASIONAL** — siapa yang boleh **di-assign / dipilih sbg pelaksana** | `['sales','gm_bd']` = `OPERATIONAL_ROSTER_ROLES` | **`src/modules/crm/salesRoster.js`** → `fetchOperationalRoster(companyId)` | dropdown salesperson visit (`CRMDashboardPage` AddVisitModal) + filter dashboard · assignee `ActivitiesPage` · salesperson `SalesCallsPage` (dead code, TD-69) · filter `ActivityLogPage` | ✅ **MASUK** (BD ikut visit customer) |
+| **ASSIGNEE DEAL** — siapa boleh **pegang deal** | `['sales','manager','supervisor','gm_bd']` | `DealDetailPage.jsx:105` `fetchAssignees` (**daftar sendiri**, lebih luas) | dropdown assignee EditDealModal → `accounts.assigned_to` | ✅ **MASUK** |
+| **KAM** — siapa boleh **pegang akun strategis** | `['sales','manager','gm_bd']` | `StrategicHandoverModal.jsx:75` (**daftar sendiri**, lebih luas) | dropdown KAM di form Strategic Handover (deal WON > Rp100jt) | ✅ **MASUK** — **kontrak mewajibkan BD memegang customer tier A** |
+| **LAPORAN** — performa sales siapa yang **DIHITUNG** | `['sales','supervisor','manager']` | `CRMReportPage.jsx:158` `fetchReportSales` | Sales Report (KPI / trend / per-sales) | ❌ **TIDAK** — **BD tidak dihitung sbg performa sales** |
+
+**Ringkas: `gm_bd` ada di 3 dari 4 roster** — semua roster **operasional/assignment** (operasional, assignee deal, KAM). Yang satu (**LAPORAN**) **dikecualikan dengan sengaja**, bukan kelupaan.
+
+- **Kenapa dipisah:** menyatukannya = diam-diam memasukkan BD ke **angka Sales Report**. Menambah `gm_bd` ke roster laporan **mengubah angka**, jadi itu keputusan bisnis, bukan refactor.
+- **⚠️ Kenapa `DealDetailPage` & `StrategicHandoverModal` TAK memakai helper** (perangkap nyata — jangan "dirapikan" jadi satu): daftar keduanya **lebih luas** dari `OPERATIONAL_ROSTER_ROLES` (`['sales','gm_bd']`). Ditukar helper → **`DealDetailPage`: manager & supervisor hilang** · **`StrategicHandoverModal`: manager hilang** dari dropdown KAM (regresi senyap — dropdown tetap terisi, cuma kurang orang). Keduanya sudah diberi komentar peringatan di kode (`DealDetailPage.jsx:99-102`, `StrategicHandoverModal.jsx:70-74`). Pola: **role ditambahkan ke daftar milik masing-masing**, bukan disatukan ke helper.
+- **Scope entitas:** roster **selalu company-scoped** (`roles` + `user_roles` `.eq('company_id', …)`). Row role `gm_bd` **hanya ada di MSI** → **gm_bd cuma muncul untuk user MSI**; JCI/SOA tak terpengaruh. Disengaja (§1: gm_bd single-entity, Paket 2 belum).
+- **Menambah role ke roster operasional:** ubah `OPERATIONAL_ROSTER_ROLES` di `salesRoster.js` — **satu tempat**. (Sebelum 17 Jul: fungsi `fetchSalesProfiles` di-copy-paste identik di 4 file, semuanya hardcode `'sales'` → itu sebabnya `gm_bd` tak pernah muncul.)
+- **Di luar roster (jangan tertukar):** `LeadPoolPage.jsx:146` `['manager','supervisor']` = `notifyManagers`, daftar **penerima notifikasi approver**, **bukan roster salesperson** → `gm_bd` **tidak relevan** di sini; nol sentuhan.
 
 ### Peta Menu → Halaman → Role-gate (visibilitas)
 
