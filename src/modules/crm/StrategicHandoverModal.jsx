@@ -67,7 +67,12 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
     supabase.from('payment_terms').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => { if (!cancelled) setPaymentTerms(data || []); });
     (async () => {
-      const { data: roleRows } = await supabase.from('roles').select('id').eq('company_id', profile.company_id).in('code', ['sales', 'manager']);
+      // Roster KAM (operasional: siapa yang boleh pegang akun strategis) → gm_bd ikut.
+      // Alasan: kontrak mewajibkan BD memegang customer tier A, jadi BD memang dirancang
+      // megang akun strategis — bukan dikecualikan. Keputusan tetap.
+      // Daftar sengaja LEBIH LUAS dari `./salesRoster` (yg cuma ['sales','gm_bd']) — jangan
+      // ditukar dgn helper itu, nanti manager hilang dari dropdown ini.
+      const { data: roleRows } = await supabase.from('roles').select('id').eq('company_id', profile.company_id).in('code', ['sales', 'manager', 'gm_bd']);
       const roleIds = (roleRows || []).map(r => r.id);
       if (!roleIds.length) return;
       const { data: urs } = await supabase.from('user_roles').select('user_id').eq('company_id', profile.company_id).in('role_id', roleIds).eq('is_active', true).is('revoked_at', null);

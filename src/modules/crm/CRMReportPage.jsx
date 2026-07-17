@@ -145,8 +145,15 @@ function perSales(acts, prospects, quotations, salesList) {
   });
 }
 
-/* ---------------- sales roster (RBAC, mirrors fetchSalesProfiles) ---------------- */
+/* ---------------- sales roster LAPORAN (RBAC) ---------------- */
 // Sales/supervisor/manager users; entity from user_roles.company_id.
+//
+// ⚠️ SENGAJA TERPISAH dari roster OPERASIONAL (`./salesRoster` → fetchOperationalRoster,
+//    ['sales','gm_bd']). JANGAN disatukan / jangan tambahkan 'gm_bd' ke sini:
+//      • OPERASIONAL = siapa yang boleh di-assign/dipilih sbg pelaksana → gm_bd MASUK
+//      • LAPORAN (ini) = performa sales siapa yang DIHITUNG → BD TIDAK dihitung sbg
+//        performa sales (keputusan bisnis).
+//    Menambahkan gm_bd di sini = mengubah angka Sales Report.
 async function fetchReportSales({ companyId, isSuper }) {
   let rolesQ = supabase.from("roles").select("id, company_id, code").in("code", ["sales", "supervisor", "manager"]);
   if (!isSuper) rolesQ = rolesQ.eq("company_id", companyId);

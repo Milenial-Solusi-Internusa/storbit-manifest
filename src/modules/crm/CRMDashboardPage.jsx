@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, LabelList, AreaChart, Area } from "recharts";
 import { supabase } from '../../lib/supabase';
+import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
 import { fetchActivityFeed } from './activityFeed';
 
@@ -837,7 +838,7 @@ function ActivityReportTab({ profile, isSalesOnly, showToast }) {
   useEffect(() => {
     if (isSalesOnly || !profile?.company_id) return;
     let cancelled = false;
-    fetchSalesProfiles(profile.company_id).then(s => { if (!cancelled) setSalesOpts(s); });
+    fetchOperationalRoster(profile.company_id).then(s => { if (!cancelled) setSalesOpts(s); });
     return () => { cancelled = true; };
   }, [isSalesOnly, profile?.company_id]);
 
@@ -998,25 +999,7 @@ const VISIT_STAGES = ['scheduled', 'completed', 'cancelled'];
 const ACT_TO_VISIT_STATUS = { todo: 'scheduled', done: 'completed', cancelled: 'cancelled' };
 const VISIT_TO_ACT_STATUS = { scheduled: 'todo', completed: 'done', cancelled: 'cancelled' };
 
-/* Resolve active 'sales' users for a company via RBAC (roles.code='sales'),
-   never a hardcoded role_id. Conditions: same company, user_roles active +
-   not revoked. Returns [{ id, full_name }] (active profiles only). */
-async function fetchSalesProfiles(companyId) {
-  const { data: roleRows } = await supabase
-    .from('roles').select('id').eq('company_id', companyId).eq('code', 'sales');
-  const roleIds = (roleRows || []).map(r => r.id);
-  if (!roleIds.length) return [];
-  const { data: urs } = await supabase
-    .from('user_roles').select('user_id')
-    .eq('company_id', companyId).in('role_id', roleIds)
-    .eq('is_active', true).is('revoked_at', null);
-  const userIds = [...new Set((urs || []).map(u => u.user_id).filter(Boolean))];
-  if (!userIds.length) return [];
-  const { data: profs } = await supabase
-    .from('profiles').select('id, full_name').in('id', userIds)
-    .eq('active', true).order('full_name').limit(1000);
-  return profs || [];
-}
+/* Roster operasional (sales + gm_bd) → helper bersama `./salesRoster`. */
 
 /* ---------- visit type (BD-07) ---------- */
 const VISIT_TYPES = [
@@ -2176,11 +2159,11 @@ function CRMDashboardPage() {
 
   // ── fetch options for AddVisitModal ─────────────────────────────────────
   // Salesperson dropdown = active 'sales' users in the current entity only
-  // (RBAC role code, scoped by company_id — see fetchSalesProfiles).
+  // (RBAC role code, scoped by company_id — see fetchOperationalRoster).
   useEffect(() => {
     if (!addVisitOpen || !profile?.company_id) return;
     Promise.all([
-      fetchSalesProfiles(profile.company_id),
+      fetchOperationalRoster(profile.company_id),
       supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['prospect', 'customer']).is('deleted_at', null).order('name').limit(1000),
     ]).then(([sales, prospRes]) => {
       setSalesProfiles(sales);

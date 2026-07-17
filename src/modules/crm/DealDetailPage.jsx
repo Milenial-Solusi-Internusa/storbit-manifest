@@ -96,10 +96,13 @@ function useIsMobile(bp = 760) {
   return m;
 }
 
-// Sales/manager/supervisor of a company, via user_roles (profiles.role is dormant).
+// Sales/manager/supervisor/gm_bd of a company, via user_roles (profiles.role is dormant).
+// Roster ASSIGNEE deal (operasional: siapa yang boleh pegang deal) → gm_bd ikut.
+// Daftar sengaja LEBIH LUAS dari `./salesRoster` (yg cuma ['sales','gm_bd']) — jangan
+// ditukar dgn helper itu, nanti manager & supervisor hilang dari dropdown ini.
 async function fetchAssignees(companyId) {
   const { data: roleRows } = await supabase
-    .from('roles').select('id').eq('company_id', companyId).in('code', ['sales', 'manager', 'supervisor']);
+    .from('roles').select('id').eq('company_id', companyId).in('code', ['sales', 'manager', 'supervisor', 'gm_bd']);
   const roleIds = (roleRows || []).map((r) => r.id);
   if (!roleIds.length) return [];
   const { data: urs } = await supabase
