@@ -4,7 +4,7 @@
 >
 > **Legenda:** ✅ Done · 🔄 In Progress · 📋 Planned · ⏸ Deferred
 >
-> **Diperbarui 2026-07-10 — Modul PRF (Procurement) Fase 1+2 LIVE (form Section 01/02/03/04 + child fields dinamis + menu + nomor auto); FASE 0-3 SP done (mesin status LIVE s/d BTB_TERBIT), FASE 4-5 + tech debt next.** Fakta: `03_DATA_MODEL`/`05_WORKFLOW_MAP`/`08_TECH_DEBT`.
+> **Diperbarui 2026-07-17 — Quotation: TABEL KURS manual per-quotation** (kolom baru `quotations.exchange_rates` jsonb + RPC `save_quotation` memetakannya — **DB sudah LIVE**, 2 file FE; **tes runtime OK**; migrasi direkam (`20260717000000`+`20260717000001`) + snapshot ter-refresh → **TD-74 (a)+(b) beres**, sisa **(c)** tabrakan nama + **(d)** `usd_rate` = keputusan desain). ⚠️ Arah *"dropdown currency header tunggal jadi penggerak baris"* yang sempat dicatat di sini **DIBATALKAN & dibongkar** — lihat baris Quotation di Status Modul + `PROGRESS.md` 2026-07-17. Sebelumnya 2026-07-10 — Modul PRF (Procurement) Fase 1+2 LIVE (form Section 01/02/03/04 + child fields dinamis + menu + nomor auto); FASE 0-3 SP done (mesin status LIVE s/d BTB_TERBIT), FASE 4-5 + tech debt next. Fakta: `03_DATA_MODEL`/`05_WORKFLOW_MAP`/`08_TECH_DEBT`.
 
 ---
 
@@ -31,7 +31,8 @@
 | **CRM & Inquiry** | Pipeline / Kanban (drag-stage, soft-gate, toolbar: member/sort/filter/list-view) | ✅ | 2.9X–Z; `estimated_value` |
 | | Prospect form + BANT scorecard + Win/Loss capture | ✅ | auto-assign sales, dup-check |
 | | Inquiry (list + form + detail) | ✅ | |
-| | Quotation (builder, SLA BD-05, pricing authority BD-06, discount, currency dropdown, VAT rate per service, PDF) | ✅ | PDF = `@react-pdf/renderer` (2.10A–C); **currency EUR/SGD/JPY/MYR + VAT rate dropdown + kurs per-baris** ✅ (2.10C/H/I) |
+| | Quotation (builder, SLA BD-05, pricing authority BD-06, discount, currency dropdown, VAT rate per service, PDF) | ✅ | PDF = `@react-pdf/renderer` (2.10A–C); **currency EUR/SGD/JPY/MYR + VAT rate dropdown** ✅ (2.10C/H/I). **"currency dropdown" di baris ini = dropdown per-baris** (`quotation_items.currency`) — **currency tetap per-baris (multi-currency)**; ⚠️ tak ada dropdown currency di header (percobaan 17 Jul **dibatalkan**, `quotations.currency_code` tetap PASIF) |
+| | **Tabel kurs per-quotation** (`quotations.exchange_rates` jsonb) | ✅ | 17 Jul: header punya tabel kurs manual; **kurs baris jadi read-only turunan** + write-through ⇒ Detail/PDF nol perubahan; seed quotation lama (beda kurs antar-baris → warning eksplisit); blokir **SUBMIT saja** bila kurs kurang (Draft boleh). **DB LIVE** (ALTER + RPC, manual) + **migrasi direkam** (`20260717000000`+`20260717000001`) + **snapshot ter-refresh**; **tes runtime OK**. Sisa **TD-74 (c)** tabrakan nama & **(d)** `usd_rate` = keputusan desain, bukan fitur kurang. Kurs **manual per-quotation, tanpa lookup FX** → **B6** `14_BACKLOG_RECON` tetap **SEBAGIAN** (jangan diklaim tutup) |
 | | CRM Dashboard (KPI, charts, calendar, per-role, activity report) | ✅ | bg putih 2.10E |
 | | **CRM Report page** (KPI, trend chart, per-sales breakdown, activity detail) | ✅ | Supabase real data + sidebar menu Report (2.10L–M); **belum tes manual runtime** |
 | | Master Customer (list + detail page + health score) | ✅ | per-entitas + Free Agent (2.1C–G) |

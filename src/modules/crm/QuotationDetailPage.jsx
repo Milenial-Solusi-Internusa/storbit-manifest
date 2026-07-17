@@ -166,7 +166,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           subtotal, tax_amount, total_amount, payment_terms_id,
           pricing_done_at, quote_sent_at, discount_pct,
           inquiry_id, prospect_id, customer_id, internal_notes, quote_date,
-          currency_code, margin_floor, vat_rate,
+          currency_code, exchange_rates, margin_floor, vat_rate,
           attention_to, pickup_address, delivery_address, cargo_mode,
           gw, dimension, cw, cbm, container_type, container_qty,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city, pic_name, pic_email, pic_phone),
