@@ -5,27 +5,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, Plus, Eye, PhoneCall, X, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
 
-// Resolve active 'sales' users for a company via RBAC (roles.code='sales'),
-// never a hardcoded role_id. Conditions: same company, user_roles active +
-// not revoked. Returns [{ id, full_name }] (active profiles only).
-async function fetchSalesProfiles(companyId) {
-  const { data: roleRows } = await supabase
-    .from('roles').select('id').eq('company_id', companyId).eq('code', 'sales');
-  const roleIds = (roleRows || []).map(r => r.id);
-  if (!roleIds.length) return [];
-  const { data: urs } = await supabase
-    .from('user_roles').select('user_id')
-    .eq('company_id', companyId).in('role_id', roleIds)
-    .eq('is_active', true).is('revoked_at', null);
-  const userIds = [...new Set((urs || []).map(u => u.user_id).filter(Boolean))];
-  if (!userIds.length) return [];
-  const { data: profs } = await supabase
-    .from('profiles').select('id, full_name').in('id', userIds)
-    .eq('active', true).order('full_name').limit(1000);
-  return profs || [];
-}
+// Roster operasional (sales + gm_bd) → helper bersama `./salesRoster`.
 
 const C = {
   bg:        '#F6EFE3',
@@ -438,12 +421,12 @@ export default function SalesCallsPage({ showToast }) {
 
   // Load prospect + salesperson options for the form (called when a modal opens).
   // Salesperson dropdown = active 'sales' users in the current entity only
-  // (resolved via RBAC role code, see fetchSalesProfiles).
+  // (resolved via RBAC role code, see fetchOperationalRoster).
   const loadFormOptions = async () => {
     if (!profile?.company_id) return;
     const [pRes, sales] = await Promise.all([
       supabase.from('accounts').select('id, name, company_prefix').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(1000),
-      fetchSalesProfiles(profile.company_id),
+      fetchOperationalRoster(profile.company_id),
     ]);
     setProspects(pRes.data || []);
     setSalesProfiles(sales);

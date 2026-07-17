@@ -6,30 +6,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, Plus, Eye, Check, Activity, X, Pencil, UserPlus, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 
-// Resolve active 'sales' users for a company via RBAC (roles.code='sales'),
-// never a hardcoded role_id. Conditions: same company, user_roles active +
-// not revoked. Returns [{ id, full_name }] (active profiles only).
-// (Same convention as SalesCallsPage — kept local, no new shared module.)
-async function fetchSalesProfiles(companyId) {
-  const { data: roleRows } = await supabase
-    .from('roles').select('id').eq('company_id', companyId).eq('code', 'sales');
-  const roleIds = (roleRows || []).map(r => r.id);
-  if (!roleIds.length) return [];
-  const { data: urs } = await supabase
-    .from('user_roles').select('user_id')
-    .eq('company_id', companyId).in('role_id', roleIds)
-    .eq('is_active', true).is('revoked_at', null);
-  const userIds = [...new Set((urs || []).map(u => u.user_id).filter(Boolean))];
-  if (!userIds.length) return [];
-  const { data: profs } = await supabase
-    .from('profiles').select('id, full_name').in('id', userIds)
-    .eq('active', true).order('full_name').limit(1000);
-  return profs || [];
-}
+// Roster operasional (sales + gm_bd) → helper bersama `./salesRoster`.
 
 const C = {
   bg:        '#F6EFE3',
@@ -600,7 +582,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     if (!profile?.company_id) return;
     const [aRes, sales] = await Promise.all([
       supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['prospect', 'customer']).is('deleted_at', null).order('name').limit(1000),
-      fetchSalesProfiles(profile.company_id),
+      fetchOperationalRoster(profile.company_id),
     ]);
     setAccounts(aRes.data || []);
     setSalesProfiles(sales);
@@ -610,7 +592,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   useEffect(() => {
     if (!profile?.company_id) return;
     let cancelled = false;
-    fetchSalesProfiles(profile.company_id).then(s => { if (!cancelled) setSalesProfiles(s); });
+    fetchOperationalRoster(profile.company_id).then(s => { if (!cancelled) setSalesProfiles(s); });
     return () => { cancelled = true; };
   }, [profile?.company_id]);
 
