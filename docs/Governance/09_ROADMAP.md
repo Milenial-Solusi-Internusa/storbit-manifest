@@ -5,6 +5,8 @@
 > **Legenda:** ✅ Done · 🔄 In Progress · 📋 Planned · ⏸ Deferred
 >
 > **Diperbarui 2026-07-17 — Quotation: TABEL KURS manual per-quotation** (kolom baru `quotations.exchange_rates` jsonb + RPC `save_quotation` memetakannya — **DB sudah LIVE**, 2 file FE; **tes runtime OK**; migrasi direkam (`20260717000000`+`20260717000001`) + snapshot ter-refresh → **TD-74 (a)+(b) beres**, sisa **(c)** tabrakan nama + **(d)** `usd_rate` = keputusan desain). ⚠️ Arah *"dropdown currency header tunggal jadi penggerak baris"* yang sempat dicatat di sini **DIBATALKAN & dibongkar** — lihat baris Quotation di Status Modul + `PROGRESS.md` 2026-07-17. Sebelumnya 2026-07-10 — Modul PRF (Procurement) Fase 1+2 LIVE (form Section 01/02/03/04 + child fields dinamis + menu + nomor auto); FASE 0-3 SP done (mesin status LIVE s/d BTB_TERBIT), FASE 4-5 + tech debt next. Fakta: `03_DATA_MODEL`/`05_WORKFLOW_MAP`/`08_TECH_DEBT`.
+>
+> ℹ️ **Audit sumber 13-18** (`13_CRM_FLOW_AUDIT`, `14_BACKLOG_RECON`, `15_INPUT_CONTROL_AUDIT`, `16_SP_TABLES_SYNC_AUDIT`, `17_ZERO_INPUT_AUDIT`, `18_CRM_SALES_PRF_PENDING_AUDIT`) **kini diarsipkan di `docs/archive/audits/`**. Tag `(dari NN_…)` di bawah = atribusi historis (bukan tautan hidup).
 
 ---
 

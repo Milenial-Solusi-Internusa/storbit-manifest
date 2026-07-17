@@ -3,6 +3,8 @@
 > Breakdown task aktif & backlog jadi unit yang bisa langsung dikerjakan Claude Code. Sumber: `docs/09_ROADMAP.md` (Next Up), `docs/08_TECH_DEBT.md`. Update saat task selesai / prioritas berubah.
 >
 > **Diperbarui 2026-07-17 (rekam migrasi kurs + refresh snapshot) — F10 menyempit:** migrasi `quotations.exchange_rates` + `save_quotation` **sudah direkam** (`20260717000000_…`, `20260717000001_…`) dan **`pg_dump` sudah dijalankan** → snapshot stale TD-74(b) **dan** TD-72(b) **BERES sekaligus** (`schema_snapshot.sql:4044`/`:1013`/`:4295-4296`); **jangan dump ulang**. Sisa F10 = keputusan desain TD-74(c)/(d). Sebelumnya 2026-07-17 — **+F10** (TD-74); **+F9** (sisa TD-64: `supervisor` + `sales_spv`; `gm_bd` sudah beres).** Sebelumnya 2026-07-08 — +section H (FASE 4-5 + tech debt FASE 0-3); +Completed FASE 0-3; E1 (audit logging) DONE. Catatan kejujuran: task A–G lain (CRM/RBAC/foundation) **tidak** disentuh FASE 0-3 → tetap OPEN.
+>
+> ℹ️ **Audit sumber 13-18** (`13_CRM_FLOW_AUDIT`, `14_BACKLOG_RECON`, `15_INPUT_CONTROL_AUDIT`, `16_SP_TABLES_SYNC_AUDIT`, `17_ZERO_INPUT_AUDIT`, `18_CRM_SALES_PRF_PENDING_AUDIT`) **kini diarsipkan di `docs/archive/audits/`**. Tag `(dari NN_…)` di bawah = atribusi historis (bukan tautan hidup).
 
 ---
 
