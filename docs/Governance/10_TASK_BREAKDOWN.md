@@ -95,6 +95,11 @@
       - **Sinyal pelunasan lain yang ADA (domain terpisah):** `ar_ttfs.tgl_pembayaran` (`schema_snapshot.sql:1856`, COMMENT: "NULL = not yet paid… calcAR() … Lunas / Partial / Belum Bayar"). Ini **domain AR/finance/penagihan**, yang per `05_WORKFLOW_MAP` **BUKAN** status SP.
       - **PERLU KONFIRMASI (jangan diputuskan sepihak) — sinyal mana yang jadi acuan "lunas" untuk gate H7:** **(a)** `sp_orders.status='LUNAS'` via FASE 4-5 (H1/H2) · **(b)** `ar_ttfs.tgl_pembayaran` (domain AR, lintas-domain) · **(c)** kolom status pelunasan **baru** yang diisi manual tim. User semula menyebut *"diisi manual oleh tim nanti"* → **mungkin** maksudnya **(c)**, tapi **(c) bentrok dgn FASE 4-5** yang sudah direncanakan (dua sumber kebenaran pelunasan) → **konfirmasi dulu**.
 
+### I. Perubahan kecil CRM (dari 14_BACKLOG_RECON)
+- [ ] **I1. Rename tombol "Tambah Deal" → "Tambah Leads"** — 1 baris FE, `PipelineKanbanPage.jsx:899` (label terverifikasi). (dari 14_BACKLOG_RECON.md B5)
+- [ ] **I2. Template note (preset) di quotation** — sekarang `quotations.notes`/`terms` = field bebas, tak ada preset (terverifikasi nol preset). Perlu desain kecil (daftar preset + picker). (dari 14_BACKLOG_RECON.md B8)
+- [ ] **I3. Mekanisme email → email group** — ubah konfigurasi/proses notifikasi ke email group. **Perlu keputusan Den** (konfigurasi, bukan murni kode; kerabat TD-43). (dari 14_BACKLOG_RECON.md B4)
+
 ---
 
 ## Completed (FASE 0-3 — Storbit SP mesin status, ~Jul 2026)
