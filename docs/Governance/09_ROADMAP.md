@@ -174,7 +174,23 @@ Berdasarkan kondisi LIVE (FASE 0-3 selesai) + `08_TECH_DEBT.md`:
 - **RBAC/RLS `accounts`** + dropdown role-scope (TD-01/04/06).
 - **Runtime-verify staging** (accounts/Activity cutover) + **deploy Edge Functions** (TD-21/22) + **drop dormant** `sales_calls`/`visits`/`customers`/`profiles.role` (TD-18/19/20).
 - **Modul Finance** transaksi umum (Billing/AR-AP) — arah setelah foundation matang. **Audit logging** (TD-05) ✅ done.
+- **Inventory — perencanaan alokasi barang ke klien** 📋 (belum ada; `reserved`/`available` di stok = reservasi SP fulfillment, BUKAN perencanaan alokasi). (dari 14_BACKLOG_RECON.md D19)
+- **Inventory — stock monitoring: aging & turnover** 📋 (belum ada; Inventory Dashboard punya movement-trend & low-stock, tapi **nol** KPI aging/turnover — terverifikasi `grep aging|turnover` inventory = 0; `stock_ledger` bisa jadi basis data). (dari 14_BACKLOG_RECON.md D20)
+- **CRM — upload MOU ke Nexus** 📋 (belum ada; **nol `storage.upload` di CRM**, `deal_handovers.msa_status` hanya text; butuh desain Supabase Storage + kolom/tabel MOU). Ini juga rumah untuk item `18` C-13. (dari 14_BACKLOG_RECON.md C16)
+- **CRM — Aktivitas tarik status MOU/TOP** 📋 (belum ada; bergantung MOU di atas; data TOP sudah ada di `top_requests`). (dari 14_BACKLOG_RECON.md C17)
 
 **Near-term:** dashboard Indomarco — halaman `IndomarcoDashboardPage` sudah **LIVE**; polish/iterasi sesuai kebutuhan presentasi.
 
 7. [TODO: konfirmasi prioritas bisnis berikutnya dengan product owner].
+
+---
+
+## Keputusan Terbuka (perlu keputusan Den)
+
+> Peta keputusan produk terpusat — hal yang **belum diputuskan** (bukan fakta/selesai). Dari rekonsiliasi backlog. Section ini akan diperluas di sub-fase berikutnya (append-friendly).
+
+1. **Dashboard boleh dibagi ke customer eksternal?** — `IndomarcoDashboardPage` sekarang ditandai INTERNAL (framing customer-facing tapi halaman internal). **Perlu keputusan Den:** boleh dibagikan ke customer eksternal? tujuan & batasannya? (dari 14_BACKLOG_RECON.md A1)
+2. **Intake SP dari Indomarco — automasi email vs API.** — Email SP kadang tak diterima MSI. **Perlu keputusan Den:** solusi di sisi MSI (automasi email konfirmasi) atau integrasi API ke Indomarco? (butuh keputusan + desain integrasi; kerabat TD-43 verifikasi email). (dari 14_BACKLOG_RECON.md A2)
+3. **Kontrak 20 DC vs aktual 44 DC — akun Nexus per DC?** — `dc_master` sudah memuat 45 DC (36 Indomarco ter-mapping) sebagai DATA, bukan keputusan. **Perlu keputusan Den:** buat akun/penomoran Nexus per DC atau tidak? (dari 14_BACKLOG_RECON.md A3)
+4. **Hilangkan approval Lead Pool — cukup justifikasi wajib?** — Sekarang: pull Lead Pool butuh justifikasi ≥20 char + approval manager (`LeadPoolApprovalPage`). **Perlu keputusan Den:** buang tahap approval, cukup remarks/justifikasi WAJIB? (kerabat TD-77 celah RLS `pull_status`). (dari 14_BACKLOG_RECON.md C12)
+5. **"Aktifkan modul Shipment untuk mengaktifkan form Handover" (Koh Deny) — maksud ambigu.** — Handover form SUDAH ter-wire ke WON (gate nilai Rp100jt) & `ShipmentPage` sudah ada. **Perlu keputusan Den / klarifikasi:** apa maksud "Shipment mengaktifkan Handover"? relasinya belum terdokumentasi. (dari 14_BACKLOG_RECON.md C14)
