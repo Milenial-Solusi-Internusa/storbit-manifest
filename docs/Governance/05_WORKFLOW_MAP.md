@@ -82,7 +82,7 @@ Lead Pool ──┐
 
 ## Aging Pipeline (Lead idle → Lead Pool) — Edge Function (LIVE + TERJADWAL harian 01:00 WIB)
 
-Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`) — pindahkan lead yang terlalu lama diam ke Lead Pool + notifikasi ke sales pemilik. Sebelumnya ter-deploy dgn slug auto `bright-handler` & **tak ada di version control**; kini di-commit (branch `feat/aging-pipeline`, belum merge).
+Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`) — pindahkan lead yang terlalu lama diam ke Lead Pool + notifikasi ke sales pemilik. Sebelumnya ter-deploy dgn slug auto `bright-handler` & **tak ada di version control**; kini di-commit (branch `feat/aging-pipeline`, sudah merge ke `main`).
 
 **Batas diam per stage (hari):** NEW 7 · CONTACTED 5 · QUALIFIED 5 · PROPOSAL 3 · NEGOTIATION 14.
 
