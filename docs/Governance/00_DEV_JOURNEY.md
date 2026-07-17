@@ -80,7 +80,7 @@
 | Helper security (7) | is_super_admin / is_admin_or_above / is_manager_or_above / has_role / has_permission / get_user_company_id / get_user_role_code | **LIVE** |
 | RLS ~60 tabel | company- + role-scoped | **LIVE** |
 | **~48 policy `USING(true)`** | sp_items / picking / delivery / stock_ledger / dll — isolasi via filter aplikasi, bukan DB | **⚠️ security smell** → **TD-39** |
-| Audit log | `audit_logs` + `logAudit()` (`auditLogger.js`), ~19 event | **LIVE** (TD-05 done; AuditLogPage masih login-only, TD-37) |
+| Audit log | `audit_logs` + `logAudit()` (`auditLogger.js`), ~19 event | **LIVE** (TD-05 done; **AuditLogPage baca `audit_logs`** (`:103`) sejak 2.11J — **TD-37 DONE**, klaim login-only usang; sisa opsional: diff viewer belum dirender) |
 
 ### Master Data
 | Fitur | Fungsi | Status |

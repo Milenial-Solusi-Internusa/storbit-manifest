@@ -32,7 +32,7 @@
 - [ ] **D3.** Migrasi RLS RBAC-driven (4-fase, TD-01) — **prasyarat HRIS, sesi fresh, risiko tinggi**. Perketat `profiles_read` (TD-04) bersamaan modul HRIS.
 
 ### E. Foundation reliability
-- [x] **E1.** ~~Implement `audit_logs` + `logAudit()`~~ **DONE (2.11J)** — tabel `audit_logs` + `src/lib/auditLogger.js` live, ~19 event di-wire (TD-05 DONE). Sisa: `AuditLogPage` switch sumber `user_login_logs`→`audit_logs` + diff viewer (TD-37).
+- [x] **E1.** ~~Implement `audit_logs` + `logAudit()`~~ **DONE (2.11J)** — tabel `audit_logs` + `src/lib/auditLogger.js` live, ~19 event di-wire (TD-05 DONE). Switch sumber `AuditLogPage` (`user_login_logs`→`audit_logs`) **sudah termasuk di 2.11J** (`7e40149`) → `AuditLogPage.jsx:103` kini `.from("audit_logs")`, **TD-37 DONE**. Sisa: **diff viewer `old_data`/`new_data`** (opsional, bukan blocker) — kolom sudah ditulis `auditLogger.js:92-93`, belum dirender (`AuditLogPage.jsx:9-10,104`).
 - [ ] **E2.** Setup Vitest + RTL mulai dari util murni (`spCalc`, `bant`, format) (TD-07) — prasyarat pecah App.jsx.
 - [ ] **E3.** Pasang Sentry + ErrorBoundary report (TD-08).
 
@@ -133,7 +133,7 @@
 
 **Admin Settings — 4 page baru (port Lovable, 2.11A):**
 - [x] **Security Policy** — password/sesi/login-protection/2FA per-role (localStorage `security_policy_*`).
-- [x] **Audit Log** — fetch real `user_login_logs` + join `profiles`; filter/pagination/CSV (login-only sampai `audit_logs` — TD-37).
+- [x] **Audit Log** — fetch real `user_login_logs` + join `profiles`; filter/pagination/CSV (login-only sampai `audit_logs` — TD-37). ⚠️ **Kondisi 2.11A ini kini sudah TIDAK berlaku** — sumbernya diganti ke `audit_logs` di **hari yang sama** oleh 2.11J (`7e40149`); **TD-37 ditutup DONE 17 Jul 2026**.
 - [x] **General Preferences** — lokalisasi/format/tampilan per entitas (localStorage `general_prefs_*`; EntitySwitcher default `useAuth`).
 - [x] **Integrations** — WhatsApp/SMTP/n8n/API keys (localStorage `integrations_*`; ⚠️ credentials belum secure — TD-36).
 - [x] **`kit.jsx` extended** — +13 ikon lucide + `KitSelect`; hub group "Roadmap"→"Keamanan & Sistem"; 4 route `admin-settings-*` di App.jsx (state-swap). Reuse kit existing, tanpa `adminKit.js`.

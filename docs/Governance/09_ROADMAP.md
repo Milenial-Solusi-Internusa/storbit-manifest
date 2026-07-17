@@ -24,14 +24,14 @@
 | | Struktur Organisasi (Org Chart, `reports_to`, warna per-level) | ✅ | 2.9S/U/V |
 | | Schema Manager | ✅ | via EF `manage-schema` |
 | | Admin Settings (Entity profile/bank/signatories, Document numbering/templates, Finance defaults, Approval workflows, Notifications) | ✅ | UI + Supabase wired (2.6A–F) |
-| | **Admin Settings — Security Policy, Audit Log, General Preferences, Integrations** | ✅ | port Lovable (2.11A); General/Security/Integrations = localStorage fallback (TD-36), Audit Log = fetch real `user_login_logs` (login-only, TD-37); **belum tes manual runtime** |
+| | **Admin Settings — Security Policy, Audit Log, General Preferences, Integrations** | ✅ | port Lovable (2.11A); General/Security/Integrations = localStorage fallback (TD-36), Audit Log = fetch real **`audit_logs`** (`AuditLogPage.jsx:103`) — sejak 2.11J (`7e40149`, 24 Jun); **TD-37 DONE** (klaim login-only usang). Sisa opsional: diff viewer `old_data`/`new_data`; **belum tes manual runtime** |
 | | **AdminKit (`kit.jsx`) extended** | ✅ | +13 ikon lucide + primitive `KitSelect` (2.11A); satu sumber design-system Admin Settings |
 | | **Dropdown Management** (master dropdown/option values) | ✅ | full DB-driven via `dropdown_options` (CRUD persist) + `currencies`/`payment_terms` (toggle-only); Tab 2 di General Preferences (2.11C–E); **belum tes manual runtime** |
 | | My Profile (overlay, avatar, password, prefs) | ✅ | 2.8A |
 | **CRM & Inquiry** | Pipeline / Kanban (drag-stage, soft-gate, toolbar: member/sort/filter/list-view) | ✅ | 2.9X–Z; `estimated_value` |
 | | Prospect form + BANT scorecard + Win/Loss capture | ✅ | auto-assign sales, dup-check |
 | | Inquiry (list + form + detail) | ✅ | |
-| | Quotation (builder, SLA BD-05, pricing authority BD-06, discount, currency dropdown, VAT rate per service, PDF) | ✅ | PDF = `@react-pdf/renderer` (2.10A–C); **currency EUR/SGD/JPY/MYR + VAT rate dropdown** ✅ (2.10C/H/I). **"currency dropdown" di baris ini = dropdown per-baris** (`quotation_items.currency`) — **currency tetap per-baris (multi-currency)**; ⚠️ tak ada dropdown currency di header (percobaan 17 Jul **dibatalkan**, `quotations.currency_code` tetap PASIF) |
+| | Quotation (builder, SLA BD-05, pricing authority BD-06, discount, currency dropdown, VAT rate per service, PDF) | ✅ | PDF = `@react-pdf/renderer` (2.10A–C); **currency EUR/SGD/JPY/MYR + VAT rate dropdown** ✅ (2.10C/H/I). **"currency dropdown" di baris ini = dropdown per-baris** (`quotation_items.currency`) — **currency tetap per-baris (multi-currency)**; ⚠️ tak ada dropdown currency di header (percobaan 17 Jul **dibatalkan**, `quotations.currency_code` tetap PASIF). ⚠️ **"pricing authority BD-06" di baris ini = UI SAJA** (badge otoritas diskon + tampilan margin) — **enforcement NOL** (terverifikasi 17 Jul): `validate()` (`QuotationFormPage.jsx:784-788`) HANYA cek `header.inquiry_id`; `handleSave` (`:799`) = `if (!validate()) return false;` titik. `pricingAuthority()` (`:41`) dipanggil sekali di `:1118` → cuma merender badge warna; `marginPct` (`:780`) cuma dirender (`:1290`); `margin_floor` cuma passthrough payload (`:869`) — **tanpa field input, tak pernah dibandingkan**. Artinya user bisa **submit diskon 90% / margin negatif**: badge merah "perlu approval CEO" muncul tapi **simpan tetap jalan**, dan **tak ada record approval ditulis ke mana pun**. Lihat **TD-38** (HIGH) + task **H3** (`10_TASK_BREAKDOWN.md`). Sumber: audit 17 Jul (`18_CRM_SALES_PRF_PENDING_AUDIT.md` GAP #3 / C-03) |
 | | **Tabel kurs per-quotation** (`quotations.exchange_rates` jsonb) | ✅ | 17 Jul: header punya tabel kurs manual; **kurs baris jadi read-only turunan** + write-through ⇒ Detail/PDF nol perubahan; seed quotation lama (beda kurs antar-baris → warning eksplisit); blokir **SUBMIT saja** bila kurs kurang (Draft boleh). **DB LIVE** (ALTER + RPC, manual) + **migrasi direkam** (`20260717000000`+`20260717000001`) + **snapshot ter-refresh**; **tes runtime OK**. Sisa **TD-74 (c)** tabrakan nama & **(d)** `usd_rate` = keputusan desain, bukan fitur kurang. Kurs **manual per-quotation, tanpa lookup FX** → **B6** `14_BACKLOG_RECON` tetap **SEBAGIAN** (jangan diklaim tutup) |
 | | CRM Dashboard (KPI, charts, calendar, per-role, activity report) | ✅ | bg putih 2.10E |
 | | **CRM Report page** (KPI, trend chart, per-sales breakdown, activity detail) | ✅ | Supabase real data + sidebar menu Report (2.10L–M); **belum tes manual runtime** |
@@ -105,12 +105,12 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 
 **Fitur — Admin Settings (port Lovable, 2.11A):**
 - ✅ **Security Policy** — password policy, sesi, login protection, 2FA per-role (localStorage fallback `security_policy_*`).
-- ✅ **Audit Log** — fetch real `user_login_logs` + join `profiles`; filter/pagination/CSV export (login events only sampai `audit_logs` jadi — TD-37).
+- ✅ **Audit Log** — fetch real `user_login_logs` + join `profiles`; filter/pagination/CSV export (login events only sampai `audit_logs` jadi — TD-37). ⚠️ **Kondisi 2.11A ini kini sudah TIDAK berlaku** — sumbernya diganti ke `audit_logs` di **hari yang sama** oleh 2.11J (`7e40149`); **TD-37 ditutup DONE 17 Jul 2026**.
 - ✅ **General Preferences** — lokalisasi/format/tampilan per entitas (localStorage `general_prefs_*`; EntitySwitcher default dari `useAuth`).
 - ✅ **Integrations** — WhatsApp/SMTP/n8n webhook/API keys (localStorage `integrations_*`; ⚠️ credentials belum secure — TD-36).
 - ✅ **`kit.jsx` extended** — +13 ikon lucide + `KitSelect` (reuse kit existing, tanpa `adminKit.js` baru).
 
-> ⚠️ Semua page 2.11A **"build clean, belum tes manual runtime"**. TD baru: **TD-36** (credentials localStorage), **TD-37** (AuditLog login-only).
+> ⚠️ Semua page 2.11A **"build clean, belum tes manual runtime"**. TD baru: **TD-36** (credentials localStorage — **tetap OPEN**), **TD-37** (AuditLog login-only — **kini DONE**, ditutup 17 Jul; klaim login-only usang sejak 2.11J).
 
 ---
 

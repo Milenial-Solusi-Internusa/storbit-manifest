@@ -52,6 +52,12 @@ Lead Pool ──┐
 - **SUBMITTED → SENT**: [sales] tombol **"Kirim ke Customer"** (`QuotationDetailPage.jsx:258`, `status='SENT'` + ⚙ `quote_sent_at`); tombol muncul saat `status='SUBMITTED'`.
 - **ACCEPTED / REJECTED / EXPIRED** = **label display saja, TANPA transisi UI** — tak ada aksi/tombol yang menulis status ini (nol baris ACCEPTED di DB). ⚠️ Konsekuensi: trigger `sync_deal_value_on_quotation_accept` (nyala hanya saat ACCEPTED) **tak pernah jalan** → 88% deal WON `estimated_value` kosong (lihat `08_TECH_DEBT.md` **TD-54**).
 
+**Dokumen CRM: NOL PDF dipersist (terverifikasi kode):**
+- **Tidak ada satu pun dokumen/PDF CRM yang disimpan.** Semua PDF (Quotation Letter, Inquiry, Rate Sheet, Activity Report, Visit History) di-generate **di browser** via `@react-pdf/renderer` lalu di-**download sebagai blob** — **nol `storage.upload`/`storage.from` di `src/modules/crm/`**; tak ada kolom path/URL PDF di `quotations`/`inquiries`.
+- Bukan "Storage belum ada": Storage **dipakai** modul lain (`UserEditPage`, `EntitySettingsPage`, `MyProfilePage` → avatars/logo). CRM memang tak pernah menyimpan dokumen.
+- Yang tersimpan ke DB hanya **record terstruktur** (baris + `activity_logs`/`audit_logs`), **bukan dokumennya**.
+- ⚠️ Konsekuensi: **tak ada arsip dokumen yang dikirim ke customer**, dan **upload MOU belum mungkin** (butuh desain penyimpanan dokumen dulu — backlog).
+
 **Struktur pipeline (koreksi — TIDAK ada tabel `deals`/`pipeline`):**
 - Pipeline = tabel **`accounts`**, kolom **`pipeline_stage`**. Nilai deal disimpan di **`accounts.estimated_value`** (BUKAN `deal_value`).
 - Trigger di `accounts`: `trg_set_customer_on_won` (WON → customer) + `trg_z_track_stage_change` (log perubahan stage → `activity_logs`). Trigger di `quotations`: `trg_z_sync_deal_value_on_quotation_accept` (quotation ACCEPTED → `accounts.estimated_value`; lihat catatan TD-54 di atas).
