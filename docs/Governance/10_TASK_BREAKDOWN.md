@@ -229,3 +229,45 @@
 
 **Catatan:** (audit-before-fix? dependency ke task lain?)
 ```
+
+---
+
+## Template Change Request (perubahan besar)
+
+> Untuk perubahan besar (DB change, migrasi modul, refactor lintas-file, RLS) — task kecil/rutin cukup Template Task Baru di atas. Perubahan DB/RLS WAJIB approval eksplisit sebelum eksekusi.
+
+### CR-[NOMOR]: [JUDUL]
+
+**Tanggal:** YYYY-MM-DD
+**Diajukan oleh:** [nama]
+**Prioritas:** Critical / High / Medium / Low
+
+**Deskripsi perubahan:**
+(apa yang berubah & kenapa; link ke TECH_DEBT TD-xx / ROADMAP)
+
+**Modul yang terdampak:**
+(CRM / Foundation / Finance / … + file/komponen kunci)
+
+**DB changes diperlukan:** Ya / Tidak
+(kalau ya, SQL lengkap:)
+```sql
+-- DDL/DML di sini
+```
+
+**Risiko:**
+(apa yang bisa rusak; lintas-modul? RLS? data loss? backward-compat?)
+
+**Rollback plan:**
+(cara balikin: revert commit, restore kolom, re-deploy versi lama, dll)
+
+**Definition of Done:**
+- [ ] npm run build clean
+- [ ] Lint net-zero
+- [ ] Tes manual (langkah spesifik)
+- [ ] Snapshot di-refresh (kalau DB change)
+- [ ] Deploy code stop-baca-kolom DULU sebelum drop (kalau drop kolom)
+- [ ] Docs + CLAUDE.md + PROGRESS.md di-update
+
+**Status:** Draft / Approved / In Progress / Done
+
+> Contoh historis: CR-001 (migrasi PDF `@react-pdf`) = `09_ROADMAP` §Quotation + fase 2.10A; CR-002 (migrasi RLS RBAC-driven) = TD-01 (`08_TECH_DEBT`).

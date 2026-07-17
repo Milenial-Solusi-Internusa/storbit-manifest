@@ -136,3 +136,29 @@
 **Push/deploy:** HANYA bila diinstruksikan eksplisit. `main` = production (Vercel auto-deploy). Commit trailer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
 
 **Tugas dokumentasi:** update `docs/` saat fitur/aturan/keputusan berubah; update `CLAUDE.md` saat ada standing rule baru.
+
+---
+
+## 8. QA Checklist
+
+> Checklist manual sebelum deploy/push (belum ada test otomatis — TD-07). **Pre-deploy & DB-change checklist = lihat §4 (Pola Wajib Database), §6 (Do/Don't), §7 (Workflow Development)** — tak diulang di sini. Bagian ini fokus ke checklist per-modul + PDF quotation.
+
+### Per-Modul (fitur kritis + edge case pernah kena bug)
+
+**CRM** — Fitur kritis tiap deploy: Pipeline drag stage (NEW→…→WON/LOST; WON → account jadi `customer` & muncul di Master Customer; soft-gate PROPOSAL/WON muncul); visibility per role (super_admin lintas entitas, manager se-entitas, sales hanya miliknya — jangan bocor lintas role/entity); Quotation simpan (create + edit via RPC) benar saat reload (bukan basi/duplikat) + total/subtotal/VAT/grand benar + PDF generate; Activities create/done/cancel/edit → muncul di Activity Log feed + dropdown sales termuat; Dashboard KPI & chart terisi per-role. Edge case pernah kena bug: Quotation edit kedua "tidak ngefek" (state basi / RLS update silent / policy DELETE hilang); Dropdown sales kosong untuk manager (RLS `user_roles_read` `is_admin_or_above`); Currency dropdown / VAT rate per service_type; CRM Dashboard chart kosong (`useWidth` race).
+
+**Foundation** — User Access (Add User via create-user EF → user+role+company benar; Edit permission diff-save; avatar upload; deactivate/delete super_admin; Ubah Password); Positions compact (1 baris per code, badge entitas, edit checkbox reactivate bukan duplicate vs `UNIQUE(company_id,code)`); Org Structure (tree dari `reports_to`); Master data CRUD soft-delete + scope company. Edge case: trigger `trg_z_gen_customer_code_upd` (jangan generate code saat soft-delete → dulu "duplicate key accounts_code_unique"); `profiles` pakai `active` (bukan deleted_at/is_active).
+
+**Service Management (HRGA / Asset)** — HRGA submit request → nomor HRG ter-generate + approval matrix per company + status lifecycle; Asset list per kategori + detail tab + inline-edit IT (3 tabel) + Health Score (save Add Asset wizard masih dummy — jangan klaim persist). Edge case: `hrga_approval_configs` query WAJIB filter `company_id` (kalau tidak → `.single()` coerce error); tabel CLI butuh GRANT manual.
+
+### PDF Checklist (Quotation)
+
+- [ ] Klik Download PDF → file `.pdf` ter-download (bukan error).
+- [ ] **Teks selectable** (vektor `@react-pdf`, bukan raster image).
+- [ ] **9 section muncul** & urut: header → customer details → item tables → grand summary → notes → terms → signatures → divider → footer.
+- [ ] **Tabel item tidak kepotong di tengah baris** (page break otomatis, `wrap={false}`).
+- [ ] **Footer muncul di setiap halaman** (`fixed`); divider nempel di atas footer.
+- [ ] **Grand total benar**; PPN label dynamic ("PPN 1,1%"/"PPN 11%"); baris VAT hilang kalau 0%.
+- [ ] **Internal data TIDAK muncul:** `cost_price`, `margin`, `internal_notes` (customer-facing only).
+- [ ] "Customer Representative" + nama customer center; on-screen detail tetap normal.
+- [ ] Filename `${quotation_no}_rev${revision??1}.pdf`.
