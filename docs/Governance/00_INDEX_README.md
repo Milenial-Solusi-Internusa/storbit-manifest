@@ -35,14 +35,9 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | `docs/08_TECH_DEBT.md` | Daftar tech debt (TD-01…TD-31) + prioritas fix | 2026-06-22 |
 | `docs/09_ROADMAP.md` | Status modul, milestone, next up | 2026-06-22 |
 | `docs/10_TASK_BREAKDOWN.md` | Task aktif & backlog konkret + template task baru | 2026-06-22 |
-| `docs/11_QA_CHECKLIST.md` | Checklist QA pre-deploy, per-modul, DB change, PDF | 2026-06-22 |
-| `docs/12_CHANGE_REQUEST.md` | Template Change Request + contoh (PDF migration, RBAC plan) | 2026-06-22 |
-| `docs/13_CRM_FLOW_AUDIT.md` | **Audit read-only** — potret alur CRM apa-adanya di kode (stage machine, transisi, gap) vs rancangan CRM (diagram asli `crm_workflow.md` sudah dihapus — rekaman historis). Per commit `dbfd868`. | 2026-07-15 |
-| `docs/14_BACKLOG_RECON.md` | **Rekonsiliasi read-only** — pencocokan 20 item lapangan vs dokumen (`08`/`09`/`10`/`13`); klasifikasi SUDAH/SEBAGIAN/BELUM/BUKAN TASK + kandidat tech-debt baru. | 2026-07-15 |
-| `docs/15_INPUT_CONTROL_AUDIT.md` | **Audit read-only** — 2 misi kontrol input SP: (Misi 1) jalur harga Master Product sebagai sumber tunggal + kesiapan kunci harga Edit Item SP; (Misi 2) pola input lain. Per branch `feat/detail-sp-reskin`. | 2026-07-15 |
-| `docs/16_SP_TABLES_SYNC_AUDIT.md` | **Audit read-only** — hubungan `sp_items` (legacy) ↔ `sp_orders`/`sp_order_items` (kanonik): dual-write hanya saat CREATE, `sp_items` = sumber kebenaran tunggal, `sp_order_items` = mirror write-once cabang mati (basi setelah edit). Sumber `schema_snapshot.sql` + `db.js`. | 2026-07-15 |
-| `docs/17_ZERO_INPUT_AUDIT.md` | **Audit read-only** — nilai default `0`/`1` di `<input type="number">` tak ke-clear saat user mengetik ("05"/"50" bukan "5"); sebab dominan tak ada select-on-focus, diperparah handling `onChange` mentah. 9 field CRM + Logistics/SP; pola sumber `QuotationFormPage`. Kerabat isu scroll (`15`). Reproduksi wajib diverifikasi runtime. | 2026-07-16 |
 | `docs/architecture/`, `docs/database/`, `docs/security/`, `docs/workflow/`, `docs/integration/`, `docs/performance/`, `docs/operations/`, `docs/modules/` | (pre-existing, Fase 0.1) blueprint, baseline, dll — lihat "Required Reading" di `AGENTS.md` | [TODO: verifikasi keberadaan/isi tiap file referenced di AGENTS.md] |
+
+> **Dokumen 11-18 sudah diserap ke canon 00-10 lalu diarsipkan** ke `docs/archive/audits/` (konsolidasi governance, 17 Jul 2026): **11**→`02 §8` (QA Checklist), **12**→`10` (Template Change Request) + rollback CR-002 di `08` TD-01, **13-18** (audit CRM/SP/input/pending)→diserap jadi TD di `08` / task di `10` / keputusan di `09`. File aslinya tetap bisa dibaca di `docs/archive/audits/` sebagai rekaman historis.
 
 ---
 
@@ -53,9 +48,9 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | **Onboarding (baru kenal proyek)** | `CLAUDE.md` → `AGENTS.md` → `docs/01_PRD_NEXUS.md` → `docs/09_ROADMAP.md` → `docs/03_DATA_MODEL.md` |
 | **Mulai task fitur baru** | `CLAUDE.md` → `docs/02_RULES_GOVERNANCE.md` → `docs/10_TASK_BREAKDOWN.md` → `docs/05_WORKFLOW_MAP.md` (modul terkait) → `docs/06_UI_UX_FLOW.md` |
 | **Task bug/audit** | `CLAUDE.md` → `docs/08_TECH_DEBT.md` → `docs/03_DATA_MODEL.md` (gotchas) → `docs/07_API_REPOSITORY.md` (error patterns) |
-| **DB / schema / RLS change** | `docs/02_RULES_GOVERNANCE.md §4` → `docs/03_DATA_MODEL.md` → `docs/04_ROLE_PERMISSION_MATRIX.md` → `docs/11_QA_CHECKLIST.md` (DB Change Checklist) → `docs/12_CHANGE_REQUEST.md` (kalau besar) |
+| **DB / schema / RLS change** | `docs/02_RULES_GOVERNANCE.md §4` → `docs/03_DATA_MODEL.md` → `docs/04_ROLE_PERMISSION_MATRIX.md` → `docs/02_RULES_GOVERNANCE.md §4` + `§7` (DB Change Checklist) → `docs/10_TASK_BREAKDOWN.md` (Template Change Request) |
 | **Kerja UI / styling / PDF** | `docs/06_UI_UX_FLOW.md` → `docs/02_RULES_GOVERNANCE.md §5` |
-| **Sebelum push/deploy** | `docs/11_QA_CHECKLIST.md` |
+| **Sebelum push/deploy** | `docs/02_RULES_GOVERNANCE.md §8` (QA Checklist) |
 | **Cari histori implementasi fase lama** | `docs/00_DEV_JOURNEY.md` (Bagian 3 arsip) + git history `CLAUDE.md` + `PROGRESS.md` |
 
 **Prinsip:** saat dokumen & `CLAUDE.md` berbeda, **defer ke `CLAUDE.md`** (paling dinamis). Untuk struktur DB, sumber kebenaran = `supabase/schema_snapshot.sql`. Untuk safety rules, sumber = `AGENTS.md`.
@@ -67,7 +62,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | Dokumen | Status |
 |---------|--------|
 | 02, 03, 08, 09 (Fase 1) | ✅ Complete |
-| 00_DEV_JOURNEY, 01, 04, 05, 06, 07, 10, 11, 12 (Fase 2) | ✅ Complete |
+| 00_DEV_JOURNEY, 01, 04, 05, 06, 07, 10 (Fase 2) | ✅ Complete |
 | CLAUDE.md (lean) | ✅ Complete |
 
 **`[TODO]` yang perlu diisi manual (tersebar di docs):**
