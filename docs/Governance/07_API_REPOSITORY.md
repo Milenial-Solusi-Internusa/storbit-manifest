@@ -74,6 +74,7 @@ const { data, error } = await q.order('created_at',{ascending:false}).limit(1000
 - **quotations + items:** detail = `Promise.all([quotations…maybeSingle(), quotation_items…order(sort_order)])`; embed customer/prospect via `accounts!quotations_*_fkey`. Save EDIT via RPC `save_quotation`; CREATE via insert + `.select('id').single()`.
 - **profiles + roles:** `profiles` filter `.eq('active', true)`; `user_roles.user_id → auth.users` (bukan profiles) → query terpisah `.in('user_id', ids)` lalu map company_id/role.
 - **currencies:** `.eq('is_active', true).order('code')` — RLS `USING(true)`.
+- **roster salesperson (`salesRoster.js`):** `fetchOperationalRoster(companyId)` — `roles.code IN ('sales','gm_bd')` (**RBAC, tak pernah hardcode role_id**) → `user_roles` (`is_active` + `revoked_at IS NULL`) → `profiles` (`active`). **Selalu company-scoped.** Satu-satunya sumber roster operasional (4 salinan `fetchSalesProfiles` dihapus 17 Jul). ⚠️ **Bukan** untuk roster laporan (`CRMReportPage`) & assignee deal (`DealDetailPage`) — beda kriteria, lihat `04_ROLE_PERMISSION_MATRIX` §3.1.
 - **unified feed (`activityFeed.js`):** merge 5 sumber (accounts/inquiries/quotations/activity_logs/user_login_logs); embed FK pakai nama constraint sendiri (`inquiries_prospect_id_fkey`, dll); `user_login_logs` tanpa filter company (RLS).
 
 ---
