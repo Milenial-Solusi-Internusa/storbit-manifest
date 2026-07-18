@@ -139,7 +139,7 @@ function ActionsBar({ saving, onBack, onSave }) {
   );
 }
 
-export default function PRFFormPage({ onBack, showToast }) {
+export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   const { profile, user } = useAuth();
   const { options: streamOpts } = useDropdownOptions('stream', STREAM_FALLBACK);
 
@@ -181,6 +181,36 @@ export default function PRFFormPage({ onBack, showToast }) {
     supabase.from('companies').select('code').eq('id', cid).maybeSingle()
       .then(({ data }) => setCompanyCode(data?.code || 'MSI'));
   }, [profile?.company_id]);
+
+  // Prefill dari inquiry (Cetak PRF). HANYA field non-cabang — service_type/direction
+  // + semua field cabang tetap manual (taksonomi service_type inquiry vs PRF beda;
+  // direction tak ada di inquiry). incoterms: ambil elemen pertama HANYA bila token
+  // PRF valid, else kosong. weight/volume/dimension tak di-prefill (slot branch-split).
+  useEffect(() => {
+    if (!prefillInquiryId) return undefined;
+    let cancelled = false;
+    supabase.from('inquiries')
+      .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms')
+      .eq('id', prefillInquiryId).is('deleted_at', null).maybeSingle()
+      .then(({ data: inq }) => {
+        if (cancelled || !inq) return;
+        const inco = (Array.isArray(inq.incoterms) && INCOTERMS_FULL.includes(inq.incoterms[0])) ? inq.incoterms[0] : '';
+        setForm(f => ({
+          ...f,
+          customer_source: 'inquiry',
+          inquiry_id: inq.id,
+          account_id: inq.customer_id || inq.prospect_id || '',
+          hs_code: inq.hs_code || '',
+          pickup_address: inq.pickup_address || '',
+          delivery_address: inq.delivery_address || '',
+          origin: inq.pol || '',
+          destination: inq.pod || '',
+          deadline_quotation: inq.deadline_quote || '',
+          incoterms: inco,
+        }));
+      });
+    return () => { cancelled = true; };
+  }, [prefillInquiryId]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const setNum = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value.replace(/[^\d.]/g, '') }));
