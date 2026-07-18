@@ -81,6 +81,18 @@ const QUO_BADGE = {
   ACCEPTED: { bg: C.greenBg, fg: C.green, bd: C.greenBd },
   REJECTED: { bg: C.redBg,   fg: C.red,   bd: C.redBd   },
 };
+const PRF_BADGE = {
+  DRAFT:       { bg: C.grayBg,  fg: C.gray,  bd: C.grayBd  },
+  SUBMITTED:   { bg: C.blueBg,  fg: C.blue,  bd: C.blueBd  },
+  ACKNOWLEDGED:{ bg: C.amberBg, fg: C.amber, bd: C.amberBd },
+  QUOTED:      { bg: C.greenBg, fg: C.green, bd: C.greenBd },
+  CANCELLED:   { bg: C.redBg,   fg: C.red,   bd: C.redBd   },
+  EXPIRED:     { bg: C.grayBg,  fg: C.gray,  bd: C.grayBd  },
+};
+// PRF service_type = moda transport (beda taksonomi dari inquiry SERVICE_LABEL).
+const PRF_SERVICE_LABEL = {
+  sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom',
+};
 const ACT_ICON = {
   call: Phone, whatsapp: MessageCircle, visit: MapPin, meeting: Users,
   email: Mail, followup: ListChecks,
@@ -385,13 +397,14 @@ function BadgeRow({ label, values, full }) {
 }
 
 /* ========================================================================= */
-export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, showToast }) {
+export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, showToast }) {
   const { profile, erpRole, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [inquiry, setInquiry] = useState(null);
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
+  const [prfs, setPrfs] = useState([]);
   const [activities, setActivities] = useState([]);
   const [profMap, setProfMap] = useState({});
   const [termMap, setTermMap] = useState({});
@@ -429,6 +442,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
 
+      // PRF born from this inquiry (RLS-scoped as-is — sales sees only own PRF).
+      const { data: prfRows } = await supabase
+        .from('prf')
+        .select('id, prf_no, service_type, status, created_at')
+        .eq('inquiry_id', inq.id).is('deleted_at', null)
+        .order('created_at', { ascending: false }).limit(200);
+
       let acts = [];
       if (inq.prospect_id) {
         const { data } = await supabase
@@ -459,6 +479,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setInquiry(inq);
       setAccount(acc);
       setQuotations(quos || []);
+      setPrfs(prfRows || []);
       setActivities(acts);
       setProfMap(pMap);
       setTermMap(tMap);
@@ -680,6 +701,48 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                           <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                             <button title="Lihat detail" onClick={() => onViewQuotation?.(q)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.navy, padding: 4 }}><Eye size={15} /></button>
                             <button title="Download (segera hadir)" disabled style={{ background: 'none', border: 'none', cursor: 'not-allowed', color: C.textFaint, padding: 4, opacity: 0.5 }}><Download size={15} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card
+            title="Daftar PRF"
+            icon={<FileText size={17} />}
+            right={['sales', 'gm_bd'].includes(erpRole) ? (
+              <button onClick={() => onCreatePRF?.()} style={{ height: 34, padding: '0 12px', borderRadius: 9, border: 'none', background: C.orange, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <FileText size={14} />Cetak PRF
+              </button>
+            ) : null}
+          >
+            {prfs.length === 0 ? (
+              <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Belum ada PRF</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                      {['No', 'PRF No', 'Tanggal', 'Service Type', 'Status'].map((h) => (
+                        <th key={h} style={{ textAlign: 'left', padding: '7px 8px', fontFamily: HEAD, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: C.textFaint, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prfs.map((p, i) => {
+                      const b = PRF_BADGE[String(p.status).toUpperCase()] || PRF_BADGE.DRAFT;
+                      return (
+                        <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                          <td style={{ padding: '8px', color: C.textFaint }}>{i + 1}</td>
+                          <td style={{ padding: '8px', fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: C.navy, whiteSpace: 'nowrap' }}>{p.prf_no}</td>
+                          <td style={{ padding: '8px', color: C.textMute, whiteSpace: 'nowrap' }}>{fmtDate(p.created_at)}</td>
+                          <td style={{ padding: '8px', color: C.textMute, whiteSpace: 'nowrap' }}>{PRF_SERVICE_LABEL[p.service_type] || p.service_type || '—'}</td>
+                          <td style={{ padding: '8px' }}>
+                            <span style={{ padding: '3px 9px', borderRadius: 99, background: b.bg, color: b.fg, border: `1px solid ${b.bd}`, fontFamily: HEAD, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}>{String(p.status).toUpperCase()}</span>
                           </td>
                         </tr>
                       );
