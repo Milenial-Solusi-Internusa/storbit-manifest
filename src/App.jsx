@@ -41,6 +41,9 @@ const InquiryListPage      = lazy(() => import('./modules/crm/InquiryListPage'))
 const InquiryFormPage      = lazy(() => import('./modules/crm/InquiryFormPage'));
 const PRFFormPage          = lazy(() => import('./modules/procurement/PRFFormPage'));
 const ProcInquiryForwardingPage = lazy(() => import('./modules/procurement/ProcInquiryForwardingPage'));
+const SalesOrderDocListPage   = lazy(() => import('./modules/sales-order/SalesOrderDocListPage'));
+const SalesOrderDocFormPage   = lazy(() => import('./modules/sales-order/SalesOrderDocFormPage'));
+const SalesOrderDocDetailPage = lazy(() => import('./modules/sales-order/SalesOrderDocDetailPage'));
 const QuotationFormPage    = lazy(() => import('./modules/crm/QuotationFormPage'));
 const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'));
 const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
@@ -478,6 +481,7 @@ const ERP_MENU_GROUPS = [
           { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
           { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
           { id: 'crm-rate-list',   label: 'Rate List',       icon: Tag, role: ['super_admin','admin','ceo','gm','gm_bd','manager','sales'] },
+          { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList, role: ['sales','gm_bd','manager','ceo','admin','super_admin'] },
           {
             id: 'crm-customers', label: 'Master Customer', icon: Building2,
             children: [
@@ -583,6 +587,8 @@ const ERP_MENU_GROUPS = [
       { id: 'prf', label: 'PRF', icon: FileText, role: ['sales','gm_bd','procurement','manager','ceo','admin','super_admin'] },
       // Gate registry for the active Procurement nav node (Inquiry/RFQ → Direct → Forwarding MSI).
       { id: 'proc-inquiry-fwd-msi', label: 'Forwarding (MSI)', icon: Ship, role: ['sales','gm_bd','procurement','manager','ceo','admin','super_admin'] },
+      // Gate registry untuk node SO sisi Procurement (read-only inbox — terima dari Sales).
+      { id: 'proc-sales-order', label: 'Sales Order', icon: ClipboardList, role: ['procurement','manager','ceo','admin','super_admin'] },
       {
         id: 'procRequest', label: 'Procurement Request', icon: ClipboardCheck,
         children: [
@@ -863,6 +869,7 @@ const NEXUS_NAV = [
           { id: 'crm-prospects',        label: 'Prospects',         icon: Users },
           { id: 'crm-inquiry',          label: 'Inquiry',           icon: FileText },
           { id: 'quotation-draft',      label: 'Quotation',         icon: Receipt },
+          { id: 'crm-sales-order',      label: 'Sales Order',       icon: ClipboardList },
           { id: 'crm-rate-list',        label: 'Rate List',         icon: Tag },
           {
             id: 'crm-customers', label: 'Master Customer', icon: Building2,
@@ -968,6 +975,7 @@ const NEXUS_NAV = [
               { id: 'proc-pr-allentity', label: 'All Entity',       icon: Boxes,   soon: true },
             ],
           },
+          { id: 'proc-sales-order', label: 'Sales Order', icon: ClipboardList },   // ← ACTIVE (SO diterima dari Sales, read-only)
           { id: 'proc-po', label: 'Purchase Order', icon: ScrollText, soon: true },
           {
             id: 'proc-grn', label: 'Goods Receipt (GRN)', icon: Download,
@@ -1601,6 +1609,8 @@ export default function StorbitManifest() {
   const [duplicatingQuotation, setDuplicatingQuotation] = useState(null);  // source row for duplicate (prefilled create)
   const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
   const [prfPrefillInquiryId, setPrfPrefillInquiryId] = useState(null);  // inquiry id → prefill PRF form (Cetak PRF)
+  const [soDetailId, setSoDetailId] = useState(null);  // SO id → tampilkan SO detail (crm/proc)
+  const [soFormOpen, setSoFormOpen] = useState(false); // buka SO create form (crm)
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
@@ -1706,6 +1716,8 @@ export default function StorbitManifest() {
     setDuplicatingQuotation(null);
     setCrmDealInquiry(null);
     setPrfPrefillInquiryId(null);
+    setSoDetailId(null);
+    setSoFormOpen(false);
     setReportingMomMode('list');
     setReportingMomId(null);
     setSelectedPickingId(null);
@@ -2704,7 +2716,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3224,6 +3236,38 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Procurement Forwarding temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <ProcInquiryForwardingPage onBack={() => setActiveMenu('home')} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+
+          {/* ── Sales Order (SO) — CRM side: list (bikin+lihat) / form / detail ── */}
+          {activeMenu === 'crm-sales-order' && (canRenderPage('crm-sales-order') ? (
+            <ErrorBoundary title="Sales Order temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                {soDetailId ? (
+                  <SalesOrderDocDetailPage soId={soDetailId} onBack={() => setSoDetailId(null)} showToast={showToast} />
+                ) : soFormOpen ? (
+                  <SalesOrderDocFormPage onBack={() => setSoFormOpen(false)} onCreated={(id) => { setSoFormOpen(false); setSoDetailId(id); }} showToast={showToast} />
+                ) : (
+                  <SalesOrderDocListPage variant="crm" onCreate={() => setSoFormOpen(true)} onSelect={(r) => setSoDetailId(r.id)} showToast={showToast} />
+                )}
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+
+          {/* ── Sales Order (SO) — Procurement side: list (read-only) / detail ─── */}
+          {activeMenu === 'proc-sales-order' && (canRenderPage('proc-sales-order') ? (
+            <ErrorBoundary title="Sales Order temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                {soDetailId ? (
+                  <SalesOrderDocDetailPage soId={soDetailId} onBack={() => setSoDetailId(null)} showToast={showToast} />
+                ) : (
+                  <SalesOrderDocListPage variant="procurement" onSelect={(r) => setSoDetailId(r.id)} showToast={showToast} />
+                )}
               </Suspense>
             </ErrorBoundary>
           ) : (
