@@ -542,7 +542,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
   const [customers,   setCustomers]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [rawSearch,   setRawSearch]   = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('customer'); // default view: Customer (Semua/Free Agent via filter)
   const [filterCo,    setFilterCo]    = useState('all');
   const [filterTier,  setFilterTier]  = useState('all');
   const [formCustomer, setFormCustomer] = useState(null);
@@ -558,8 +558,12 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
-    // Master Customer = accounts WHERE account_status='customer'; Free Agent view = 'free_agent'
-    const statusFilter = entityFilter === 'FREE_AGENT' ? 'free_agent' : 'customer';
+    // Merged Master Customer view = accounts WHERE account_status IN (customer, free_agent);
+    // the Status filter narrows client-side. Legacy entityFilter prop (dormant) still
+    // locks to a single status when set.
+    const statusValues = entityFilter === 'FREE_AGENT' ? ['free_agent']
+      : entityFilter ? ['customer']
+      : ['customer', 'free_agent'];
     try {
       const { data, error } = await supabase
         .from('accounts')
@@ -569,7 +573,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
           source_company:companies!prospects_owner_company_id_fkey(name, code),
           payment_term:payment_terms!prospects_payment_terms_id_fkey(name)
         `)
-        .eq('account_status', statusFilter)
+        .in('account_status', statusValues)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);
@@ -582,7 +586,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
       const { data, error: fbErr } = await supabase
         .from('accounts')
         .select('*')
-        .eq('account_status', statusFilter)
+        .in('account_status', statusValues)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);
@@ -595,34 +599,39 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
-  const filtered = customers.filter(c => {
+  // Scope = search + entity + tier (everything EXCEPT the Status dropdown). Shared by
+  // the table (which then also applies Status) and the stat cards (kept status-
+  // segmented so their labels stay accurate regardless of the Status filter).
+  const matchesScope = (c) => {
     const q = search.toLowerCase();
     if (q && !c.name?.toLowerCase().includes(q) && !c.legal_name?.toLowerCase().includes(q) && !c.code?.toLowerCase().includes(q) && !c.pic_name?.toLowerCase().includes(q)) return false;
-    // Entity lock (from sub-menu): MSI/JCI/SOA by entitas, FREE_AGENT by status
+    // Entity lock (dormant sub-menu prop): MSI/JCI/SOA by entitas, FREE_AGENT by status
     if (entityFilter === 'FREE_AGENT') {
       if (statusOf(c) !== 'free_agent') return false;
     } else if (entityFilter) {
       if (c.source_company?.code !== entityFilter) return false;
     }
-    if (filterStatus !== 'all' && statusOf(c) !== filterStatus) return false;
     if (!entityLocked && filterCo !== 'all' && c.source_company?.code !== filterCo) return false;
     if (filterTier !== 'all' && c.tier !== filterTier) return false;
     return true;
-  });
+  };
+  const filtered = customers.filter(c => matchesScope(c) && (filterStatus === 'all' || statusOf(c) === filterStatus));
+  const scoped   = customers.filter(matchesScope);
 
-  // Y for "Menampilkan X dari Y": customers passing the ENTITY filter only
-  // (mirrors lines above), BEFORE search/tier/status — so it's per-entity, not global.
+  // Y for "Menampilkan X dari Y": accounts passing the ENTITY filter only,
+  // BEFORE search/tier/status — so it's per-entity, not global.
   const entityCount = customers.filter(c => {
     if (entityFilter === 'FREE_AGENT') return statusOf(c) === 'free_agent';
     if (entityFilter) return c.source_company?.code === entityFilter;
     return true;
   }).length;
 
-  // Stat cards — computed from the filtered set
-  const total      = filtered.length;
-  const activeCnt  = filtered.filter(c => statusOf(c) === 'customer').length;
-  const tierACnt   = filtered.filter(c => c.tier === 'A').length;
-  const freeCnt    = filtered.filter(c => statusOf(c) === 'free_agent').length;
+  // Stat cards — status-segmented over the current scope (NOT collapsed by the
+  // Status dropdown), so "Total Customer"/"Free Agent" stay correct in every view.
+  const total      = scoped.filter(c => statusOf(c) === 'customer').length;
+  const activeCnt  = scoped.filter(c => statusOf(c) === 'customer').length;
+  const tierACnt   = scoped.filter(c => c.tier === 'A' && statusOf(c) === 'customer').length;
+  const freeCnt    = scoped.filter(c => statusOf(c) === 'free_agent').length;
 
   const openAdd  = () => { setFormCustomer({}); setFormOpen(true); };
   const openEdit = (c) => { setFormCustomer(c); setFormOpen(true); };
@@ -642,10 +651,10 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
         <div>
           <nav style={P.crumbs}>
             <span>CRM</span><Ico name="chevright" size={13} />
-            <span>Master Customer</span>
+            <span>Customer</span>
             {headerMeta && (<><Ico name="chevright" size={13} /><span style={P.crumbCur}>{headerMeta.title}</span></>)}
           </nav>
-          <h1 style={P.title}>{headerMeta?.title || 'Master Customer'}</h1>
+          <h1 style={P.title}>{headerMeta?.title || 'Customer'}</h1>
           <div style={P.sub}>
             {headerMeta?.sub ? `${headerMeta.sub} · ${total} customer terdaftar` : `${customers.length} customer terdaftar`}
           </div>
@@ -727,7 +736,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
                 <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>Memuat data…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>
-                  {search || filterStatus !== 'all' || filterCo !== 'all' || filterTier !== 'all' ? 'Tidak ada customer yang cocok dengan filter.' : 'Belum ada data customer.'}
+                  {search || filterStatus !== 'customer' || filterCo !== 'all' || filterTier !== 'all' ? 'Tidak ada customer yang cocok dengan filter.' : 'Belum ada data customer.'}
                 </td></tr>
               ) : (
                 filtered.map((c, i) => (

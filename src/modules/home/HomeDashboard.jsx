@@ -34,8 +34,8 @@ function greeting() {
 const TASKS = [
   { gate: 'manifest', tone: ['#F0EBFB', '#7A5EBE'], icon: Receipt, title: 'Konfirmasi SP baru', sub: 'SP-894688 · Indomarco · 150 unit',
     actions: [{ label: 'Tinjau', kind: 'pri', to: 'manifest' }] },
-  { gate: 'crm-customers-msi', tone: ['#E9F1FC', '#3D6BAB'], icon: User, title: 'Review akses customer', sub: 'Indomarco minta akses entitas MSI',
-    actions: [{ label: 'Tinjau', kind: 'pri', to: 'crm-customers-msi' }] },
+  { gate: 'crm-customers', tone: ['#E9F1FC', '#3D6BAB'], icon: User, title: 'Review akses customer', sub: 'Indomarco minta akses entitas MSI',
+    actions: [{ label: 'Tinjau', kind: 'pri', to: 'crm-customers' }] },
   { gate: 'quotation-draft', tone: ['#E7F4ED', '#479467'], icon: FileText, title: 'Setujui quotation', sub: 'QT-0412 · Martin · MSI',
     actions: [{ label: 'Tolak', kind: 'sec', to: 'quotation-draft' }, { label: 'Setujui', kind: 'pri', to: 'quotation-draft' }] },
 ];

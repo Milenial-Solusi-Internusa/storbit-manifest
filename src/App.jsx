@@ -9,7 +9,7 @@ import {
   Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
-  ClipboardList, LayoutList, Archive, UserX, Activity, BookOpen,
+  ClipboardList, LayoutList, Archive, Activity, BookOpen,
   Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck, TrendingUp,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
@@ -468,15 +468,10 @@ const CRM_MENU_ITEMS = [
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList, role: ['sales','gm_bd','manager','ceo','admin','super_admin'] },
   { id: 'crm-rate-list',   label: 'Rate List',       icon: Tag, role: ['super_admin','admin','ceo','gm','gm_bd','manager','sales'] },
-  {
-    id: 'crm-customers', label: 'Master Customer', icon: Building2,
-    children: [
-      { id: 'crm-customers-msi',  label: 'Customer MSI', icon: Building2 },
-      { id: 'crm-customers-jci',  label: 'Customer JCI', icon: Building2 },
-      { id: 'crm-customers-soa',  label: 'Customer SOA', icon: Building2 },
-      { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX    },
-    ],
-  },
+  // Tahap 2a: 5 entri Master Customer (induk + 4 anak entitas) digabung jadi SATU
+  // item "Customer". Sumbu entitas (MSI/JCI/SOA/Semua) & status (Customer/Free
+  // Agent/Semua) kini jadi filter di dalam CustomerListPage, bukan submenu.
+  { id: 'crm-customers', label: 'Customer', icon: Building2 },
   { id: 'crm-calls',      label: 'Activities', icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
   { id: 'crm-activity-log', label: 'Activity Log', icon: History, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
 ];
@@ -1118,10 +1113,6 @@ const MENU_KEY_MAP = {
   'crm-inquiry':     'crm_inquiry',
   'quotation-draft': 'crm_quotation',
   'crm-customers':       'crm_customers',
-  'crm-customers-msi':   'crm_customers',
-  'crm-customers-jci':   'crm_customers',
-  'crm-customers-soa':   'crm_customers',
-  'crm-customers-free':  'crm_customers',
   'customer-detail':     'crm_customers',
   // Logistics
   'manifest':            'logistics_sp',
@@ -1947,6 +1938,16 @@ export default function StorbitManifest() {
   // Redirect inventory parent → default sub-page (Stok Barang)
   useEffect(() => {
     if (activeMenu === 'inventory') setActiveMenu('inventory-stok');
+  }, [activeMenu]);
+
+  // Tahap 2a: legacy Master Customer sub-menu ids merged into a single
+  // 'crm-customers'. Normalize any stale value (localStorage last-menu / old
+  // deep-link) so it doesn't land on a now-removed id with no render block.
+  useEffect(() => {
+    if (['crm-customers-msi', 'crm-customers-jci', 'crm-customers-soa', 'crm-customers-free'].includes(activeMenu)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveMenu('crm-customers');
+    }
   }, [activeMenu]);
 
   const showToast = (msg, type = 'success') => {
@@ -3152,34 +3153,6 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Master Customer temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <CustomerListPage showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'crm-customers-msi' && (
-            <ErrorBoundary title="Master Customer temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CustomerListPage entityFilter="MSI" showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'crm-customers-jci' && (
-            <ErrorBoundary title="Master Customer temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CustomerListPage entityFilter="JCI" showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'crm-customers-soa' && (
-            <ErrorBoundary title="Master Customer temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CustomerListPage entityFilter="SOA" showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'crm-customers-free' && (
-            <ErrorBoundary title="Master Customer temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CustomerListPage entityFilter="FREE_AGENT" showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
               </Suspense>
             </ErrorBoundary>
           )}
