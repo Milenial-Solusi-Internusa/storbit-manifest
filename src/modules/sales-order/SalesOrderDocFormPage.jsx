@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, Save, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import ProductPicker from '../../components/ProductPicker';
 
 const C = {
   bg: '#F6EFE3', surface: '#FFFDF8', surface2: '#FBF6EC',
@@ -14,6 +15,10 @@ const C = {
   line: '#E7DCC8', navy: '#144682', accent: '#E85A1E', accentSoft: '#FEF2EC',
   warnBg: '#FDF4E7', warnInk: '#9A5B12', warnBd: '#E6CE94',
 };
+
+// Label service_type (map lokal modul — belum ada helper bersama yang ter-export).
+const SERVICE_LABEL = { freight_forwarding: 'Freight Forwarding', customs: 'Customs', trading: 'Trading' };
+const svc = (v) => SERVICE_LABEL[v] || v || '—';
 
 async function generateSoNo(companyId, companyCode) {
   const year = new Date().getFullYear();
@@ -29,6 +34,7 @@ export default function SalesOrderDocFormPage({ onBack, onCreated, showToast }) 
   const [inquiries, setInquiries] = useState([]);
   const [companyCode, setCompanyCode] = useState('');
   const [inquiryId, setInquiryId] = useState('');
+  const [pickText, setPickText] = useState(''); // teks pencarian/ tampilan pilihan di ProductPicker
   const [saving, setSaving] = useState(false);
   const [existing, setExisting] = useState(null); // { id, so_no } bila inquiry sudah punya SO live
 
@@ -49,8 +55,12 @@ export default function SalesOrderDocFormPage({ onBack, onCreated, showToast }) 
   const derivedAccountId = picked ? (picked.customer_id || picked.prospect_id || null) : null;
   const derivedAccountName = picked ? (picked.customer?.name || picked.prospect?.name || '—') : '—';
 
-  // Ganti inquiry → reset penanda anti-dobel.
-  const onPick = (e) => { setInquiryId(e.target.value); setExisting(null); };
+  // Bentuk inquiry ke shape ProductPicker (filter by code=inquiry_no + name=customer).
+  const inquiryOpts = inquiries.map(i => ({ id: i.id, code: i.inquiry_no, name: i.customer?.name || i.prospect?.name || 'tanpa customer' }));
+  // Pilih inquiry dari picker → set id + tampilkan pilihan; reset penanda anti-dobel.
+  const onInquiryPick = (opt) => { setInquiryId(opt.id); setPickText(`${opt.code} — ${opt.name}`); setExisting(null); };
+  // Ketik ulang → batalkan pilihan (mirror pola InputSPPage).
+  const onInquiryText = (v) => { setPickText(v); setInquiryId(''); setExisting(null); };
 
   const doCreate = useCallback(async () => {
     if (!picked) { showToast?.('Pilih inquiry sumber dulu', 'error'); return; }
@@ -115,20 +125,20 @@ export default function SalesOrderDocFormPage({ onBack, onCreated, showToast }) 
 
       <div style={box}>
         <label style={label}>Inquiry Sumber <span style={{ color: C.accent }}>*</span></label>
-        <select value={inquiryId} onChange={onPick}
-          style={{ width: '100%', height: 44, borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', padding: '0 12px', fontSize: 14, color: C.ink, outline: 'none', fontFamily: 'inherit', cursor: 'pointer', boxSizing: 'border-box' }}>
-          <option value="">— pilih inquiry —</option>
-          {inquiries.map(i => (
-            <option key={i.id} value={i.id}>
-              {i.inquiry_no} — {i.customer?.name || i.prospect?.name || 'tanpa customer'}
-            </option>
-          ))}
-        </select>
+        {/* Reuse ProductPicker (pola manifest/InputSPPage): filter by code=inquiry_no + name=customer. */}
+        <ProductPicker
+          value={pickText}
+          products={inquiryOpts}
+          onChangeText={onInquiryText}
+          onPick={onInquiryPick}
+          placeholder="Cari nomor inquiry / nama customer…"
+          inputStyle={{ width: '100%', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', fontSize: 14, color: C.ink, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+        />
 
         {picked && (
           <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 18px' }}>
             <div><span style={label}>Customer (otomatis)</span><div style={{ fontSize: 14, fontWeight: 600 }}>{derivedAccountName}</div></div>
-            <div><span style={label}>Layanan</span><div style={{ fontSize: 14, color: C.inkSoft }}>{picked.service_type || '—'}</div></div>
+            <div><span style={label}>Layanan</span><div style={{ fontSize: 14, color: C.inkSoft }}>{svc(picked.service_type)}</div></div>
             <div style={{ gridColumn: '1 / -1' }}><span style={label}>Rute</span><div style={{ fontSize: 14, color: C.inkSoft }}>{picked.route || '—'}</div></div>
           </div>
         )}
