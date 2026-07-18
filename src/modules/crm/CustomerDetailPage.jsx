@@ -704,7 +704,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
             <button type="button" className="cd-back" style={S.backBtn} onClick={onBack}><Icon name="arrowleft" size={15} />Kembali</button>
             <nav style={S.crumbs}>
               <span>CRM</span><Icon name="chevright" size={13} />
-              <span>Master Customer</span><Icon name="chevright" size={13} />
+              <span>Customer</span><Icon name="chevright" size={13} />
               <span style={S.crumbCur}>{customer.name}</span>
             </nav>
           </div>
