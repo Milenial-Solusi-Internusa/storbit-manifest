@@ -460,10 +460,21 @@ const PLANNED_MODULES = {
 // ─────────────────────────────────────────────────────────────────────────────
 const CRM_MENU_ITEMS = [
   { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
-  { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
-  { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-  { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['ceo','gm','gm_bd','manager','supervisor','admin','super_admin'] },
-  { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
+  // Tahap 2b: 4 menu (Pipeline / Prospects / Lead Pool / Approval) digabung jadi
+  // SATU item "Account" bertab. Anak-anak DIPERTAHANKAN (gate verbatim) supaya
+  // findMenuItemById tetap menemukan tiap tab dgn gate-nya (isMenuAccessible /
+  // deep-link / redirect-guard identik), dan visibilitas "Account" = OR gate anak
+  // (navChildGate). Sidebar merender ini sbg SATU leaf (special-case di LeafRow);
+  // activeMenu tetap = id tab (bukan 'crm-account'). Urutan anak = urutan tab.
+  {
+    id: 'crm-account', label: 'Account', icon: Users,
+    children: [
+      { id: 'crm-pipeline',           label: 'Pipeline / Leads',   icon: Users },
+      { id: 'crm-prospects',          label: 'Prospects',          icon: Users, module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
+      { id: 'crm-lead-pool',          label: 'Lead Pool',          icon: Archive, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+      { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['ceo','gm','gm_bd','manager','supervisor','admin','super_admin'] },
+    ],
+  },
   { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList, role: ['sales','gm_bd','manager','ceo','admin','super_admin'] },
@@ -475,6 +486,42 @@ const CRM_MENU_ITEMS = [
   { id: 'crm-calls',      label: 'Activities', icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
   { id: 'crm-activity-log', label: 'Activity Log', icon: History, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
 ];
+
+// Tahap 2b: tabs inside the merged "Account" menu. activeMenu stays one of these
+// ids; the tab id IS the route. Gates live on the matching children of the
+// 'crm-account' node in CRM_MENU_ITEMS (found via findMenuItemById).
+const ACCOUNT_TABS = [
+  { id: 'crm-pipeline',           label: 'Pipeline'  },
+  { id: 'crm-prospects',          label: 'Prospects' },
+  { id: 'crm-lead-pool',          label: 'Lead Pool' },
+  { id: 'crm-lead-pool-approval', label: 'Approval'  },
+];
+const ACCOUNT_TAB_IDS = ACCOUNT_TABS.map(t => t.id);
+const isAccountTab = (id) => ACCOUNT_TAB_IDS.includes(id);
+
+// Presentational tab strip for the Account page. `tabs` is already gate-filtered
+// by the caller; active tab = navy underline (var(--navy), matches sidebar/CRM).
+function AccountTabBar({ tabs, active, onSelect }) {
+  return (
+    <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--line, #E8ECF2)', marginBottom: 20, flexWrap: 'wrap' }}>
+      {tabs.map(t => {
+        const on = active === t.id;
+        return (
+          <button key={t.id} type="button" onClick={() => onSelect(t.id)}
+            style={{
+              appearance: 'none', border: 'none', background: 'transparent', cursor: 'pointer',
+              padding: '10px 16px', marginBottom: -1,
+              fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 13.5, fontWeight: on ? 700 : 600,
+              color: on ? 'var(--navy)' : '#7E8899',
+              borderBottom: on ? '2px solid var(--navy)' : '2px solid transparent',
+            }}>
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const ERP_MENU_GROUPS = [
   // ── CORE ──────────────────────────────────────────────────────────────────
@@ -1390,6 +1437,29 @@ function NexusSidebar({
     }
     const active = activeMenu === c.id ||
       (depth === 0 && c.id === 'crm-customers' && (activeMenu === 'customer-detail' || activeMenu.startsWith('crm-customers')));
+    // Tahap 2b: render the merged "Account" node as a SINGLE leaf (not an
+    // expandable submenu). Visible iff ≥1 tab (navChildGate OR, via childVisible);
+    // click → first permitted tab; active when activeMenu ∈ Account tabs.
+    if (c.id === 'crm-account') {
+      const firstTab = ACCOUNT_TAB_IDS.find(id => {
+        const it = findMenuItemById(id);
+        return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission);
+      });
+      const acctActive = isAccountTab(activeMenu);
+      return (
+        <button key={c.id} type="button" onClick={() => firstTab && go(firstTab)}
+          className="w-full flex items-center gap-2.5 rounded-[10px] transition-colors"
+          style={{ padding: '7px 10px', marginBottom: 1, background: acctActive ? 'var(--p-blue)' : 'transparent', color: acctActive ? 'var(--navy)' : 'var(--mute)', fontSize: 12.5, fontWeight: acctActive ? 600 : 500, textAlign: 'left' }}
+          onMouseEnter={e => { if (!acctActive) e.currentTarget.style.background = '#F5F7FA'; }}
+          onMouseLeave={e => { if (!acctActive) e.currentTarget.style.background = 'transparent'; }}
+        >
+          {Icon
+            ? <Icon size={15} strokeWidth={acctActive ? 2 : 1.8} style={{ flexShrink: 0, color: acctActive ? 'var(--navy)' : 'var(--faint)' }} />
+            : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: acctActive ? 1 : 0.5, flexShrink: 0 }} />}
+          <span className="flex-1 truncate">{c.label}</span>
+        </button>
+      );
+    }
     if (c.children) {
       const subVisible = c.children.filter(childVisible);
       if (!subVisible.length) return null;
@@ -3024,29 +3094,8 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── CRM: Prospect List ──────────────────────────────────────────── */}
-          {activeMenu === 'crm-prospects' && !showProspectForm && (
-            <ErrorBoundary title="CRM Prospects temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <ProspectListPage
-                  onAddProspect={() => { setEditingProspect(null); setShowProspectForm(true); }}
-                  onEditProspect={(p) => { setEditingProspect(p); setShowProspectForm(true); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'crm-prospects' && showProspectForm && (
-            <ErrorBoundary title="Prospect Form temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <ProspectFormPage
-                  prospect={editingProspect}
-                  onBack={() => { setShowProspectForm(false); setEditingProspect(null); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
+          {/* CRM Account tabs (Pipeline / Prospects / Lead Pool / Approval) are
+              rendered together in the consolidated block below (search "CRM: Account"). */}
 
           {/* ── CRM: Inquiry List ───────────────────────────────────────────── */}
           {activeMenu === 'crm-inquiry' && !showInquiryForm && !crmDealInquiry && (
@@ -3107,18 +3156,73 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── CRM: Pipeline Kanban ────────────────────────────────────────── */}
-          {activeMenu === 'crm-pipeline' && (
-            <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <PipelineKanbanPage
-                  showToast={showToast}
-                  setActiveMenu={setActiveMenu}
-                  setShowProspectForm={setShowProspectForm}
-                  setEditingProspect={setEditingProspect}
+          {/* ── CRM: Account (Pipeline / Prospects / Lead Pool / Approval — tabbed) ──
+              Tahap 2b: one menu, activeMenu stays the tab id. Tab bar shows only
+              gate-permitted tabs; hidden while the Prospect form is open (full-page
+              sub-view) so form isn't lost to an accidental tab switch. */}
+          {isAccountTab(activeMenu) && (
+            <div>
+              {!(activeMenu === 'crm-prospects' && showProspectForm) && (
+                <AccountTabBar
+                  tabs={ACCOUNT_TABS.filter(t => {
+                    const it = findMenuItemById(t.id);
+                    return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission);
+                  })}
+                  active={activeMenu}
+                  onSelect={navigateTo}
                 />
-              </Suspense>
-            </ErrorBoundary>
+              )}
+              {activeMenu === 'crm-pipeline' && (
+                <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
+                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                    <PipelineKanbanPage
+                      showToast={showToast}
+                      setActiveMenu={setActiveMenu}
+                      setShowProspectForm={setShowProspectForm}
+                      setEditingProspect={setEditingProspect}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+              {activeMenu === 'crm-prospects' && !showProspectForm && (
+                <ErrorBoundary title="CRM Prospects temporarily unavailable">
+                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                    <ProspectListPage
+                      onAddProspect={() => { setEditingProspect(null); setShowProspectForm(true); }}
+                      onEditProspect={(p) => { setEditingProspect(p); setShowProspectForm(true); }}
+                      showToast={showToast}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+              {activeMenu === 'crm-prospects' && showProspectForm && (
+                <ErrorBoundary title="Prospect Form temporarily unavailable">
+                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                    <ProspectFormPage
+                      prospect={editingProspect}
+                      onBack={() => { setShowProspectForm(false); setEditingProspect(null); }}
+                      showToast={showToast}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+              {activeMenu === 'crm-lead-pool' && (
+                <ErrorBoundary title="Lead Pool temporarily unavailable">
+                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                    <LeadPoolPage showToast={showToast} />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+              {activeMenu === 'crm-lead-pool-approval' && (!canRenderPage('crm-lead-pool-approval') ? (
+                <AccessDeniedPage />
+              ) : (
+                <ErrorBoundary title="Approval Lead Pool temporarily unavailable">
+                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                    <LeadPoolApprovalPage showToast={showToast} />
+                  </Suspense>
+                </ErrorBoundary>
+              ))}
+            </div>
           )}
 
           {/* ── CRM: Quotation List ─────────────────────────────────────────── */}
@@ -3301,25 +3405,8 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── CRM: Lead Pool ──────────────────────────────────────────────── */}
-          {activeMenu === 'crm-lead-pool' && (
-            <ErrorBoundary title="Lead Pool temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <LeadPoolPage showToast={showToast} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── CRM: Lead Pool Approval (manager/supervisor/admin) ──────────────── */}
-          {activeMenu === 'crm-lead-pool-approval' && (!canRenderPage('crm-lead-pool-approval') ? (
-            <AccessDeniedPage />
-          ) : (
-            <ErrorBoundary title="Approval Lead Pool temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <LeadPoolApprovalPage showToast={showToast} />
-              </Suspense>
-            </ErrorBoundary>
-          ))}
+          {/* CRM Lead Pool + Approval moved into the consolidated "CRM: Account"
+              tabbed block above (Tahap 2b). */}
 
           {/* ── Foundation: Admin Settings ──────────────────────────────────── */}
           {/* Routes (activeMenu-based, no react-router in this app):

@@ -712,7 +712,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
               <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
             </div>
           )}
-          <span style={P.countLine}>Menampilkan {total} dari {entityCount}</span>
+          <span style={P.countLine}>Menampilkan {filtered.length} dari {entityCount}</span>
         </div>
 
         {/* Table */}
