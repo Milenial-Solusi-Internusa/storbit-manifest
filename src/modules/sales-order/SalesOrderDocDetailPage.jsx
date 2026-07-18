@@ -21,6 +21,10 @@ const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 // Peran yang RLS beri hak baca company-wide (untuk membedakan "kosong" vs "tak boleh lihat").
 const MGR_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
 
+// Label service_type (map lokal modul — belum ada helper bersama yang ter-export).
+const SERVICE_LABEL = { freight_forwarding: 'Freight Forwarding', customs: 'Customs', trading: 'Trading' };
+const svc = (v) => SERVICE_LABEL[v] || v || '—';
+
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -167,7 +171,7 @@ export default function SalesOrderDocDetailPage({ soId, onBack, showToast }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', color: C.muted, fontSize: 13.5 }}>
                 <span style={{ fontFamily: MONO, fontWeight: 600, color: C.navy, background: C.chip, padding: '4px 10px', borderRadius: 8 }}>{so.so_no}</span>
-                <span>{inq.service_type || '—'}</span>
+                <span>{svc(inq.service_type)}</span>
                 <span>{inq.route || '—'}</span>
                 <span>Terbit {fmtDate(so.created_at)}</span>
               </div>
@@ -284,7 +288,7 @@ export default function SalesOrderDocDetailPage({ soId, onBack, showToast }) {
                 {[
                   ['Customer', so.account?.name || '—'],
                   ['Inquiry asal', inq.inquiry_no || '—'],
-                  ['Layanan', inq.service_type || '—'],
+                  ['Layanan', svc(inq.service_type)],
                   ['Rute', inq.route || '—'],
                   ['Status', so.status],
                   ['Terbit', fmtDate(so.created_at)],
