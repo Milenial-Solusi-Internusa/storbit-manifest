@@ -295,7 +295,7 @@ export default function RiwayatVisitPage({ showToast }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 10 }}>
-            <span style={{ color: C.orange, fontWeight: 600 }}>Reporting</span>
+            <span style={{ color: C.orange, fontWeight: 600 }}>CRM</span>
             <ChevronRight size={13} style={{ color: C.faint, flexShrink: 0 }} />
             <span style={{ color: C.mute }}>Riwayat Visit</span>
           </nav>
