@@ -12,6 +12,10 @@ import { calcBantScore } from './bant';
 import ConfirmModal from '../../components/ConfirmModal';
 import { CustomerFormModal } from './CustomerListPage';
 import TOPRequestModal from './TOPRequestModal';
+import {
+  DealStepper, DealHeaderControls, EditDealModal, PrfListCard,
+  STAGES, stageIndex, saveDealUpdate, fetchAssignees,
+} from './DealPanels';
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const NAVY = '#1B4D8A';
@@ -357,6 +361,66 @@ function VisitRow({ v }) {
     </div>
   );
 }
+
+// ── Tahap 3a: nested inquiry → quotation row (Riwayat tab) ──
+const INQ_SERVICE_LABEL = { freight_forwarding: 'Freight Forwarding', customs: 'Customs', trading: 'Trading' };
+const QUO_TONE = {
+  DRAFT:     { bg: '#EEEAE0', fg: '#6B7280' }, SENT:      { bg: '#E1ECF7', fg: '#2563EB' },
+  SUBMITTED: { bg: '#E1ECF7', fg: '#2563EB' }, ACCEPTED:  { bg: '#DEF0E4', fg: '#1F8B4D' },
+  REJECTED:  { bg: '#FBE3E3', fg: '#C0392B' },
+};
+function InquiryHistoryRow({ inq, quotes }) {
+  const [open, setOpen] = useState(false);
+  const n = quotes.length;
+  return (
+    <div style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', border: 0, background: 'transparent', padding: '15px 22px', cursor: 'pointer', textAlign: 'left', flexWrap: 'wrap' }}>
+        <Icon name="chevright" size={15} color={INK_FAINT} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />
+        <span style={{ fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, color: NAVY }}>{inq.inquiry_no || '—'}</span>
+        <span style={{ fontSize: 12.5, color: INK_SOFT }}>{INQ_SERVICE_LABEL[inq.service_type] || inq.service_type || '—'}</span>
+        {(inq.pol || inq.pod) && <span style={{ fontSize: 12, color: INK_FAINT }}>{inq.pol || '—'} → {inq.pod || '—'}</span>}
+        <span style={{ fontSize: 12, color: INK_FAINT, marginLeft: 'auto' }}>{fmtDateShort(inq.created_at)}</span>
+        <span style={{ ...S.badge, background: n ? '#EAF0F8' : '#F4EFE5', color: n ? NAVY : INK_FAINT, padding: '3px 10px' }}>
+          {n ? `${n} quotation` : 'Belum ada quotation'}
+        </span>
+      </button>
+      {open && (
+        n === 0 ? (
+          <div style={{ padding: '0 22px 16px 49px', fontSize: 12.5, color: INK_FAINT }}>Inquiry ini belum punya quotation.</div>
+        ) : (
+          <div style={{ padding: '0 22px 16px 49px', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
+                  {['Quotation No', 'Tanggal', 'Nilai', 'Status'].map((h) => (
+                    <th key={h} style={{ textAlign: h === 'Nilai' ? 'right' : 'left', padding: '7px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {quotes.map((q) => {
+                  const t = QUO_TONE[String(q.status).toUpperCase()] || QUO_TONE.DRAFT;
+                  return (
+                    <tr key={q.id} style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
+                      <td style={{ padding: '8px', fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, color: NAVY, whiteSpace: 'nowrap' }}>{q.quotation_no}</td>
+                      <td style={{ padding: '8px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{fmtDateShort(q.created_at)}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRupiah(q.total_amount)}</td>
+                      <td style={{ padding: '8px' }}>
+                        <span style={{ ...S.badge, background: t.bg, color: t.fg, padding: '3px 9px' }}>{String(q.status).toUpperCase()}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 function HealthGauge({ score, color }) {
   const r = 64;
   const circ = 2 * Math.PI * r;
@@ -426,7 +490,7 @@ function computeHealth(customer, prospect, visits) {
 
 // ─── Main component ─────────────────────────────────────────────────────────────
 export default function CustomerDetailPage({ id, onBack, showToast }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, user } = useAuth();
   // Delete customer is restricted to super_admin (soft-delete via deleted_at).
   const canDelete = erpRole === 'super_admin';
 
@@ -447,6 +511,22 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
   const [editNotes, setEditNotes]     = useState(false);
   const [notesDraft, setNotesDraft]   = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
+
+  // ── Deal controls (stepper + Nilai Deal + Pindah Stage + Edit Deal) ──
+  // Writes go through the SAME saveDealUpdate as DealDetailPage (audit parity).
+  const [dealEditOpen,  setDealEditOpen]  = useState(false);
+  const [dealSeed,      setDealSeed]      = useState(null);   // fresh deal fields for the Edit modal
+  const [dealAssignees, setDealAssignees] = useState([]);
+
+  // ── Lazy tab data: Riwayat (inquiry+quotation) & Dokumen (PRF+SO) ──
+  const [histLoaded,    setHistLoaded]    = useState(false);
+  const [histLoading,   setHistLoading]   = useState(false);
+  const [histInquiries, setHistInquiries] = useState([]);
+  const [histQuotes,    setHistQuotes]    = useState([]);
+  const [docLoaded,     setDocLoaded]     = useState(false);
+  const [docLoading,    setDocLoading]    = useState(false);
+  const [docPrfs,       setDocPrfs]       = useState([]);
+  const [docSOs,        setDocSOs]        = useState([]);
 
   // ── Fetch customer (+ joins, incl. linked prospect for BANT) ──
   const fetchCustomer = useCallback(async () => {
@@ -556,6 +636,100 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
       });
   }, [id]);
 
+  // ── Lazy: tab 'Riwayat' — inquiries (account) + quotations (account), nested ──
+  // Account-scoped via prospect_id OR customer_id (customer_id = kolom warisan).
+  useEffect(() => {
+    if (tab !== 'riwayat' || histLoaded || !id) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistLoading(true);
+    Promise.all([
+      supabase.from('inquiries')
+        .select('id, inquiry_no, service_type, status, created_at, pol, pod')
+        .or(`prospect_id.eq.${id},customer_id.eq.${id}`).is('deleted_at', null)
+        .order('created_at', { ascending: false }).limit(1000),
+      supabase.from('quotations')
+        .select('id, quotation_no, total_amount, status, created_at, inquiry_id, valid_until')
+        .or(`prospect_id.eq.${id},customer_id.eq.${id}`).is('deleted_at', null)
+        .order('created_at', { ascending: false }).limit(1000),
+    ]).then(([inqRes, quoRes]) => {
+      setHistInquiries(inqRes.data || []);
+      setHistQuotes(quoRes.data || []);
+      setHistLoaded(true);
+      setHistLoading(false);
+    });
+  }, [tab, histLoaded, id]);
+
+  // ── Lazy: tab 'Dokumen' — PRF + Sales Order. PRF data TIDAK seragam: sebagian
+  // baris hanya punya inquiry_id → query WAJIB tangkap account_id OR inquiry_id∈akun. ──
+  useEffect(() => {
+    if (tab !== 'dokumen' || docLoaded || !id) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDocLoading(true);
+    (async () => {
+      let inqIds = histInquiries.map((i) => i.id);
+      if (!histLoaded) {
+        const { data: inq } = await supabase.from('inquiries').select('id')
+          .or(`prospect_id.eq.${id},customer_id.eq.${id}`).is('deleted_at', null).limit(1000);
+        inqIds = (inq || []).map((i) => i.id);
+      }
+      let prfQ = supabase.from('prf')
+        .select('id, prf_no, service_type, status, created_at, account_id, inquiry_id')
+        .is('deleted_at', null);
+      prfQ = inqIds.length
+        ? prfQ.or(`account_id.eq.${id},inquiry_id.in.(${inqIds.join(',')})`)
+        : prfQ.eq('account_id', id);
+      const [prfRes, soRes] = await Promise.all([
+        prfQ.order('created_at', { ascending: false }).limit(500),
+        supabase.from('sales_orders')
+          .select('id, so_no, status, signed, created_at, inquiry_id')
+          .eq('account_id', id).is('deleted_at', null)
+          .order('created_at', { ascending: false }).limit(500),
+      ]);
+      setDocPrfs(prfRes.data || []);
+      setDocSOs(soRes.data || []);
+      setDocLoaded(true);
+      setDocLoading(false);
+    })();
+  }, [tab, docLoaded, id, histLoaded, histInquiries]);
+
+  // ── Deal handlers — SATU jalur tulis (saveDealUpdate), audit sama DealDetailPage ──
+  const dealActor = { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id };
+  const pickStage = async (i) => {
+    const key = STAGES[i].key;
+    if (key === (customer?.pipeline_stage || 'NEW')) return;
+    const ok = await saveDealUpdate({
+      accountId: id, patch: { pipeline_stage: key }, auditStageKey: key,
+      prevStage: customer?.pipeline_stage, accountName: customer?.name, actor: dealActor, showToast,
+    });
+    if (ok) fetchCustomer();
+  };
+  const openDealEdit = async () => {
+    // Fetch deal fields fresh — the main fetch aliases assigned_profile as the
+    // embed (shadowing the raw uuid the write path needs), so re-read it here.
+    const { data } = await supabase.from('accounts')
+      .select('id, name, pipeline_stage, estimated_value, estimated_closing_date, assigned_profile')
+      .eq('id', id).maybeSingle();
+    setDealSeed(data || null);
+    if (!dealAssignees.length && profile?.company_id) fetchAssignees(profile.company_id).then(setDealAssignees);
+    setDealEditOpen(true);
+  };
+  const saveDealEdit = async (draft) => {
+    // No auditStageKey here → mirrors DealDetailPage's Edit modal (only Pindah
+    // Stage logs a stage-change audit event).
+    const ok = await saveDealUpdate({
+      accountId: id,
+      patch: {
+        pipeline_stage: STAGES[draft.stage].key,
+        assigned_profile: draft.assignedId || null,
+        estimated_value: draft.value === '' ? 0 : Number(draft.value),
+        estimated_closing_date: draft.closeDate || null,
+      },
+      prevStage: customer?.pipeline_stage, accountName: customer?.name, actor: dealActor, showToast,
+    });
+    if (ok) fetchCustomer();
+    return ok;
+  };
+
   const handleDelete = async () => {
     setDeleting(true);
     try {
@@ -622,9 +796,24 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
     ? customer.legal_name
     : (customer.customer_type || '');
 
+  // Deal (stepper + Nilai Deal) — dari baris accounts yang SUDAH di-fetch (0 query tambahan).
+  const dealStageIdx = stageIndex(customer.pipeline_stage);
+  const dealValue = Number(customer.estimated_value || 0);
+  // Riwayat: group quotations per inquiry (nested); orphan = tanpa inquiry / inquiry di luar akun.
+  const quotesByInquiry = {};
+  histQuotes.forEach((q) => {
+    if (!q.inquiry_id) return;
+    if (!quotesByInquiry[q.inquiry_id]) quotesByInquiry[q.inquiry_id] = [];
+    quotesByInquiry[q.inquiry_id].push(q);
+  });
+  const inqIdSet = new Set(histInquiries.map((i) => i.id));
+  const orphanQuotes = histQuotes.filter((q) => !q.inquiry_id || !inqIdSet.has(q.inquiry_id));
+
   const TABS = [
     { id: 'info',      icon: 'info',      label: 'Info Dasar' },
     { id: 'komersial', icon: 'briefcase', label: 'Komersial' },
+    { id: 'riwayat',   icon: 'clock',     label: 'Riwayat',   count: histInquiries.length || undefined },
+    { id: 'dokumen',   icon: 'filecheck', label: 'Dokumen',   count: (docPrfs.length + docSOs.length) || undefined },
     { id: 'visit',     icon: 'route',     label: 'History Visit', count: visits.length || undefined },
     { id: 'aktivitas', icon: 'activity',  label: 'Aktivitas',     count: activities.length || undefined },
     { id: 'bant',      icon: 'target',    label: 'BANT & Pipeline' },
@@ -704,11 +893,11 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
             <button type="button" className="cd-back" style={S.backBtn} onClick={onBack}><Icon name="arrowleft" size={15} />Kembali</button>
             <nav style={S.crumbs}>
               <span>CRM</span><Icon name="chevright" size={13} />
-              <span>Customer</span><Icon name="chevright" size={13} />
+              <span>Account</span><Icon name="chevright" size={13} />
               <span style={S.crumbCur}>{customer.name}</span>
             </nav>
           </div>
-          <h1 style={S.title}>Detail Customer</h1>
+          <h1 style={S.title}>Detail Account</h1>
         </div>
         <div style={S.actions}>
           {isTempoTerm(customer.payment_term?.name) && (
@@ -716,6 +905,14 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
           )}
           <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setEditing(true)}><Icon name="pencil" size={16} />Edit</button>
           {canDelete && <button type="button" className="cd-danger" style={S.dangerBtn} onClick={() => setConfirmDel(true)}><Icon name="trash" size={16} />Hapus</button>}
+        </div>
+      </div>
+
+      {/* Deal: stepper + Nilai Deal + Pindah Stage + Edit Deal (Tahap 3a) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+        <DealStepper current={dealStageIdx} value={dealValue} />
+        <div style={{ ...S.card, padding: '14px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+          <DealHeaderControls value={dealValue} stageIdx={dealStageIdx} onEdit={openDealEdit} onPickStage={pickStage} />
         </div>
       </div>
 
@@ -761,6 +958,96 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
 
       {tab === 'info' && renderSections(infoSections)}
       {tab === 'komersial' && renderSections(komSections)}
+
+      {/* RIWAYAT — inquiry (account-scoped) dengan quotation bertingkat */}
+      {tab === 'riwayat' && (
+        <div style={S.card}>
+          <div style={S.cardHead}>
+            <h3 style={S.cardHeadTitle}>Riwayat Inquiry &amp; Quotation</h3>
+            <span style={S.cardHeadSub}>{histInquiries.length} inquiry · {histQuotes.length} quotation</span>
+          </div>
+          {histLoading ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
+          ) : (histInquiries.length === 0 && orphanQuotes.length === 0) ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada inquiry untuk account ini.</div>
+          ) : (
+            <div>
+              {histInquiries.map((inq) => (
+                <InquiryHistoryRow key={inq.id} inq={inq} quotes={quotesByInquiry[inq.id] || []} />
+              ))}
+              {orphanQuotes.length > 0 && (
+                <div style={{ padding: '15px 22px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, marginBottom: 10 }}>
+                    Quotation tanpa inquiry ({orphanQuotes.length})
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <tbody>
+                        {orphanQuotes.map((q) => {
+                          const t = QUO_TONE[String(q.status).toUpperCase()] || QUO_TONE.DRAFT;
+                          return (
+                            <tr key={q.id} style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
+                              <td style={{ padding: '8px', fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, color: NAVY, whiteSpace: 'nowrap' }}>{q.quotation_no}</td>
+                              <td style={{ padding: '8px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{fmtDateShort(q.created_at)}</td>
+                              <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRupiah(q.total_amount)}</td>
+                              <td style={{ padding: '8px' }}><span style={{ ...S.badge, background: t.bg, color: t.fg, padding: '3px 9px' }}>{String(q.status).toUpperCase()}</span></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DOKUMEN — PRF + Sales Order (account-scoped). PRF menangkap account_id OR inquiry_id∈akun. */}
+      {tab === 'dokumen' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {docLoading ? (
+            <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div></div>
+          ) : (
+            <>
+              <PrfListCard prfs={docPrfs} canCreate={false} />
+              <div style={S.card}>
+                <div style={S.cardHead}>
+                  <h3 style={S.cardHeadTitle}>Sales Order</h3>
+                  <span style={S.cardHeadSub}>{docSOs.length} SO</span>
+                </div>
+                {docSOs.length === 0 ? (
+                  <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada Sales Order.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
+                          {['No', 'SO No', 'Tanggal', 'Status', 'Tanda Tangan'].map((h) => (
+                            <th key={h} style={{ textAlign: 'left', padding: '9px 16px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {docSOs.map((so, i) => (
+                          <tr key={so.id} style={{ borderBottom: i < docSOs.length - 1 ? '1px solid ' + LINE_SOFT : 'none' }}>
+                            <td style={{ padding: '9px 16px', color: INK_FAINT }}>{i + 1}</td>
+                            <td style={{ padding: '9px 16px', fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, color: NAVY, whiteSpace: 'nowrap' }}>{so.so_no}</td>
+                            <td style={{ padding: '9px 16px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{fmtDateShort(so.created_at)}</td>
+                            <td style={{ padding: '9px 16px' }}><span style={{ ...S.badge, background: '#E1ECF7', color: '#2563EB', padding: '3px 9px' }}>{String(so.status).toUpperCase()}</span></td>
+                            <td style={{ padding: '9px 16px', color: so.signed ? '#1F8B4D' : INK_FAINT, whiteSpace: 'nowrap' }}>{so.signed ? 'Ditandatangani' : 'Belum'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* HISTORY VISIT */}
       {tab === 'visit' && (
@@ -965,6 +1252,17 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
           showToast={showToast}
         />
       )}
+
+      {/* Edit Deal modal — stage/value/assignee, jalur tulis sama DealDetailPage */}
+      <EditDealModal
+        open={dealEditOpen}
+        initial={dealSeed
+          ? { stage: stageIndex(dealSeed.pipeline_stage), assignedId: dealSeed.assigned_profile || '', value: Number(dealSeed.estimated_value || 0), closeDate: dealSeed.estimated_closing_date || '' }
+          : { stage: 0, assignedId: '', value: 0, closeDate: '' }}
+        assignees={dealAssignees}
+        onClose={() => setDealEditOpen(false)}
+        onSave={saveDealEdit}
+      />
 
       {/* Delete confirm */}
       <ConfirmModal
