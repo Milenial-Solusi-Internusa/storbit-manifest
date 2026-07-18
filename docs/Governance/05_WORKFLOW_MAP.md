@@ -77,6 +77,7 @@ Lead Pool ──┐
 - **WON → Handover — HARD gate by nilai deal:** `estimated_value` **≤ Rp100jt → Light Handover** / **> Rp100jt → Strategic Handover**; WON resmi (`finalizeWon`: convert ke customer) **hanya jalan setelah** form handover tersimpan (`deal_handovers`).
 - **Lead Pool → Pipeline — HARD (butuh approval):** [sales] "Tarik ke Pipeline" → `pull_status='pending'` → [manager/supervisor/admin] **approve** (Approval Lead Pool) → balik ke pipeline stage sebelumnya. Reject → tetap di pool.
 - **Akun Lead Pool tak boleh dipakai untuk dokumen/aktivitas baru — GATE (FE, 18 Jul 2026):** akun yang sedang parkir (`is_in_lead_pool=true`) **TIDAK bisa dipilih** di picker manapun untuk **membuat/mengaitkan** dokumen/aktivitas baru — harus **ditarik dulu** dari Lead Pool via approval (bullet di atas) → `is_in_lead_pool=false` → baru bisa dikerjakan. Prinsip **dua sumbu**: **(1) TEMPAT AKSI** (picker/dropdown create/link) **WAJIB** filter `is_in_lead_pool=false`; **(2) DAFTAR BACA** (list/tabel/dashboard/laporan) **TIDAK** difilter — akun parkir tetap tampil dengan badge Lead Pool; halaman Lead Pool & Approval Lead Pool memang menampilkan akun parkir (tak disentuh). Diterapkan FE di **5 picker akun**: `InquiryFormPage` (prospect + customer), `PRFFormPage` (customer + prospect), `SalesCallsPage`, `ActivitiesPage` (2 select), `CRMDashboardPage` (AddVisit) — masing-masing + empty-state "Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya." **Edit-mode** menyuntik ulang akun yang sudah tertaut (walau kini parkir) supaya relasi lama tak hilang (`InquiryForm` sudah punya via fetch-by-id; `SalesCalls`/`Activities`/`CRMDashboard-visit` +param `injectAccount`; `PRF` create-only → tak perlu). **Sengaja TIDAK difilter** (akun **diwarisi lewat inquiry**, bukan dipilih langsung — inquiry itu gerbangnya): picker INQUIRY di `QuotationFormPage`/`SalesOrderDocFormPage`, PRF `source='inquiry'`, dan `db.js:listCustomers` (customer-only SP/AR logistics — customer praktis tak parkir, keputusan sadar). **Keputusan user:** filter diterapkan ke SEMUA picker termasuk customer-side (walau customer praktis tak pernah parkir) — aturan seragam lebih tahan lama daripada mengandalkan asumsi perilaku cron; tak ada constraint struktural yang mencegah `customer` punya `is_in_lead_pool=true`. Konsisten dgn Kanban (sudah filter `is_in_lead_pool=false`). Detail: `08_TECH_DEBT.md` **TD-91**.
+- **Lifecycle → prospect — GERBANG DB (HARD, LIVE 18 Jul 2026):** akun `account_status` = sumbu **lifecycle** (`lead`/`mql`/`sql`/`prospect`/`customer`/`free_agent`/`lost`, dikunci CHECK `accounts_account_status_check`). Akun jadi **`prospect` hanya bila ada inquiry masuk** — **inquiry = gerbangnya**. Promosi `lead/mql/sql → prospect` ditangani **TRIGGER DB** `trg_set_prospect_on_inquiry` (fungsi `set_prospect_on_inquiry()`, SECURITY DEFINER) `AFTER INSERT ON inquiries`, **BUKAN kode FE**; guard `account_status IN ('lead','mql','sql')` → tak menurunkan customer/prospect (InquiryForm menaruh akun di `prospect_id`). Akun baru **lahir `'lead'`** (default kolom). Nilai `'lead_pool'` **sudah tak ada di data** (penanda parkir = `is_in_lead_pool` saja). Detail: `03_DATA_MODEL` entri `accounts` + `08_TECH_DEBT` **TD-91** + migrasi `20260718000001_lifecycle_split_fase2.sql`.
 - **TOP Request — soft:** [sales/manager] ajukan Terms of Payment → insert `top_requests` status='submitted' → approval finance (proses downstream, di luar FE).
 - **MOM approval — HARD:** MOM `submitted` → [CEO/admin] **approve/reject** (MOMDetailPage).
 
@@ -91,7 +92,7 @@ Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`
 **Filter per-entitas (`companies.aging_enabled`) — HANYA MSI:** EF pakai **service role key** → menembus RLS → semula melihat SELURUH entitas. Tapi aturan aging di atas adalah aturan sales **MSI**, bukan Storbit (SOA)/JCI. Terbukti dry_run: dari 472 lead, **3 milik PT Stuja Orbit Abadi** (General Order, Indogrosir, CK — Central Kitchen; ketiganya `assigned_to` NULL). **Perbaikan** (migrasi `20260710000008`): kolom `companies.aging_enabled boolean NOT NULL DEFAULT false` (MSI=true, JCI/SOA=false); EF baca daftar `company_id` yang `aging_enabled=true` lalu `.in('company_id', companyIds)` di query accounts; +GRANT SELECT `companies` ke `service_role` (fix `permission denied for table companies` — lihat TD-62). Hasil dry_run pasca-filter: diperiksa **469** (turun dari 472), memenuhi **304** (tak berubah — 3 lead Storbit diam 7 hari di NEW, batas 7, belum lewat).
 
 **Perhitungan:** `diamHari = Math.floor((now − MAX(stage_changed_at, last_activity_at)) / hari)`. Lead dianggap "disentuh" bila **stage naik ATAU ada aktivitas** (pakai yang paling baru dari keduanya). `Math.floor` (pembulatan ke bawah) → lead dapat jatah hari penuh. Bila `diamHari > batas`:
-- `is_in_lead_pool=true`, `account_status='lead_pool'` (kedua kolom serempak — fix TD-50), `lead_pool_at=now`, `lead_pool_reason='Aging N hari di stage X'`, + notifikasi ke `assigned_to` (`event_type='crm.lead_idle'`).
+- `is_in_lead_pool=true`, ~~`account_status='lead_pool'` (kedua kolom serempak — fix TD-50)~~ **[USANG — SUPERSEDED 18 Jul: EF kini HANYA set `is_in_lead_pool`; `account_status` tak disentuh. `'lead_pool'` bahkan DITOLAK CHECK `accounts_account_status_check` sejak Fase 2 live — lihat TD-50/TD-91]**, `lead_pool_at=now`, `lead_pool_reason='Aging N hari di stage X'`, + notifikasi ke `assigned_to` (`event_type='crm.lead_idle'`).
 - **Mode kering** (`?dry_run=true`) → laporkan kandidat (diperiksa/memenuhi/per-stage/daftar), **tak memindahkan** apa pun.
 
 **Perbaikan EF (commit `ca7aad3`, `9f59f8c`, `96974bb`):**
@@ -102,7 +103,7 @@ Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`
 5. +mode kering (`dry_run`).
 6. +`.is('deleted_at', null)`.
 7. `Math.floor` (jatah hari penuh).
-8. Set `account_status` bareng `is_in_lead_pool` (TD-50).
+8. ~~Set `account_status` bareng `is_in_lead_pool` (TD-50).~~ **[USANG — SUPERSEDED 18 Jul: EF berhenti menulis `account_status`; hanya toggle `is_in_lead_pool`. Lihat TD-50/TD-91.]**
 
 **Simulasi `dry_run` — terverifikasi 10 Jul (`verify_jwt` aktif, pasca-filter per-entitas):** **469 diperiksa** (hanya MSI), **304 memenuhi syarat** (setelah `Math.floor`). Sebaran: CONTACTED 121 · NEW 118 · QUALIFIED 45 · PROPOSAL 20 · NEGOTIATION 0. Sebelum `Math.floor` angkanya **332** (termasuk 6 NEGOTIATION); pembulatan ke bawah menyelamatkan **28 lead** yang harinya belum genap — seluruhnya deal NEGOTIATION aman.
 
@@ -128,8 +129,11 @@ Edge Function **`aging-pipeline`** (`supabase/functions/aging-pipeline/index.ts`
 SELECT cron.unschedule('aging-pipeline-harian');
 
 -- (b) kembalikan lead yang dipindah malam pertama
+--     HANYA toggle penanda parkir — JANGAN set account_status. Akun kembali ke
+--     lifecycle aslinya; menyetel 'prospect' menaikkan lead/mql/sql jadi prospect
+--     tanpa inquiry (melanggar aturan gerbang, lolos CHECK jadi tak ketahuan).
 UPDATE accounts
-SET is_in_lead_pool = false, account_status = 'prospect',
+SET is_in_lead_pool = false,
     lead_pool_at = NULL, lead_pool_reason = NULL
 WHERE lead_pool_reason LIKE 'Aging%'
   AND lead_pool_at >= '2026-07-10 18:00:00+00';
