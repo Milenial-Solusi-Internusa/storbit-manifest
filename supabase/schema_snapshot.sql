@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict CFHtZ9rM3BthMA7xDZpbPm1dcXUGtNxYCggDdVTpooBg6bOkCnUlTcvsIlRpStt
+\restrict VPhjbr34lFYg08KDf6EVxAWKFA7ajJ3mHKaC0zGNGhtP5j1GEVdS8CbXV09GMww
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -4178,6 +4178,29 @@ CREATE TABLE public.sales_calls (
 
 
 --
+-- Name: sales_orders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sales_orders (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    so_no text NOT NULL,
+    status character varying DEFAULT 'DRAFT'::character varying NOT NULL,
+    inquiry_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    signed boolean DEFAULT false NOT NULL,
+    sign_link text,
+    signed_at timestamp with time zone,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    deleted_at timestamp with time zone,
+    CONSTRAINT sales_orders_status_check CHECK (((status)::text = ANY (ARRAY['DRAFT'::text, 'SENT'::text])))
+);
+
+
+--
 -- Name: sales_visit_logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5713,6 +5736,22 @@ ALTER TABLE ONLY public.sales_calls
 
 
 --
+-- Name: sales_orders sales_orders_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT sales_orders_no_unique UNIQUE (company_id, so_no);
+
+
+--
+-- Name: sales_orders sales_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT sales_orders_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sales_visit_logs sales_visit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6877,6 +6916,20 @@ CREATE INDEX idx_roles_deleted_at ON public.roles USING btree (deleted_at) WHERE
 
 
 --
+-- Name: idx_sales_orders_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sales_orders_account_id ON public.sales_orders USING btree (account_id);
+
+
+--
+-- Name: idx_sales_orders_company_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sales_orders_company_created ON public.sales_orders USING btree (company_id, created_at DESC);
+
+
+--
 -- Name: idx_sp_items_customer_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7017,6 +7070,13 @@ CREATE INDEX idx_vendors_is_active ON public.vendors USING btree (is_active);
 
 
 --
+-- Name: sales_orders_inquiry_unique_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX sales_orders_inquiry_unique_live ON public.sales_orders USING btree (inquiry_id) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: sp_btb_no_unique_live; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7070,6 +7130,13 @@ CREATE TRIGGER set_hrga_requests_updated_at BEFORE UPDATE ON public.hrga_request
 --
 
 CREATE TRIGGER set_prf_updated_at BEFORE UPDATE ON public.prf FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: sales_orders set_sales_orders_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_sales_orders_updated_at BEFORE UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -9180,6 +9247,46 @@ ALTER TABLE ONLY public.sales_calls
 
 ALTER TABLE ONLY public.sales_calls
     ADD CONSTRAINT sales_calls_salesperson_id_fkey FOREIGN KEY (salesperson_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: sales_orders sales_orders_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT sales_orders_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: sales_orders sales_orders_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT sales_orders_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: sales_orders sales_orders_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT sales_orders_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: sales_orders sales_orders_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT sales_orders_inquiry_id_fkey FOREIGN KEY (inquiry_id) REFERENCES public.inquiries(id);
+
+
+--
+-- Name: sales_orders sales_orders_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT sales_orders_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.profiles(id);
 
 
 --
@@ -11722,6 +11829,40 @@ CREATE POLICY sales_calls_update ON public.sales_calls FOR UPDATE USING (((compa
 
 
 --
+-- Name: sales_orders; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sales_orders ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sales_orders sales_orders_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sales_orders_delete ON public.sales_orders FOR DELETE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()))));
+
+
+--
+-- Name: sales_orders sales_orders_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sales_orders_insert ON public.sales_orders FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND (public.has_role('sales'::text) OR public.has_role('gm_bd'::text)))));
+
+
+--
+-- Name: sales_orders sales_orders_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sales_orders_select ON public.sales_orders FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND ((created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above()))));
+
+
+--
+-- Name: sales_orders sales_orders_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sales_orders_update ON public.sales_orders FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND (created_by = auth.uid())))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()))));
+
+
+--
 -- Name: sales_visit_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -12210,5 +12351,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict CFHtZ9rM3BthMA7xDZpbPm1dcXUGtNxYCggDdVTpooBg6bOkCnUlTcvsIlRpStt
+\unrestrict VPhjbr34lFYg08KDf6EVxAWKFA7ajJ3mHKaC0zGNGhtP5j1GEVdS8CbXV09GMww
 
