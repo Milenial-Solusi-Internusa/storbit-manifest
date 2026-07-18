@@ -2,7 +2,8 @@
 
 > Alur bisnis per modul live. Sumber: `CLAUDE.md` (CRM Flow, phase notes), `docs/03_DATA_MODEL.md`. Notasi: **[role]** = pelaku, **⚙** = trigger/otomatis DB.
 >
-> **Diperbarui 2026-07-10 (peluncuran aging-pipeline, pagi) — section Aging Pipeline: LIVE + terjadwal.** Filter per-entitas via `companies.aging_enabled` (hanya MSI); pg_cron harian 01:00 WIB (Vault key); verify_jwt beres (TD-60 DONE); dry_run pasca-filter 469 diperiksa / 304 memenuhi. + KONTEKS ADOPSI sebaran pencatatan sales (bukan kinerja). Sebelumnya (audit CRM E2E): koreksi mesin status QUOTATION (DRAFT→SUBMITTED→SENT) + struktur pipeline (tabel `accounts`, tak ada `deals`) + trigger `trg_z_sync_last_activity`. Alur SP 12 tahap FASE 0-3 (mesin status `sp_orders.status` via `sp_recompute_status`, LIVE s/d BTB_TERBIT). Bagian non-CRM/non-SP belum ditinjau ulang.
+> **Diperbarui 2026-07-18 (UI entitas SO — Sales Order, dokumen perintah kerja Sales → Procurement) — +section "Sales → SO → Procurement".** SO dibuat manual oleh sales dari inquiry (account diturunkan otomatis), Sign by Customer (link), Kirim ke Procurement (SENT), procurement terima read-only. SO **menunjuk** history quotation/PRF via `inquiry_id` (bukan salinan). Satu inquiry satu SO. NOL perubahan DB (tabel `sales_orders` sudah dibuat + direkam `20260718000000_sales_orders.sql` + masuk snapshot). ⚠️ Known limitation v1: History Quotation bisa kosong di sisi procurement karena RLS `quotations_read` tak memuat `procurement` (bukan bug data) → `08_TECH_DEBT` TD-90. Belum tes runtime.
+> Sebelumnya **2026-07-10 (peluncuran aging-pipeline, pagi) — section Aging Pipeline: LIVE + terjadwal.** Filter per-entitas via `companies.aging_enabled` (hanya MSI); pg_cron harian 01:00 WIB (Vault key); verify_jwt beres (TD-60 DONE); dry_run pasca-filter 469 diperiksa / 304 memenuhi. + KONTEKS ADOPSI sebaran pencatatan sales (bukan kinerja). Sebelumnya (audit CRM E2E): koreksi mesin status QUOTATION (DRAFT→SUBMITTED→SENT) + struktur pipeline (tabel `accounts`, tak ada `deals`) + trigger `trg_z_sync_last_activity`. Alur SP 12 tahap FASE 0-3 (mesin status `sp_orders.status` via `sp_recompute_status`, LIVE s/d BTB_TERBIT). Bagian non-CRM/non-SP belum ditinjau ulang.
 
 ---
 
@@ -317,6 +318,37 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 - **Anti-dobel = panel "Daftar PRF" yang TERLIHAT** di Detail Inquiry (bukan dialog blocking) → sales lihat sendiri berapa kali inquiry ini di-PRF-kan. Panel + list Forwarding(MSI) = **read-only** (nol aksi edit/delete).
 - **⚠️ Known limitation v1 (RLS `prf_select` = own OR procurement OR manager+):** sales **hanya melihat PRF MILIKNYA** di panel & list → cek-dobel & list **tak menangkap** PRF yang dibuat user lain untuk inquiry sama. Diterima untuk v1 (perbaikannya butuh melonggarkan RLS — tak dilakukan). Detail: `08_TECH_DEBT` **TD-79** (sebagian teraddress) + **TD-76** (list read-only ada, form tetap create-only).
 - **Gate role:** menu terlihat sales/gm_bd/procurement/manager+; **hanya sales/gm_bd yang bisa Submit/Draft** (RLS `prf_insert`). Detail: `04_ROLE_PERMISSION_MATRIX`. Skema: `03_DATA_MODEL` (tabel `prf`). Rujukan desain: `AUDIT_PROCUREMENT.md`.
+
+---
+
+## Sales → SO (Sales Order) → Procurement Flow (UI v1 LIVE; SI menyusul)
+
+> Dokumen perintah kerja Sales → Procurement. Sales menerbitkan SO manual dari inquiry; SO **menunjuk** history quotation & PRF (via `inquiry_id`), **tidak menyalin** ke tabel SO. NOL perubahan DB (tabel `sales_orders` sudah dibuat, rekaman `20260718000000_sales_orders.sql`, sudah masuk snapshot).
+
+```
+[Sales/GM BD] Menu "Sales Order" (CRM) → tombol "Buat SO"
+   → pilih INQUIRY sumber → account_id DITURUNKAN OTOMATIS dari inquiry (customer_id ?? prospect_id; sales tak isi account terpisah)
+   → nomor auto SO/{ENTITAS}/{TAHUN}/{URUT-3digit} (increment_document_sequence: document_type='SO', department_code='CRM', month=0)
+   → INSERT sales_orders (status='DRAFT', signed=false, created_by)
+   → Anti-dobel 2 lapis: (a) cek SO live per inquiry sebelum insert → jika ada, tak insert + tawarkan "Buka SO {so_no}";
+                          (b) tangkap unique violation DB 23505 (sales_orders_inquiry_unique_live) → pesan ramah
+
+[Sales] Detail SO (SalesOrderDocDetailPage)
+   → Sign by Customer: input link URL (validasi http/https) → sign_link + signed=true + signed_at (hanya creator; setelah signed → badge + link + "Ubah link")
+   → Kirim ke Procurement: status DRAFT→SENT (hanya creator + status DRAFT)
+   → Panel History Quotation (query quotations WHERE inquiry_id = SO.inquiry_id, read-only)
+   → Panel History PRF (query prf WHERE inquiry_id = SO.inquiry_id, read-only)
+   → Slot SI (Shipment Instruction) = placeholder badge "Nyusul" (entitas terpisah, belum dibangun)
+
+[Procurement] Menu "Sales Order" (Procurement, node top-level) → list read-only (tanpa tombol Buat SO) → Detail SO read-only
+   → RLS sales_orders_select: super OR (company AND (creator OR procurement OR manager+))
+```
+
+- **SO menunjuk, tidak menyalin:** nol kolom quotation/prf di `sales_orders`; history dirender saat buka Detail (via `inquiry_id`). Satu inquiry hanya SATU SO (unique index parsial DB `sales_orders_inquiry_unique_live WHERE deleted_at IS NULL`).
+- **Status v1:** DRAFT / SENT (CHECK). Sign = link teks (bukan upload file). SI = placeholder (entitas terpisah, menyusul).
+- **Menu 2 sisi:** `crm-sales-order` (child nav-crm; gate `[sales,gm_bd,manager,ceo,admin,super_admin]`, tombol "Buat SO") + `proc-sales-order` (node top-level nav-proc; gate `[procurement,manager,ceo,admin,super_admin]`, read-only).
+- **⚠️ Known limitation v1 (RLS quotation ≠ procurement):** RLS `quotations_read` = `manager+ OR created_by OR super` → **procurement TIDAK termasuk**. Di sisi Procurement (dan role non-manager), panel History Quotation bisa **kosong bukan karena tak ada quotation, tapi karena RLS memblokir**. UI menangani jujur: role manager-or-above/super → "Belum ada quotation" (definitif); role lain → pesan **netral** "Quotation tidak dapat ditampilkan untuk role ini (kebijakan akses)". **Keterbatasan klien:** tak bisa membedakan 100% RLS-blocked vs genuinely-empty untuk role non-definitif → dipakai pesan netral. History PRF aman (`prf_select` memuat `procurement`). **RLS quotations TIDAK dilonggarkan di task ini** — calon perubahan = keputusan forum terpisah. Detail: `08_TECH_DEBT` TD-90.
+- Skema: `03_DATA_MODEL` (tabel `sales_orders`). Belum tes runtime.
 
 ---
 
