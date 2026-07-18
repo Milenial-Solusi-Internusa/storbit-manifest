@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict VPhjbr34lFYg08KDf6EVxAWKFA7ajJ3mHKaC0zGNGhtP5j1GEVdS8CbXV09GMww
+\restrict iLaVpM9yTjV1UNh3byQmmEb3CbhY7eMUxhFMwudQb49IhpaS1hebuLW9DRpKySn
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1133,6 +1133,24 @@ END; $$;
 
 
 --
+-- Name: set_prospect_on_inquiry(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_prospect_on_inquiry() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  UPDATE public.accounts
+  SET account_status = 'prospect'
+  WHERE id = COALESCE(NEW.prospect_id, NEW.customer_id)
+    AND account_status IN ('lead','mql','sql');
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: set_sp_status(text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1464,7 +1482,7 @@ CREATE TABLE public.accounts (
     bant_payment text,
     bant_decision_maker text,
     bant_score integer DEFAULT 0,
-    account_status character varying(50) DEFAULT 'prospect'::character varying,
+    account_status character varying(50) DEFAULT 'lead'::character varying,
     owner_company_id uuid,
     tier character varying(20),
     code text,
@@ -1487,8 +1505,22 @@ CREATE TABLE public.accounts (
     pull_approved_at timestamp with time zone,
     pull_status text,
     is_odoo_customer boolean DEFAULT false NOT NULL,
+    CONSTRAINT accounts_account_status_check CHECK (((account_status)::text = ANY ((ARRAY['lead'::character varying, 'mql'::character varying, 'sql'::character varying, 'prospect'::character varying, 'customer'::character varying, 'free_agent'::character varying, 'lost'::character varying])::text[]))),
     CONSTRAINT accounts_pull_status_check CHECK ((pull_status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text]))),
     CONSTRAINT prospects_source_check CHECK (((source)::text = ANY (ARRAY['sales_visit'::text, 'cold_call'::text, 'referral'::text, 'existing_network'::text, 'exhibition'::text, 'instagram'::text, 'linkedin'::text, 'tiktok'::text, 'website'::text, 'walk_in'::text, 'other'::text])))
+);
+
+
+--
+-- Name: accounts_lifecycle_backup_20260718; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.accounts_lifecycle_backup_20260718 (
+    id uuid,
+    account_status character varying(50),
+    pipeline_stage character varying,
+    is_in_lead_pool boolean,
+    deleted_at timestamp with time zone
 );
 
 
@@ -7357,6 +7389,13 @@ CREATE TRIGGER trg_set_customer_on_won BEFORE INSERT OR UPDATE ON public.account
 
 
 --
+-- Name: inquiries trg_set_prospect_on_inquiry; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_set_prospect_on_inquiry AFTER INSERT ON public.inquiries FOR EACH ROW EXECUTE FUNCTION public.set_prospect_on_inquiry();
+
+
+--
 -- Name: sp_items trg_sp_items_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9669,6 +9708,12 @@ ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY accounts_delete_superadmin ON public.accounts FOR DELETE TO authenticated USING (public.is_super_admin());
 
+
+--
+-- Name: accounts_lifecycle_backup_20260718; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.accounts_lifecycle_backup_20260718 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: activities; Type: ROW SECURITY; Schema: public; Owner: -
@@ -12351,5 +12396,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict VPhjbr34lFYg08KDf6EVxAWKFA7ajJ3mHKaC0zGNGhtP5j1GEVdS8CbXV09GMww
+\unrestrict iLaVpM9yTjV1UNh3byQmmEb3CbhY7eMUxhFMwudQb49IhpaS1hebuLW9DRpKySn
 
