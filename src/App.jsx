@@ -483,8 +483,20 @@ const CRM_MENU_ITEMS = [
   // item "Customer". Sumbu entitas (MSI/JCI/SOA/Semua) & status (Customer/Free
   // Agent/Semua) kini jadi filter di dalam CustomerListPage, bukan submenu.
   { id: 'crm-customers', label: 'Customer', icon: Building2 },
-  { id: 'crm-calls',      label: 'Activities', icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-  { id: 'crm-activity-log', label: 'Activity Log', icon: History, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+  // Tahap 2c: Activities + Activity Log + Riwayat Visit digabung jadi SATU item
+  // "Aktivitas" bertab. riwayat-visit DIPINDAH dari grup Reporting ke sini (gate
+  // verbatim). Anak dipertahankan agar findMenuItemById menemukan gate tiap tab;
+  // visibilitas "Aktivitas" = OR gate anak. Sidebar merender satu leaf; activeMenu
+  // tetap = id tab. Id induk 'crm-aktivitas' (bukan 'crm-activity' — itu prefix
+  // dari 'crm-activity-log').
+  {
+    id: 'crm-aktivitas', label: 'Aktivitas', icon: Activity,
+    children: [
+      { id: 'crm-calls',        label: 'Activities',    icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+      { id: 'crm-activity-log', label: 'Activity Log',  icon: History,  role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+      { id: 'riwayat-visit',    label: 'Riwayat Visit', icon: History,  role: ['super_admin','ceo','gm_bd'] },
+    ],
+  },
 ];
 
 // Tahap 2b: tabs inside the merged "Account" menu. activeMenu stays one of these
@@ -499,9 +511,20 @@ const ACCOUNT_TABS = [
 const ACCOUNT_TAB_IDS = ACCOUNT_TABS.map(t => t.id);
 const isAccountTab = (id) => ACCOUNT_TAB_IDS.includes(id);
 
-// Presentational tab strip for the Account page. `tabs` is already gate-filtered
-// by the caller; active tab = navy underline (var(--navy), matches sidebar/CRM).
-function AccountTabBar({ tabs, active, onSelect }) {
+// Tahap 2c: tabs inside the merged "Aktivitas" menu (gates on the matching
+// children of 'crm-aktivitas' in CRM_MENU_ITEMS). activeMenu stays the tab id.
+const ACTIVITY_TABS = [
+  { id: 'crm-calls',        label: 'Jadwal & Tugas' },
+  { id: 'crm-activity-log', label: 'Riwayat'        },
+  { id: 'riwayat-visit',    label: 'Riwayat Visit'  },
+];
+const ACTIVITY_TAB_IDS = ACTIVITY_TABS.map(t => t.id);
+const isActivityTab = (id) => ACTIVITY_TAB_IDS.includes(id);
+
+// Presentational tab strip shared by the tabbed CRM menus (Account, Aktivitas).
+// `tabs` is already gate-filtered by the caller; active tab = navy underline
+// (var(--navy), matches sidebar/CRM).
+function MenuTabBar({ tabs, active, onSelect }) {
   return (
     <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--line, #E8ECF2)', marginBottom: 20, flexWrap: 'wrap' }}>
       {tabs.map(t => {
@@ -858,7 +881,7 @@ const ERP_MENU_GROUPS = [
         ],
       },
       { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor'] },
-      { id: 'riwayat-visit',         label: 'Riwayat Visit', icon: History, role: ['super_admin','ceo','gm_bd'] },
+      // Tahap 2c: riwayat-visit dipindah ke grup CRM (tab di menu "Aktivitas").
       { id: 'indomarco-dashboard',   label: 'Indomarco Dashboard', icon: Building2, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor'] },
       { id: 'reporting-form-report', label: 'Form Report',  icon: FileText, planned: true },
       { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales','operations'] },
@@ -1115,7 +1138,6 @@ const NEXUS_NAV = [
         id: 'nav-report', label: 'Reporting', icon: BarChart3, tone: 'indigo',
         children: [
           { id: 'reporting-sales', label: 'Sales Report',          icon: BarChart2 },
-          { id: 'riwayat-visit',   label: 'Riwayat Visit',         icon: History },
           { id: 'indomarco-dashboard', label: 'Indomarco Dashboard', icon: Building2 },
           { id: 'reporting-mom',   label: 'MOM',                   icon: BookOpen },
           { id: 'reports',         label: 'Reporting & Dashboard', icon: LayoutDashboard },
@@ -1437,25 +1459,27 @@ function NexusSidebar({
     }
     const active = activeMenu === c.id ||
       (depth === 0 && c.id === 'crm-customers' && (activeMenu === 'customer-detail' || activeMenu.startsWith('crm-customers')));
-    // Tahap 2b: render the merged "Account" node as a SINGLE leaf (not an
-    // expandable submenu). Visible iff ≥1 tab (navChildGate OR, via childVisible);
-    // click → first permitted tab; active when activeMenu ∈ Account tabs.
-    if (c.id === 'crm-account') {
-      const firstTab = ACCOUNT_TAB_IDS.find(id => {
+    // Tahap 2b/2c: render a merged tabbed node ('crm-account' = Account,
+    // 'crm-aktivitas' = Aktivitas) as a SINGLE leaf (not an expandable submenu).
+    // Tab ids are the node's own children. Visible iff ≥1 tab (navChildGate OR,
+    // via childVisible); click → first permitted tab; active when activeMenu ∈ tabs.
+    if (c.id === 'crm-account' || c.id === 'crm-aktivitas') {
+      const tabIds = (c.children || []).map(gc => gc.id);
+      const firstTab = tabIds.find(id => {
         const it = findMenuItemById(id);
         return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission);
       });
-      const acctActive = isAccountTab(activeMenu);
+      const tabbedActive = tabIds.includes(activeMenu);
       return (
         <button key={c.id} type="button" onClick={() => firstTab && go(firstTab)}
           className="w-full flex items-center gap-2.5 rounded-[10px] transition-colors"
-          style={{ padding: '7px 10px', marginBottom: 1, background: acctActive ? 'var(--p-blue)' : 'transparent', color: acctActive ? 'var(--navy)' : 'var(--mute)', fontSize: 12.5, fontWeight: acctActive ? 600 : 500, textAlign: 'left' }}
-          onMouseEnter={e => { if (!acctActive) e.currentTarget.style.background = '#F5F7FA'; }}
-          onMouseLeave={e => { if (!acctActive) e.currentTarget.style.background = 'transparent'; }}
+          style={{ padding: '7px 10px', marginBottom: 1, background: tabbedActive ? 'var(--p-blue)' : 'transparent', color: tabbedActive ? 'var(--navy)' : 'var(--mute)', fontSize: 12.5, fontWeight: tabbedActive ? 600 : 500, textAlign: 'left' }}
+          onMouseEnter={e => { if (!tabbedActive) e.currentTarget.style.background = '#F5F7FA'; }}
+          onMouseLeave={e => { if (!tabbedActive) e.currentTarget.style.background = 'transparent'; }}
         >
           {Icon
-            ? <Icon size={15} strokeWidth={acctActive ? 2 : 1.8} style={{ flexShrink: 0, color: acctActive ? 'var(--navy)' : 'var(--faint)' }} />
-            : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: acctActive ? 1 : 0.5, flexShrink: 0 }} />}
+            ? <Icon size={15} strokeWidth={tabbedActive ? 2 : 1.8} style={{ flexShrink: 0, color: tabbedActive ? 'var(--navy)' : 'var(--faint)' }} />
+            : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: tabbedActive ? 1 : 0.5, flexShrink: 0 }} />}
           <span className="flex-1 truncate">{c.label}</span>
         </button>
       );
@@ -3163,7 +3187,7 @@ export default function StorbitManifest() {
           {isAccountTab(activeMenu) && (
             <div>
               {!(activeMenu === 'crm-prospects' && showProspectForm) && (
-                <AccountTabBar
+                <MenuTabBar
                   tabs={ACCOUNT_TABS.filter(t => {
                     const it = findMenuItemById(t.id);
                     return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission);
@@ -3270,27 +3294,49 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── CRM: Activities ─────────────────────────────────────────────── */}
-          {activeMenu === 'crm-calls' && (
-            <ErrorBoundary title="Activities temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <ActivitiesPage
-                  showToast={showToast}
-                  setActiveMenu={setActiveMenu}
-                  setShowProspectForm={setShowProspectForm}
-                  setEditingProspect={setEditingProspect}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── CRM: Activity Log ───────────────────────────────────────────── */}
-          {activeMenu === 'crm-activity-log' && (
-            <ErrorBoundary title="Activity Log temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <ActivityLogPage showToast={showToast} />
-              </Suspense>
-            </ErrorBoundary>
+          {/* ── CRM: Aktivitas (Jadwal & Tugas / Riwayat / Riwayat Visit — tabbed) ──
+              Tahap 2c: one menu, activeMenu stays the tab id. Tab bar shows only
+              gate-permitted tabs; riwayat-visit keeps its canRenderPage content-gate.
+              All sub-views here are modal overlays → tab bar always shown. */}
+          {isActivityTab(activeMenu) && (
+            <div>
+              <MenuTabBar
+                tabs={ACTIVITY_TABS.filter(t => {
+                  const it = findMenuItemById(t.id);
+                  return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission);
+                })}
+                active={activeMenu}
+                onSelect={navigateTo}
+              />
+              {activeMenu === 'crm-calls' && (
+                <ErrorBoundary title="Activities temporarily unavailable">
+                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                    <ActivitiesPage
+                      showToast={showToast}
+                      setActiveMenu={setActiveMenu}
+                      setShowProspectForm={setShowProspectForm}
+                      setEditingProspect={setEditingProspect}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+              {activeMenu === 'crm-activity-log' && (
+                <ErrorBoundary title="Activity Log temporarily unavailable">
+                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                    <ActivityLogPage showToast={showToast} />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+              {activeMenu === 'riwayat-visit' && (canRenderPage('riwayat-visit') ? (
+                <ErrorBoundary title="Riwayat Visit temporarily unavailable">
+                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                    <RiwayatVisitPage showToast={showToast} />
+                  </Suspense>
+                </ErrorBoundary>
+              ) : (
+                <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+              ))}
+            </div>
           )}
 
           {/* ── Procurement: PRF (Price Request Form) ───────────────────────── */}
@@ -3356,16 +3402,8 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── Reporting & Governance: Riwayat Visit ───────────────────────── */}
-          {activeMenu === 'riwayat-visit' && (canRenderPage('riwayat-visit') ? (
-            <ErrorBoundary title="Riwayat Visit temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <RiwayatVisitPage showToast={showToast} />
-              </Suspense>
-            </ErrorBoundary>
-          ) : (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          ))}
+          {/* Riwayat Visit moved into the consolidated "CRM: Aktivitas" tabbed
+              block above (Tahap 2c — pindah dari grup Reporting ke CRM). */}
 
           {/* ── CRM: Indomarco Dashboard (internal — manager-or-above) ───────── */}
           {activeMenu === 'indomarco-dashboard' && (canRenderPage('indomarco-dashboard') ? (
