@@ -40,6 +40,7 @@ const ProspectFormPage     = lazy(() => import('./modules/crm/ProspectFormPage')
 const InquiryListPage      = lazy(() => import('./modules/crm/InquiryListPage'));
 const InquiryFormPage      = lazy(() => import('./modules/crm/InquiryFormPage'));
 const PRFFormPage          = lazy(() => import('./modules/procurement/PRFFormPage'));
+const ProcInquiryForwardingPage = lazy(() => import('./modules/procurement/ProcInquiryForwardingPage'));
 const QuotationFormPage    = lazy(() => import('./modules/crm/QuotationFormPage'));
 const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'));
 const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
@@ -580,6 +581,8 @@ const ERP_MENU_GROUPS = [
     items: [
       { section: 'Direct Procurement' },
       { id: 'prf', label: 'PRF', icon: FileText, role: ['sales','gm_bd','procurement','manager','ceo','admin','super_admin'] },
+      // Gate registry for the active Procurement nav node (Inquiry/RFQ → Direct → Forwarding MSI).
+      { id: 'proc-inquiry-fwd-msi', label: 'Forwarding (MSI)', icon: Ship, role: ['sales','gm_bd','procurement','manager','ceo','admin','super_admin'] },
       {
         id: 'procRequest', label: 'Procurement Request', icon: ClipboardCheck,
         children: [
@@ -936,8 +939,93 @@ const NEXUS_NAV = [
       },
       {
         id: 'nav-proc', label: 'Procurement', icon: ShoppingCart, tone: 'peach',
+        // Skeleton roadmap: container nodes = plain expandable (no badge); leaf
+        // nodes = `soon` (disabled), EXCEPT the one active node below.
         children: [
-          { id: 'prf', label: 'PRF', icon: FileText },
+          {
+            id: 'proc-inquiry', label: 'Inquiry / RFQ', icon: FileText,
+            children: [
+              {
+                id: 'proc-inquiry-direct', label: 'Direct', icon: Link2,
+                children: [
+                  { id: 'proc-inquiry-fwd-msi',  label: 'Forwarding (MSI)',        icon: Ship },              // ← ACTIVE
+                  { id: 'proc-inquiry-prod-soa', label: 'Product / Storbit (SOA)', icon: Package, soon: true },
+                ],
+              },
+              {
+                id: 'proc-inquiry-indirect', label: 'Indirect', icon: Globe,
+                children: [
+                  { id: 'proc-inquiry-allentity', label: 'All Entity (MSI Group)', icon: Boxes, soon: true },
+                ],
+              },
+              { id: 'proc-inquiry-award', label: 'Quotation Comparison & Award', icon: Receipt, soon: true },
+            ],
+          },
+          {
+            id: 'proc-pr', label: 'Purchase Request', icon: ClipboardList,
+            children: [
+              { id: 'proc-pr-storbit',  label: 'Product / Storbit', icon: Package, soon: true },
+              { id: 'proc-pr-allentity', label: 'All Entity',       icon: Boxes,   soon: true },
+            ],
+          },
+          { id: 'proc-po', label: 'Purchase Order', icon: ScrollText, soon: true },
+          {
+            id: 'proc-grn', label: 'Goods Receipt (GRN)', icon: Download,
+            children: [
+              { id: 'proc-grn-receiving', label: 'Receiving',        icon: Download, soon: true },
+              { id: 'proc-grn-return',    label: 'Return to Vendor', icon: Upload,   soon: true },
+            ],
+          },
+          {
+            id: 'proc-invoice', label: 'Invoice & Matching', icon: Receipt,
+            children: [
+              { id: 'proc-invoice-3way', label: '3-Way Match',   icon: CheckCircle2, soon: true },
+              { id: 'proc-invoice-ap',   label: 'Hand-off ke AP', icon: Wallet,      soon: true },
+            ],
+          },
+          {
+            id: 'proc-contracts', label: 'Contracts / Rate Agreement', icon: FileCheck,
+            children: [
+              { id: 'proc-contracts-framework', label: 'Framework Agreement',          icon: FileText, soon: true },
+              { id: 'proc-contracts-carrier',   label: 'Shipping Line / Carrier Rate', icon: Ship,     soon: true },
+            ],
+          },
+          {
+            id: 'proc-vendor', label: 'Vendor Management', icon: UsersRound,
+            children: [
+              { id: 'proc-vendor-list',       label: 'Vendor List',                     icon: Users,   soon: true },
+              { id: 'proc-vendor-onboarding', label: 'Vendor Onboarding / Registration', icon: Contact, soon: true },
+              { id: 'proc-vendor-catalog',    label: 'Vendor Price List / Catalog',      icon: Tag,     soon: true },
+              {
+                id: 'proc-vendor-performance', label: 'Vendor Performance / Analysis', icon: BarChart2,
+                children: [
+                  { id: 'proc-vendor-scorecard', label: 'Vendor Score Card From User', icon: ClipboardCheck, soon: true },
+                ],
+              },
+            ],
+          },
+          {
+            id: 'proc-reporting', label: 'Reporting', icon: BarChart3,
+            children: [
+              { id: 'proc-report-spend',       label: 'Vendor Spend',              icon: TrendingUp, soon: true },
+              { id: 'proc-report-negotiation', label: 'Negotiation Performance',   icon: BarChart2,  soon: true },
+              { id: 'proc-report-category',    label: 'Spend by Entity / Category', icon: Boxes,     soon: true },
+              { id: 'proc-report-poaging',     label: 'PO Aging',                  icon: Clock,      soon: true },
+              { id: 'proc-report-cycle',       label: 'PR → PO Cycle Time',        icon: Zap,        soon: true },
+              { id: 'proc-report-savings',     label: 'Savings / PPV',             icon: Wallet,     soon: true },
+              { id: 'proc-report-otif',        label: 'On-Time Delivery (OTIF)',   icon: Truck,      soon: true },
+            ],
+          },
+          {
+            id: 'proc-settings', label: 'Settings / Master Data', icon: Settings,
+            children: [
+              { id: 'proc-settings-product',  label: 'Master Product',                icon: Package,     soon: true },
+              { id: 'proc-settings-approval', label: 'Approval Matrix',               icon: ShieldCheck, soon: true },
+              { id: 'proc-settings-category', label: 'Procurement Category',          icon: Tag,         soon: true },
+              { id: 'proc-settings-uom',      label: 'UOM / Payment Terms / Currency', icon: Landmark,   soon: true },
+              { id: 'proc-settings-poseries', label: 'PO Number Series',              icon: ScrollText,  soon: true },
+            ],
+          },
         ],
       },
       {
@@ -1512,6 +1600,7 @@ export default function StorbitManifest() {
   const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
   const [duplicatingQuotation, setDuplicatingQuotation] = useState(null);  // source row for duplicate (prefilled create)
   const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
+  const [prfPrefillInquiryId, setPrfPrefillInquiryId] = useState(null);  // inquiry id → prefill PRF form (Cetak PRF)
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
@@ -1616,6 +1705,7 @@ export default function StorbitManifest() {
     setEditingQuotation(null);
     setDuplicatingQuotation(null);
     setCrmDealInquiry(null);
+    setPrfPrefillInquiryId(null);
     setReportingMomMode('list');
     setReportingMomId(null);
     setSelectedPickingId(null);
@@ -2614,7 +2704,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -2980,6 +3070,7 @@ export default function StorbitManifest() {
                   onCreateQuotation={() => { setCrmDealInquiry(null); setEditingQuotation(null); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
                   onViewQuotation={(q) => { setCrmDealInquiry(null); setCrmQuotationDetail(q); setActiveMenu('quotation-draft'); }}
                   onEditInquiry={() => setShowInquiryForm(true)}
+                  onCreatePRF={() => { setPrfPrefillInquiryId(crmDealInquiry.id); setCrmDealInquiry(null); setActiveMenu('prf'); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -3121,7 +3212,18 @@ export default function StorbitManifest() {
           {activeMenu === 'prf' && (canRenderPage('prf') ? (
             <ErrorBoundary title="PRF temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <PRFFormPage onBack={() => setActiveMenu('home')} showToast={showToast} />
+                <PRFFormPage onBack={() => setActiveMenu('home')} showToast={showToast} prefillInquiryId={prfPrefillInquiryId} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+
+          {/* ── Procurement: Inquiry/RFQ → Direct → Forwarding (MSI) placeholder ─ */}
+          {activeMenu === 'proc-inquiry-fwd-msi' && (canRenderPage('proc-inquiry-fwd-msi') ? (
+            <ErrorBoundary title="Procurement Forwarding temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <ProcInquiryForwardingPage onBack={() => setActiveMenu('home')} />
               </Suspense>
             </ErrorBoundary>
           ) : (

@@ -298,7 +298,24 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 ```
 
 - **Live sekarang:** FORM lengkap (Section 01/02/03/04) + menu + nomor auto (Fase 1+2). Sumber inquiry mengisi `inquiry_id` + auto `account_id`. Section 03 child fields dinamis per `service_type` (Fase 2).
-- **Belum:** list/inbox procurement (Fase 3a), cross-entity inbox (Fase 3b). Status QUOTED/EXPIRED disiapkan di CHECK tapi belum ada transisinya. **⚠️ FLAG UX (perlu konfirmasi user testing):** Custom butuh 2 syarat (service=custom DAN add-on Custom Clearance) — jika custom tanpa add-on, blok tak muncul + hint.
+- **Belum:** list/inbox procurement penuh (Fase 3a — form masih create-only, draft tak bisa dibuka-ulang), cross-entity inbox (Fase 3b). Status QUOTED/EXPIRED disiapkan di CHECK tapi belum ada transisinya. **⚠️ FLAG UX (perlu konfirmasi user testing):** Custom butuh 2 syarat (service=custom DAN add-on Custom Clearance) — jika custom tanpa add-on, blok tak muncul + hint.
+
+**Cetak PRF dari inquiry (realisasi mandat MI — [sales/gm_bd], 18 Jul 2026):**
+> Mandat MI: sales **wajib menerbitkan PRF** untuk minta harga ke pricing/procurement, ter-prefill dari inquiry. NOL perubahan DB (FK `prf.inquiry_id → inquiries.id` sudah ada).
+```
+[Sales/GM BD] Detail Inquiry (DealDetailPage)
+   → tombol "Cetak PRF" (HANYA sales/gm_bd — role dgn prf_insert)
+   → form PRF ter-PREFILL field non-cabang dari inquiry:
+        account_id (dari customer_id/prospect_id), hs_code, pickup/delivery address,
+        pol→origin, pod→destination, deadline_quote→deadline_quotation,
+        incoterms[0] (hanya bila token PRF valid, else kosong), customer_source='inquiry' + inquiry_id
+   → [sales] pilih service_type (moda) + direction + SEMUA field cabang MANUAL
+        (taksonomi service_type inquiry=lini bisnis ≠ PRF=moda; direction tak ada di inquiry)
+   → Submit → INSERT prf dgn inquiry_id (jejak)
+   → muncul di panel "Daftar PRF" (per-inquiry, DealDetailPage) & list "Forwarding (MSI)"
+```
+- **Anti-dobel = panel "Daftar PRF" yang TERLIHAT** di Detail Inquiry (bukan dialog blocking) → sales lihat sendiri berapa kali inquiry ini di-PRF-kan. Panel + list Forwarding(MSI) = **read-only** (nol aksi edit/delete).
+- **⚠️ Known limitation v1 (RLS `prf_select` = own OR procurement OR manager+):** sales **hanya melihat PRF MILIKNYA** di panel & list → cek-dobel & list **tak menangkap** PRF yang dibuat user lain untuk inquiry sama. Diterima untuk v1 (perbaikannya butuh melonggarkan RLS — tak dilakukan). Detail: `08_TECH_DEBT` **TD-79** (sebagian teraddress) + **TD-76** (list read-only ada, form tetap create-only).
 - **Gate role:** menu terlihat sales/gm_bd/procurement/manager+; **hanya sales/gm_bd yang bisa Submit/Draft** (RLS `prf_insert`). Detail: `04_ROLE_PERMISSION_MATRIX`. Skema: `03_DATA_MODEL` (tabel `prf`). Rujukan desain: `AUDIT_PROCUREMENT.md`.
 
 ---
