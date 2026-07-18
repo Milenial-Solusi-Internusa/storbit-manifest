@@ -170,9 +170,10 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   useEffect(() => {
     if (!profile?.company_id) return;
     const cid = profile.company_id;
-    supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['customer', 'free_agent']).is('deleted_at', null).order('name').limit(1000)
+    // Akun parkir Lead Pool tak boleh dipilih untuk PRF baru — is_in_lead_pool=false di semua picker.
+    supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
-    supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).is('deleted_at', null).order('name').limit(1000) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+    supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       .then(({ data }) => setProspects(data || []));
     supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
       .then(({ data }) => setInquiries(data || []));
@@ -468,6 +469,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                     ) : (
                       <select value={form.account_id} onChange={set('account_id')} style={selInput}>
                         <option value="">— Pilih {form.customer_source === 'prospect' ? 'prospect' : 'customer'} —</option>
+                        {(form.customer_source === 'prospect' ? prospects : customers).length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
                         {(form.customer_source === 'prospect' ? prospects : customers).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                       </select>
                     )}<Chevron />

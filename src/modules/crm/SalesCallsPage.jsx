@@ -227,6 +227,7 @@ function CallFormModal({ open, isEdit, draft, setDraft, saving, error, prospects
             {lbl('Prospect')}
             <select value={draft.prospect_id} onChange={e => upd('prospect_id', e.target.value)} style={selStyle}>
               <option value="">— Opsional —</option>
+              {prospects.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
               {prospects.map(p => <option key={p.id} value={p.id}>{prospectLabel(p)}</option>)}
             </select>
           </div>
@@ -422,13 +423,18 @@ export default function SalesCallsPage({ showToast }) {
   // Load prospect + salesperson options for the form (called when a modal opens).
   // Salesperson dropdown = active 'sales' users in the current entity only
   // (resolved via RBAC role code, see fetchOperationalRoster).
-  const loadFormOptions = async () => {
+  // injectAccount = akun yang SUDAH tertaut ke call yang sedang diedit; disuntik
+  // walau parkir supaya relasi lama tak hilang (akun parkir tak muncul untuk call baru).
+  const loadFormOptions = async (injectAccount) => {
     if (!profile?.company_id) return;
     const [pRes, sales] = await Promise.all([
-      supabase.from('accounts').select('id, name, company_prefix').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+      // Akun parkir Lead Pool tak boleh dipilih untuk call baru — is_in_lead_pool=false.
+      supabase.from('accounts').select('id, name, company_prefix').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       fetchOperationalRoster(profile.company_id),
     ]);
-    setProspects(pRes.data || []);
+    let list = pRes.data || [];
+    if (injectAccount?.id && !list.some(p => p.id === injectAccount.id)) list = [injectAccount, ...list];
+    setProspects(list);
     setSalesProfiles(sales);
   };
 
@@ -493,7 +499,7 @@ export default function SalesCallsPage({ showToast }) {
     setFormError(null);
     setDetailCall(null);
     setFormOpen(true);
-    loadFormOptions();
+    loadFormOptions(call.prospect_id ? { id: call.prospect_id, name: call.prospect?.name || '(akun tertaut)', company_prefix: call.prospect?.company_prefix } : undefined);
   };
 
   const handleSave = useCallback(async () => {
