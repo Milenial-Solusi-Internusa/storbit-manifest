@@ -1,5 +1,15 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-19
+
+### Restruktur menu CRM — TAHAP 1 (fondasi): satu-sumber `CRM_MENU_ITEMS` + fix id `crm-group` + hapus dead code — branch `feat/crm-nav-refactor` (belum commit, belum merge)
+> **Sifat: fondasi murni. NOL perubahan yang dilihat user, NOL perubahan DB, NOL perubahan gate/izin per role.** Semua di `src/App.jsx` + hapus 2 file dead code. Persiapan tahap-tahap restruktur berikutnya (rujukan pemetaan: `AUDIT_CRM_NAV.md`).
+- [x] **(TASK 1) Satukan dua definisi menu CRM.** Dulu item CRM didefinisikan DUA KALI — `ERP_MENU_GROUPS` (sumber gate, dibaca `findMenuItemById`+`canSeeMenuItem`) dan `NEXUS_NAV` (struktur sidebar yang dirender) — dan sudah drift (urutan `crm-rate-list`/`crm-sales-order` bertukar). Kini item CRM diekstrak ke satu konstanta bersama **`CRM_MENU_ITEMS`** (bentuk-ERP lengkap: gate `role`/`module` + menuKey via `MENU_KEY_MAP`), dirujuk **verbatim** oleh `children` induk CRM di `ERP_MENU_GROUPS` DAN `children` `nav-crm` di `NEXUS_NAV`. Urutan `CRM_MENU_ITEMS` mengikuti urutan render `NEXUS_NAV` saat ini (sales-order sebelum rate-list) → sidebar yang dilihat user TIDAK berubah. Efek samping: urutan internal `children` di `ERP_MENU_GROUPS` ikut jadi urutan itu — TAK terlihat user (urutan ERP_MENU_GROUPS hanya dipakai `findMenuItemById` [match by-id] & `visFlat` [item top-level saja]); tak berdampak ke `UserEditPage` (menyusun daftar izin menu dari DB `module_menus`, bukan dari struktur ini).
+- [x] **(TASK 2) Perbaiki tabrakan id `crm-dashboard`.** Dulu id induk grup CRM = id anak "Dashboard" (dua-duanya `crm-dashboard`). Kini induk = **`crm-group`** (gateless → default-deny `canSeeMenuItem` → otomatis dikecualikan dari `visFlat` redirect fallback, `App.jsx:1929`; tak pernah dirender sbg halaman). Anak "Dashboard" TETAP `crm-dashboard` → menu_key DB (`crm_dashboard`) & izin user tak terpengaruh. `MENU_KEY_MAP` tidak diubah.
+- [x] **(TASK 3) Hapus dead code.** Hapus lazy-import `SalesCallsPage` (`App.jsx`, di-import tapi tak pernah dirender; `ActivitiesPage` sudah menggantikannya utk route `crm-calls`) + file `src/modules/crm/SalesCallsPage.jsx`. Hapus `src/modules/crm/CustomerMasterPage.legacy.jsx` (tak di-import di mana pun). Komentar historis penyebut "SalesCallsPage" di `salesRoster.js` & `ActivitiesPage.jsx` SENGAJA dibiarkan (komentar, bukan kode). → **TD-69 DONE**, **TD-15 PARTIAL** (sisa `UserManagement.legacy.jsx`).
+- Verifikasi: `npm run build` clean (1.59s). `npm run lint` **165 problems** (turun dari baseline 223; −57 dari 2 file dead code + −1 import unused; NOL problem baru). **Belum tes runtime** (perlu login).
+- Yang SENGAJA tidak dikerjakan (tahap berikutnya): tidak menggabungkan menu apa pun (Account/Customer/Aktivitas), tidak memindah panel detail inquiry, tidak mengubah label yang dilihat user, tidak menyentuh Rate List/Reporting/modul non-CRM, tidak menyentuh katalog menu DB.
+
 ## 2026-07-18
 
 ### FASE 2 lifecycle-split — backfill + trigger gerbang + default kolom + CHECK — **SELESAI & LIVE di PRODUCTION** (dijalankan manual, terverifikasi via katalog sistem)

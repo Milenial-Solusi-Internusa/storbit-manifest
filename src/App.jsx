@@ -59,7 +59,6 @@ const MOMListPage          = lazy(() => import('./modules/reporting/MOMListPage'
 const MOMFormPage          = lazy(() => import('./modules/reporting/MOMFormPage'));
 const MOMDetailPage        = lazy(() => import('./modules/reporting/MOMDetailPage'));
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
-const SalesCallsPage       = lazy(() => import('./modules/crm/SalesCallsPage'));
 const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
 const ActivityLogPage      = lazy(() => import('./modules/crm/ActivityLogPage'));
 const LeadPoolPage         = lazy(() => import('./modules/crm/LeadPoolPage'));
@@ -450,6 +449,38 @@ const PLANNED_MODULES = {
   },
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CRM_MENU_ITEMS — SINGLE SOURCE OF TRUTH for the Commercial & CRM item list.
+// Referenced verbatim by BOTH the gate tree (ERP_MENU_GROUPS, via findMenuItemById
+// + canSeeMenuItem) AND the rendered sidebar (NEXUS_NAV nav-crm) so the two can
+// never drift again. Each entry carries its own gate (menuKey resolved via
+// MENU_KEY_MAP, or inline role/module). Order = the sidebar render order.
+// Sidebar rendering (LeafRow) only reads id/label/icon/children/soon; the extra
+// role/module props are ignored there and used solely by the gate resolver.
+// ─────────────────────────────────────────────────────────────────────────────
+const CRM_MENU_ITEMS = [
+  { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
+  { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
+  { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+  { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['ceo','gm','gm_bd','manager','supervisor','admin','super_admin'] },
+  { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
+  { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
+  { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
+  { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList, role: ['sales','gm_bd','manager','ceo','admin','super_admin'] },
+  { id: 'crm-rate-list',   label: 'Rate List',       icon: Tag, role: ['super_admin','admin','ceo','gm','gm_bd','manager','sales'] },
+  {
+    id: 'crm-customers', label: 'Master Customer', icon: Building2,
+    children: [
+      { id: 'crm-customers-msi',  label: 'Customer MSI', icon: Building2 },
+      { id: 'crm-customers-jci',  label: 'Customer JCI', icon: Building2 },
+      { id: 'crm-customers-soa',  label: 'Customer SOA', icon: Building2 },
+      { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX    },
+    ],
+  },
+  { id: 'crm-calls',      label: 'Activities', icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+  { id: 'crm-activity-log', label: 'Activity Log', icon: History, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+];
+
 const ERP_MENU_GROUPS = [
   // ── CORE ──────────────────────────────────────────────────────────────────
   {
@@ -467,33 +498,16 @@ const ERP_MENU_GROUPS = [
     ],
   },
   // ── COMMERCIAL & CRM ──────────────────────────────────────────────────────
+  // Parent id is 'crm-group' (NOT 'crm-dashboard') so it no longer collides with
+  // the "Dashboard" child id. The parent is gateless on purpose (never rendered
+  // as a page; excluded from the visFlat redirect fallback). Children come from
+  // the shared CRM_MENU_ITEMS.
   {
     label: 'Commercial & CRM',
     items: [
       {
-        id: 'crm-dashboard', label: 'CRM & Inquiry', icon: Users,
-        children: [
-          { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
-          { id: 'crm-pipeline',  label: 'Pipeline / Leads', icon: Users     },
-          { id: 'crm-lead-pool', label: 'Lead Pool',        icon: Archive, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-          { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['ceo','gm','gm_bd','manager','supervisor','admin','super_admin'] },
-          { id: 'crm-prospects', label: 'Prospects',         icon: Users,    module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
-          { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
-          { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
-          { id: 'crm-rate-list',   label: 'Rate List',       icon: Tag, role: ['super_admin','admin','ceo','gm','gm_bd','manager','sales'] },
-          { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList, role: ['sales','gm_bd','manager','ceo','admin','super_admin'] },
-          {
-            id: 'crm-customers', label: 'Master Customer', icon: Building2,
-            children: [
-              { id: 'crm-customers-msi',  label: 'Customer MSI', icon: Building2 },
-              { id: 'crm-customers-jci',  label: 'Customer JCI', icon: Building2 },
-              { id: 'crm-customers-soa',  label: 'Customer SOA', icon: Building2 },
-              { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX    },
-            ],
-          },
-          { id: 'crm-calls',      label: 'Activities', icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-          { id: 'crm-activity-log', label: 'Activity Log', icon: History, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-        ],
+        id: 'crm-group', label: 'CRM & Inquiry', icon: Users,
+        children: CRM_MENU_ITEMS,
       },
     ],
   },
@@ -860,29 +874,11 @@ const NEXUS_NAV = [
     group: 'Bisnis',
     items: [
       {
+        // Children come from the shared CRM_MENU_ITEMS (single source with the
+        // gate tree). The sidebar renders id/label/icon/children only; gates on
+        // those items are resolved via findMenuItemById (ERP_MENU_GROUPS).
         id: 'nav-crm', label: 'Commercial & CRM', icon: Contact, tone: 'blue',
-        children: [
-          { id: 'crm-dashboard',        label: 'Dashboard',         icon: BarChart2 },
-          { id: 'crm-pipeline',         label: 'Pipeline / Leads',  icon: Users },
-          { id: 'crm-lead-pool',        label: 'Lead Pool',         icon: Archive },
-          { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck },
-          { id: 'crm-prospects',        label: 'Prospects',         icon: Users },
-          { id: 'crm-inquiry',          label: 'Inquiry',           icon: FileText },
-          { id: 'quotation-draft',      label: 'Quotation',         icon: Receipt },
-          { id: 'crm-sales-order',      label: 'Sales Order',       icon: ClipboardList },
-          { id: 'crm-rate-list',        label: 'Rate List',         icon: Tag },
-          {
-            id: 'crm-customers', label: 'Master Customer', icon: Building2,
-            children: [
-              { id: 'crm-customers-msi',  label: 'Customer MSI', icon: Building2 },
-              { id: 'crm-customers-jci',  label: 'Customer JCI', icon: Building2 },
-              { id: 'crm-customers-soa',  label: 'Customer SOA', icon: Building2 },
-              { id: 'crm-customers-free', label: 'Free Agent',   icon: UserX },
-            ],
-          },
-          { id: 'crm-calls',        label: 'Activities',   icon: Activity },
-          { id: 'crm-activity-log', label: 'Activity Log', icon: History },
-        ],
+        children: CRM_MENU_ITEMS,
       },
       {
         id: 'nav-sp', label: 'Daftar Pesanan (Storbit)', icon: ClipboardList, tone: 'violet',

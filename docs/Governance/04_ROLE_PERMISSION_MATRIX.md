@@ -93,6 +93,8 @@ Sumber: matrix permission `CLAUDE.md`. **CRUD** = full, **R** = read-only, **-**
 ### Peta Menu → Halaman → Role-gate (visibilitas)
 
 > **Beda dari matriks granular di bawah:** ini peta **visibilitas** (menu → halaman + siapa boleh lihat), dari `ERP_MENU_GROUPS`/`NEXUS_NAV` + `canSeeMenuItem` (**default-deny**) di `App.jsx`. Jenis gate: `public` · `menuKey` (via `hasMenuPermission`) · `module` (via `hasPermission`) · `role[...]` (array). **📋 soon** = `PLANNED_MODULES` → ComingSoonPage. *(Sumber terkini: `App.jsx` `ERP_MENU_GROUPS`/`NEXUS_NAV`.)*
+>
+> ℹ️ **Restruktur menu CRM Tahap 1 (19 Jul 2026, branch `feat/crm-nav-refactor`, belum commit — fondasi, NOL perubahan gate/izin):** daftar item CRM kini bersumber **tunggal** dari konstanta bersama **`CRM_MENU_ITEMS`** (`App.jsx`), dirujuk verbatim oleh `ERP_MENU_GROUPS` (pohon gate) DAN `NEXUS_NAV nav-crm` (sidebar) → tak bisa drift lagi. Induk grup CRM kini ber-id **`crm-group`** (gateless, dulu bertabrakan dengan id anak `crm-dashboard`); anak "Dashboard" TETAP `crm-dashboard` (menuKey `crm_dashboard` tak berubah). **Item, jumlah, dan gate per role di tabel di bawah IDENTIK** sebelum vs sesudah (objek gate-nya harfiah dipindah, bukan diubah); urutan render sidebar juga tak berubah.
 
 | Grup | Menu / Halaman | Komponen | Role-gate | Status |
 |---|---|---|---|---|
