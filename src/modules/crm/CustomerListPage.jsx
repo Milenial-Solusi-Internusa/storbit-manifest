@@ -311,7 +311,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       .from('accounts')
       .select('id, name')
       .ilike('name', nameVal.trim())
-      .eq('account_status', 'customer')
+      .in('account_status', ['customer', 'free_agent'])
       .is('deleted_at', null)
       .limit(1);
     if (data?.length > 0 && data[0].id !== initial?.id) {

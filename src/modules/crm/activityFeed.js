@@ -52,7 +52,8 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
   const accountsQ = (() => {
     let q = supabase.from('accounts')
       .select('id, name, created_at, created_by, assigned_to')
-      .eq('account_status', 'prospect')
+      // Semua akun pra-customer. TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md)
+      .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool'])
       .is('deleted_at', null);
     q = scopeCo(q);
     if (isSalesOnly) q = q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`);

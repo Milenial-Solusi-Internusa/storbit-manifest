@@ -117,7 +117,9 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
           bant_budget, bant_authority, bant_need, bant_timeline,
           assigned_profile:profiles!prospects_assigned_to_fkey(full_name)
         `, { count: 'exact' })
-        .eq('account_status', 'prospect')
+        // Semua akun pra-customer supaya lead/mql/sql tetap tampil di daftar pasca-backfill.
+        // TODO: hapus 'lead_pool' setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
+        .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool'])
         .is('deleted_at', null);
 
       // Role-aware scope (see flags above)

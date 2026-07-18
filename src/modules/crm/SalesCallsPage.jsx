@@ -425,7 +425,7 @@ export default function SalesCallsPage({ showToast }) {
   const loadFormOptions = async () => {
     if (!profile?.company_id) return;
     const [pRes, sales] = await Promise.all([
-      supabase.from('accounts').select('id, name, company_prefix').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(1000),
+      supabase.from('accounts').select('id, name, company_prefix').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       fetchOperationalRoster(profile.company_id),
     ]);
     setProspects(pRes.data || []);
