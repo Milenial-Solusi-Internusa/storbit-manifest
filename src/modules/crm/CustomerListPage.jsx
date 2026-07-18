@@ -82,11 +82,16 @@ const TIER_CFG = {
   C: { label: 'Tier C', bg: '#F1E1D2', fg: '#9A5B2C', dot: '#B0703C' },
 };
 const STATUS_CFG = {
-  // accounts.account_status segments
+  // accounts.account_status segments (lifecycle akun)
+  lead:       { label: 'Lead',       bg: '#EFEAF6', fg: '#6A3D9A', dot: '#7A4E8C' },
+  mql:        { label: 'MQL',        bg: '#E6EEF9', fg: '#2A5B8C', dot: '#2A5B8C' },
+  sql:        { label: 'SQL',        bg: '#E1ECF7', fg: '#1B4D8A', dot: '#1B4D8A' },
   customer:   { label: 'Customer',   bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D' },
   prospect:   { label: 'Prospect',   bg: '#EAF0F8', fg: '#1B4D8A', dot: '#1B4D8A' },
   lost:       { label: 'Lost',       bg: '#FBE3E0', fg: '#B23227', dot: '#C0392B' },
   free_agent: { label: 'Free Agent', bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E' },
+  // TODO: hapus setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
+  lead_pool:  { label: 'Lead Pool',  bg: '#F0EBE0', fg: '#7A6A45', dot: '#B0703C' },
   // legacy customers.status (fallback)
   active:     { label: 'Active',     bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D' },
   inactive:   { label: 'Inactive',   bg: '#EEF0F3', fg: '#9AA0AC', dot: '#B6BCC6' },
@@ -161,8 +166,15 @@ function TierBadge({ tier }) {
   return <span style={{ ...P.badge, background: t.bg, color: t.fg }}><span style={{ ...P.bdot, background: t.dot }} />{t.label}</span>;
 }
 function StatusBadge({ status }) {
-  const s = STATUS_CFG[status] || STATUS_CFG.inactive;
+  // Nilai tak dikenal JANGAN dibuat blank — tampilkan nilai mentahnya apa adanya
+  // supaya baris tak pernah tak terlihat (pelajaran NURTURE / TD-61).
+  const s = STATUS_CFG[status] || { label: String(status || '—'), bg: '#EEF0F3', fg: '#5E6553', dot: '#B6BCC6' };
   return <span style={{ ...P.badge, background: s.bg, color: s.fg }}><span style={{ ...P.bdot, background: s.dot }} />{s.label}</span>;
+}
+// Penanda parkir Lead Pool = badge TERPISAH dari lifecycle, sumbernya
+// is_in_lead_pool (bukan account_status). Lihat AUDIT_CRM_FLOW.md.
+function LeadPoolBadge() {
+  return <span style={{ ...P.badge, background: '#F0EBE0', color: '#7A6A45' }}><span style={{ ...P.bdot, background: '#B0703C' }} />Lead Pool</span>;
 }
 function StatCard({ label, value, hint, icon, iconBg, iconFg }) {
   return (
@@ -204,7 +216,12 @@ function CustomerRow({ c, idx, onSelect, onEdit }) {
         ) : <span style={{ color: '#A29684' }}>—</span>}
       </td>
       <td style={P.td}><TierBadge tier={c.tier} /></td>
-      <td style={P.td}><StatusBadge status={statusKey} /></td>
+      <td style={P.td}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <StatusBadge status={statusKey} />
+          {c.is_in_lead_pool ? <LeadPoolBadge /> : null}
+        </span>
+      </td>
       <td style={P.td}><span style={P.terms}>{c.payment_term?.name || c.payment_terms || '—'}</span></td>
       <td style={P.td}><span style={P.lastAct}>{fmtDate(lastAct)}</span></td>
       <td style={{ ...P.td, width: 90 }}>

@@ -110,6 +110,7 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
           id, name, legal_name, customer_type, source,
           pic_name, pic_phone, pic_email, phone, email, address, city, notes,
           company_prefix, assigned_to, pipeline_stage, payment_terms_id,
+          is_in_lead_pool,
           won_reason, lost_reason, converted_at, created_at,
           bant_commodity, bant_origin, bant_destination, bant_frequency,
           bant_current_vendor, bant_payment, bant_decision_maker, bant_score,
@@ -257,7 +258,13 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
                 onMouseEnter={e => e.currentTarget.style.background = C.surface2}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
-                <td style={{ padding: '12px 14px', fontWeight: 700, color: C.ink }}>{p.name || '—'}</td>
+                <td style={{ padding: '12px 14px', fontWeight: 700, color: C.ink }}>
+                  {p.name || '—'}
+                  {/* Penanda parkir Lead Pool = badge terpisah dari lifecycle/stage, dari is_in_lead_pool. */}
+                  {p.is_in_lead_pool ? (
+                    <span style={{ marginLeft: 8, display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, letterSpacing: '.02em', background: '#F0EBE0', color: '#7A6A45', verticalAlign: 'middle' }}>Lead Pool</span>
+                  ) : null}
+                </td>
                 <td style={{ padding: '12px 14px', color: C.inkSoft }}>{p.pic_name || '—'}</td>
                 <td style={{ padding: '12px 14px' }}><SourceBadge source={p.source} /></td>
                 <td style={{ padding: '12px 14px' }}><StageBadge stage={p.pipeline_stage} /></td>

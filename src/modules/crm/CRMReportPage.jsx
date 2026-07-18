@@ -67,7 +67,10 @@ const MONTHS_ID = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep"
 const TYPE_MAP = { call: "Call", whatsapp: "Call", visit: "Visit", meeting: "Visit", email: "Email", followup: "Task" };
 // quotation "dikirim" statuses (real enum is uppercase; lowercase kept as fallback)
 const QUOTE_SENT = ["SENT", "SUBMITTED", "sent", "quoted"];
-const PROSPECT_STATUS = ["prospect", "lead", "lead_pool"];
+// Seluruh akun pra-customer (lifecycle baru). Metrik ini kini "Akun Baru",
+// bukan "Prospect Baru" — isinya semua tahap sebelum customer.
+// lead_pool = nilai lama; TODO: hapus setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
+const PROSPECT_STATUS = ["lead", "mql", "sql", "prospect", "lead_pool"];
 
 /* ---------------- date-range helpers ---------------- */
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
@@ -443,7 +446,7 @@ export default function CRMReportPage() {
     { key: "pending", name: "Pending", color: C.amber, Icon: Ic.Clock, val: k.pending, prev: kPrev.pending, goodWhenDown: true },
     { key: "overdue", name: "Overdue", color: C.red, Icon: Ic.AlertCircle, val: k.overdue, prev: kPrev.overdue, goodWhenDown: true },
     { key: "cancelled", name: "Dibatalkan", color: C.gray500, Icon: Ic.XCircle, val: cancelledCount, prev: prevCancelledCount, goodWhenDown: true },
-    { key: "prospect", name: "Prospect Baru", color: C.purple, Icon: Ic.UserPlus, val: k.prospect, prev: kPrev.prospect },
+    { key: "prospect", name: "Akun Baru", color: C.purple, Icon: Ic.UserPlus, val: k.prospect, prev: kPrev.prospect },
     { key: "quotation", name: "Quotation Dikirim", color: C.orange, Icon: Ic.FileText, val: k.quotation, prev: kPrev.quotation },
   ];
 
@@ -747,7 +750,7 @@ export default function CRMReportPage() {
                   <Th label="Selesai" col="done" sort={sort} onClick={clickSort} />
                   <Th label="Pending" col="pending" sort={sort} onClick={clickSort} />
                   <Th label="Overdue" col="overdue" sort={sort} onClick={clickSort} />
-                  <Th label="Prospect" col="prospect" sort={sort} onClick={clickSort} />
+                  <Th label="Akun Baru" col="prospect" sort={sort} onClick={clickSort} />
                   <Th label="Quotation" col="quotation" sort={sort} onClick={clickSort} />
                   <Th label="Win Rate" col="winRate" sort={sort} onClick={clickSort} align="left" />
                 </tr>

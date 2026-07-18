@@ -106,8 +106,10 @@ Deno.serve(async (req) => {
     const { error: errUpdate } = await supabase
       .from('accounts')
       .update({
+        // Parkir adalah kondisi terpisah, BUKAN tahap lifecycle. EF hanya
+        // menyalakan penanda parkir; account_status (lifecycle asli akun)
+        // TIDAK BOLEH diubah di sini. Lihat AUDIT_CRM_FLOW.md.
         is_in_lead_pool: true,
-        account_status: 'lead_pool',
         lead_pool_at: now.toISOString(),
         lead_pool_reason: `Aging ${k.diam_hari} hari di stage ${k.stage}`,
       })

@@ -90,11 +90,16 @@ const TIER_CFG = {
   C: { bg: '#F1E1D2', fg: '#9A5B2C' },
 };
 const STATUS_CFG = {
-  // accounts.account_status segments
+  // accounts.account_status segments (lifecycle akun)
+  lead:       { bg: '#EFEAF6', fg: '#6A3D9A', dot: '#7A4E8C', label: 'Lead'       },
+  mql:        { bg: '#E6EEF9', fg: '#2A5B8C', dot: '#2A5B8C', label: 'MQL'        },
+  sql:        { bg: '#E1ECF7', fg: '#1B4D8A', dot: '#1B4D8A', label: 'SQL'        },
   customer:   { bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D', label: 'Customer'   },
   prospect:   { bg: '#EAF0F8', fg: '#1B4D8A', dot: '#1B4D8A', label: 'Prospect'   },
   lost:       { bg: '#FBE3E0', fg: '#B23227', dot: '#C0392B', label: 'Lost'       },
   free_agent: { bg: '#FBE6DA', fg: '#C8521B', dot: '#E85A1E', label: 'Free Agent' },
+  // TODO: hapus setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
+  lead_pool:  { bg: '#F0EBE0', fg: '#7A6A45', dot: '#B0703C', label: 'Lead Pool'  },
   // legacy customers.status (fallback)
   active:     { bg: '#DEF0E4', fg: '#1F8B4D', dot: '#1F8B4D', label: 'Active'     },
   inactive:   { bg: '#EEF0F3', fg: '#9AA0AC', dot: '#B6BCC6', label: 'Inactive'   },
@@ -603,7 +608,10 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
   }
 
   const statusKey = statusOf(customer);
-  const statusCfg = STATUS_CFG[statusKey] || STATUS_CFG.active;
+  // Nilai tak dikenal JANGAN dibuat blank — tampilkan mentahnya (pelajaran NURTURE / TD-61).
+  const statusCfg = STATUS_CFG[statusKey] || { bg: '#EEF0F3', fg: '#5E6553', dot: '#B6BCC6', label: String(statusKey || '—') };
+  // Penanda parkir Lead Pool = badge TERPISAH dari lifecycle, dari is_in_lead_pool.
+  const leadPoolCfg = { bg: '#F0EBE0', fg: '#7A6A45', dot: '#B0703C', label: 'Lead Pool' };
   const tierCfg = customer.tier ? (TIER_CFG[customer.tier] || TIER_CFG.B) : null;
   const coCode = customer.source_company?.code;
   // accounts model: BANT / pipeline data lives directly on the account row.
@@ -719,6 +727,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
             <div style={S.plate}>
               {customer.code && <span style={S.code}>{customer.code}</span>}
               <Badge cfg={statusCfg}>{statusCfg.label}</Badge>
+              {customer.is_in_lead_pool ? <Badge cfg={leadPoolCfg}>{leadPoolCfg.label}</Badge> : null}
             </div>
             <h2 style={S.custName}>{customer.name}</h2>
             {subLine && <div style={S.custSub}>{subLine}</div>}
