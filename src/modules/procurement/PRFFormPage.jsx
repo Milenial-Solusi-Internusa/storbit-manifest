@@ -170,9 +170,9 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   useEffect(() => {
     if (!profile?.company_id) return;
     const cid = profile.company_id;
-    supabase.from('accounts').select('id, name').eq('company_id', cid).eq('account_status', 'customer').is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['customer', 'free_agent']).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
-    supabase.from('accounts').select('id, name').eq('company_id', cid).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).is('deleted_at', null).order('name').limit(1000) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       .then(({ data }) => setProspects(data || []));
     supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
       .then(({ data }) => setInquiries(data || []));

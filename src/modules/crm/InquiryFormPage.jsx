@@ -50,6 +50,14 @@ const SERVICES = [
 const MSDS_OPTS = ['Ya', 'Tidak', 'Belum Tahu'];
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+// Kelompok lifecycle account_status. Dropdown inquiry harus bisa memilih akun
+// pra-customer (lead/mql/sql/prospect) supaya trigger gerbang Fase 2 hidup.
+// TODO: hapus 'lead_pool' setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
+const PRA_CUSTOMER_STATUS = ['lead', 'mql', 'sql', 'prospect', 'lead_pool'];
+const CUSTOMER_SIDE_STATUS = ['customer', 'free_agent'];
+const LIFECYCLE_LABEL = { lead: 'Lead', mql: 'MQL', sql: 'SQL', prospect: 'Prospect', lead_pool: 'Lead Pool', customer: 'Customer', free_agent: 'Free Agent' };
+const lifecycleLabel = (s) => LIFECYCLE_LABEL[s] || s || '';
+
 const S = {
   page: { maxWidth: 1100, margin: '0 auto', padding: '4px 0 8px', fontFamily: "'Inter',system-ui,sans-serif", color: C.text },
   headerCard: { background: C.card, border: '1px solid ' + C.border, borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)', padding: '22px 26px', marginBottom: 22 },
@@ -163,9 +171,9 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
 
   useEffect(() => {
     if (!profile?.company_id) return;
-    supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'prospect').is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', PRA_CUSTOMER_STATUS).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setProspects(data || []));
-    supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).eq('account_status', 'customer').is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', CUSTOMER_SIDE_STATUS).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
 
@@ -210,7 +218,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         if (linkedId) {
           const { data: acc } = await supabase.from('accounts').select('id, name, account_status').eq('id', linkedId).maybeSingle();
           if (cancelled || !acc) return;
-          const opt = { id: acc.id, name: acc.name };
+          const opt = { id: acc.id, name: acc.name, account_status: acc.account_status };
           if (data.customer_id) setCustomers(prev => prev.some(c => c.id === acc.id) ? prev : [opt, ...prev]);
           else setProspects(prev => prev.some(p => p.id === acc.id) ? prev : [opt, ...prev]);
         }
@@ -351,12 +359,12 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                     {sourceType === 'prospect' ? (
                       <select value={form.prospect_id} onChange={set('prospect_id')} style={selInput}>
                         <option value="">— Pilih prospect —</option>
-                        {prospects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {prospects.map(p => <option key={p.id} value={p.id}>{p.name}{p.account_status ? ` — ${lifecycleLabel(p.account_status)}` : ''}</option>)}
                       </select>
                     ) : (
                       <select value={form.customer_id} onChange={set('customer_id')} style={selInput}>
                         <option value="">— Pilih customer —</option>
-                        {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.account_status ? ` — ${lifecycleLabel(c.account_status)}` : ''}</option>)}
                       </select>
                     )}<Chevron />
                   </div>

@@ -191,7 +191,8 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const checkDuplicateName = async (val) => {
     if (!val.trim() || isEdit) { setNameWarning(''); return; }
     const { data } = await supabase.from('accounts').select('id, name').ilike('name', val.trim())
-      .is('deleted_at', null).eq('company_id', profile.company_id).eq('account_status', 'prospect').limit(1);
+      /* dedup lintas seluruh akun pra-customer. TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+      .is('deleted_at', null).eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).limit(1);
     setNameWarning(data && data.length > 0 ? 'Prospect dengan nama ini sudah terdaftar. Pastikan tidak duplikat.' : '');
   };
 
@@ -227,7 +228,8 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       if (isEdit) {
         ({ error } = await supabase.from('accounts').update(payload).eq('id', prospect.id));
       } else {
-        payload.created_by = profile.id; payload.account_status = 'prospect';
+        // Akun baru lahir sebagai 'lead' — inquiry adalah gerbang menuju 'prospect' (dinaikkan trigger DB Fase 2).
+        payload.created_by = profile.id; payload.account_status = 'lead';
         payload.owner_company_id = profile.company_id; payload.last_activity_at = new Date().toISOString();
         ({ error } = await supabase.from('accounts').insert(payload));
       }
@@ -236,7 +238,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         action: isEdit ? ACTION_TYPES.UPDATE_PROSPECT : ACTION_TYPES.CREATE_PROSPECT,
         entityType: ENTITY_TYPES.PROSPECT, entityId: isEdit ? prospect.id : null, entityLabel: form.name,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.(isEdit ? 'Prospect berhasil diupdate ✨' : 'Prospect berhasil ditambahkan ✨');
+      showToast?.(isEdit ? 'Prospect berhasil diupdate ✨' : 'Akun baru berhasil ditambahkan');
       onBack();
     } catch (err) {
       showToast?.('Gagal menyimpan: ' + err.message, 'error');
@@ -261,7 +263,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         <div style={S.headerCard}>
           <div style={{ minWidth: 0 }}>
             <h1 style={S.hTitle}>{isEdit ? 'Edit Prospect' : 'Tambah Prospect'}</h1>
-            <div style={S.hSub}>{isEdit ? prospect.name : 'Lengkapi data prospect baru untuk masuk ke pipeline CRM.'}</div>
+            <div style={S.hSub}>{isEdit ? prospect.name : 'Lengkapi data akun baru untuk masuk ke pipeline CRM.'}</div>
           </div>
           <div style={{ display: 'flex', gap: 10, flex: '0 0 auto' }}>
             <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Batal</button>

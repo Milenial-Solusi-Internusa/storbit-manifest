@@ -581,7 +581,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   const loadFormOptions = useCallback(async () => {
     if (!profile?.company_id) return;
     const [aRes, sales] = await Promise.all([
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['prospect', 'customer']).is('deleted_at', null).order('name').limit(1000),
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       fetchOperationalRoster(profile.company_id),
     ]);
     setAccounts(aRes.data || []);

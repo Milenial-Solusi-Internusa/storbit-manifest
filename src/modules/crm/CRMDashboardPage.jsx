@@ -1867,7 +1867,7 @@ function CRMDashboardPage() {
           .from('accounts')
           .select('id, pipeline_stage, name, created_at, source, assigned_to, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
-          .eq('account_status', 'prospect')
+          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .is('deleted_at', null)
           .limit(1000)),
 
@@ -1889,7 +1889,7 @@ function CRMDashboardPage() {
           .from('accounts')
           .select('created_at')
           .eq('company_id', cid)
-          .eq('account_status', 'prospect')
+          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .is('deleted_at', null)
           .gte('created_at', startLastMonth.toISOString())
           .lt('created_at', startThisMonth.toISOString())
@@ -1900,7 +1900,7 @@ function CRMDashboardPage() {
           .from('accounts')
           .select('assigned_to, pipeline_stage, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
-          .eq('account_status', 'prospect')
+          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .is('deleted_at', null)
           .not('assigned_to', 'is', null)
           .limit(1000)),
@@ -2164,7 +2164,7 @@ function CRMDashboardPage() {
     if (!addVisitOpen || !profile?.company_id) return;
     Promise.all([
       fetchOperationalRoster(profile.company_id),
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['prospect', 'customer']).is('deleted_at', null).order('name').limit(1000),
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
     ]).then(([sales, prospRes]) => {
       setSalesProfiles(sales);
       setProspectOptions(prospRes.data || []);
