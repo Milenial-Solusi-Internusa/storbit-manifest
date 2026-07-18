@@ -1154,6 +1154,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                 onChange: e => setDraft(d => ({ ...d, prospect_id: e.target.value })),
                 children: [
                   <option key="" value="">— Opsional —</option>,
+                  ...(prospectOptions.length === 0 ? [<option key="__empty" value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>] : []),
                   ...prospectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>),
                 ],
               })}
@@ -2164,12 +2165,19 @@ function CRMDashboardPage() {
     if (!addVisitOpen || !profile?.company_id) return;
     Promise.all([
       fetchOperationalRoster(profile.company_id),
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+      // Akun parkir Lead Pool tak boleh dipilih untuk visit baru — is_in_lead_pool=false.
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
     ]).then(([sales, prospRes]) => {
       setSalesProfiles(sales);
-      setProspectOptions(prospRes.data || []);
+      // Suntik akun yang SUDAH tertaut ke visit yang diedit (walau parkir) supaya relasi lama tak hilang.
+      let list = prospRes.data || [];
+      const editing = editVisitId ? calVisits.find(x => x.id === editVisitId) : null;
+      if (editing?.prospect_id && !list.some(p => p.id === editing.prospect_id)) {
+        list = [{ id: editing.prospect_id, name: editing.prospect && editing.prospect !== '—' ? editing.prospect : '(akun tertaut)' }, ...list];
+      }
+      setProspectOptions(list);
     });
-  }, [addVisitOpen, profile?.company_id]);
+  }, [addVisitOpen, profile?.company_id, editVisitId, calVisits]);
 
   // ── save new visit ───────────────────────────────────────────────────────
   const EMPTY_DRAFT = { visit_date: '', visit_time: '', prospect_id: '', salesperson_id: '', location: '', notes: '', status: 'scheduled', visit_type: '', point_of_meeting: '', mom: '', follow_up: '' };

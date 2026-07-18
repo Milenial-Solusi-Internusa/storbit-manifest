@@ -287,6 +287,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
               {lbl('Account (Customer / Prospek)')}
               <select value={draft.account_id} onChange={e => upd('account_id', e.target.value)} style={selStyle}>
                 <option value="">— Opsional —</option>
+                {accounts.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
@@ -419,6 +420,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
             {lbl('Account (Customer / Prospek)')}
             <select value={draft.account_id} onChange={e => upd('account_id', e.target.value)} style={selStyle}>
               <option value="">— Opsional —</option>
+              {accounts.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
@@ -578,13 +580,18 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   useEffect(() => { setPage(0); }, [search, filterType, filterStatus, filterDate, customFrom, customTo, filterSales]);
 
   // Load account + salesperson options for the form (called when modal opens).
-  const loadFormOptions = useCallback(async () => {
+  // injectAccount = akun yang SUDAH tertaut ke aktivitas yang diedit; disuntik walau
+  // parkir supaya relasi lama tak hilang (akun parkir tak muncul untuk aktivitas baru).
+  const loadFormOptions = useCallback(async (injectAccount) => {
     if (!profile?.company_id) return;
     const [aRes, sales] = await Promise.all([
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+      // Akun parkir Lead Pool tak boleh dipilih untuk aktivitas baru — is_in_lead_pool=false.
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       fetchOperationalRoster(profile.company_id),
     ]);
-    setAccounts(aRes.data || []);
+    let list = aRes.data || [];
+    if (injectAccount?.id && !list.some(a => a.id === injectAccount.id)) list = [injectAccount, ...list];
+    setAccounts(list);
     setSalesProfiles(sales);
   }, [profile?.company_id]);
 
@@ -976,7 +983,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         accounts={accounts}
         saving={detailSaving}
         error={detailError}
-        onEnterEdit={() => { setDetailError(null); loadFormOptions(); }}
+        onEnterEdit={() => { setDetailError(null); loadFormOptions(detail?.account_id ? { id: detail.account_id, name: detail.account?.name || '(akun tertaut)' } : undefined); }}
         onSave={handleEditSave}
         onCancel={() => detail && handleCancelActivity(detail.id)}
         onMarkDone={() => detail && handleCheck(detail)}

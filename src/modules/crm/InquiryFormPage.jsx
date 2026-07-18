@@ -171,9 +171,11 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
 
   useEffect(() => {
     if (!profile?.company_id) return;
-    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', PRA_CUSTOMER_STATUS).is('deleted_at', null).order('name').limit(1000)
+    // Akun yang sedang parkir di Lead Pool tak boleh dipilih untuk dokumen baru —
+    // harus ditarik dulu lewat approval. is_in_lead_pool=false di semua picker.
+    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', PRA_CUSTOMER_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setProspects(data || []));
-    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', CUSTOMER_SIDE_STATUS).is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', CUSTOMER_SIDE_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
 
@@ -359,6 +361,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                     {sourceType === 'prospect' ? (
                       <select value={form.prospect_id} onChange={set('prospect_id')} style={selInput}>
                         <option value="">— Pilih prospect —</option>
+                        {prospects.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
                         {prospects.map(p => <option key={p.id} value={p.id}>{p.name}{p.account_status ? ` — ${lifecycleLabel(p.account_status)}` : ''}</option>)}
                       </select>
                     ) : (
