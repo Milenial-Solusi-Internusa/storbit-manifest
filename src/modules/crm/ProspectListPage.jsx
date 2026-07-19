@@ -79,7 +79,7 @@ function SourceBadge({ source }) {
   );
 }
 
-export default function ProspectListPage({ onAddProspect, onEditProspect, showToast }) {
+export default function ProspectListPage({ onAddProspect, onSelectProspect, showToast }) {
   const { profile, erpRole } = useAuth();
   const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
   // Visibility scope by role (mirrors RLS on `accounts` + CRMDashboard):
@@ -252,7 +252,7 @@ export default function ProspectListPage({ onAddProspect, onEditProspect, showTo
             ) : prospects.map((p, i) => (
               <tr
                 key={p.id}
-                onClick={() => onEditProspect(p)}
+                onClick={() => onSelectProspect(p)}
                 style={{
                   borderBottom: i < prospects.length - 1 ? `1px solid ${C.lineSoft}` : 'none',
                   cursor: 'pointer', transition: 'background .12s',

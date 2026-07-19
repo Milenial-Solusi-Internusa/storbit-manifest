@@ -10,7 +10,6 @@ import LightHandoverModal from './LightHandoverModal';
 import StrategicHandoverModal from './StrategicHandoverModal';
 import ConfirmModal from '../../components/ConfirmModal';
 import { calcBantScore } from './bant';
-import BantScoreBar from './BantScoreBar';
 
 /* =========================================================================
    Pipeline config — lowercase ids match Supabase pipeline_stage.toLowerCase()
@@ -179,16 +178,6 @@ function agingBadge(stageId, stageChangedAt) {
   return null;
 }
 
-/* ── Stage badge config ── */
-const STAGE_BADGE = {
-  new:         { bg: '#EEF3FB', color: '#1B4D8A' },
-  contacted:   { bg: '#EEF3FB', color: '#1B4D8A' },
-  qualified:   { bg: '#FBE6DA', color: '#C8521B' },
-  proposal:    { bg: '#ECE3F4', color: '#6E4B8C' },
-  negotiation: { bg: '#FBEFD3', color: '#9A6B12' },
-  won:         { bg: '#DEF0E4', color: '#1F8B4D' },
-  lost:        { bg: '#EFEFF2', color: '#9AA0AC' },
-};
 const CUSTOMER_TYPE_LABELS = { freight: 'Freight', customs: 'Customs', trading: 'Trading', mixed: 'Mixed' };
 const SOURCE_LABELS_KP = {
   sales_visit: 'Sales Visit', cold_call: 'Cold Call', referral: 'Referral',
@@ -310,116 +299,6 @@ function CheckRow({ checked, round, onClick, children }) {
   );
 }
 
-/* ── ProspectDetailModal — presentational sub-components (module scope) ── */
-const Field = ({ label, value, full }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, gridColumn: full ? '1 / -1' : undefined }}>
-    <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
-    <div style={{ fontSize: 13.5, color: value ? '#111827' : '#D1D5DB', fontStyle: value ? 'normal' : 'italic' }}>{value || '—'}</div>
-  </div>
-);
-
-const Section = ({ title, children }) => (
-  <div style={{ marginBottom: 20 }}>
-    <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 6, borderBottom: '1px solid #F3F4F6' }}>{title}</div>
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px' }}>{children}</div>
-  </div>
-);
-
-function ProspectDetailModal({ deal, onClose, onEdit }) {
-  if (!deal) return null;
-  const raw   = deal.raw || {};
-  const stage = STAGES.find(s => s.id === deal.stage) || STAGES[0];
-  const badge = STAGE_BADGE[deal.stage] || STAGE_BADGE.new;
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: 'white', borderRadius: 20, maxWidth: 640, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.20)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-
-        {/* Header */}
-        <div style={{ padding: '24px 28px 20px', borderBottom: '1px solid #F3F4F6' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 6 }}>DETAIL PROSPECT</div>
-              <h2 style={{ margin: '0 0 10px', fontSize: 20, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif", lineHeight: 1.2 }}>{deal.co}</h2>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ ...badge, padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700 }}>{stage.name}</span>
-                {raw.customer_type && (
-                  <span style={{ background: '#F3F4F6', color: '#374151', padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600 }}>
-                    {CUSTOMER_TYPE_LABELS[raw.customer_type] || raw.customer_type}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <button
-                onClick={() => { onEdit(deal); onClose(); }}
-                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#1B4D8A', color: 'white', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                Edit
-              </button>
-              <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="checkcircle" size={16} color="#6B7280" style={null} />
-                <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="#6B7280" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div style={{ padding: '20px 28px 28px' }}>
-          <Section title="Informasi Perusahaan">
-            <Field label="Legal Name"     value={raw.legal_name} />
-            <Field label="Customer Type"  value={CUSTOMER_TYPE_LABELS[raw.customer_type] || raw.customer_type} />
-            <Field label="Phone"          value={raw.phone} />
-            <Field label="Email"          value={raw.email} />
-            <Field label="City"           value={raw.city} />
-            <Field label="Address"        value={raw.address} full />
-          </Section>
-
-          <Section title="PIC">
-            <Field label="PIC Name"  value={raw.pic_name} />
-            <Field label="PIC Phone" value={raw.pic_phone} />
-            <Field label="PIC Email" value={raw.pic_email} full />
-          </Section>
-
-          <Section title="Pipeline & Sales">
-            <Field label="Stage"                  value={stage.name} />
-            <Field label="Source"                 value={SOURCE_LABELS_KP[raw.source] || raw.source} />
-            <Field label="Assigned To"            value={raw.assigned_profile?.full_name} />
-            <Field label="Estimated Closing Date" value={raw.estimated_closing_date ? fmtDate(raw.estimated_closing_date) : null} />
-            {deal.stage === 'won'  && <Field label="Alasan Won"  value={raw.won_reason} full />}
-            {deal.stage === 'lost' && <Field label="Alasan Lost" value={raw.lost_reason} full />}
-          </Section>
-
-          <Section title="BANT Qualification">
-            <div style={{ gridColumn: '1 / -1', marginBottom: 4 }}>
-              <BantScoreBar score={raw.bant_score != null ? raw.bant_score : calcBantScore(raw)} />
-            </div>
-            <Field label="Komoditi / Barang"          value={raw.bant_commodity} />
-            <Field label="Kota/Port Asal (POL)"       value={raw.bant_origin} />
-            <Field label="Kota/Port Tujuan (POD)"     value={raw.bant_destination} />
-            <Field label="Frekuensi Pengiriman"       value={raw.bant_frequency} />
-            <Field label="Vendor / Forwarder Saat Ini" value={raw.bant_current_vendor} />
-            <Field label="Preferensi Payment"         value={raw.bant_payment} />
-            <Field label="Decision Maker"             value={raw.bant_decision_maker} full />
-          </Section>
-
-          <Section title="Finansial">
-            <Field label="Payment Terms" value={raw.payment_terms_id || null} />
-          </Section>
-
-          {raw.notes && (
-            <div style={{ marginBottom: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #F3F4F6' }}>Notes</div>
-              <div style={{ fontSize: 13.5, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap', background: '#F9FAFB', borderRadius: 8, padding: '10px 14px' }}>{raw.notes}</div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ── Deal card ── */
 function DealCard({ deal, stColor, onDragStart, onDragEnd, dragging, onClick }) {
   const [h, setH] = useState(false);
@@ -531,7 +410,7 @@ function ListGroup({ stage, items, onRowClick }) {
 }
 
 /* ========================================================================= */
-export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowProspectForm, setEditingProspect }) {
+export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowProspectForm, setEditingProspect, onSelectAccount }) {
   const { profile, erpRole, user } = useAuth();
   // Visibility scope by role (mirrors RLS on `accounts` + CRMDashboard):
   //  • super_admin / admin → all entities (no company filter)
@@ -544,7 +423,6 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   const [prospects,    setProspects]    = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [draggingId,   setDraggingId]   = useState(null);
-  const [detailDeal,   setDetailDeal]   = useState(null);
 
   // ── New UI-only state ──────────────────────────────────────────────────────
   const [view,      setView]      = useState('board');
@@ -1053,7 +931,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
                             key={d.id} deal={d} stColor={stage.color}
                             dragging={draggingId === d.id}
                             onDragStart={onDragStart} onDragEnd={onDragEnd}
-                            onClick={setDetailDeal}
+                            onClick={(deal) => onSelectAccount?.(deal.id)}
                           />
                         ))
                       : <div style={S.colEmpty}>Tidak ada deal</div>}
@@ -1073,7 +951,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
               key={stage.id}
               stage={stage}
               items={sortDeals(filteredDeals.filter(d => d.stage === stage.id), sortMode)}
-              onRowClick={setDetailDeal}
+              onRowClick={(deal) => onSelectAccount?.(deal.id)}
             />
           ))}
         </div>
@@ -1126,18 +1004,6 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         cancelLabel="Batal"
         onConfirm={handleStageGateConfirm}
         onCancel={handleStageGateCancel}
-      />
-
-      {/* ── Prospect detail modal ── */}
-      <ProspectDetailModal
-        deal={detailDeal}
-        onClose={() => setDetailDeal(null)}
-        onEdit={(deal) => {
-          setDetailDeal(null);
-          setEditingProspect?.(deal.raw);
-          setShowProspectForm?.(true);
-          setActiveMenu?.('crm-prospects');
-        }}
       />
     </div>
   );
