@@ -325,9 +325,9 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 ```
 [Sales/GM BD] Detail Inquiry (DealDetailPage)
    → tombol "Cetak PRF" (HANYA sales/gm_bd — role dgn prf_insert)
-   → form PRF ter-PREFILL field non-cabang dari inquiry:
+   → form PRF ter-PREFILL field non-cabang dari inquiry (via helper `applyInquiryData`):
         account_id (dari customer_id/prospect_id), hs_code, pickup/delivery address,
-        pol→origin, pod→destination, deadline_quote→deadline_quotation,
+        pol→origin, pod→destination, deadline_quote→deadline_quotation, notes→notes,
         incoterms[0] (hanya bila token PRF valid, else kosong), customer_source='inquiry' + inquiry_id
    → [sales] pilih service_type (moda) + direction + SEMUA field cabang MANUAL
         (taksonomi service_type inquiry=lini bisnis ≠ PRF=moda; direction tak ada di inquiry)
@@ -337,6 +337,7 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 - **Anti-dobel = panel "Daftar PRF" yang TERLIHAT** di Detail Inquiry (bukan dialog blocking) → sales lihat sendiri berapa kali inquiry ini di-PRF-kan. Panel + list Forwarding(MSI) = **read-only** (nol aksi edit/delete).
 - **⚠️ Known limitation v1 (RLS `prf_select` = own OR procurement OR manager+):** sales **hanya melihat PRF MILIKNYA** di panel & list → cek-dobel & list **tak menangkap** PRF yang dibuat user lain untuk inquiry sama. Diterima untuk v1 (perbaikannya butuh melonggarkan RLS — tak dilakukan). Detail: `08_TECH_DEBT` **TD-79** (sebagian teraddress) + **TD-76** (list read-only ada, form tetap create-only).
 - **Gate role:** menu terlihat sales/gm_bd/procurement/manager+; **hanya sales/gm_bd yang bisa Submit/Draft** (RLS `prf_insert`). Detail: `04_ROLE_PERMISSION_MATRIX`. Skema: `03_DATA_MODEL` (tabel `prf`). Rujukan desain: `AUDIT_PROCUREMENT.md`.
+- **Prefill diperluas + dropdown Sumber=Inquiry ikut prefill (FE, 19 Jul 2026, `PRFFormPage.jsx`):** logika prefill dikonsolidasi ke helper `applyInquiryData(f, inq)` dan kini aktif di **3 jalan masuk**: (1) Cetak PRF dari `DealDetailPage` (prop `prefillInquiryId`), (2) Cetak PRF per-baris di tab Riwayat Detail Account (prop sama), dan (3) **dropdown Sumber=Inquiry `onInquiryPick`** — yang sebelumnya TIDAK prefill sama sekali. Pengaman helper: **fill-empty-only** (tak menimpa isian user) + **non-null** (tak menghapus); create-only struktural (PRFFormPage tak punya edit-mode). Field vocab-beda/lossy yang tak bisa disalin (`service_type`, `commodity`, `additional_services`→`add_on_services`, dan **`incoterms` nilai tanpa padanan** mis. `CFR/CNF`, `DDU/DAP` — yang selama ini diam-diam jadi kosong saat prefill) **tak di-prefill** tetapi ditampilkan sebagai **teks bantu read-only** (echo nilai asli inquiry) supaya sales tahu harus isi apa tanpa membuka inquiry; field Inquiry juga diberi hint "Sebagian data disalin otomatis dari inquiry {no}." NOL perubahan DB (semua kolom sudah ada). ⚠️ Duplikasi kolom lintas-tabel inquiry↔prf yang ditambal helper ini dicatat sbg **TD-107** (`08_TECH_DEBT`). Belum tes runtime.
 
 ---
 
