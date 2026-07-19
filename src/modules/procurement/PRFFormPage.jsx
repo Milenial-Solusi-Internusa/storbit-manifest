@@ -170,7 +170,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   const { options: streamOpts } = useDropdownOptions('stream', STREAM_FALLBACK);
 
   const [form, setForm] = useState({
-    customer_source: 'customer', account_id: '', account_name_manual: '', inquiry_id: '',
+    customer_source: 'inquiry', account_id: '', inquiry_id: '',
     stream: '', deadline_quotation: '',
     direction: '', commodity: '', hs_code: '', msds_available: false,
     service_type: '', incoterms: '', commercial_value: '', commercial_currency: '',
@@ -184,8 +184,6 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     project_freight_types: [], project_qty: '',
     notes: '',
   });
-  const [customers, setCustomers] = useState([]);
-  const [prospects, setProspects] = useState([]);
   const [inquiries, setInquiries] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [companyCode, setCompanyCode] = useState('');
@@ -196,11 +194,8 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   useEffect(() => {
     if (!profile?.company_id) return;
     const cid = profile.company_id;
-    // Akun parkir Lead Pool tak boleh dipilih untuk PRF baru — is_in_lead_pool=false di semua picker.
-    supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
-      .then(({ data }) => setCustomers(data || []));
-    supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
-      .then(({ data }) => setProspects(data || []));
+    // PRF hanya lahir dari inquiry (keputusan 19 Jul 2026) — akun diturunkan dari inquiry,
+    // jadi tak ada lagi picker customer/prospect di sini.
     supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, commodity, additional_services').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
       .then(({ data }) => setInquiries(data || []));
     supabase.from('currencies').select('code, name').order('code')
@@ -271,16 +266,14 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
         : f.add_on_services,
     }));
   };
-  // Source change: reset picked account identity.
-  const onSourceChange = (src) => setForm(f => ({ ...f, customer_source: src, account_id: '', account_name_manual: '', inquiry_id: '' }));
   // Inquiry pick: store inquiry_id + auto-fill account_id + prefill field AMAN (fill-empty-only).
   const onInquiryPick = (e) => {
     const inq = inquiries.find(i => i.id === e.target.value);
     setForm(f => applyInquiryData({ ...f, inquiry_id: e.target.value, account_id: inq ? (inq.customer_id || inq.prospect_id || '') : '' }, inq));
   };
 
-  // Inquiry sumber (utk penanda + teks bantu read-only field yg tak di-prefill).
-  const srcInq = (form.customer_source === 'inquiry' && form.inquiry_id) ? inquiries.find(i => i.id === form.inquiry_id) : null;
+  // Inquiry sumber (utk penanda + teks bantu read-only field yg tak di-prefill). PRF selalu dari inquiry.
+  const srcInq = form.inquiry_id ? inquiries.find(i => i.id === form.inquiry_id) : null;
   const isDG = form.commodity === 'dg';
   const isImpExp = form.direction === 'import' || form.direction === 'export';
   const incotermOpts = form.service_type === 'air' ? INCOTERMS_AIR : INCOTERMS_FULL;
@@ -300,11 +293,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
 
   const validate = () => {
     const e = {};
-    if (form.customer_source === 'inquiry') {
-      if (!form.inquiry_id) e.account = 'Pilih inquiry';
-    } else if (!form.account_id && !form.account_name_manual.trim()) {
-      e.account = 'Pilih akun atau isi nama manual';
-    }
+    if (!form.inquiry_id) e.account = 'Pilih inquiry';
     if (!form.deadline_quotation) e.deadline_quotation = 'Wajib diisi';
     if (!form.direction) e.direction = 'Wajib diisi';
     if (!form.commodity) e.commodity = 'Wajib diisi';
@@ -359,6 +348,12 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   }
 
   const handleSave = async (status) => {
+    // PRF wajib lahir dari inquiry — tegakkan untuk DRAFT maupun SUBMIT (form create-only).
+    if (!form.inquiry_id) {
+      setErrors(e => ({ ...e, account: 'Pilih inquiry' }));
+      showToast?.('Pilih inquiry terlebih dahulu', 'error');
+      return;
+    }
     if (status === 'SUBMITTED' && !validate()) return;
     setSaving(true);
     try {
@@ -376,10 +371,10 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
         status,
         submitted_at: status === 'SUBMITTED' ? new Date().toISOString() : null,
         // Informasi Dasar
-        customer_source: form.customer_source,
+        customer_source: 'inquiry',
         account_id: form.account_id || null,
-        account_name_manual: form.account_name_manual.trim() || null,
-        inquiry_id: form.customer_source === 'inquiry' ? (form.inquiry_id || null) : null,
+        account_name_manual: null,
+        inquiry_id: form.inquiry_id || null,
         stream: form.stream || null,
         deadline_quotation: form.deadline_quotation || null,
         // Inquiry Details
@@ -469,39 +464,22 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
 
             <div style={{ display: 'grid', gap: 18 }}>
               <Field label="Sumber" span>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  {[['customer', 'Customer (Existing)'], ['prospect', 'Prospect'], ['inquiry', 'Inquiry']].map(([t, lbl]) => (
-                    <button key={t} type="button" onClick={() => onSourceChange(t)}
-                      style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", border: '1px solid ' + (form.customer_source === t ? C.navy : C.border), background: form.customer_source === t ? C.navy : '#fff', color: form.customer_source === t ? '#fff' : C.sub }}>
-                      {lbl}
-                    </button>
-                  ))}
+                <div style={{ display: 'inline-flex', alignItems: 'center', height: 44, padding: '0 16px', borderRadius: 10, border: '1px solid ' + C.border, background: '#F8FAFC', fontSize: 14, fontWeight: 600, color: C.navy }}>
+                  Inquiry
                 </div>
+                <span style={S.hint}>PRF selalu diterbitkan dari sebuah inquiry.</span>
               </Field>
 
-              <div style={grid2}>
-                <Field label={form.customer_source === 'inquiry' ? 'Inquiry' : (form.customer_source === 'prospect' ? 'Prospect' : 'Customer')} required>
-                  <div style={{ position: 'relative' }}>
-                    {form.customer_source === 'inquiry' ? (
-                      <select value={form.inquiry_id} onChange={onInquiryPick} style={selInput}>
-                        <option value="">— Pilih inquiry —</option>
-                        {inquiries.map(i => <option key={i.id} value={i.id}>{i.inquiry_no}</option>)}
-                      </select>
-                    ) : (
-                      <select value={form.account_id} onChange={set('account_id')} style={selInput}>
-                        <option value="">— Pilih {form.customer_source === 'prospect' ? 'prospect' : 'customer'} —</option>
-                        {(form.customer_source === 'prospect' ? prospects : customers).length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
-                        {(form.customer_source === 'prospect' ? prospects : customers).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
-                    )}<Chevron />
-                  </div>
-                  {errText('account')}
-                  {srcInq && <span style={S.hint}>Sebagian data disalin otomatis dari inquiry {srcInq.inquiry_no}.</span>}
-                </Field>
-                <Field label="Nama Manual" hint={<span style={S.hint}> (jika tak ada di daftar)</span>}>
-                  <input value={form.account_name_manual} onChange={set('account_name_manual')} style={S.input} placeholder="Ketik nama customer/prospect…" />
-                </Field>
-              </div>
+              <Field label="Inquiry" required>
+                <div style={{ position: 'relative' }}>
+                  <select value={form.inquiry_id} onChange={onInquiryPick} style={selInput}>
+                    <option value="">— Pilih inquiry —</option>
+                    {inquiries.map(i => <option key={i.id} value={i.id}>{i.inquiry_no}</option>)}
+                  </select><Chevron />
+                </div>
+                {errText('account')}
+                {srcInq && <span style={S.hint}>Sebagian data disalin otomatis dari inquiry {srcInq.inquiry_no}.</span>}
+              </Field>
 
               <div style={grid2}>
                 <Field label="Stream">
