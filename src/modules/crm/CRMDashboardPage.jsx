@@ -1862,7 +1862,7 @@ function CRMDashboardPage() {
       // widget is always single-entity (isAllEntities:false) — consistent with fetchDash.
       const feedPromise = fetchActivityFeed({ companyId: cid, uid, isAllEntities: false, isSalesOnly });
 
-      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes] = await Promise.all([
+      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes, activeProspectsRes] = await Promise.all([
         // Full prospects for this company — all fields needed for multiple computations
         ownProspects(supabase
           .from('accounts')
@@ -1949,12 +1949,30 @@ function CRMDashboardPage() {
           .not('became_customer_at', 'is', null)
           .is('deleted_at', null)
           .limit(1000)),
+
+        // "Prospect Aktif" KPI — kriteria SAMA dengan header PipelineKanbanPage
+        // (account_status pra-customer + is_in_lead_pool=false + stage bukan
+        // WON/LOST, NULL disertakan seperti Pipeline `null → 'NEW'`). Server
+        // count(head) → TIDAK kena batas 1000 baris (beda dari prospectsRes.length).
+        // WON/LOST huruf BESAR (DB uppercase; Pipeline lowercase-mapping di JS).
+        // `.or(...is.null...)` supaya baris pipeline_stage NULL tak silent-drop
+        // (NOT IN polos mengecualikan NULL). Company-scoped seperti kartu Inquiry/Quotation.
+        supabase
+          .from('accounts')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', cid)
+          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .eq('is_in_lead_pool', false)
+          .or('pipeline_stage.is.null,pipeline_stage.not.in.(WON,LOST)')
+          .is('deleted_at', null),
       ]);
 
       if (prospectsRes.error) throw prospectsRes.error;
 
       const prospects       = prospectsRes.data || [];
-      const totalProspects  = prospects.length; // active prospects only — drives the "Total Prospects" card (unchanged)
+      const totalProspects  = prospects.length; // row-pull count (capped 1000, incl Lead Pool) — dipakai Win Rate & subtitle sales (TIDAK diubah batch ini)
+      // Kartu "Prospect Aktif" — server count, kriteria = header Pipeline (lihat query di atas).
+      const activeProspects = activeProspectsRes.count ?? 0;
 
       // Won deals = active prospects still at stage WON (rare) + customers that
       // auto-converted from a WON deal. Win rate is over all deals that ever
@@ -2062,7 +2080,7 @@ function CRMDashboardPage() {
       }).length;
 
       setDashData({
-        totalProspects, totalInquiries, totalQuotations, winRate,
+        totalProspects, activeProspects, totalInquiries, totalQuotations, winRate,
         stagesData, recentActivity,
         trendData, leadSourceData, salesPerfData,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
@@ -2255,7 +2273,7 @@ function CRMDashboardPage() {
 
   // ── KPI cards from real data ─────────────────────────────────────────────
   const kpisReal = dashData ? [
-    { label: "Total Prospects", icon: "users",       value: String(dashData.totalProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
+    { label: "Prospect Aktif", icon: "users",       value: String(dashData.activeProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
     { label: "Total Inquiry",   icon: "filetext",    value: String(dashData.totalInquiries), unit: "inquiry",   accent: ORANGE,    accentBg: "#FBE6DA", trend: null },
     { label: "Total Quotation", icon: "receipt",     value: String(dashData.totalQuotations),unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
     { label: "Win Rate",        icon: "checkcircle", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
