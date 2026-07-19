@@ -1679,6 +1679,10 @@ export default function StorbitManifest() {
   // saat CustomerDetailPage (re)mount → kembali ke Riwayat setelah simpan/batal edit.
   const [customerInquiryEdit, setCustomerInquiryEdit] = useState(null); // inquiry id → InquiryForm mode=edit
   const [customerDetailTab,   setCustomerDetailTab]   = useState('info');
+  // Lihat Quotation & Cetak PRF dari Detail Account (tab Riwayat). Jalur TERPISAH dari
+  // crmDealInquiry (DealDetailPage) supaya jalur DDP tak berubah. Balik → clear → remount tab Riwayat.
+  const [customerQuotationView, setCustomerQuotationView] = useState(null); // quotation id → QuotationDetail
+  const [customerPrfInquiryId,  setCustomerPrfInquiryId]  = useState(null); // inquiry id → PRFFormPage prefill
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
   const [spOrderMap, setSpOrderMap]       = useState({});    // FASE 2E L0: uid → {status, hadCancelledPicking}
   const [selectedPickingId, setSelectedPickingId] = useState(null);  // picking detail page
@@ -1802,6 +1806,8 @@ export default function StorbitManifest() {
     setDuplicatingQuotation(null);
     setCrmDealInquiry(null);
     setCustomerInquiryEdit(null);
+    setCustomerQuotationView(null);
+    setCustomerPrfInquiryId(null);
     setCustomerDetailTab('info');
     setPrfPrefillInquiryId(null);
     setSoDetailId(null);
@@ -1840,8 +1846,11 @@ export default function StorbitManifest() {
     if (group) setActiveModule(group.label);
     setPrevCustomerMenu(activeMenu);
     setActiveCustomerId(customerId);
-    // Buka akun selalu mulai bersih: tab default + tak ada form edit inquiry nyangkut.
+    // Buka akun selalu mulai bersih: tab default + tak ada sub-view (edit inquiry /
+    // lihat quotation / cetak PRF) yang nyangkut.
     setCustomerInquiryEdit(null);
+    setCustomerQuotationView(null);
+    setCustomerPrfInquiryId(null);
     setCustomerDetailTab('info');
     setActiveMenu('customer-detail');
   }, [activeMenu]);
@@ -3297,7 +3306,7 @@ export default function StorbitManifest() {
           )}
 
           {/* ── CRM: Customer Detail (full page) ─────────────────────────────── */}
-          {activeMenu === 'customer-detail' && !customerInquiryEdit && (
+          {activeMenu === 'customer-detail' && !customerInquiryEdit && !customerQuotationView && !customerPrfInquiryId && (
             <ErrorBoundary title="Customer Detail temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <CustomerDetailPage
@@ -3306,6 +3315,8 @@ export default function StorbitManifest() {
                   showToast={showToast}
                   initialTab={customerDetailTab}
                   onEditInquiry={canRenderPage('crm-inquiry') ? (inq) => { setCustomerDetailTab('riwayat'); setCustomerInquiryEdit(inq.id); } : undefined}
+                  onViewQuotation={(q) => { setCustomerDetailTab('riwayat'); setCustomerQuotationView(q.id); }}
+                  onCreatePRF={(inq) => { setCustomerDetailTab('riwayat'); setCustomerPrfInquiryId(inq.id); }}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -3320,6 +3331,36 @@ export default function StorbitManifest() {
                   inquiryId={customerInquiryEdit}
                   mode="edit"
                   onBack={() => setCustomerInquiryEdit(null)}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {/* Lihat Quotation dari Detail Account — jalur TERPISAH dari DealDetailPage.
+              onBack → clear → CustomerDetailPage remount di tab Riwayat. onEdit/onDuplicate
+              DISALIN dari jalur lama (App: blok quotation-draft) + setActiveMenu('quotation-draft')
+              karena entry-menu di sini 'customer-detail' (jalur lama sudah di menu itu). */}
+          {activeMenu === 'customer-detail' && customerQuotationView && (
+            <ErrorBoundary title="Quotation Detail temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <QuotationDetailPage
+                  quotationId={customerQuotationView}
+                  onBack={() => setCustomerQuotationView(null)}
+                  onEdit={(q) => { setCustomerQuotationView(null); setDuplicatingQuotation(null); setEditingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onDuplicate={(q) => { setCustomerQuotationView(null); setEditingQuotation(null); setDuplicatingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {/* Cetak PRF dari Detail Account (inquiry-scoped) — jalur TERPISAH; onBack (simpan
+              ATAU batal) → clear → CustomerDetailPage remount di tab Riwayat. */}
+          {activeMenu === 'customer-detail' && customerPrfInquiryId && (
+            <ErrorBoundary title="Cetak PRF temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <PRFFormPage
+                  prefillInquiryId={customerPrfInquiryId}
+                  onBack={() => setCustomerPrfInquiryId(null)}
                   showToast={showToast}
                 />
               </Suspense>

@@ -77,6 +77,7 @@ const ICONS = {
   alert:      '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
   heartpulse: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.49 4.04 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
   database:   '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+  eye:        '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
 };
 function Icon({ name, size = 18, color, style, strokeWidth = 1.7 }) {
   return (
@@ -446,7 +447,7 @@ function InquiryDetailBlock({ inq }) {
     </div>
   );
 }
-function InquiryHistoryRow({ inq, quotes, onEditInquiry }) {
+function InquiryHistoryRow({ inq, quotes, onEditInquiry, onViewQuotation, onCreatePRF }) {
   const [open, setOpen] = useState(false);
   const n = quotes.length;
   // Nilai tak dikenal JANGAN dibuat blank — tampilkan mentahnya (pelajaran NURTURE / TD-61).
@@ -475,6 +476,12 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry }) {
             <Icon name="pencil" size={14} />Edit Inquiry
           </button>
         )}
+        {onCreatePRF && (
+          <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5, flex: '0 0 auto' }}
+            onClick={() => onCreatePRF(inq)}>
+            <Icon name="filecheck" size={14} />Cetak PRF
+          </button>
+        )}
       </div>
       {open && (
         <div style={{ padding: '0 22px 16px 49px' }}>
@@ -487,7 +494,7 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
-                    {['Quotation No', 'Tanggal', 'Nilai', 'Status'].map((h) => (
+                    {['Quotation No', 'Tanggal', 'Nilai', 'Status', 'Aksi'].map((h) => (
                       <th key={h} style={{ textAlign: h === 'Nilai' ? 'right' : 'left', padding: '7px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -502,6 +509,14 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry }) {
                         <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRupiah(q.total_amount)}</td>
                         <td style={{ padding: '8px' }}>
                           <span style={{ ...S.badge, background: t.bg, color: t.fg, padding: '3px 9px' }}>{String(q.status).toUpperCase()}</span>
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          {onViewQuotation && (
+                            <button type="button" title="Lihat quotation" onClick={() => onViewQuotation(q)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: NAVY, padding: 4, display: 'inline-flex' }}>
+                              <Icon name="eye" size={15} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -584,10 +599,13 @@ function computeHealth(customer, prospect, visits) {
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────────
-export default function CustomerDetailPage({ id, onBack, showToast, onEditInquiry, initialTab }) {
+export default function CustomerDetailPage({ id, onBack, showToast, onEditInquiry, onViewQuotation, onCreatePRF, initialTab }) {
   const { profile, erpRole, user } = useAuth();
   // Delete customer is restricted to super_admin (soft-delete via deleted_at).
   const canDelete = erpRole === 'super_admin';
+  // Gate Cetak PRF — DISALIN APA ADANYA dari DealDetailPage.jsx:373 (nol perubahan
+  // perilaku). erpRole = role primer; lihat TD (user multi-role). Tombol muncul iff true.
+  const canCreatePRF = ['sales', 'gm_bd'].includes(erpRole);
 
   const [customer, setCustomer] = useState(null);
   const [loading,  setLoading]  = useState(true);
@@ -1068,7 +1086,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
           ) : (
             <div>
               {histInquiries.map((inq) => (
-                <InquiryHistoryRow key={inq.id} inq={inq} quotes={quotesByInquiry[inq.id] || []} onEditInquiry={onEditInquiry} />
+                <InquiryHistoryRow key={inq.id} inq={inq} quotes={quotesByInquiry[inq.id] || []} onEditInquiry={onEditInquiry} onViewQuotation={onViewQuotation} onCreatePRF={canCreatePRF ? onCreatePRF : undefined} />
               ))}
               {orphanQuotes.length > 0 && (
                 <div style={{ padding: '15px 22px' }}>
@@ -1086,6 +1104,12 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
                               <td style={{ padding: '8px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{fmtDateShort(q.created_at)}</td>
                               <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRupiah(q.total_amount)}</td>
                               <td style={{ padding: '8px' }}><span style={{ ...S.badge, background: t.bg, color: t.fg, padding: '3px 9px' }}>{String(q.status).toUpperCase()}</span></td>
+                              <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                                <button type="button" title="Lihat quotation" onClick={() => onViewQuotation(q)}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: NAVY, padding: 4, display: 'inline-flex' }}>
+                                  <Icon name="eye" size={15} />
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
