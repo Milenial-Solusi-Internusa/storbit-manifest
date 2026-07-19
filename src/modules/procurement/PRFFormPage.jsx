@@ -84,6 +84,32 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const toRoman = (m) => ROMAN[m] || String(m);
 
+// ── Echo label maps (inquiry vocab → display) untuk teks bantu read-only pada field
+// yang TIDAK di-prefill karena kosakatanya beda dgn PRF (service_type, additional_services).
+const INQ_SERVICE_LABEL = { freight_forwarding: 'Freight Forwarding', customs: 'Customs Clearance', trading: 'General Trading' };
+const INQ_ADDON_LABEL = { customs: 'Custom Clearance', warehouse: 'Warehouse', undername: 'Undername', insurance: 'Cargo Insurance', trucking: 'Trucking' };
+
+// Prefill dari inquiry — HANYA field AMAN (padanan 1:1 aman). Pengaman:
+//  #2 fill-empty-only: isi hanya bila field PRF masih kosong (tak menimpa isian user).
+//  #3 non-null: hanya set bila nilai inquiry ada (tak menghapus isian PRF).
+// service_type/commodity/add_on_services/berat/volume/dimension SENGAJA tak disalin
+// (vocab beda / ambigu / tergantung moda) — ditampilkan sbg teks bantu di UI.
+function applyInquiryData(f, inq) {
+  if (!inq) return f;
+  const out = { ...f };
+  const fill = (key, val) => { if ((out[key] === '' || out[key] == null) && val != null && val !== '') out[key] = val; };
+  fill('hs_code', inq.hs_code);
+  fill('pickup_address', inq.pickup_address);
+  fill('delivery_address', inq.delivery_address);
+  fill('origin', inq.pol);
+  fill('destination', inq.pod);
+  fill('deadline_quotation', inq.deadline_quote);
+  fill('notes', inq.notes);
+  const inco = (Array.isArray(inq.incoterms) && INCOTERMS_FULL.includes(inq.incoterms[0])) ? inq.incoterms[0] : '';
+  fill('incoterms', inco);
+  return out;
+}
+
 const S = {
   page: { maxWidth: 1100, margin: '0 auto', padding: '4px 0 8px', fontFamily: "'Inter',system-ui,sans-serif", color: C.text },
   headerCard: { background: C.card, border: '1px solid ' + C.border, borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)', padding: '22px 26px', marginBottom: 22 },
@@ -175,7 +201,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
       .then(({ data }) => setCustomers(data || []));
     supabase.from('accounts').select('id, name').eq('company_id', cid).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       .then(({ data }) => setProspects(data || []));
-    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
+    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, commodity, additional_services').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
       .then(({ data }) => setInquiries(data || []));
     supabase.from('currencies').select('code, name').order('code')
       .then(({ data }) => setCurrencies(data || []));
@@ -191,24 +217,17 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     if (!prefillInquiryId) return undefined;
     let cancelled = false;
     supabase.from('inquiries')
-      .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms')
+      .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms, notes')
       .eq('id', prefillInquiryId).is('deleted_at', null).maybeSingle()
       .then(({ data: inq }) => {
         if (cancelled || !inq) return;
-        const inco = (Array.isArray(inq.incoterms) && INCOTERMS_FULL.includes(inq.incoterms[0])) ? inq.incoterms[0] : '';
-        setForm(f => ({
+        // Identity (customer_source/inquiry_id/account_id) di-set tanpa syarat; field data fill-empty-only via helper.
+        setForm(f => applyInquiryData({
           ...f,
           customer_source: 'inquiry',
           inquiry_id: inq.id,
           account_id: inq.customer_id || inq.prospect_id || '',
-          hs_code: inq.hs_code || '',
-          pickup_address: inq.pickup_address || '',
-          delivery_address: inq.delivery_address || '',
-          origin: inq.pol || '',
-          destination: inq.pod || '',
-          deadline_quotation: inq.deadline_quote || '',
-          incoterms: inco,
-        }));
+        }, inq));
       });
     return () => { cancelled = true; };
   }, [prefillInquiryId]);
@@ -254,12 +273,14 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   };
   // Source change: reset picked account identity.
   const onSourceChange = (src) => setForm(f => ({ ...f, customer_source: src, account_id: '', account_name_manual: '', inquiry_id: '' }));
-  // Inquiry pick: store inquiry_id + auto-fill account_id from its customer/prospect.
+  // Inquiry pick: store inquiry_id + auto-fill account_id + prefill field AMAN (fill-empty-only).
   const onInquiryPick = (e) => {
     const inq = inquiries.find(i => i.id === e.target.value);
-    setForm(f => ({ ...f, inquiry_id: e.target.value, account_id: inq ? (inq.customer_id || inq.prospect_id || '') : '' }));
+    setForm(f => applyInquiryData({ ...f, inquiry_id: e.target.value, account_id: inq ? (inq.customer_id || inq.prospect_id || '') : '' }, inq));
   };
 
+  // Inquiry sumber (utk penanda + teks bantu read-only field yg tak di-prefill).
+  const srcInq = (form.customer_source === 'inquiry' && form.inquiry_id) ? inquiries.find(i => i.id === form.inquiry_id) : null;
   const isDG = form.commodity === 'dg';
   const isImpExp = form.direction === 'import' || form.direction === 'export';
   const incotermOpts = form.service_type === 'air' ? INCOTERMS_AIR : INCOTERMS_FULL;
@@ -475,6 +496,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                     )}<Chevron />
                   </div>
                   {errText('account')}
+                  {srcInq && <span style={S.hint}>Sebagian data disalin otomatis dari inquiry {srcInq.inquiry_no}.</span>}
                 </Field>
                 <Field label="Nama Manual" hint={<span style={S.hint}> (jika tak ada di daftar)</span>}>
                   <input value={form.account_name_manual} onChange={set('account_name_manual')} style={S.input} placeholder="Ketik nama customer/prospect…" />
@@ -526,6 +548,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                     </select><Chevron />
                   </div>
                   {errText('commodity')}
+                  {srcInq?.commodity && <span style={S.hint}>Dari inquiry: {srcInq.commodity} — pilih padanan manual.</span>}
                 </Field>
               </div>
 
@@ -557,6 +580,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                     </select><Chevron />
                   </div>
                   {errText('service_type')}
+                  {srcInq?.service_type && <span style={S.hint}>Dari inquiry: {INQ_SERVICE_LABEL[srcInq.service_type] || srcInq.service_type} — pilih moda manual.</span>}
                 </Field>
                 <Field label="Incoterms" hint={form.service_type === 'air' ? <span style={S.hint}> (7 term — Air)</span> : null}>
                   <div style={{ position: 'relative' }}>
@@ -565,6 +589,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                       {incotermOpts.map(t => <option key={t} value={t}>{t}</option>)}
                     </select><Chevron />
                   </div>
+                  {srcInq && Array.isArray(srcInq.incoterms) && srcInq.incoterms.length > 0 && !INCOTERMS_FULL.includes(srcInq.incoterms[0]) && <span style={S.hint}>Dari inquiry: {srcInq.incoterms[0]} — tidak ada padanan di daftar PRF, pilih manual.</span>}
                 </Field>
               </div>
 
@@ -609,6 +634,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                   })}
                 </div>
                 {form.direction === 'domestic' && <span style={S.hint}>Layanan customs dinonaktifkan untuk Domestic.</span>}
+                {srcInq?.additional_services?.length > 0 && <div style={S.hint}>Dari inquiry: {srcInq.additional_services.map(s => INQ_ADDON_LABEL[s] || s).join(', ')} — centang manual (kosakata inquiry ≠ PRF).</div>}
               </div>
 
               {showOthers && (
