@@ -1674,6 +1674,11 @@ export default function StorbitManifest() {
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
   const [activeCustomerId, setActiveCustomerId] = useState(null); // for customer-detail page
   const [prevCustomerMenu, setPrevCustomerMenu] = useState('crm-customers'); // back target
+  // Edit Inquiry dari Detail Account (tab Riwayat). SENGAJA terpisah dari crmDealInquiry
+  // (jalur DealDetailPage) supaya jalur DDP tak berubah. customerDetailTab = tab awal
+  // saat CustomerDetailPage (re)mount → kembali ke Riwayat setelah simpan/batal edit.
+  const [customerInquiryEdit, setCustomerInquiryEdit] = useState(null); // inquiry id → InquiryForm mode=edit
+  const [customerDetailTab,   setCustomerDetailTab]   = useState('info');
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
   const [spOrderMap, setSpOrderMap]       = useState({});    // FASE 2E L0: uid → {status, hadCancelledPicking}
   const [selectedPickingId, setSelectedPickingId] = useState(null);  // picking detail page
@@ -1796,6 +1801,8 @@ export default function StorbitManifest() {
     setEditingQuotation(null);
     setDuplicatingQuotation(null);
     setCrmDealInquiry(null);
+    setCustomerInquiryEdit(null);
+    setCustomerDetailTab('info');
     setPrfPrefillInquiryId(null);
     setSoDetailId(null);
     setSoFormOpen(false);
@@ -1833,6 +1840,9 @@ export default function StorbitManifest() {
     if (group) setActiveModule(group.label);
     setPrevCustomerMenu(activeMenu);
     setActiveCustomerId(customerId);
+    // Buka akun selalu mulai bersih: tab default + tak ada form edit inquiry nyangkut.
+    setCustomerInquiryEdit(null);
+    setCustomerDetailTab('info');
     setActiveMenu('customer-detail');
   }, [activeMenu]);
   const backFromCustomerDetail = useCallback(() => {
@@ -3287,10 +3297,31 @@ export default function StorbitManifest() {
           )}
 
           {/* ── CRM: Customer Detail (full page) ─────────────────────────────── */}
-          {activeMenu === 'customer-detail' && (
+          {activeMenu === 'customer-detail' && !customerInquiryEdit && (
             <ErrorBoundary title="Customer Detail temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CustomerDetailPage id={activeCustomerId} onBack={backFromCustomerDetail} showToast={showToast} />
+                <CustomerDetailPage
+                  id={activeCustomerId}
+                  onBack={backFromCustomerDetail}
+                  showToast={showToast}
+                  initialTab={customerDetailTab}
+                  onEditInquiry={canRenderPage('crm-inquiry') ? (inq) => { setCustomerDetailTab('riwayat'); setCustomerInquiryEdit(inq.id); } : undefined}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {/* Edit Inquiry dari Detail Account — jalur TERPISAH dari DealDetailPage
+              (blok crm-inquiry di atas tak disentuh). Balik → clear state → CustomerDetailPage
+              remount di tab Riwayat (initialTab) + re-fetch. */}
+          {activeMenu === 'customer-detail' && customerInquiryEdit && (
+            <ErrorBoundary title="Edit Inquiry temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <InquiryFormPage
+                  inquiryId={customerInquiryEdit}
+                  mode="edit"
+                  onBack={() => setCustomerInquiryEdit(null)}
+                  showToast={showToast}
+                />
               </Suspense>
             </ErrorBoundary>
           )}

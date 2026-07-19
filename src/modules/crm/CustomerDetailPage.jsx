@@ -369,6 +369,18 @@ const QUO_TONE = {
   SUBMITTED: { bg: '#E1ECF7', fg: '#2563EB' }, ACCEPTED:  { bg: '#DEF0E4', fg: '#1F8B4D' },
   REJECTED:  { bg: '#FBE3E3', fg: '#C0392B' },
 };
+// Palet status inquiry — hex/label DIREPLIKASI dari InquiryListPage.STATUS_META (skema
+// yang sama, bukan skema baru). Sengaja tak diimpor: InquiryListPage lazy-loaded →
+// impor konstanta darinya menyeret bundle-nya ke chunk halaman ini. Duplikasi ini
+// tech debt (LOW): rumah yang benar = konstanta status CRM bersama.
+const INQ_STATUS_TONE = {
+  OPEN:      { bg: '#E1ECF5', fg: '#2A5B8C', label: 'Open'      },
+  IN_REVIEW: { bg: '#F8ECCF', fg: '#9A6B0E', label: 'In Review' },
+  QUOTED:    { bg: '#ECE3F4', fg: '#6E4B8C', label: 'Quoted'    },
+  WON:       { bg: '#E4F0E5', fg: '#2E7D4F', label: 'Won'       },
+  LOST:      { bg: '#F6E0DB', fg: '#B23227', label: 'Lost'      },
+  CANCELLED: { bg: '#EEE9DC', fg: '#6B6F5E', label: 'Cancelled' },
+};
 // Satu field skalar detail permintaan — tak dirender bila kosong (hindari baris menggantung).
 function InqField({ label, value }) {
   if (value == null || value === '') return null;
@@ -434,22 +446,36 @@ function InquiryDetailBlock({ inq }) {
     </div>
   );
 }
-function InquiryHistoryRow({ inq, quotes }) {
+function InquiryHistoryRow({ inq, quotes, onEditInquiry }) {
   const [open, setOpen] = useState(false);
   const n = quotes.length;
+  // Nilai tak dikenal JANGAN dibuat blank — tampilkan mentahnya (pelajaran NURTURE / TD-61).
+  const st = INQ_STATUS_TONE[String(inq.status || '').toUpperCase()] || { bg: '#EEF0F3', fg: '#5E6553', label: String(inq.status || '—') };
   return (
     <div style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
-      <button type="button" onClick={() => setOpen((o) => !o)}
-        style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', border: 0, background: 'transparent', padding: '15px 22px', cursor: 'pointer', textAlign: 'left', flexWrap: 'wrap' }}>
-        <Icon name="chevright" size={15} color={INK_FAINT} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />
-        <span style={{ fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, color: NAVY }}>{inq.inquiry_no || '—'}</span>
-        <span style={{ fontSize: 12.5, color: INK_SOFT }}>{INQ_SERVICE_LABEL[inq.service_type] || inq.service_type || '—'}</span>
-        {(inq.pol || inq.pod) && <span style={{ fontSize: 12, color: INK_FAINT }}>{inq.pol || '—'} → {inq.pod || '—'}</span>}
-        <span style={{ fontSize: 12, color: INK_FAINT, marginLeft: 'auto' }}>{fmtDateShort(inq.created_at)}</span>
-        <span style={{ ...S.badge, background: n ? '#EAF0F8' : '#F4EFE5', color: n ? NAVY : INK_FAINT, padding: '3px 10px' }}>
-          {n ? `${n} quotation` : 'Belum ada quotation'}
-        </span>
-      </button>
+      {/* Header baris: tombol toggle (expand) + tombol aksi Edit Inquiry sebagai
+          SAUDARA di dalam wrapper flex (bukan anak button toggle → hindari nested
+          button + jaga aksesibilitas keyboard tombol toggle). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 22 }}>
+        <button type="button" onClick={() => setOpen((o) => !o)}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, border: 0, background: 'transparent', padding: '15px 0 15px 22px', cursor: 'pointer', textAlign: 'left', flexWrap: 'wrap' }}>
+          <Icon name="chevright" size={15} color={INK_FAINT} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />
+          <span style={{ fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, color: NAVY }}>{inq.inquiry_no || '—'}</span>
+          <span style={{ fontSize: 12.5, color: INK_SOFT }}>{INQ_SERVICE_LABEL[inq.service_type] || inq.service_type || '—'}</span>
+          {(inq.pol || inq.pod) && <span style={{ fontSize: 12, color: INK_FAINT }}>{inq.pol || '—'} → {inq.pod || '—'}</span>}
+          <span style={{ fontSize: 12, color: INK_FAINT, marginLeft: 'auto' }}>{fmtDateShort(inq.created_at)}</span>
+          <span style={{ ...S.badge, background: st.bg, color: st.fg, padding: '3px 10px' }}>{st.label}</span>
+          <span style={{ ...S.badge, background: n ? '#EAF0F8' : '#F4EFE5', color: n ? NAVY : INK_FAINT, padding: '3px 10px' }}>
+            {n ? `${n} quotation` : 'Belum ada quotation'}
+          </span>
+        </button>
+        {onEditInquiry && (
+          <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5, flex: '0 0 auto' }}
+            onClick={() => onEditInquiry(inq)}>
+            <Icon name="pencil" size={14} />Edit Inquiry
+          </button>
+        )}
+      </div>
       {open && (
         <div style={{ padding: '0 22px 16px 49px' }}>
           <InquiryDetailBlock inq={inq} />
@@ -558,14 +584,14 @@ function computeHealth(customer, prospect, visits) {
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────────
-export default function CustomerDetailPage({ id, onBack, showToast }) {
+export default function CustomerDetailPage({ id, onBack, showToast, onEditInquiry, initialTab }) {
   const { profile, erpRole, user } = useAuth();
   // Delete customer is restricted to super_admin (soft-delete via deleted_at).
   const canDelete = erpRole === 'super_admin';
 
   const [customer, setCustomer] = useState(null);
   const [loading,  setLoading]  = useState(true);
-  const [tab,      setTab]      = useState('info');
+  const [tab,      setTab]      = useState(initialTab || 'info');
 
   const [visits, setVisits]               = useState([]);
   const [visitsLoading, setVisitsLoading] = useState(false);
@@ -1042,7 +1068,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
           ) : (
             <div>
               {histInquiries.map((inq) => (
-                <InquiryHistoryRow key={inq.id} inq={inq} quotes={quotesByInquiry[inq.id] || []} />
+                <InquiryHistoryRow key={inq.id} inq={inq} quotes={quotesByInquiry[inq.id] || []} onEditInquiry={onEditInquiry} />
               ))}
               {orphanQuotes.length > 0 && (
                 <div style={{ padding: '15px 22px' }}>
