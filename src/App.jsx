@@ -3314,7 +3314,7 @@ export default function StorbitManifest() {
                   onBack={backFromCustomerDetail}
                   showToast={showToast}
                   initialTab={customerDetailTab}
-                  onEditInquiry={canRenderPage('crm-inquiry') ? (inq) => { setCustomerDetailTab('riwayat'); setCustomerInquiryEdit(inq.id); } : undefined}
+                  onEditInquiry={hasMenuPermission('crm_inquiry', 'view') ? (inq) => { setCustomerDetailTab('riwayat'); setCustomerInquiryEdit(inq.id); } : undefined}
                   onViewQuotation={(q) => { setCustomerDetailTab('riwayat'); setCustomerQuotationView(q.id); }}
                   onCreatePRF={(inq) => { setCustomerDetailTab('riwayat'); setCustomerPrfInquiryId(inq.id); }}
                 />
