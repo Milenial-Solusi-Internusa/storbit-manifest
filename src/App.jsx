@@ -3204,6 +3204,7 @@ export default function StorbitManifest() {
                       setActiveMenu={setActiveMenu}
                       setShowProspectForm={setShowProspectForm}
                       setEditingProspect={setEditingProspect}
+                      onSelectAccount={navigateToCustomerDetail}
                     />
                   </Suspense>
                 </ErrorBoundary>
@@ -3213,7 +3214,7 @@ export default function StorbitManifest() {
                   <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                     <ProspectListPage
                       onAddProspect={() => { setEditingProspect(null); setShowProspectForm(true); }}
-                      onEditProspect={(p) => { setEditingProspect(p); setShowProspectForm(true); }}
+                      onSelectProspect={(p) => navigateToCustomerDetail(p.id)}
                       showToast={showToast}
                     />
                   </Suspense>

@@ -369,6 +369,71 @@ const QUO_TONE = {
   SUBMITTED: { bg: '#E1ECF7', fg: '#2563EB' }, ACCEPTED:  { bg: '#DEF0E4', fg: '#1F8B4D' },
   REJECTED:  { bg: '#FBE3E3', fg: '#C0392B' },
 };
+// Satu field skalar detail permintaan — tak dirender bila kosong (hindari baris menggantung).
+function InqField({ label, value }) {
+  if (value == null || value === '') return null;
+  return (
+    <div>
+      <div style={S.gridFieldLabel}>{label}</div>
+      <div style={S.gridFieldValue}>{value}</div>
+    </div>
+  );
+}
+// Field bertipe array (incoterms/kontainer/cargo/layanan) → pills; tak dirender bila kosong.
+function InqPills({ label, values }) {
+  const arr = Array.isArray(values) ? values.filter(Boolean) : [];
+  if (!arr.length) return null;
+  return (
+    <div>
+      <div style={S.gridFieldLabel}>{label}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+        {arr.map((v) => (
+          <span key={v} style={{ fontSize: 11.5, fontWeight: 600, color: NAVY, background: '#EAF0F8', borderRadius: 7, padding: '3px 9px' }}>{v}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+// Blok "Detail Permintaan" untuk satu inquiry (tampil saat baris di-expand, sebelum quotation).
+// Semua field kosong disaring supaya tak ada baris kosong menggantung.
+function InquiryDetailBlock({ inq }) {
+  const scalars = [
+    { l: 'Route',          v: inq.route },
+    { l: 'Komoditas',      v: inq.commodity },
+    { l: 'Nama Barang',    v: inq.goods_name },
+    { l: 'HS Code',        v: inq.hs_code },
+    { l: 'Berat (KG)',     v: inq.weight_kg != null ? String(inq.weight_kg) : '' },
+    { l: 'Volume (CBM)',   v: inq.volume_cbm != null ? String(inq.volume_cbm) : '' },
+    { l: 'Deadline Quote', v: inq.deadline_quote ? fmtDateShort(inq.deadline_quote) : '' },
+  ].filter((f) => f.v != null && f.v !== '');
+  const pills = [
+    { l: 'Incoterm',         v: inq.incoterms },
+    { l: 'Jenis Kontainer',  v: inq.container_types },
+    { l: 'Cargo Type',       v: inq.cargo_types },
+    { l: 'Layanan Tambahan', v: inq.additional_services },
+  ].filter((p) => Array.isArray(p.v) && p.v.filter(Boolean).length);
+  const hasNotes = inq.notes && String(inq.notes).trim();
+  const isEmpty = !scalars.length && !pills.length && !hasNotes;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, marginBottom: 10 }}>Detail Permintaan</div>
+      {isEmpty ? (
+        <div style={{ fontSize: 12.5, color: INK_FAINT }}>Detail permintaan belum diisi.</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px 20px' }}>
+          {scalars.map((f) => <InqField key={f.l} label={f.l} value={f.v} />)}
+          {pills.map((p) => <InqPills key={p.l} label={p.l} values={p.v} />)}
+          {hasNotes ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div style={S.gridFieldLabel}>Notes</div>
+              <div style={{ ...S.gridFieldValue, whiteSpace: 'pre-wrap' }}>{inq.notes}</div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
 function InquiryHistoryRow({ inq, quotes }) {
   const [open, setOpen] = useState(false);
   const n = quotes.length;
@@ -386,36 +451,40 @@ function InquiryHistoryRow({ inq, quotes }) {
         </span>
       </button>
       {open && (
-        n === 0 ? (
-          <div style={{ padding: '0 22px 16px 49px', fontSize: 12.5, color: INK_FAINT }}>Inquiry ini belum punya quotation.</div>
-        ) : (
-          <div style={{ padding: '0 22px 16px 49px', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
-                  {['Quotation No', 'Tanggal', 'Nilai', 'Status'].map((h) => (
-                    <th key={h} style={{ textAlign: h === 'Nilai' ? 'right' : 'left', padding: '7px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {quotes.map((q) => {
-                  const t = QUO_TONE[String(q.status).toUpperCase()] || QUO_TONE.DRAFT;
-                  return (
-                    <tr key={q.id} style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
-                      <td style={{ padding: '8px', fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, color: NAVY, whiteSpace: 'nowrap' }}>{q.quotation_no}</td>
-                      <td style={{ padding: '8px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{fmtDateShort(q.created_at)}</td>
-                      <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRupiah(q.total_amount)}</td>
-                      <td style={{ padding: '8px' }}>
-                        <span style={{ ...S.badge, background: t.bg, color: t.fg, padding: '3px 9px' }}>{String(q.status).toUpperCase()}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
+        <div style={{ padding: '0 22px 16px 49px' }}>
+          <InquiryDetailBlock inq={inq} />
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, marginBottom: 10 }}>Quotation</div>
+          {n === 0 ? (
+            <div style={{ fontSize: 12.5, color: INK_FAINT }}>Inquiry ini belum punya quotation.</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
+                    {['Quotation No', 'Tanggal', 'Nilai', 'Status'].map((h) => (
+                      <th key={h} style={{ textAlign: h === 'Nilai' ? 'right' : 'left', padding: '7px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {quotes.map((q) => {
+                    const t = QUO_TONE[String(q.status).toUpperCase()] || QUO_TONE.DRAFT;
+                    return (
+                      <tr key={q.id} style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
+                        <td style={{ padding: '8px', fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, color: NAVY, whiteSpace: 'nowrap' }}>{q.quotation_no}</td>
+                        <td style={{ padding: '8px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{fmtDateShort(q.created_at)}</td>
+                        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRupiah(q.total_amount)}</td>
+                        <td style={{ padding: '8px' }}>
+                          <span style={{ ...S.badge, background: t.bg, color: t.fg, padding: '3px 9px' }}>{String(q.status).toUpperCase()}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -644,7 +713,7 @@ export default function CustomerDetailPage({ id, onBack, showToast }) {
     setHistLoading(true);
     Promise.all([
       supabase.from('inquiries')
-        .select('id, inquiry_no, service_type, status, created_at, pol, pod')
+        .select('id, inquiry_no, service_type, status, created_at, pol, pod, route, commodity, goods_name, hs_code, weight_kg, volume_cbm, deadline_quote, incoterms, container_types, cargo_types, additional_services, notes')
         .or(`prospect_id.eq.${id},customer_id.eq.${id}`).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000),
       supabase.from('quotations')
