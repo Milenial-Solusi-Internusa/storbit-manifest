@@ -30,7 +30,7 @@ const fmtDate = (iso) => {
   return `${d.getDate()} ${M[d.getMonth()]} ${d.getFullYear()}`;
 };
 
-export default function ProcInquiryForwardingPage({ onBack }) {
+export default function ProcInquiryForwardingPage({ onBack, onSelect }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -104,7 +104,7 @@ export default function ProcInquiryForwardingPage({ onBack }) {
                   const b = BADGE[String(r.status).toUpperCase()] || BADGE.DRAFT;
                   const customer = r.account?.name || r.account_name_manual || '—';
                   return (
-                    <tr key={r.id}>
+                    <tr key={r.id} onClick={() => onSelect?.(r.id)} style={{ cursor: onSelect ? 'pointer' : 'default' }}>
                       <td style={{ ...td, color: '#8A8E7C' }}>{i + 1}</td>
                       <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: NAVY }}>{r.prf_no}</td>
                       <td style={{ ...td, color: '#5E6553' }}>{fmtDate(r.created_at)}</td>
