@@ -2,6 +2,33 @@
 
 ## 2026-07-20
 
+### Win Rate + funnel footer CRM Dashboard — lanjutan fix "angka 1000" (Gejala A) — branch `main` (working tree, belum commit)
+
+**Ringkas:** lanjutan diagnosa "angka 1000" di CRM Dashboard. Penyebab sebelumnya: `totalProspects` = query tarik-baris `.limit(1000)` lalu `.length` yang ikut menghitung Lead Pool, menyuapi tiga permukaan (kartu Prospect Aktif [sudah difix 19 Jul], **penyebut Win Rate**, **subtitle Win Rate Personal**). **FE-only, 1 file `src/modules/crm/CRMDashboardPage.jsx`, NOL perubahan DB/RLS/menu.**
+
+**TASK 1 — TD-102 (Win Rate denominator) DITUTUP.**
+- Penyebut Win Rate `totalDeals` diganti dari `totalProspects + wonCustomers.length` (capped-1000, ikut Lead Pool) → **`activeProspects + wonCustomers.length`** (server `count(head)` uncapped, `is_in_lead_pool=false`, mengecualikan WON/LOST).
+- Query `activeProspectsRes` kini di-wrap **`ownProspects(...)`** (helper `:1853`, seperti query saudara `:1863/1885/1896/1939`) → **PERUBAHAN PERILAKU**: role sales/operations (`isSalesOnly`) jadi owner-scoped (`assigned_to.eq / created_by.eq` user); non-sales tetap company-scoped (`ownProspects` = identity). Konsekuensi: angka kartu "Prospect Aktif" + penyebut Win Rate + subtitle untuk user SALES kini lingkupnya **milik sendiri**, bukan se-perusahaan. Kartu "Prospect Aktif" (`kpisReal`) hanya tampil untuk non-sales → tak ada regresi tampilan; nilai super_admin/non-sales tetap company-scoped (≈156 MSI, konsisten TD-101).
+
+**TASK 2 — Subtitle kartu "Win Rate Personal" (view sales).**
+- `dari ${dashData.totalProspects} prospect aktif` → `dari ${dashData.totalDeals} prospect aktif`. Angka subtitle kini IDENTIK dengan penyebut Win Rate kartu itu (variabel `totalDeals` yang sama). `totalDeals` ditambahkan ke objek `dashData`.
+
+**TASK 3 — Footer total funnel DIHAPUS (keputusan Den).**
+- Baris angka "N total prospect" di footer komponen `PipelineByStage` dihapus, beserta definisi `const totalCount` yang jadi yatim. **Alasan:** angka itu menjumlahkan batang dari pull capped-1000 (memuat Lead Pool + batang Won/Lost) → salah; memperbaikinya = mengubah basis funnel = di luar scope. Menghapus lebih jujur daripada label diperhalus.
+- **BASIS FUNNEL SENGAJA TIDAK DIPERBAIKI** — batang per stage (jumlah, urutan, basis data `stagesData` dari pull capped-1000, termasuk batang Won & Lost) DIBIARKAN APA ADANYA, menunggu keputusan "pemotongan papan pipeline" (terkait Gejala B / TD-61 stage NURTURE tak berkolom — masih DITUNDA, di luar batch ini).
+- Penyesuaian visual terbatas: seluruh footer dijadikan kondisional `totalVal > 0` (sebelumnya `totalVal` selalu 0 karena `stagesData.value=0`, sehingga menghapus span saja akan menyisakan strip kosong dengan `borderTop` menggantung). Kemampuan tampil total-rupiah tetap terjaga bila kelak nilai stage terisi.
+
+**Catatan tambahan (WAJIB tercatat):**
+- Variabel `totalProspects` kini **YATIM** (hanya di-return di objek `dashData`, tidak dikonsumsi konsumen mana pun lagi). SENGAJA BELUM DIHAPUS (permintaan Den, kandidat hapus batch lanjutan). Komentar di baris definisinya (`:1971`) sudah diperbarui agar jujur.
+- Query tarik-baris "prospects" (`:~1867`) TETAP DIBUTUHKAN (funnel/stageCounts, Lead Source, Trend mingguan, `wonProspects`, `sqlThisMonth`) — tidak dihapus.
+- **Jujur:** setelah batch ini MASIH ADA angka Dashboard dari `.length` atas query ber-`.limit()`, di luar tiga permukaan target — dicatat sebagai SATU KELOMPOK tech debt (bukan per-task): (1) `wonCustomersRes` `.limit(1000)` → `.length` masuk numerator+denominator Win Rate (laten bila customer-WON > 1000); (2) agregat Sales Perf/Trend/Lead Source/`sqlThisMonth` + KPI Call/Visit/Quotation mingguan (`CRMDashboardPage`); (3) `LeadPoolPage.jsx:~125` (`rows.length`/`filtered.length`); (4) `CustomerListPage.jsx:~579/592` (kartu ringkasan + "Menampilkan X dari"). → **TD-111** (menyerap daftar rujukan lama TD-102).
+
+**Verifikasi:** build clean (2591 modules, 1.47s). **Belum tes runtime** (dashboard di balik login → angka Win Rate/subtitle/scope-aware sales belum diverifikasi FE). Atribusi: pembacaan kode CC, bukan runtime.
+
+**⚠️ Reminder manual (git tak tahu):** (1) **belum di-commit** (working tree `main`); (2) **belum tes runtime**; (3) **tidak ada SQL / `pg_dump`** untuk batch ini (FE murni).
+
+Detail dok: `08_TECH_DEBT` TD-102 (DONE) / TD-111 (baru) / TD-101 (scope note).
+
 ### PRF Pricing Answer — jawaban harga procurement + cost build-up per komponen — branch `feat/prf-pricing-answer`
 
 **Ringkas:** tempat tim pricing/procurement menuliskan jawaban harga atas PRF, dengan cost build-up dirinci per komponen (vendor vs internal). Tidak ada role `pricing` di sistem (hanya `procurement`) → "pricing/procurement" = procurement.
@@ -371,7 +398,7 @@ Detail dok: `03_DATA_MODEL` (`prf` +7 kolom, `prf_cost_items`) · `05_WORKFLOW_M
 
 **E. Migrasi infrastruktur (kepemilikan → MSI) — detail di `CLAUDE.md` Quick Reference:**
 - Supabase project → org "Milenial Solusi Internusa" (`nexus-msi`); GitHub repo → `Milenial-Solusi-Internusa/storbit-manifest`; Vercel → team "MSI Group" (`nexus`); domain prod → `nexus.msigroup.co.id` (CNAME Domainesia). **Supabase ref TIDAK berubah** (`untmpqceexwxzuhlmyrg`).
-- Project Vercel lama + `nexus.dli.my.id` sengaja dibiarkan hidup (safety net; hapus ~1 minggu setelah domain baru stabil). Backup penuh (3.5 MB, 96 tabel) diambil sebelum migrasi.
+- Project Vercel lama + `nexus.dli.my.id` awalnya sengaja dibiarkan hidup (safety net; rencana hapus ~1 minggu setelah domain baru stabil). Backup penuh (3.5 MB, 96 tabel) diambil sebelum migrasi. **Update 20 Jul 2026:** domain lama `nexus.dli.my.id` sudah DINONAKTIFKAN total — DNS record CNAME `nexus` di zona `dli.my.id` (Domainesia) dihapus, tanpa redirect. Domain resmi satu-satunya kini `nexus.msigroup.co.id`.
 - **KOREKSI:** host `pg_dump`/pooler yang BENAR = `aws-1-ap-northeast-2.pooler.supabase.com` (bukan `ap-southeast-1` — catatan lama salah → gagal koneksi).
 - **Backlog keamanan (belum dikerjakan):** repo GitHub masih PUBLIC (kode ERP 3 entitas + schema terbuka); 2FA belum aktif utk 2 Owner org (mhmmdjaelaniii, msigroup-sys); Vercel masih Hobby (pemakaian komersial); Supabase Auth Site URL masih `http://localhost:3000` + Redirect URLs kosong (tak masalah utk login email+password, tapi perlu dirapikan); rename repo `storbit-manifest`→`nexus` (opsional).
 
