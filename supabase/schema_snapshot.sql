@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict SqHGIbStRuFXD5CswietmkdKgMh9Wd710L3nqo57hhKEuopdvht1XpB7GOy1vRo
+\restrict 5Rlali1rAQbb9lpUQZKGA3PkgGrS3O2JHdaW9KTURc9hiSNJLt2ZsnE3anMidrE
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -628,6 +628,40 @@ CREATE FUNCTION public.get_user_role_code() RETURNS text
       ELSE 3
     END
   LIMIT 1
+$$;
+
+
+--
+-- Name: guard_quotation_prf_consistency(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_quotation_prf_consistency() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+declare
+  v_prf_inquiry uuid;
+begin
+  if new.prf_id is null then
+    return new;
+  end if;
+
+  select inquiry_id into v_prf_inquiry
+  from public.prf
+  where id = new.prf_id;
+
+  if v_prf_inquiry is null then
+    raise exception 'PRF % tidak punya inquiry_id, tidak bisa jadi dasar quotation', new.prf_id;
+  end if;
+
+  if new.inquiry_id is null then
+    new.inquiry_id := v_prf_inquiry;
+  elsif new.inquiry_id <> v_prf_inquiry then
+    raise exception 'inquiry_id quotation (%) tidak cocok dengan inquiry_id PRF (%)',
+      new.inquiry_id, v_prf_inquiry;
+  end if;
+
+  return new;
+end;
 $$;
 
 
@@ -4150,7 +4184,8 @@ CREATE TABLE public.quotations (
     cbm text,
     container_type text,
     container_qty integer,
-    exchange_rates jsonb DEFAULT '{}'::jsonb NOT NULL
+    exchange_rates jsonb DEFAULT '{}'::jsonb NOT NULL,
+    prf_id uuid
 );
 
 
@@ -4159,6 +4194,13 @@ CREATE TABLE public.quotations (
 --
 
 COMMENT ON COLUMN public.quotations.exchange_rates IS 'Tabel kurs manual per-quotation: {"USD":16200,"SGD":12000}. IDR implisit = 1 (tak disimpan). Sumber kebenaran kurs; quotation_items.exchange_rate = salinan materialized (write-through) yang dibaca Detail & PDF. Input manual, tanpa lookup FX.';
+
+
+--
+-- Name: COLUMN quotations.prf_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.quotations.prf_id IS 'PRF yang jadi dasar harga quotation ini. Boleh null untuk quotation yang dibuat manual tanpa PRF.';
 
 
 --
@@ -6998,6 +7040,13 @@ CREATE INDEX idx_quotations_company_id ON public.quotations USING btree (company
 
 
 --
+-- Name: idx_quotations_prf_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_quotations_prf_id ON public.quotations USING btree (prf_id) WHERE (prf_id IS NOT NULL);
+
+
+--
 -- Name: idx_quotations_prospect_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7471,6 +7520,13 @@ CREATE TRIGGER trg_products_updated_at BEFORE UPDATE ON public.products FOR EACH
 --
 
 CREATE TRIGGER trg_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: quotations trg_quotation_prf_consistency; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_quotation_prf_consistency BEFORE INSERT OR UPDATE ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.guard_quotation_prf_consistency();
 
 
 --
@@ -9281,6 +9337,14 @@ ALTER TABLE ONLY public.quotations
 
 ALTER TABLE ONLY public.quotations
     ADD CONSTRAINT quotations_payment_terms_id_fkey FOREIGN KEY (payment_terms_id) REFERENCES public.payment_terms(id);
+
+
+--
+-- Name: quotations quotations_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotations
+    ADD CONSTRAINT quotations_prf_id_fkey FOREIGN KEY (prf_id) REFERENCES public.prf(id);
 
 
 --
@@ -12555,5 +12619,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict SqHGIbStRuFXD5CswietmkdKgMh9Wd710L3nqo57hhKEuopdvht1XpB7GOy1vRo
+\unrestrict 5Rlali1rAQbb9lpUQZKGA3PkgGrS3O2JHdaW9KTURc9hiSNJLt2ZsnE3anMidrE
 
