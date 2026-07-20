@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict iLaVpM9yTjV1UNh3byQmmEb3CbhY7eMUxhFMwudQb49IhpaS1hebuLW9DRpKySn
+\restrict SqHGIbStRuFXD5CswietmkdKgMh9Wd710L3nqo57hhKEuopdvht1XpB7GOy1vRo
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -988,6 +988,57 @@ BEGIN
   UPDATE delivery_notes SET status='delivered', delivered_at=now() WHERE id=p_delivery_note_id;
   PERFORM sp_recompute_status(v_cust, v_sp);
 END; $$;
+
+
+--
+-- Name: save_prf_pricing(uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_count int;
+BEGIN
+  -- 1) Header jawaban harga (RLS prf_update_status: procurement + status='SUBMITTED').
+  UPDATE public.prf SET
+    suggested_rate = NULLIF(p_header->>'suggested_rate','')::numeric,
+    rate_currency  = COALESCE(NULLIF(p_header->>'rate_currency',''), 'IDR'),
+    valid_from     = NULLIF(p_header->>'valid_from','')::date,
+    valid_until    = NULLIF(p_header->>'valid_until','')::date,
+    pricing_notes  = NULLIF(p_header->>'pricing_notes',''),
+    answered_by    = auth.uid(),
+    answered_at    = now()
+  WHERE id = p_prf_id;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF v_count = 0 THEN
+    RAISE EXCEPTION 'PRF tidak ditemukan atau tidak ada izin menyimpan jawaban harga (RLS).';
+  END IF;
+
+  -- Guard eksplisit: p_items wajib jsonb array (atau NULL). Non-array = RAISE, bukan skip senyap.
+  IF p_items IS NOT NULL AND jsonb_typeof(p_items) <> 'array' THEN
+    RAISE EXCEPTION 'save_prf_pricing: p_items harus jsonb array (atau NULL), tetapi menerima jsonb_typeof = %', jsonb_typeof(p_items);
+  END IF;
+
+  -- 2) Replace rincian biaya (RLS prf_cost_items_delete + _insert: procurement + SUBMITTED).
+  DELETE FROM public.prf_cost_items WHERE prf_id = p_prf_id;
+
+  IF p_items IS NOT NULL AND jsonb_typeof(p_items) = 'array' THEN
+    INSERT INTO public.prf_cost_items (prf_id, component, cost_type, amount, currency, sort_order, notes)
+    SELECT p_prf_id,
+      it->>'component',
+      CASE WHEN (it->>'cost_type') = 'internal' THEN 'internal' ELSE 'vendor' END,
+      COALESCE(NULLIF(it->>'amount','')::numeric, 0),
+      COALESCE(NULLIF(it->>'currency',''), 'IDR'),
+      COALESCE(NULLIF(it->>'sort_order','')::int, 0),
+      NULLIF(it->>'notes','')
+    FROM jsonb_array_elements(p_items) AS it;
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'prf_id', p_prf_id);
+END;
+$$;
 
 
 --
@@ -3790,7 +3841,33 @@ CREATE TABLE public.prf (
     project_qty integer,
     notes text,
     inquiry_id uuid,
+    suggested_rate numeric(18,2),
+    rate_currency text DEFAULT 'IDR'::text NOT NULL,
+    valid_from date,
+    valid_until date,
+    pricing_notes text,
+    answered_by uuid,
+    answered_at timestamp with time zone,
     CONSTRAINT prf_status_check CHECK (((status)::text = ANY (ARRAY['DRAFT'::text, 'SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'CANCELLED'::text, 'QUOTED'::text, 'EXPIRED'::text])))
+);
+
+
+--
+-- Name: prf_cost_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prf_cost_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    prf_id uuid NOT NULL,
+    component text NOT NULL,
+    cost_type text DEFAULT 'vendor'::text NOT NULL,
+    amount numeric(18,2) DEFAULT 0 NOT NULL,
+    currency text DEFAULT 'IDR'::text NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    notes text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT prf_cost_items_cost_type_check CHECK ((cost_type = ANY (ARRAY['vendor'::text, 'internal'::text])))
 );
 
 
@@ -5608,6 +5685,14 @@ ALTER TABLE ONLY public.positions
 
 
 --
+-- Name: prf_cost_items prf_cost_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_cost_items
+    ADD CONSTRAINT prf_cost_items_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: prf prf_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6815,6 +6900,13 @@ CREATE INDEX idx_pph_product_changed ON public.product_price_history USING btree
 
 
 --
+-- Name: idx_prf_cost_items_prf_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prf_cost_items_prf_id ON public.prf_cost_items USING btree (prf_id);
+
+
+--
 -- Name: idx_products_company_code; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7155,6 +7247,13 @@ CREATE TRIGGER set_hrga_request_types_updated_at BEFORE UPDATE ON public.hrga_re
 --
 
 CREATE TRIGGER set_hrga_requests_updated_at BEFORE UPDATE ON public.hrga_requests FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: prf_cost_items set_prf_cost_items_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_prf_cost_items_updated_at BEFORE UPDATE ON public.prf_cost_items FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -8937,11 +9036,27 @@ ALTER TABLE ONLY public.prf
 
 
 --
+-- Name: prf prf_answered_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_answered_by_fkey FOREIGN KEY (answered_by) REFERENCES public.profiles(id);
+
+
+--
 -- Name: prf prf_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
     ADD CONSTRAINT prf_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: prf_cost_items prf_cost_items_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_cost_items
+    ADD CONSTRAINT prf_cost_items_prf_id_fkey FOREIGN KEY (prf_id) REFERENCES public.prf(id) ON DELETE CASCADE;
 
 
 --
@@ -11505,6 +11620,50 @@ CREATE POLICY pph_read ON public.product_price_history FOR SELECT USING ((public
 ALTER TABLE public.prf ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: prf_cost_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.prf_cost_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: prf_cost_items prf_cost_items_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_cost_items_delete ON public.prf_cost_items FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = 'SUBMITTED'::text)))))));
+
+
+--
+-- Name: prf_cost_items prf_cost_items_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_cost_items_insert ON public.prf_cost_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = 'SUBMITTED'::text)))))));
+
+
+--
+-- Name: prf_cost_items prf_cost_items_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_cost_items_select ON public.prf_cost_items FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.company_id = public.get_user_company_id()) AND ((p.created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above())))))));
+
+
+--
+-- Name: prf_cost_items prf_cost_items_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_cost_items_update ON public.prf_cost_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = 'SUBMITTED'::text))))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = 'SUBMITTED'::text)))))));
+
+
+--
 -- Name: prf prf_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -12396,5 +12555,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict iLaVpM9yTjV1UNh3byQmmEb3CbhY7eMUxhFMwudQb49IhpaS1hebuLW9DRpKySn
+\unrestrict SqHGIbStRuFXD5CswietmkdKgMh9Wd710L3nqo57hhKEuopdvht1XpB7GOy1vRo
 
