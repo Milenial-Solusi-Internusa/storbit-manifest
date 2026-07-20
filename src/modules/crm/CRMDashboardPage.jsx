@@ -425,7 +425,6 @@ function BarTip({ active, payload }) {
 
 function PipelineByStage({ stages = STAGES }) {
   const [barRef, barW] = useWidth();
-  const totalCount = stages.reduce((a, s) => a + s.count, 0);
   const totalVal   = stages.reduce((a, s) => a + (s.value || 0), 0);
   return (
     <div className="om-card" style={D.card}>
@@ -461,14 +460,11 @@ function PipelineByStage({ stages = STAGES }) {
           </BarChart>
         )}
         </div>
-        <div style={{ ...D.barFoot, margin: "2px 8px 0", padding: "13px 0 14px" }}>
-          <span style={{ fontSize: 12, color: "#7A828E", fontWeight: 600 }}>
-            <b style={{ color: NAVY, fontWeight: 800 }}>{totalCount}</b> total prospect
-          </span>
-          {totalVal > 0 && (
+        {totalVal > 0 && (
+          <div style={{ ...D.barFoot, margin: "2px 8px 0", padding: "13px 0 14px", justifyContent: "flex-end" }}>
             <span style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: NAVY, letterSpacing: -0.3 }}>{rpShort(totalVal)}</span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1956,21 +1952,23 @@ function CRMDashboardPage() {
         // count(head) → TIDAK kena batas 1000 baris (beda dari prospectsRes.length).
         // WON/LOST huruf BESAR (DB uppercase; Pipeline lowercase-mapping di JS).
         // `.or(...is.null...)` supaya baris pipeline_stage NULL tak silent-drop
-        // (NOT IN polos mengecualikan NULL). Company-scoped seperti kartu Inquiry/Quotation.
-        supabase
+        // (NOT IN polos mengecualikan NULL). Di-wrap ownProspects() → company-scoped
+        // untuk non-sales (identity) & owner-scoped untuk sales, jadi angka ini juga
+        // dipakai sebagai basis penyebut Win Rate (TD-102) yang scope-aware.
+        ownProspects(supabase
           .from('accounts')
           .select('id', { count: 'exact', head: true })
           .eq('company_id', cid)
           .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .eq('is_in_lead_pool', false)
           .or('pipeline_stage.is.null,pipeline_stage.not.in.(WON,LOST)')
-          .is('deleted_at', null),
+          .is('deleted_at', null)),
       ]);
 
       if (prospectsRes.error) throw prospectsRes.error;
 
       const prospects       = prospectsRes.data || [];
-      const totalProspects  = prospects.length; // row-pull count (capped 1000, incl Lead Pool) — dipakai Win Rate & subtitle sales (TIDAK diubah batch ini)
+      const totalProspects  = prospects.length; // row-pull count (capped 1000, incl Lead Pool). TD-102: TIDAK lagi dipakai Win Rate/subtitle (diganti activeProspects); kini yatim — kandidat hapus di batch lanjutan.
       // Kartu "Prospect Aktif" — server count, kriteria = header Pipeline (lihat query di atas).
       const activeProspects = activeProspectsRes.count ?? 0;
 
@@ -1980,7 +1978,7 @@ function CRMDashboardPage() {
       const wonCustomers    = wonCustomersRes.data || [];
       const wonProspects    = prospects.filter(p => (p.pipeline_stage || '').toUpperCase() === 'WON').length;
       const wonCount        = wonProspects + wonCustomers.length;
-      const totalDeals      = totalProspects + wonCustomers.length;
+      const totalDeals      = activeProspects + wonCustomers.length; // TD-102: server-count (uncapped, is_in_lead_pool=false, scope-aware) — bukan lagi totalProspects capped-1000
       const winRate         = totalDeals > 0 ? Math.round((wonCount / totalDeals) * 100) : 0;
       const totalInquiries  = inquiriesRes.count  ?? 0;
       const totalQuotations = quotationsRes.count ?? 0;
@@ -2080,7 +2078,7 @@ function CRMDashboardPage() {
       }).length;
 
       setDashData({
-        totalProspects, activeProspects, totalInquiries, totalQuotations, winRate,
+        totalProspects, activeProspects, totalDeals, totalInquiries, totalQuotations, winRate,
         stagesData, recentActivity,
         trendData, leadSourceData, salesPerfData,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
@@ -2289,7 +2287,7 @@ function CRMDashboardPage() {
     { label: "Quotation Bulan Ini", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
       subtitle: `${dashData.quotationsThisMonth} / 20 target bulan ini`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
     { label: "Win Rate Personal",   icon: "checkcircle", value: String(dashData.winRate),             unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
-      subtitle: `dari ${dashData.totalProspects} prospect aktif` },
+      subtitle: `dari ${dashData.totalDeals} prospect aktif` },
   ] : KPIS;
 
   const kpiCards = isSalesOnly ? kpisSales : kpisReal;
