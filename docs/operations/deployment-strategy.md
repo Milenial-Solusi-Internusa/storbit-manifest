@@ -61,8 +61,8 @@ main                  ← production-ready code
 
 | Environment | Branch | URL | Auto-Deploy |
 |-------------|--------|-----|-------------|
-| Production | `main` | `nexus.msigroup.id` (future) | No — manual trigger only |
-| Staging | `staging` | `staging.nexus.msigroup.id` | Yes — on merge to staging |
+| Production | `main` | `nexus.msigroup.co.id` (future) | No — manual trigger only |
+| Staging | `staging` | `staging.nexus.msigroup.co.id` | Yes — on merge to staging |
 | Preview | `feature/*` | Auto-generated preview URL | Yes — on PR open |
 
 **Production auto-deploy is disabled.** Production deployments must be manually triggered after explicit approval.

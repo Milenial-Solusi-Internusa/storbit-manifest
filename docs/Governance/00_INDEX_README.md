@@ -66,7 +66,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | CLAUDE.md (lean) | ✅ Complete |
 
 **`[TODO]` yang perlu diisi manual (tersebar di docs):**
-- **Live URL** sudah dikonfirmasi `nexus.dli.my.id` (resolved).
+- **Live URL** sudah dikonfirmasi `nexus.msigroup.co.id` (resolved).
 - **04_ROLE_PERMISSION_MATRIX §3** — tabel granular VIEW/CREATE/EDIT/DELETE/APPROVE/EXPORT/PRINT per menu (data RBAC tidak ada di schema-only snapshot — perlu query data DB).
 - **04 §1** — status role `sales_head` (aktif vs sisa migrasi).
 - **01 §4** — status implementasi MFA, setup staging environment.

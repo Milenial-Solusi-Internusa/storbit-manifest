@@ -74,7 +74,7 @@ Confirmed stack:
 - React 19 + Vite 8
 - TailwindCSS 3
 - Supabase (PostgreSQL + Auth + RLS + Edge Functions + Storage)
-- Vercel — auto-deploys from `main` → production at `nexus.dli.my.id`
+- Vercel — auto-deploys from `main` → production at `nexus.msigroup.co.id`
 - GitHub — `main` is the single integration + production branch (solo-developer workflow; `fix/*` for hotfixes)
 
 Live modules:
