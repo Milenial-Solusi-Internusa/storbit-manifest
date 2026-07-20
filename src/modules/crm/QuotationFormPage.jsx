@@ -364,12 +364,17 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
 }
 
 // ─── Main component ───────────────────────────────────────────────────────
-export default function QuotationFormPage({ onBack, showToast, quotation = null, duplicateFrom = null }) {
+export default function QuotationFormPage({ onBack, showToast, quotation = null, duplicateFrom = null, prefillFromPrf = null }) {
   const { profile, erpRole, user } = useAuth();
   const isEdit = !!quotation;
 
   const [header, setHeader] = useState({
     inquiry_id:       '',
+    // prf_id — diisi HANYA saat form dibuka dari PRFDetailPage (Buat Quotation).
+    // Jalur lain (kosong/edit/duplicate) membiarkannya '' → tersimpan null.
+    prf_id:           '',
+    // currency_code — default 'IDR' (= default kolom DB; jalur non-PRF tak berubah).
+    currency_code:    'IDR',
     service_type:     'freight_forwarding',
     route:            '',
     valid_until:      '',
@@ -624,6 +629,66 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, duplicateFrom?.id]);
+
+  // ── PRF mode — prefill a NEW (create) quotation from an answered PRF ─────
+  // Identitas (prf_id + inquiry_id) + currency/valid_until + SATU baris item
+  // (harga jual PRF sbg unit_price, Σ prf_cost_items sbg cost_price). Field
+  // service_type/route/vat diambil dari INQUIRY (pola handleInquiryChange),
+  // BUKAN dari PRF — sumbu service_type beda (TD-108); gw/dimension/cw/cbm/
+  // container dibiarkan kosong (mode-dependent, TD-107). prf.pricing_notes
+  // TIDAK PERNAH dibawa ke field mana pun (catatan internal margin procurement,
+  // quotation dikirim ke customer). Trigger DB trg_quotation_prf_consistency =
+  // penjaga konsistensi prf_id ↔ inquiry_id saat INSERT.
+  useEffect(() => {
+    if (isEdit || duplicateFrom || !prefillFromPrf) return;
+    const p = prefillFromPrf;
+    let cancelled = false;
+    (async () => {
+      // Dropdown hanya memuat inquiry status OPEN — inquiry milik PRF bisa saja
+      // sudah non-OPEN, jadi resolve langsung by id (select identik dropdown).
+      let inq = null;
+      if (p.inquiry_id) {
+        const { data } = await supabase
+          .from('inquiries')
+          .select('id, inquiry_no, service_type, route, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
+          .eq('id', p.inquiry_id)
+          .maybeSingle();
+        inq = data || null;
+      }
+      if (cancelled) return;
+      if (inq) {
+        // Inject ke opsi dropdown bila belum ada (pola inject edit-mode InquiryFormPage)
+        // supaya select menampilkan inquiry terpilih, bukan blank.
+        setInquiries(list => (list.some(i => i.id === inq.id) ? list : [inq, ...list]));
+        setSelectedInquiry(inq);
+        setClientName(inq.prospect?.name || inq.customer?.name || '');
+      }
+      setHeader(h => ({
+        ...h,
+        prf_id:        p.prf_id || '',
+        inquiry_id:    p.inquiry_id || '',
+        currency_code: p.rate_currency || 'IDR',
+        valid_until:   p.valid_until || '',
+        service_type:  inq?.service_type || h.service_type,
+        route:         inq?.route || h.route,
+        vat_rate:      vatDefaultFor(inq?.service_type || h.service_type),
+      }));
+      // Satu baris item: teks generik menyebut layanan (netral, TANPA pricing_notes).
+      const svcLabel = SERVICE_TYPES_FALLBACK.find(s => s.value === inq?.service_type)?.label || 'Freight Forwarding';
+      const row = {
+        ...freshRow(),
+        description: `Jasa ${svcLabel}`,
+        qty:         1,
+        currency:    p.rate_currency || 'IDR',
+        unit_price:  Number(p.suggested_rate) || 0,
+        cost_price:  Number(p.cost_total) || 0,
+      };
+      row.total = calcRowTotal(row);
+      setSections([{ id: crypto.randomUUID(), name: 'CHARGES', rows: [row] }]);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, duplicateFrom, prefillFromPrf?.prf_id]);
 
   const setH = (k) => (e) => setHeader(h => ({ ...h, [k]: e.target.value }));
 
@@ -905,6 +970,12 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           company_id:       profile.company_id,
           quote_date:       header.quote_date             || null,
           inquiry_id:       header.inquiry_id            || null,
+          // prf_id hanya terisi saat form dibuka dari PRF. Konsistensi prf_id ↔
+          // inquiry_id dijaga trigger DB trg_quotation_prf_consistency (mismatch →
+          // insert ditolak; qErr di bawah dilempar → toast pesan asli ke user).
+          prf_id:           header.prf_id                || null,
+          // Default 'IDR' = perilaku lama (kolom DB default 'IDR'); non-PRF tak berubah.
+          currency_code:    header.currency_code         || 'IDR',
           prospect_id:      selectedInquiry?.prospect?.id || null,
           customer_id:      selectedInquiry?.customer?.id || null,
           service_type:     header.service_type,
