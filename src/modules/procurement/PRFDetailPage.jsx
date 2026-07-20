@@ -3,8 +3,11 @@
 // panel "Jawaban Harga" (cost build-up per komponen → prf_cost_items + kolom jawaban di prf).
 // Edit hanya untuk procurement/super_admin (cermin RLS prf_update_status + prf_cost_items write);
 // sales/lainnya LIHAT saja. RLS = penegak sebenarnya. Total Modal/Untung/Margin dihitung saat render.
+// Tombol "Buat Quotation" + panel riwayat quotation di-gate hasMenuPermission('crm_quotation','view')
+// (fail-CLOSED — beda dari canRenderPage/TD-103; procurement tanpa menu Quotation tak melihat keduanya,
+// konsisten TD-90: procurement memang tak bisa baca quotations).
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, ArrowUp, ArrowDown, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 
@@ -31,16 +34,20 @@ const num = (v) => (Number(v) || 0);
 const money = (v) => (Number(v) || 0).toLocaleString('id-ID', { maximumFractionDigits: 2 });
 
 // PRF fields yang ada sekarang (read-only summary). Nilai kosong disaring saat render.
-const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, answered_by, answered_at, account:accounts!prf_account_id_fkey(name), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)';
+const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, answered_by, answered_at, account:accounts!prf_account_id_fkey(name), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)';
 
-export default function PRFDetailPage({ prfId, onBack, showToast }) {
-  const { erpRole } = useAuth();
+export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation }) {
+  const { erpRole, hasMenuPermission } = useAuth();
   const canEdit = ['procurement', 'super_admin'].includes(erpRole);
+  // Gate quotation: mekanisme yang SAMA dengan visibilitas menu Quotation di sidebar
+  // (canSeeMenuItem → MENU_KEY_MAP['quotation-draft']='crm_quotation'). Fail-closed.
+  const canSeeQuotations = hasMenuPermission('crm_quotation', 'view');
 
   const [prf, setPrf] = useState(null);
   const [rows, setRows] = useState([]);           // cost items (editable draft)
   const [answer, setAnswer] = useState({ suggested_rate: '', rate_currency: 'IDR', valid_from: '', valid_until: '', pricing_notes: '' });
   const [answeredName, setAnsweredName] = useState('');
+  const [prfQuotes, setPrfQuotes] = useState([]); // quotation yang lahir dari PRF ini (informasional)
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -69,6 +76,23 @@ export default function PRFDetailPage({ prfId, onBack, showToast }) {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
+
+  // Riwayat quotation dari PRF ini — HANYA di-query untuk user yang punya akses
+  // modul Quotation (untuk user tanpa izin baca, RLS mengembalikan data:[] tanpa
+  // error → tak bisa dibedakan dari "kosong beneran"; panel disembunyikan total
+  // agar tak menampilkan "belum ada quotation" yang menyesatkan — TD-90).
+  useEffect(() => {
+    if (!canSeeQuotations || !prfId) return;
+    let cancelled = false;
+    supabase.from('quotations')
+      .select('id, quotation_no, quote_date, created_at, status, total_amount')
+      .eq('prf_id', prfId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1000)
+      .then(({ data, error: qe }) => { if (!cancelled && !qe) setPrfQuotes(data || []); });
+    return () => { cancelled = true; };
+  }, [canSeeQuotations, prfId]);
 
   // ── Cost-item row ops (edit only) ──
   const addRow = () => setRows(r => [...r, { id: null, component: '', cost_type: 'vendor', amount: '0', currency: answer.rate_currency || 'IDR', sort_order: r.length, notes: '' }]);
@@ -144,6 +168,27 @@ export default function PRFDetailPage({ prfId, onBack, showToast }) {
   );
 
   const customer = prf.account?.name || prf.account_name_manual || '—';
+
+  // Tombol "Buat Quotation" — SEMUA syarat wajib terpenuhi, kalau tidak: tak dirender
+  // sama sekali (bukan disabled): (a) harga sudah dijawab, (b) suggested_rate > 0,
+  // (c) status bukan CANCELLED/EXPIRED, plus gate menu Quotation (fail-closed).
+  const canCreateQuotation =
+    typeof onCreateQuotation === 'function' &&
+    canSeeQuotations &&
+    !!prf.answered_at &&
+    num(prf.suggested_rate) > 0 &&
+    !['CANCELLED', 'EXPIRED'].includes(String(prf.status || '').toUpperCase());
+
+  // Payload prefill utk QuotationFormPage. pricing_notes SENGAJA TIDAK dibawa —
+  // catatan internal procurement soal harga modal, quotation dikirim ke customer.
+  const handleCreateQuotation = () => onCreateQuotation({
+    prf_id:         prf.id,
+    inquiry_id:     prf.inquiry_id || null,
+    rate_currency:  prf.rate_currency || 'IDR',
+    valid_until:    prf.valid_until || null,
+    suggested_rate: num(prf.suggested_rate),
+    cost_total:     totalModal, // Σ prf_cost_items.amount (angka "Total Modal" di layar)
+  });
   // Summary field list (kosong disaring)
   const summary = [
     ['Customer', customer],
@@ -165,7 +210,16 @@ export default function PRFDetailPage({ prfId, onBack, showToast }) {
 
   return (
     <div style={page}>
-      <button type="button" onClick={onBack} style={backBtn}><ChevronLeft size={16} />Kembali</button>
+      {/* Baris aksi atas: Kembali (kiri) + Buat Quotation (kanan, conditional) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <button type="button" onClick={onBack} style={backBtn}><ChevronLeft size={16} />Kembali</button>
+        {canCreateQuotation && (
+          <button type="button" onClick={handleCreateQuotation}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 10, border: `1px solid ${ORANGE}`, background: ORANGE, color: '#fff', fontFamily: HEAD, fontWeight: 700, fontSize: 13, cursor: 'pointer', marginBottom: 18 }}>
+            <FileText size={15} />Buat Quotation
+          </button>
+        )}
+      </div>
 
       {/* Header ringkas */}
       <div style={{ marginBottom: 18 }}>
@@ -300,6 +354,43 @@ export default function PRFDetailPage({ prfId, onBack, showToast }) {
           )}
         </div>
       </section>
+
+      {/* Riwayat quotation dari PRF ini — informasional, BUKAN pemblokir (satu PRF
+          boleh punya banyak quotation karena harga bisa direvisi). Disembunyikan
+          total untuk user tanpa akses modul Quotation (procurement — TD-90). */}
+      {canSeeQuotations && (
+        <section style={card}>
+          <div style={secBar}><span style={secTitle}>Quotation dari PRF Ini</span></div>
+          <div style={secBody}>
+            {prfQuotes.length === 0 ? (
+              <div style={{ fontSize: 13, color: MUTE }}>Belum ada quotation yang dibuat dari PRF ini.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={th}>Quotation No</th>
+                      <th style={th}>Tanggal</th>
+                      <th style={th}>Status</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prfQuotes.map(q => (
+                      <tr key={q.id}>
+                        <td style={{ ...td, fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, color: NAVY }}>{q.quotation_no}</td>
+                        <td style={td}>{fmtDate(q.quote_date || q.created_at)}</td>
+                        <td style={td}>{String(q.status || '—').toUpperCase()}</td>
+                        <td style={numTd}>Rp {money(q.total_amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

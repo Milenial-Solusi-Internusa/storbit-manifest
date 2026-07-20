@@ -1701,6 +1701,7 @@ export default function StorbitManifest() {
   const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
   const [prfPrefillInquiryId, setPrfPrefillInquiryId] = useState(null);  // inquiry id → prefill PRF form (Cetak PRF)
   const [procPrfDetailId, setProcPrfDetailId] = useState(null);  // prf id → PRFDetailPage (dari list Forwarding MSI)
+  const [quotationFromPrf, setQuotationFromPrf] = useState(null); // payload prefill PRF → QuotationFormPage ("Buat Quotation" di PRFDetailPage)
   const [soDetailId, setSoDetailId] = useState(null);  // SO id → tampilkan SO detail (crm/proc)
   const [soFormOpen, setSoFormOpen] = useState(false); // buka SO create form (crm)
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
@@ -1806,6 +1807,7 @@ export default function StorbitManifest() {
     setCrmQuotationDetail(null);
     setEditingQuotation(null);
     setDuplicatingQuotation(null);
+    setQuotationFromPrf(null);
     setCrmDealInquiry(null);
     setCustomerInquiryEdit(null);
     setCustomerQuotationView(null);
@@ -3171,7 +3173,7 @@ export default function StorbitManifest() {
                 <DealDetailPage
                   inquiryId={crmDealInquiry.id}
                   onBack={() => setCrmDealInquiry(null)}
-                  onCreateQuotation={() => { setCrmDealInquiry(null); setEditingQuotation(null); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onCreateQuotation={() => { setCrmDealInquiry(null); setEditingQuotation(null); setQuotationFromPrf(null); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
                   onViewQuotation={(q) => { setCrmDealInquiry(null); setCrmQuotationDetail(q); setActiveMenu('quotation-draft'); }}
                   onEditInquiry={() => setShowInquiryForm(true)}
                   onCreatePRF={() => { setPrfPrefillInquiryId(crmDealInquiry.id); setCrmDealInquiry(null); setActiveMenu('prf'); }}
@@ -3277,7 +3279,7 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Quotation List temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <QuotationListPage
-                  onAddQuotation={() => { setEditingQuotation(null); setShowQuotationForm(true); }}
+                  onAddQuotation={() => { setEditingQuotation(null); setQuotationFromPrf(null); setShowQuotationForm(true); }}
                   onSelectQuotation={(q) => setCrmQuotationDetail(q)}
                   showToast={showToast}
                 />
@@ -3291,8 +3293,8 @@ export default function StorbitManifest() {
                 <QuotationDetailPage
                   quotationId={crmQuotationDetail.id}
                   onBack={() => setCrmQuotationDetail(null)}
-                  onEdit={(q) => { setDuplicatingQuotation(null); setEditingQuotation(q); setShowQuotationForm(true); }}
-                  onDuplicate={(q) => { setEditingQuotation(null); setDuplicatingQuotation(q); setShowQuotationForm(true); }}
+                  onEdit={(q) => { setDuplicatingQuotation(null); setQuotationFromPrf(null); setEditingQuotation(q); setShowQuotationForm(true); }}
+                  onDuplicate={(q) => { setEditingQuotation(null); setQuotationFromPrf(null); setDuplicatingQuotation(q); setShowQuotationForm(true); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -3349,8 +3351,8 @@ export default function StorbitManifest() {
                 <QuotationDetailPage
                   quotationId={customerQuotationView}
                   onBack={() => setCustomerQuotationView(null)}
-                  onEdit={(q) => { setCustomerQuotationView(null); setDuplicatingQuotation(null); setEditingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
-                  onDuplicate={(q) => { setCustomerQuotationView(null); setEditingQuotation(null); setDuplicatingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onEdit={(q) => { setCustomerQuotationView(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); setEditingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onDuplicate={(q) => { setCustomerQuotationView(null); setEditingQuotation(null); setQuotationFromPrf(null); setDuplicatingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -3440,7 +3442,8 @@ export default function StorbitManifest() {
           {activeMenu === 'proc-inquiry-fwd-msi' && procPrfDetailId && (canRenderPage('proc-inquiry-fwd-msi') ? (
             <ErrorBoundary title="PRF Detail temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <PRFDetailPage prfId={procPrfDetailId} onBack={() => setProcPrfDetailId(null)} showToast={showToast} />
+                <PRFDetailPage prfId={procPrfDetailId} onBack={() => setProcPrfDetailId(null)} showToast={showToast}
+                  onCreateQuotation={(payload) => { setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(payload); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }} />
               </Suspense>
             </ErrorBoundary>
           ) : (
@@ -3633,7 +3636,8 @@ export default function StorbitManifest() {
                 <QuotationFormPage
                   quotation={editingQuotation}
                   duplicateFrom={duplicatingQuotation}
-                  onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); setDuplicatingQuotation(null); }}
+                  prefillFromPrf={quotationFromPrf}
+                  onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); }}
                   showToast={showToast}
                 />
               </Suspense>
