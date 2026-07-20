@@ -132,6 +132,7 @@ Sumber: matrix permission `CLAUDE.md`. **CRUD** = full, **R** = read-only, **-**
 | SERVICE | Asset Management | AssetShell (16 sub-objek) | inherit | LIVE |
 | SERVICE | IT Service Mgmt | ComingSoon | — | 📋 soon |
 | PROCUREMENT | PRF (Price Request Form — form) | PRFFormPage | role[sales,gm_bd,procurement,manager,ceo,admin,super_admin] | LIVE (Fase 1; menu terlihat semua role di list, tapi **hanya sales/gm_bd bisa Submit/Draft** — dijaga RLS `prf_insert`; role lain submit → toast error) |
+| PROCUREMENT | PRF — Detail + Jawaban Harga (cost build-up) | PRFDetailPage | **edit: `['procurement','super_admin'].includes(erpRole)`** (cermin RLS `prf_update_status` + `prf_cost_items`); lihat: siapa pun yang berhak baca PRF (`prf_select`: own OR procurement OR manager+ OR super) | LIVE (20 Jul 2026; dibuka dari list "Forwarding (MSI)"; sales/manager = LIHAT saja, panel read-only; **RLS = penegak**; write butuh `status='SUBMITTED'` → lihat `08_TECH_DEBT` TD-109) |
 | PROCUREMENT | PR · PO · Vendor Mgmt | ComingSoon | — | 📋 soon |
 | REPORTING | Sales Report | CRMReportPage | role[super_admin,admin,ceo,gm,gm_bd,manager,supervisor] | LIVE |
 | REPORTING | ~~Riwayat Visit~~ | ~~RiwayatVisitPage~~ | — | **PINDAH ke grup CRM** (Tahap 2c, 19 Jul — kini tab "Aktivitas › Riwayat Visit"; lihat baris CRM) |

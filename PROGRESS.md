@@ -1,5 +1,33 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-20
+
+### PRF Pricing Answer — jawaban harga procurement + cost build-up per komponen — branch `feat/prf-pricing-answer`
+
+**Ringkas:** tempat tim pricing/procurement menuliskan jawaban harga atas PRF, dengan cost build-up dirinci per komponen (vendor vs internal). Tidak ada role `pricing` di sistem (hanya `procurement`) → "pricing/procurement" = procurement.
+
+**DB (SQL DIJALANKAN MANUAL oleh Den di SQL Editor — belum tentu live; rekaman `supabase/migrations/20260720000000_prf_pricing_answer.sql`, non-destruktif/idempotent):**
+- **`prf` +7 kolom jawaban:** `suggested_rate` numeric(18,2), `rate_currency` text NOT NULL DEFAULT 'IDR', `valid_from` date, `valid_until` date, `pricing_notes` text, `answered_by` uuid (FK→profiles), `answered_at` timestamptz. Semua nullable kecuali `rate_currency`. Ditulis via UPDATE `prf` → dijaga policy `prf_update_status` yang ADA (procurement + SUBMITTED). NOL policy prf baru.
+- **Tabel anak baru `prf_cost_items`:** `prf_id` NOT NULL FK→prf ON DELETE CASCADE, `component`, `cost_type` DEFAULT 'vendor' CHECK IN (vendor,internal), `amount` numeric(18,2) DEFAULT 0, `currency` DEFAULT 'IDR', `sort_order`, `notes`, timestamps. + index `idx_prf_cost_items_prf_id` + trigger `set_prf_cost_items_updated_at` (reuse `set_updated_at`) + GRANT authenticated.
+- **RLS `prf_cost_items` (4 policy) DITURUNKAN dari policy prf ASLI via EXISTS ke induk `public.prf` (pola quotation_items/activity_logs):** SELECT ← predikat `prf_select`; INSERT/UPDATE/DELETE ← predikat USING `prf_update_status` (procurement + status='SUBMITTED' + company + deleted_at IS NULL), dibungkus `is_super_admin() OR (…)`. **Catatan:** tabel `prf` TIDAK punya DELETE policy sendiri — write anak sengaja diikat ke `prf_update_status`, TIDAK dilonggarkan.
+- **RPC atomik `save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb)`** [migrasi TERPISAH `supabase/migrations/20260720000001_save_prf_pricing_rpc.sql`] — **SECURITY INVOKER** (RLS tetap penegak: `prf_update_status` header, `prf_cost_items_*` rincian; NOL perubahan policy). Satu transaksi plpgsql: UPDATE header (guard `GET DIAGNOSTICS ROW_COUNT=0 → RAISE` = blokir tak-berwenang SEBELUM delete) → DELETE rincian → INSERT rincian dari `jsonb_array_elements`. **RAISE apa pun me-rollback SELURUH transaksi** → header tak tersimpan & rincian lama tak hilang. `answered_by`=server `auth.uid()`, `answered_at`=now(). GRANT EXECUTE authenticated. **Jejak keputusan (pelajaran):** implementasi awal = 3 request client terpisah (UPDATE + DELETE + INSERT) → **TIDAK atomik** (bila DELETE commit lalu INSERT gagal karena RLS/putus koneksi → rincian biaya lama HILANG, header terlanjur tersimpan; window kehilangan data nyata utk procurement berwenang pada PRF SUBMITTED) → diganti RPC atomik (keputusan Den, opsi A).
+
+**FE (3 file, verifikasi = pembacaan kode CC, bukan runtime):**
+- **BARU `src/modules/procurement/PRFDetailPage.jsx`** — halaman detail PRF minimal (keputusan Den: summary read-only + panel Jawaban Harga saja, tanpa tombol edit/hapus/cetak PRF). Dibuat karena SEBELUMNYA tak ada halaman detail PRF (hanya form create + list non-klik). Panel: tabel rincian biaya (tambah/hapus/urut baris) → **Total Modal** (Σ amount) → **Harga Jual** (`suggested_rate`) → **Untung** & **Margin %** — ketiganya **dihitung saat render, TIDAK disimpan ke DB**. Simpan → **satu `supabase.rpc('save_prf_pricing', { p_prf_id, p_header, p_items })`** (menggantikan 3 request terpisah; semantik field identik: kosong→NULL, `rate_currency` default IDR, replace rincian; `answered_by` diisi server via `auth.uid()`). Gate edit `['procurement','super_admin'].includes(erpRole)` (`canEdit`, cermin RLS); sales/manager = LIHAT saja (panel read-only). RLS = penegak sebenarnya.
+- **`ProcInquiryForwardingPage.jsx`** — baris list jadi klik-able (prop `onSelect(r.id)`); kolom/filter TIDAK diubah.
+- **`src/App.jsx`** — lazy import PRFDetailPage + state `procPrfDetailId` + render block (`proc-inquiry-fwd-msi`: list `!procPrfDetailId` + cabang detail, keduanya di bawah `canRenderPage('proc-inquiry-fwd-msi')`) + reset di `navigateTo`.
+
+**Keputusan desain penting:**
+- **Menyimpan jawaban harga TIDAK mengubah `prf.status`** (terverifikasi: satu-satunya penulis status = form create `PRFFormPage:~372`; tak ada transisi) → procurement bisa mengoreksi ulang selama PRF `SUBMITTED`.
+- **Heads-up / TD-109 (LOW):** kalau kelak ada transisi `SUBMITTED→QUOTED`, procurement akan terkunci dari edit (RLS menuntut SUBMITTED). Belum ditangani (di luar scope).
+- **TD-83** (costing/margin PRF) SEBAGIAN teraddress: cost build-up + margin % ada; approve/reject/BOM + koneksi otomatis ke quotation BELUM.
+
+**Verifikasi:** build clean (2591 modules, 1.71s); lint 165 (net-zero). **Belum tes runtime** (perlu login + SQL migrasi dijalankan dulu).
+
+**⚠️ Reminder manual (git tak tahu):** (1) jalankan **DUA** file SQL **berurutan** — `20260720000000_prf_pricing_answer.sql` (kolom+tabel+RLS) LALU `20260720000001_save_prf_pricing_rpc.sql` (RPC); tanpa RPC → simpan gagal ("function save_prf_pricing not found"); (2) refresh `schema_snapshot.sql` via `pg_dump` setelah live (snapshot STALE — belum memuat 7 kolom `prf` + tabel `prf_cost_items` + RPC `save_prf_pricing`).
+
+Detail dok: `03_DATA_MODEL` (`prf` +7 kolom, `prf_cost_items`) · `05_WORKFLOW_MAP` §Procurement — PRF (langkah "Jawaban Harga") · `04_ROLE_PERMISSION_MATRIX` (baris PRFDetailPage) · `08_TECH_DEBT` TD-109.
+
 ## 2026-07-19
 
 ### PRF hanya boleh lahir DARI INQUIRY — hapus sumber Customer/Prospect dari form — branch `feat/prf-inquiry-only`, commit `28eb85a`, sudah merge ke main
