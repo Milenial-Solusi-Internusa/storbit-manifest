@@ -37,3 +37,5 @@ coverage
 # Local-only working docs (jangan di-track / di-commit)
 RBAC_AUDIT.md
 backup_full_*.sql
+.vercel
+.env*
