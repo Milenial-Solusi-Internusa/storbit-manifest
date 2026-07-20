@@ -57,7 +57,7 @@ Detail status sub-fitur: `docs/09_ROADMAP.md`.
 
 - **Performance:** server-side pagination + search untuk list besar; debounce search (min 300ms); `.limit(1000)` wajib (default PostgREST 10); select kolom eksplisit; lazy-load modul (`React.lazy`); aggregate/materialized view untuk dashboard berat; tidak render ribuan row sekaligus.
 - **Security:** Supabase Auth; RLS company- + role-scoped wajib tiap tabel business; MFA untuk admin/BOD/Finance Controller/Head ([TODO: status implementasi MFA — security baseline mewajibkan, verifikasi]); audit 19 event wajib ([TODO: belum diimplementasi — lihat TECH_DEBT TD-05]); soft-delete default; private bucket + signed URL untuk attachment; tidak ada service-role key di frontend.
-- **Availability / Deploy:** Vercel auto-deploy dari `main` → production `nexus.dli.my.id`. Dev/staging/prod terpisah ([TODO: konfirmasi setup staging environment]).
+- **Availability / Deploy:** Vercel auto-deploy dari `main` → production `nexus.msigroup.co.id`. Dev/staging/prod terpisah ([TODO: konfirmasi setup staging environment]).
 - **Browser support:** modern evergreen (Chrome/Edge/Firefox/Safari terbaru). Responsive desktop + mobile (breakpoint `lg = 1024px`).
 - **Observability:** error monitoring (Sentry) = direncanakan, belum terpasang (TECH_DEBT TD-08).
 

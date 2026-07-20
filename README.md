@@ -36,7 +36,7 @@ Nexus by MSI is the unified internal business platform covering master data, tra
 | RLS | Supabase Row Level Security | — |
 | Server logic | Supabase Edge Functions (Deno) | — |
 | File storage | Supabase Storage (private + avatars) | — |
-| Hosting | Vercel — auto-deploy from `main` → `nexus.dli.my.id` | — |
+| Hosting | Vercel — auto-deploy from `main` → `nexus.msigroup.co.id` | — |
 | Source Control | GitHub (`main` = production) | — |
 
 ---

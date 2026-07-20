@@ -5,7 +5,7 @@
 
 ## 1. APA INI
 Nexus by MSI — ERP/CRM multi-entity. Stack: React + Vite + Supabase + Tailwind.
-Deploy nexus.dli.my.id via Vercel (auto-deploy dari branch main).
+Deploy nexus.msigroup.co.id via Vercel (auto-deploy dari branch main).
 Repo: mhmmdjaelaniii/storbit-manifest.
 
 | Entitas | Nama | Bidang |
