@@ -41,6 +41,7 @@ const InquiryListPage      = lazy(() => import('./modules/crm/InquiryListPage'))
 const InquiryFormPage      = lazy(() => import('./modules/crm/InquiryFormPage'));
 const PRFFormPage          = lazy(() => import('./modules/procurement/PRFFormPage'));
 const ProcInquiryForwardingPage = lazy(() => import('./modules/procurement/ProcInquiryForwardingPage'));
+const PRFDetailPage        = lazy(() => import('./modules/procurement/PRFDetailPage'));
 const SalesOrderDocListPage   = lazy(() => import('./modules/sales-order/SalesOrderDocListPage'));
 const SalesOrderDocFormPage   = lazy(() => import('./modules/sales-order/SalesOrderDocFormPage'));
 const SalesOrderDocDetailPage = lazy(() => import('./modules/sales-order/SalesOrderDocDetailPage'));
@@ -1699,6 +1700,7 @@ export default function StorbitManifest() {
   const [duplicatingQuotation, setDuplicatingQuotation] = useState(null);  // source row for duplicate (prefilled create)
   const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
   const [prfPrefillInquiryId, setPrfPrefillInquiryId] = useState(null);  // inquiry id → prefill PRF form (Cetak PRF)
+  const [procPrfDetailId, setProcPrfDetailId] = useState(null);  // prf id → PRFDetailPage (dari list Forwarding MSI)
   const [soDetailId, setSoDetailId] = useState(null);  // SO id → tampilkan SO detail (crm/proc)
   const [soFormOpen, setSoFormOpen] = useState(false); // buka SO create form (crm)
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
@@ -1810,6 +1812,7 @@ export default function StorbitManifest() {
     setCustomerPrfInquiryId(null);
     setCustomerDetailTab('info');
     setPrfPrefillInquiryId(null);
+    setProcPrfDetailId(null);
     setSoDetailId(null);
     setSoFormOpen(false);
     setReportingMomMode('list');
@@ -3424,10 +3427,20 @@ export default function StorbitManifest() {
           ))}
 
           {/* ── Procurement: Inquiry/RFQ → Direct → Forwarding (MSI) placeholder ─ */}
-          {activeMenu === 'proc-inquiry-fwd-msi' && (canRenderPage('proc-inquiry-fwd-msi') ? (
+          {activeMenu === 'proc-inquiry-fwd-msi' && !procPrfDetailId && (canRenderPage('proc-inquiry-fwd-msi') ? (
             <ErrorBoundary title="Procurement Forwarding temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <ProcInquiryForwardingPage onBack={() => setActiveMenu('home')} />
+                <ProcInquiryForwardingPage onBack={() => setActiveMenu('home')} onSelect={setProcPrfDetailId} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+          {/* ── Procurement: PRF Detail (dari list Forwarding MSI) ───────────── */}
+          {activeMenu === 'proc-inquiry-fwd-msi' && procPrfDetailId && (canRenderPage('proc-inquiry-fwd-msi') ? (
+            <ErrorBoundary title="PRF Detail temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <PRFDetailPage prfId={procPrfDetailId} onBack={() => setProcPrfDetailId(null)} showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           ) : (
