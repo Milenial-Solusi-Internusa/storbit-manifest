@@ -88,6 +88,7 @@
 | Produk 4-tier harga | `default_price` + semester/tahunan/project (`set_product_category_prices`, bulk update) + riwayat harga | **LIVE** |
 | `accounts` (master customer tunggal) | lifecycle prospect → customer | **LIVE** |
 | `dc_master` | master Distribution Center + wilayah | **LIVE** |
+| Master Vendor (`vendors`) | halaman Procurement → Vendor Management → Vendor List (`VendorListPage`, 21 Jul 2026): list company-scoped + tambah/edit 18 field + "Nonaktifkan" = soft-delete `deleted_at`. **Pintu masuk UI PERTAMA** untuk tabel `vendors` (sebelumnya hanya dibaca dropdown Penerimaan Barang). ⚠️ **belum tersambung ke PRF/PR/PO** (nol FK masuk). Pembaca lama `PenerimaanBarangPage` ikut disesuaikan (dropdown GRN kini menyaring `deleted_at IS NULL`) menjelang rencana pencabutan syarat itu dari RLS `vendors_select` | **LIVE di kode** — ✅ **tes runtime SEBAGIAN** (login `procurement` asli: menu muncul, halaman terbuka, list company-scoped benar); ⚠️ **edit & soft delete belum teruji** |
 | Dropdown management | `dropdown_options` DB-driven + `useDropdownOptions` | **LIVE** |
 | Penomoran dokumen | `increment_document_sequence` + `document_sequences` | **LIVE** |
 
