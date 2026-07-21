@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict aomWovkPARkNUpEzcKA1LCGkrBSIWaU81QhXaMMjE61M8Rhc4D8bI0gAbP4TidF
+\restrict jW9L48W4aihf58LYdkyeTuNfhIPlrfkoNV2uW7QGbVgfsjjj8TmjzyiZizXZUBB
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -12578,7 +12578,7 @@ CREATE POLICY vendors_insert ON public.vendors FOR INSERT TO authenticated WITH 
 -- Name: vendors vendors_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY vendors_select ON public.vendors FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
+CREATE POLICY vendors_select ON public.vendors FOR SELECT TO authenticated USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
@@ -12621,5 +12621,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict aomWovkPARkNUpEzcKA1LCGkrBSIWaU81QhXaMMjE61M8Rhc4D8bI0gAbP4TidF
+\unrestrict jW9L48W4aihf58LYdkyeTuNfhIPlrfkoNV2uW7QGbVgfsjjj8TmjzyiZizXZUBB
 
