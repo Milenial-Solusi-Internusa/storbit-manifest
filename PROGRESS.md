@@ -1,5 +1,64 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-21
+
+### Dua migrasi DB-only — rombak RLS `vendors` + FK currency `prf_cost_items` + kolom `prf.exchange_rates`
+
+**Ringkas:** batch **DB-only, NOL file frontend**. Dua SQL **sudah dijalankan Den & LIVE**, keduanya direkam sebagai file migrasi (banner "REKAMAN — jangan jalankan ulang"). Menutup **TD-47** dan menyiapkan fondasi currency untuk PRF. **Sisa dari percobaan multi-vendor yang dibatalkan** — lihat blok "BELUM DIKERJAKAN" di bawah.
+
+**MIGRASI 1 — `supabase/migrations/20260721000000_vendors_rls_overhaul.sql` (RLS `vendors`).**
+- **Kondisi LAMA: LIMA policy tumpang tindih** warisan `20260524000014_rls_policy_draft.sql` — `vendors_select`, `vendors_read`, `vendors_insert`, `vendors_update`, `vendors_modify`.
+- **Kondisi BARU: EMPAT policy** — `vendors_select` / `vendors_insert` / `vendors_update` / `vendors_delete`. Semua **`TO authenticated`**, company-scoped (`company_id = get_user_company_id()`), role gate **`is_manager_or_above() OR has_role('procurement')`**, super admin bypass top-level (`is_super_admin() OR (…)`). SELECT & UPDATE USING juga menuntut `deleted_at IS NULL`. **DELETE = super admin only.**
+- **Tiga cacat yang ditutup:**
+  - **(a) Role legacy** — `vendors_update` WITH CHECK lama pakai `has_role('procurement_head')`/`has_role('procurement_staff')` = **role hantu** (tak ada di tabel `roles`; kanonik `procurement`). Kini `has_role('procurement')` sesuai taksonomi aktif. → **TD-47 RESOLVED.**
+  - **(b) `vendors_select USING(true)` TANPA klausa `TO`** — menganulir scoping company `vendors_read` (policy permissive di PostgreSQL di-OR-kan → `USING(true)` menang) = **kebocoran BACA lintas entitas antar user login** (user MSI bisa baca vendor SOA). ⚠️ **Catatan akurat: `anon` TIDAK terdampak** — `anon` tak punya GRANT ke tabel ini → **bocor antar-user-login, BUKAN bocor publik/anonim.** Jangan naikkan severity melebihi fakta.
+  - **(c) `vendors_insert WITH CHECK (auth.uid() IS NOT NULL)`** — **tanpa cek role MAUPUN company** → user terautentikasi apa pun, role apa pun, bisa **menyisipkan vendor ke company mana pun**. **Ini yang PALING BERBAHAYA dari kelimanya**, dan **luput** baik dari catatan TD-47 lama maupun dari `AUDIT_PRF_VENDOR.md` (audit hanya menamai `vendors_update`). Audit + TD sudah **dikoreksi in-place**.
+- **Koreksi penilaian lama:** TD-47 dulu berlabel "belum bahaya (vendors bukan data sensitif)". Itu **mengecilkan masalah** — (b) dan (c) adalah lubang isolasi entitas nyata, bukan sekadar kotor.
+- Konteks yang tak berubah: `vendors` tetap **master data yatim** — nol FK masuk, satu-satunya pembaca FE = `PenerimaanBarangPage.jsx:332` (inventory, bukan procurement). Rombakan ini **merapikan pintu**, bukan menghidupkan modul vendor.
+
+**MIGRASI 2 — `supabase/migrations/20260721000001_prf_currency_fk_exchange_rates.sql` (currency PRF).**
+- **(a) FK baru `prf_cost_items_currency_fkey`: `prf_cost_items.currency` → `currencies(code)`.** Sebelumnya `text NOT NULL DEFAULT 'IDR'` **tanpa FK tanpa CHECK** → nilai `'usd'` / `'IDR '` / typo diterima **diam-diam**. Meniru pola `vendors.currency_code → currencies(code)`.
+- **(b) Kolom baru `prf.exchange_rates jsonb NOT NULL DEFAULT '{}'::jsonb`** — tabel kurs manual **per-dokumen**, object map `{"USD":16200}`, **IDR implisit = 1 (tidak disimpan)**. Meniru **pola `quotations.exchange_rates`** (`20260717000000`) sebagai sumber kebenaran kurs, input manual tanpa lookup FX. Sudah ada `COMMENT ON COLUMN` di DB.
+- ⚠️ **`prf.exchange_rates` BELUM DIBACA KODE MANA PUN** — kolom disiapkan lebih dulu; aktif dipakai saat batch multi-vendor + currency PRF dijalankan. Jangan catat sebagai fitur hidup.
+- ⚠️ **Awas tabrakan nama:** ada **tabel** `public.exchange_rates` (master FX history) yang **berbeda & dorman** — lihat `03_DATA_MODEL` gotcha #13 + **TD-74**.
+
+**KEPUTUSAN DESAIN — kenapa `quotation_items.currency` TIDAK ikut dikunci.**
+- **Sengaja belum dikunci karena datanya sudah banyak** → memasang FK sekarang berisiko **FK violation** bila ada nilai historis tak match `currencies.code`.
+- Akibatnya sekarang ada **dua standar dalam satu alur dokumen**: **rantai PRF sudah tervalidasi**, **rantai quotation belum**. Dicatat sebagai **TD-113** (MEDIUM) dengan urutan aman: inventarisasi nilai distinct → normalisasi data lama → **baru** pasang FK.
+- Terverifikasi: `quotation_items` hanya punya `quotation_items_pkey` + `quotation_items_quotation_id_fkey` (`schema_snapshot.sql:5815,9308`) — **nol constraint pada `currency`**.
+
+**TECH DEBT BARU: TD-112 / TD-113 / TD-114.**
+- **TD-112 (LOW)** — GRANT `TRUNCATE`/`TRIGGER`/`REFERENCES` ke role `authenticated` di ~100 tabel schema `public`. **Default bawaan Supabase, BUKAN salah setelan.** `TRUNCATE` memang lolos RLS, **tapi PostgREST tak punya endpoint TRUNCATE** → tak bisa dipanggil klien. **Status jujur: defense-in-depth kurang rapat, BUKAN lubang aktif.** ⚠️ Kalau kelak diberesin: **REVOKE saja TIDAK CUKUP — `ALTER DEFAULT PRIVILEGES` harus ikut diubah**, kalau tidak tabel baru kembali ke kondisi semula. **Atribusi: fakta ~100 tabel dari Den (inspeksi DB), BUKAN verifikasi doc-keeper** — snapshot di-dump `--no-privileges` (**TD-63**) sehingga GRANT **tak terlihat di repo** dan klaim ini tak bisa dicek dari sini.
+- **TD-113 (MEDIUM)** — `quotation_items.currency` + kolom currency lain rantai quotation masih free text tanpa FK (lihat keputusan desain di atas).
+- **TD-114 (LOW)** — `calcRowTotal` banding `row.currency === 'IDR'` **case-sensitive** (`src/modules/crm/QuotationFormPage.jsx:155-161`, banding di `:159`). Nilai `'idr'` dianggap non-IDR lalu dikali `exchange_rate`; bila `exchange_rate` kosong → `Number('')||0` = **0** → total baris jadi 0. **Sisi PRF otomatis tertutup** oleh FK currency baru; **sisi quotation belum** (bergantung TD-113).
+
+**⚠️ BELUM DIKERJAKAN — MULTI-VENDOR `prf_cost_items` TIDAK ADA. JANGAN DIKLAIM SELESAI.**
+- Kolom **`vendor_id` / `item_group` / `is_awarded` / `exchange_rate`** (per-baris `prf_cost_items`) **sempat ditambahkan lalu di-DROP kembali**.
+- **Sebab: urutan eksekusi SALAH — DB didahulukan sebelum kode dan RPC siap.** Kolom lahir tanpa penulis/pembaca dan tanpa RPC yang memakainya → dibatalkan.
+- **PELAJARAN URUTAN EKSEKUSI (catat, jangan diulang): kode + RPC dulu, BARU DB.** Menambah kolom lebih awal hanya menciptakan permukaan skema yatim yang harus di-drop lagi.
+- Terverifikasi bersih: definisi `prf_cost_items` di `schema_snapshot.sql` **tidak memuat** keempat kolom itu (kolom = `id`, `prf_id`, `component`, `cost_type`, `amount`, `currency`, `sort_order`, `notes`, `created_at`, `updated_at`).
+- **Bentuk struktur multi-vendor BELUM DIPUTUSKAN** — opsi **A/B/C** ada di `AUDIT_PRF_VENDOR.md` (A: vendor sebagai atribut baris; B: tabel penawaran + award; C: satu harga dirakit lintas vendor). Keputusan ini **milik Den**, belum diambil.
+- Dua sisa yang **layak dipertahankan** dari percobaan itu = tepat kedua perubahan di Migrasi 2 (FK currency + `exchange_rates`).
+
+**Koreksi dokumen yang dikerjakan sesi ini (doc-keeper).**
+- `AUDIT_PRF_VENDOR.md` — **dua koreksi in-place** (isi audit lain dibiarkan apa adanya sebagai arsip): (1) jumlah policy bermasalah + `vendors_insert` yang luput dan justru paling berbahaya; (2) klaim read vendor "per-entitas" tidak akurat secara RLS efektif.
+- `03_DATA_MODEL.md` — entri `vendors` (RLS 4 policy baru), `prf_cost_items` (FK currency), `prf` (kolom `exchange_rates` + catatan multi-vendor belum ada).
+- **Koreksi klaim snapshot yang USANG** (temuan sesi ini, bertentangan dengan catatan lama): gotcha #10 masih menulis "`pg_dump` belum jalan"; entri `quotations.prf_id` masih menulis "BELUM masuk snapshot & BELUM direkam migrasi". **Keduanya sudah tidak benar** — lihat "Status snapshot" di bawah.
+- **+Koreksi cakupan trigger `trg_quotation_prf_consistency`:** dokumen mencatatnya sebagai penjaga **INSERT**; definisi sebenarnya **`BEFORE INSERT OR UPDATE`** (`schema_snapshot.sql:7527`) → jalur EDIT ikut dijaga. Trigger juga menolak bila PRF rujukan tak punya `inquiry_id`, selain menolak mismatch.
+
+**Status snapshot — SEGAR (koreksi terhadap asumsi awal sesi).**
+- ✅ `supabase/schema_snapshot.sql` **SUDAH memuat kedua migrasi 21 Jul**: 4 policy `vendors` baru ADA; `vendors_read` / `vendors_modify` **0 hit**; role legacy `procurement_head`/`procurement_staff` **0 hit** (di snapshot maupun `src/`); `prf_cost_items_currency_fkey` ADA; `prf.exchange_rates` ADA dalam definisi tabel `prf`.
+- ✅ Snapshot juga sudah memuat objek 20 Jul yang sempat dicatat tertinggal: `quotations.prf_id` + FK + fungsi + trigger.
+- **Tidak ada utang `pg_dump` yang diketahui per 21 Jul 2026.**
+- **Atribusi jujur:** verifikasi ini = **grep pada file `supabase/schema_snapshot.sql` di repo oleh doc-keeper**, **bukan** query ke database langsung. Yang dijamin: isi file snapshot. Yang **tidak** dijamin doc-keeper: bahwa DB live identik dengan snapshot (klaim "sudah dijalankan & LIVE" berasal dari Den).
+
+**Verifikasi & batasan.**
+- **NOL file frontend disentuh** batch ini → tidak ada `npm run build` / lint yang relevan untuk dilaporkan.
+- **Tidak ada tes runtime** untuk RLS `vendors` baru. Belum diverifikasi lewat UI/JWT bahwa: procurement bisa insert vendor di company-nya; user non-manager/non-procurement ditolak; user entitas lain tak bisa membaca. `vendors` kemungkinan besar **0 baris** → butuh seed minimal untuk uji. **Jangan anggap gate ini terbukti jalan.**
+- Rujukan: `03_DATA_MODEL` (`vendors`/`prf`/`prf_cost_items`) · `08_TECH_DEBT` **TD-47** (RESOLVED) / **TD-112** / **TD-113** / **TD-114** / TD-55 (kerabat, tetap OPEN) · `AUDIT_PRF_VENDOR.md` (blok koreksi + opsi A/B/C).
+
+---
+
 ## 2026-07-20
 
 ### "Buat Quotation dari PRF" — sambungkan ujung rantai dokumen Inquiry → PRF → Quotation — branch `main` (working tree)
