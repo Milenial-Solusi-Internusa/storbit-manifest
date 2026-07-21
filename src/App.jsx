@@ -42,6 +42,7 @@ const InquiryFormPage      = lazy(() => import('./modules/crm/InquiryFormPage'))
 const PRFFormPage          = lazy(() => import('./modules/procurement/PRFFormPage'));
 const ProcInquiryForwardingPage = lazy(() => import('./modules/procurement/ProcInquiryForwardingPage'));
 const PRFDetailPage        = lazy(() => import('./modules/procurement/PRFDetailPage'));
+const VendorListPage       = lazy(() => import('./modules/procurement/VendorListPage'));
 const SalesOrderDocListPage   = lazy(() => import('./modules/sales-order/SalesOrderDocListPage'));
 const SalesOrderDocFormPage   = lazy(() => import('./modules/sales-order/SalesOrderDocFormPage'));
 const SalesOrderDocDetailPage = lazy(() => import('./modules/sales-order/SalesOrderDocDetailPage'));
@@ -669,6 +670,9 @@ const ERP_MENU_GROUPS = [
       { id: 'proc-inquiry-fwd-msi', label: 'Forwarding (MSI)', icon: Ship, role: ['sales','gm_bd','procurement','manager','ceo','admin','super_admin'] },
       // Gate registry untuk node SO sisi Procurement (read-only inbox — terima dari Sales).
       { id: 'proc-sales-order', label: 'Sales Order', icon: ClipboardList, role: ['procurement','manager','ceo','admin','super_admin'] },
+      // Gate registry Master Vendor. Role list = cermin RLS `vendors_*` (21 Jul):
+      // has_role('procurement') + tujuh kode is_manager_or_above(). Sales dikecualikan.
+      { id: 'proc-vendor-list', label: 'Vendor List', icon: Users, role: ['procurement','manager','supervisor','gm','gm_bd','ceo','admin','super_admin'] },
       {
         id: 'procRequest', label: 'Procurement Request', icon: ClipboardCheck,
         children: [
@@ -1063,7 +1067,7 @@ const NEXUS_NAV = [
           {
             id: 'proc-vendor', label: 'Vendor Management', icon: UsersRound,
             children: [
-              { id: 'proc-vendor-list',       label: 'Vendor List',                     icon: Users,   soon: true },
+              { id: 'proc-vendor-list',       label: 'Vendor List',                     icon: Users   },              // ← ACTIVE (Master Vendor)
               { id: 'proc-vendor-onboarding', label: 'Vendor Onboarding / Registration', icon: Contact, soon: true },
               { id: 'proc-vendor-catalog',    label: 'Vendor Price List / Catalog',      icon: Tag,     soon: true },
               {
@@ -2831,7 +2835,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3461,6 +3465,17 @@ export default function StorbitManifest() {
                 ) : (
                   <SalesOrderDocListPage variant="crm" onCreate={() => setSoFormOpen(true)} onSelect={(r) => setSoDetailId(r.id)} showToast={showToast} />
                 )}
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+
+          {/* ── Procurement: Master Vendor (Vendor Management → Vendor List) ──── */}
+          {activeMenu === 'proc-vendor-list' && (canRenderPage('proc-vendor-list') ? (
+            <ErrorBoundary title="Master Vendor temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <VendorListPage onBack={() => setActiveMenu('home')} showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           ) : (
