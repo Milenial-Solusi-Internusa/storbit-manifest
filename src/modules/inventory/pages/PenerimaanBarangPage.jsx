@@ -332,7 +332,8 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
         supabase.from('vendors')
           .select('id, code, name, vendor_type')
           .eq('company_id', soa.id)
-          .eq('is_active', true),
+          .eq('is_active', true)
+          .is('deleted_at', null),
       ]);
 
       if (pRes.error) throw pRes.error;
