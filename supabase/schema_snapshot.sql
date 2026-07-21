@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 5Rlali1rAQbb9lpUQZKGA3PkgGrS3O2JHdaW9KTURc9hiSNJLt2ZsnE3anMidrE
+\restrict aomWovkPARkNUpEzcKA1LCGkrBSIWaU81QhXaMMjE61M8Rhc4D8bI0gAbP4TidF
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -3882,6 +3882,7 @@ CREATE TABLE public.prf (
     pricing_notes text,
     answered_by uuid,
     answered_at timestamp with time zone,
+    exchange_rates jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT prf_status_check CHECK (((status)::text = ANY (ARRAY['DRAFT'::text, 'SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'CANCELLED'::text, 'QUOTED'::text, 'EXPIRED'::text])))
 );
 
@@ -9108,6 +9109,14 @@ ALTER TABLE ONLY public.prf
 
 
 --
+-- Name: prf_cost_items prf_cost_items_currency_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_cost_items
+    ADD CONSTRAINT prf_cost_items_currency_fkey FOREIGN KEY (currency) REFERENCES public.currencies(code);
+
+
+--
 -- Name: prf_cost_items prf_cost_items_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12552,38 +12561,31 @@ CREATE POLICY user_roles_update ON public.user_roles FOR UPDATE TO authenticated
 ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: vendors vendors_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY vendors_delete ON public.vendors FOR DELETE TO authenticated USING (public.is_super_admin());
+
+
+--
 -- Name: vendors vendors_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY vendors_insert ON public.vendors FOR INSERT WITH CHECK ((auth.uid() IS NOT NULL));
-
-
---
--- Name: vendors vendors_modify; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY vendors_modify ON public.vendors USING (public.is_super_admin());
-
-
---
--- Name: vendors vendors_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY vendors_read ON public.vendors FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin())));
+CREATE POLICY vendors_insert ON public.vendors FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('procurement'::text)))));
 
 
 --
 -- Name: vendors vendors_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY vendors_select ON public.vendors FOR SELECT USING (true);
+CREATE POLICY vendors_select ON public.vendors FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
 
 
 --
 -- Name: vendors vendors_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY vendors_update ON public.vendors FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin()))) WITH CHECK (((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('procurement_head'::text) OR public.has_role('procurement_staff'::text))));
+CREATE POLICY vendors_update ON public.vendors FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL) AND (public.is_manager_or_above() OR public.has_role('procurement'::text))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('procurement'::text)))));
 
 
 --
@@ -12619,5 +12621,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 5Rlali1rAQbb9lpUQZKGA3PkgGrS3O2JHdaW9KTURc9hiSNJLt2ZsnE3anMidrE
+\unrestrict aomWovkPARkNUpEzcKA1LCGkrBSIWaU81QhXaMMjE61M8Rhc4D8bI0gAbP4TidF
 
