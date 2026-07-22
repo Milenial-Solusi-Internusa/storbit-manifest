@@ -1,6 +1,6 @@
--- STATUS: BELUM DIJALANKAN saat file ini dibuat (22 Jul 2026).
--- Jalankan manual di Supabase SQL Editor, lalu verifikasi dengan query di bagian
--- VERIFIKASI di bawah. Jangan percaya pesan "Success" — cek information_schema.
+-- STATUS: SUDAH DIJALANKAN 22 Jul 2026, terverifikasi.
+-- Bukti: information_schema.columns -> external_ref & booking_no ada, data_type
+-- text, is_nullable YES, column_default NULL. schema_snapshot.sql sudah di-refresh.
 --
 -- Dua kolom referensi eksternal pada sales_orders. Keduanya NULLABLE, tanpa
 -- DEFAULT, dan SENGAJA belum dipakai UI mana pun.
