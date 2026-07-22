@@ -1717,10 +1717,27 @@ export default function StorbitManifest() {
   // canRenderPage — centralized route-guard (defense-in-depth). Reuses the same
   // gate as the sidebar (canSeeMenuItem) so a page can't be rendered by a role
   // that can't see its menu, even if activeMenu is set programmatically/forced.
-  // Synthetic / non-menu ids (customer-detail, product-detail, …) → allowed.
+  //
+  // FAIL-CLOSED: id yang TIDAK ada di ERP_MENU_GROUPS ditolak. Dulu diizinkan,
+  // dengan alasan "id sintetis (customer-detail, product-detail, …) → allowed" —
+  // tapi terverifikasi ke-22 call-site TAK PERNAH mengirim id sintetis: jalur
+  // detail selalu digate lewat id menu induknya (mis. blok `product-detail`
+  // memakai gate `'products'`). Jadi cabang itu memang tak terpakai, dan
+  // membiarkannya fail-open cuma menyimpan bahaya untuk nanti.
+  //
+  // Kenapa diperketat SEKARANG: restrukturisasi menu akan mengganti/menghapus id
+  // menu. Setiap gate yang menunjuk id usang akan berubah dari penjaga menjadi
+  // izin-untuk-semua TANPA GEJALA — build clean, lint bersih, halaman tampil
+  // normal untuk semua role. Fail-closed membuat kegagalannya berisik.
+  //
+  // console.warn dipasang supaya fail-closed tidak ikut senyap: id yang
+  // tertinggal langsung terbaca di console, bukan cuma jadi halaman kosong.
   const canRenderPage = useCallback((menuId) => {
     const item = findMenuItemById(menuId);
-    if (!item) return true;
+    if (!item) {
+      console.warn(`[RBAC] canRenderPage: menu id "${menuId}" tidak ditemukan di ERP_MENU_GROUPS — akses DITOLAK (fail-closed). Cek apakah id ini terhapus/berganti nama saat restrukturisasi menu.`);
+      return false;
+    }
     return canSeeMenuItem(item, role, hasPermission, hasMenuPermission);
   }, [role, hasPermission, hasMenuPermission]);
 
