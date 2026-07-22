@@ -1,6 +1,10 @@
--- STATUS: BELUM DIJALANKAN saat file ini dibuat (22 Jul 2026).
--- Jalankan manual di Supabase SQL Editor, lalu verifikasi dengan query di bagian
--- VERIFIKASI di bawah. Jangan percaya pesan "Success".
+-- STATUS: SUDAH DIJALANKAN 22 Jul 2026, terverifikasi.
+-- Bukti: body_md5 6fc1b00ac670c7177b25c43e9b716c8a IDENTIK sebelum & sesudah,
+-- body_len 2582 (tidak berubah), proconfig NULL -> {search_path=public},
+-- prosecdef tetap false. Smoke test: isi harga PRF/MSI/2026/VII/013 sebagai
+-- SCM Master (USD 2.000, vendor MSI-0002, kurs 16.200) -> tersimpan, persist
+-- setelah refresh, dikonfirmasi lewat SELECT ke prf + prf_cost_items (bukan toast).
+-- schema_snapshot.sql sudah di-refresh.
 --
 -- Kembalikan SET search_path TO 'public' pada save_prf_pricing.
 --
