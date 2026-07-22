@@ -17,15 +17,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, Hash, CalendarClock,
-  Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor,
+  Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import {
-  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, fmtDate, Card, InfoRow,
+  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, Card, InfoRow,
   DealStepper, DealHeaderControls, EditDealModal, QuotationListCard,
   PrfListCard, PriceSummaryCard, fetchAssignees, saveDealUpdate,
 } from './DealPanels';
+import { bantQualifyGate } from './bant';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import ConfirmModal from '../../components/ConfirmModal';
+import WinLossModal from './WinLossModal';
+
+// Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
+// aksinya tidak dirender sama sekali (bukan disabled).
+const LOSABLE_INQUIRY_STATUS = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
 
 const SERVICE_LABEL = {
   freight_forwarding: 'Freight Forwarding',
@@ -59,7 +67,7 @@ function StageBadge({ idx }) {
 }
 
 /* ---------- Header ---------- */
-function Header({ name, stageIdx, inquiryNo, assignedName, closeDate, value, onBack, onEdit, onPickStage }) {
+function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, closeDate, value, onBack, onEdit, onPickStage }) {
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -88,7 +96,7 @@ function Header({ name, stageIdx, inquiryNo, assignedName, closeDate, value, onB
           </div>
         </div>
 
-        <DealHeaderControls value={value} stageIdx={stageIdx} onEdit={onEdit} onPickStage={onPickStage} />
+        <DealHeaderControls value={value} stageKey={stageKey} onEdit={onEdit} onPickStage={onPickStage} />
       </div>
     </div>
   );
@@ -126,6 +134,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [assignees, setAssignees] = useState([]);
   const [editOpen, setEditOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // Konfirmasi lunak gate BANT (skor 5–7 → QUALIFIED) — pola pending-action yang sama
+  // dengan stageGate di PipelineKanbanPage.
+  const [stageGate, setStageGate] = useState({ open: false, message: '', onYes: null });
+  // Tandai inquiry KALAH (Task 4) — memakai ulang WinLossModal mode='lost'.
+  const [lossOpen, setLossOpen] = useState(false);
+  const [lossSaving, setLossSaving] = useState(false);
 
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -146,7 +160,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (inq.prospect_id) {
         const { data } = await supabase
           .from('accounts')
-          .select('id, name, pipeline_stage, estimated_value, assigned_profile, assigned_to, pic_name, estimated_closing_date')
+          // bant_* dipakai gate QUALIFIED (aturan bersama bant.js) — ikut ditarik di
+          // sini supaya tidak perlu fetch kedua saat user memindahkan stage.
+          .select('id, name, pipeline_stage, estimated_value, assigned_profile, assigned_to, pic_name, estimated_closing_date, bant_budget, bant_authority, bant_need, bant_timeline')
           .eq('id', inq.prospect_id).maybeSingle();
         acc = data || null;
       }
@@ -219,6 +235,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const estValue = Number(account?.estimated_value || 0);
   const assignedName = profMap[account?.assigned_profile] || profMap[account?.assigned_to] || null;
   const createdByName = profMap[inquiry?.created_by] || null;
+  // Aksi "Tandai Kalah" hanya untuk status yang belum terminal (default 'OPEN' bila
+  // kolomnya kosong). WON / LOST / CANCELLED → tombolnya tidak dirender sama sekali.
+  const canMarkLost = LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
 
   // Update accounts row (used by both Edit modal & Pindah Stage). Returns boolean.
   // Single shared write path (saveDealUpdate) so the audit trail matches
@@ -235,9 +254,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return ok;
   }
 
-  function pickStage(i) {
-    const key = STAGES[i].key;
+  // onPickStage kini mengirim KEY stage (menu hanya menawarkan ACTIVE_STAGES).
+  function pickStage(key) {
     if (key === (account?.pipeline_stage || 'NEW')) return;
+    if (!isActiveStage(key)) return;                     // sabuk pengaman jalur tulis
+    if (key === 'QUALIFIED') {
+      const gate = bantQualifyGate(account);
+      if (gate.verdict === 'block') { showToast?.(gate.message, 'error'); return; }
+      if (gate.verdict === 'confirm') {
+        setStageGate({ open: true, message: gate.message, onYes: () => updateAccount({ pipeline_stage: key }, key) });
+        return;
+      }
+    }
     updateAccount({ pipeline_stage: key }, key);
   }
 
@@ -254,19 +282,73 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     // sama dengan yang menyemai draft.stage.
     const seedStage = account?.pipeline_stage;
     const stageKnown = isKnownStage(seedStage);
+    const nextKey = STAGES[draft.stage]?.key;
+    // Stage ditulis HANYA bila seed-nya dikenal DAN nilai barunya masih boleh ditulis.
+    // Syarat kedua menutup kasus akun warisan (mis. PROPOSAL) yang dibuka lalu langsung
+    // disimpan tanpa menyentuh dropdown: tanpa itu, nilai lamanya akan DITULIS ULANG.
+    const stageWritable = stageKnown && isActiveStage(nextKey);
+
+    if (stageWritable && nextKey === 'QUALIFIED' && nextKey !== seedStage) {
+      const gate = bantQualifyGate(account);
+      if (gate.verdict === 'block') { showToast?.(gate.message, 'error'); return false; }
+      if (gate.verdict === 'confirm') {
+        // Modal Edit Deal dibiarkan terbuka (return false) sampai konfirmasi dijawab.
+        setStageGate({
+          open: true,
+          message: gate.message,
+          onYes: async () => { const done = await commitEdit(draft, nextKey); if (done) setEditOpen(false); },
+        });
+        return false;
+      }
+    }
+
+    const ok = await commitEdit(draft, stageWritable ? nextKey : null);
+    // Setelah updateAccount supaya pesan ini yang terakhir dilihat user. Tipe default,
+    // bukan 'error' — penyimpanannya memang berhasil.
+    if (ok && !stageWritable) {
+      showToast?.(stageKnown
+        ? `Stage "${seedStage}" sekarang mengikuti status inquiry — stage tidak diubah. Perubahan lain tersimpan.`
+        : `Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
+    }
+    return ok;
+  }
+
+  // Jalur tulis Edit Deal — stageKey null berarti stage sengaja TIDAK ditulis.
+  async function commitEdit(draft, stageKey) {
     const patch = {
       assigned_profile: draft.assignedId || null,
       estimated_value: draft.value === '' ? 0 : Number(draft.value),
       estimated_closing_date: draft.closeDate || null,
     };
-    if (stageKnown) patch.pipeline_stage = STAGES[draft.stage].key;
-    const ok = await updateAccount(patch);
-    // Setelah updateAccount supaya pesan ini yang terakhir dilihat user. Tipe default,
-    // bukan 'error' — penyimpanannya memang berhasil.
-    if (ok && !stageKnown) {
-      showToast?.(`Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
-    }
-    return ok;
+    if (stageKey) patch.pipeline_stage = stageKey;
+    return updateAccount(patch);
+  }
+
+  // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
+  // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
+  // Tidak ada aksi "Tandai Menang" tandingannya: WON hanya lahir dari SO lewat trigger.
+  async function markInquiryLost(values) {
+    if (!inquiry?.id) return;
+    const prevStatus = inquiry.status || 'OPEN';
+    setLossSaving(true);
+    const { error } = await supabase
+      .from('inquiries')
+      .update({ status: 'LOST', lost_reason: values.lost_reason })
+      .eq('id', inquiry.id);
+    setLossSaving(false);
+    if (error) { showToast?.('Gagal menandai kalah: ' + error.message, 'error'); return; }
+    // Berjejak: ini SATU-SATUNYA jalur menandai deal kalah, dan alasannya ikut
+    // menghitung win rate. Pola sama saveDealUpdate — fire-and-forget, tak memblokir.
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_INQUIRY,
+      entityType: ENTITY_TYPES.INQUIRY,
+      entityId: inquiry.id,
+      entityLabel: inquiry.inquiry_no,
+      notes: `${prevStatus} → LOST · alasan: ${values.lost_reason}`,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    setLossOpen(false);
+    showToast?.('Inquiry ditandai KALAH.', 'success');
+    refetch();
   }
 
   // ── loading / not-found ──
@@ -298,6 +380,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <Header
         name={account?.name}
         stageIdx={stageIdx}
+        stageKey={account?.pipeline_stage || 'NEW'}
         inquiryNo={inquiry.inquiry_no}
         assignedName={assignedName}
         closeDate={account?.estimated_closing_date}
@@ -313,10 +396,19 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <Card
             title="Detail Inquiry"
             icon={<FileText size={17} />}
-            right={onEditInquiry ? (
-              <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Pencil size={14} />Edit Inquiry
-              </button>
+            right={(onEditInquiry || canMarkLost) ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {onEditInquiry && (
+                  <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Pencil size={14} />Edit Inquiry
+                  </button>
+                )}
+                {canMarkLost && (
+                  <button onClick={() => setLossOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.redBd}`, background: '#fff', color: C.red, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <XCircle size={14} />Tandai Kalah
+                  </button>
+                )}
+              </div>
             ) : null}
           >
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -400,6 +492,29 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         assignees={assignees}
         onClose={() => setEditOpen(false)}
         onSave={saveEdit}
+      />
+
+      {/* Gate BANT — konfirmasi lunak saat menaikkan stage ke QUALIFIED */}
+      <ConfirmModal
+        open={stageGate.open}
+        variant="warning"
+        title="Score BANT Belum Optimal"
+        message={stageGate.message}
+        confirmLabel="Ya, Lanjut"
+        cancelLabel="Batal"
+        onConfirm={() => { stageGate.onYes?.(); setStageGate({ open: false, message: '', onYes: null }); }}
+        onCancel={() => setStageGate({ open: false, message: '', onYes: null })}
+      />
+
+      {/* Tandai inquiry KALAH — kategori alasan memakai kosakata WinLossModal apa adanya */}
+      <WinLossModal
+        key={`lost-${inquiry.id}-${lossOpen}`}
+        open={lossOpen}
+        mode="lost"
+        prospectName={inquiry.inquiry_no}
+        saving={lossSaving}
+        onSave={markInquiryLost}
+        onCancel={() => setLossOpen(false)}
       />
 
       <style>{`@media (max-width: 860px){ .dd-cols{ grid-template-columns: 1fr !important; } }`}</style>

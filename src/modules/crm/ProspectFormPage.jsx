@@ -11,7 +11,8 @@ import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
 import WinLossModal from './WinLossModal';
-import { BANT_DIMENSIONS, calcBantScore, BANT_FREQUENCY_OPTIONS } from './bant';
+import { BANT_DIMENSIONS, calcBantScore, bantQualifyGate, BANT_FREQUENCY_OPTIONS } from './bant';
+import { ACTIVE_STAGE_KEYS, isActiveStage, isKnownStage } from './DealPanels';
 import BantScoreBar from './BantScoreBar';
 
 /* ---------- design tokens (Lovable) ---------- */
@@ -24,11 +25,11 @@ const C = {
   success: '#16A34A', warning: '#F59E0B', error: '#DC2626',
 };
 
-// 'NURTURE' DICABUT (persiapan Fase 3): nilai itu tak punya kolom di Kanban dan tak
-// punya aturan aging, jadi akun yang di-set NURTURE hilang dari papan. Menutup pintu
-// masuknya di sini menghentikan pertambahan baris baru. Akun NURTURE yang SUDAH ada
-// tetap terbaca — lihat penanganan <select> di Section Pipeline.
-const PIPELINE_STAGES = ['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'WON', 'LOST'];
+// Daftar stage yang bisa DITULIS kini datang dari DealPanels (ACTIVE_STAGE_KEYS =
+// NEW/CONTACTED/QUALIFIED). Daftar lokal 7-nilai dicabut — sumbu deal (PROPOSAL/
+// NEGOTIATION/WON/LOST) sudah pindah ke inquiries.status di Fase 2, dan 'NURTURE'
+// sudah dicabut lebih dulu. Nilai warisan tetap TERBACA di layar; lihat penanganan
+// <select> di Section Pipeline.
 const STAGE_DOT = { NEW: '#94A3B8', CONTACTED: '#3B82F6', QUALIFIED: '#0D9488', PROPOSAL: '#F59E0B', NEGOTIATION: '#E85A1E', WON: '#16A34A', LOST: '#DC2626', NURTURE: '#94A3B8' };
 const CUSTOMER_TYPES = ['freight', 'customs', 'trading', 'mixed'];
 const SOURCES = ['sales_visit', 'cold_call', 'referral', 'existing_network', 'exhibition', 'instagram', 'linkedin', 'tiktok', 'website', 'walk_in', 'other'];
@@ -78,6 +79,9 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
   const isSalesCreator = ['sales', 'operations'].includes(erpRole);
   const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
+  // Konfirmasi lunak gate BANT (skor 5–7 saat memilih QUALIFIED) — pola pending-action
+  // yang sama dengan stageGate di PipelineKanbanPage.
+  const [stageGate, setStageGate] = useState({ open: false, message: '', onYes: null });
   const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
   const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
 
@@ -202,13 +206,29 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   const handleStageChange = (e) => {
     const v = e.target.value;
-    if (v === 'WON' || v === 'LOST') setWinLoss({ open: true, mode: v.toLowerCase() });
-    else setForm(f => ({ ...f, pipeline_stage: v }));
+    // Cabang WON/LOST kini TAK TERJANGKAU — keduanya tidak lagi ditawarkan dropdown.
+    // Dibiarkan utuh (bukan lingkup batch ini untuk membongkar WinLossModal).
+    if (v === 'WON' || v === 'LOST') { setWinLoss({ open: true, mode: v.toLowerCase() }); return; }
+    // Gate BANT untuk naik ke QUALIFIED — aturan & teks sama persis dengan Kanban.
+    if (v === 'QUALIFIED') {
+      const gate = bantQualifyGate(form);
+      if (gate.verdict === 'block') { showToast?.(gate.message, 'error'); return; }
+      if (gate.verdict === 'confirm') {
+        setStageGate({ open: true, message: gate.message, onYes: () => setForm(f => ({ ...f, pipeline_stage: 'QUALIFIED' })) });
+        return;
+      }
+    }
+    setForm(f => ({ ...f, pipeline_stage: v }));
   };
 
-  // Stage akun ini dikenal daftar PIPELINE_STAGES? Akun warisan ber-stage 'NURTURE'
-  // (dicabut dari daftar) menjawab false → dropdown-nya dikunci, lihat Section Pipeline.
-  const stageKnown = PIPELINE_STAGES.includes(form.pipeline_stage);
+  // DUA pertanyaan berbeda, sengaja tidak digabung:
+  //  • stageKnown  — nilai ini ada di STAGES (7 nilai)? Kalau TIDAK (mis. 'NURTURE'
+  //    warisan) select DIKUNCI — perilaku dari batch penjaga stage, dipertahankan.
+  //  • stageOffered — nilai ini termasuk yang masih boleh DITULIS? Kalau tidak
+  //    (PROPOSAL/NEGOTIATION/WON/LOST) nilainya tetap ditampilkan sebagai opsi
+  //    disabled, tapi tidak bisa dipilih ulang dan tidak ikut ditulis saat simpan.
+  const stageKnown = isKnownStage(form.pipeline_stage);
+  const stageOffered = isActiveStage(form.pipeline_stage);
 
   const handleWinLossSave = (values) => {
     setForm(f => ({ ...f, pipeline_stage: winLoss.mode.toUpperCase(), ...values }));
@@ -231,6 +251,11 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         ...form, ...customValues, company_id: profile.company_id,
         assigned_to: effectiveAssignedTo, payment_terms_id: form.payment_terms_id || null, updated_by: profile.id,
       };
+      // Jangan pernah MENULIS nilai stage yang sumbunya sudah pindah ke inquiry
+      // (PROPOSAL/NEGOTIATION/WON/LOST) atau yang tak dikenal ('NURTURE'). Membuka
+      // akun warisan lalu menyimpannya kini tidak menulis ulang stage lamanya —
+      // baris di DB tetap apa adanya, field lain tetap tersimpan.
+      if (!isActiveStage(form.pipeline_stage)) delete payload.pipeline_stage;
       if (form.pipeline_stage === 'WON') payload.converted_at = prospect?.converted_at || new Date().toISOString();
       let error;
       if (isEdit) {
@@ -353,14 +378,17 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                 <Field label="Pipeline Stage">
                   <div style={selWrap}>
                     <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', width: 9, height: 9, borderRadius: 999, background: STAGE_DOT[form.pipeline_stage] || '#94A3B8', pointerEvents: 'none' }} />
-                    {/* Stage tak dikenal (mis. 'NURTURE' warisan): tampilkan nilai MENTAH
-                        sebagai opsi disabled + kunci select-nya. Tanpa ini dropdown tampil
-                        KOSONG — dan kotak kosong mengundang diisi, yang justru menimpa
-                        nilai warisan itu. State `form.pipeline_stage` tetap utuh sehingga
-                        payload menyimpannya kembali apa adanya. */}
+                    {/* Nilai di luar daftar tulis (mis. 'NURTURE' warisan, atau
+                        PROPOSAL/NEGOTIATION/WON/LOST yang sumbunya sudah pindah ke
+                        inquiry): tampilkan nilai MENTAH sebagai opsi disabled. Tanpa ini
+                        dropdown tampil KOSONG — dan kotak kosong mengundang diisi, yang
+                        justru menimpa nilai warisan itu.
+                        Select DIKUNCI hanya untuk nilai yang tak dikenal sama sekali
+                        (aturan batch penjaga stage, tidak diubah); stage lama yang masih
+                        dikenal tetap boleh dipindahkan ke salah satu stage aktif. */}
                     <select value={form.pipeline_stage} onChange={handleStageChange} disabled={!stageKnown} style={{ ...selInput, paddingLeft: 30 }}>
-                      {!stageKnown && <option value={form.pipeline_stage} disabled>{form.pipeline_stage || '(kosong)'}</option>}
-                      {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
+                      {!stageOffered && <option value={form.pipeline_stage} disabled>{form.pipeline_stage || '(kosong)'}</option>}
+                      {ACTIVE_STAGE_KEYS.map(s => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
                     </select><SelectChevron />
                   </div>
                 </Field>
@@ -477,6 +505,13 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         open={confirmState.open} title={confirmState.title} message={confirmState.message}
         confirmLabel="Ya, Hapus" cancelLabel="Batal" variant="danger"
         onConfirm={confirmState.onConfirm} onCancel={closeConfirm}
+      />
+      <ConfirmModal
+        open={stageGate.open} variant="warning"
+        title="Score BANT Belum Optimal" message={stageGate.message}
+        confirmLabel="Ya, Lanjut" cancelLabel="Batal"
+        onConfirm={() => { stageGate.onYes?.(); setStageGate({ open: false, message: '', onYes: null }); }}
+        onCancel={() => setStageGate({ open: false, message: '', onYes: null })}
       />
     </div>
   );

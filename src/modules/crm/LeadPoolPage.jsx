@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, Archive, ArrowRight, Loader2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { prevActiveStage } from './DealPanels';
 
 const C = {
   bg: '#F6EFE3', surface: '#FFFDF8', surface2: '#FBF6EC',
@@ -17,8 +18,11 @@ const C = {
 
 // Stage label + previous-stage mapping (untuk target tarik ke pipeline).
 const STAGE_LABEL = { NEW: 'New', CONTACTED: 'Contacted', QUALIFIED: 'Qualified', PROPOSAL: 'Proposal', NEGOTIATION: 'Negotiation', WON: 'Won', LOST: 'Lost' };
-const PREV_STAGE = { CONTACTED: 'NEW', QUALIFIED: 'CONTACTED', PROPOSAL: 'QUALIFIED', NEGOTIATION: 'PROPOSAL' };
-const prevStageOf = (s) => PREV_STAGE[String(s || '').toUpperCase()] || 'NEW';
+// Label target memakai helper yang SAMA dengan yang dipakai LeadPoolApprovalPage saat
+// benar-benar menulis. Salinan lokalnya dicabut: sejak hasil di luar ACTIVE_STAGE_KEYS
+// di-clamp ke QUALIFIED, peta lama akan menjanjikan "Proposal" padahal yang ditulis
+// "Qualified" — kebohongan di layar.
+const prevStageOf = prevActiveStage;
 
 // pull_status badge palette
 const PULL_BADGE = {
