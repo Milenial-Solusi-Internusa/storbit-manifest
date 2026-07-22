@@ -1,12 +1,58 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-22
+
+### Hentikan pendarahan NURTURE — penjaga stage tak dikenal + cabut opsi NURTURE dari form (persiapan Fase 3) — FE-only
+
+**Ringkas:** **4 file FE**, **NOL perubahan DB / migrasi / RLS**. Basis temuan: `AUDIT_FASE3_20260722.md` bagian **C3** dan **G2**. Ini **persiapan Fase 3** (pemangkasan `accounts.pipeline_stage` dari 8 nilai jadi 3: NEW/CONTACTED/QUALIFIED) — **bukan** Fase 3 itu sendiri.
+
+**MASALAH YANG DITUTUP — kerusakannya sudah AKTIF sebelum Fase 3 dimulai, bukan risiko teoretis.** `stageIndex()` (`DealPanels.jsx:47-50`) mengembalikan **0 (= NEW)** untuk nilai di luar `STAGES` — jadi akun ber-`pipeline_stage='NURTURE'` (nilai yang tak ada di `STAGES`) sudah dirender sebagai "New". Lebih jauh: modal **Edit Deal** disemai dari `stageIndex(...)` lalu **menulis balik** `STAGES[draft.stage].key` **tanpa gate dan tanpa audit** (`auditStageKey` sengaja tak dikirim di jalur Edit) → membuka akun NURTURE di Edit Deal lalu menyimpannya **menimpa NURTURE dengan NEW, diam-diam**. Konsekuensinya: **baris NURTURE yang mau dimigrasi Fase 3 bisa berkurang sendiri sebelum migrasinya jalan.** Batch ini menghentikan pendarahan itu **dan** menutup pintu masuk NURTURE baru.
+
+**⚠️ Atribusi angka:** "6 akun NURTURE" berasal dari **brief Den**, bukan query yang dijalankan doc-keeper maupun penulis audit (`AUDIT_FASE3_20260722.md` menyatakan batas kejujuran yang sama di kepalanya). Jangan naikkan jadi fakta terverifikasi.
+
+**(1) `src/modules/crm/DealPanels.jsx` — helper baru `isKnownStage` (+6 baris, setelah `stageIndex` di `:47-50`).**
+`export const isKnownStage = (key) => STAGES.some((s) => s.key === key)` — **cocok PERSIS**, tanpa `toUpperCase`, tanpa fallback. **Sengaja BUKAN turunan `stageIndex`:** `stageIndex` mengembalikan 0 untuk nilai tak dikenal sehingga **tidak bisa membedakan "memang NEW" dari "tidak dikenal"** — itulah persis cacat yang ditambal.
+**Kenapa ditaruh di `DealPanels`, bukan inline di dua file pemakainya:** Fase 3 **batch 3B** akan menyatukan **empat** konstanta stage yang tersebar; penjaga inline berarti **dua tempat tambahan** yang harus dicari saat itu. Satu helper di modul bersama = satu titik ubah.
+**`stageIndex()` SENGAJA TIDAK DIUBAH** — nilai balik 0-nya masih dipakai untuk merender stepper (`DealStepper`); mengubahnya = perubahan render, di luar lingkup batch ini.
+
+**(2) `src/modules/crm/ProspectFormPage.jsx` — cabut opsi NURTURE + kunci dropdown untuk stage tak dikenal (2 titik).**
+- **(a) `PIPELINE_STAGES` (`:31` — pra-perubahan `:27`, bergeser karena komentar penjelas ditambahkan di atasnya)** — entri `'NURTURE'` **DICABUT**; tujuh nilai lain utuh (NEW, CONTACTED, QUALIFIED, PROPOSAL, NEGOTIATION, WON, LOST). Ini **satu-satunya sumber NURTURE baru** di seluruh app (per audit bagian B1 #8 / C1 tabel baris 4) → pintu masuknya kini tertutup.
+- **(b) `<select>` Pipeline Stage (`:361-363`, di dalam `Field` yang mulai `:353`)** — bila `form.pipeline_stage` **tidak ada** di `PIPELINE_STAGES`, dirender satu `<option disabled>` berisi **nilai MENTAH** + `<select>`-nya **`disabled`**. Ditopang derived `stageKnown` (`:211`).
+  **Kenapa dikunci, bukan sekadar dicabut opsinya:** mencabut opsi saja membuat dropdown tampil **KOSONG** untuk akun NURTURE — dan **kotak kosong mengundang diisi**, yang justru menimpa nilai warisan itu, **persis yang batch ini cegah**. Mengunci select menutup jalan itu sambil **tetap menampilkan nilainya** (pelajaran NURTURE/TD-61: nilai tak dikenal jangan pernah jadi tak terlihat).
+- **⭐ KEPUTUSAN YANG PERLU DICATAT (verifikasi KODE, bukan runtime):** menyimpan form **TANPA menyentuh dropdown TIDAK menimpa stage**. Sebabnya `<select>` adalah **controlled component** — ketika `value` tak cocok opsi mana pun, React menyetel `selectedIndex = -1` dan **TIDAK memicu `onChange`**, sehingga state tetap `'NURTURE'` dan `payload = {...form}` menuliskannya **kembali apa adanya**.
+- **SENGAJA TIDAK DISENTUH:** `STAGE_DOT` (`:32`) tetap punya kunci `NURTURE` supaya titik warnanya masih ter-render.
+
+**(3) `src/modules/crm/CustomerDetailPage.jsx` — penjaga di `saveDealEdit` (import `:17` + `saveDealEdit` mulai `:829`, penjaga `:843-844`).**
+Sebelum menyusun payload: `isKnownStage(dealSeed?.pipeline_stage)`. **Tidak dikenal → `pipeline_stage` dibuang TOTAL dari payload** (field lain tetap tersimpan) + toast informatif setelah simpan sukses. **Dikenal → perilaku SAMA PERSIS seperti sebelumnya, nol perubahan.**
+**⭐ Kenapa membaca `dealSeed`, BUKAN state halaman `customer`:** `dealSeed` adalah **sumber yang SAMA** dengan yang menyemai `draft.stage` (fetch segar di `openDealEdit`, dipakai di prop `initial` `EditDealModal` `:1398-1399`). Kalau memakai `customer` yang **bisa basi**, `stageKnown` bisa bernilai `true` padahal DB berisi NURTURE → payload menulis hasil `stageIndex`→0 = **NEW**, persis kebocoran yang ditutup batch ini. **`dealSeed` null (fetch gagal) juga dianggap tak dikenal** — menolak menebak lebih aman daripada menulis `'NEW'`.
+
+**(4) `src/modules/crm/DealDetailPage.jsx` — penjaga yang sama (import `:25` + `saveEdit` mulai `:244`, penjaga `:255-256`).**
+**PERBEDAAN YANG PERLU DICATAT — dan ini BUKAN inkonsistensi:** di halaman ini penjaga membaca **`account?.pipeline_stage`**, karena di sini penyemai `draft.stage` memang **state `account` itu sendiri** (`stageIdx = stageIndex(account?.pipeline_stage)` `:218` → prop `initial` `:399`); **tidak ada fetch terpisah** seperti `dealSeed`. Aturannya sama di kedua halaman — **"penjaga membaca sumber yang menyemai draft"** — hanya sumbernya kebetulan berbeda per halaman. Jangan "diseragamkan" tanpa memeriksa penyemainya dulu.
+
+**KEPUTUSAN DESAIN LAIN (dua, keduanya soal toast).**
+- **Toast memakai tipe DEFAULT, bukan `'error'`.** Komponen toast hanya punya **dua rupa**: `'error'` (rose + segitiga peringatan) dan selain itu (mint + centang) — `App.jsx:3734-3745`. **Penyimpanannya BERHASIL** (field lain tetap tersimpan), jadi menandainya error akan **menyesatkan**.
+- **Toast dipanggil SETELAH simpan sukses**, supaya pesan inilah yang **terakhir dilihat** user — `saveDealUpdate` memunculkan `'Perubahan disimpan'` sendiri (`DealPanels.jsx:138`).
+
+**SENGAJA TIDAK DISENTUH:**
+- **`stageIndex()`** di `DealPanels` (masih mengembalikan 0 untuk nilai tak dikenal — dipakai render stepper).
+- **Jalur "Pindah Stage"** (`CustomerDetailPage:810`, `DealDetailPage:238`) — itu **aksi eksplisit user**, di luar lingkup batch ini (dan jalur itu memang mengirim `auditStageKey`).
+- **Keempat konstanta stage lain** (`PipelineKanbanPage:17`, `DealPanels:38`, `CRMDashboardPage:77`, sisa 7 nilai di `ProspectFormPage`) — pemangkasannya adalah **Fase 3 batch 3B**, BUKAN sekarang.
+- **DB / migrasi / RLS: NOL.**
+
+**VERIFIKASI (diverifikasi ulang doc-keeper, bukan klaim brief).** Build **clean, 2592 modules**. Lint **165 = net-zero** vs baseline 165 — 10 problem di keempat file itu **seluruhnya pre-existing** (angka total tidak bergerak). `git status` hanya memuat 4 file itu (+ file audit baru yang belum ter-track).
+**⚠️ BELUM TES RUNTIME. Build clean BUKAN jaminan fitur jalan.** Checklist manual Den: buka akun NURTURE di Detail Account → Edit Deal → ubah nilai deal saja → simpan → cek `pipeline_stage` di DB **masih `'NURTURE'`** + toast informatif muncul; buka akun stage normal → Edit Deal → simpan → stage tetap tersimpan seperti biasa (**nol regresi**); buka form Prospect akun NURTURE → dropdown terkunci menampilkan `NURTURE` mentah → simpan → nilai tetap.
+
+**TECH DEBT: tidak ada TD baru.** Batch ini **MEMPERSEMPIT (bukan menutup) TD-61** — pintu masuk NURTURE baru tertutup dan baris warisan tak lagi bisa tertimpa diam-diam lewat Edit Deal, **TAPI inti TD-61 TETAP OPEN**: keenam baris itu masih **belum punya kolom Kanban maupun aturan aging**, dan migrasinya ke Lead Pool baru akan dikerjakan di **Fase 3**.
+
+---
+
 ## 2026-07-21
 
 ### Panel "Jawaban Harga" PRF dirombak jadi MULTI-VENDOR (kartu per vendor + award tunggal) — FE-only
 
 **Ringkas:** **SATU file diubah**, `src/modules/procurement/PRFDetailPage.jsx` (panelnya ditulis ulang). **NOL perubahan DB** — kolom & RPC-nya sudah live lebih dulu: **Tahap A** `supabase/migrations/20260721000003_prf_cost_items_vendor_award_fx.sql` (+`vendor_id`/`item_group`/`is_awarded`/`exchange_rate`, semua longgar) dan **Tahap B** `20260721000004_save_prf_pricing_vendor_award_fx.sql` (RPC menulis 4 kolom itu + `p_header.exchange_rates` + **guard RAISE bila >1 vendor ter-award**).
 
-**Status snapshot: STALE untuk Tahap A/B — tapi `pg_dump` SUDAH DIRENCANAKAN, bukan utang terbuka.** Terverifikasi doc-keeper (pembacaan file repo): definisi `CREATE TABLE public.prf_cost_items` di `supabase/schema_snapshot.sql` (`:3894-3906`) **masih 10 kolom**, dan body `save_prf_pricing` di snapshot masih versi lama. **Sumber kebenaran sementara = file migrasinya**, bukan snapshot. **Den akan menjalankan `pg_dump` sebelum commit** → jangan catat ini sebagai utang yang menggantung; catat sebagai langkah yang sudah dijadwalkan. (Catatan: banner "snapshot segar, tidak ada utang `pg_dump`" dari batch sebelumnya **sudah dikoreksi** di `03_DATA_MODEL` gotcha #10.)
+~~**Status snapshot: STALE untuk Tahap A/B — tapi `pg_dump` SUDAH DIRENCANAKAN, bukan utang terbuka.** Definisi `CREATE TABLE public.prf_cost_items` di snapshot masih 10 kolom, dan body `save_prf_pricing` masih versi lama. Sumber kebenaran sementara = file migrasinya.~~ **[KOREKSI 22 Jul 2026 — klaim ini SUDAH TIDAK BENAR, jangan dihidupkan lagi]** `pg_dump` yang dijadwalkan itu **sudah dijalankan dan ter-commit di `e13f73d`**. Snapshot **SEGAR**: keempat kolom Tahap A ada di `supabase/schema_snapshot.sql:4078-4081`, dan body baru `save_prf_pricing` (lengkap dengan guard vendor + `SET search_path TO 'public'`) di `:1031-1034`. **Sumber kebenaran = snapshot, bukan file migrasi. Tidak ada utang `pg_dump` untuk Tahap A/B.** (Catatan: banner "snapshot segar, tidak ada utang `pg_dump`" dari batch sebelumnya **sudah dikoreksi** di `03_DATA_MODEL` gotcha #10.)
 
 **⭐ ATURAN BISNIS YANG DIKODEKAN — hasil konfirmasi tim procurement, catat sebagai keputusan (git tak tahu ini):**
 1. **Tiap vendor mengirim rate sheet UTUH → satu KARTU per vendor.** Komponen antar vendor **TIDAK dibandingkan baris-per-baris** karena penamaan & rinciannya beda-beda → **sengaja TIDAK ada tabel banding**. Jangan "perbaiki" jadi tabel perbandingan tanpa membahas ulang.
