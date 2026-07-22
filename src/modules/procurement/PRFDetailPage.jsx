@@ -61,6 +61,9 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const companyId = profile?.company_id || null;
 
   const [prf, setPrf] = useState(null);
+  // Salinan MENTAH prf_cost_items dari DB (bukan bentuk kartu). Dipakai HANYA oleh gate +
+  // payload "Buat Quotation" supaya keduanya menggambarkan PRF versi tersimpan.
+  const [savedCostItems, setSavedCostItems] = useState([]);
   // Kartu vendor: [{ key, vendor_id, rows: [{ key, item_group, component, amount, currency, notes }] }]
   const [vendorCards, setVendorCards] = useState([]);
   const [internalRows, setInternalRows] = useState([]);   // biaya internal — tanpa vendor, tak dilombakan
@@ -95,6 +98,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     );
 
     const { data: ci } = await supabase.from('prf_cost_items').select(COST_SELECT).eq('prf_id', prfId).order('sort_order', { ascending: true });
+    setSavedCostItems(ci || []);
 
     // Kelompokkan baris flat → kartu. PRF LAMA (vendor_id NULL, cost_type='vendor')
     // jatuh ke SATU kartu "vendor belum dipilih" → tetap terbuka & tetap bisa disimpan
@@ -227,14 +231,24 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // quotation_items hanya punya SATU kolom currency untuk cost_price DAN unit_price,
   // dan exchange_rate baris quotation di-hardcode 1 di QuotationFormPage → jalur non-IDR
   // pasti salah basis. Jadi tombol hanya aktif bila rate_currency = IDR.
-  const awardedNonIdr = Object.keys(modalByCurrency).filter(c => c !== 'IDR' && num(modalByCurrency[c]) !== 0);
-  const needConvert = awardedNonIdr.length > 0;                       // modal campur → konversi ke IDR
-  const convertBlocked = awardedNonIdr.filter(c => !(num(rates[c]) > 0)); // kurs belum diisi → tak bisa konversi
-  const costTotalIdr = Object.entries(modalByCurrency)
-    .reduce((s, [c, amt]) => s + (c === 'IDR' ? num(amt) : num(amt) * rateFor(c)), 0);
+  // SUMBER TUNGGAL untuk gate + payload = PRF versi TERSIMPAN (bukan state form). Tombol ini
+  // BERPINDAH HALAMAN ke QuotationFormPage → edit yang belum disimpan hilang saat itu juga,
+  // jadi memakai nilai form akan melahirkan quotation dari angka yang tak ada di mana pun.
+  // Ringkasan/Untung/Margin di panel bawah SENGAJA tetap ikut state form (itu preview editing).
+  const savedRateCurrency = prf?.rate_currency || 'IDR';
+  const savedRates = (prf?.exchange_rates && typeof prf.exchange_rates === 'object') ? prf.exchange_rates : {};
+  const savedRateFor = (c) => ((c || 'IDR') === 'IDR' ? 1 : (num(savedRates[c]) || 1));
+  // Baris ter-award di DB = baris kartu pemenang + SELURUH biaya internal (internal selalu
+  // disimpan is_awarded=true) — ekuivalen dengan `awardedRows` di sisi form.
+  const savedModalByCurrency = totalsOf(savedCostItems.filter(r => r.is_awarded));
+  const awardedNonIdr = Object.keys(savedModalByCurrency).filter(c => c !== 'IDR' && num(savedModalByCurrency[c]) !== 0);
+  const needConvert = awardedNonIdr.length > 0;                              // modal campur → konversi ke IDR
+  const convertBlocked = awardedNonIdr.filter(c => !(num(savedRates[c]) > 0)); // kurs belum diisi → tak bisa konversi
+  const costTotalIdr = Object.entries(savedModalByCurrency)
+    .reduce((s, [c, amt]) => s + (c === 'IDR' ? num(amt) : num(amt) * savedRateFor(c)), 0);
 
   let quotationBlockReason = null;
-  if (rc !== 'IDR') {
+  if (savedRateCurrency !== 'IDR') {
     quotationBlockReason = 'Harga jual atau modal bukan IDR. Quotation untuk kasus ini harus dibuat manual — dukungan multi-currency di quotation belum tersedia.';
   } else if (convertBlocked.length > 0) {
     quotationBlockReason = `Kurs ${convertBlocked.join(', ')} belum diisi, jadi modal tak bisa dikonversi ke IDR. Isi kurs di atas terlebih dahulu.`;
@@ -461,7 +475,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
             )}
             {!quotationBlockReason && needConvert && (
               <span style={{ fontSize: 11.5, color: ORANGE, textAlign: 'right', lineHeight: 1.45 }}>
-                Modal lintas mata uang — angka yang dikirim ke quotation adalah <b>hasil konversi ke IDR</b>: {money(costTotalIdr)} (kurs {awardedNonIdr.map(c => `${c} ${money(rates[c])}`).join(', ')}).
+                Modal lintas mata uang — angka yang dikirim ke quotation adalah <b>hasil konversi ke IDR</b>: {money(costTotalIdr)} (kurs {awardedNonIdr.map(c => `${c} ${money(savedRates[c])}`).join(', ')}).
               </span>
             )}
           </div>
