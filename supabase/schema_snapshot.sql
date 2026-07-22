@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jW9L48W4aihf58LYdkyeTuNfhIPlrfkoNV2uW7QGbVgfsjjj8TmjzyiZizXZUBB
+\restrict SaBwIbEwrCqzS2qUbczNWmtC6A3Qmd5LOV177Ej6gfpbTkqs5i9vcyunPVBbBn6
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1030,9 +1030,10 @@ END; $$;
 
 CREATE FUNCTION public.save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb) RETURNS jsonb
     LANGUAGE plpgsql
-    SET search_path TO 'public'
     AS $$
-DECLARE v_count int;
+DECLARE
+  v_count   int;
+  v_vendors int;
 BEGIN
   -- 1) Header jawaban harga (RLS prf_update_status: procurement + status='SUBMITTED').
   UPDATE public.prf SET
@@ -1041,6 +1042,7 @@ BEGIN
     valid_from     = NULLIF(p_header->>'valid_from','')::date,
     valid_until    = NULLIF(p_header->>'valid_until','')::date,
     pricing_notes  = NULLIF(p_header->>'pricing_notes',''),
+    exchange_rates = COALESCE(p_header->'exchange_rates', exchange_rates),
     answered_by    = auth.uid(),
     answered_at    = now()
   WHERE id = p_prf_id;
@@ -1050,23 +1052,41 @@ BEGIN
     RAISE EXCEPTION 'PRF tidak ditemukan atau tidak ada izin menyimpan jawaban harga (RLS).';
   END IF;
 
-  -- Guard eksplisit: p_items wajib jsonb array (atau NULL). Non-array = RAISE, bukan skip senyap.
   IF p_items IS NOT NULL AND jsonb_typeof(p_items) <> 'array' THEN
     RAISE EXCEPTION 'save_prf_pricing: p_items harus jsonb array (atau NULL), tetapi menerima jsonb_typeof = %', jsonb_typeof(p_items);
+  END IF;
+
+  -- Guard aturan bisnis: satu PRF hanya boleh punya SATU vendor pemenang.
+  IF p_items IS NOT NULL THEN
+    SELECT count(DISTINCT it->>'vendor_id') INTO v_vendors
+    FROM jsonb_array_elements(p_items) AS it
+    WHERE COALESCE(NULLIF(it->>'is_awarded','')::boolean, true) = true
+      AND NULLIF(it->>'vendor_id','') IS NOT NULL;
+
+    IF v_vendors > 1 THEN
+      RAISE EXCEPTION 'save_prf_pricing: hanya boleh satu vendor pemenang per PRF, tetapi menerima % vendor ter-award.', v_vendors;
+    END IF;
   END IF;
 
   -- 2) Replace rincian biaya (RLS prf_cost_items_delete + _insert: procurement + SUBMITTED).
   DELETE FROM public.prf_cost_items WHERE prf_id = p_prf_id;
 
   IF p_items IS NOT NULL AND jsonb_typeof(p_items) = 'array' THEN
-    INSERT INTO public.prf_cost_items (prf_id, component, cost_type, amount, currency, sort_order, notes)
+    INSERT INTO public.prf_cost_items (
+      prf_id, component, cost_type, amount, currency, sort_order, notes,
+      vendor_id, item_group, is_awarded, exchange_rate
+    )
     SELECT p_prf_id,
       it->>'component',
       CASE WHEN (it->>'cost_type') = 'internal' THEN 'internal' ELSE 'vendor' END,
       COALESCE(NULLIF(it->>'amount','')::numeric, 0),
       COALESCE(NULLIF(it->>'currency',''), 'IDR'),
       COALESCE(NULLIF(it->>'sort_order','')::int, 0),
-      NULLIF(it->>'notes','')
+      NULLIF(it->>'notes',''),
+      NULLIF(it->>'vendor_id','')::uuid,
+      NULLIF(it->>'item_group',''),
+      COALESCE(NULLIF(it->>'is_awarded','')::boolean, true),
+      COALESCE(NULLIF(it->>'exchange_rate','')::numeric, 1)
     FROM jsonb_array_elements(p_items) AS it;
   END IF;
 
@@ -3902,6 +3922,10 @@ CREATE TABLE public.prf_cost_items (
     notes text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
+    vendor_id uuid,
+    item_group text,
+    is_awarded boolean DEFAULT true NOT NULL,
+    exchange_rate numeric DEFAULT 1 NOT NULL,
     CONSTRAINT prf_cost_items_cost_type_check CHECK ((cost_type = ANY (ARRAY['vendor'::text, 'internal'::text])))
 );
 
@@ -9125,6 +9149,14 @@ ALTER TABLE ONLY public.prf_cost_items
 
 
 --
+-- Name: prf_cost_items prf_cost_items_vendor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_cost_items
+    ADD CONSTRAINT prf_cost_items_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.vendors(id);
+
+
+--
 -- Name: prf prf_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12621,5 +12653,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jW9L48W4aihf58LYdkyeTuNfhIPlrfkoNV2uW7QGbVgfsjjj8TmjzyiZizXZUBB
+\unrestrict SaBwIbEwrCqzS2qUbczNWmtC6A3Qmd5LOV177Ej6gfpbTkqs5i9vcyunPVBbBn6
 
