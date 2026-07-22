@@ -8,13 +8,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import BantScoreBar from './BantScoreBar';
-import { calcBantScore } from './bant';
+import { calcBantScore, bantQualifyGate } from './bant';
 import ConfirmModal from '../../components/ConfirmModal';
 import { CustomerFormModal } from './CustomerListPage';
 import TOPRequestModal from './TOPRequestModal';
 import {
   DealStepper, DealHeaderControls, EditDealModal, PrfListCard,
-  STAGES, stageIndex, isKnownStage, saveDealUpdate, fetchAssignees,
+  STAGES, stageIndex, isKnownStage, isActiveStage, saveDealUpdate, fetchAssignees,
 } from './DealPanels';
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
@@ -630,6 +630,9 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   const [dealEditOpen,  setDealEditOpen]  = useState(false);
   const [dealSeed,      setDealSeed]      = useState(null);   // fresh deal fields for the Edit modal
   const [dealAssignees, setDealAssignees] = useState([]);
+  // Konfirmasi lunak gate BANT (skor 5–7 → QUALIFIED) — pola pending-action yang
+  // sama dengan stageGate di PipelineKanbanPage.
+  const [stageGate,     setStageGate]     = useState({ open: false, message: '', onYes: null });
 
   // ── Lazy tab data: Riwayat (inquiry+quotation) & Dokumen (PRF+SO) ──
   const [histLoaded,    setHistLoaded]    = useState(false);
@@ -807,25 +810,57 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
 
   // ── Deal handlers — SATU jalur tulis (saveDealUpdate), audit sama DealDetailPage ──
   const dealActor = { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id };
-  const pickStage = async (i) => {
-    const key = STAGES[i].key;
-    if (key === (customer?.pipeline_stage || 'NEW')) return;
+  const writeStage = async (key) => {
     const ok = await saveDealUpdate({
       accountId: id, patch: { pipeline_stage: key }, auditStageKey: key,
       prevStage: customer?.pipeline_stage, accountName: customer?.name, actor: dealActor, showToast,
     });
     if (ok) fetchCustomer();
+    return ok;
+  };
+  // onPickStage kini mengirim KEY stage (menu hanya menawarkan ACTIVE_STAGES).
+  const pickStage = async (key) => {
+    if (key === (customer?.pipeline_stage || 'NEW')) return;
+    if (!isActiveStage(key)) return;                     // sabuk pengaman jalur tulis
+    if (key === 'QUALIFIED') {
+      const gate = bantQualifyGate(customer);
+      if (gate.verdict === 'block') { showToast?.(gate.message, 'error'); return; }
+      if (gate.verdict === 'confirm') {
+        setStageGate({ open: true, message: gate.message, onYes: () => writeStage('QUALIFIED') });
+        return;
+      }
+    }
+    await writeStage(key);
   };
   const openDealEdit = async () => {
     // Fetch deal fields fresh — the main fetch aliases assigned_profile as the
     // embed (shadowing the raw uuid the write path needs), so re-read it here.
+    // bant_* ikut ditarik supaya gate BANT membaca baris SEGAR yang sama dengan yang
+    // menyemai draft (bukan state halaman yang bisa basi).
     const { data } = await supabase.from('accounts')
-      .select('id, name, pipeline_stage, estimated_value, estimated_closing_date, assigned_profile')
+      .select('id, name, pipeline_stage, estimated_value, estimated_closing_date, assigned_profile, bant_budget, bant_authority, bant_need, bant_timeline')
       .eq('id', id).maybeSingle();
     setDealSeed(data || null);
     if (!dealAssignees.length && profile?.company_id) fetchAssignees(profile.company_id).then(setDealAssignees);
     setDealEditOpen(true);
   };
+  // Jalur tulis Edit Deal — stageKey null berarti stage sengaja TIDAK ditulis.
+  const commitDealEdit = async (draft, stageKey) => {
+    const patch = {
+      assigned_profile: draft.assignedId || null,
+      estimated_value: draft.value === '' ? 0 : Number(draft.value),
+      estimated_closing_date: draft.closeDate || null,
+    };
+    if (stageKey) patch.pipeline_stage = stageKey;
+    const ok = await saveDealUpdate({
+      accountId: id,
+      patch,
+      prevStage: customer?.pipeline_stage, accountName: customer?.name, actor: dealActor, showToast,
+    });
+    if (ok) fetchCustomer();
+    return ok;
+  };
+
   const saveDealEdit = async (draft) => {
     // No auditStageKey here → mirrors DealDetailPage's Edit modal (only Pindah
     // Stage logs a stage-change audit event).
@@ -842,23 +877,35 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
     // jadi stage tidak ditulis: menolak menebak lebih aman daripada menulis 'NEW'.
     const seedStage = dealSeed?.pipeline_stage;
     const stageKnown = isKnownStage(seedStage);
-    const patch = {
-      assigned_profile: draft.assignedId || null,
-      estimated_value: draft.value === '' ? 0 : Number(draft.value),
-      estimated_closing_date: draft.closeDate || null,
-    };
-    if (stageKnown) patch.pipeline_stage = STAGES[draft.stage].key;
-    const ok = await saveDealUpdate({
-      accountId: id,
-      patch,
-      prevStage: customer?.pipeline_stage, accountName: customer?.name, actor: dealActor, showToast,
-    });
-    if (ok) fetchCustomer();
-    // Setelah saveDealUpdate supaya pesan ini yang terakhir dilihat user (saveDealUpdate
+    const nextKey = STAGES[draft.stage]?.key;
+    // Stage ditulis HANYA bila seed-nya dikenal DAN nilai barunya masih boleh ditulis.
+    // Syarat kedua menutup kasus akun warisan (mis. PROPOSAL) yang dibuka lalu langsung
+    // disimpan tanpa menyentuh dropdown: tanpa itu, nilai lamanya akan DITULIS ULANG.
+    const stageWritable = stageKnown && isActiveStage(nextKey);
+
+    if (stageWritable && nextKey === 'QUALIFIED' && nextKey !== seedStage) {
+      const gate = bantQualifyGate(dealSeed);
+      if (gate.verdict === 'block') { showToast?.(gate.message, 'error'); return false; }
+      if (gate.verdict === 'confirm') {
+        // Modal Edit Deal sengaja dibiarkan terbuka (return false) sampai konfirmasi
+        // dijawab; kalau dilanjut, simpan dijalankan lalu modalnya ditutup di sini.
+        setStageGate({
+          open: true,
+          message: gate.message,
+          onYes: async () => { const done = await commitDealEdit(draft, nextKey); if (done) setDealEditOpen(false); },
+        });
+        return false;
+      }
+    }
+
+    const ok = await commitDealEdit(draft, stageWritable ? nextKey : null);
+    // Setelah simpan supaya pesan ini yang terakhir dilihat user (saveDealUpdate
     // memunculkan toast 'Perubahan disimpan' sendiri). Tipe default, bukan 'error' —
     // penyimpanannya memang berhasil.
-    if (ok && !stageKnown) {
-      showToast(`Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
+    if (ok && !stageWritable) {
+      showToast(stageKnown
+        ? `Stage "${seedStage}" sekarang mengikuti status inquiry — stage tidak diubah. Perubahan lain tersimpan.`
+        : `Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
     }
     return ok;
   };
@@ -1045,7 +1092,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
         <DealStepper current={dealStageIdx} value={dealValue} />
         <div style={{ ...S.card, padding: '14px 20px', display: 'flex', justifyContent: 'flex-end' }}>
-          <DealHeaderControls value={dealValue} stageIdx={dealStageIdx} onEdit={openDealEdit} onPickStage={pickStage} />
+          <DealHeaderControls value={dealValue} stageKey={customer.pipeline_stage || 'NEW'} onEdit={openDealEdit} onPickStage={pickStage} />
         </div>
       </div>
 
@@ -1401,6 +1448,18 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         assignees={dealAssignees}
         onClose={() => setDealEditOpen(false)}
         onSave={saveDealEdit}
+      />
+
+      {/* Gate BANT — konfirmasi lunak saat menaikkan stage ke QUALIFIED */}
+      <ConfirmModal
+        open={stageGate.open}
+        variant="warning"
+        title="Score BANT Belum Optimal"
+        message={stageGate.message}
+        confirmLabel="Ya, Lanjut"
+        cancelLabel="Batal"
+        onConfirm={() => { stageGate.onYes?.(); setStageGate({ open: false, message: '', onYes: null }); }}
+        onCancel={() => setStageGate({ open: false, message: '', onYes: null })}
       />
 
       {/* Delete confirm */}

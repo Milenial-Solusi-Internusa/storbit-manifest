@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
 import { fetchActivityFeed } from './activityFeed';
+import { STAGES as SHARED_STAGES, STAGE_IDS } from './DealPanels';
 
 /* =========================================================================
    CRMDashboardPage — Nexus by MSI · CRM Sales Dashboard (freight forwarding)
@@ -74,15 +75,18 @@ const KPIS = [
   { label: "Win Rate",             icon: "target",  value: "—", unit: "%",        accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
 ];
 
-const STAGES = [
-  { id: "new",         name: "New",         count: 0, value: 0, color: NAVY },
-  { id: "contacted",   name: "Contacted",   count: 0, value: 0, color: NAVY },
-  { id: "qualified",   name: "Qualified",   count: 0, value: 0, color: NAVY },
-  { id: "proposal",    name: "Proposal",    count: 0, value: 0, color: NAVY },
-  { id: "negotiation", name: "Negotiation", count: 0, value: 0, color: NAVY },
-  { id: "won",         name: "Won",         count: 0, value: 0, color: "#1F8B4D" },
-  { id: "lost",        name: "Lost",        count: 0, value: 0, color: "#C0392B" },
-];
+// Fallback funnel (dipakai PipelineByStage saat data belum ada) — diturunkan dari
+// DealPanels.STAGES, sumber tunggal daftar stage. Tetap 7 nilai: ini konsumen RENDER.
+// Peta warna ditulis lokal (bukan STAGE_COLORS di bawah) karena const itu baru
+// diinisialisasi jauh setelah baris ini — merujuknya = TDZ error saat modul dievaluasi.
+const STAGE_FALLBACK_COLOR = { won: "#1F8B4D", lost: "#C0392B" };
+const STAGES = SHARED_STAGES.map((s) => ({
+  id: s.key.toLowerCase(),
+  name: s.label,
+  count: 0,
+  value: 0,
+  color: STAGE_FALLBACK_COLOR[s.key.toLowerCase()] || NAVY,
+}));
 
 const STATUS_BADGE = {
   "Exceeding": { bg: "#DEF0E4", fg: "#1F8B4D" },
@@ -1731,7 +1735,9 @@ function fmtTimeAgo(iso) {
 }
 
 /* ── stage order for pipeline chart ─────────────────────────────────────── */
-const STAGE_ORDER  = ['new','contacted','qualified','proposal','negotiation','won','lost'];
+// Urutan batang funnel — tetap 7 nilai (konsumen RENDER), diturunkan dari sumber
+// tunggal DealPanels.STAGES supaya tidak jadi daftar stage kedua.
+const STAGE_ORDER  = STAGE_IDS;
 const STAGE_COLORS = { won: '#1F8B4D', lost: '#C0392B' };
 const STAGE_LABELS = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', negotiation: 'Negotiation', won: 'Won', lost: 'Lost' };
 

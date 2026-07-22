@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CheckCircle2, XCircle, Loader2, ClipboardCheck, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { prevActiveStage } from './DealPanels';
 
 const C = {
   bg: '#F6EFE3', surface: '#FFFDF8', surface2: '#FBF6EC',
@@ -16,8 +17,10 @@ const C = {
 };
 
 const STAGE_LABEL = { NEW: 'New', CONTACTED: 'Contacted', QUALIFIED: 'Qualified', PROPOSAL: 'Proposal', NEGOTIATION: 'Negotiation', WON: 'Won', LOST: 'Lost' };
-const PREV_STAGE = { CONTACTED: 'NEW', QUALIFIED: 'CONTACTED', PROPOSAL: 'QUALIFIED', NEGOTIATION: 'PROPOSAL' };
-const prevStageOf = (s) => PREV_STAGE[String(s || '').toUpperCase()] || 'NEW';
+// prevActiveStage (DealPanels) menggantikan peta lokal: pemetaan mentah
+// NEGOTIATION → PROPOSAL akan MENGHASILKAN nilai yang sumbunya sudah pindah ke
+// inquiries.status, jadi hasil di luar ACTIVE_STAGE_KEYS di-clamp ke QUALIFIED.
+const prevStageOf = prevActiveStage;
 
 const fmtDateTime = (iso) => {
   if (!iso) return '—';

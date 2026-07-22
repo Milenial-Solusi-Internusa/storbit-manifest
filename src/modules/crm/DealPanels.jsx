@@ -55,6 +55,33 @@ export const stageIndex = (s) => {
 // (mis. 'NURTURE') dengan hasil kolaps stageIndex.
 export const isKnownStage = (key) => STAGES.some((s) => s.key === key);
 
+// ── Fase 3 batch 3B-1 — pisahkan "yang bisa DIRENDER" dari "yang bisa DITULIS" ──
+// STAGES (7 nilai di atas) TETAP untuk RENDER: stepper, kolom Kanban, badge, opsi
+// filter. Memangkasnya akan membuat akun warisan (PROPOSAL/NEGOTIATION/WON/LOST)
+// HILANG dari layar padahal barisnya masih ada di DB.
+// ACTIVE_STAGES dipakai SETIAP tempat yang bisa MENULIS: dropdown Pindah Stage,
+// <select> Edit Deal, <select> ProspectFormPage, drop target Kanban. Sumbu deal
+// (PROPOSAL/NEGOTIATION/WON/LOST) sudah pindah ke inquiries.status di Fase 2.
+export const ACTIVE_STAGE_KEYS = ['NEW', 'CONTACTED', 'QUALIFIED'];
+export const ACTIVE_STAGES = STAGES.filter((s) => ACTIVE_STAGE_KEYS.includes(s.key));
+export const isActiveStage = (key) => ACTIVE_STAGE_KEYS.includes(key);
+
+// Turunan bentuk-lain dari STAGES — supaya konsumen yang memakai id lowercase
+// (Kanban, urutan funnel dashboard) tidak perlu menulis array literal keduanya.
+export const STAGE_IDS = STAGES.map((s) => s.key.toLowerCase());
+
+// Stage sebelumnya untuk tarik-balik Lead Pool, DI-CLAMP ke ACTIVE_STAGE_KEYS:
+// pemetaan mentah NEGOTIATION → PROPOSAL akan MENGHASILKAN nilai yang akan dihapus,
+// jadi apa pun di luar daftar aktif dikembalikan ke QUALIFIED (nilai tertinggi yang
+// masih sah). Dipakai LeadPoolApprovalPage (yang MENULIS) dan LeadPoolPage (yang
+// menampilkan target) dari satu helper, supaya labelnya tidak menjanjikan stage yang
+// berbeda dari yang benar-benar ditulis.
+const PREV_STAGE = { CONTACTED: 'NEW', QUALIFIED: 'CONTACTED', PROPOSAL: 'QUALIFIED', NEGOTIATION: 'PROPOSAL' };
+export const prevActiveStage = (s) => {
+  const prev = PREV_STAGE[String(s || '').toUpperCase()] || 'NEW';
+  return isActiveStage(prev) ? prev : 'QUALIFIED';
+};
+
 export const fmtRp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 export const fmtCompact = (n) => {
   const v = Number(n || 0);
@@ -229,7 +256,11 @@ export function DealStepper({ current, value }) {
 }
 
 /* ---------- DealHeaderControls (Nilai Deal + Edit + Pindah Stage) ---------- */
-export function DealHeaderControls({ value, stageIdx, onEdit, onPickStage }) {
+// Menu "Pindah Stage" hanya menawarkan ACTIVE_STAGES (jalur TULIS). Kontrak
+// onPickStage memakai KEY stage, bukan indeks — indeks ke STAGES tidak lagi sama
+// dengan indeks ke daftar yang dirender, dan `stageKey` juga dipakai untuk menandai
+// stage yang sedang aktif walau nilainya di luar daftar (mis. 'NURTURE' warisan).
+export function DealHeaderControls({ value, stageKey, onEdit, onPickStage }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -253,16 +284,17 @@ export function DealHeaderControls({ value, stageIdx, onEdit, onPickStage }) {
           {open && (
             <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: '#fff', border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: '0 16px 40px rgba(19,35,59,0.16)', padding: 7, width: 230, zIndex: 30 }}>
               <div style={{ fontFamily: BODY, fontSize: 11, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '7px 11px 4px' }}>Pindahkan ke stage</div>
-              {STAGES.map((s, i) => {
+              {ACTIVE_STAGES.map((s) => {
                 const SIcon = s.Icon;
+                const cur = s.key === stageKey;
                 return (
-                  <button key={s.key} onClick={() => { onPickStage(i); setOpen(false); }} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, width: '100%', border: 'none', background: i === stageIdx ? C.surfaceAlt : 'transparent',
+                  <button key={s.key} onClick={() => { onPickStage(s.key); setOpen(false); }} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, width: '100%', border: 'none', background: cur ? C.surfaceAlt : 'transparent',
                     padding: '9px 11px', borderRadius: 8, cursor: 'pointer', fontFamily: BODY, fontSize: 13, color: C.text, textAlign: 'left',
                   }}>
-                    <SIcon size={16} color={i === stageIdx ? C.navy : C.textMute} />
-                    <span style={{ flex: 1, fontWeight: i === stageIdx ? 600 : 500 }}>{s.label.toUpperCase()}</span>
-                    {i === stageIdx && <Check size={15} color={C.navy} />}
+                    <SIcon size={16} color={cur ? C.navy : C.textMute} />
+                    <span style={{ flex: 1, fontWeight: cur ? 600 : 500 }}>{s.label.toUpperCase()}</span>
+                    {cur && <Check size={15} color={C.navy} />}
                   </button>
                 );
               })}
@@ -297,8 +329,15 @@ export function EditDealModal({ open, initial, assignees, onClose, onSave }) {
         <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div>
             <label style={labelStyle}>Pipeline Stage</label>
+            {/* Ketujuh opsi TETAP dirender, tapi yang di luar ACTIVE_STAGES `disabled`.
+                Sengaja tidak dipangkas: akun warisan ber-stage PROPOSAL/NEGOTIATION
+                akan tampil sebagai KOTAK KOSONG kalau opsinya hilang (value tak cocok
+                → selectedIndex = -1) — pelajaran NURTURE. Hanya 3 yang bisa dipilih;
+                jalur simpan pemanggil juga menolak menulis nilai non-aktif. */}
             <select value={draft.stage} onChange={(e) => set('stage', parseInt(e.target.value, 10))} style={{ ...inputStyle, cursor: 'pointer' }}>
-              {STAGES.map((s, i) => <option key={s.key} value={i}>{s.label.toUpperCase()}</option>)}
+              {STAGES.map((s, i) => (
+                <option key={s.key} value={i} disabled={!isActiveStage(s.key)}>{s.label.toUpperCase()}</option>
+              ))}
             </select>
           </div>
           <div>

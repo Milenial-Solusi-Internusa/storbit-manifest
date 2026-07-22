@@ -5,24 +5,25 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
-import WinLossModal from './WinLossModal';
-import LightHandoverModal from './LightHandoverModal';
-import StrategicHandoverModal from './StrategicHandoverModal';
 import ConfirmModal from '../../components/ConfirmModal';
-import { calcBantScore } from './bant';
+import { calcBantScore, bantQualifyGate } from './bant';
+import { STAGES as DEAL_STAGES, ACTIVE_STAGE_KEYS } from './DealPanels';
 
 /* =========================================================================
-   Pipeline config — lowercase ids match Supabase pipeline_stage.toLowerCase()
+   Pipeline config — diturunkan dari DealPanels.STAGES (sumber tunggal).
+   Ketujuh kolom TETAP dirender supaya kartu warisan di PROPOSAL/NEGOTIATION/
+   WON/LOST tidak hilang dari papan; yang dibatasi adalah drop target (lihat
+   handleDropStage). Bentuk id lowercase + tone/warna khas papan ini dipetakan
+   di sini, bukan disalin jadi daftar stage kedua.
    ========================================================================= */
-const STAGES = [
-  { id: 'new',         name: 'New',         prob: 10,  tone: 'navy', color: '#1B4D8A' },
-  { id: 'contacted',   name: 'Contacted',   prob: 20,  tone: 'navy', color: '#1B4D8A' },
-  { id: 'qualified',   name: 'Qualified',   prob: 40,  tone: 'navy', color: '#1B4D8A' },
-  { id: 'proposal',    name: 'Proposal',    prob: 60,  tone: 'navy', color: '#1B4D8A' },
-  { id: 'negotiation', name: 'Negotiation', prob: 80,  tone: 'navy', color: '#1B4D8A' },
-  { id: 'won',         name: 'Won',         prob: 100, tone: 'won',  color: '#1F8B4D' },
-  { id: 'lost',        name: 'Lost',        prob: 0,   tone: 'lost', color: '#C0392B' },
-];
+const KANBAN_TONE = {
+  won:  { tone: 'won',  color: '#1F8B4D' },
+  lost: { tone: 'lost', color: '#C0392B' },
+};
+const STAGES = DEAL_STAGES.map((s) => {
+  const id = s.key.toLowerCase();
+  return { id, name: s.label, prob: s.prob, ...(KANBAN_TONE[id] || { tone: 'navy', color: '#1B4D8A' }) };
+});
 
 const HEAD_BG = { navy: '#1B4D8A', won: '#1F8B4D', lost: '#C0392B' };
 
@@ -428,12 +429,6 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   const [view,      setView]      = useState('board');
   const [dropStage, setDropStage] = useState(null);
   const [toast,     setToast]     = useState({ msg: '', icon: 'check', show: false });
-  // Win/Loss capture modal — { open, mode, id, prevStage, prospectName }
-  const [winLoss,       setWinLoss]       = useState({ open: false, mode: 'won', id: null, prevStage: 'NEW', prospectName: '' });
-  const [winLossSaving, setWinLossSaving] = useState(false);
-  // Handover gate (WON only): { open, type:'light'|'strategic', account, prevStage, wonValues }
-  const [handover,      setHandover]      = useState({ open: false, type: 'light', account: null, prevStage: 'NEW', wonValues: null });
-  const HANDOVER_TCV_LIMIT = 100000000; // ≤ 100jt → Light, > → Strategic
   // Soft stage gating — confirm (not block) when prerequisites are missing.
   const [stageGate,     setStageGate]     = useState({ open: false, stageId: null, id: null, type: null, prospectName: '' });
   // Toolbar controls — member filter / sort / filter panel (all client-side)
@@ -490,15 +485,6 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   const applyStageMove = useCallback(async (stageId, id, prospect) => {
     const newStage = stageId.toUpperCase();           // DB stores uppercase
 
-    // WON / LOST require a reason — move card optimistically, then open WinLossModal.
-    // The DB write happens only after the modal is saved (handleWinLossSave).
-    if (newStage === 'WON' || newStage === 'LOST') {
-      const prevStage = prospect.pipeline_stage || 'NEW';
-      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage } : p));
-      setWinLoss({ open: true, mode: newStage.toLowerCase(), id, prevStage, prospectName: prospect.name || '' });
-      return;
-    }
-
     // Optimistic update
     setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: newStage } : p));
 
@@ -535,19 +521,31 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
       return;
     }
 
+    // ── Batas jalur TULIS (Fase 3 batch 3B-1) ──────────────────────────────
+    // Kolomnya tetap dirender supaya kartu warisan terlihat, tapi bukan lagi drop
+    // target yang sah: sumbu deal sekarang hidup di inquiries.status (Fase 2).
+    // Ditolak SEBELUM gate apa pun → nol tulis ke DB.
+    if (!ACTIVE_STAGE_KEYS.includes(newStage)) {
+      const st = STAGES.find(s => s.id === stageId);
+      showToast?.(`Tahap "${st?.name || stageId}" tidak lagi diatur dari akun. Tahap deal (Proposal/Negotiation/Won/Lost) sekarang mengikuti status inquiry.`, 'error');
+      return;
+    }
+
     // ── Soft stage gating ──────────────────────────────────────────────────
     // PROPOSAL without an Inquiry, or WON without a Quotation → ask first
     // (lightweight COUNT). User can always proceed. On confirm, the move
     // resumes via handleStageGateConfirm → applyStageMove.
+    // CATATAN: cabang PROPOSAL & WON di bawah kini TAK TERJANGKAU — keduanya
+    // sudah ditolak oleh batas jalur tulis di atas. Sengaja dibiarkan utuh.
     if (newStage === 'QUALIFIED') {
-      // BANT gate: ≥8 lolos, 5–7 konfirmasi, <5 blok total.
-      const score = calcBantScore(prospect);
-      if (score < 5) {
-        showToast?.(`BANT score terlalu rendah (${score}/12). Lengkapi qualification dulu sebelum Qualified.`, 'error');
+      // BANT gate: ≥8 lolos, 5–7 konfirmasi, <5 blok total (aturan bersama, bant.js).
+      const gate = bantQualifyGate(prospect);
+      if (gate.verdict === 'block') {
+        showToast?.(gate.message, 'error');
         return;
       }
-      if (score < 8) {
-        setStageGate({ open: true, stageId, id, type: 'qualified', prospectName: prospect.name || '', score });
+      if (gate.verdict === 'confirm') {
+        setStageGate({ open: true, stageId, id, type: 'qualified', prospectName: prospect.name || '', message: gate.message });
         return;
       }
     } else if (newStage === 'PROPOSAL') {
@@ -587,106 +585,11 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
     setStageGate(g => ({ ...g, open: false }));
   }, []);
 
-  // ── Win/Loss modal — cancel reverts the optimistic move (no DB write) ───────
-  const handleWinLossCancel = useCallback(() => {
-    setWinLoss(wl => {
-      if (wl.id) {
-        setProspects(prev => prev.map(p => p.id === wl.id ? { ...p, pipeline_stage: wl.prevStage } : p));
-      }
-      return { ...wl, open: false, id: null };
-    });
-  }, []);
-
-  // Finalize WON → write accounts (pipeline_stage WON + convert to customer).
-  // Dipanggil setelah handover form disubmit. Return boolean.
-  const finalizeWon = useCallback(async (id, prevStage, prospectName, wonValues) => {
-    const nowIso = new Date().toISOString();
-    const payload = {
-      pipeline_stage: 'WON', ...wonValues, updated_by: profile.id,
-      converted_at: nowIso, account_status: 'customer', became_customer_at: nowIso,
-    };
-    const { error } = await supabase.from('accounts').update(payload).eq('id', id);
-    if (error) {
-      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: prevStage } : p));
-      showToast?.('Gagal menyimpan: ' + error.message, 'error');
-      return false;
-    }
-    logAudit(supabase, {
-      action: ACTION_TYPES.CHANGE_PIPELINE_STAGE, entityType: ENTITY_TYPES.DEAL,
-      entityId: id, entityLabel: prospectName || '', notes: (prevStage || 'NEW') + ' → WON',
-    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-    setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: 'WON', ...wonValues } : p));
-    notify((prospectName || '') + ' dipindah ke Won', 'checkcircle');
-    return true;
-  }, [profile?.id, showToast]);
-
-  // ── Win/Loss modal — LOST tulis langsung; WON buka handover gate dulu ──────────
-  const handleWinLossSave = useCallback(async (values) => {
-    const { id, mode } = winLoss;
-    if (!id) return;
-    if (mode === 'won') {
-      // Tunda update accounts — buka handover form (Light/Strategic by estimated_value).
-      const prospect = prospects.find(p => p.id === id);
-      const tcv = Number(prospect?.estimated_value || 0);
-      setHandover({
-        open: true,
-        type: tcv > HANDOVER_TCV_LIMIT ? 'strategic' : 'light',
-        account: prospect || { id, name: winLoss.prospectName },
-        prevStage: winLoss.prevStage,
-        wonValues: values,
-      });
-      setWinLoss(wl => ({ ...wl, open: false }));
-      return;
-    }
-    // LOST → tulis langsung
-    setWinLossSaving(true);
-    try {
-      const payload = { pipeline_stage: 'LOST', ...values, updated_by: profile.id, account_status: 'lost' };
-      const { error } = await supabase.from('accounts').update(payload).eq('id', id);
-      if (error) throw error;
-      logAudit(supabase, {
-        action: ACTION_TYPES.CHANGE_PIPELINE_STAGE, entityType: ENTITY_TYPES.DEAL,
-        entityId: id, entityLabel: winLoss.prospectName || '', notes: (winLoss.prevStage || 'NEW') + ' → LOST',
-      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: 'LOST', ...values } : p));
-      notify((winLoss.prospectName || '') + ' dipindah ke Lost', 'ban');
-      setWinLoss(wl => ({ ...wl, open: false, id: null }));
-    } catch (err) {
-      setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: winLoss.prevStage } : p));
-      setWinLoss(wl => ({ ...wl, open: false, id: null }));
-      showToast?.('Gagal menyimpan: ' + err.message, 'error');
-    } finally {
-      setWinLossSaving(false);
-    }
-  }, [winLoss, prospects, profile?.id, showToast]);
-
-  // Handover submit → insert deal_handovers, lalu finalize WON. Return boolean.
-  const handleHandoverSubmit = useCallback(async (fields) => {
-    const { account, type, prevStage, wonValues } = handover;
-    if (!account?.id) return false;
-    const { error } = await supabase.from('deal_handovers').insert({
-      company_id: profile.company_id,
-      account_id: account.id,
-      handover_type: type,
-      status: 'submitted',
-      submitted_at: new Date().toISOString(),
-      created_by: profile.id,
-      ...fields,
-    });
-    if (error) { showToast?.('Gagal menyimpan handover: ' + error.message, 'error'); return false; }
-    const ok = await finalizeWon(account.id, prevStage, account.name, wonValues);
-    if (!ok) return false;
-    setHandover(h => ({ ...h, open: false, account: null }));
-    return true;
-  }, [handover, profile?.company_id, profile?.id, finalizeWon, showToast]);
-
-  // Handover cancel → batalkan WON, kembalikan stage ke sebelumnya.
-  const handleHandoverCancel = useCallback(() => {
-    setHandover(h => {
-      if (h.account?.id) setProspects(prev => prev.map(p => p.id === h.account.id ? { ...p, pipeline_stage: h.prevStage } : p));
-      return { ...h, open: false, account: null };
-    });
-  }, []);
+  // CATATAN Fase 3 batch 3B-1: seluruh mesin tulis WON/LOST di papan akun DICABUT
+  // dari sini (handleWinLossCancel, finalizeWon, handleWinLossSave, handover submit/
+  // cancel + state-nya). WON/LOST bukan lagi nilai sumbu akun — sumbu deal hidup di
+  // inquiries.status (Fase 2). Komponen WinLossModal / LightHandoverModal /
+  // StrategicHandoverModal TIDAK dihapus, hanya tidak lagi dipanggil dari sini.
 
   function onDragStart(e, id) {
     dragId.current = id;
@@ -963,33 +866,6 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         <span>{toast.msg}</span>
       </div>
 
-      {/* ── Win/Loss capture modal ── */}
-      <WinLossModal
-        key={`${winLoss.mode}-${winLoss.id || 'none'}`}
-        open={winLoss.open}
-        mode={winLoss.mode}
-        prospectName={winLoss.prospectName}
-        saving={winLossSaving}
-        onSave={handleWinLossSave}
-        onCancel={handleWinLossCancel}
-      />
-
-      {/* ── Handover gate (WON) — Light / Strategic by estimated_value ── */}
-      {handover.open && handover.type === 'light' && (
-        <LightHandoverModal
-          account={handover.account}
-          onCancel={handleHandoverCancel}
-          onSubmit={handleHandoverSubmit}
-        />
-      )}
-      {handover.open && handover.type === 'strategic' && (
-        <StrategicHandoverModal
-          account={handover.account}
-          onCancel={handleHandoverCancel}
-          onSubmit={handleHandoverSubmit}
-        />
-      )}
-
       {/* ── Soft stage gating confirmation ── */}
       <ConfirmModal
         open={stageGate.open}
@@ -998,7 +874,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         message={stageGate.type === 'won'
           ? 'Prospect ini belum punya Quotation. Biasanya deal ditandai WON setelah ada Quotation yang disetujui. Tetap tandai sebagai WON?'
           : stageGate.type === 'qualified'
-            ? `BANT score ${stageGate.score}/12 — prospect masih perlu di-nurture. Yakin pindah ke Qualified?`
+            ? stageGate.message
             : 'Prospect ini belum punya Inquiry. Biasanya Proposal dibuat setelah ada Inquiry. Tetap lanjut ke Proposal?'}
         confirmLabel={stageGate.type === 'won' ? 'Ya, Tandai WON' : 'Ya, Lanjut'}
         cancelLabel="Batal"

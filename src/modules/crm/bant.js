@@ -56,6 +56,31 @@ export const BANT_MAX_SCORE = 12;
 export const calcBantScore = (obj) =>
   BANT_DIMENSIONS.reduce((sum, d) => sum + (Number(obj?.[d.key]) || 0), 0);
 
+// Gate BANT untuk naik ke QUALIFIED — SATU aturan untuk semua jalur tulis
+// (Kanban drag, Pindah Stage & Edit Deal di Detail Account / Detail Deal, form
+// Prospect). Ambang & teksnya diambil apa adanya dari gate Kanban yang sudah ada
+// supaya pesan yang dilihat sales identik di mana pun ia menaikkan stage.
+// Ditaruh di sini (bukan di DealPanels) karena file ini sudah memiliki
+// calcBantScore + ambang 8/5 pada bantScoreMeta, dan bebas JSX.
+export const bantQualifyGate = (account) => {
+  const score = calcBantScore(account);
+  if (score < 5) {
+    return {
+      verdict: 'block',
+      score,
+      message: `BANT score terlalu rendah (${score}/12). Lengkapi qualification dulu sebelum Qualified.`,
+    };
+  }
+  if (score < 8) {
+    return {
+      verdict: 'confirm',
+      score,
+      message: `BANT score ${score}/12 — prospect masih perlu di-nurture. Yakin pindah ke Qualified?`,
+    };
+  }
+  return { verdict: 'pass', score };
+};
+
 export const bantScoreMeta = (score) => {
   if (score >= 8) return { color: '#16A34A', label: 'Qualified', canQualify: true };
   if (score >= 5) return { color: '#F59E0B', label: 'Nurture', canQualify: false };
