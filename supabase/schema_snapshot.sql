@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict SaBwIbEwrCqzS2qUbczNWmtC6A3Qmd5LOV177Ej6gfpbTkqs5i9vcyunPVBbBn6
+\restrict jIyihQhxup8JmK2FmhFeRfuSLdimt15YEu5ygxshBQHWIgg6GbJGPTGGVYjG8HD
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1030,6 +1030,7 @@ END; $$;
 
 CREATE FUNCTION public.save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb) RETURNS jsonb
     LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
   v_count   int;
@@ -4372,8 +4373,24 @@ CREATE TABLE public.sales_orders (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     deleted_at timestamp with time zone,
+    external_ref text,
+    booking_no text,
     CONSTRAINT sales_orders_status_check CHECK (((status)::text = ANY (ARRAY['DRAFT'::text, 'SENT'::text])))
 );
+
+
+--
+-- Name: COLUMN sales_orders.external_ref; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sales_orders.external_ref IS 'Nomor referensi SO ini di sistem operasional (Odoo). Nullable, belum dipakai UI mana pun — kunci sambungan disiapkan lebih dulu supaya rekonsiliasi tidak perlu mencari padanan manual nanti.';
+
+
+--
+-- Name: COLUMN sales_orders.booking_no; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sales_orders.booking_no IS 'Nomor booking ke carrier. Nullable, belum dipakai UI mana pun.';
 
 
 --
@@ -12653,5 +12670,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict SaBwIbEwrCqzS2qUbczNWmtC6A3Qmd5LOV177Ej6gfpbTkqs5i9vcyunPVBbBn6
+\unrestrict jIyihQhxup8JmK2FmhFeRfuSLdimt15YEu5ygxshBQHWIgg6GbJGPTGGVYjG8HD
 
