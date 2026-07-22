@@ -14,7 +14,7 @@ import { CustomerFormModal } from './CustomerListPage';
 import TOPRequestModal from './TOPRequestModal';
 import {
   DealStepper, DealHeaderControls, EditDealModal, PrfListCard,
-  STAGES, stageIndex, saveDealUpdate, fetchAssignees,
+  STAGES, stageIndex, isKnownStage, saveDealUpdate, fetchAssignees,
 } from './DealPanels';
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
@@ -829,17 +829,37 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   const saveDealEdit = async (draft) => {
     // No auditStageKey here → mirrors DealDetailPage's Edit modal (only Pindah
     // Stage logs a stage-change audit event).
+    //
+    // PENJAGA stage tak dikenal. `draft.stage` diturunkan dari
+    // `stageIndex(dealSeed.pipeline_stage)` (lihat prop `initial` EditDealModal), dan
+    // stageIndex mengembalikan 0 (=NEW) untuk nilai di luar STAGES. Tanpa penjaga ini,
+    // menyimpan modal untuk akun ber-stage 'NURTURE' menimpanya jadi 'NEW' — diam-diam
+    // dan tanpa audit.
+    // Sengaja membaca `dealSeed`, BUKAN `customer` — dealSeed adalah sumber yang SAMA
+    // dengan yang menyemai draft.stage (fetch segar di openDealEdit). Kalau memakai
+    // state halaman yang bisa basi, stageKnown bisa true padahal DB berisi NURTURE, dan
+    // penimpaan itu lolos lagi. dealSeed null (fetch gagal) → juga dianggap tak dikenal,
+    // jadi stage tidak ditulis: menolak menebak lebih aman daripada menulis 'NEW'.
+    const seedStage = dealSeed?.pipeline_stage;
+    const stageKnown = isKnownStage(seedStage);
+    const patch = {
+      assigned_profile: draft.assignedId || null,
+      estimated_value: draft.value === '' ? 0 : Number(draft.value),
+      estimated_closing_date: draft.closeDate || null,
+    };
+    if (stageKnown) patch.pipeline_stage = STAGES[draft.stage].key;
     const ok = await saveDealUpdate({
       accountId: id,
-      patch: {
-        pipeline_stage: STAGES[draft.stage].key,
-        assigned_profile: draft.assignedId || null,
-        estimated_value: draft.value === '' ? 0 : Number(draft.value),
-        estimated_closing_date: draft.closeDate || null,
-      },
+      patch,
       prevStage: customer?.pipeline_stage, accountName: customer?.name, actor: dealActor, showToast,
     });
     if (ok) fetchCustomer();
+    // Setelah saveDealUpdate supaya pesan ini yang terakhir dilihat user (saveDealUpdate
+    // memunculkan toast 'Perubahan disimpan' sendiri). Tipe default, bukan 'error' —
+    // penyimpanannya memang berhasil.
+    if (ok && !stageKnown) {
+      showToast(`Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
+    }
     return ok;
   };
 

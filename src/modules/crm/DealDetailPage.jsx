@@ -22,7 +22,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import {
-  C, HEAD, BODY, STAGES, stageIndex, fmtDate, Card, InfoRow,
+  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, fmtDate, Card, InfoRow,
   DealStepper, DealHeaderControls, EditDealModal, QuotationListCard,
   PrfListCard, PriceSummaryCard, fetchAssignees, saveDealUpdate,
 } from './DealPanels';
@@ -242,12 +242,31 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   }
 
   async function saveEdit(draft) {
-    return updateAccount({
-      pipeline_stage: STAGES[draft.stage].key,
+    // PENJAGA stage tak dikenal — sama tujuannya dengan CustomerDetailPage.saveDealEdit.
+    // `draft.stage` diturunkan dari `stageIdx` (prop `initial` EditDealModal), dan
+    // `stageIdx = stageIndex(account?.pipeline_stage)`; stageIndex mengembalikan 0 (=NEW)
+    // untuk nilai di luar STAGES. Tanpa penjaga ini, menyimpan modal untuk akun
+    // ber-stage 'NURTURE' menimpanya jadi 'NEW', diam-diam dan tanpa audit.
+    //
+    // Di halaman INI penyemai draft memang state `account` itu sendiri — tidak ada fetch
+    // terpisah seperti `dealSeed` di CustomerDetailPage. Jadi membaca `account` di sini
+    // BUKAN memakai state halaman sebagai pengganti sumber, melainkan memang sumber yang
+    // sama dengan yang menyemai draft.stage.
+    const seedStage = account?.pipeline_stage;
+    const stageKnown = isKnownStage(seedStage);
+    const patch = {
       assigned_profile: draft.assignedId || null,
       estimated_value: draft.value === '' ? 0 : Number(draft.value),
       estimated_closing_date: draft.closeDate || null,
-    });
+    };
+    if (stageKnown) patch.pipeline_stage = STAGES[draft.stage].key;
+    const ok = await updateAccount(patch);
+    // Setelah updateAccount supaya pesan ini yang terakhir dilihat user. Tipe default,
+    // bukan 'error' — penyimpanannya memang berhasil.
+    if (ok && !stageKnown) {
+      showToast?.(`Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
+    }
+    return ok;
   }
 
   // ── loading / not-found ──
