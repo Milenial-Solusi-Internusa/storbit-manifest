@@ -24,7 +24,11 @@ const C = {
   success: '#16A34A', warning: '#F59E0B', error: '#DC2626',
 };
 
-const PIPELINE_STAGES = ['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'WON', 'LOST', 'NURTURE'];
+// 'NURTURE' DICABUT (persiapan Fase 3): nilai itu tak punya kolom di Kanban dan tak
+// punya aturan aging, jadi akun yang di-set NURTURE hilang dari papan. Menutup pintu
+// masuknya di sini menghentikan pertambahan baris baru. Akun NURTURE yang SUDAH ada
+// tetap terbaca — lihat penanganan <select> di Section Pipeline.
+const PIPELINE_STAGES = ['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'WON', 'LOST'];
 const STAGE_DOT = { NEW: '#94A3B8', CONTACTED: '#3B82F6', QUALIFIED: '#0D9488', PROPOSAL: '#F59E0B', NEGOTIATION: '#E85A1E', WON: '#16A34A', LOST: '#DC2626', NURTURE: '#94A3B8' };
 const CUSTOMER_TYPES = ['freight', 'customs', 'trading', 'mixed'];
 const SOURCES = ['sales_visit', 'cold_call', 'referral', 'existing_network', 'exhibition', 'instagram', 'linkedin', 'tiktok', 'website', 'walk_in', 'other'];
@@ -202,6 +206,10 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     else setForm(f => ({ ...f, pipeline_stage: v }));
   };
 
+  // Stage akun ini dikenal daftar PIPELINE_STAGES? Akun warisan ber-stage 'NURTURE'
+  // (dicabut dari daftar) menjawab false → dropdown-nya dikunci, lihat Section Pipeline.
+  const stageKnown = PIPELINE_STAGES.includes(form.pipeline_stage);
+
   const handleWinLossSave = (values) => {
     setForm(f => ({ ...f, pipeline_stage: winLoss.mode.toUpperCase(), ...values }));
     setWinLoss(wl => ({ ...wl, open: false }));
@@ -345,7 +353,13 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                 <Field label="Pipeline Stage">
                   <div style={selWrap}>
                     <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', width: 9, height: 9, borderRadius: 999, background: STAGE_DOT[form.pipeline_stage] || '#94A3B8', pointerEvents: 'none' }} />
-                    <select value={form.pipeline_stage} onChange={handleStageChange} style={{ ...selInput, paddingLeft: 30 }}>
+                    {/* Stage tak dikenal (mis. 'NURTURE' warisan): tampilkan nilai MENTAH
+                        sebagai opsi disabled + kunci select-nya. Tanpa ini dropdown tampil
+                        KOSONG — dan kotak kosong mengundang diisi, yang justru menimpa
+                        nilai warisan itu. State `form.pipeline_stage` tetap utuh sehingga
+                        payload menyimpannya kembali apa adanya. */}
+                    <select value={form.pipeline_stage} onChange={handleStageChange} disabled={!stageKnown} style={{ ...selInput, paddingLeft: 30 }}>
+                      {!stageKnown && <option value={form.pipeline_stage} disabled>{form.pipeline_stage || '(kosong)'}</option>}
                       {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
                     </select><SelectChevron />
                   </div>

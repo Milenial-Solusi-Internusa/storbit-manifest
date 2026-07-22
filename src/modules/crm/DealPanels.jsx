@@ -48,6 +48,12 @@ export const stageIndex = (s) => {
   const i = STAGES.findIndex((x) => x.key === String(s || '').toUpperCase());
   return i < 0 ? 0 : i;
 };
+// isKnownStage — cocok PERSIS terhadap STAGES (tanpa toUpperCase, tanpa fallback).
+// Sengaja BUKAN turunan stageIndex: stageIndex mengembalikan 0 (=NEW) untuk nilai
+// tak dikenal, sehingga tak bisa membedakan "memang NEW" dari "tidak dikenal".
+// Dipakai jalur simpan Edit Deal untuk menolak menimpa stage yang tak dikenal
+// (mis. 'NURTURE') dengan hasil kolaps stageIndex.
+export const isKnownStage = (key) => STAGES.some((s) => s.key === key);
 
 export const fmtRp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 export const fmtCompact = (n) => {
