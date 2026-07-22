@@ -196,8 +196,11 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     const cid = profile.company_id;
     // PRF hanya lahir dari inquiry (keputusan 19 Jul 2026) — akun diturunkan dari inquiry,
     // jadi tak ada lagi picker customer/prospect di sini.
-    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, commodity, additional_services').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
-      .then(({ data }) => setInquiries(data || []));
+    // JARING 1 — akun parkir Lead Pool tak boleh dipakai untuk PRF baru (aturan 18 Jul 2026;
+    // filter aslinya ikut terhapus saat picker akun dicabut). `inquiries` punya DUA FK ke
+    // `accounts` → embed kedua sisi dan buang barisnya bila SALAH SATU parkir.
+    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, commodity, additional_services, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
+      .then(({ data }) => setInquiries((data || []).filter(i => !i.prospect?.is_in_lead_pool && !i.customer?.is_in_lead_pool)));
     supabase.from('currencies').select('code, name').order('code')
       .then(({ data }) => setCurrencies(data || []));
     supabase.from('companies').select('code').eq('id', cid).maybeSingle()
@@ -212,10 +215,20 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     if (!prefillInquiryId) return undefined;
     let cancelled = false;
     supabase.from('inquiries')
-      .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms, notes')
+      .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms, notes, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)')
       .eq('id', prefillInquiryId).is('deleted_at', null).maybeSingle()
       .then(({ data: inq }) => {
         if (cancelled || !inq) return;
+        // JARING 2 — prefill masuk lewat query by-id, MELEWATI dropdown yang sudah disaring.
+        // Kalau akunnya parkir: JANGAN set inquiry_id. Menyetelnya akan membuat dropdown tampil
+        // kosong (id-nya tak ada di antara option) tapi form TETAP bisa disimpan — lebih buruk
+        // dari kondisi sebelum disaring. Pesan lewat `errors.account` (dirender errText di bawah
+        // field Inquiry), BUKAN showToast: showToast tak dimemo di App.jsx sehingga memasukkannya
+        // ke dep array effect ini akan memicu fetch+prefill ulang tiap render.
+        if (inq.prospect?.is_in_lead_pool || inq.customer?.is_in_lead_pool) {
+          setErrors(e => ({ ...e, account: 'Akun inquiry ini sedang di Lead Pool — tarik dari Lead Pool dulu sebelum membuat PRF.' }));
+          return;
+        }
         // Identity (customer_source/inquiry_id/account_id) di-set tanpa syarat; field data fill-empty-only via helper.
         setForm(f => applyInquiryData({
           ...f,
@@ -357,6 +370,18 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     if (status === 'SUBMITTED' && !validate()) return;
     setSaving(true);
     try {
+      // JARING 3 (titik simpan) — dropdown & prefill hanya menutup dua jalur yang kita tahu
+      // HARI INI; guard ini menutup jalur yang belum diketahui, dan permukaannya cuma satu titik.
+      // Sengaja SEBELUM generatePrfNo supaya penolakan tidak menghanguskan nomor PRF (TD-48).
+      const { data: inqChk, error: chkErr } = await supabase.from('inquiries')
+        .select('id, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)')
+        .eq('id', form.inquiry_id).is('deleted_at', null).maybeSingle();
+      if (chkErr) throw new Error('Gagal memeriksa status Lead Pool inquiry: ' + chkErr.message);
+      if (inqChk?.prospect?.is_in_lead_pool || inqChk?.customer?.is_in_lead_pool) {
+        setErrors(e => ({ ...e, account: 'Akun inquiry ini sedang di Lead Pool — tarik dari Lead Pool dulu sebelum membuat PRF.' }));
+        showToast?.('Akun inquiry ini sedang di Lead Pool. Tarik dari Lead Pool dulu sebelum membuat PRF.', 'error');
+        return;
+      }
       const prf_no = await generatePrfNo(profile.company_id, companyCode);
       // Sea FCL qty jsonb — only checked types, numeric.
       const qtyClean = {};
