@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jIyihQhxup8JmK2FmhFeRfuSLdimt15YEu5ygxshBQHWIgg6GbJGPTGGVYjG8HD
+\restrict dSFxz5zjBP4DjB7KJbi6Y1dQhoR8WDNlZrHNVHv0Ay467rNAK4lLhOVm3NMCcTG
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1198,6 +1198,73 @@ $$;
 
 
 --
+-- Name: set_inquiry_quoted_on_quotation_sent(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_inquiry_quoted_on_quotation_sent() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.status = 'SENT'
+     AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'SENT')
+     AND NEW.inquiry_id IS NOT NULL THEN
+    UPDATE public.inquiries
+    SET status = 'QUOTED', updated_at = now()
+    WHERE id = NEW.inquiry_id
+      AND deleted_at IS NULL
+      AND status IN ('OPEN','IN_REVIEW');
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_inquiry_review_on_prf_submit(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_inquiry_review_on_prf_submit() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.status = 'SUBMITTED'
+     AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'SUBMITTED')
+     AND NEW.inquiry_id IS NOT NULL THEN
+    UPDATE public.inquiries
+    SET status = 'IN_REVIEW', updated_at = now()
+    WHERE id = NEW.inquiry_id
+      AND deleted_at IS NULL
+      AND status = 'OPEN';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_inquiry_won_on_so(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_inquiry_won_on_so() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.inquiry_id IS NOT NULL THEN
+    UPDATE public.inquiries
+    SET status = 'WON', updated_at = now()
+    WHERE id = NEW.inquiry_id
+      AND deleted_at IS NULL
+      AND status IN ('OPEN','IN_REVIEW','QUOTED','NEGOTIATION');
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: set_product_category_prices(uuid, numeric, numeric, numeric); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1614,6 +1681,79 @@ CREATE TABLE public.accounts (
     CONSTRAINT accounts_account_status_check CHECK (((account_status)::text = ANY ((ARRAY['lead'::character varying, 'mql'::character varying, 'sql'::character varying, 'prospect'::character varying, 'customer'::character varying, 'free_agent'::character varying, 'lost'::character varying])::text[]))),
     CONSTRAINT accounts_pull_status_check CHECK ((pull_status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text]))),
     CONSTRAINT prospects_source_check CHECK (((source)::text = ANY (ARRAY['sales_visit'::text, 'cold_call'::text, 'referral'::text, 'existing_network'::text, 'exhibition'::text, 'instagram'::text, 'linkedin'::text, 'tiktok'::text, 'website'::text, 'walk_in'::text, 'other'::text])))
+);
+
+
+--
+-- Name: accounts_dedup_backup_20260722; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.accounts_dedup_backup_20260722 (
+    id uuid,
+    company_id uuid,
+    name text,
+    legal_name character varying,
+    customer_type character varying,
+    tax_id character varying,
+    address text,
+    city character varying,
+    country character varying,
+    phone character varying,
+    email character varying,
+    pic_name character varying,
+    pic_phone character varying,
+    pic_email character varying,
+    source character varying,
+    assigned_to uuid,
+    pipeline_stage character varying,
+    lost_reason text,
+    converted_at timestamp with time zone,
+    converted_to uuid,
+    payment_terms_id uuid,
+    currency_code character varying,
+    credit_limit numeric,
+    notes text,
+    is_active boolean,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    estimated_closing_date date,
+    assigned_profile uuid,
+    company_prefix text,
+    won_reason text,
+    bant_commodity text,
+    bant_origin text,
+    bant_destination text,
+    bant_frequency text,
+    bant_current_vendor text,
+    bant_payment text,
+    bant_decision_maker text,
+    bant_score integer,
+    account_status character varying(50),
+    owner_company_id uuid,
+    tier character varying(20),
+    code text,
+    nomor_kontrak text,
+    default_dc text,
+    last_activity_at timestamp with time zone,
+    became_customer_at timestamp with time zone,
+    estimated_value numeric,
+    bant_budget smallint,
+    bant_authority smallint,
+    bant_need smallint,
+    bant_timeline smallint,
+    stage_changed_at timestamp with time zone,
+    is_in_lead_pool boolean,
+    lead_pool_reason text,
+    lead_pool_at timestamp with time zone,
+    pull_justification text,
+    pull_requested_at timestamp with time zone,
+    pull_approved_by uuid,
+    pull_approved_at timestamp with time zone,
+    pull_status text,
+    is_odoo_customer boolean
 );
 
 
@@ -3461,7 +3601,19 @@ CREATE TABLE public.inquiries (
     additional_services text[],
     dimension text,
     pickup_address text,
-    delivery_address text
+    delivery_address text,
+    CONSTRAINT inquiries_status_check CHECK (((status)::text = ANY ((ARRAY['OPEN'::character varying, 'IN_REVIEW'::character varying, 'QUOTED'::character varying, 'NEGOTIATION'::character varying, 'WON'::character varying, 'LOST'::character varying, 'CANCELLED'::character varying])::text[])))
+);
+
+
+--
+-- Name: inquiries_status_backup_20260722; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inquiries_status_backup_20260722 (
+    id uuid,
+    status character varying,
+    updated_at timestamp with time zone
 );
 
 
@@ -7523,6 +7675,27 @@ CREATE TRIGGER trg_gen_customer_code_ins BEFORE INSERT ON public.accounts FOR EA
 
 
 --
+-- Name: quotations trg_inquiry_quoted; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_inquiry_quoted AFTER INSERT OR UPDATE OF status ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.set_inquiry_quoted_on_quotation_sent();
+
+
+--
+-- Name: prf trg_inquiry_review; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_inquiry_review AFTER INSERT OR UPDATE OF status ON public.prf FOR EACH ROW EXECUTE FUNCTION public.set_inquiry_review_on_prf_submit();
+
+
+--
+-- Name: sales_orders trg_inquiry_won; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_inquiry_won AFTER INSERT ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION public.set_inquiry_won_on_so();
+
+
+--
 -- Name: payment_terms trg_payment_terms_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9940,6 +10113,12 @@ ALTER TABLE ONLY public.warehouses
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: accounts_dedup_backup_20260722; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.accounts_dedup_backup_20260722 ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: accounts accounts_delete_superadmin; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -11173,6 +11352,12 @@ CREATE POLICY inquiries_insert ON public.inquiries FOR INSERT WITH CHECK ((compa
 
 CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
+
+--
+-- Name: inquiries_status_backup_20260722; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inquiries_status_backup_20260722 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: inquiries inquiries_update; Type: POLICY; Schema: public; Owner: -
@@ -12670,5 +12855,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jIyihQhxup8JmK2FmhFeRfuSLdimt15YEu5ygxshBQHWIgg6GbJGPTGGVYjG8HD
+\unrestrict dSFxz5zjBP4DjB7KJbi6Y1dQhoR8WDNlZrHNVHv0Ay467rNAK4lLhOVm3NMCcTG
 
