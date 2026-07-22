@@ -472,7 +472,7 @@ const CRM_MENU_ITEMS = [
     id: 'crm-account', label: 'Account', icon: Users,
     children: [
       { id: 'crm-pipeline',           label: 'Pipeline / Leads',   icon: Users },
-      { id: 'crm-prospects',          label: 'Prospects',          icon: Users, module: 'crm', role: ['super_admin','admin','ceo','gm','manager','sales','operations'] },
+      { id: 'crm-prospects',          label: 'Prospects',          icon: Users },
       { id: 'crm-lead-pool',          label: 'Lead Pool',          icon: Archive, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
       { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['ceo','gm','gm_bd','manager','supervisor','admin','super_admin'] },
     ],
@@ -728,7 +728,7 @@ const ERP_MENU_GROUPS = [
       { section: 'Transaksi' },
       { id: 'jobCosting',  label: 'Job Costing',         icon: Receipt                                              },
       { id: 'billing',     label: 'Billing / Invoice',   icon: FileText                                             },
-      { id: 'ar',          label: 'AR / Collection',     icon: Wallet,   module: 'finance', role: ['super_admin','admin','ceo','gm','finance_controller','finance']                },
+      { id: 'ar',          label: 'AR / Collection',     icon: Wallet   },
       { id: 'ap',          label: 'AP / Vendor Invoice', icon: Wallet                                               },
       { section: 'Keuangan' },
       { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark                                             },
@@ -916,9 +916,9 @@ const ERP_MENU_GROUPS = [
       { id: 'admin',         label: 'Master Data',       icon: Database },
       { id: 'products',      label: 'Products & Services', icon: Package },
       { id: 'bulk-edit-price', label: 'Update Harga Massal', icon: TrendingUp, role: ['super_admin'] },
-      { id: 'schema-manager',label: 'Schema Manager',    icon: Database, module: 'admin', role: ['super_admin'] },
+      { id: 'schema-manager',label: 'Schema Manager',    icon: Database },
       { section: 'Admin Settings' },
-      { id: 'admin-settings', label: 'Admin Settings', icon: Settings, module: 'admin', role: ['super_admin','admin'] },
+      { id: 'admin-settings', label: 'Admin Settings', icon: Settings },
     ],
   },
 ];
@@ -1742,11 +1742,19 @@ export default function StorbitManifest() {
   }, [role, hasPermission, hasMenuPermission]);
 
   // Defense-in-depth for Admin Settings (hub + all admin-settings-* sub-pages):
-  // explicit role gate — super_admin OR admin only. The item's role:['super_admin','admin']
-  // was previously DEAD (module 'admin' gate won → any admin.view holder could open it,
-  // the F3 exposure); this enforces it at the page level for the whole family so a stray
-  // navigation can't render a system-config screen. Task 1 (MENU_KEY_MAP
-  // 'admin-settings'→'admin_settings') separately tightens the sidebar gate to per-menu.
+  // explicit role gate — super_admin OR admin only.
+  //
+  // Kenapa gate terpisah ini perlu: item menu `admin-settings` dulu menuliskan
+  // module:'admin' + role:['super_admin','admin'], dan KEDUANYA tidak pernah
+  // dievaluasi. Sebabnya BUKAN "module menang atas role" seperti tertulis di
+  // komentar lama — yang menang adalah MENU_KEY_MAP: canSeeMenuItem (:1260-1262)
+  // memeriksa MENU_KEY_MAP[item.id] LEBIH DULU dan langsung return, sebelum
+  // sampai ke item.module (:1265) maupun item.role (:1268). Karena
+  // MENU_KEY_MAP['admin-settings']='admin_settings' ada, gate efektifnya adalah
+  // hasMenuPermission('admin_settings','view') — siapa pun yang dapat izin menu
+  // itu bisa membuka layar konfigurasi sistem, tanpa cek role sama sekali.
+  // Kedua properti mati itu sudah DIHAPUS dari itemnya (Fase 0 Batch 3); gate
+  // role-nya kini hidup di baris ini, bukan di pohon menu.
   // (AGENTS.md: don't rely on menu gating alone.)
   const canAdminSettings = role === 'super_admin' || role === 'admin';
 
