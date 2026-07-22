@@ -587,7 +587,7 @@ const ERP_MENU_GROUPS = [
         id: 'manifest', label: 'Sales Order / SP', icon: Receipt,
         children: [
           { id: 'manifest', label: 'SP Manifest', icon: LayoutList },
-          { id: 'input',    label: 'Input SP',    icon: Plus, module: 'logistics', role: ['super_admin','admin','ceo','gm','manager','operations','sales'] },
+          { id: 'input',    label: 'Input SP',    icon: Plus },
         ],
       },
       { id: 'picking', label: 'Picking List', icon: ClipboardList, role: ['super_admin','admin','ceo','gm','manager','operations'] },
@@ -619,7 +619,7 @@ const ERP_MENU_GROUPS = [
         ],
       },
       {
-        id: 'shipment', label: 'Shipment Management', icon: Truck, module: 'logistics', role: ['super_admin','admin','ceo','gm','manager','operations','sales'],
+        id: 'shipment', label: 'Shipment Management', icon: Truck,
         children: [
           { id: 'shipment',         label: 'Tracking Aktif',     icon: Truck    },
           { id: 'shipment-jadwal',  label: 'Jadwal Pengiriman',  icon: Calendar },
@@ -733,9 +733,9 @@ const ERP_MENU_GROUPS = [
       { section: 'Keuangan' },
       { id: 'cashBank',    label: 'Cash / Bank',         icon: Landmark                                             },
       { id: 'accounting',  label: 'Accounting',          icon: BarChart3                                            },
-      { id: 'outstanding', label: 'Outstanding',         icon: Clock,    module: 'finance', role: ['super_admin','admin','ceo','gm','manager','finance_controller','finance']      },
+      { id: 'outstanding', label: 'Outstanding',         icon: Clock    },
       { section: 'Dokumen' },
-      { id: 'finance',     label: 'Finance Docs',        icon: FileText, module: 'finance', role: ['super_admin','admin','ceo','gm','finance_controller','finance']                },
+      { id: 'finance',     label: 'Finance Docs',        icon: FileText },
     ],
   },
   // ── SERVICE MANAGEMENT ────────────────────────────────────────────────────
@@ -913,7 +913,7 @@ const ERP_MENU_GROUPS = [
     label: 'Foundation',
     items: [
       { section: 'Master Data' },
-      { id: 'admin',         label: 'Master Data',       icon: Database, module: 'foundation', role: ['super_admin','admin','it'] },
+      { id: 'admin',         label: 'Master Data',       icon: Database },
       { id: 'products',      label: 'Products & Services', icon: Package },
       { id: 'bulk-edit-price', label: 'Update Harga Massal', icon: TrendingUp, role: ['super_admin'] },
       { id: 'schema-manager',label: 'Schema Manager',    icon: Database, module: 'admin', role: ['super_admin'] },
