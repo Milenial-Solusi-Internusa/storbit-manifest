@@ -2,6 +2,31 @@
 
 ## 2026-07-23
 
+### InquiryListPage — chip filter status + kolom "Umur Inquiry" (jembatan visibilitas sampai papan Deal F4-6) — FE-only
+
+**Ringkas:** **1 file** (`src/modules/crm/InquiryListPage.jsx`), **NOL perubahan DB/RLS/migrasi**. **Konteks:** sejak batch 3B-1 tahap deal (Proposal/Negotiation/Won/Lost) tak lagi terlihat maju di papan akun — sumbu itu pindah ke `inquiries.status`. Sales kehilangan gambaran agregat "berapa yang jalan di tiap status". Task ini menutup lubang itu di halaman daftar Inquiry sebagai **jembatan ringan sampai papan Deal per-inquiry (F4-6)** — bukan pengganti papan itu.
+
+**(Task 1) Chip filter status menggantikan dropdown "Semua Status".**
+- Dropdown `<select>` status **dicabut** (dropdown Service **tetap**). State `filterStatus` **tetap dipakai** — chip menyetelnya, dan fetch list membacanya di `:265` (`.eq('status', filterStatus)`) → **nol state yatim** (diverifikasi grep).
+- Deretan chip: **"Semua"** (selalu, count = total) + **satu chip per status yang PUNYA DATA** (`count>0`), urut kanonik `STATUS_ORDER` (`OPEN→IN_REVIEW→QUOTED→NEGOTIATION→WON→LOST→CANCELLED`). Status nol-baris **tidak dirender** — chip dibangun dari **DATA, bukan daftar teori**. Chip aktif ditandai warna status (default "Semua").
+- **⭐ Angka chip = jumlah baris saat chip diklik** (keputusan Den). Dihitung lewat **query ringan TERPISAH** (`select('status')`, scope RLS + service + search yang **SAMA** dgn list, **TAPI tanpa filter status & tanpa pagination**, `.limit(1000)`), di-reduce per status di client. Fetch tabel utama (server-paginated `.range()` + `count:'exact'`) **tidak diubah** → angka chip **tak menyusut** saat sebuah status dipilih. Query count di-inline sebagai `useEffect` (deps: `profile.id`/`company_id` + `isAllEntities`/`isSalesOnly` + `filterService` + `search` — **BUKAN** `filterStatus`/`page`), non-fatal (gagal → chip tanpa angka, list utama tetap jalan).
+- **Label chip** dari peta kecil `STATUS_CHIP_LABEL` (OPEN→"Baru", QUOTED→"Quoted", IN_REVIEW→"Menunggu harga", NEGOTIATION→"Negotiation", WON→"Won", LOST→"Lost", CANCELLED→"Cancelled"). **Warna chip di-REUSE dari `STATUS_META`** (bukan peta warna kedua); **`CHIP_FALLBACK` neutral** untuk status tanpa entri `STATUS_META` — **verifikasi doc-keeper: `NEGOTIATION` memang TIDAK ada di `STATUS_META`** (6 entri OPEN/IN_REVIEW/QUOTED/WON/LOST/CANCELLED), jadi fallback benar-benar terpakai. **`STATUS_META.label` TIDAK diubah** — badge tabel & modal detail tetap "Open" dst (keputusan Den).
+
+**(Task 2) Kolom "Umur Inquiry".**
+- Helper lokal `ageDays(iso)` = `Math.floor((Date.now()-created)/86400000)`, pakai **`created_at`** (sudah ter-select `:248`), **BUKAN `updated_at`** (updated_at bergeser tiap edit → menyesatkan). Tak ada helper days-diff generik yang di-export di CRM → helper lokal (konsisten `fmtDate` lokal).
+- Header **"Umur Inquiry"** disisip setelah "Created At", sebelum kolom aksi. Cell `"N hari"` (angka polos, **tanpa warna/threshold**); `created_at` null → `"—"`. `colSpan` loading/empty **8→9**.
+- **⚠️ Label sengaja "Umur Inquiry", BUKAN "umur di status"** — ini umur sejak DIBUAT, bukan lama di status sekarang; `inquiries` **tak punya kolom penanda perubahan status** (hanya `created_at`/`updated_at`/`deleted_at`). Kalau kelak butuh "aging per status", perlu kolom baru (bukan task ini).
+
+**Fakta data (dari Den, kode tetap general):** `inquiries.status` yang terisi saat ini HANYA `OPEN` (~140) + `QUOTED` (~67); lima nilai CHECK lain nol baris → chip-nya **tidak muncul** sampai terisi. Begitu status lain terisi, chipnya **otomatis muncul** dengan label benar (kode general, bukan hardcode dua chip).
+
+**SENGAJA TIDAK DISENTUH:** DB · fetch tabel utama · pagination · dropdown Service · search · `StageBadge`/`StatusBadge` · modal detail · PDF · aksi apa pun · `STATUS_META` (warna di-reuse, tak diubah).
+
+**VERIFIKASI (diverifikasi ulang doc-keeper):** build clean **2590 modules, 1.79s**. Lint **160 = net-zero** vs baseline 160 — file ini **13 problem** (dikonfirmasi via `npx eslint`), semua **pre-existing** (10× "cannot create components during render" dari `Field`/`Section` di modal + 1 memoization-skip `fetchInquiries` + 2 setState-in-effect); query count sengaja di-inline (bukan `useCallback` + effect terpisah) agar tak menambah 2 problem baru. **⚠️ BELUM TES RUNTIME** — halaman di balik login; build clean bukan jaminan. Checklist Den: chip "Semua"/"Baru"/"Quoted" dgn jumlah, nol chip utk status kosong; klik "Quoted" → list tersaring + angka cocok; "Semua" → penuh; tiap baris "N hari" masuk akal; dropdown "Semua Status" lama sudah tak ada.
+
+**TECH DEBT: nol TD baru** (disepakati). **Catatan doc-keeper soal milestone:** ini **UI enhancement halaman yang sudah ada** (jembatan sampai F4-6), **bukan** menu/fitur/entitas baru → **tidak** dicatat sebagai milestone di `00_DEV_JOURNEY` BAGIAN 1; cukup PROGRESS + `05_WORKFLOW_MAP` §CRM + baris status `09_ROADMAP`. (Usulan, menunggu Den — kalau F4-6 kelak jadi, jembatan ini bisa disebut di milestone F4-6.)
+
+---
+
 ### Fix `CustomerFormModal` — promosi lifecycle diam-diam + kode duplikat saat edit akun non-customer — FE-only
 
 **Ringkas:** **1 file** (`src/modules/crm/CustomerListPage.jsx`, komponen `CustomerFormModal` — di-export, dipakai ulang `CustomerDetailPage.jsx` via `import { CustomerFormModal }`), **NOL perubahan DB/RLS/migrasi**. Tercatat sebagai **TD-123 (langsung RESOLVED)**.
