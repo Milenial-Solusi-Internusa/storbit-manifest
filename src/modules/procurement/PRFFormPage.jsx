@@ -31,7 +31,14 @@ const COMMODITIES = [
   { value: 'general', label: 'General Cargo' },
   { value: 'special_permit', label: 'Special Permit' },
   { value: 'dg', label: 'Dangerous Good' },
+  { value: 'perishable', label: 'Perishable' },
+  { value: 'live_animal', label: 'Live Animal' },
+  { value: 'valuable', label: 'Valuable' },
+  { value: 'pharma', label: 'Pharma' },
 ];
+// IMO hazard classes — nilai string IDENTIK dengan InquiryFormPage.IMO_CLASSES supaya
+// nilai imo_class yang di-prefill dari inquiry cocok dengan salah satu opsi dropdown.
+const IMO_CLASSES = ['Class 1 — Explosives', 'Class 2 — Gases', 'Class 3 — Flammable Liquids', 'Class 4 — Flammable Solids', 'Class 5 — Oxidizers', 'Class 6 — Toxic', 'Class 7 — Radioactive', 'Class 8 — Corrosives', 'Class 9 — Miscellaneous'];
 const SERVICE_TYPES = [
   { value: 'sea', label: 'Sea' },
   { value: 'air', label: 'Air' },
@@ -105,6 +112,11 @@ function applyInquiryData(f, inq) {
   fill('destination', inq.pod);
   fill('deadline_quotation', inq.deadline_quote);
   fill('notes', inq.notes);
+  fill('goods_name', inq.goods_name);
+  // UN/IMO diisi ke state fill-empty-only walau field-nya baru TAMPIL saat commodity=dg
+  // (nilai tersimpan diam-diam, muncul begitu DG dipilih). Sengaja tak memaksa commodity=dg.
+  fill('un_number', inq.un_number);
+  fill('imo_class', inq.imo_class);
   const inco = (Array.isArray(inq.incoterms) && INCOTERMS_FULL.includes(inq.incoterms[0])) ? inq.incoterms[0] : '';
   fill('incoterms', inco);
   return out;
@@ -172,7 +184,8 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   const [form, setForm] = useState({
     customer_source: 'inquiry', account_id: '', inquiry_id: '',
     stream: '', deadline_quotation: '',
-    direction: '', commodity: '', hs_code: '', msds_available: false,
+    direction: '', commodity: '', goods_name: '', hs_code: '', msds_available: false,
+    un_number: '', imo_class: '',
     service_type: '', incoterms: '', commercial_value: '', commercial_currency: '',
     origin: '', destination: '', pickup_address: '', delivery_address: '',
     add_on_services: [], add_on_others: '', cargo_ready_date: '',
@@ -199,7 +212,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     // JARING 1 — akun parkir Lead Pool tak boleh dipakai untuk PRF baru (aturan 18 Jul 2026;
     // filter aslinya ikut terhapus saat picker akun dicabut). `inquiries` punya DUA FK ke
     // `accounts` → embed kedua sisi dan buang barisnya bila SALAH SATU parkir.
-    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, commodity, additional_services, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
+    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, commodity, goods_name, un_number, imo_class, additional_services, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
       .then(({ data }) => setInquiries((data || []).filter(i => !i.prospect?.is_in_lead_pool && !i.customer?.is_in_lead_pool)));
     supabase.from('currencies').select('code, name').order('code')
       .then(({ data }) => setCurrencies(data || []));
@@ -215,7 +228,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     if (!prefillInquiryId) return undefined;
     let cancelled = false;
     supabase.from('inquiries')
-      .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms, notes, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)')
+      .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms, notes, goods_name, un_number, imo_class, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)')
       .eq('id', prefillInquiryId).is('deleted_at', null).maybeSingle()
       .then(({ data: inq }) => {
         if (cancelled || !inq) return;
@@ -313,9 +326,9 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     if (isImpExp && form.hs_code.length !== 8) e.hs_code = 'HS Code wajib 8 digit untuk import/export';
     if (isDG && !form.msds_available) e.msds_available = 'MSDS wajib untuk Dangerous Good';
     if (!form.service_type) e.service_type = 'Wajib diisi';
+    if (!form.incoterms) e.incoterms = 'Wajib diisi';
     if (pickupReq && !form.pickup_address.trim()) e.pickup_address = 'Wajib untuk incoterm ini';
     if (deliveryReq && !form.delivery_address.trim()) e.delivery_address = 'Wajib untuk incoterm ini';
-    if (!form.cargo_ready_date) e.cargo_ready_date = 'Wajib diisi';
     // Section 03 — child mandatory (gated by visibility)
     if (showSea) {
       if (!form.sea_freight_type) e.sea_freight_type = 'Wajib diisi';
@@ -333,7 +346,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     if (showAir) {
       if (form.air_gw === '') e.air_gw = 'Wajib diisi';
       if (!form.air_dimension.trim()) e.air_dimension = 'Wajib diisi';
-      if (form.air_volume === '') e.air_volume = 'Wajib diisi';
+      // air_volume SENGAJA opsional (Sea-LCL volume tetap wajib, lihat blok showSea di atas).
       if (form.air_koli === '') e.air_koli = 'Wajib diisi';
     }
     if (showInland) {
@@ -405,8 +418,13 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
         // Inquiry Details
         direction: form.direction || null,
         commodity: form.commodity || null,
+        goods_name: form.goods_name || null,
         hs_code: form.hs_code || null,
         msds_available: isDG ? !!form.msds_available : false,
+        // UN/IMO hanya disimpan saat kargo DG (mirror msds_available) — konsisten dgn field
+        // yang hanya tampil saat commodity=dg.
+        un_number: isDG ? (form.un_number || null) : null,
+        imo_class: isDG ? (form.imo_class || null) : null,
         service_type: form.service_type || null,
         incoterms: form.incoterms || null,
         commercial_value: showCommercial && form.commercial_value !== '' ? Number(form.commercial_value) : null,
@@ -556,6 +574,12 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
               </div>
 
               <div style={grid2}>
+                <Field label="Nama Barang">
+                  <input value={form.goods_name} onChange={set('goods_name')} style={S.input} placeholder="cth: Solar Panel" />
+                </Field>
+              </div>
+
+              <div style={grid2}>
                 <Field label="HS Code" required={isImpExp} hint={<span style={S.hint}> (8 digit{isImpExp ? '' : ', opsional'})</span>}>
                   <input value={form.hs_code} onChange={(e) => setForm(f => ({ ...f, hs_code: e.target.value.replace(/\D/g, '').slice(0, 8) }))} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace" }} placeholder="00000000" inputMode="numeric" />
                   {errText('hs_code')}
@@ -571,6 +595,22 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                 )}
               </div>
 
+              {isDG && (
+                <div style={grid2}>
+                  <Field label="UN Number">
+                    <input value={form.un_number} onChange={set('un_number')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace" }} placeholder="cth: 1203" />
+                  </Field>
+                  <Field label="IMO Class">
+                    <div style={{ position: 'relative' }}>
+                      <select value={form.imo_class} onChange={set('imo_class')} style={selInput}>
+                        <option value="">— Pilih IMO Class —</option>
+                        {IMO_CLASSES.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select><Chevron />
+                    </div>
+                  </Field>
+                </div>
+              )}
+
               <div style={grid2}>
                 <Field label="Service Type" required>
                   <div style={{ position: 'relative' }}>
@@ -585,13 +625,14 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                   {errText('service_type')}
                   {srcInq?.service_type && <span style={S.hint}>Dari inquiry: {INQ_SERVICE_LABEL[srcInq.service_type] || srcInq.service_type} — pilih moda manual.</span>}
                 </Field>
-                <Field label="Incoterms" hint={form.service_type === 'air' ? <span style={S.hint}> (7 term — Air)</span> : null}>
+                <Field label="Incoterms" required hint={form.service_type === 'air' ? <span style={S.hint}> (7 term — Air)</span> : null}>
                   <div style={{ position: 'relative' }}>
                     <select value={form.incoterms} onChange={set('incoterms')} style={selInput}>
                       <option value="">— Pilih incoterm —</option>
                       {incotermOpts.map(t => <option key={t} value={t}>{t}</option>)}
                     </select><Chevron />
                   </div>
+                  {errText('incoterms')}
                   {srcInq && Array.isArray(srcInq.incoterms) && srcInq.incoterms.length > 0 && !INCOTERMS_FULL.includes(srcInq.incoterms[0]) && <span style={S.hint}>Dari inquiry: {srcInq.incoterms[0]} — tidak ada padanan di daftar PRF, pilih manual.</span>}
                 </Field>
               </div>
@@ -647,7 +688,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
               )}
 
               <div style={grid2}>
-                <Field label="Cargo Ready Date" required>
+                <Field label="Cargo Ready Date">
                   <input type="date" value={form.cargo_ready_date} onChange={set('cargo_ready_date')} style={S.input} />
                   {errText('cargo_ready_date')}
                 </Field>
@@ -711,7 +752,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                   <div style={grid2}>
                     <Field label="GW (kgs)" required><input value={form.air_gw} onChange={setNum('air_gw')} style={S.input} placeholder="0" inputMode="decimal" />{errText('air_gw')}</Field>
                     <Field label="Dimension (PxLxT)" required><input value={form.air_dimension} onChange={set('air_dimension')} style={S.input} placeholder="cth: 120x80x100 cm" />{errText('air_dimension')}</Field>
-                    <Field label="Volume (m³)" required><input value={form.air_volume} onChange={setNum('air_volume')} style={S.input} placeholder="0" inputMode="decimal" />{errText('air_volume')}</Field>
+                    <Field label="Volume (m³)"><input value={form.air_volume} onChange={setNum('air_volume')} style={S.input} placeholder="0" inputMode="decimal" />{errText('air_volume')}</Field>
                     <Field label="Koli" required><input value={form.air_koli} onChange={setInt('air_koli')} style={S.input} placeholder="0" inputMode="numeric" />{errText('air_koli')}</Field>
                   </div>
                 )}
