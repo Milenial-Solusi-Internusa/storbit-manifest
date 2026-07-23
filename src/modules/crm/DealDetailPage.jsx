@@ -151,7 +151,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, commodity, estimated_volume, status, notes, prospect_id, created_by, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
+        .select('id, inquiry_no, service_type, route, estimated_volume, status, notes, prospect_id, created_by, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -446,7 +446,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <BadgeRow label="Layanan Tambahan" values={inquiry.additional_services} />
               <InfoRow label="Deadline Quote" value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''} />
               <InfoRow label="Route" value={inquiry.route} />
-              <InfoRow label="Komoditas" value={inquiry.commodity} />
               <InfoRow label="Dibuat Oleh" value={createdByName} />
               <InfoRow label="Tanggal Dibuat" value={fmtDate(inquiry.created_at)} />
               <InfoRow label="Notes" value={inquiry.notes} full />

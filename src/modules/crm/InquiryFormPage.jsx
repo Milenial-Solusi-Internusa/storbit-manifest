@@ -154,7 +154,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
 
   const [form, setForm] = useState({
     prospect_id: '', customer_id: '', service_type: 'freight_forwarding',
-    route: '', commodity: '', estimated_volume: '', notes: '',
+    route: '', estimated_volume: '', notes: '',
     // new RFQ fields
     deadline_quote: '', pol: '', pod: '', incoterms: [], container_types: [],
     goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
@@ -194,7 +194,6 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
           customer_id: data.customer_id || '',
           service_type: data.service_type || 'freight_forwarding',
           route: data.route || '',
-          commodity: data.commodity || '',
           estimated_volume: data.estimated_volume || '',
           notes: data.notes || '',
           deadline_quote: data.deadline_quote || '',
@@ -252,7 +251,6 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         customer_id: null,
         service_type: form.service_type,
         route: form.route || null,
-        commodity: form.commodity || null,
         estimated_volume: form.estimated_volume || null,
         notes: form.notes || null,
         deadline_quote: form.deadline_quote || null,
@@ -465,7 +463,6 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               {/* preserved existing fields */}
               <div style={grid2}>
                 <Field label="Route"><input value={form.route} onChange={set('route')} style={S.input} placeholder="cth: Jakarta – Surabaya" /></Field>
-                <Field label="Commodity"><input value={form.commodity} onChange={set('commodity')} style={S.input} placeholder="Jenis komoditi" /></Field>
               </div>
             </div>
           </div>

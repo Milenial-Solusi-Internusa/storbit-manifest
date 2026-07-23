@@ -412,7 +412,6 @@ function InqPills({ label, values }) {
 function InquiryDetailBlock({ inq }) {
   const scalars = [
     { l: 'Route',          v: inq.route },
-    { l: 'Komoditas',      v: inq.commodity },
     { l: 'Nama Barang',    v: inq.goods_name },
     { l: 'HS Code',        v: inq.hs_code },
     { l: 'Berat (KG)',     v: inq.weight_kg != null ? String(inq.weight_kg) : '' },
@@ -760,7 +759,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
     setHistLoading(true);
     Promise.all([
       supabase.from('inquiries')
-        .select('id, inquiry_no, service_type, status, created_at, pol, pod, route, commodity, goods_name, hs_code, weight_kg, volume_cbm, deadline_quote, incoterms, container_types, cargo_types, additional_services, notes')
+        .select('id, inquiry_no, service_type, status, created_at, pol, pod, route, goods_name, hs_code, weight_kg, volume_cbm, deadline_quote, incoterms, container_types, cargo_types, additional_services, notes')
         .or(`prospect_id.eq.${id},customer_id.eq.${id}`).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000),
       supabase.from('quotations')

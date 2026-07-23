@@ -200,7 +200,7 @@ function InquiryDetailModal({ inquiry, onClose }) {
           </Section>
 
           <Section title="Detail Kargo">
-            <Field label="Commodity"        value={inquiry.commodity} />
+            <Field label="Nama Barang"      value={inquiry.goods_name} />
             <Field label="Estimated Volume" value={inquiry.estimated_volume} />
           </Section>
 
@@ -245,7 +245,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       let query = supabase
         .from('inquiries')
         .select(`
-          id, inquiry_no, service_type, route, status, created_at, commodity, estimated_volume, notes,
+          id, inquiry_no, service_type, route, status, created_at, estimated_volume, notes,
           pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
           cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
           prospect:accounts!inquiries_prospect_id_fkey(name, pipeline_stage),
