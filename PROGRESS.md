@@ -1,5 +1,44 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-23
+
+### Fix `CustomerFormModal` — promosi lifecycle diam-diam + kode duplikat saat edit akun non-customer — FE-only
+
+**Ringkas:** **1 file** (`src/modules/crm/CustomerListPage.jsx`, komponen `CustomerFormModal` — di-export, dipakai ulang `CustomerDetailPage.jsx` via `import { CustomerFormModal }`), **NOL perubahan DB/RLS/migrasi**. Tercatat sebagai **TD-123 (langsung RESOLVED)**.
+
+**⭐ CATAT AKAR-nya, bukan cuma perbaikannya — satu bug menjelaskan TIGA gejala terpisah.**
+
+**AKAR — dua cacat, keduanya berumur lama:**
+1. **Payload UPDATE menulis `account_status` tanpa syarat** — `account_status: form.status === 'free_agent' ? 'free_agent' : 'customer'`.
+2. **Sumbernya dropdown "Status" ber-SUMBU SALAH + di-seed dari KOLOM HANTU.** Opsinya `active`/`inactive`/`free_agent`; `active`/`inactive` **bukan** nilai `account_status` (CHECK = `lead/mql/sql/prospect/customer/free_agent/lost` — itu sumbu **`is_active`**, bukan lifecycle). `form.status` di-init dari `initial?.status`, padahal tabel `accounts` **tidak punya kolom `status`** — hanya `account_status` + `is_active` (**diverifikasi doc-keeper** di `schema_snapshot.sql` `CREATE TABLE public.accounts`: ada `is_active` `:26`, `account_status` `:44`, `code` `:47`; **nol** kolom `status`). Jadi `form.status` **selalu** default `'active'`.
+
+**Gabungannya:** buka Edit pada akun **apa pun** → dropdown menampilkan "Active" (bukan lifecycle asli) → simpan → karena `'active' !== 'free_agent'` → **`account_status` ditimpa jadi `'customer'` diam-diam**. Akun `lead`/`mql`/`sql`/`prospect` yang diedit **namanya saja** langsung dipromosikan jadi customer.
+
+**Keran kedua yang ikut ditutup:** UPDATE juga passthrough `code: form.code || null` dari field "Customer Code" yang **editable**. Kode customer diterbitkan **trigger `generate_customer_code`** (`schema:436` — hanya saat `NEW.account_status='customer'` & `code` kosong, dari `code_counters`), **bukan** diketik user → field editable itu adalah **pintu masuk kode duplikat** (nilai yang diketik user ditulis apa adanya di UPDATE). *(Rantai teknis lengkap: promosi ke `customer` + `code` kosong juga memicu trigger UPDATE `trg_z_gen_customer_code_upd` `schema:7948`.)*
+
+**TIGA GEJALA TERPISAH, satu akar (konteks Den):**
+- **RNK Incontro Indonesia** — akun `lead`, diedit → diam-diam jadi `customer`.
+- **Duplikat MITRA** — kode duplikat lewat field Customer Code editable yang ikut ditulis di UPDATE.
+- **JONS COLLECTION** "Customer sejak …" padahal `lead` — tampilan yang bergantung `account_status='customer'` menyala karena akun ter-promosi diam-diam.
+
+**⭐ AKAR vs PEMICU — beda tanggal, dicatat KEDUANYA:**
+- **Akar** berumur lama: baris `account_status` tanpa syarat + seed dari kolom hantu sudah ada **sejak modal ini dibuat sebagai form customer-only**. Selama modal HANYA dibuka untuk akun customer, memaksa `account_status='customer'` **tak terlihat salah** (idempoten).
+- **Pemicu** yang membuatnya berbahaya baru terjadi saat **konsolidasi navigasi CRM (Tahap 3a/3b, 19 Jul 2026)** membuat **`CustomerDetailPage` ("Detail Account") bisa dibuka untuk akun non-customer** — dari Prospects & Pipeline via `App.jsx:3270` (`onSelectProspect`) / `:3260` (`onSelectAccount`) → `navigateToCustomerDetail` (**diverifikasi doc-keeper**). Sejak titik itu, tombol Edit di Detail Account membuka `CustomerFormModal` dgn `initial` = akun prospek → keran promosi terbuka. → **bug lahir sejak awal, tapi baru BISA DIPICU sejak 19 Jul; baru KETAHUAN 23 Jul.**
+
+**PERBAIKAN (3 perubahan, 1 batch):**
+1. **`account_status` DICABUT dari payload UPDATE** — UPDATE tak lagi menulis lifecycle apa pun; lifecycle hanya naik lewat trigger DB.
+2. **`code` DICABUT dari UPDATE.** Karena `payload` objek BERSAMA UPDATE+INSERT, `code` **dipindah ke cabang INSERT** (`payload.code = form.code || null` `:363`) — teknik sama dengan `account_status` yang sudah insert-only. **Perilaku INSERT identik**, hanya UPDATE yang berhenti menulis `code`.
+3. **Field "Customer Code" jadi read-only saat EDIT** (`disabled={!!initial?.id}` + style muted, `:420`) — tetap tampil supaya bisa dilihat/disalin. **Add-new tak berubah** (input tetap editable).
+- Ikutan: dropdown "Status" dicabut (yatim total — satu-satunya konsumennya `account_status` yang baru dicabut; grep konfirmasi **tak menyuap `is_active`**), const `CUST_STATUSES` dicabut (0 ref), seed `status: initial?.status` dibuang.
+
+**SENGAJA TIDAK DISENTUH:** INSERT/"tambah customer baru" (perilaku identik — `code` + `account_status='customer'` + `became_customer_at` tetap ditulis di cabang insert `:363-365`) · cek duplikat `.ilike('name')` + `.in('account_status',['customer','free_agent'])` (`:300-312`, isu terpisah, di luar scope) · `generate_customer_code`/DB apa pun · file lain — dua `.update()` `CustomerDetailPage` (`:918` `{deleted_at,updated_by}` soft-delete + `:937` `{notes,updated_by}`) **diverifikasi bersih**, nol token lifecycle.
+
+**VERIFIKASI (diverifikasi ULANG doc-keeper, bukan klaim brief):** grep dua file (`CustomerListPage` + `CustomerDetailPage`) untuk `account_status`/`became_customer_at`/`converted_at`/`code` di jalur `.update()` → setelah fix **NOL penulis lifecycle di UPDATE** (`became_customer_at` hanya di INSERT `:365`; `converted_at` nihil di kedua file). Build clean **2590 modules, 1.57s**; lint **160 = net-zero** (file ini **1 problem**, identik HEAD, pre-existing). **⚠️ BELUM TES RUNTIME** — modal di balik login; build clean bukan jaminan. DoD Den: edit nama akun `lead` (RNK) → tetap `lead`, `code` tetap null, nol error constraint; edit customer asli → tetap customer, nol regresi.
+
+**TECH DEBT:** **TD-123** dicatat langsung sbg **RESOLVED** (fix + akar + tanggal aktivasi/penemuan). Sekerabat **TD-94** (drift keluar-WON — sama-sama `account_status` bergerak di luar jalur yang seharusnya).
+
+---
+
 ## 2026-07-22
 
 ### TES RUNTIME batch 3B-1 — LOLOS SEBAGIAN (akun sales ASLI, bukan super admin) + snapshot akhirnya SEGAR
