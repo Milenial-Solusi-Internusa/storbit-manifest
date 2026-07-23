@@ -53,6 +53,25 @@ const SERVICE_TYPE_LABELS = {
   trading:            'General Trading',
 };
 
+// Label ramah khusus chip filter status. STATUS_META.label sengaja TIDAK dipakai
+// di sini (nilainya 'Open' dst) — badge tabel & modal detail tetap memakainya.
+// Peta memuat semua nilai CHECK inquiries_status supaya kalau status lain mulai
+// terisi, chipnya otomatis muncul dgn label benar (yang dirender tetap hanya yang
+// punya data — lihat render). Warna chip di-reuse dari STATUS_META (bukan peta ke-2).
+const STATUS_CHIP_LABEL = {
+  OPEN:        'Baru',
+  QUOTED:      'Quoted',
+  IN_REVIEW:   'Menunggu harga',
+  NEGOTIATION: 'Negotiation',
+  WON:         'Won',
+  LOST:        'Lost',
+  CANCELLED:   'Cancelled',
+};
+// Urutan kanonik chip (progresi status). Status di luar daftar → jatuh ke akhir.
+const STATUS_ORDER = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION', 'WON', 'LOST', 'CANCELLED'];
+// Warna fallback utk status yg belum punya entri STATUS_META (mis. NEGOTIATION).
+const CHIP_FALLBACK = { bg: C.neutralBg, color: C.neutral, bd: C.neutralBd };
+
 const PAGE_SIZE = 20;
 
 function fmtDate(iso) {
@@ -60,6 +79,16 @@ function fmtDate(iso) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return String(iso);
   return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// Umur inquiry = jumlah hari sejak created_at s/d hari ini (BUKAN lama di status —
+// kolomnya created_at, bukan penanda perubahan status; accounts/inquiries tak punya
+// kolom itu). null → tak bisa dihitung.
+function ageDays(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
 
 function StageBadge({ stage }) {
@@ -88,6 +117,32 @@ function StatusBadge({ status }) {
     }}>
       {m.label}
     </span>
+  );
+}
+
+// Chip filter status (clickable) — bentuk pill sama StatusBadge, +count +state aktif.
+function StatusChip({ label, count, meta, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        padding: '6px 12px', borderRadius: 99, cursor: 'pointer',
+        fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, letterSpacing: '.3px',
+        border: `1px solid ${active ? meta.bd : C.line}`,
+        background: active ? meta.bg : C.surface,
+        color: active ? meta.color : C.inkSoft,
+        transition: 'background .12s, border-color .12s, color .12s',
+      }}
+    >
+      {label}
+      <span style={{
+        fontSize: 11, fontWeight: 700, lineHeight: 1.4,
+        padding: '0 7px', borderRadius: 99,
+        background: active ? meta.color : C.surface2,
+        color: active ? '#fff' : C.inkFaint,
+      }}>{count}</span>
+    </button>
   );
 }
 
@@ -177,6 +232,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [detailInquiry, setDetailInquiry] = useState(null);
+  // Hitungan per status untuk chip. IKUT menyaring service + search (bukan status),
+  // supaya angka chip = jumlah baris yang muncul saat chip itu diklik.
+  const [statusCounts, setStatusCounts] = useState({});
+  const [countsTotal, setCountsTotal] = useState(0);
 
   const fetchInquiries = useCallback(async () => {
     if (!profile?.id) return;
@@ -220,6 +279,32 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
   useEffect(() => { setPage(0); }, [filterStatus, filterService, search]);
+
+  // Query ringan terpisah untuk chip: ambil kolom status saja (dataset kecil, patuh
+  // .limit(1000)), hitung per status di client. Scope RLS + service + search SAMA
+  // dgn list, TAPI TANPA filter status & tanpa pagination — chip tak boleh menyusut
+  // saat sebuah status dipilih. Tak dijalankan ulang saat filterStatus/page berubah.
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    if (!isAllEntities && !profile?.company_id) return undefined;
+    let cancelled = false;
+    (async () => {
+      let query = supabase.from('inquiries').select('status').is('deleted_at', null);
+      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+      if (isSalesOnly)    query = query.eq('created_by', profile.id);
+      if (filterService !== 'all') query = query.eq('service_type', filterService);
+      if (search.trim())  query = query.ilike('inquiry_no', `%${search.trim()}%`);
+      const { data, error } = await query.limit(1000);
+      if (cancelled) return;
+      // Non-fatal: kalau gagal, chip cukup tak menampilkan angka; list utama tetap jalan.
+      if (error) { setStatusCounts({}); setCountsTotal(0); return; }
+      const counts = {};
+      (data || []).forEach(r => { if (r.status) counts[r.status] = (counts[r.status] || 0) + 1; });
+      setStatusCounts(counts);
+      setCountsTotal((data || []).length);
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, filterService, search]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -270,12 +355,6 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
             }}
           />
         </div>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
-          <option value="all">Semua Status</option>
-          {Object.entries(STATUS_META).map(([k, v]) => (
-            <option key={k} value={k}>{v.label}</option>
-          ))}
-        </select>
         <select value={filterService} onChange={e => setFilterService(e.target.value)} style={selStyle}>
           <option value="all">Semua Service</option>
           {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => (
@@ -284,21 +363,47 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         </select>
       </div>
 
+      {/* Chip filter status — hanya status yg punya data; angka = baris saat diklik */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+        <StatusChip
+          label="Semua" count={countsTotal}
+          meta={{ bg: C.accentSoft, color: C.accent, bd: C.accent }}
+          active={filterStatus === 'all'}
+          onClick={() => setFilterStatus('all')}
+        />
+        {Object.keys(statusCounts)
+          .filter(k => statusCounts[k] > 0)
+          .sort((a, b) => {
+            const ia = STATUS_ORDER.indexOf(a), ib = STATUS_ORDER.indexOf(b);
+            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+          })
+          .map(k => (
+            <StatusChip
+              key={k}
+              label={STATUS_CHIP_LABEL[k] || k}
+              count={statusCounts[k]}
+              meta={STATUS_META[k] || CHIP_FALLBACK}
+              active={filterStatus === k}
+              onClick={() => setFilterStatus(k)}
+            />
+          ))}
+      </div>
+
       {/* Table */}
       <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, overflow: 'hidden', boxShadow: '0 1px 6px rgba(35,41,30,.06)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-              {['Inquiry No', 'Prospect / Customer', 'Service Type', 'Route', 'Stage', 'Status', 'Created At', ''].map(h => (
+              {['Inquiry No', 'Prospect / Customer', 'Service Type', 'Route', 'Stage', 'Status', 'Created At', 'Umur Inquiry', ''].map(h => (
                 <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
             ) : inquiries.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada inquiry</td></tr>
+              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada inquiry</td></tr>
             ) : inquiries.map((inq, i) => (
               <tr
                 key={inq.id}
@@ -319,6 +424,9 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                 <td style={{ padding: '12px 14px' }}><StageBadge stage={inq.prospect?.pipeline_stage || inq.customer?.pipeline_stage} /></td>
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={inq.status} /></td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(inq.created_at)}</td>
+                <td style={{ padding: '12px 14px', color: C.inkSoft, fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                  {ageDays(inq.created_at) == null ? '—' : `${ageDays(inq.created_at)} hari`}
+                </td>
                 <td style={{ padding: '12px 10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
                     <PDFDownloadLink
