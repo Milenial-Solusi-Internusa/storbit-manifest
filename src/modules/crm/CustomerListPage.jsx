@@ -39,11 +39,6 @@ const D = {
 // ─── Constants (form) ───────────────────────────────────────────────────────────
 const CUSTOMER_TYPES = ['PT', 'CV', 'Mr.', 'Mrs.', 'Ms.', 'Other'];
 const TIERS = ['A', 'B', 'C'];
-const CUST_STATUSES = [
-  { value: 'active',     label: 'Active'      },
-  { value: 'inactive',   label: 'Inactive'    },
-  { value: 'free_agent', label: 'Free Agent'  },
-];
 // Filter-bar options — must match accounts.account_status values
 const STATUS_FILTERS = [
   { value: 'customer',   label: 'Customer'   },
@@ -279,7 +274,6 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
     pic_phone:        initial?.pic_phone       || '',
     pic_email:        initial?.pic_email       || '',
     tier:             initial?.tier            || '',
-    status:           initial?.status          || 'active',
     assigned_to:      initial?.assigned_to     || '',
     payment_terms_id: initial?.payment_terms_id || '',
     credit_limit:     initial?.credit_limit    ?? '',
@@ -337,7 +331,6 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         legal_name:       form.legal_name      || null,
         customer_type:    form.customer_type   || null,
         tax_id:           form.tax_id          || null,
-        code:             form.code            || null,
         phone:            form.phone           || null,
         email:            form.email           || null,
         address:          form.address         || null,
@@ -352,8 +345,10 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         notes:            form.notes           || null,
         is_odoo_customer: !!form.is_odoo_customer,
         updated_by:       profile.id,
-        // accounts: status segment lives in account_status (form 'free_agent' → free_agent, else customer)
-        account_status:   form.status === 'free_agent' ? 'free_agent' : 'customer',
+        // Lifecycle (account_status/became_customer_at) hanya naik lewat trigger DB,
+        // TIDAK PERNAH lewat form edit — jadi UPDATE tak menulisnya. `code` juga tak
+        // ditulis di UPDATE: kode diterbitkan trigger generate_customer_code, dan field
+        // editable-nya adalah pintu masuk kode duplikat. Keduanya ditulis di INSERT saja.
         ...(form.tier        && { tier:        form.tier        }),
         ...(form.assigned_to && { assigned_to: form.assigned_to }),
       };
@@ -365,6 +360,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         payload.company_id         = profile.company_id;
         payload.owner_company_id   = profile.company_id;
         payload.created_by         = profile.id;
+        payload.code               = form.code || null;
         payload.account_status     = 'customer';
         payload.became_customer_at = new Date().toISOString();
         ({ error } = await supabase.from('accounts').insert(payload));
@@ -424,7 +420,12 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               <input value={form.tax_id} onChange={set('tax_id')} placeholder="00.000.000.0-000.000" style={{ ...INP_STYLE, fontFamily: "'IBM Plex Mono', monospace" }} />
             </FG>
             <FG label="Customer Code">
-              <input value={form.code} onChange={set('code')} placeholder="KOD-001" style={{ ...INP_STYLE, fontFamily: "'IBM Plex Mono', monospace" }} />
+              {/* Read-only saat EDIT: kode diterbitkan trigger generate_customer_code,
+                  bukan diketik user, dan UPDATE tak menulis code. Tetap tampil supaya
+                  bisa dilihat/disalin. Add-new tak berubah — input tetap editable. */}
+              <input value={form.code} onChange={set('code')} disabled={!!initial?.id} placeholder="KOD-001"
+                style={{ ...INP_STYLE, fontFamily: "'IBM Plex Mono', monospace",
+                  ...(initial?.id && { background: D.surface2, color: D.inkSoft, cursor: 'not-allowed' }) }} />
             </FG>
           </div>
 
@@ -455,11 +456,6 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               <select value={form.tier} onChange={set('tier')} style={SEL_STYLE}>
                 <option value="">— Pilih tier —</option>
                 {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </FG>
-            <FG label="Status">
-              <select value={form.status} onChange={set('status')} style={SEL_STYLE}>
-                {CUST_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </FG>
             <FG label="Payment Terms">
