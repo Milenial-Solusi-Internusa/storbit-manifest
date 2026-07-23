@@ -212,7 +212,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     // JARING 1 — akun parkir Lead Pool tak boleh dipakai untuk PRF baru (aturan 18 Jul 2026;
     // filter aslinya ikut terhapus saat picker akun dicabut). `inquiries` punya DUA FK ke
     // `accounts` → embed kedua sisi dan buang barisnya bila SALAH SATU parkir.
-    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, commodity, goods_name, un_number, imo_class, additional_services, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
+    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, goods_name, un_number, imo_class, cargo_types, additional_services, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
       .then(({ data }) => setInquiries((data || []).filter(i => !i.prospect?.is_in_lead_pool && !i.customer?.is_in_lead_pool)));
     supabase.from('currencies').select('code, name').order('code')
       .then(({ data }) => setCurrencies(data || []));
@@ -569,7 +569,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
                     </select><Chevron />
                   </div>
                   {errText('commodity')}
-                  {srcInq?.commodity && <span style={S.hint}>Dari inquiry: {srcInq.commodity} — pilih padanan manual.</span>}
+                  {srcInq?.cargo_types?.length > 0 && <span style={S.hint}>Dari inquiry: {srcInq.cargo_types.join(', ')} — pilih commodity sesuai.</span>}
                 </Field>
               </div>
 
