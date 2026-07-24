@@ -34,8 +34,14 @@ Thumbs.db
 # Test files (kalau ada)
 coverage
 
+# Deno lockfile (dipakai lokal untuk deno check EF; tak perlu di-track)
+deno.lock
+
 # Local-only working docs (jangan di-track / di-commit)
 RBAC_AUDIT.md
 backup_full_*.sql
 .vercel
 .env*
+
+# Supabase CLI local artifacts
+supabase/.temp/

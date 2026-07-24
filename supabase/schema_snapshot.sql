@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict NwE6g12cmFAf077KvIXnrcvczeUiDiv3UX2NsgISr02aRLSq38gOcum9bW0DyCf
+\restrict JZRF6jgCotShbgu5hl1F8ZIjtV5yafVQMG2VnScZLYpVxhOHH6ieMdZM36LDXHK
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1878,6 +1878,79 @@ CREATE TABLE public.accounts_lifecycle_backup_20260718 (
 
 
 --
+-- Name: accounts_promo_fix_backup_20260723; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.accounts_promo_fix_backup_20260723 (
+    id uuid,
+    company_id uuid,
+    name text,
+    legal_name character varying,
+    customer_type character varying,
+    tax_id character varying,
+    address text,
+    city character varying,
+    country character varying,
+    phone character varying,
+    email character varying,
+    pic_name character varying,
+    pic_phone character varying,
+    pic_email character varying,
+    source character varying,
+    assigned_to uuid,
+    pipeline_stage character varying,
+    lost_reason text,
+    converted_at timestamp with time zone,
+    converted_to uuid,
+    payment_terms_id uuid,
+    currency_code character varying,
+    credit_limit numeric,
+    notes text,
+    is_active boolean,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    estimated_closing_date date,
+    assigned_profile uuid,
+    company_prefix text,
+    won_reason text,
+    bant_commodity text,
+    bant_origin text,
+    bant_destination text,
+    bant_frequency text,
+    bant_current_vendor text,
+    bant_payment text,
+    bant_decision_maker text,
+    bant_score integer,
+    account_status character varying(50),
+    owner_company_id uuid,
+    tier character varying(20),
+    code text,
+    nomor_kontrak text,
+    default_dc text,
+    last_activity_at timestamp with time zone,
+    became_customer_at timestamp with time zone,
+    estimated_value numeric,
+    bant_budget smallint,
+    bant_authority smallint,
+    bant_need smallint,
+    bant_timeline smallint,
+    stage_changed_at timestamp with time zone,
+    is_in_lead_pool boolean,
+    lead_pool_reason text,
+    lead_pool_at timestamp with time zone,
+    pull_justification text,
+    pull_requested_at timestamp with time zone,
+    pull_approved_by uuid,
+    pull_approved_at timestamp with time zone,
+    pull_status text,
+    is_odoo_customer boolean
+);
+
+
+--
 -- Name: activities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2611,6 +2684,79 @@ CREATE TABLE public.audit_logs (
     ip_address text,
     user_agent text,
     notes text
+);
+
+
+--
+-- Name: backup_leadpool_trap_20260724; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_leadpool_trap_20260724 (
+    id uuid,
+    company_id uuid,
+    name text,
+    legal_name character varying,
+    customer_type character varying,
+    tax_id character varying,
+    address text,
+    city character varying,
+    country character varying,
+    phone character varying,
+    email character varying,
+    pic_name character varying,
+    pic_phone character varying,
+    pic_email character varying,
+    source character varying,
+    assigned_to uuid,
+    pipeline_stage character varying,
+    lost_reason text,
+    converted_at timestamp with time zone,
+    converted_to uuid,
+    payment_terms_id uuid,
+    currency_code character varying,
+    credit_limit numeric,
+    notes text,
+    is_active boolean,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    estimated_closing_date date,
+    assigned_profile uuid,
+    company_prefix text,
+    won_reason text,
+    bant_commodity text,
+    bant_origin text,
+    bant_destination text,
+    bant_frequency text,
+    bant_current_vendor text,
+    bant_payment text,
+    bant_decision_maker text,
+    bant_score integer,
+    account_status character varying(50),
+    owner_company_id uuid,
+    tier character varying(20),
+    code text,
+    nomor_kontrak text,
+    default_dc text,
+    last_activity_at timestamp with time zone,
+    became_customer_at timestamp with time zone,
+    estimated_value numeric,
+    bant_budget smallint,
+    bant_authority smallint,
+    bant_need smallint,
+    bant_timeline smallint,
+    stage_changed_at timestamp with time zone,
+    is_in_lead_pool boolean,
+    lead_pool_reason text,
+    lead_pool_at timestamp with time zone,
+    pull_justification text,
+    pull_requested_at timestamp with time zone,
+    pull_approved_by uuid,
+    pull_approved_at timestamp with time zone,
+    pull_status text,
+    is_odoo_customer boolean
 );
 
 
@@ -4166,6 +4312,9 @@ CREATE TABLE public.prf (
     answered_by uuid,
     answered_at timestamp with time zone,
     exchange_rates jsonb DEFAULT '{}'::jsonb NOT NULL,
+    goods_name text,
+    un_number text,
+    imo_class text,
     CONSTRAINT prf_status_check CHECK (((status)::text = ANY (ARRAY['DRAFT'::text, 'SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'CANCELLED'::text, 'QUOTED'::text, 'EXPIRED'::text])))
 );
 
@@ -10279,6 +10428,12 @@ ALTER TABLE public.accounts_fase3_backup_20260722 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.accounts_lifecycle_backup_20260718 ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: accounts_promo_fix_backup_20260723; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.accounts_promo_fix_backup_20260723 ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: activities; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10678,6 +10833,12 @@ CREATE POLICY audit_logs_insert ON public.audit_logs FOR INSERT WITH CHECK ((aut
 
 CREATE POLICY audit_logs_read ON public.audit_logs FOR SELECT USING (public.is_admin_or_above());
 
+
+--
+-- Name: backup_leadpool_trap_20260724; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_leadpool_trap_20260724 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: branches; Type: ROW SECURITY; Schema: public; Owner: -
@@ -13008,5 +13169,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict NwE6g12cmFAf077KvIXnrcvczeUiDiv3UX2NsgISr02aRLSq38gOcum9bW0DyCf
+\unrestrict JZRF6jgCotShbgu5hl1F8ZIjtV5yafVQMG2VnScZLYpVxhOHH6ieMdZM36LDXHK
 

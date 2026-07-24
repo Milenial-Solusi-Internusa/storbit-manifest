@@ -1,12 +1,14 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Batas hari per stage. Lead yang diam lebih lama dari ini masuk Lead Pool.
+// PROPOSAL & NEGOTIATION SENGAJA TIDAK ADA: sejak 22 Jul 2026 sumbu deal pindah
+// ke inquiries.status dan kedua stage itu tak bisa ditulis lagi dari UI, sehingga
+// stage_changed_at-nya beku permanen → akun warisan ke-pool terus tanpa bisa keluar.
+// Daftar ini juga jadi sumber prefilter query (lihat `stages` di bawah).
 const AGING_RULES: Record<string, number> = {
   NEW: 7,
   CONTACTED: 5,
   QUALIFIED: 5,
-  PROPOSAL: 3,
-  NEGOTIATION: 14,
 }
 
 Deno.serve(async (req) => {
@@ -54,6 +56,49 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: error.message }), { status: 500 })
   }
 
+  // Sinyal aktivitas DOKUMEN: updated_at terbaru per akun dari inquiry & quotation.
+  // Diambil BATCH — dua query total di LUAR loop, bukan per akun (hindari N+1).
+  // Akun dicocokkan lewat prospect_id ATAU customer_id, pola sama dengan tab
+  // Riwayat di Detail Account (CustomerDetailPage: .or('prospect_id.eq…,customer_id.eq…')).
+  // Di sini id akun tidak dipakai sbg filter: daftar kandidat bisa sampai 1000 uuid
+  // dan URL-nya akan meledak. Diurut updated_at DESC supaya kalau limit terpotong,
+  // yang hilang adalah baris PALING LAMA — akun yang benar-benar baru tersentuh
+  // selalu ikut terbawa.
+  const [inqRes, quoRes] = await Promise.all([
+    supabase.from('inquiries')
+      .select('prospect_id, customer_id, updated_at')
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false })
+      .limit(1000),
+    supabase.from('quotations')
+      .select('prospect_id, customer_id, updated_at')
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false })
+      .limit(1000),
+  ])
+
+  if (inqRes.error || quoRes.error) {
+    return new Response(
+      JSON.stringify({ error: (inqRes.error ?? quoRes.error)!.message }),
+      { status: 500 }
+    )
+  }
+
+  // akun id → epoch ms dokumen terbaru. Akun tanpa dokumen TIDAK masuk map sama
+  // sekali (bukan 0 tersimpan) — di loop dibaca lewat `?? 0`, mengikuti pola
+  // COALESCE yang sudah dipakai stage_changed_at / last_activity_at.
+  const sinyalDokumen = new Map<string, number>()
+  const catatDokumen = (accId: string | null, iso: string | null) => {
+    if (!accId || !iso) return
+    const t = new Date(iso).getTime()
+    if (Number.isNaN(t)) return
+    if (t > (sinyalDokumen.get(accId) ?? 0)) sinyalDokumen.set(accId, t)
+  }
+  for (const r of [...(inqRes.data ?? []), ...(quoRes.data ?? [])]) {
+    catatDokumen(r.prospect_id, r.updated_at)
+    catatDokumen(r.customer_id, r.updated_at)
+  }
+
   const now = new Date()
   const kandidat: Array<Record<string, unknown>> = []
 
@@ -61,11 +106,12 @@ Deno.serve(async (req) => {
     const limit = AGING_RULES[p.pipeline_stage]
     if (!limit) continue
 
-    // Lead dianggap "disentuh" kalau stage-nya naik ATAU ada aktivitas tercatat.
-    // Ambil yang paling baru di antara keduanya.
+    // Lead dianggap "disentuh" kalau stage-nya naik, ada aktivitas tercatat, ATAU
+    // ada inquiry/quotation hidup yang baru dibuat/diperbarui. Ambil yang paling baru.
     const tglStage = p.stage_changed_at ? new Date(p.stage_changed_at).getTime() : 0
     const tglAktivitas = p.last_activity_at ? new Date(p.last_activity_at).getTime() : 0
-    const terakhirDisentuh = Math.max(tglStage, tglAktivitas)
+    const tglDokumen = sinyalDokumen.get(p.id) ?? 0
+    const terakhirDisentuh = Math.max(tglStage, tglAktivitas, tglDokumen)
 
     if (terakhirDisentuh === 0) continue // tak ada acuan waktu, lewati
 
@@ -112,6 +158,15 @@ Deno.serve(async (req) => {
         is_in_lead_pool: true,
         lead_pool_at: now.toISOString(),
         lead_pool_reason: `Aging ${k.diam_hari} hari di stage ${k.stage}`,
+        // Siklus parkir BARU harus mulai dari status pull bersih. Tanpa reset ini,
+        // cap 'approved' dari siklus sebelumnya tertinggal dan mengunci akun:
+        // tombol "Tarik ke Pipeline" tak dirender (LeadPoolPage: canPull) dan
+        // Approval page tak melihatnya (filter pull_status='pending').
+        pull_status: null,
+        pull_requested_at: null,
+        pull_justification: null,
+        pull_approved_at: null,
+        pull_approved_by: null,
       })
       .eq('id', k.id)
 
