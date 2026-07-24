@@ -98,6 +98,9 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   const [winLoss, setWinLoss] = useState({ open: false, mode: 'won' });
   const [nameWarning, setNameWarning] = useState('');
+  // Kode entitas (MSI/JCI/SOA) untuk pesan tolak duplikat. Pola sama dgn
+  // InquiryFormPage:286 / QuotationFormPage:964 — fetch sekali saat mount.
+  const [entityCode, setEntityCode] = useState('');
   const [profiles, setProfiles] = useState([]);
   const [fetchedAssignee, setFetchedAssignee] = useState(null);
   const [paymentTerms, setPaymentTerms] = useState([]);
@@ -171,6 +174,8 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       .then(({ data }) => setProfiles(data || []));
     supabase.from('payment_terms').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null)
       .then(({ data }) => setPaymentTerms(data || []));
+    supabase.from('companies').select('code').eq('id', profile.company_id).maybeSingle()
+      .then(({ data }) => setEntityCode(data?.code || ''));
   }, [profile?.company_id]);
 
   const handleDelete = useCallback(() => {
@@ -196,12 +201,20 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     return next;
   });
 
+  // Pre-check MIRIP (bukan lagi exact ilike). RPC check_similar_accounts =
+  // SECURITY DEFINER, jadi ia melihat akun milik sales LAIN dalam entitas yang
+  // sama — RLS accounts membatasi sales ke akunnya sendiri, sehingga cek dari
+  // klien biasa akan buta dan menjanjikan "aman" untuk nama yang justru ditolak
+  // index. Cakupannya juga seluruh lifecycle (bukan cuma pra-customer), meniru
+  // uq_accounts_norm_name_per_entitas yang tak peduli account_status.
+  // Ini WARNING, bukan gerbang — hard-block-nya di DB.
   const checkDuplicateName = async (val) => {
-    if (!val.trim() || isEdit) { setNameWarning(''); return; }
-    const { data } = await supabase.from('accounts').select('id, name').ilike('name', val.trim())
-      /* dedup lintas seluruh akun pra-customer. TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
-      .is('deleted_at', null).eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']).limit(1);
-    setNameWarning(data && data.length > 0 ? 'Prospect dengan nama ini sudah terdaftar. Pastikan tidak duplikat.' : '');
+    if (!val.trim() || isEdit || !profile?.company_id) { setNameWarning(''); return; }
+    const { data, error } = await supabase.rpc('check_similar_accounts', {
+      p_name: val.trim(), p_company_id: profile.company_id,
+    });
+    if (error || !data?.length) { setNameWarning(''); return; }
+    setNameWarning(`Mirip dengan: ${data.map(d => d.name).join(', ')} — yakin ini akun baru?`);
   };
 
   const handleStageChange = (e) => {
@@ -274,7 +287,18 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       showToast?.(isEdit ? 'Prospect berhasil diupdate ✨' : 'Akun baru berhasil ditambahkan');
       onBack();
     } catch (err) {
-      showToast?.('Gagal menyimpan: ' + err.message, 'error');
+      // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut
+      // nama INDEX (uq_accounts_norm_name_per_entitas), bukan nama constraint.
+      // Kode 23505 saja TIDAK cukup: accounts juga punya accounts_code_unique —
+      // tanpa cek nama index, bentrok kode akan salah dilaporkan sebagai bentrok nama.
+      const isDupName = err?.code === '23505'
+        && /uq_accounts_norm_name_per_entitas/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
+      if (isDupName) {
+        setErrors(e => ({ ...e, name: 'Nama sudah dipakai' }));
+        showToast?.(`Akun dengan nama ini sudah ada di ${entityCode || 'entitas'} ini.`, 'error');
+      } else {
+        showToast?.('Gagal menyimpan: ' + (err?.message || 'terjadi kesalahan'), 'error');
+      }
     } finally {
       setSaving(false);
     }

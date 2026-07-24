@@ -286,6 +286,9 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
   const [dupWarning, setDupWarning] = useState('');
   const [profiles, setProfiles]     = useState([]);
   const [payTerms, setPayTerms]     = useState([]);
+  // Kode entitas (MSI/JCI/SOA) untuk pesan tolak duplikat. Pola sama dgn
+  // InquiryFormPage:286 / QuotationFormPage:964 — fetch sekali saat mount.
+  const [entityCode, setEntityCode] = useState('');
 
   useEffect(() => {
     if (!profile?.company_id) return;
@@ -293,26 +296,25 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       .then(({ data }) => setProfiles(data || []));
     supabase.from('payment_terms').select('id, name').eq('company_id', profile.company_id).is('deleted_at', null)
       .then(({ data }) => setPayTerms(data || []));
+    supabase.from('companies').select('code').eq('id', profile.company_id).maybeSingle()
+      .then(({ data }) => setEntityCode(data?.code || ''));
   }, [profile?.company_id]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
+  // Pre-check MIRIP (bukan lagi exact ilike). RPC check_similar_accounts =
+  // SECURITY DEFINER, jadi ia melihat akun milik sales LAIN dalam entitas yang
+  // sama — RLS accounts membatasi sales ke akunnya sendiri, sehingga cek dari
+  // klien biasa akan buta. Cakupan RPC = seluruh lifecycle & di-scope company_id
+  // (cek lama tak menyaring entitas sama sekali), meniru index unik yang menegakkan.
+  // Ini WARNING, bukan gerbang — hard-block-nya di DB. Create-only (skip saat edit).
   const checkDuplicate = async (nameVal) => {
-    if (!nameVal.trim() || (initial?.name?.toLowerCase() === nameVal.toLowerCase())) {
-      setDupWarning(''); return;
-    }
-    const { data } = await supabase
-      .from('accounts')
-      .select('id, name')
-      .ilike('name', nameVal.trim())
-      .in('account_status', ['customer', 'free_agent'])
-      .is('deleted_at', null)
-      .limit(1);
-    if (data?.length > 0 && data[0].id !== initial?.id) {
-      setDupWarning('Customer dengan nama ini sudah terdaftar. Pastikan tidak duplikat.');
-    } else {
-      setDupWarning('');
-    }
+    if (!nameVal.trim() || initial?.id || !profile?.company_id) { setDupWarning(''); return; }
+    const { data, error } = await supabase.rpc('check_similar_accounts', {
+      p_name: nameVal.trim(), p_company_id: profile.company_id,
+    });
+    if (error || !data?.length) { setDupWarning(''); return; }
+    setDupWarning(`Mirip dengan: ${data.map(d => d.name).join(', ')} — yakin ini akun baru?`);
   };
 
   const validate = () => {
@@ -369,7 +371,19 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       showToast?.(initial?.id ? 'Customer diperbarui ✨' : 'Customer ditambahkan ✨');
       onSaved();
     } catch (err) {
-      showToast?.('Gagal menyimpan: ' + err.message, 'error');
+      // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut
+      // nama INDEX (uq_accounts_norm_name_per_entitas), bukan nama constraint.
+      // Kode 23505 saja TIDAK cukup: jalur INSERT ini juga menulis `code`, yang
+      // dijaga accounts_code_unique — tanpa cek nama index, bentrok kode akan
+      // salah dilaporkan sebagai bentrok nama.
+      const isDupName = err?.code === '23505'
+        && /uq_accounts_norm_name_per_entitas/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
+      if (isDupName) {
+        setErrors(e => ({ ...e, name: 'Nama sudah dipakai' }));
+        showToast?.(`Akun dengan nama ini sudah ada di ${entityCode || 'entitas'} ini.`, 'error');
+      } else {
+        showToast?.('Gagal menyimpan: ' + (err?.message || 'terjadi kesalahan'), 'error');
+      }
     } finally {
       setSaving(false);
     }
