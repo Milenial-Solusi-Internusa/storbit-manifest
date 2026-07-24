@@ -1771,6 +1771,14 @@ export default function StorbitManifest() {
   // (hrga_request_approvals is an audit trail; pending is derived from
   //  hrga_requests.current_level × hrga_approval_configs role mapping.)
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  // Kode entitas (MSI/JCI/SOA) untuk pesan tolak duplikat nama akun di
+  // handleSaveCustomer. Pola sama dgn InquiryFormPage:286 — fetch sekali.
+  const [entityCode, setEntityCode] = useState('');
+  useEffect(() => {
+    if (!profile?.company_id) return;
+    supabase.from('companies').select('code').eq('id', profile.company_id).maybeSingle()
+      .then(({ data }) => setEntityCode(data?.code || ''));
+  }, [profile?.company_id]);
   // Skip redundant setState from the 60s polls (avoid root re-render / flicker).
   const pendingCountRef = useRef(null);
   const lastNotifJsonRef = useRef('');
@@ -2323,7 +2331,18 @@ export default function StorbitManifest() {
       setEditingCustomer(null);
       setShowAddCustomer(false);
     } catch (err) {
-      showToast('Gagal menyimpan customer: ' + (err.message || 'unknown error'), 'error');
+      // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut
+      // nama INDEX (uq_accounts_norm_name_per_entitas), bukan nama constraint.
+      // Kode 23505 saja TIDAK cukup: jalur ini juga menulis `code` (dijaga
+      // accounts_code_unique) — tanpa cek nama index, bentrok kode akan salah
+      // dilaporkan sebagai bentrok nama.
+      const isDupName = err?.code === '23505'
+        && /uq_accounts_norm_name_per_entitas/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
+      if (isDupName) {
+        showToast(`Akun dengan nama ini sudah ada di ${entityCode || 'entitas'} ini.`, 'error');
+      } else {
+        showToast('Gagal menyimpan customer: ' + (err.message || 'unknown error'), 'error');
+      }
     }
   };
 
@@ -3706,6 +3725,7 @@ export default function StorbitManifest() {
           initial={editingCustomer}
           existingCustomers={customers}
           dcList={dcList}
+          companyId={profile?.company_id}
           onClose={() => { setEditingCustomer(null); setShowAddCustomer(false); }}
           onSave={handleSaveCustomer}
         />
@@ -4187,7 +4207,10 @@ const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTar
 // Pilih seluruh isi saat focus → ketikan menimpa nilai default (0), tak ter-append.
 const selectOnFocus = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.select(); };
 
-function Input({ label, type='text', value, onChange, placeholder }) {
+// onBlur = prop OPSIONAL (menerima nilai, bukan event) — dipakai pre-check nama
+// duplikat di CustomerModal. Aditif: 14 pemakaian lain tak mengirimnya, jadi
+// `onBlur?.()` no-op dan styling border tetap jalan seperti semula.
+function Input({ label, type='text', value, onChange, placeholder, onBlur }) {
   return (
     <div>
       <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>{label}</label>
@@ -4198,7 +4221,7 @@ function Input({ label, type='text', value, onChange, placeholder }) {
         className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none transition-colors"
         style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}
         onFocus={e => { e.currentTarget.style.borderColor = PASTEL.peachDeep; selectOnFocus(e); }}
-        onBlur={e => e.currentTarget.style.borderColor = PASTEL.line}
+        onBlur={e => { e.currentTarget.style.borderColor = PASTEL.line; onBlur?.(e.target.value); }}
       />
     </div>
   );
@@ -4416,11 +4439,26 @@ function CustRow({ label, value, mono, highlight }) {
 // ============================
 // Customer Modal
 // ============================
-function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave }) {
+// companyId dioper sbg PROP dari App (bukan useAuth di sini) supaya komponen ini
+// tetap presentational. Dipakai pre-check nama mirip lewat RPC check_similar_accounts.
+function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave, companyId }) {
   const [data, setData] = useState(initial || {
     code: '', name: '', defaultDC: '', picName: '', picEmail: '', active: true
   });
   const update = (k, v) => setData({ ...data, [k]: v });
+
+  // Pre-check MIRIP — WARNING inline, non-blocking. TIDAK memakai alert():
+  // alert() di sini akan bertumpuk dengan hard-block exact saat submit (:4445+),
+  // yang sengaja DIPERTAHANKAN. Create-only (skip saat edit).
+  const [nameWarning, setNameWarning] = useState('');
+  const checkSimilarName = async (val) => {
+    if (!val?.trim() || initial?.id || !companyId) { setNameWarning(''); return; }
+    const { data: hits, error } = await supabase.rpc('check_similar_accounts', {
+      p_name: val.trim(), p_company_id: companyId,
+    });
+    if (error || !hits?.length) { setNameWarning(''); return; }
+    setNameWarning(`Mirip dengan: ${hits.map(h => h.name).join(', ')} — yakin ini akun baru?`);
+  };
 
   // ── Custom fields ────────────────────────────────────────────────────────
   const { customFields } = useCustomFields('customers');
@@ -4467,7 +4505,10 @@ function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave }) 
         <div className="grid grid-cols-3 gap-3">
           <Input label="Code *" value={data.code} onChange={v=>update('code', v.toUpperCase())} placeholder="IM"/>
           <div className="col-span-2">
-            <Input label="Name *" value={data.name} onChange={v=>update('name', v)} placeholder="INDOMARCO"/>
+            <Input label="Name *" value={data.name} onChange={v=>update('name', v)} placeholder="INDOMARCO" onBlur={checkSimilarName}/>
+            {nameWarning && (
+              <div className="mt-1.5 text-xs" style={{ color: PASTEL.peachDeep }}>{nameWarning}</div>
+            )}
           </div>
         </div>
 
