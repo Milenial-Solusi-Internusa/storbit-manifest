@@ -169,6 +169,7 @@ Model granular sebenarnya disimpan di DB: **`modules` → `module_menus` → `mo
 | `get_user_company_id()` | — | `SELECT company_id FROM profiles WHERE id=auth.uid()`. Null sebelum backfill / di SQL Editor. |
 | `has_permission(module, action)` | query `user_roles→roles→role_permissions→permissions` | ⚠️ Flagged broken/unseeded (TECH_DEBT TD-02). |
 | `has_role(role_code)` / `get_user_role_code()` | cek role di `user_roles` | Helper. |
+| `check_similar_accounts(p_name, p_company_id)` ⚠️ **BELUM DIJALANKAN** | — (bukan predikat role; **SECURITY DEFINER** → menembus RLS `accounts`) | **Pre-check kemiripan nama akun** untuk peringatan duplikat di form. **Sengaja menembus RLS**: `prospects_read` membatasi sales ke akun **miliknya sendiri**, sehingga pre-check dari klien biasa **buta terhadap akun sales lain** dan akan menjanjikan "aman" untuk nama yang justru ditolak index `uq_accounts_norm_name_per_entitas`. **Batas kebocorannya dijaga dua lapis:** (a) hasil di-scope **satu entitas** lewat argumen `p_company_id`; (b) yang dikembalikan **hanya `id` + `name` + skor** — kolom lain milik akun sales lain **tidak** ikut terbuka. `GRANT EXECUTE TO authenticated`. ⚠️ **Ini pelonggaran visibilitas yang DISENGAJA** — kalau kelak dipakai untuk hal lain, tinjau ulang dulu. |
 
 **Pola RLS accounts (acuan utama):**
 `USING ((company_id = get_user_company_id() AND (is_manager_or_above() OR assigned_to=auth.uid() OR created_by=auth.uid())) OR is_super_admin())`.

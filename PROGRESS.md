@@ -1,5 +1,43 @@
 # Nexus MSI — Development Progress Log
 
+## 2026-07-25
+
+### Lapisan UX dedup akun — pre-check fuzzy + handler 23505 manusiawi (di ATAS hard-block DB yang sudah live)
+
+**Ringkas:** **3 file FE** (`src/modules/crm/ProspectFormPage.jsx`, `src/modules/crm/CustomerListPage.jsx`, `src/App.jsx` — `CustomerModal` + `Input` + `handleSaveCustomer`), **NOL perubahan DB dari sesi ini**. Batch ini **menambah lapisan UX di ATAS** hard-block yang sudah terpasang lebih dulu — **tidak menyentuh** fungsi/index yang sudah ada.
+
+**KONTEKS — hard-block sudah LIVE lebih dulu (dipasang Den manual di DB, di luar sesi ini).** Aturan bisnis final **"satu perusahaan = satu akun, cakupan PER-ENTITAS, hard-block"** kini ditegakkan di **level tabel**: fungsi **`public.normalize_account_name(text)`** (IMMUTABLE — buang PT/CV/TBK + non-alfanumerik + lowercase) + **UNIQUE index partial `uq_accounts_norm_name_per_entitas` ON accounts (company_id, normalize_account_name(name)) WHERE deleted_at IS NULL** + extension **`pg_trgm`** (schema `public`). → **Keputusan Terbuka #20 / "K-3" yang kemarin dicatat "sudah diputuskan, BELUM dieksekusi" kini BERUBAH STATUS: hard-block-nya AKTIF.** *(Keberadaan ketiganya di DB = **pernyataan Den**; doc-keeper hanya bisa memverifikasi bahwa ketiganya **belum berjejak di repo** — lihat blok UTANG di bawah.)*
+
+**(1) Fungsi DB baru `public.check_similar_accounts(p_name text, p_company_id uuid)` — SQL DI-OUTPUT, ⚠️ BELUM DIJALANKAN.** `RETURNS TABLE(id uuid, name text, similarity real)`, `LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'`, ambang similarity **0.6** (ditulis sebagai satu nilai di CTE `param` supaya gampang diubah), `ORDER BY similarity DESC LIMIT 5`, `GRANT EXECUTE … TO authenticated`.
+- **Kenapa SECURITY DEFINER (bukan gaya-gayaan):** RLS `prospects_read` membatasi sales ke akun **miliknya sendiri** (`assigned_to`/`created_by`) → pre-check dari klien biasa **BUTA terhadap akun sales lain**, akan bilang "aman" lalu **ditolak index**. DEFINER membuatnya membaca **lintas-pemilik tapi tetap dalam SATU entitas** (`p_company_id`), dan hanya mengembalikan **`id` + `name` + skor** — **tidak** membocorkan kolom lain milik akun sales lain.
+- **Kenapa `LANGUAGE sql`, bukan plpgsql:** kolom output wajib bernama `similarity`; di plpgsql nama itu jadi variabel yang **membayangi fungsi `similarity()` milik pg_trgm**. `LANGUAGE sql` bebas dari masalah itu — dan **bukan konvensi baru**: repo sudah punya **10 fungsi `LANGUAGE sql`** (diverifikasi doc-keeper via grep snapshot), termasuk `get_table_columns` yang juga `RETURNS TABLE`.
+
+**(2) Pre-check fuzzy MENGGANTIKAN dup-check exact di 2 jalur (keputusan Den).** `ProspectFormPage.checkDuplicateName` & `CustomerListPage.checkDuplicate` dulu query `.ilike()` exact-match; kini memanggil RPC. **State + slot render dipakai ulang → NOL UI baru.** Warning: `"Mirip dengan: {nama} — yakin ini akun baru?"`, **non-blocking** (ini peringatan, **gerbangnya di DB**). **⭐ Dua PELEBARAN CAKUPAN yang gampang luput:** **(a)** cek lama `ProspectFormPage` hanya melihat akun **pra-customer** (`.in('account_status', ['lead','mql','sql','prospect','lead_pool'])`) — filter itu **dicabut** → kini **seluruh lifecycle**, meniru index yang memang **tak peduli `account_status`**; **(b)** cek lama `CustomerListPage` **tidak menyaring entitas sama sekali** — kini di-scope `company_id`, sejalan aturan per-entitas. *(Keduanya diverifikasi doc-keeper di `git diff`.)*
+
+**(3) Jalur Storbit (`CustomerModal`, `App.jsx`) dapat fuzzy warning DI SAMPING hard-block exact lamanya — bukan menggantikan.** **Keputusan Den: `alert()` hard-block exact** atas `existingCustomers` in-memory (`App.jsx:4485` nama, `:4490` kode) **SENGAJA DIPERTAHANKAN** (diverifikasi doc-keeper: keduanya masih ada). Jadi jalur ini punya **DUA LAPIS**: fuzzy warning **inline saat on-blur** + hard-block exact **`alert()` saat submit**. **Bentuknya sengaja dibedakan supaya tidak ada `alert()` bertumpuk.** `companyId` dioper sebagai **prop dari App** (bukan `useAuth` di dalam modal) supaya komponen itu tetap **presentational**.
+
+**(4) Komponen `Input` (App.jsx) dapat prop OPSIONAL `onBlur`.** Aditif & backward-compatible: `onBlur?.(e.target.value)` dipanggil **setelah** styling border dikembalikan → **14 pemakaian lain tak mengirimnya → no-op, styling tetap** (diverifikasi doc-keeper: 15 `<Input `, **1** ber-`onBlur`). `Input` lokal `App.jsx`, **tidak diekspor** → radius perubahan terkurung di file itu.
+
+**(5) Handler 23505 manusiawi di KETIGA jalur create.** Pesan: `"Akun dengan nama ini sudah ada di {ENTITAS} ini."` — bukan error mentah Postgres. Kode entitas dari `companies.code` by `profile.company_id`, **fetch sekali saat mount** (pola mapan repo: `InquiryFormPage:286`, `QuotationFormPage:964`, `MOMFormPage:275`, `PRFFormPage:219`); fallback `'entitas'` bila belum termuat. **⭐ PENGETATAN PENTING — `err.code === '23505'` SAJA TIDAK CUKUP:** index-nya **PARTIAL UNIQUE**, sehingga Postgres menyebut **nama INDEX**, bukan nama constraint; dan `accounts` **juga** punya **`accounts_code_unique`** yang dipicu jalur 2 & 3 (**keduanya menulis `code` saat INSERT**). Karena itu handler mencocokkan **`err.code === '23505'` DAN regex nama index** pada `` `${err.message} ${err.details}` `` — **tanpa itu, bentrok KODE akan salah dilaporkan sebagai bentrok NAMA.** Pola dasarnya meniru `VendorListPage.jsx:201-207`, tapi **lebih ketat**: preseden itu masih memakai `err?.code === '23505'` polos (aman di sana karena `vendors` cuma punya satu unique yang relevan).
+
+**Fuzzy check CREATE-ONLY di ketiga jalur** (skip saat edit — `isEdit` / `initial?.id`), konsisten dengan perilaku sebelumnya.
+
+**VERIFIKASI (diverifikasi ULANG doc-keeper, bukan disalin dari brief).** `npm run lint` → **160 problems = baseline persis (net-zero)**; dibuktikan **per-file terhadap HEAD** lewat `git stash`: ketiga file yang disentuh = **13 problem sebelum DAN sesudah**, identik → seluruhnya pre-existing (working tree dipulihkan, terverifikasi). Build clean **2590 modules, 1.11s** = **pernyataan Den** (tidak saya jalankan ulang). **⚠️ NOL TES RUNTIME.** **⭐ Dan yang jauh lebih penting dari itu: fungsi `check_similar_accounts` BELUM ADA DI DB** (SQL-nya baru di-output, belum dijalankan) → **seluruh fitur fuzzy di KETIGA jalur BELUM BISA JALAN.** Saat ini RPC-nya akan error dan kode menanganinya sebagai "tidak ada kemiripan" (`if (error || !data?.length) { setWarning(''); return; }`) → **warning tak pernah muncul, gagal SENYAP**. Jangan catat/klaim fitur ini "jalan". **Build clean bukan jaminan fitur jalan.**
+
+**⚠️ UTANG JEJAK MENUMPUK — EMPAT hal, dan TIGA di antaranya SUDAH LIVE di produksi tanpa rekaman apa pun.** Diverifikasi doc-keeper via grep (`schema_snapshot.sql` + `supabase/migrations/`):
+1. **Merge 7 grup duplikat** (pembersihan data manual, prasyarat pemasangan index) — **belum ada file migrasi**.
+2. **`normalize_account_name(text)`** — **0 hit** di snapshot, **0 hit** di migrasi.
+3. **`uq_accounts_norm_name_per_entitas`** + pemasangan **`pg_trgm`** — **0 hit** di snapshot; **0 file migrasi memasangnya**. *(Catatan presisi doc-keeper: `pg_trgm` **disebut** di komentar `20260722000005_dedup_accounts.sql:34` sebagai "HANYA dipakai untuk survei awal" — itu **penyebutan**, bukan pemasangan; **nol migrasi memasang `pg_trgm`; yang ada hanya `uuid-ossp` dan `pg_cron`/`pg_net`.**)*
+4. **`check_similar_accounts`** (batch ini) — belum dijalankan, dan **nanti tetap perlu file migrasi**.
+
+**Konsekuensinya tegas: `schema_snapshot.sql` kini menyesatkan untuk `accounts`** — snapshot **tidak memperlihatkan** bahwa nama akun sudah dijaga UNIQUE per entitas, padahal **penegakannya sudah aktif**. Pembaca yang mengandalkan snapshot akan menyimpulkan "nama akun bebas duplikat" dan salah. Ini persis kasus yang diperingatkan aturan repo: *"snapshot bilang objek tidak ada ≠ objeknya tidak ada — bandingkan tanggal, lalu TANYA."*
+
+**PENGINGAT MANUAL (git tak tahu):** **(a)** jalankan SQL `check_similar_accounts` — **tanpa ini fitur batch ini mati total**; **(b)** rekam **keempat** utang di atas sebagai file migrasi; **(c)** `pg_dump` untuk memuat keempatnya — **menambah** utang dump yang sudah tercatat kemarin untuk `backup_leadpool_c1_won_20260724` → **satu dump menutup semuanya**, jangan dicicil.
+
+Detail lain: `03_DATA_MODEL` (`accounts` + RPC + gotcha #10) · `05_WORKFLOW_MAP` §CRM Gate & Approval · `04_ROLE_PERMISSION_MATRIX` §4 · `09_ROADMAP` Keputusan #20 (status berubah).
+
+---
+
 ## 2026-07-24
 
 ### Fix Lead Pool aging + bebasin korban stale `pull_status` — Edge Function (3 perbaikan) + pembersihan data DUA GELOMBANG (27 + 15 akun)
