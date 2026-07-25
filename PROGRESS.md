@@ -2,6 +2,38 @@
 
 ## 2026-07-25
 
+### Picker akun form Inquiry: `<select>` native → searchable combobox (`AccountPicker`) — UI murni
+
+**Ringkas:** **2 file** — **1 BARU** `src/components/AccountPicker.jsx` + **1 edit** `src/modules/crm/InquiryFormPage.jsx` (hanya blok picker Section 01). **NOL perubahan DB/RLS/migrasi/query-server.** Diverifikasi doc-keeper: `git status` = tepat kedua file itu (`M InquiryFormPage.jsx` + `?? AccountPicker.jsx`), `ProductPicker.jsx` **NOL diff** (`git diff --stat HEAD` kosong).
+
+**Tujuan.** Di form "Buat Inquiry Baru" (RFQ), picker **Prospect** dan **Customer (Existing)** dulu `<select>` native — panjang, scroll-only, tak bisa search. Diganti combobox yang mereuse **pola** picker produk Storbit (`ProductPicker` di form Input SP), tapi dibentuk untuk akun.
+
+**⭐ Keputusan Den: Opsi A — komponen SIBLING baru, BUKAN generalisasi `ProductPicker`.** `ProductPicker.jsx` + **7 konsumennya** (Quotation / SalesOrderDoc / DeliveryNoteDetail / SalesOrderDetail / InputSP / PickingListDetail / BulkEditPrice) sengaja **NOL sentuhan** — menghindari radius perubahan yang tak perlu.
+
+**(1) BARU `src/components/AccountPicker.jsx`.** Mereuse mekanik `ProductPicker` seketat mungkin: dropdown `createPortal` (`position:fixed`, `z-9999`), filter realtime ≥1 char, flip-up saat ruang bawah kurang (`AccountPicker.jsx:53-72`), tutup saat klik-luar (input wrapper + menu dihitung "di dalam"), pilih via `onMouseDown` (`preventDefault` → tak ada keyboard-nav baru; parity SP).
+- **Dibentuk untuk akun `{id, name, account_status}`, BUKAN produk:** filter **hanya di `name`** (akun tak punya `code`, `:46`); item render = **nama akun + badge status** (mis. "AROMA SCENTS" + badge "Prospect"), label status dari prop `statusLabel` (dioper `lifecycleLabel`).
+- **Adaptasi sadar dari ProductPicker (bukan konvensi baru):** `<input type="text">` satu baris (`:88`), **bukan** `<textarea>` auto-grow milik ProductPicker — ini single-select pengganti `<select>`, bukan field deskripsi multi-baris.
+- **Props:** `value, accounts, inputStyle, onChangeText, onPick, placeholder, emptyText, statusLabel`.
+- **Warna:** palet slate/white InquiryFormPage, **navy `#1B4D8A`** (bukan brand `#144682`) — sengaja, biar nyatu dengan form sekitarnya; drift `#1B4D8A` vs `#144682` = **TD-93** (dibereskan serentak se-form nanti, **bukan** dicicil di picker ini — komentar file `:11-13` mencatat ini). **NOL TD baru.**
+
+**(2) Edit `InquiryFormPage.jsx` (hanya blok picker Section 01).**
+- `import AccountPicker` (`:17`).
+- Tambah state teks lokal `prospectText`/`customerText` (`:174-175`) = teks yang tampil di input. **`form.prospect_id`/`form.customer_id` TETAP sumber kebenaran tersimpan** — tak berubah.
+- Ganti dua `<select>` (Prospect/Customer) dengan dua `<AccountPicker>` (`:362-388`). `onPick(a)` → set teks=`a.name` + set id; `onChangeText(v)` → set teks + **kosongkan id**. Validasi `errors.source` (`:241-242`) yang ADA memblok submit bila id kosong — sama pola SP: tak pilih dari dropdown → id null → submit ketahan.
+- **Prefill edit-mode** (`:228-229`): di effect fetch akun terkait, set `prospectText`/`customerText` = `acc.name` sesuai mode; injeksi akun ke list dropdown tetap dijaga.
+- **Toggle sumber prospect↔customer** (`:353`): selain kosongkan id (perilaku lama), sekarang juga kosongkan `prospectText`/`customerText`.
+- **Signal Lead-Pool kosong:** `<option disabled>` "Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu…" tak bisa hidup di combobox (dropdown muncul saat mengetik) → diganti **helper-text kecil di bawah picker** saat `prospects.length === 0` (`:384-386`, teks **sama persis**, mempertahankan sinyal lama). **Hanya mode Prospect** (mode Customer memang tak punya pesan ini).
+
+**⭐ Temuan (dicatat, tak diperbaiki karena SUDAH benar):** kedua query ke `accounts` (`InquiryFormPage.jsx:181` prospect / `:183` customer) **sudah** memfilter **`deleted_at IS NULL` DAN `is_in_lead_pool=false`** sebelum perubahan ini. Jadi akun yang baru di-soft-delete (mis. ALLIANC/ALLIANCE COSMETIC dari dedup) memang sudah tak muncul, dan akun Lead Pool sudah dikecualikan (konsisten gate picker action-context modul lain — `05_WORKFLOW_MAP` §CRM bullet "Akun Lead Pool tak boleh dipakai…"). Combobox baru cuma merender isi array `prospects`/`customers` yang **sudah** tersaring itu. *(Atribusi: pembacaan kode doc-keeper, bukan tes runtime.)*
+
+**Sengaja TIDAK disentuh:** `ProductPicker.jsx` + 7 konsumennya (NOL diff) · sumber data/query DB/RLS · logika submit/validasi Inquiry & field lain · dua `<select>` native lain di form (Service Type + IMO Class — di luar scope; `selInput`/`Chevron` masih dipakai keduanya) · form SP Storbit (sumber contoh, bukan target).
+
+**Verifikasi.** `npm run build` clean **2591 modules** (naik 1 dari 2590 = modul `AccountPicker` baru), 1.50s · `npm run lint` **160 = baseline persis (net-zero)** (138 errors / 22 warnings, sama sebelum-sesudah) — **pernyataan Den** untuk build/lint. Yang doc-keeper verifikasi sendiri (baca file/git, bukan runtime): isi diff + `git status` 2 file + `ProductPicker` NOL diff + kedua query sudah menyaring `deleted_at`/`is_in_lead_pool` + prop `statusLabel`=`lifecycleLabel` + TD-93 memang soal drift `#1B4D8A`. **⚠️ BELUM tes runtime** — form Inquiry di balik login; build clean ≠ fitur jalan. **NOL tech debt baru.** **Bukan milestone** (UI enhancement halaman lama, bukan menu/fitur/entitas baru) → tak dicatat di `00_DEV_JOURNEY`; cukup PROGRESS + `05_WORKFLOW_MAP` §CRM (nota kecil di bullet gate Lead Pool).
+
+Detail: `05_WORKFLOW_MAP` §CRM (bullet "Akun Lead Pool tak boleh dipakai…" — nota 25 Jul).
+
+---
+
 ### Lapisan UX dedup akun — pre-check fuzzy + handler 23505 manusiawi (di ATAS hard-block DB yang sudah live)
 
 **Ringkas:** **3 file FE** (`src/modules/crm/ProspectFormPage.jsx`, `src/modules/crm/CustomerListPage.jsx`, `src/App.jsx` — `CustomerModal` + `Input` + `handleSaveCustomer`), **NOL perubahan DB dari sesi ini**. Batch ini **menambah lapisan UX di ATAS** hard-block yang sudah terpasang lebih dulu — **tidak menyentuh** fungsi/index yang sudah ada.
