@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
+import AccountPicker from '../../components/AccountPicker';
 
 const C = {
   navy: '#1B4D8A', navyDark: '#0F3768', navySoft: '#EEF3FB',
@@ -168,6 +169,10 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
   const [errors, setErrors] = useState({});
   const [sourceType, setSourceType] = useState('prospect');
   const [editNo, setEditNo] = useState('');   // existing inquiry_no (edit mode header)
+  // Display text for the searchable account pickers. form.prospect_id/customer_id
+  // stay the stored source of truth; these hold only what's shown in the input.
+  const [prospectText, setProspectText] = useState('');
+  const [customerText, setCustomerText] = useState('');
 
   useEffect(() => {
     if (!profile?.company_id) return;
@@ -220,8 +225,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
           const { data: acc } = await supabase.from('accounts').select('id, name, account_status').eq('id', linkedId).maybeSingle();
           if (cancelled || !acc) return;
           const opt = { id: acc.id, name: acc.name, account_status: acc.account_status };
-          if (data.customer_id) setCustomers(prev => prev.some(c => c.id === acc.id) ? prev : [opt, ...prev]);
-          else setProspects(prev => prev.some(p => p.id === acc.id) ? prev : [opt, ...prev]);
+          if (data.customer_id) { setCustomers(prev => prev.some(c => c.id === acc.id) ? prev : [opt, ...prev]); setCustomerText(acc.name); }
+          else { setProspects(prev => prev.some(p => p.id === acc.id) ? prev : [opt, ...prev]); setProspectText(acc.name); }
         }
       });
     return () => { cancelled = true; };
@@ -345,7 +350,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               <Field label="Sumber" span>
                 <div style={{ display: 'flex', gap: 10 }}>
                   {['prospect', 'customer'].map(t => (
-                    <button key={t} type="button" onClick={() => { setSourceType(t); setForm(f => ({ ...f, prospect_id: '', customer_id: '' })); }}
+                    <button key={t} type="button" onClick={() => { setSourceType(t); setForm(f => ({ ...f, prospect_id: '', customer_id: '' })); setProspectText(''); setCustomerText(''); }}
                       style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", border: '1px solid ' + (sourceType === t ? C.navy : C.border), background: sourceType === t ? C.navy : '#fff', color: sourceType === t ? '#fff' : C.sub }}>
                       {t === 'prospect' ? 'Prospect' : 'Customer (Existing)'}
                     </button>
@@ -355,20 +360,30 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
 
               <div style={grid2}>
                 <Field label={sourceType === 'prospect' ? 'Prospect' : 'Customer'} required>
-                  <div style={{ position: 'relative' }}>
-                    {sourceType === 'prospect' ? (
-                      <select value={form.prospect_id} onChange={set('prospect_id')} style={selInput}>
-                        <option value="">— Pilih prospect —</option>
-                        {prospects.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
-                        {prospects.map(p => <option key={p.id} value={p.id}>{p.name}{p.account_status ? ` — ${lifecycleLabel(p.account_status)}` : ''}</option>)}
-                      </select>
-                    ) : (
-                      <select value={form.customer_id} onChange={set('customer_id')} style={selInput}>
-                        <option value="">— Pilih customer —</option>
-                        {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.account_status ? ` — ${lifecycleLabel(c.account_status)}` : ''}</option>)}
-                      </select>
-                    )}<Chevron />
-                  </div>
+                  {sourceType === 'prospect' ? (
+                    <AccountPicker
+                      value={prospectText}
+                      accounts={prospects}
+                      statusLabel={lifecycleLabel}
+                      inputStyle={S.input}
+                      placeholder="Cari prospect…"
+                      onChangeText={(v) => { setProspectText(v); setForm(f => ({ ...f, prospect_id: '' })); }}
+                      onPick={(a) => { setProspectText(a.name); setForm(f => ({ ...f, prospect_id: a.id })); }}
+                    />
+                  ) : (
+                    <AccountPicker
+                      value={customerText}
+                      accounts={customers}
+                      statusLabel={lifecycleLabel}
+                      inputStyle={S.input}
+                      placeholder="Cari customer…"
+                      onChangeText={(v) => { setCustomerText(v); setForm(f => ({ ...f, customer_id: '' })); }}
+                      onPick={(a) => { setCustomerText(a.name); setForm(f => ({ ...f, customer_id: a.id })); }}
+                    />
+                  )}
+                  {sourceType === 'prospect' && prospects.length === 0 && (
+                    <span style={{ fontSize: 12, color: C.sub, marginTop: 5, display: 'block' }}>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</span>
+                  )}
                   {errors.source && <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors.source}</span>}
                 </Field>
                 <Field label="Deadline Quote">
