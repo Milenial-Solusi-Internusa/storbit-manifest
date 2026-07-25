@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict DGehahikS3blVbNgWZczZYUZveRAGo4XR5GFnGq7PyDRP2XxzB8hDsBkGU3fe1K
+\restrict H8fq72kWo6oaXXo0s4Fu6H5A5rLkUQuhF6o9I0QrGYeUiRmGEGU89k4a3Rz6Tsz
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1758,238 +1758,6 @@ CREATE TABLE public.accounts (
 
 
 --
--- Name: accounts_dedup_backup_20260722; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.accounts_dedup_backup_20260722 (
-    id uuid,
-    company_id uuid,
-    name text,
-    legal_name character varying,
-    customer_type character varying,
-    tax_id character varying,
-    address text,
-    city character varying,
-    country character varying,
-    phone character varying,
-    email character varying,
-    pic_name character varying,
-    pic_phone character varying,
-    pic_email character varying,
-    source character varying,
-    assigned_to uuid,
-    pipeline_stage character varying,
-    lost_reason text,
-    converted_at timestamp with time zone,
-    converted_to uuid,
-    payment_terms_id uuid,
-    currency_code character varying,
-    credit_limit numeric,
-    notes text,
-    is_active boolean,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone,
-    updated_at timestamp with time zone,
-    deleted_at timestamp with time zone,
-    estimated_closing_date date,
-    assigned_profile uuid,
-    company_prefix text,
-    won_reason text,
-    bant_commodity text,
-    bant_origin text,
-    bant_destination text,
-    bant_frequency text,
-    bant_current_vendor text,
-    bant_payment text,
-    bant_decision_maker text,
-    bant_score integer,
-    account_status character varying(50),
-    owner_company_id uuid,
-    tier character varying(20),
-    code text,
-    nomor_kontrak text,
-    default_dc text,
-    last_activity_at timestamp with time zone,
-    became_customer_at timestamp with time zone,
-    estimated_value numeric,
-    bant_budget smallint,
-    bant_authority smallint,
-    bant_need smallint,
-    bant_timeline smallint,
-    stage_changed_at timestamp with time zone,
-    is_in_lead_pool boolean,
-    lead_pool_reason text,
-    lead_pool_at timestamp with time zone,
-    pull_justification text,
-    pull_requested_at timestamp with time zone,
-    pull_approved_by uuid,
-    pull_approved_at timestamp with time zone,
-    pull_status text,
-    is_odoo_customer boolean
-);
-
-
---
--- Name: accounts_fase3_backup_20260722; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.accounts_fase3_backup_20260722 (
-    id uuid,
-    company_id uuid,
-    name text,
-    legal_name character varying,
-    customer_type character varying,
-    tax_id character varying,
-    address text,
-    city character varying,
-    country character varying,
-    phone character varying,
-    email character varying,
-    pic_name character varying,
-    pic_phone character varying,
-    pic_email character varying,
-    source character varying,
-    assigned_to uuid,
-    pipeline_stage character varying,
-    lost_reason text,
-    converted_at timestamp with time zone,
-    converted_to uuid,
-    payment_terms_id uuid,
-    currency_code character varying,
-    credit_limit numeric,
-    notes text,
-    is_active boolean,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone,
-    updated_at timestamp with time zone,
-    deleted_at timestamp with time zone,
-    estimated_closing_date date,
-    assigned_profile uuid,
-    company_prefix text,
-    won_reason text,
-    bant_commodity text,
-    bant_origin text,
-    bant_destination text,
-    bant_frequency text,
-    bant_current_vendor text,
-    bant_payment text,
-    bant_decision_maker text,
-    bant_score integer,
-    account_status character varying(50),
-    owner_company_id uuid,
-    tier character varying(20),
-    code text,
-    nomor_kontrak text,
-    default_dc text,
-    last_activity_at timestamp with time zone,
-    became_customer_at timestamp with time zone,
-    estimated_value numeric,
-    bant_budget smallint,
-    bant_authority smallint,
-    bant_need smallint,
-    bant_timeline smallint,
-    stage_changed_at timestamp with time zone,
-    is_in_lead_pool boolean,
-    lead_pool_reason text,
-    lead_pool_at timestamp with time zone,
-    pull_justification text,
-    pull_requested_at timestamp with time zone,
-    pull_approved_by uuid,
-    pull_approved_at timestamp with time zone,
-    pull_status text,
-    is_odoo_customer boolean
-);
-
-
---
--- Name: accounts_lifecycle_backup_20260718; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.accounts_lifecycle_backup_20260718 (
-    id uuid,
-    account_status character varying(50),
-    pipeline_stage character varying,
-    is_in_lead_pool boolean,
-    deleted_at timestamp with time zone
-);
-
-
---
--- Name: accounts_promo_fix_backup_20260723; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.accounts_promo_fix_backup_20260723 (
-    id uuid,
-    company_id uuid,
-    name text,
-    legal_name character varying,
-    customer_type character varying,
-    tax_id character varying,
-    address text,
-    city character varying,
-    country character varying,
-    phone character varying,
-    email character varying,
-    pic_name character varying,
-    pic_phone character varying,
-    pic_email character varying,
-    source character varying,
-    assigned_to uuid,
-    pipeline_stage character varying,
-    lost_reason text,
-    converted_at timestamp with time zone,
-    converted_to uuid,
-    payment_terms_id uuid,
-    currency_code character varying,
-    credit_limit numeric,
-    notes text,
-    is_active boolean,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone,
-    updated_at timestamp with time zone,
-    deleted_at timestamp with time zone,
-    estimated_closing_date date,
-    assigned_profile uuid,
-    company_prefix text,
-    won_reason text,
-    bant_commodity text,
-    bant_origin text,
-    bant_destination text,
-    bant_frequency text,
-    bant_current_vendor text,
-    bant_payment text,
-    bant_decision_maker text,
-    bant_score integer,
-    account_status character varying(50),
-    owner_company_id uuid,
-    tier character varying(20),
-    code text,
-    nomor_kontrak text,
-    default_dc text,
-    last_activity_at timestamp with time zone,
-    became_customer_at timestamp with time zone,
-    estimated_value numeric,
-    bant_budget smallint,
-    bant_authority smallint,
-    bant_need smallint,
-    bant_timeline smallint,
-    stage_changed_at timestamp with time zone,
-    is_in_lead_pool boolean,
-    lead_pool_reason text,
-    lead_pool_at timestamp with time zone,
-    pull_justification text,
-    pull_requested_at timestamp with time zone,
-    pull_approved_by uuid,
-    pull_approved_at timestamp with time zone,
-    pull_status text,
-    is_odoo_customer boolean
-);
-
-
---
 -- Name: activities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2723,6 +2491,49 @@ CREATE TABLE public.audit_logs (
     ip_address text,
     user_agent text,
     notes text
+);
+
+
+--
+-- Name: backup_b4_inquiries_20260725; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_b4_inquiries_20260725 (
+    id uuid,
+    company_id uuid,
+    inquiry_no text,
+    prospect_id uuid,
+    customer_id uuid,
+    service_type character varying,
+    route text,
+    commodity text,
+    estimated_volume text,
+    notes text,
+    status character varying,
+    created_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    deadline_quote date,
+    pol text,
+    pod text,
+    incoterms text[],
+    container_types text[],
+    goods_name text,
+    hs_code text,
+    weight_kg numeric(12,2),
+    volume_cbm numeric(12,2),
+    cargo_types text[],
+    un_number text,
+    imo_class text,
+    has_msds text,
+    additional_services text[],
+    dimension text,
+    pickup_address text,
+    delivery_address text,
+    won_reason text,
+    lost_reason text,
+    estimated_value numeric
 );
 
 
@@ -4215,7 +4026,6 @@ CREATE TABLE public.inquiries (
     customer_id uuid,
     service_type character varying,
     route text,
-    commodity text,
     estimated_volume text,
     notes text,
     status character varying DEFAULT 'OPEN'::character varying,
@@ -4244,17 +4054,6 @@ CREATE TABLE public.inquiries (
     lost_reason text,
     estimated_value numeric,
     CONSTRAINT inquiries_status_check CHECK (((status)::text = ANY ((ARRAY['OPEN'::character varying, 'IN_REVIEW'::character varying, 'QUOTED'::character varying, 'NEGOTIATION'::character varying, 'WON'::character varying, 'LOST'::character varying, 'CANCELLED'::character varying])::text[])))
-);
-
-
---
--- Name: inquiries_status_backup_20260722; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.inquiries_status_backup_20260722 (
-    id uuid,
-    status character varying,
-    updated_at timestamp with time zone
 );
 
 
@@ -5187,30 +4986,6 @@ COMMENT ON COLUMN public.sales_orders.external_ref IS 'Nomor referensi SO ini di
 --
 
 COMMENT ON COLUMN public.sales_orders.booking_no IS 'Nomor booking ke carrier. Nullable, belum dipakai UI mana pun.';
-
-
---
--- Name: sales_orders_backup_20260722; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.sales_orders_backup_20260722 (
-    id uuid,
-    company_id uuid,
-    so_no text,
-    status character varying,
-    inquiry_id uuid,
-    account_id uuid,
-    signed boolean,
-    sign_link text,
-    signed_at timestamp with time zone,
-    created_by uuid,
-    updated_by uuid,
-    created_at timestamp with time zone,
-    updated_at timestamp with time zone,
-    deleted_at timestamp with time zone,
-    external_ref text,
-    booking_no text
-);
 
 
 --
@@ -10795,35 +10570,11 @@ ALTER TABLE ONLY public.warehouses
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: accounts_dedup_backup_20260722; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.accounts_dedup_backup_20260722 ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: accounts accounts_delete_superadmin; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY accounts_delete_superadmin ON public.accounts FOR DELETE TO authenticated USING (public.is_super_admin());
 
-
---
--- Name: accounts_fase3_backup_20260722; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.accounts_fase3_backup_20260722 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: accounts_lifecycle_backup_20260718; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.accounts_lifecycle_backup_20260718 ENABLE ROW LEVEL SECURITY;
-
---
--- Name: accounts_promo_fix_backup_20260723; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.accounts_promo_fix_backup_20260723 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: activities; Type: ROW SECURITY; Schema: public; Owner: -
@@ -11225,6 +10976,12 @@ CREATE POLICY audit_logs_insert ON public.audit_logs FOR INSERT WITH CHECK ((aut
 
 CREATE POLICY audit_logs_read ON public.audit_logs FOR SELECT USING (public.is_admin_or_above());
 
+
+--
+-- Name: backup_b4_inquiries_20260725; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_b4_inquiries_20260725 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: backup_dedup_accounts_20260725; Type: ROW SECURITY; Schema: public; Owner: -
@@ -12088,12 +11845,6 @@ CREATE POLICY inquiries_insert ON public.inquiries FOR INSERT WITH CHECK ((compa
 
 CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
-
---
--- Name: inquiries_status_backup_20260722; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.inquiries_status_backup_20260722 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: inquiries inquiries_update; Type: POLICY; Schema: public; Owner: -
@@ -13082,12 +12833,6 @@ CREATE POLICY sales_calls_update ON public.sales_calls FOR UPDATE USING (((compa
 ALTER TABLE public.sales_orders ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sales_orders_backup_20260722; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.sales_orders_backup_20260722 ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: sales_orders sales_orders_delete; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -13597,5 +13342,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DGehahikS3blVbNgWZczZYUZveRAGo4XR5GFnGq7PyDRP2XxzB8hDsBkGU3fe1K
+\unrestrict H8fq72kWo6oaXXo0s4Fu6H5A5rLkUQuhF6o9I0QrGYeUiRmGEGU89k4a3Rz6Tsz
 
