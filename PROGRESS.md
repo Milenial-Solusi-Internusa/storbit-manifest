@@ -2,6 +2,75 @@
 
 ## 2026-07-25
 
+### Catatan susulan (doc-keeper) — PRF batch field B1 (23 Jul) + Inquiry commodity→goods_name B3 (23 Jul) + drop kolom `inquiries.commodity` B4 (25 Jul)
+
+**Ringkas:** Dokumentasi **CATCH-UP murni** — merangkum SATU rangkaian kerja yang sudah TUNTAS di kode/DB sejak 23-25 Jul 2026, tapi dokumentasinya sengaja ditunda sampai sesi ini (25 Jul). **NOL kode/DB diubah di sesi doc-keeper ini** — murni menulis dokumentasi menyusul dua commit yang sudah live di `main`+`origin` sejak 23 Jul, plus satu batch SQL manual (25 Jul) yang jejak migrasinya sudah direkam SEBELUM sesi ini dimulai. **Latar:** `AUDIT_B4_READINESS.md` (audit read-only 25 Jul, dibaca sebagai referensi) menemukan B1 dan B3 — dua commit nyata, sudah merge `main`+`origin` — **nol entri di `PROGRESS.md`/`CLAUDE.md`/dokumen Governance manapun**, persis pola under-claim berulang di repo ini (bandingkan TD-20, TD-128). *(Catatan penomoran: "B2" — dalam konteks field PRF/Inquiry — per audit **tidak pernah ada**; satu-satunya hit "B2" di seluruh git history adalah komit dokumentasi 17 Jul yang sama sekali tak berkaitan [konsolidasi Governance]. Label B1/B3/B4 mengikuti penamaan yang sudah dipakai sejak awal batch ini, bukan buatan doc-keeper.)*
+
+**B1 — commit `1235f4a`, Kamis 23 Jul 2026 13:49:46 +0700.** "feat(prf): batch 1 field PRF — nama barang + DG detail + enum kargo + kewajiban". **1 file** (`src/modules/procurement/PRFFormPage.jsx`, +49/−8). Enam perubahan:
+1. Field **"Nama Barang"** baru di PRF, prefill dari `inquiries.goods_name` lewat helper `applyInquiryData` (pola sama `hs_code`). Field di Section 02, **TIDAK mandatory**.
+2. **UN Number** (text) + **IMO Class** (dropdown) muncul saat `commodity=dg`, berdampingan dengan MSDS. Ikut di-prefill dari inquiry (`un_number`/`imo_class`) — state terisi fill-empty-only walau field baru TAMPIL saat DG dipilih (tak memaksa `commodity=dg`). `IMO_CLASSES` lokal di `PRFFormPage`, nilai string IDENTIK dengan `InquiryFormPage` supaya prefill cocok opsi.
+3. Enum `commodity` (PRF, BUKAN inquiry) +4 opsi baru: `perishable`/`live_animal`/`valuable`/`pharma`. Form-only (`prf.commodity` masih `text` tanpa CHECK constraint) → tanpa SQL untuk perubahan ini spesifik.
+4. Cargo Ready Date jadi opsional (dihapus dari validasi + asterisk required dicabut).
+5. Incoterm jadi **WAJIB saat Submit** (ditambahkan ke validasi + asterisk + pesan error).
+6. Volume Air jadi opsional (dihapus dari validasi + asterisk). Volume Sea-LCL **TETAP wajib** (tak berubah).
+
+Sengaja tak disentuh: kewajiban Volume Sea-LCL, field ikutan special cargo (perishable/pharma dst — hanya enum-nya ditambah, belum ada field turunan), `isDG` & pemicunya, Section 03 child lain, file lain.
+
+**Prasyarat DB B1** (SQL manual, dijalankan 23 Jul bersamaan commit; jejak migrasinya BARU dibuat 25 Jul — lihat blok migrasi di bawah):
+```sql
+ALTER TABLE public.prf ADD COLUMN goods_name text;
+ALTER TABLE public.prf ADD COLUMN un_number  text;
+ALTER TABLE public.prf ADD COLUMN imo_class  text;
+```
+Ketiga kolom nullable, tanpa default, tanpa CHECK.
+
+Build clean 2590 modules, 1.55s. Lint 160 = net-zero (file 0 problem) — **klaim commit sendiri**, tidak dijalankan ulang doc-keeper di sesi ini.
+
+---
+
+**B3 — commit `260e9ae`, Kamis 23 Jul 2026 14:46:20 +0700** (~1 jam setelah B1, hari yang sama). "feat(inquiry): gabung goods_name + commodity jadi nama barang tunggal". **6 file** (+7/−13 total): `src/modules/crm/CustomerDetailPage.jsx`, `src/modules/crm/DealDetailPage.jsx`, `src/modules/crm/InquiryFormPage.jsx`, `src/modules/crm/InquiryListPage.jsx`, `src/modules/crm/InquiryPDF.jsx`, `src/modules/procurement/PRFFormPage.jsx`.
+
+**Latar:** `goods_name` & `inquiries.commodity` de facto duplikat (produksi diisi nilai sama). **Keputusan:** `goods_name` jadi field tunggal, `commodity` Inquiry dipensiunkan dari KODE. Kode berhenti baca/tulis `inquiries.commodity` — **kolom DB saat itu TETAP ADA** (drop menyusul terpisah = B4, lihat di bawah). Sifat kargo TIDAK terpengaruh — itu di `cargo_types`, tak disentuh batch ini.
+
+- **Task 1 — `InquiryFormPage`:** hapus input "Commodity" + key `commodity` di state, populate edit-mode, dan payload create/edit. `goods_name` ("Nama Barang") jadi satu-satunya field nama barang. `cargo_types` tak disentuh.
+- **Task 2 — 4 pembaca `commodity` dipindah:**
+  - `InquiryListPage`: display baca `goods_name` + label "Commodity"→"Nama Barang" (satu-satunya baris nama barang di sana). `commodity` dibuang dari `.select()`.
+  - `CustomerDetailPage` / `DealDetailPage` / `InquiryPDF`: baris "Komoditas" **DIHAPUS** (redundan — ketiganya sudah punya baris "Nama Barang" dari `goods_name`; opsi B = menghapus duplikat, bukan menciptakannya). `commodity` dibuang dari `.select()` CDP/DDP.
+- **Task 3 — `PRFFormPage` teks bantu Commodity:** dulu baca `inquiry.commodity` untuk memandu pilih enum PRF; kini baca `inquiry.cargo_types` (sifat kargo sebenarnya), di-join array jadi teks ("Dari inquiry: dg, liquid — pilih commodity sesuai"). `cargo_types` ditambah ke `.select()` inquiry; `commodity` dibuang dari select.
+
+**Hasil (diverifikasi ULANG oleh `AUDIT_B4_READINESS.md` 25 Jul — bukan cuma klaim commit sendiri):** NOL referensi `inquiries.commodity` tersisa di kode — dikonfirmasi via grep menyeluruh SEMUA pola akses (bukan cuma string literal), mencakup `src/`, Edge Functions, dan `schema_snapshot.sql` (nol view/function/trigger DB-side yang bergantung padanya). `prf.commodity` (enum PRF) & `bant_commodity` (kolom `accounts`) di luar scope, tidak disentuh — keduanya entitas berbeda total, tetap hidup by design.
+
+Sengaja tak disentuh: `cargo_types` (selain dibaca Task 3), kolom DB `inquiries.commodity` (saat itu tetap ada), `prf.commodity` enum, `goods_name` (tak diubah, hanya jadi satu-satunya field).
+
+Build clean 2590 modules, 1.72s. Lint 160 = net-zero — **klaim commit sendiri**. Nol perubahan DB dari batch ini sendiri (kolom belum di-drop).
+
+---
+
+**B4 — 25 Jul 2026 (backfill + drop kolom).** SQL dijalankan manual oleh Den, **DIREKAM sebagai migrasi di sesi terpisah SEBELUM sesi doc-keeper ini dimulai**.
+
+**Urutan SQL (sudah live):**
+1. **Backup:** `CREATE TABLE public.backup_b4_inquiries_20260725 AS SELECT * FROM public.inquiries;` — backup penuh SEBELUM apa pun disentuh.
+2. **Backfill:** `UPDATE public.inquiries SET goods_name = NULLIF(TRIM(commodity), '') WHERE deleted_at IS NULL AND commodity IS NOT NULL AND TRIM(commodity) <> '' AND (goods_name IS NULL OR goods_name = '') AND COALESCE(status, '') NOT IN ('WON', 'CANCELLED');` — fill-empty-only (tak menimpa `goods_name` yang sudah terisi), dikecualikan status `WON`/`CANCELLED` (deal sudah selesai, nama barang lama tak lagi relevan dibackfill) dan baris soft-deleted. **Hasil nyata: 80 baris ter-update.**
+3. **Drop:** `ALTER TABLE public.inquiries DROP COLUMN commodity;`
+
+**Dasar keamanan drop** (dari `AUDIT_B4_READINESS.md`, audit independen SEBELUM drop dijalankan): nol pembaca `inquiries.commodity` di `src/`/Edge Functions, nol CHECK/FK/index/view/trigger DB-side yang bergantung padanya, snapshot menunjukkan kolom `text` polos tanpa constraint apa pun.
+
+**⚠️ OPEN ITEM — BELUM dikerjakan, dicatat sebagai temuan terbuka, BUKAN task selesai (dan BUKAN tech debt baru — sengaja belum dipromosikan, menunggu keputusan Den):** `goods_name` saat ini **TIDAK wajib diisi** di form Inquiry (`InquiryFormPage.jsx` fungsi `validate()` hanya cek `prospect_id`/`customer_id`/`service_type` — `goods_name` absen total dari validasi, field-nya juga tak ber-`required`). Per audit: **19 inquiry aktif punya `goods_name` kosong** (angka PASCA-backfill, per 25 Jul — beda dari "80 baris" yang itu angka SEBELUM backfill khusus untuk baris ber-commodity-tapi-goods_name-kosong; 19 mencakup baris yang dari awal dua-duanya kosong, tak tersentuh backfill sama sekali). Artinya inquiry baru MASIH BISA lahir tanpa nama barang apa pun hari ini — keputusan apakah field ini perlu diwajibkan adalah keputusan bisnis terpisah, belum diambil, belum dikerjakan.
+
+**DUA FILE MIGRASI BARU** (sudah ada di repo sebelum sesi doc-keeper ini dimulai; isinya diverifikasi doc-keeper via `Read`, **TIDAK diubah di sesi ini**):
+1. **`supabase/migrations/20260725000005_arsip_b1_prf_goods_fields.sql`** — arsip 3× `ALTER TABLE public.prf ADD COLUMN IF NOT EXISTS` (goods_name/un_number/imo_class). Idempotent native, tanpa DO block.
+2. **`supabase/migrations/20260725000006_b4_drop_inquiries_commodity.sql`** — arsip 3-step di atas: STEP 1 `CREATE TABLE IF NOT EXISTS backup_b4_inquiries_20260725 AS SELECT * FROM inquiries` (backup) → STEP 2 DO block ber-guard (skip kalau kolom `commodity` sudah tak ada; UPDATE dijalankan via `EXECUTE` dynamic SQL supaya referensi kolom baru di-resolve saat runtime, bukan saat compile — replay AMAN sesudah kolomnya sudah tak ada) → STEP 3 `ALTER TABLE inquiries DROP COLUMN IF EXISTS commodity` (idempotent native).
+
+**Tabel backup `backup_b4_inquiries_20260725`** — JARING PENGAMAN, **JANGAN di-drop sendirian**; nasibnya diputuskan BERSAMA tabel backup lain yang sudah menumpuk (rujuk `08_TECH_DEBT` TD-128 + Quick Reference `CLAUDE.md`) — drop semua sekaligus saat aman, lalu SATU `pg_dump`. **Menambah lagi tumpukan tabel backup** yang menunggu drop-sekaligus.
+
+**Kesiapan drop di sisi kode: diverifikasi `AUDIT_B4_READINESS.md`** (audit terpisah 25 Jul, dibaca doc-keeper sebagai referensi — isinya tidak diulang di sini). Verdict audit saat ditulis: "AMAN DI SISI KODE — nol dependency ditemukan... TAPI BELUM AMAN untuk dieksekusi langsung" (dua bloker: backfill belum jalan + B1/B3 nol jejak dokumentasi). **Kedua bloker itu kini tertutup:** backfill sudah jalan (80 baris, lihat di atas), dan entri PROGRESS ini menutup bloker dokumentasi.
+
+**⚠️ Temuan audit LAIN yang TIDAK direkonsiliasi di sini (di luar rangkaian B1/B3/B4, dicatat agar tak hilang):** `AUDIT_B4_READINESS.md` juga menemukan **5 tabel backup dari rangkaian dedup akun yang tak terdaftar** di `CLAUDE.md`/TD-128 (`backup_dedup_accounts_20260725`, `_activities_`, `_alliance_`, `_inquiries_`, `_quotations_20260725`) — menghitung **13** tabel backup di snapshot (25 Jul 11:58), bukan 8 seperti yang tercatat. **Ini temuan TERPISAH dari rangkaian B4** (dedup akun ≠ Inquiry/PRF) — **belum direkonsiliasi** di sesi ini (di luar scope task ini), diteruskan ke Den sebagai reminder terpisah.
+
+Detail: `03_DATA_MODEL` (`inquiries`, `prf`, gotcha #10) + `08_TECH_DEBT` TD-107 (koreksi item `commodity`) + `09_ROADMAP` (baris PRF + Inquiry, dikoreksi) + `CLAUDE.md` Quick Reference (tabel backup) + Recent (25 Jul 2026).
+
+---
+
 ### Arsip migrasi dedup akun — 4 file migrasi (utang JEJAK lunas) + TD-128
 
 **Ringkas:** **4 file migrasi BARU** di `supabase/migrations/` + **TD-128** ditambahkan ke `08_TECH_DEBT.md`. **NOL SQL dijalankan di sesi ini, NOL perubahan DB, NOL `pg_dump`, NOL commit.** Ini **ARSIP** — merekam SQL dedup akun yang **SUDAH dijalankan MANUAL di produksi 25 Jul** (per Den) tapi selama ini **0 jejak di repo**. Batch ini **melunasi utang JEJAK**, bukan menambah objek DB baru.
