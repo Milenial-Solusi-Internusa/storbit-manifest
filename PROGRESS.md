@@ -2,6 +2,30 @@
 
 ## 2026-07-25
 
+### Arsip migrasi dedup akun — 4 file migrasi (utang JEJAK lunas) + TD-128
+
+**Ringkas:** **4 file migrasi BARU** di `supabase/migrations/` + **TD-128** ditambahkan ke `08_TECH_DEBT.md`. **NOL SQL dijalankan di sesi ini, NOL perubahan DB, NOL `pg_dump`, NOL commit.** Ini **ARSIP** — merekam SQL dedup akun yang **SUDAH dijalankan MANUAL di produksi 25 Jul** (per Den) tapi selama ini **0 jejak di repo**. Batch ini **melunasi utang JEJAK**, bukan menambah objek DB baru.
+
+**Latar.** Dedup akun (merge 8 grup + hard-block unik-per-entitas + fungsi fuzzy) sudah LIVE sejak 25 Jul, tapi tak satu pun berjejak di `schema_snapshot.sql` maupun `supabase/migrations/` (diverifikasi doc-keeper di sesi sebelumnya via grep: 0 hit). CLAUDE.md + entri PROGRESS "lapisan UX dedup" menandainya "UTANG JEJAK MENUMPUK — 4 hal". Keempat file di bawah menutup utang itu.
+
+**EMPAT FILE (verbatim — tak diubah doc-keeper, sesuai instruksi Den):**
+1. **`20260725000001_dedup_merge_7_grup.sql`** — merge 7 grup duplikat identik-setelah-normalisasi (per-entitas MSI). DO-block ber-**skip-guard** (`IF EXISTS akun-drop sudah soft-deleted → RETURN`), UPDATE FK anak (`activities.account_id` · `inquiries.prospect_id`/`customer_id` · `quotations.prospect_id`/`customer_id`) ke `keep_id`, rename akun keep jadi `HISAKA WORKS INDONESIA`, soft-delete 7 akun drop, guard `dangling=0` & `del=7` (RAISE bila meleset).
+2. **`20260725000002_dedup_merge_alliance.sql`** — merge 3 akun ALLIANCE (COSMETIC/COSMETICS/ALLIANC) → 1 customer. Skip-guard sama + guard `dangling=0` & `del=2`.
+3. **`20260725000003_dedup_hardblock.sql`** — `CREATE EXTENSION IF NOT EXISTS pg_trgm`, `CREATE OR REPLACE FUNCTION public.normalize_account_name(text)` (IMMUTABLE PARALLEL SAFE — buang PT/CV/TBK + non-alfanumerik + lowercase), `CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_norm_name_per_entitas ON accounts (company_id, normalize_account_name(name)) WHERE deleted_at IS NULL`. **Idempotent.**
+4. **`20260725000004_check_similar_accounts.sql`** — `CREATE OR REPLACE FUNCTION public.check_similar_accounts(p_name text, p_company_id uuid) RETURNS TABLE(id uuid, name text, similarity real) LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'` (ambang 0.6, `LIMIT 5`, hanya `id`+`name`+skor) + `GRANT EXECUTE … TO authenticated`. **Idempotent.**
+
+**Skip-guard vs idempotent — aturan rebuild.** File 1 & 2 = data-fix → **skip-guard** (`IF EXISTS … RETURN`) sehingga **aman di-skip** saat `supabase db reset` (tak menyapu ulang / menggandakan pembersihan data yang sudah ter-merge). File 3 & 4 = DDL → **idempotent** (`IF NOT EXISTS`/`OR REPLACE`) sehingga **aman di-replay**.
+
+**TD-128 (MEDIUM) — RESOLVED (jejak), 2 utang manual sisa.** Ditambahkan setelah TD-127 di `08_TECH_DEBT.md` (sudah final, tak diubah lagi). Utang JEJAK lunas oleh keempat file arsip. **DUA sisa manual (di luar wewenang doc-keeper — butuh Den):** **(1)** `schema_snapshot.sql` **belum di-refresh** via `pg_dump` — snapshot masih tak memuat keempat objek; **(2)** **6 tabel backup lama (18–23 Jul) belum di-drop** — backup dedup 25 Jul + dua backup leadpool (24 Jul) sengaja **ditahan sebagai jaring pengaman**; drop yang lama saja, lalu **satu** `pg_dump` menutup keduanya.
+
+**⚠️ Bedakan tegas: "berjejak migrasi" ≠ "ada di snapshot".** Utang JEJAK (file migrasi) lunas; utang SNAPSHOT (`pg_dump`) belum. Sampai `pg_dump` jalan, `schema_snapshot.sql` **tetap MENYESATKAN untuk `accounts`** (memperlihatkan `name` tanpa penjagaan unik padahal hard-block per-entitas aktif) → sumber kebenaran keempat objek = **file migrasinya**, bukan snapshot.
+
+**⚠️ Atribusi jujur.** Keempat objek LIVE di produksi = **pernyataan Den** (doc-keeper tak query DB). `check_similar_accounts` (file 4) kini **dikonfirmasi dijalankan + tested**: `SELECT check_similar_accounts('ALLIANCE COSMETIC', '<uuid MSI>')` balik 3 baris (similarity 1.0/0.842/0.619), dan smoke test UI 25 Jul membuktikan warning fuzzy muncul di jalur Prospect **dan** Customer CRM — tak lagi sekadar bersandar brief. Yang doc-keeper verifikasi sendiri: keempat file `.sql` ADA (`git status` → 4 untracked), isinya (skip-guard/idempotent/DDL), TD-128 final. **NOL SQL dijalankan / NOL `pg_dump` / NOL commit** dari sesi ini.
+
+Detail: `08_TECH_DEBT` TD-128 + `03_DATA_MODEL` (`accounts` + RPC `check_similar_accounts` + gotcha #10 — klaim "belum berjejak" dikoreksi in-place) + `05_WORKFLOW_MAP` §CRM Gate & Approval.
+
+---
+
 ### Picker akun form Inquiry: `<select>` native → searchable combobox (`AccountPicker`) — UI murni
 
 **Ringkas:** **2 file** — **1 BARU** `src/components/AccountPicker.jsx` + **1 edit** `src/modules/crm/InquiryFormPage.jsx` (hanya blok picker Section 01). **NOL perubahan DB/RLS/migrasi/query-server.** Diverifikasi doc-keeper: `git status` = tepat kedua file itu (`M InquiryFormPage.jsx` + `?? AccountPicker.jsx`), `ProductPicker.jsx` **NOL diff** (`git diff --stat HEAD` kosong).
@@ -65,6 +89,8 @@ Detail: `05_WORKFLOW_MAP` §CRM (bullet "Akun Lead Pool tak boleh dipakai…" �
 **Konsekuensinya tegas: `schema_snapshot.sql` kini menyesatkan untuk `accounts`** — snapshot **tidak memperlihatkan** bahwa nama akun sudah dijaga UNIQUE per entitas, padahal **penegakannya sudah aktif**. Pembaca yang mengandalkan snapshot akan menyimpulkan "nama akun bebas duplikat" dan salah. Ini persis kasus yang diperingatkan aturan repo: *"snapshot bilang objek tidak ada ≠ objeknya tidak ada — bandingkan tanggal, lalu TANYA."*
 
 **PENGINGAT MANUAL (git tak tahu):** **(a)** jalankan SQL `check_similar_accounts` — **tanpa ini fitur batch ini mati total**; **(b)** rekam **keempat** utang di atas sebagai file migrasi; **(c)** `pg_dump` untuk memuat keempatnya — **menambah** utang dump yang sudah tercatat kemarin untuk `backup_leadpool_c1_won_20260724` → **satu dump menutup semuanya**, jangan dicicil.
+
+**✅ [KOREKSI SUSULAN 25 Jul — kedua poin di atas SUDAH TIDAK BERLAKU, jangan dibaca sebagai kondisi hari ini:** (b) direkam via `20260725000001`–`000004` (lihat entri "Arsip migrasi dedup akun" di atas) → utang JEJAK LUNAS, **TD-128 RESOLVED (jejak)**. (a) `check_similar_accounts` **dijalankan manual DAN TESTED** — `SELECT check_similar_accounts('ALLIANCE COSMETIC', '<uuid MSI>')` balik 3 baris (similarity 1.0/0.842/0.619), dan smoke test UI 25 Jul membuktikan warning **"Mirip dengan: ALLIANCE COSMETICS"** memang **muncul** di jalur Prospect **dan** Customer CRM → klaim baris 81 di atas *"fitur fuzzy di KETIGA jalur BELUM BISA JALAN … gagal SENYAP"* **TIDAK BERLAKU LAGI**, fuzzy **JALAN**. Sisa hanya (c) — 2 utang MANUAL: refresh `pg_dump` + drop 6 backup lama 18–23 Jul; snapshot **tetap** menyesatkan sampai itu dijalankan.]**
 
 Detail lain: `03_DATA_MODEL` (`accounts` + RPC + gotcha #10) · `05_WORKFLOW_MAP` §CRM Gate & Approval · `04_ROLE_PERMISSION_MATRIX` §4 · `09_ROADMAP` Keputusan #20 (status berubah).
 
