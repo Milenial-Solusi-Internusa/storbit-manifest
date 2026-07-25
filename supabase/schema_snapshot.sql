@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict JZRF6jgCotShbgu5hl1F8ZIjtV5yafVQMG2VnScZLYpVxhOHH6ieMdZM36LDXHK
+\restrict DGehahikS3blVbNgWZczZYUZveRAGo4XR5GFnGq7PyDRP2XxzB8hDsBkGU3fe1K
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -248,6 +248,32 @@ BEGIN
   END;
   RETURN NEW;
 END;
+$$;
+
+
+--
+-- Name: check_similar_accounts(text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_similar_accounts(p_name text, p_company_id uuid) RETURNS TABLE(id uuid, name text, similarity real)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  WITH param AS (
+    SELECT public.normalize_account_name(p_name) AS norm,
+           0.6::real                             AS ambang
+  )
+  SELECT a.id,
+         a.name,
+         public.similarity(public.normalize_account_name(a.name), p.norm) AS similarity
+  FROM public.accounts a
+  CROSS JOIN param p
+  WHERE a.company_id = p_company_id
+    AND a.deleted_at IS NULL
+    AND p.norm <> ''
+    AND public.similarity(public.normalize_account_name(a.name), p.norm) >= p.ambang
+  ORDER BY 3 DESC, a.name
+  LIMIT 5;
 $$;
 
 
@@ -1022,6 +1048,19 @@ BEGIN
   UPDATE delivery_notes SET status='delivered', delivered_at=now() WHERE id=p_delivery_note_id;
   PERFORM sp_recompute_status(v_cust, v_sp);
 END; $$;
+
+
+--
+-- Name: normalize_account_name(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.normalize_account_name(p_name text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+  SELECT lower(regexp_replace(
+           regexp_replace(coalesce(p_name,''), '\y(PT|CV|TBK)\y\.?', '', 'gi'),
+           '[^a-zA-Z0-9]', '', 'g'));
+$$;
 
 
 --
@@ -2684,6 +2723,352 @@ CREATE TABLE public.audit_logs (
     ip_address text,
     user_agent text,
     notes text
+);
+
+
+--
+-- Name: backup_dedup_accounts_20260725; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_dedup_accounts_20260725 (
+    id uuid,
+    company_id uuid,
+    name text,
+    legal_name character varying,
+    customer_type character varying,
+    tax_id character varying,
+    address text,
+    city character varying,
+    country character varying,
+    phone character varying,
+    email character varying,
+    pic_name character varying,
+    pic_phone character varying,
+    pic_email character varying,
+    source character varying,
+    assigned_to uuid,
+    pipeline_stage character varying,
+    lost_reason text,
+    converted_at timestamp with time zone,
+    converted_to uuid,
+    payment_terms_id uuid,
+    currency_code character varying,
+    credit_limit numeric,
+    notes text,
+    is_active boolean,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    estimated_closing_date date,
+    assigned_profile uuid,
+    company_prefix text,
+    won_reason text,
+    bant_commodity text,
+    bant_origin text,
+    bant_destination text,
+    bant_frequency text,
+    bant_current_vendor text,
+    bant_payment text,
+    bant_decision_maker text,
+    bant_score integer,
+    account_status character varying(50),
+    owner_company_id uuid,
+    tier character varying(20),
+    code text,
+    nomor_kontrak text,
+    default_dc text,
+    last_activity_at timestamp with time zone,
+    became_customer_at timestamp with time zone,
+    estimated_value numeric,
+    bant_budget smallint,
+    bant_authority smallint,
+    bant_need smallint,
+    bant_timeline smallint,
+    stage_changed_at timestamp with time zone,
+    is_in_lead_pool boolean,
+    lead_pool_reason text,
+    lead_pool_at timestamp with time zone,
+    pull_justification text,
+    pull_requested_at timestamp with time zone,
+    pull_approved_by uuid,
+    pull_approved_at timestamp with time zone,
+    pull_status text,
+    is_odoo_customer boolean
+);
+
+
+--
+-- Name: backup_dedup_activities_20260725; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_dedup_activities_20260725 (
+    id uuid,
+    company_id uuid,
+    account_id uuid,
+    inquiry_id uuid,
+    quotation_id uuid,
+    assigned_to uuid,
+    type text,
+    status text,
+    scheduled_for date,
+    activity_time time without time zone,
+    completed_at timestamp with time zone,
+    prospect_name text,
+    contact_name text,
+    contact_phone text,
+    outcome text,
+    notes text,
+    next_action text,
+    next_action_date date,
+    details jsonb,
+    migrated_from text,
+    created_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone
+);
+
+
+--
+-- Name: backup_dedup_alliance_20260725; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_dedup_alliance_20260725 (
+    id uuid,
+    company_id uuid,
+    name text,
+    legal_name character varying,
+    customer_type character varying,
+    tax_id character varying,
+    address text,
+    city character varying,
+    country character varying,
+    phone character varying,
+    email character varying,
+    pic_name character varying,
+    pic_phone character varying,
+    pic_email character varying,
+    source character varying,
+    assigned_to uuid,
+    pipeline_stage character varying,
+    lost_reason text,
+    converted_at timestamp with time zone,
+    converted_to uuid,
+    payment_terms_id uuid,
+    currency_code character varying,
+    credit_limit numeric,
+    notes text,
+    is_active boolean,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    estimated_closing_date date,
+    assigned_profile uuid,
+    company_prefix text,
+    won_reason text,
+    bant_commodity text,
+    bant_origin text,
+    bant_destination text,
+    bant_frequency text,
+    bant_current_vendor text,
+    bant_payment text,
+    bant_decision_maker text,
+    bant_score integer,
+    account_status character varying(50),
+    owner_company_id uuid,
+    tier character varying(20),
+    code text,
+    nomor_kontrak text,
+    default_dc text,
+    last_activity_at timestamp with time zone,
+    became_customer_at timestamp with time zone,
+    estimated_value numeric,
+    bant_budget smallint,
+    bant_authority smallint,
+    bant_need smallint,
+    bant_timeline smallint,
+    stage_changed_at timestamp with time zone,
+    is_in_lead_pool boolean,
+    lead_pool_reason text,
+    lead_pool_at timestamp with time zone,
+    pull_justification text,
+    pull_requested_at timestamp with time zone,
+    pull_approved_by uuid,
+    pull_approved_at timestamp with time zone,
+    pull_status text,
+    is_odoo_customer boolean
+);
+
+
+--
+-- Name: backup_dedup_inquiries_20260725; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_dedup_inquiries_20260725 (
+    id uuid,
+    company_id uuid,
+    inquiry_no text,
+    prospect_id uuid,
+    customer_id uuid,
+    service_type character varying,
+    route text,
+    commodity text,
+    estimated_volume text,
+    notes text,
+    status character varying,
+    created_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    deadline_quote date,
+    pol text,
+    pod text,
+    incoterms text[],
+    container_types text[],
+    goods_name text,
+    hs_code text,
+    weight_kg numeric(12,2),
+    volume_cbm numeric(12,2),
+    cargo_types text[],
+    un_number text,
+    imo_class text,
+    has_msds text,
+    additional_services text[],
+    dimension text,
+    pickup_address text,
+    delivery_address text,
+    won_reason text,
+    lost_reason text,
+    estimated_value numeric
+);
+
+
+--
+-- Name: backup_dedup_quotations_20260725; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_dedup_quotations_20260725 (
+    id uuid,
+    company_id uuid,
+    quotation_no text,
+    revision integer,
+    inquiry_id uuid,
+    prospect_id uuid,
+    customer_id uuid,
+    service_type character varying,
+    valid_until date,
+    payment_terms_id uuid,
+    currency_code character varying,
+    notes text,
+    terms text,
+    subtotal numeric(15,2),
+    tax_amount numeric(15,2),
+    total_amount numeric(15,2),
+    status character varying,
+    sent_at timestamp with time zone,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    usd_rate numeric(15,2),
+    route text,
+    pricing_done_at timestamp with time zone,
+    quote_sent_at timestamp with time zone,
+    discount_pct numeric,
+    margin_floor numeric,
+    internal_notes text,
+    quote_date date,
+    vat_rate numeric,
+    attention_to text,
+    pickup_address text,
+    delivery_address text,
+    cargo_mode text,
+    gw text,
+    dimension text,
+    cw text,
+    cbm text,
+    container_type text,
+    container_qty integer,
+    exchange_rates jsonb,
+    prf_id uuid
+);
+
+
+--
+-- Name: backup_leadpool_c1_won_20260724; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_leadpool_c1_won_20260724 (
+    id uuid,
+    company_id uuid,
+    name text,
+    legal_name character varying,
+    customer_type character varying,
+    tax_id character varying,
+    address text,
+    city character varying,
+    country character varying,
+    phone character varying,
+    email character varying,
+    pic_name character varying,
+    pic_phone character varying,
+    pic_email character varying,
+    source character varying,
+    assigned_to uuid,
+    pipeline_stage character varying,
+    lost_reason text,
+    converted_at timestamp with time zone,
+    converted_to uuid,
+    payment_terms_id uuid,
+    currency_code character varying,
+    credit_limit numeric,
+    notes text,
+    is_active boolean,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    estimated_closing_date date,
+    assigned_profile uuid,
+    company_prefix text,
+    won_reason text,
+    bant_commodity text,
+    bant_origin text,
+    bant_destination text,
+    bant_frequency text,
+    bant_current_vendor text,
+    bant_payment text,
+    bant_decision_maker text,
+    bant_score integer,
+    account_status character varying(50),
+    owner_company_id uuid,
+    tier character varying(20),
+    code text,
+    nomor_kontrak text,
+    default_dc text,
+    last_activity_at timestamp with time zone,
+    became_customer_at timestamp with time zone,
+    estimated_value numeric,
+    bant_budget smallint,
+    bant_authority smallint,
+    bant_need smallint,
+    bant_timeline smallint,
+    stage_changed_at timestamp with time zone,
+    is_in_lead_pool boolean,
+    lead_pool_reason text,
+    lead_pool_at timestamp with time zone,
+    pull_justification text,
+    pull_requested_at timestamp with time zone,
+    pull_approved_by uuid,
+    pull_approved_at timestamp with time zone,
+    pull_status text,
+    is_odoo_customer boolean
 );
 
 
@@ -7734,6 +8119,13 @@ CREATE UNIQUE INDEX sp_btb_no_unique_live ON public.sp_btb USING btree (customer
 
 
 --
+-- Name: uq_accounts_norm_name_per_entitas; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_accounts_norm_name_per_entitas ON public.accounts USING btree (company_id, public.normalize_account_name(name)) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: hrga_approval_configs set_hrga_approval_configs_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -10835,6 +11227,42 @@ CREATE POLICY audit_logs_read ON public.audit_logs FOR SELECT USING (public.is_a
 
 
 --
+-- Name: backup_dedup_accounts_20260725; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_dedup_accounts_20260725 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: backup_dedup_activities_20260725; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_dedup_activities_20260725 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: backup_dedup_alliance_20260725; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_dedup_alliance_20260725 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: backup_dedup_inquiries_20260725; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_dedup_inquiries_20260725 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: backup_dedup_quotations_20260725; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_dedup_quotations_20260725 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: backup_leadpool_c1_won_20260724; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_leadpool_c1_won_20260724 ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: backup_leadpool_trap_20260724; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -13169,5 +13597,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict JZRF6jgCotShbgu5hl1F8ZIjtV5yafVQMG2VnScZLYpVxhOHH6ieMdZM36LDXHK
+\unrestrict DGehahikS3blVbNgWZczZYUZveRAGo4XR5GFnGq7PyDRP2XxzB8hDsBkGU3fe1K
 
