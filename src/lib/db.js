@@ -119,13 +119,15 @@ export function customerFromDb(row) {
 }
 
 export function customerToDb(c) {
-  // Start with the known standard field mapping
+  // Start with the known standard field mapping.
+  // pic_name/pic_email SENGAJA TIDAK ditulis lagi (batch "kunci pic_*" 26 Jul
+  // 2026) — kelola kontak lewat tab Kontak (tabel contacts). customerFromDb()
+  // masih memetakan picName/picEmail (dipakai CustomerModal untuk menampilkan
+  // nilai lama di field yang kini read-only), tapi arah tulis ini berhenti di sini.
   const payload = {
     code:      c.code,
     name:      c.name,
     default_dc:c.defaultDC || c.defaultDc || '',
-    pic_name:  c.picName   || '',
-    pic_email: c.picEmail  || '',
     active:    c.active !== false,
   };
   // Append any custom fields — columns that are not in the standard app-level keys
@@ -216,7 +218,7 @@ export async function listCustomers() {
   // passes through harmlessly as custom fields.
   const { data, error } = await supabase
     .from('accounts')
-    .select('*')
+    .select('*, contacts(id, name, email, phone, is_primary, deleted_at)')
     .eq('account_status', 'customer')
     .is('deleted_at', null)
     .order('name');

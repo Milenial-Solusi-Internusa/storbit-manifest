@@ -4210,16 +4210,17 @@ const selectOnFocus = (e) => { if (e.currentTarget.type === 'number') e.currentT
 // onBlur = prop OPSIONAL (menerima nilai, bukan event) — dipakai pre-check nama
 // duplikat di CustomerModal. Aditif: 14 pemakaian lain tak mengirimnya, jadi
 // `onBlur?.()` no-op dan styling border tetap jalan seperti semula.
-function Input({ label, type='text', value, onChange, placeholder, onBlur }) {
+function Input({ label, type='text', value, onChange, placeholder, onBlur, disabled }) {
   return (
     <div>
       <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>{label}</label>
       <input
         type={type} value={value ?? ''}
+        disabled={disabled}
         onWheel={blurOnWheel}
-        onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        onChange={e => onChange?.(e.target.value)} placeholder={placeholder}
         className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none transition-colors"
-        style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}
+        style={{ background: disabled ? PASTEL.lineSoft : 'white', border: `1px solid ${PASTEL.line}`, cursor: disabled ? 'not-allowed' : 'text' }}
         onFocus={e => { e.currentTarget.style.borderColor = PASTEL.peachDeep; selectOnFocus(e); }}
         onBlur={e => { e.currentTarget.style.borderColor = PASTEL.line; onBlur?.(e.target.value); }}
       />
@@ -4369,6 +4370,10 @@ function CustomersPage({ customers, rows, onAdd, onEdit, onDelete, role }) {
         )}
         {customers.map(c => {
           const usage = usageCount(c.name);
+          // Kontak primary dari embed contacts (LEFT JOIN — akun tanpa kontak
+          // dapat array kosong, tak hilang dari daftar) — pengganti pic_name/
+          // pic_email (batch "kunci pic_*" 26 Jul 2026). Tanpa fallback ke pic_*.
+          const pic = (Array.isArray(c.contacts) ? c.contacts : []).find(k => k.is_primary && !k.deleted_at) || null;
           return (
             <div key={c.id} className="rounded-3xl p-5 border transition-all hover:shadow-lg" style={{ background: 'white', borderColor: PASTEL.line, opacity: c.active === false ? 0.55 : 1 }}>
               <div className="flex items-start justify-between mb-3">
@@ -4390,8 +4395,8 @@ function CustomersPage({ customers, rows, onAdd, onEdit, onDelete, role }) {
 
               <div className="space-y-1.5 text-xs mb-4">
                 <CustRow label="Default DC" value={c.defaultDC || '—'}/>
-                <CustRow label="PIC" value={c.picName || '—'}/>
-                <CustRow label="Email" value={c.picEmail || '—'} mono={!!c.picEmail}/>
+                <CustRow label="PIC" value={pic?.name || '—'}/>
+                <CustRow label="Email" value={pic?.email || '—'} mono={!!pic?.email}/>
                 <CustRow label="Used in SP" value={`${usage} ${usage === 1 ? 'item' : 'items'}`} highlight={usage > 0}/>
               </div>
 
@@ -4527,8 +4532,12 @@ function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave, co
           </datalist>
         </div>
 
-        <Input label="PIC Name" value={data.picName} onChange={v=>update('picName', v)} placeholder="Nama PIC dari customer"/>
-        <Input label="PIC Email" value={data.picEmail} onChange={v=>update('picEmail', v)} placeholder="pic@customer.com"/>
+        {/* Read-only sejak batch "kunci pic_*" 26 Jul 2026 — kelola kontak di tab
+            Kontak (Detail Account, CRM). Field dipertahankan (bukan dihapus)
+            supaya nilai lama tetap terlihat, tak diam-diam hilang dari tampilan. */}
+        <div className="text-[11px]" style={{ color: PASTEL.inkMute, marginTop: -4 }}>Kelola kontak di tab Kontak.</div>
+        <Input label="PIC Name" value={data.picName} disabled/>
+        <Input label="PIC Email" value={data.picEmail} disabled/>
 
         <div>
           <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-2" style={{ color: PASTEL.inkMute }}>Status</label>

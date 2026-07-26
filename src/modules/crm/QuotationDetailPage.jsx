@@ -150,6 +150,11 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   const [generatingPDF,  setGeneratingPDF]  = useState(false);
   const [confirmSend,    setConfirmSend]    = useState(false);
   const [sending,        setSending]        = useState(false);
+  // Kontak utama akun tujuan quotation ini (prospect ATAU customer) — pengganti
+  // accounts.pic_email/pic_phone (batch "kunci pic_*" 26 Jul 2026). Satu quotation
+  // = satu detail view, jadi query tambahan tunggal ini aman (bukan risiko N+1
+  // list). Tidak ada fallback ke pic_* — kosong tampil apa adanya ('-').
+  const [primaryContact, setPrimaryContact] = useState(null);
 
   // ── Effect 1: fetch quotation + items (only re-runs when quotationId changes) ──
   useEffect(() => {
@@ -169,7 +174,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           currency_code, exchange_rates, margin_floor, vat_rate,
           attention_to, pickup_address, delivery_address, cargo_mode,
           gw, dimension, cw, cbm, container_type, container_qty,
-          prospect:accounts!quotations_prospect_id_fkey(name, address, city, pic_name, pic_email, pic_phone),
+          prospect:accounts!quotations_prospect_id_fkey(name, address, city),
           customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone),
           inquiry:inquiries!quotations_inquiry_id_fkey(inquiry_no)
         `)
@@ -196,6 +201,22 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
 
     return () => { cancelled = true; };
   }, [quotationId, showToast]);
+
+  // ── Effect 1b: fetch primary contact of the destination account (prospect OR
+  // customer) — once quot is loaded. Single extra query, single-record view. ──
+  useEffect(() => {
+    const accountId = quot?.prospect_id || quot?.customer_id;
+    if (!accountId) { setPrimaryContact(null); return; }
+    let cancelled = false;
+    supabase.from('contacts')
+      .select('id, name, email, phone')
+      .eq('account_id', accountId)
+      .eq('is_primary', true)
+      .is('deleted_at', null)
+      .maybeSingle()
+      .then(({ data }) => { if (!cancelled) setPrimaryContact(data || null); });
+    return () => { cancelled = true; };
+  }, [quot?.prospect_id, quot?.customer_id]);
 
   // ── Effect 2: fetch creator profile (only re-runs when user identity changes) ──
   useEffect(() => {
@@ -275,7 +296,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
     setGeneratingPDF(true);
     try {
       const blob = await pdf(
-        <QuotationPDF quot={quot} items={items} sections={sections} creatorProfile={creatorProfile} />
+        <QuotationPDF quot={quot} items={items} sections={sections} creatorProfile={creatorProfile} primaryContact={primaryContact} />
       ).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -567,8 +588,10 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
 
           {/* Customer details — dark-green label cell table */}
           {(() => {
-            const picEmail   = quot.prospect?.pic_email   || quot.customer?.email   || '-';
-            const picPhone   = quot.prospect?.pic_phone   || quot.customer?.phone   || '-';
+            // Kontak utama (contacts), bukan accounts.pic_email/pic_phone lagi —
+            // tanpa fallback ke pic_* kalau kosong.
+            const picEmail   = primaryContact?.email || quot.customer?.email || '-';
+            const picPhone   = primaryContact?.phone || quot.customer?.phone || '-';
             const custAddr   = [quot.prospect?.address || quot.customer?.address, quot.prospect?.city || quot.customer?.city].filter(Boolean).join(', ') || '-';
             const marketingName = creatorProfile?.full_name || profile?.full_name || user?.email || '-';
             const inquiryNo = quot.inquiry?.inquiry_no || '-';

@@ -589,7 +589,7 @@ function healthStatus(score) {
 // transaction/payment/NPS/complaint data exists (server-side or via a DB view).
 // Current score is derived ONLY from available signals — visits, BANT, pipeline,
 // and profile completeness — and is clearly labelled "preliminary". No new DB columns.
-function computeHealth(customer, prospect, visits) {
+function computeHealth(customer, prospect, visits, primaryContact) {
   const visitCount = visits.length;
   const engagement = Math.min(visitCount * 30, 100);
   const bantPct = prospect
@@ -600,7 +600,9 @@ function computeHealth(customer, prospect, visits) {
     : (stage === 'NEGOTIATION' || stage === 'PROPOSAL') ? 70
     : stage === 'QUALIFIED' ? 50
     : stage ? 30 : 0;
-  const profFields = [customer.phone, customer.email, customer.address, customer.pic_name, customer.tax_id, customer.payment_terms_id, customer.tier];
+  // pic_name diganti keberadaan kontak primary (tabel contacts) — kolom
+  // accounts.pic_name sengaja tak lagi dibaca (batch "kunci pic_*" 26 Jul 2026).
+  const profFields = [customer.phone, customer.email, customer.address, primaryContact, customer.tax_id, customer.payment_terms_id, customer.tier];
   const completeness = Math.round((profFields.filter(Boolean).length / profFields.length) * 100);
   const contract = (customer.contract_no || customer.payment_term?.name || customer.payment_terms_id) ? 100 : 40;
   const components = [
@@ -757,6 +759,24 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   const [docLoading,    setDocLoading]    = useState(false);
   const [docPrfs,       setDocPrfs]       = useState([]);
   const [docSOs,        setDocSOs]        = useState([]);
+
+  // ── Kontak utama (primary contact) — dibaca EAGER (bukan lazy seperti tab
+  // Kontak di bawah), karena dipakai header + Info Dasar yang tampil di tab
+  // default ('info'), bukan hanya saat tab Kontak dibuka. Sumber kebenaran
+  // pengganti accounts.pic_name/pic_phone/pic_email (batch "kunci pic_*" 26 Jul
+  // 2026) — kolom pic_* itu SENGAJA tidak lagi dibaca di sini; akun tanpa
+  // kontak primary tampil kosong ('—' / badge tak dirender), TANPA fallback. ──
+  const [primaryContact, setPrimaryContact] = useState(null);
+  useEffect(() => {
+    if (!id) { setPrimaryContact(null); return; }
+    supabase.from('contacts')
+      .select('id, name, email, phone')
+      .eq('account_id', id)
+      .eq('is_primary', true)
+      .is('deleted_at', null)
+      .maybeSingle()
+      .then(({ data }) => setPrimaryContact(data || null));
+  }, [id]);
 
   // ── Lazy tab data: Kontak (contacts) — beda dari Riwayat/Dokumen di atas, tab
   // ini bisa MENULIS, jadi fetch-nya sebuah fungsi reusable (fetchContacts di
@@ -1268,10 +1288,13 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       { l: 'City', v: txt(customer.city) },
       { l: 'Country', v: txt(customer.country || 'Indonesia') },
     ]},
+    // Sumber: kontak primary tabel contacts (bukan accounts.pic_name/pic_phone/
+    // pic_email lagi — batch "kunci pic_*" 26 Jul 2026). Akun tanpa kontak
+    // primary tampil '—' apa adanya, TANPA fallback ke pic_*.
     { label: 'PIC', icon: 'user', fields: [
-      { l: 'PIC Name', v: customer.pic_name ? <span style={S.who}><PicAvatar name={customer.pic_name} />{customer.pic_name}</span> : '—' },
-      { l: 'PIC Phone', v: txt(customer.pic_phone), mono: true },
-      { l: 'PIC Email', v: txt(customer.pic_email), mono: true },
+      { l: 'PIC Name', v: primaryContact?.name ? <span style={S.who}><PicAvatar name={primaryContact.name} />{primaryContact.name}</span> : '—' },
+      { l: 'PIC Phone', v: txt(primaryContact?.phone), mono: true },
+      { l: 'PIC Email', v: txt(primaryContact?.email), mono: true },
     ]},
   ];
   const komSections = [
@@ -1367,7 +1390,8 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
                 <span style={S.navyBadge}><Icon name="building" size={13} strokeWidth={2} />{coCode ? coCode + ' · ' : ''}{customer.source_company.name}</span>
               )}
               {tierCfg && <span style={{ ...S.badge, background: tierCfg.bg, color: tierCfg.fg }}><Icon name="award" size={13} strokeWidth={2} />Tier {customer.tier}</span>}
-              {customer.pic_name && <span style={S.picBadge}><PicAvatar name={customer.pic_name} size={20} />PIC {customer.pic_name}</span>}
+              {/* Sumber kontak primary (contacts), bukan accounts.pic_name lagi. */}
+              {primaryContact?.name && <span style={S.picBadge}><PicAvatar name={primaryContact.name} size={20} />PIC {primaryContact.name}</span>}
             </div>
           </div>
           <div style={S.tierValBox} className="cd-tierval">
@@ -1664,7 +1688,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
 
       {/* HEALTH SCORE */}
       {tab === 'health' && (() => {
-        const { score, components } = computeHealth(customer, prospect, visits);
+        const { score, components } = computeHealth(customer, prospect, visits, primaryContact);
         const st = healthStatus(score);
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

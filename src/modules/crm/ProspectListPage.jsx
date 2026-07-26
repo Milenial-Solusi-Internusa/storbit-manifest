@@ -45,6 +45,11 @@ const SOURCE_LABELS = {
 };
 
 const PAGE_SIZE = 20;
+// Kontak primary dari embed `contacts` (LEFT JOIN — akun tanpa kontak dapat
+// array kosong, bukan hilang dari hasil); dipilih client-side, bukan filter
+// server-side pada embed. Pengganti accounts.pic_name (batch "kunci pic_*" 26
+// Jul 2026).
+const primaryContactOf = (p) => (Array.isArray(p.contacts) ? p.contacts : []).find(k => k.is_primary && !k.deleted_at) || null;
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -108,14 +113,15 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
         .from('accounts')
         .select(`
           id, name, legal_name, customer_type, source,
-          pic_name, pic_phone, pic_email, phone, email, address, city, notes,
+          phone, email, address, city, notes,
           company_prefix, assigned_to, pipeline_stage, payment_terms_id,
           is_in_lead_pool,
           won_reason, lost_reason, converted_at, created_at,
           bant_commodity, bant_origin, bant_destination, bant_frequency,
           bant_current_vendor, bant_payment, bant_decision_maker, bant_score,
           bant_budget, bant_authority, bant_need, bant_timeline,
-          assigned_profile:profiles!prospects_assigned_to_fkey(full_name)
+          assigned_profile:profiles!prospects_assigned_to_fkey(full_name),
+          contacts(id, name, email, phone, is_primary, deleted_at)
         `, { count: 'exact' })
         // Semua akun pra-customer supaya lead/mql/sql tetap tampil di daftar pasca-backfill.
         // TODO: hapus 'lead_pool' setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
@@ -267,7 +273,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
                     <span style={{ marginLeft: 8, display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, letterSpacing: '.02em', background: '#F0EBE0', color: '#7A6A45', verticalAlign: 'middle' }}>Lead Pool</span>
                   ) : null}
                 </td>
-                <td style={{ padding: '12px 14px', color: C.inkSoft }}>{p.pic_name || '—'}</td>
+                <td style={{ padding: '12px 14px', color: C.inkSoft }}>{primaryContactOf(p)?.name || '—'}</td>
                 <td style={{ padding: '12px 14px' }}><SourceBadge source={p.source} /></td>
                 <td style={{ padding: '12px 14px' }}><StageBadge stage={p.pipeline_stage} /></td>
                 <td style={{ padding: '12px 14px' }}>
