@@ -96,12 +96,15 @@ const styles = StyleSheet.create({
   footHours: { fontSize: 7.5, color: '#FFB899', marginTop: 3 },
 });
 
-export default function QuotationPDF({ quot, items = [], sections = [], creatorProfile }) {
+export default function QuotationPDF({ quot, items = [], sections = [], creatorProfile, primaryContact }) {
   if (!quot) return null;
 
   const clientName = quot.prospect?.name || quot.customer?.name || '-';
-  const picEmail   = quot.prospect?.pic_email || quot.customer?.email || '-';
-  const picPhone   = quot.prospect?.pic_phone || quot.customer?.phone || '-';
+  // Kontak utama akun (tabel contacts) — bukan accounts.pic_email/pic_phone lagi
+  // (batch "kunci pic_*" 26 Jul 2026). Tanpa fallback ke pic_* kalau kosong;
+  // '-' dipakai apa adanya, sama seperti pola field kosong lain di dokumen ini.
+  const picEmail   = primaryContact?.email || quot.customer?.email || '-';
+  const picPhone   = primaryContact?.phone || quot.customer?.phone || '-';
   const custAddr   = [quot.prospect?.address || quot.customer?.address, quot.prospect?.city || quot.customer?.city].filter(Boolean).join(', ') || '-';
   const marketingName = creatorProfile?.full_name || '-';
   const positionName  = creatorProfile?.positions?.name || 'Sales Executive';
