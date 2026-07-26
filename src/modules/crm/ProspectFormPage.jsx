@@ -264,6 +264,10 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         ...form, ...customValues, company_id: profile.company_id,
         assigned_to: effectiveAssignedTo, payment_terms_id: form.payment_terms_id || null, updated_by: profile.id,
       };
+      // pic_name/pic_phone/pic_email SENGAJA TIDAK ditulis lagi (batch "kunci
+      // pic_*" 26 Jul 2026) — kelola kontak lewat tab Kontak (tabel contacts).
+      // Field-nya tetap ada di form (read-only), hanya dibuang dari payload di sini.
+      delete payload.pic_name; delete payload.pic_phone; delete payload.pic_email;
       // Jangan pernah MENULIS nilai stage yang sumbunya sudah pindah ke inquiry
       // (PROPOSAL/NEGOTIATION/WON/LOST) atau yang tak dikenal ('NURTURE'). Membuka
       // akun warisan lalu menyimpannya kini tidak menulis ulang stage lamanya —
@@ -369,11 +373,14 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                 </Field>
               </div>
 
-              {/* Row 3 — PIC */}
+              {/* Row 3 — PIC. Read-only sejak batch "kunci pic_*" 26 Jul 2026 —
+                  kelola kontak di tab Kontak (Detail Account). Field dipertahankan
+                  (bukan dihapus) supaya nilai lama tetap terlihat. */}
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: -4 }}>Kelola kontak di tab Kontak.</div>
               <div style={grid3}>
-                <Field label="PIC Name"><input value={form.pic_name} onChange={set('pic_name')} style={S.input} placeholder="Nama PIC…" /></Field>
-                <Field label="PIC Phone"><input value={form.pic_phone} onChange={set('pic_phone')} style={S.input} placeholder="+62…" /></Field>
-                <Field label="PIC Email"><input type="email" value={form.pic_email} onChange={set('pic_email')} style={S.input} placeholder="pic@perusahaan.co.id" /></Field>
+                <Field label="PIC Name"><input value={form.pic_name} disabled style={{ ...S.input, background: C.pageBg, cursor: 'not-allowed' }} /></Field>
+                <Field label="PIC Phone"><input value={form.pic_phone} disabled style={{ ...S.input, background: C.pageBg, cursor: 'not-allowed' }} /></Field>
+                <Field label="PIC Email"><input value={form.pic_email} disabled style={{ ...S.input, background: C.pageBg, cursor: 'not-allowed' }} /></Field>
               </div>
 
               {/* Row 4 */}

@@ -811,13 +811,16 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
 
   // Open the existing ProspectFormPage in CREATE mode, prefilled from the
   // activity (Option A: ProspectFormPage treats an id-less object as create).
+  // pic_name/pic_phone prefill DIHAPUS (batch "kunci pic_*" 26 Jul 2026) — form
+  // tujuan tak lagi menulis field itu, jadi prefill-nya cuma menyesatkan (field
+  // terlihat terisi tapi tak pernah tersimpan). Informasi kontak dari activity
+  // ini sengaja hilang saat konversi — dicatat TD-131 untuk alur penggantinya
+  // (buat baris contacts otomatis), bukan dikerjakan di sini.
   const openProspectFromActivity = (row) => {
     // Activity has no separate company name → use contact_name as the prospect
     // name (best available); user can refine company name in the form.
     setEditingProspect?.({
-      name:      row.contact_name  || '',
-      pic_name:  row.contact_name  || '',
-      pic_phone: row.contact_phone || '',
+      name: row.contact_name || '',
     });
     setShowProspectForm?.(true);
     setActiveMenu?.('crm-prospects');

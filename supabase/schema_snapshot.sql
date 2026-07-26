@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict H8fq72kWo6oaXXo0s4Fu6H5A5rLkUQuhF6o9I0QrGYeUiRmGEGU89k4a3Rz6Tsz
+\restrict 2SFog1mMij6WNCLzYaBN00Ga0v9V2rkESQJ40PdsuadDh2cMw036nzvBQNsQo58
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1785,7 +1785,8 @@ CREATE TABLE public.activities (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    deleted_at timestamp with time zone
+    deleted_at timestamp with time zone,
+    contact_id uuid
 );
 
 
@@ -3150,6 +3151,30 @@ COMMENT ON COLUMN public.companies.tax_id IS 'NPWP — Indonesian tax registrati
 
 
 --
+-- Name: contacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.contacts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    name text NOT NULL,
+    "position" text,
+    email text,
+    phone text,
+    role_type text,
+    is_primary boolean DEFAULT false NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    notes text,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT contacts_role_type_check CHECK (((role_type IS NULL) OR (role_type = ANY (ARRAY['decision_maker'::text, 'requester'::text, 'finance'::text, 'operations'::text, 'other'::text]))))
+);
+
+
+--
 -- Name: cost_centers; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4053,6 +4078,7 @@ CREATE TABLE public.inquiries (
     won_reason text,
     lost_reason text,
     estimated_value numeric,
+    contact_id uuid,
     CONSTRAINT inquiries_status_check CHECK (((status)::text = ANY ((ARRAY['OPEN'::character varying, 'IN_REVIEW'::character varying, 'QUOTED'::character varying, 'NEGOTIATION'::character varying, 'WON'::character varying, 'LOST'::character varying, 'CANCELLED'::character varying])::text[])))
 );
 
@@ -5844,6 +5870,14 @@ ALTER TABLE ONLY public.companies
 
 
 --
+-- Name: contacts contacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contacts
+    ADD CONSTRAINT contacts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cost_centers cost_centers_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6774,6 +6808,13 @@ CREATE INDEX idx_activities_company ON public.activities USING btree (company_id
 
 
 --
+-- Name: idx_activities_contact; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_activities_contact ON public.activities USING btree (contact_id);
+
+
+--
 -- Name: idx_activities_sched; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7159,6 +7200,20 @@ CREATE INDEX idx_companies_is_active ON public.companies USING btree (is_active)
 
 
 --
+-- Name: idx_contacts_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_contacts_account ON public.contacts USING btree (account_id);
+
+
+--
+-- Name: idx_contacts_company; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_contacts_company ON public.contacts USING btree (company_id);
+
+
+--
 -- Name: idx_cost_centers_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7443,6 +7498,13 @@ CREATE INDEX idx_hrga_requests_type ON public.hrga_requests USING btree (request
 --
 
 CREATE INDEX idx_inquiries_company_id ON public.inquiries USING btree (company_id);
+
+
+--
+-- Name: idx_inquiries_contact; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inquiries_contact ON public.inquiries USING btree (contact_id);
 
 
 --
@@ -7901,6 +7963,13 @@ CREATE UNIQUE INDEX uq_accounts_norm_name_per_entitas ON public.accounts USING b
 
 
 --
+-- Name: uq_contacts_one_primary; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_contacts_one_primary ON public.contacts USING btree (account_id) WHERE (is_primary AND (deleted_at IS NULL));
+
+
+--
 -- Name: hrga_approval_configs set_hrga_approval_configs_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8321,6 +8390,14 @@ ALTER TABLE ONLY public.activities
 
 ALTER TABLE ONLY public.activities
     ADD CONSTRAINT activities_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: activities activities_contact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT activities_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.contacts(id);
 
 
 --
@@ -8785,6 +8862,14 @@ ALTER TABLE ONLY public.chart_of_accounts
 
 ALTER TABLE ONLY public.chart_of_accounts
     ADD CONSTRAINT chart_of_accounts_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.chart_of_accounts(id);
+
+
+--
+-- Name: contacts contacts_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contacts
+    ADD CONSTRAINT contacts_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -9457,6 +9542,14 @@ ALTER TABLE ONLY public.hrga_requests
 
 ALTER TABLE ONLY public.inquiries
     ADD CONSTRAINT inquiries_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: inquiries inquiries_contact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inquiries
+    ADD CONSTRAINT inquiries_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.contacts(id);
 
 
 --
@@ -11097,6 +11190,46 @@ CREATE POLICY companies_read_own ON public.companies FOR SELECT TO authenticated
 --
 
 CREATE POLICY companies_super_admin_write ON public.companies TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+
+
+--
+-- Name: contacts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: contacts contacts_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY contacts_delete ON public.contacts FOR DELETE TO authenticated USING (public.is_super_admin());
+
+
+--
+-- Name: contacts contacts_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY contacts_insert ON public.contacts FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.accounts a
+  WHERE (a.id = contacts.account_id))));
+
+
+--
+-- Name: contacts contacts_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY contacts_select ON public.contacts FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.accounts a
+  WHERE (a.id = contacts.account_id))));
+
+
+--
+-- Name: contacts contacts_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY contacts_update ON public.contacts FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.accounts a
+  WHERE (a.id = contacts.account_id))));
 
 
 --
@@ -13342,5 +13475,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict H8fq72kWo6oaXXo0s4Fu6H5A5rLkUQuhF6o9I0QrGYeUiRmGEGU89k4a3Rz6Tsz
+\unrestrict 2SFog1mMij6WNCLzYaBN00Ga0v9V2rkESQJ40PdsuadDh2cMw036nzvBQNsQo58
 
