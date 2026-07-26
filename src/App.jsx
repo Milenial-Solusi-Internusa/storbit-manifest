@@ -20,6 +20,7 @@ import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
+import { useUrlState } from './hooks/useUrlState';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import { calcItem } from './lib/spCalc';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
@@ -2104,6 +2105,72 @@ export default function StorbitManifest() {
       setActiveMenu('crm-customers');
     }
   }, [activeMenu]);
+
+  // URL <-> activeMenu sync (query param `menu`). activeMenu stays the single
+  // source of truth; the URL is kept as a bookmarkable/refreshable mirror of
+  // it via useUrlState (src/hooks/useUrlState.js). 'home' matches the
+  // useState initializer's own default above (`localStorage.getItem
+  // ('nexus_last_menu') || 'home'`) — it's the unconditional fallback used by
+  // every AccessDeniedPage onGoHome in this file and is exempt from the FIX B
+  // guard's SYNTHETIC allow-list above, so it's confirmed universally
+  // accessible regardless of role.
+  const [urlMenu, setUrlMenu] = useUrlState('menu', 'home');
+  const [urlMenuReady, setUrlMenuReady] = useState(false);
+
+  // 1) Adopt the URL's *initial* ?menu= value into activeMenu — exactly once,
+  //    and only if the param was actually present (a bare '/' with no ?menu=
+  //    reads back as 'home' from the hook too, same as an explicit
+  //    '?menu=home' — checking the raw URL here keeps that case from
+  //    overwriting a legitimately-restored localStorage menu on every load
+  //    that simply has no menu param yet). Gated on the SAME permsLoaded
+  //    timing as the FIX B guard above (waiting avoids wrongly rejecting a
+  //    genuinely-allowed menu during the brief post-login fetch window).
+  //    Validated with canRenderPage — the same existence+permission gate
+  //    every page render in this file already uses — so a typo'd/forbidden
+  //    id is never adopted; activeMenu keeps whatever it already resolved to,
+  //    and effect (2) below scrubs the bad value out of the URL once it
+  //    starts running (triggered by urlMenuReady flipping true).
+  useEffect(() => {
+    if (urlMenuReady) return;
+    const permsLoaded = role === 'super_admin' || userPermissions.length > 0 || menuPermissions.length > 0;
+    if (!permsLoaded) return;
+    const hasUrlParam = new URLSearchParams(window.location.search).has('menu');
+    if (hasUrlParam && urlMenu !== activeMenu && canRenderPage(urlMenu)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveMenu(urlMenu);
+    }
+    setUrlMenuReady(true);
+  }, [role, userPermissions, menuPermissions, urlMenuReady, urlMenu, activeMenu, canRenderPage]);
+
+  // 2) Keep the URL mirroring activeMenu (write side) — gated on (1) having
+  //    resolved so it never fires with a not-yet-adopted activeMenu and
+  //    clobbers the URL's initial value before it gets validated. Also the
+  //    cleanup path for effect (1): if the URL had a bad/forbidden value,
+  //    urlMenuReady flipping true fires this and overwrites it with whatever
+  //    activeMenu actually is (removing the param entirely if that's 'home').
+  useEffect(() => {
+    if (!urlMenuReady) return;
+    setUrlMenu(activeMenu);
+  }, [activeMenu, urlMenuReady, setUrlMenu]);
+
+  // 3) Back/Forward: adopt a later external change to the URL, validated the
+  //    same way as (1). Deliberately reacts to `urlMenu` only — NOT
+  //    `activeMenu` (read fresh via closure instead) — because depending on
+  //    activeMenu here would also re-run this on ordinary in-app navigation
+  //    (effect 2 hasn't mirrored the new value into urlMenu yet in that same
+  //    pass), which would misread the still-stale urlMenu as an "external"
+  //    change and revert the user's own navigation.
+  useEffect(() => {
+    if (!urlMenuReady) return;
+    if (urlMenu === activeMenu) return;
+    if (canRenderPage(urlMenu)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveMenu(urlMenu);
+    } else {
+      setUrlMenu(activeMenu);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlMenu, urlMenuReady, canRenderPage, setUrlMenu]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
