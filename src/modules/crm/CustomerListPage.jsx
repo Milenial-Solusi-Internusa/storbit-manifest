@@ -105,6 +105,11 @@ const initials = (s) =>
 const colorFor = (s) => PIC_COLORS[[...(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % PIC_COLORS.length];
 // accounts model: status comes from account_status (legacy customers.status fallback)
 const statusOf = (c) => c.account_status || c.status || 'customer';
+// Kontak primary dari embed `contacts` (row.contacts = array, LEFT JOIN — akun
+// tanpa kontak dapat array kosong, bukan hilang dari hasil). Dipilih client-side
+// (bukan filter server-side pada embed) supaya tak bergantung pada perilaku
+// filter-on-embed PostgREST — pengganti accounts.pic_name/pic_phone/pic_email.
+const primaryContactOf = (c) => (Array.isArray(c.contacts) ? c.contacts : []).find(k => k.is_primary && !k.deleted_at) || null;
 
 // ─── Style tokens (ported from design) ──────────────────────────────────────────
 const P = {
@@ -191,6 +196,7 @@ function CustomerRow({ c, idx, onSelect, onEdit }) {
   const bg = h ? '#FBF4E6' : zebra ? '#FCF8F0' : 'transparent';
   const statusKey = statusOf(c);
   const lastAct = c.last_activity_at || c.updated_at || c.created_at;
+  const pic = primaryContactOf(c);
   return (
     <tr onClick={() => onSelect(c.id)} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{ background: bg, transition: 'background .12s ease', cursor: 'pointer' }}>
@@ -203,10 +209,10 @@ function CustomerRow({ c, idx, onSelect, onEdit }) {
       </td>
       <td style={{ ...P.td, ...P.legal, whiteSpace: 'normal', minWidth: 200 }}>{c.legal_name || '—'}</td>
       <td style={P.td}>
-        {c.pic_name ? (
+        {pic?.name ? (
           <span style={P.picCell}>
-            <span style={{ ...P.picAv, background: colorFor(c.pic_name) }}>{initials(c.pic_name)}</span>
-            {c.pic_name}
+            <span style={{ ...P.picAv, background: colorFor(pic.name) }}>{initials(pic.name)}</span>
+            {pic.name}
           </span>
         ) : <span style={{ color: '#A29684' }}>—</span>}
       </td>
@@ -338,9 +344,10 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         address:          form.address         || null,
         city:             form.city            || null,
         country:          form.country         || null,
-        pic_name:         form.pic_name        || null,
-        pic_phone:        form.pic_phone       || null,
-        pic_email:        form.pic_email       || null,
+        // pic_name/pic_phone/pic_email SENGAJA TIDAK ditulis lagi (batch "kunci
+        // pic_*" 26 Jul 2026) — kelola kontak lewat tab Kontak (tabel contacts).
+        // Field-nya tetap ada di form (read-only) supaya nilai lama tak hilang
+        // dari tampilan, tapi payload ini tak pernah menyentuhnya lagi.
         payment_terms_id: form.payment_terms_id || null,
         credit_limit:     form.credit_limit !== '' ? Number(form.credit_limit) : null,
         currency_code:    form.currency_code   || 'IDR',
@@ -455,12 +462,16 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
             </FG>
           </div>
 
-          {/* PIC */}
+          {/* PIC — read-only sejak batch "kunci pic_*" 26 Jul 2026. Field ini tak
+              lagi bisa ditulis dari sini; kelola kontak di tab Kontak (halaman
+              Detail Account). Field dipertahankan (bukan dihapus) supaya nilai
+              lama tetap terlihat, bukan diam-diam hilang dari tampilan. */}
           <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 5, borderBottom: `1px solid ${D.lineSoft}` }}>PIC</div>
+          <div style={{ fontSize: 12, color: D.inkFaint, marginBottom: 12, marginTop: -6 }}>Kelola kontak di tab Kontak.</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
-            <FG label="PIC Name"><input value={form.pic_name} onChange={set('pic_name')} placeholder="Nama kontak person" style={INP_STYLE} /></FG>
-            <FG label="PIC Phone"><input value={form.pic_phone} onChange={set('pic_phone')} placeholder="08xx..." style={INP_STYLE} /></FG>
-            <FG label="PIC Email" full><input type="email" value={form.pic_email} onChange={set('pic_email')} placeholder="pic@..." style={INP_STYLE} /></FG>
+            <FG label="PIC Name"><input value={form.pic_name} disabled style={{ ...INP_STYLE, background: D.surface2, cursor: 'not-allowed' }} /></FG>
+            <FG label="PIC Phone"><input value={form.pic_phone} disabled style={{ ...INP_STYLE, background: D.surface2, cursor: 'not-allowed' }} /></FG>
+            <FG label="PIC Email" full><input value={form.pic_email} disabled style={{ ...INP_STYLE, background: D.surface2, cursor: 'not-allowed' }} /></FG>
           </div>
 
           {/* Komersial */}
@@ -535,7 +546,7 @@ function exportCsv(rows, filename) {
   const lines = [headers.map(esc).join(',')];
   rows.forEach(c => {
     lines.push([
-      c.code, c.name, c.legal_name, c.pic_name, c.tier, statusOf(c),
+      c.code, c.name, c.legal_name, primaryContactOf(c)?.name || '', c.tier, statusOf(c),
       c.payment_term?.name || c.payment_terms, fmtDate(c.last_activity_at || c.updated_at || c.created_at),
     ].map(esc).join(','));
   });
@@ -581,7 +592,8 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
           *,
           assigned_profile:profiles!prospects_assigned_to_fkey(full_name),
           source_company:companies!prospects_owner_company_id_fkey(name, code),
-          payment_term:payment_terms!prospects_payment_terms_id_fkey(name)
+          payment_term:payment_terms!prospects_payment_terms_id_fkey(name),
+          contacts(id, name, email, phone, is_primary, deleted_at)
         `)
         .in('account_status', statusValues)
         .is('deleted_at', null)
@@ -595,7 +607,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
       console.error('[CustomerList] joined fetch failed, falling back to plain select:', err);
       const { data, error: fbErr } = await supabase
         .from('accounts')
-        .select('*')
+        .select('*, contacts(id, name, email, phone, is_primary, deleted_at)')
         .in('account_status', statusValues)
         .is('deleted_at', null)
         .order('name')
@@ -614,7 +626,8 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
   // segmented so their labels stay accurate regardless of the Status filter).
   const matchesScope = (c) => {
     const q = search.toLowerCase();
-    if (q && !c.name?.toLowerCase().includes(q) && !c.legal_name?.toLowerCase().includes(q) && !c.code?.toLowerCase().includes(q) && !c.pic_name?.toLowerCase().includes(q)) return false;
+    const picName = primaryContactOf(c)?.name;
+    if (q && !c.name?.toLowerCase().includes(q) && !c.legal_name?.toLowerCase().includes(q) && !c.code?.toLowerCase().includes(q) && !picName?.toLowerCase().includes(q)) return false;
     // Entity lock (dormant sub-menu prop): MSI/JCI/SOA by entitas, FREE_AGENT by status
     if (entityFilter === 'FREE_AGENT') {
       if (statusOf(c) !== 'free_agent') return false;

@@ -135,6 +135,23 @@ const ACT_STATUS_META = {
   done:      { label: 'Selesai',    bg: '#E4F0E5',     color: '#2E7D4F', bd: '#BFDDC4' },
   cancelled: { label: 'Dibatalkan', bg: 'transparent', color: '#B23227', bd: '#E6BBB2' },
 };
+// Kontak — role_type CHECK constraint di DB: decision_maker/requester/finance/
+// operations/other (atau NULL). Satu sumber dipakai tabel (label) dan form (opsi).
+const CONTACT_ROLE_LABEL = {
+  decision_maker: 'Pengambil Keputusan',
+  requester:      'Peminta',
+  finance:        'Finance',
+  operations:     'Operasional',
+  other:          'Lainnya',
+};
+const CONTACT_ROLE_OPTIONS = [
+  { value: '',               label: '—' },
+  { value: 'decision_maker', label: 'Pengambil Keputusan' },
+  { value: 'requester',      label: 'Peminta' },
+  { value: 'finance',        label: 'Finance' },
+  { value: 'operations',     label: 'Operasional' },
+  { value: 'other',          label: 'Lainnya' },
+];
 function ActBadge({ meta }) {
   if (!meta) return <span style={{ color: '#D1D5DB' }}>—</span>;
   return (
@@ -572,7 +589,7 @@ function healthStatus(score) {
 // transaction/payment/NPS/complaint data exists (server-side or via a DB view).
 // Current score is derived ONLY from available signals — visits, BANT, pipeline,
 // and profile completeness — and is clearly labelled "preliminary". No new DB columns.
-function computeHealth(customer, prospect, visits) {
+function computeHealth(customer, prospect, visits, primaryContact) {
   const visitCount = visits.length;
   const engagement = Math.min(visitCount * 30, 100);
   const bantPct = prospect
@@ -583,7 +600,9 @@ function computeHealth(customer, prospect, visits) {
     : (stage === 'NEGOTIATION' || stage === 'PROPOSAL') ? 70
     : stage === 'QUALIFIED' ? 50
     : stage ? 30 : 0;
-  const profFields = [customer.phone, customer.email, customer.address, customer.pic_name, customer.tax_id, customer.payment_terms_id, customer.tier];
+  // pic_name diganti keberadaan kontak primary (tabel contacts) — kolom
+  // accounts.pic_name sengaja tak lagi dibaca (batch "kunci pic_*" 26 Jul 2026).
+  const profFields = [customer.phone, customer.email, customer.address, primaryContact, customer.tax_id, customer.payment_terms_id, customer.tier];
   const completeness = Math.round((profFields.filter(Boolean).length / profFields.length) * 100);
   const contract = (customer.contract_no || customer.payment_term?.name || customer.payment_terms_id) ? 100 : 40;
   const components = [
@@ -595,6 +614,104 @@ function computeHealth(customer, prospect, visits) {
   ];
   const score = Math.round(components.reduce((s, c) => s + (c.value * c.weight) / 100, 0));
   return { score, components };
+}
+
+// ─── Kontak: Tambah/Edit modal ───────────────────────────────────────────────────
+// Pola visual meniru EditDealModal (DealPanels.jsx) — overlay → card → header →
+// body → footer — memakai token lokal file ini (NAVY/ORANGE/dst), bukan C.* dari
+// DealPanels (nilainya sama, tapi Kontak murni milik halaman ini, tak perlu shared
+// module). is_primary SENGAJA tidak ada di form ini — primary hanya bisa diubah
+// lewat aksi "Jadikan Kontak Utama" (handleSetPrimary di komponen utama) supaya
+// jalur yang bisa memicu unique violation (uq_contacts_one_primary) tetap satu pintu.
+const EMPTY_CONTACT_DRAFT = { name: '', position: '', role_type: '', email: '', phone: '', is_active: true, notes: '' };
+function ContactFormModal({ open, initial, onClose, onSave }) {
+  const [draft, setDraft] = useState(EMPTY_CONTACT_DRAFT);
+  const [saving, setSaving] = useState(false);
+  const [nameError, setNameError] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    setDraft(initial ? {
+      name: initial.name || '',
+      position: initial.position || '',
+      role_type: initial.role_type || '',
+      email: initial.email || '',
+      phone: initial.phone || '',
+      is_active: initial.is_active !== false,
+      notes: initial.notes || '',
+    } : EMPTY_CONTACT_DRAFT);
+    setNameError(null);
+  }, [open, initial]);
+  if (!open) return null;
+
+  const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
+  const labelStyle = { fontSize: 11, fontWeight: 700, color: INK_FAINT, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6, display: 'block' };
+  const inputStyle = { width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 13.5, color: INK, border: '1px solid ' + LINE, borderRadius: 10, padding: '9px 12px', outline: 'none', background: '#fff' };
+
+  const handleSave = async () => {
+    const name = draft.name.trim();
+    if (!name) { setNameError('Nama wajib diisi'); return; }
+    setSaving(true);
+    const ok = await onSave({ ...draft, name });
+    setSaving(false);
+    if (ok) onClose();
+  };
+
+  return (
+    <div onMouseDown={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(19,35,59,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: 'min(480px, 100%)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', boxShadow: '0 24px 64px rgba(19,35,59,0.28)' }}>
+        <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 24px', borderBottom: '1px solid ' + LINE, background: '#FBF6EC' }}>
+          <span style={{ color: NAVY, display: 'flex' }}><Icon name="user" size={18} strokeWidth={2.2} /></span>
+          <h3 style={{ margin: 0, fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 17, fontWeight: 700, color: INK, flex: 1 }}>{initial ? 'Edit Kontak' : 'Tambah Kontak'}</h3>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: INK_SOFT, display: 'flex', padding: 4 }}><Icon name="x" size={18} /></button>
+        </header>
+
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <label style={labelStyle}>Nama <span style={{ color: '#C0392B' }}>*</span></label>
+            <input value={draft.name} onChange={(e) => { set('name', e.target.value); setNameError(null); }} style={{ ...inputStyle, borderColor: nameError ? '#C0392B' : LINE }} placeholder="Nama kontak" />
+            {nameError && <span style={{ fontSize: 11.5, color: '#C0392B', marginTop: 4, display: 'block' }}>{nameError}</span>}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Jabatan</label>
+              <input value={draft.position} onChange={(e) => set('position', e.target.value)} style={inputStyle} placeholder="mis. Purchasing Manager" />
+            </div>
+            <div>
+              <label style={labelStyle}>Peran</label>
+              <select value={draft.role_type} onChange={(e) => set('role_type', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                {CONTACT_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Email</label>
+              <input type="email" value={draft.email} onChange={(e) => set('email', e.target.value)} style={inputStyle} placeholder="nama@perusahaan.com" />
+            </div>
+            <div>
+              <label style={labelStyle}>Telepon</label>
+              <input value={draft.phone} onChange={(e) => set('phone', e.target.value)} style={inputStyle} placeholder="08xx…" />
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: INK_SOFT, cursor: 'pointer', userSelect: 'none' }}>
+            <input type="checkbox" checked={!!draft.is_active} onChange={(e) => set('is_active', e.target.checked)} style={{ width: 16, height: 16, accentColor: NAVY, cursor: 'pointer' }} />
+            Kontak aktif
+          </label>
+          <div>
+            <label style={labelStyle}>Catatan</label>
+            <textarea value={draft.notes} onChange={(e) => set('notes', e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} placeholder="Catatan tambahan…" />
+          </div>
+        </div>
+
+        <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: '1px solid ' + LINE, background: '#FBF6EC' }}>
+          <button type="button" onClick={onClose} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: '1px solid ' + LINE, background: '#fff', color: INK_SOFT, fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Batal</button>
+          <button type="button" onClick={handleSave} disabled={saving} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: NAVY, color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            {saving ? 'Menyimpan…' : (initial ? 'Simpan Perubahan' : 'Simpan Kontak')}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────────
@@ -642,6 +759,37 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   const [docLoading,    setDocLoading]    = useState(false);
   const [docPrfs,       setDocPrfs]       = useState([]);
   const [docSOs,        setDocSOs]        = useState([]);
+
+  // ── Kontak utama (primary contact) — dibaca EAGER (bukan lazy seperti tab
+  // Kontak di bawah), karena dipakai header + Info Dasar yang tampil di tab
+  // default ('info'), bukan hanya saat tab Kontak dibuka. Sumber kebenaran
+  // pengganti accounts.pic_name/pic_phone/pic_email (batch "kunci pic_*" 26 Jul
+  // 2026) — kolom pic_* itu SENGAJA tidak lagi dibaca di sini; akun tanpa
+  // kontak primary tampil kosong ('—' / badge tak dirender), TANPA fallback. ──
+  const [primaryContact, setPrimaryContact] = useState(null);
+  useEffect(() => {
+    if (!id) { setPrimaryContact(null); return; }
+    supabase.from('contacts')
+      .select('id, name, email, phone')
+      .eq('account_id', id)
+      .eq('is_primary', true)
+      .is('deleted_at', null)
+      .maybeSingle()
+      .then(({ data }) => setPrimaryContact(data || null));
+  }, [id]);
+
+  // ── Lazy tab data: Kontak (contacts) — beda dari Riwayat/Dokumen di atas, tab
+  // ini bisa MENULIS, jadi fetch-nya sebuah fungsi reusable (fetchContacts di
+  // bawah), bukan cuma isi useEffect sekali pakai. ──
+  const [contacts,           setContacts]           = useState([]);
+  const [contactsLoading,    setContactsLoading]    = useState(false);
+  const [contactsLoaded,     setContactsLoaded]     = useState(false);
+  const [contactsError,      setContactsError]      = useState(null);
+  const [contactModalOpen,   setContactModalOpen]   = useState(false);
+  const [editingContact,     setEditingContact]     = useState(null); // null = mode Tambah
+  const [primaryBusyId,      setPrimaryBusyId]      = useState(null);
+  const [deleteContactTarget, setDeleteContactTarget] = useState(null);
+  const [deletingContact,    setDeletingContact]    = useState(false);
 
   // ── Fetch customer (+ joins, incl. linked prospect for BANT) ──
   const fetchCustomer = useCallback(async () => {
@@ -807,6 +955,36 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
     })();
   }, [tab, docLoaded, id, histLoaded, histInquiries]);
 
+  // ── Kontak: fetch (reusable — dipanggil lazy saat tab dibuka PERTAMA KALI, dan
+  // dipanggil ulang setelah Tambah/Edit/Jadikan-Utama/Hapus supaya daftar ikut
+  // berubah tanpa refresh halaman). RLS contacts mewarisi visibilitas accounts
+  // (EXISTS) — tidak perlu filter company_id manual di sini. ──
+  const fetchContacts = useCallback(async () => {
+    if (!id) return;
+    setContactsLoading(true);
+    setContactsError(null);
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('account_id', id)
+        .is('deleted_at', null)
+        .order('is_primary', { ascending: false })
+        .order('name');
+      if (error) throw error;
+      setContacts(data || []);
+      setContactsLoaded(true);
+    } catch (err) {
+      setContactsError(err.message || 'Gagal memuat kontak.');
+    } finally {
+      setContactsLoading(false);
+    }
+  }, [id]);
+  useEffect(() => {
+    if (tab !== 'kontak' || contactsLoaded || !id) return;
+    fetchContacts();
+  }, [tab, contactsLoaded, id, fetchContacts]);
+
   // ── Deal handlers — SATU jalur tulis (saveDealUpdate), audit sama DealDetailPage ──
   const dealActor = { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id };
   const writeStage = async (key) => {
@@ -946,6 +1124,99 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
     }
   };
 
+  // ── Kontak: simpan (Tambah/Edit). company_id SELALU dari record akun yang
+  // sedang dibuka (customer.company_id) — BUKAN profile.company_id (company milik
+  // user yang login) — supaya tetap benar saat super_admin membuka akun milik
+  // entitas lain. updated_at diisi eksplisit pada UPDATE (tabel contacts tak
+  // punya trigger auto-update; INSERT dibiarkan pakai DEFAULT now() kolomnya). ──
+  const handleSaveContact = async (draft) => {
+    try {
+      const payload = {
+        name: draft.name,
+        position: draft.position?.trim() || null,
+        role_type: draft.role_type || null,
+        email: draft.email?.trim() || null,
+        phone: draft.phone?.trim() || null,
+        is_active: !!draft.is_active,
+        notes: draft.notes?.trim() || null,
+      };
+      let error;
+      if (editingContact) {
+        ({ error } = await supabase
+          .from('contacts')
+          .update({ ...payload, updated_at: new Date().toISOString() })
+          .eq('id', editingContact.id));
+      } else {
+        ({ error } = await supabase
+          .from('contacts')
+          .insert({ ...payload, account_id: id, company_id: customer.company_id }));
+      }
+      if (error) throw error;
+      showToast?.(editingContact ? 'Kontak diperbarui.' : 'Kontak ditambahkan.', 'success');
+      fetchContacts();
+      return true;
+    } catch (err) {
+      showToast?.('Gagal menyimpan kontak: ' + err.message, 'error');
+      return false;
+    }
+  };
+  const openAddContact  = () => { setEditingContact(null); setContactModalOpen(true); };
+  const openEditContact = (c) => { setEditingContact(c);    setContactModalOpen(true); };
+
+  // ── Kontak: Jadikan Utama — WAJIB dua langkah karena uq_contacts_one_primary
+  // (unique index partial: satu akun cuma boleh satu is_primary=true). Turunkan
+  // yang lama DULU, baru naikkan yang baru — dibalik akan membuat akun sesaat
+  // punya dua primary dan langkah kedua gagal unique violation. ──
+  const handleSetPrimary = async (contact) => {
+    if (contact.is_primary) return;
+    setPrimaryBusyId(contact.id);
+    const now = new Date().toISOString();
+    try {
+      const { error: demoteErr } = await supabase
+        .from('contacts')
+        .update({ is_primary: false, updated_at: now })
+        .eq('account_id', id)
+        .eq('is_primary', true);
+      if (demoteErr) throw demoteErr;
+      const { error: promoteErr } = await supabase
+        .from('contacts')
+        .update({ is_primary: true, updated_at: now })
+        .eq('id', contact.id);
+      if (promoteErr) throw promoteErr;
+      showToast?.(`${contact.name} dijadikan kontak utama.`, 'success');
+      fetchContacts();
+    } catch (err) {
+      showToast?.('Gagal menjadikan kontak utama: ' + err.message, 'error');
+      // Resync — langkah 1 (turunkan yang lama) bisa saja sudah sukses walau
+      // langkah 2 (naikkan yang baru) gagal; jangan biarkan UI menampilkan
+      // primary lama yang sudah tidak sesuai isi DB.
+      fetchContacts();
+    } finally {
+      setPrimaryBusyId(null);
+    }
+  };
+
+  // ── Kontak: hapus (soft delete, BUKAN .delete()). Primary yang dihapus SENGAJA
+  // tidak dipindah otomatis ke kontak lain — akun boleh tidak punya primary. ──
+  const handleDeleteContact = async () => {
+    if (!deleteContactTarget) return;
+    setDeletingContact(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', deleteContactTarget.id);
+      if (error) throw error;
+      showToast?.('Kontak dihapus.', 'success');
+      setDeleteContactTarget(null);
+      fetchContacts();
+    } catch (err) {
+      showToast?.('Gagal menghapus kontak: ' + err.message, 'error');
+    } finally {
+      setDeletingContact(false);
+    }
+  };
+
   if (loading) {
     return <div style={{ fontFamily: "'Inter', system-ui, sans-serif", padding: '4rem', textAlign: 'center', color: INK_FAINT, fontSize: 14 }}>Memuat data customer…</div>;
   }
@@ -991,6 +1262,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   const TABS = [
     { id: 'info',      icon: 'info',      label: 'Info Dasar' },
     { id: 'komersial', icon: 'briefcase', label: 'Komersial' },
+    { id: 'kontak',    icon: 'user',      label: 'Kontak',    count: contacts.length || undefined },
     { id: 'riwayat',   icon: 'clock',     label: 'Riwayat',   count: histInquiries.length || undefined },
     { id: 'dokumen',   icon: 'filecheck', label: 'Dokumen',   count: (docPrfs.length + docSOs.length) || undefined },
     { id: 'visit',     icon: 'route',     label: 'History Visit', count: visits.length || undefined },
@@ -1016,10 +1288,13 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       { l: 'City', v: txt(customer.city) },
       { l: 'Country', v: txt(customer.country || 'Indonesia') },
     ]},
+    // Sumber: kontak primary tabel contacts (bukan accounts.pic_name/pic_phone/
+    // pic_email lagi — batch "kunci pic_*" 26 Jul 2026). Akun tanpa kontak
+    // primary tampil '—' apa adanya, TANPA fallback ke pic_*.
     { label: 'PIC', icon: 'user', fields: [
-      { l: 'PIC Name', v: customer.pic_name ? <span style={S.who}><PicAvatar name={customer.pic_name} />{customer.pic_name}</span> : '—' },
-      { l: 'PIC Phone', v: txt(customer.pic_phone), mono: true },
-      { l: 'PIC Email', v: txt(customer.pic_email), mono: true },
+      { l: 'PIC Name', v: primaryContact?.name ? <span style={S.who}><PicAvatar name={primaryContact.name} />{primaryContact.name}</span> : '—' },
+      { l: 'PIC Phone', v: txt(primaryContact?.phone), mono: true },
+      { l: 'PIC Email', v: txt(primaryContact?.email), mono: true },
     ]},
   ];
   const komSections = [
@@ -1115,7 +1390,8 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
                 <span style={S.navyBadge}><Icon name="building" size={13} strokeWidth={2} />{coCode ? coCode + ' · ' : ''}{customer.source_company.name}</span>
               )}
               {tierCfg && <span style={{ ...S.badge, background: tierCfg.bg, color: tierCfg.fg }}><Icon name="award" size={13} strokeWidth={2} />Tier {customer.tier}</span>}
-              {customer.pic_name && <span style={S.picBadge}><PicAvatar name={customer.pic_name} size={20} />PIC {customer.pic_name}</span>}
+              {/* Sumber kontak primary (contacts), bukan accounts.pic_name lagi. */}
+              {primaryContact?.name && <span style={S.picBadge}><PicAvatar name={primaryContact.name} size={20} />PIC {primaryContact.name}</span>}
             </div>
           </div>
           <div style={S.tierValBox} className="cd-tierval">
@@ -1137,6 +1413,72 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
 
       {tab === 'info' && renderSections(infoSections)}
       {tab === 'komersial' && renderSections(komSections)}
+
+      {/* KONTAK — daftar kontak akun (tabel contacts, account_id=id) */}
+      {tab === 'kontak' && (
+        <div style={S.card}>
+          <div style={S.cardHead}>
+            <h3 style={S.cardHeadTitle}>Kontak</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={S.cardHeadSub}>{contacts.length} kontak</span>
+              <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5 }} onClick={openAddContact}>
+                <Icon name="user" size={14} />Tambah Kontak
+              </button>
+            </div>
+          </div>
+          {contactsLoading ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
+          ) : contactsError ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: '#C0392B', fontSize: 13 }}>Gagal memuat kontak: {contactsError}</div>
+          ) : contacts.length === 0 ? (
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada kontak</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
+                    {['No', 'Nama', 'Jabatan', 'Peran', 'Email', 'Telepon', 'Aksi'].map((h) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '9px 16px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {contacts.map((c, i) => (
+                    <tr key={c.id} style={{ borderBottom: i < contacts.length - 1 ? '1px solid ' + LINE_SOFT : 'none', opacity: c.is_active === false ? 0.55 : 1 }}>
+                      <td style={{ padding: '9px 16px', color: INK_FAINT }}>{i + 1}</td>
+                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontWeight: 600, color: INK }}>{c.name}</span>
+                        {c.is_primary && <span style={{ ...S.navyBadge, marginLeft: 8, padding: '2px 9px', fontSize: 10 }}>Utama</span>}
+                        {c.is_active === false && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#B23227', background: '#F6E0DB', borderRadius: 20, padding: '2px 9px' }}>Tidak Aktif</span>}
+                      </td>
+                      <td style={{ padding: '9px 16px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{txt(c.position)}</td>
+                      <td style={{ padding: '9px 16px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{CONTACT_ROLE_LABEL[c.role_type] || '—'}</td>
+                      <td style={{ padding: '9px 16px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{txt(c.email)}</td>
+                      <td style={{ padding: '9px 16px', color: INK_SOFT, fontFamily: "'IBM Plex Mono', ui-monospace, monospace", whiteSpace: 'nowrap' }}>{txt(c.phone)}</td>
+                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <button type="button" title="Edit" onClick={() => openEditContact(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: NAVY, padding: 5, display: 'inline-flex' }}>
+                            <Icon name="pencil" size={14} />
+                          </button>
+                          {!c.is_primary && (
+                            <button type="button" title="Jadikan Kontak Utama" disabled={primaryBusyId === c.id} onClick={() => handleSetPrimary(c)}
+                              style={{ background: 'none', border: 'none', cursor: primaryBusyId === c.id ? 'not-allowed' : 'pointer', color: primaryBusyId === c.id ? INK_FAINT : ORANGE, padding: 5, display: 'inline-flex', opacity: primaryBusyId === c.id ? 0.6 : 1 }}>
+                              <Icon name="award" size={14} />
+                            </button>
+                          )}
+                          <button type="button" title="Hapus" onClick={() => setDeleteContactTarget(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C0392B', padding: 5, display: 'inline-flex' }}>
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* RIWAYAT — inquiry (account-scoped) dengan quotation bertingkat */}
       {tab === 'riwayat' && (
@@ -1346,7 +1688,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
 
       {/* HEALTH SCORE */}
       {tab === 'health' && (() => {
-        const { score, components } = computeHealth(customer, prospect, visits);
+        const { score, components } = computeHealth(customer, prospect, visits, primaryContact);
         const st = healthStatus(score);
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1471,6 +1813,26 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setConfirmDel(false)}
+      />
+
+      {/* Kontak: Tambah/Edit modal */}
+      <ContactFormModal
+        open={contactModalOpen}
+        initial={editingContact}
+        onClose={() => setContactModalOpen(false)}
+        onSave={handleSaveContact}
+      />
+
+      {/* Kontak: hapus confirm */}
+      <ConfirmModal
+        open={!!deleteContactTarget}
+        title="Hapus Kontak?"
+        message={`Kontak "${deleteContactTarget?.name || ''}" akan dihapus (soft delete). Lanjutkan?`}
+        confirmLabel={deletingContact ? 'Menghapus…' : 'Ya, Hapus'}
+        cancelLabel="Batal"
+        variant="danger"
+        onConfirm={handleDeleteContact}
+        onCancel={() => setDeleteContactTarget(null)}
       />
     </div>
   );
