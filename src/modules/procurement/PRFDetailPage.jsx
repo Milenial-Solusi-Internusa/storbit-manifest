@@ -66,7 +66,7 @@ function containerSummary(types, qty) {
 // True bila salah satu nilai terisi (dipakai fallback "belum ada detail" per moda).
 const anyFilled = (...vals) => vals.some((v) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0));
 
-const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)';
+const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email)';
 const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate';
 
 export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation }) {
@@ -567,7 +567,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: ORANGE, marginBottom: 6 }}>Procurement · PRF</div>
         <h1 style={{ fontFamily: HEAD, fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: NAVY, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{prf.prf_no}</h1>
-        <div style={{ fontSize: 13, color: MUTE, marginTop: 5 }}>Status <b style={{ color: INK }}>{String(prf.status).toUpperCase()}</b> · dibuat {fmtDate(prf.created_at)}</div>
+        <div style={{ fontSize: 13, color: MUTE, marginTop: 5 }}>Status <b style={{ color: INK }}>{String(prf.status).toUpperCase()}</b> · dibuat {fmtDate(prf.created_at)}{prf.creator?.full_name ? ` oleh ${prf.creator.full_name}` : ''}</div>
       </div>
 
       <section style={card}>
