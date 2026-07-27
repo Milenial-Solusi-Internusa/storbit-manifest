@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2SFog1mMij6WNCLzYaBN00Ga0v9V2rkESQJ40PdsuadDh2cMw036nzvBQNsQo58
+\restrict KY8KFogPrIm9bMlgll3ZaePGjzPPJQFnCgetCfQjSrYNc6IelmvNZ47M7ZhrnKL
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2958,6 +2958,105 @@ CREATE TABLE public.backup_leadpool_trap_20260724 (
 
 
 --
+-- Name: backup_prf_20260727; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_prf_20260727 (
+    id uuid,
+    company_id uuid,
+    prf_no text,
+    status character varying,
+    created_by uuid,
+    updated_by uuid,
+    submitted_at timestamp with time zone,
+    acknowledged_by uuid,
+    acknowledged_at timestamp with time zone,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    customer_source text,
+    account_id uuid,
+    account_name_manual text,
+    stream text,
+    deadline_quotation date,
+    direction text,
+    commodity text,
+    hs_code text,
+    msds_available boolean,
+    service_type text,
+    incoterms text,
+    commercial_value numeric(14,2),
+    commercial_currency text,
+    origin text,
+    destination text,
+    pickup_address text,
+    delivery_address text,
+    add_on_services text[],
+    add_on_others text,
+    cargo_ready_date date,
+    sea_freight_type text,
+    sea_container_types text[],
+    sea_container_qty jsonb,
+    sea_lcl_gw numeric(12,2),
+    sea_lcl_dimension text,
+    sea_lcl_volume numeric(12,2),
+    sea_lcl_koli integer,
+    air_gw numeric(12,2),
+    air_dimension text,
+    air_volume numeric(12,2),
+    air_koli integer,
+    inland_fleet_types text[],
+    inland_pickup_address text,
+    inland_delivery_address text,
+    inland_gw numeric(12,2),
+    inland_dimension text,
+    custom_doc_type text,
+    project_freight_types text[],
+    project_qty integer,
+    notes text,
+    inquiry_id uuid,
+    suggested_rate numeric(18,2),
+    rate_currency text,
+    valid_from date,
+    valid_until date,
+    pricing_notes text,
+    answered_by uuid,
+    answered_at timestamp with time zone,
+    exchange_rates jsonb,
+    goods_name text,
+    un_number text,
+    imo_class text,
+    selected_offer_id uuid,
+    selected_by uuid,
+    selected_at timestamp with time zone,
+    min_offers_waiver_reason text
+);
+
+
+--
+-- Name: backup_prf_cost_items_20260727; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backup_prf_cost_items_20260727 (
+    id uuid,
+    prf_id uuid,
+    component text,
+    cost_type text,
+    amount numeric(18,2),
+    currency text,
+    sort_order integer,
+    notes text,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    vendor_id uuid,
+    item_group text,
+    is_awarded boolean,
+    exchange_rate numeric,
+    offer_id uuid
+);
+
+
+--
 -- Name: branches; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4525,6 +4624,10 @@ CREATE TABLE public.prf (
     goods_name text,
     un_number text,
     imo_class text,
+    selected_offer_id uuid,
+    selected_by uuid,
+    selected_at timestamp with time zone,
+    min_offers_waiver_reason text,
     CONSTRAINT prf_status_check CHECK (((status)::text = ANY (ARRAY['DRAFT'::text, 'SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'CANCELLED'::text, 'QUOTED'::text, 'EXPIRED'::text])))
 );
 
@@ -4548,7 +4651,30 @@ CREATE TABLE public.prf_cost_items (
     item_group text,
     is_awarded boolean DEFAULT true NOT NULL,
     exchange_rate numeric DEFAULT 1 NOT NULL,
+    offer_id uuid,
     CONSTRAINT prf_cost_items_cost_type_check CHECK ((cost_type = ANY (ARRAY['vendor'::text, 'internal'::text])))
+);
+
+
+--
+-- Name: prf_vendor_offers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prf_vendor_offers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    prf_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    vendor_id uuid NOT NULL,
+    currency text,
+    valid_from date,
+    valid_until date,
+    pros text NOT NULL,
+    cons text NOT NULL,
+    notes text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
 );
 
 
@@ -6422,6 +6548,14 @@ ALTER TABLE ONLY public.prf
 
 
 --
+-- Name: prf_vendor_offers prf_vendor_offers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_vendor_offers
+    ADD CONSTRAINT prf_vendor_offers_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: product_price_history product_price_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7641,10 +7775,59 @@ CREATE INDEX idx_pph_product_changed ON public.product_price_history USING btree
 
 
 --
+-- Name: idx_prf_acknowledged_by; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prf_acknowledged_by ON public.prf USING btree (acknowledged_by) WHERE (acknowledged_by IS NOT NULL);
+
+
+--
+-- Name: idx_prf_cost_items_offer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prf_cost_items_offer ON public.prf_cost_items USING btree (offer_id);
+
+
+--
 -- Name: idx_prf_cost_items_prf_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_cost_items_prf_id ON public.prf_cost_items USING btree (prf_id);
+
+
+--
+-- Name: idx_prf_inquiry_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prf_inquiry_id ON public.prf USING btree (inquiry_id) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_prf_selected_offer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prf_selected_offer ON public.prf USING btree (selected_offer_id) WHERE (selected_offer_id IS NOT NULL);
+
+
+--
+-- Name: idx_prf_vendor_offers_company; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prf_vendor_offers_company ON public.prf_vendor_offers USING btree (company_id);
+
+
+--
+-- Name: idx_prf_vendor_offers_prf; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prf_vendor_offers_prf ON public.prf_vendor_offers USING btree (prf_id) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_prf_vendor_offers_vendor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prf_vendor_offers_vendor ON public.prf_vendor_offers USING btree (vendor_id);
 
 
 --
@@ -8233,6 +8416,13 @@ CREATE TRIGGER trg_picking_lists_updated_at BEFORE UPDATE ON public.picking_list
 --
 
 CREATE TRIGGER trg_positions_updated_at BEFORE UPDATE ON public.positions FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: prf_vendor_offers trg_prf_vendor_offers_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_prf_vendor_offers_updated_at BEFORE UPDATE ON public.prf_vendor_offers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -9881,6 +10071,14 @@ ALTER TABLE ONLY public.prf_cost_items
 
 
 --
+-- Name: prf_cost_items prf_cost_items_offer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_cost_items
+    ADD CONSTRAINT prf_cost_items_offer_id_fkey FOREIGN KEY (offer_id) REFERENCES public.prf_vendor_offers(id) ON DELETE CASCADE;
+
+
+--
 -- Name: prf_cost_items prf_cost_items_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9913,11 +10111,51 @@ ALTER TABLE ONLY public.prf
 
 
 --
+-- Name: prf prf_selected_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_selected_by_fkey FOREIGN KEY (selected_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: prf prf_selected_offer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf
+    ADD CONSTRAINT prf_selected_offer_id_fkey FOREIGN KEY (selected_offer_id) REFERENCES public.prf_vendor_offers(id) ON DELETE SET NULL;
+
+
+--
 -- Name: prf prf_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
     ADD CONSTRAINT prf_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: prf_vendor_offers prf_vendor_offers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_vendor_offers
+    ADD CONSTRAINT prf_vendor_offers_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: prf_vendor_offers prf_vendor_offers_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_vendor_offers
+    ADD CONSTRAINT prf_vendor_offers_prf_id_fkey FOREIGN KEY (prf_id) REFERENCES public.prf(id) ON DELETE CASCADE;
+
+
+--
+-- Name: prf_vendor_offers prf_vendor_offers_vendor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prf_vendor_offers
+    ADD CONSTRAINT prf_vendor_offers_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.vendors(id);
 
 
 --
@@ -11119,6 +11357,18 @@ ALTER TABLE public.backup_leadpool_c1_won_20260724 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backup_leadpool_trap_20260724 ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: backup_prf_20260727; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_prf_20260727 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: backup_prf_cost_items_20260727; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backup_prf_cost_items_20260727 ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: branches; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -11976,7 +12226,9 @@ CREATE POLICY inquiries_insert ON public.inquiries FOR INSERT WITH CHECK ((compa
 -- Name: inquiries inquiries_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
+CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()) OR (public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.inquiry_id = inquiries.id) AND (p.company_id = inquiries.company_id) AND (p.deleted_at IS NULL)))))))));
 
 
 --
@@ -12619,6 +12871,48 @@ CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING 
 
 
 --
+-- Name: prf_vendor_offers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.prf_vendor_offers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: prf_vendor_offers prf_vendor_offers_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_vendor_offers_delete ON public.prf_vendor_offers FOR DELETE TO authenticated USING (public.is_super_admin());
+
+
+--
+-- Name: prf_vendor_offers prf_vendor_offers_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_vendor_offers_insert ON public.prf_vendor_offers FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND (created_by = auth.uid()) AND (EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid())))))));
+
+
+--
+-- Name: prf_vendor_offers prf_vendor_offers_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_vendor_offers_select ON public.prf_vendor_offers FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.has_role('procurement'::text) OR public.is_manager_or_above() OR (EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.created_by = auth.uid()))))))));
+
+
+--
+-- Name: prf_vendor_offers prf_vendor_offers_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_vendor_offers_update ON public.prf_vendor_offers FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid()))))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (EXISTS ( SELECT 1
+   FROM public.prf p
+  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid())))))));
+
+
+--
 -- Name: product_price_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -12702,7 +12996,7 @@ CREATE POLICY prospects_insert ON public.accounts FOR INSERT WITH CHECK ((compan
 -- Name: accounts prospects_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()) OR (public.has_role('operations'::text) AND ((account_status)::text = 'customer'::text))))));
+CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()) OR (public.has_role('operations'::text) AND ((account_status)::text = 'customer'::text)) OR public.has_role('procurement'::text)))));
 
 
 --
@@ -13475,5 +13769,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 2SFog1mMij6WNCLzYaBN00Ga0v9V2rkESQJ40PdsuadDh2cMw036nzvBQNsQo58
+\unrestrict KY8KFogPrIm9bMlgll3ZaePGjzPPJQFnCgetCfQjSrYNc6IelmvNZ47M7ZhrnKL
 
