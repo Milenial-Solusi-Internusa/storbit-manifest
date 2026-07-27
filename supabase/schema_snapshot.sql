@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict vqcRr8wXjdGL5co5ypmx3qF1XbjEdUMZQe6V8lUN3Xfl7tAFMhTC3lGuVQYLa6G
+\restrict Lvg9DhRFwfawTfhVHuMbRNpQD3TlrexBE6PUNY0ce7Id0UXuuTaueJDMREU4EtZ
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -12999,7 +12999,7 @@ ALTER TABLE public.prf_cost_items ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY prf_cost_items_delete ON public.prf_cost_items FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
@@ -13008,7 +13008,7 @@ CREATE POLICY prf_cost_items_delete ON public.prf_cost_items FOR DELETE TO authe
 
 CREATE POLICY prf_cost_items_insert ON public.prf_cost_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
@@ -13026,9 +13026,9 @@ CREATE POLICY prf_cost_items_select ON public.prf_cost_items FOR SELECT TO authe
 
 CREATE POLICY prf_cost_items_update ON public.prf_cost_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid())))))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid())))))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
@@ -13958,5 +13958,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict vqcRr8wXjdGL5co5ypmx3qF1XbjEdUMZQe6V8lUN3Xfl7tAFMhTC3lGuVQYLa6G
+\unrestrict Lvg9DhRFwfawTfhVHuMbRNpQD3TlrexBE6PUNY0ce7Id0UXuuTaueJDMREU4EtZ
 
