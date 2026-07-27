@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Lvg9DhRFwfawTfhVHuMbRNpQD3TlrexBE6PUNY0ce7Id0UXuuTaueJDMREU4EtZ
+\restrict pp0rIJiMzJSpSPScirhDFJTms7Tin9c2UeqD5qbDtWvX3ymUce8244a0kSxNrmB
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -13056,7 +13056,7 @@ CREATE POLICY prf_update_draft ON public.prf FOR UPDATE TO authenticated USING (
 -- Name: prf prf_update_status; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((acknowledged_by IS NULL) OR (acknowledged_by = auth.uid()))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text))));
+CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((acknowledged_by IS NULL) OR (acknowledged_by = auth.uid()))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text))));
 
 
 --
@@ -13958,5 +13958,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Lvg9DhRFwfawTfhVHuMbRNpQD3TlrexBE6PUNY0ce7Id0UXuuTaueJDMREU4EtZ
+\unrestrict pp0rIJiMzJSpSPScirhDFJTms7Tin9c2UeqD5qbDtWvX3ymUce8244a0kSxNrmB
 
