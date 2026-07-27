@@ -11,6 +11,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 
 const C = {
   navy: '#1B4D8A', navyDark: '#0F3768', navySoft: '#EEF3FB',
@@ -178,7 +179,7 @@ function ActionsBar({ saving, onBack, onSave }) {
 }
 
 export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
-  const { profile, user } = useAuth();
+  const { profile, user, erpRole } = useAuth();
   const { options: streamOpts } = useDropdownOptions('stream', STREAM_FALLBACK);
 
   const [form, setForm] = useState({
@@ -213,11 +214,23 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     // filter aslinya ikut terhapus saat picker akun dicabut). `inquiries` punya DUA FK ke
     // `accounts` → embed kedua sisi dan buang barisnya bila SALAH SATU parkir.
     supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, goods_name, un_number, imo_class, cargo_types, additional_services, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
-      .then(({ data }) => setInquiries((data || []).filter(i => !i.prospect?.is_in_lead_pool && !i.customer?.is_in_lead_pool)));
+      .then(({ data, error }) => {
+        if (error) { console.error('[PRF] gagal memuat daftar inquiry:', error.message); showToast?.('Gagal memuat daftar inquiry: ' + error.message, 'error'); return; }
+        setInquiries((data || []).filter(i => !i.prospect?.is_in_lead_pool && !i.customer?.is_in_lead_pool));
+      });
     supabase.from('currencies').select('code, name').order('code')
-      .then(({ data }) => setCurrencies(data || []));
+      .then(({ data, error }) => {
+        if (error) { console.error('[PRF] gagal memuat daftar currency:', error.message); showToast?.('Gagal memuat daftar currency: ' + error.message, 'error'); return; }
+        setCurrencies(data || []);
+      });
     supabase.from('companies').select('code').eq('id', cid).maybeSingle()
-      .then(({ data }) => setCompanyCode(data?.code || 'MSI'));
+      .then(({ data, error }) => {
+        if (error) { console.error('[PRF] gagal memuat kode entitas:', error.message); showToast?.('Gagal memuat kode entitas: ' + error.message, 'error'); return; }
+        setCompanyCode(data?.code || 'MSI');
+      });
+    // showToast sengaja tak dimasukkan dep — tak dimemo di App.jsx, memasukkannya akan
+    // memicu effect ini re-run (refetch inquiries/currencies/companyCode) tiap App.jsx re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.company_id]);
 
   // Prefill dari inquiry (Cetak PRF). HANYA field non-cabang — service_type/direction
@@ -230,8 +243,17 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     supabase.from('inquiries')
       .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms, notes, goods_name, un_number, imo_class, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)')
       .eq('id', prefillInquiryId).is('deleted_at', null).maybeSingle()
-      .then(({ data: inq }) => {
-        if (cancelled || !inq) return;
+      .then(({ data: inq, error }) => {
+        if (cancelled) return;
+        // Error fetch (RLS/jaringan) — errors.account dipakai (bukan showToast), pola sama
+        // persis dgn JARING 2 di bawah: showToast tak dimemo di App.jsx, memasukkannya ke dep
+        // array effect ini akan memicu fetch+prefill ulang tiap render.
+        if (error) {
+          console.error('[PRF] gagal memuat data prefill inquiry:', error.message);
+          setErrors(e => ({ ...e, account: 'Gagal memuat data inquiry untuk prefill: ' + error.message }));
+          return;
+        }
+        if (!inq) return;
         // JARING 2 — prefill masuk lewat query by-id, MELEWATI dropdown yang sudah disaring.
         // Kalau akunnya parkir: JANGAN set inquiry_id. Menyetelnya akan membuat dropdown tampil
         // kosong (id-nya tak ada di antara option) tapi form TETAP bisa disimpan — lebih buruk
@@ -460,6 +482,15 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
       };
       const { error } = await supabase.from('prf').insert(payload);
       if (error) throw error;
+      // entityId null — insert ini tak pakai .select('id') (pola sama modul lain yang tak
+      // butuh id balik); entityLabel (prf_no) sudah cukup unik utk identifikasi di audit log.
+      logAudit(supabase, {
+        action: ACTION_TYPES.CREATE_PRF,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: null,
+        entityLabel: prf_no,
+        notes: `status: ${status}`,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
       showToast?.(status === 'SUBMITTED' ? `PRF ${prf_no} berhasil dikirim` : `Draft PRF ${prf_no} tersimpan`);
       onBack();
     } catch (err) {
