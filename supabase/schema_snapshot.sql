@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict pkmja71DivgITJvKcNgTUbbbHxJtEIka2h33vBdOgAOFrsxRpzAdOOis7bMyww5
+\restrict QZgb3SL5wBr83sBtc5aN66SWxrLWeSsDlrq2FPa2w2sqxzfsHIOZ0SVRC18cJCM
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -13092,7 +13092,7 @@ CREATE POLICY prf_vendor_offers_select ON public.prf_vendor_offers FOR SELECT TO
 
 CREATE POLICY prf_vendor_offers_update ON public.prf_vendor_offers FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid()))))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (EXISTS ( SELECT 1
+  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid()))))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid())))))));
 
@@ -13954,5 +13954,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict pkmja71DivgITJvKcNgTUbbbHxJtEIka2h33vBdOgAOFrsxRpzAdOOis7bMyww5
+\unrestrict QZgb3SL5wBr83sBtc5aN66SWxrLWeSsDlrq2FPa2w2sqxzfsHIOZ0SVRC18cJCM
 
