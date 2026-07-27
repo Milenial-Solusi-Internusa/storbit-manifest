@@ -716,12 +716,16 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
 
 // ─── Main component ─────────────────────────────────────────────────────────────
 export default function CustomerDetailPage({ id, onBack, showToast, onEditInquiry, onViewQuotation, onCreatePRF, initialTab }) {
-  const { profile, erpRole, user } = useAuth();
+  const { profile, erpRole, erpRoles, user } = useAuth();
   // Delete customer is restricted to super_admin (soft-delete via deleted_at).
   const canDelete = erpRole === 'super_admin';
-  // Gate Cetak PRF — DISALIN APA ADANYA dari DealDetailPage.jsx:373 (nol perubahan
-  // perilaku). erpRole = role primer; lihat TD (user multi-role). Tombol muncul iff true.
-  const canCreatePRF = ['sales', 'gm_bd', 'super_admin'].includes(erpRole);
+  // Gate Cetak PRF — cek SELURUH role aktif user (erpRoles), bukan erpRole (role
+  // primer via pickPrimaryErpRole/ERP_ROLE_PRIORITY) — user multi-role (mis.
+  // manager+sales) sebelumnya kehilangan tombol ini karena role berprioritas
+  // lebih tinggi (manager) menutupi role yang sebenarnya berhak (sales) di
+  // erpRole. Cermin RLS prf_insert (has_role('sales') = EXISTS di seluruh
+  // user_roles, bukan role primer).
+  const canCreatePRF = erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code));
 
   const [customer, setCustomer] = useState(null);
   const [loading,  setLoading]  = useState(true);

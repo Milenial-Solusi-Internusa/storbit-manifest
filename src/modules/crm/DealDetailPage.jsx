@@ -127,7 +127,7 @@ function BadgeRow({ label, values, full }) {
 
 /* ========================================================================= */
 export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, showToast }) {
-  const { profile, erpRole, user } = useAuth();
+  const { profile, erpRole, erpRoles, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [inquiry, setInquiry] = useState(null);
@@ -573,7 +573,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <QuotationListCard quotations={quotations} onCreate={onCreateQuotation} onView={onViewQuotation} />
           <PrfListCard
             prfs={prfs}
-            canCreate={['sales', 'gm_bd', 'super_admin'].includes(erpRole)}
+            // Cetak PRF — cek SELURUH role aktif (erpRoles), bukan erpRole (role
+            // primer). User multi-role (mis. manager+sales) sebelumnya kehilangan
+            // tombol ini karena role prioritas lebih tinggi menutupi 'sales' di
+            // erpRole. Cermin RLS prf_insert (has_role('sales') = EXISTS lintas
+            // user_roles, bukan role primer).
+            canCreate={erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code))}
             onCreate={onCreatePRF}
             canSelectOffer={(p) => p.created_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole)}
             onSelectOffer={handleSelectOffer}
