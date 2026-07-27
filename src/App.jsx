@@ -463,19 +463,26 @@ const PLANNED_MODULES = {
 // ─────────────────────────────────────────────────────────────────────────────
 const CRM_MENU_ITEMS = [
   { id: 'crm-dashboard', label: 'Dashboard',        icon: BarChart2 },
-  // Tahap 2b: 4 menu (Pipeline / Prospects / Lead Pool / Approval) digabung jadi
-  // SATU item "Account" bertab. Anak-anak DIPERTAHANKAN (gate verbatim) supaya
-  // findMenuItemById tetap menemukan tiap tab dgn gate-nya (isMenuAccessible /
-  // deep-link / redirect-guard identik), dan visibilitas "Account" = OR gate anak
-  // (navChildGate). Sidebar merender ini sbg SATU leaf (special-case di LeafRow);
-  // activeMenu tetap = id tab (bukan 'crm-account'). Urutan anak = urutan tab.
+  // Batch restrukturisasi menu CRM #2 (26 Jul 2026): ditarik keluar dari tab
+  // 'crm-account' jadi menu top-level sendiri, tepat setelah Dashboard. Id/gate
+  // (menuKey crm_pipeline → hasMenuPermission, TIDAK berubah)/komponen tetap.
+  // Tab Lead/Deal per-inquiry (F4-6) belum ada — halaman ini masih papan Lead
+  // saja, tanpa tab internal.
+  { id: 'crm-pipeline', label: 'Pipeline', icon: TrendingUp },
+  // Tahap 2b (19 Jul): awalnya 4 menu (Pipeline / Prospects / Lead Pool /
+  // Approval) digabung jadi SATU item "Account" bertab. Batch restrukturisasi
+  // menu CRM #2 (26 Jul) menarik Pipeline (di atas) & Approval Lead Pool
+  // (paling bawah) KELUAR jadi menu top-level sendiri — Account kini tinggal
+  // 2 tab. Mekanisme tab yang tersisa TAK BERUBAH: anak DIPERTAHANKAN (gate
+  // verbatim) supaya findMenuItemById tetap menemukan gate tiap tab, dan
+  // visibilitas "Account" = OR gate anak (navChildGate). Sidebar merender ini
+  // sbg SATU leaf (special-case di LeafRow); activeMenu tetap = id tab (bukan
+  // 'crm-account').
   {
     id: 'crm-account', label: 'Account', icon: Users,
     children: [
-      { id: 'crm-pipeline',           label: 'Pipeline / Leads',   icon: Users },
       { id: 'crm-prospects',          label: 'Prospects',          icon: Users },
       { id: 'crm-lead-pool',          label: 'Lead Pool',          icon: Archive, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-      { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['ceo','gm','gm_bd','manager','supervisor','admin','super_admin'] },
     ],
   },
   { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
@@ -502,16 +509,20 @@ const CRM_MENU_ITEMS = [
       { id: 'riwayat-visit',    label: 'Riwayat Visit', icon: History,  role: ['super_admin','ceo','gm_bd'] },
     ],
   },
+  // Batch restrukturisasi menu CRM #2 (26 Jul 2026): ditarik keluar dari tab
+  // 'crm-account' jadi menu top-level sendiri, paling bawah. Id/gate role
+  // (sales sengaja TIDAK termasuk)/komponen TIDAK berubah. Keputusan bisnis
+  // "diganti alur tarik-langsung" BELUM dikonfirmasi/dieksekusi — menu ini
+  // dipertahankan apa adanya.
+  { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['ceo','gm','gm_bd','manager','supervisor','admin','super_admin'] },
 ];
 
 // Tahap 2b: tabs inside the merged "Account" menu. activeMenu stays one of these
 // ids; the tab id IS the route. Gates live on the matching children of the
 // 'crm-account' node in CRM_MENU_ITEMS (found via findMenuItemById).
 const ACCOUNT_TABS = [
-  { id: 'crm-pipeline',           label: 'Pipeline'  },
   { id: 'crm-prospects',          label: 'Prospects' },
   { id: 'crm-lead-pool',          label: 'Lead Pool' },
-  { id: 'crm-lead-pool-approval', label: 'Approval'  },
 ];
 const ACCOUNT_TAB_IDS = ACCOUNT_TABS.map(t => t.id);
 const isAccountTab = (id) => ACCOUNT_TAB_IDS.includes(id);
@@ -3339,10 +3350,31 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── CRM: Account (Pipeline / Prospects / Lead Pool / Approval — tabbed) ──
-              Tahap 2b: one menu, activeMenu stays the tab id. Tab bar shows only
-              gate-permitted tabs; hidden while the Prospect form is open (full-page
-              sub-view) so form isn't lost to an accidental tab switch. */}
+          {/* ── CRM: Pipeline — ditarik keluar dari tab 'crm-account' (batch
+              restrukturisasi menu CRM #2, 26 Jul 2026) jadi menu top-level
+              sendiri. Tab Lead/Deal per-inquiry (F4-6) belum ada — masih papan
+              Lead saja, tanpa tab internal. ── */}
+          {activeMenu === 'crm-pipeline' && (
+            <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <PipelineKanbanPage
+                  showToast={showToast}
+                  setActiveMenu={setActiveMenu}
+                  setShowProspectForm={setShowProspectForm}
+                  setEditingProspect={setEditingProspect}
+                  onSelectAccount={navigateToCustomerDetail}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── CRM: Account (Prospects / Lead Pool — tabbed) ── Tahap 2b: one
+              menu, activeMenu stays the tab id. Tab bar shows only
+              gate-permitted tabs; hidden while the Prospect form is open
+              (full-page sub-view) so form isn't lost to an accidental tab
+              switch. Pipeline & Approval Lead Pool PINDAH keluar (batch
+              restrukturisasi menu CRM #2, 26 Jul 2026) — lihat blok
+              masing-masing di luar sini. */}
           {isAccountTab(activeMenu) && (
             <div>
               {!(activeMenu === 'crm-prospects' && showProspectForm) && (
@@ -3354,19 +3386,6 @@ export default function StorbitManifest() {
                   active={activeMenu}
                   onSelect={navigateTo}
                 />
-              )}
-              {activeMenu === 'crm-pipeline' && (
-                <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
-                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                    <PipelineKanbanPage
-                      showToast={showToast}
-                      setActiveMenu={setActiveMenu}
-                      setShowProspectForm={setShowProspectForm}
-                      setEditingProspect={setEditingProspect}
-                      onSelectAccount={navigateToCustomerDetail}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
               )}
               {activeMenu === 'crm-prospects' && !showProspectForm && (
                 <ErrorBoundary title="CRM Prospects temporarily unavailable">
@@ -3397,17 +3416,23 @@ export default function StorbitManifest() {
                   </Suspense>
                 </ErrorBoundary>
               )}
-              {activeMenu === 'crm-lead-pool-approval' && (!canRenderPage('crm-lead-pool-approval') ? (
-                <AccessDeniedPage />
-              ) : (
-                <ErrorBoundary title="Approval Lead Pool temporarily unavailable">
-                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                    <LeadPoolApprovalPage showToast={showToast} />
-                  </Suspense>
-                </ErrorBoundary>
-              ))}
             </div>
           )}
+
+          {/* ── CRM: Approval Lead Pool — ditarik keluar dari tab 'crm-account'
+              (batch restrukturisasi menu CRM #2, 26 Jul 2026) jadi menu
+              top-level sendiri, paling bawah. Keputusan bisnis "diganti alur
+              tarik-langsung" BELUM dikonfirmasi/dieksekusi — dipertahankan apa
+              adanya. ── */}
+          {activeMenu === 'crm-lead-pool-approval' && (!canRenderPage('crm-lead-pool-approval') ? (
+            <AccessDeniedPage />
+          ) : (
+            <ErrorBoundary title="Approval Lead Pool temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <LeadPoolApprovalPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          ))}
 
           {/* ── CRM: Quotation List ─────────────────────────────────────────── */}
           {activeMenu === 'quotation-draft' && !crmQuotationDetail && !showQuotationForm && (
