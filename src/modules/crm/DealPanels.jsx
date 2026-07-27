@@ -116,6 +116,10 @@ const PRF_BADGE = {
 const PRF_SERVICE_LABEL = {
   sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom',
 };
+// Batch 3C — angka rincian biaya per penawaran vendor (bukan Rupiah — currency
+// bisa apa saja per kartu). Terpisah dari fmtRp/fmtCompact di atas yang SELALU
+// prefix "Rp".
+const fmtAmt = (n) => Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 2 });
 
 export function useIsMobile(bp = 760) {
   const [m, setM] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
@@ -432,7 +436,15 @@ export function QuotationListCard({ quotations, onCreate, onView }) {
 
 /* ---------- PrfListCard ---------- */
 // canCreate + onCreate → tombol "Cetak PRF" (role check dilakukan pemanggil).
-export function PrfListCard({ prfs, canCreate, onCreate }) {
+//
+// Batch 3C — perluasan OPT-IN: kalau caller mengisi `prf.vendorOffers` (array)
+// pada baris PRF berstatus QUOTED, kartu ini menampilkan daftar penawaran
+// vendornya (read-only) + tombol pilih/ganti (via canSelectOffer/onSelectOffer).
+// PRF yang TIDAK punya field itu (mis. tab "Dokumen" CustomerDetailPage, yang
+// hanya fetch kolom dasar) dirender PERSIS seperti sebelumnya — tabel ringkasan
+// di bawah ini SAMA SEKALI tidak berubah.
+export function PrfListCard({ prfs, canCreate, onCreate, canSelectOffer, onSelectOffer, offerActionBusy }) {
+  const quotedWithOffers = prfs.filter((p) => String(p.status).toUpperCase() === 'QUOTED' && Array.isArray(p.vendorOffers));
   return (
     <Card
       title="Daftar PRF"
@@ -474,7 +486,80 @@ export function PrfListCard({ prfs, canCreate, onCreate }) {
           </table>
         </div>
       )}
+
+      {quotedWithOffers.map((p) => (
+        <div key={`offers-${p.id}`} style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+          <div style={{ fontFamily: HEAD, fontSize: 12, fontWeight: 700, color: C.navy, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>
+            Penawaran Vendor — {p.prf_no}
+          </div>
+          {p.min_offers_waiver_reason && (
+            <div style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.orange, marginBottom: 10 }}>
+              Hanya {p.vendorOffers.length} penawaran. Alasan procurement: {p.min_offers_waiver_reason}
+            </div>
+          )}
+          {p.vendorOffers.length === 0 ? (
+            <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Belum ada penawaran vendor.</div>
+          ) : (
+            p.vendorOffers.map((o) => (
+              <OfferMiniCard
+                key={o.id}
+                offer={o}
+                isSelected={p.selected_offer_id === o.id}
+                hasSelection={!!p.selected_offer_id}
+                canSelect={!!canSelectOffer?.(p)}
+                busy={!!offerActionBusy}
+                onSelect={() => onSelectOffer?.(p, o)}
+              />
+            ))
+          )}
+        </div>
+      ))}
     </Card>
+  );
+}
+
+// ---------- OfferMiniCard (private helper — kartu ringkas 1 penawaran vendor) ----------
+function OfferMiniCard({ offer, isSelected, hasSelection, canSelect, busy, onSelect }) {
+  const totalsEntries = Object.entries(offer.totals || {});
+  return (
+    <div style={{ border: `${isSelected ? 2 : 1}px solid ${isSelected ? C.navy : C.border}`, borderRadius: 12, padding: 14, marginBottom: 12, background: C.surface }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 13, color: C.text }}>{offer.vendorName}</span>
+        {offer.currency && <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute }}>{offer.currency}</span>}
+        {isSelected && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20, background: C.navySoft, color: C.navy, fontFamily: HEAD, fontWeight: 800, fontSize: 11, letterSpacing: '.03em' }}>
+            <Check size={12} />DIPILIH SALES
+          </span>
+        )}
+        {!isSelected && canSelect && (
+          <button type="button" onClick={onSelect} disabled={busy} style={{ marginLeft: 'auto', height: 30, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.navy}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontWeight: 700, fontSize: 12, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+            {hasSelection ? 'Ganti ke Penawaran Ini' : 'Pakai Penawaran Ini'}
+          </button>
+        )}
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontFamily: BODY, fontSize: 10.5, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>Total Biaya</div>
+        {totalsEntries.length === 0 ? (
+          <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>Belum ada rincian biaya.</span>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            {totalsEntries.map(([cur, v]) => (
+              <span key={cur} style={{ fontFamily: HEAD, fontWeight: 800, fontSize: 13.5, color: C.navy, fontVariantNumeric: 'tabular-nums' }}>{cur} {fmtAmt(v)}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <div>
+          <div style={{ fontFamily: BODY, fontSize: 10.5, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>Kelebihan</div>
+          <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.text, whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{offer.pros}</div>
+        </div>
+        <div>
+          <div style={{ fontFamily: BODY, fontSize: 10.5, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>Kekurangan</div>
+          <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.text, whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{offer.cons}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

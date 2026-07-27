@@ -16,9 +16,12 @@
 // Tombol "Buat Quotation" + panel riwayat quotation di-gate hasMenuPermission('crm_quotation','view')
 // (fail-CLOSED — beda dari canRenderPage/TD-103; konsisten TD-90).
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, Plus, Trash2, FileText, Check } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, FileText, Check, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import ConfirmModal from '../../components/ConfirmModal';
+import PRFVendorOfferModal from './PRFVendorOfferModal';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
@@ -32,6 +35,12 @@ const DANGER = '#C0392B';
 const SERVICE_LABEL = { sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom' };
 // Kategori biaya = daftar tetap (kolom item_group). Aturan bisnis, bukan CHECK di DB.
 const ITEM_GROUPS = ['Origin Charges', 'Freight Charges', 'Destination Charges'];
+// Mirrors DB is_manager_or_above() (schema_snapshot.sql, fungsi is_manager_or_above).
+// Dipakai HANYA untuk gate tombol render (RPC prf_release menegakkan izin sebenarnya).
+const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
+// Blok "Detail Layanan" (Section 03) — label tampilan, mirror kosakata PRFFormPage.jsx.
+const SEA_FREIGHT_LABEL = { fcl: 'FCL', lcl: 'LCL' };
+const CONTAINER_LABEL = { '20': "20'", '40': "40'", '40HC': "40' HC", '20RF': "20' Reefer", '40RF': "40' Reefer" };
 
 const fmtDate = (iso) => {
   if (!iso) return '—';
@@ -51,18 +60,33 @@ const totalsOf = (rows) => rows.reduce((m, r) => {
   return m;
 }, {});
 
-const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, account:accounts!prf_account_id_fkey(name), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)';
-const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate';
+// Gabungkan tipe+qty kontainer FCL jadi satu baris terbaca, mis. "20' × 2, 40' HC × 1".
+function containerSummary(types, qty) {
+  if (!Array.isArray(types) || types.length === 0) return null;
+  return types.map((t) => {
+    const q = qty && qty[t] != null ? qty[t] : null;
+    return `${CONTAINER_LABEL[t] || t}${q != null ? ` × ${q}` : ''}`;
+  }).join(', ');
+}
+// True bila salah satu nilai terisi (dipakai fallback "belum ada detail" per moda).
+const anyFilled = (...vals) => vals.some((v) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0));
+
+const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, acknowledged_by, acknowledged_at, selected_offer_id, min_offers_waiver_reason, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email), holder:profiles!prf_acknowledged_by_fkey(full_name)';
+const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate, offer_id';
 
 export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation }) {
-  const { profile, erpRole, hasMenuPermission } = useAuth();
+  const { profile, erpRole, hasMenuPermission, user } = useAuth();
   const canEdit = ['procurement', 'super_admin'].includes(erpRole);
   const canSeeQuotations = hasMenuPermission('crm_quotation', 'view');
   const companyId = profile?.company_id || null;
 
   const [prf, setPrf] = useState(null);
-  // Salinan MENTAH prf_cost_items dari DB (bukan bentuk kartu). Dipakai HANYA oleh gate +
-  // payload "Buat Quotation" supaya keduanya menggambarkan PRF versi tersimpan.
+  // Salinan MENTAH prf_cost_items dari DB (bukan bentuk kartu, TAK difilter offer_id).
+  // Dua pemakai: (1) gate + payload "Buat Quotation" (savedModalByCurrency/costTotalIdr,
+  // filter is_awarded) supaya menggambarkan PRF versi tersimpan; (2) costItemsByOffer utk
+  // kartu "Penawaran Vendor" (filter offer_id terisi). Panel "Jawaban Harga" lama TIDAK
+  // memakai state ini langsung — vendorCards/internalRows dibangun dari `ci` di load(),
+  // difilter offer_id NULL di sana (lihat komentar di titik itu).
   const [savedCostItems, setSavedCostItems] = useState([]);
   // Kartu vendor: [{ key, vendor_id, rows: [{ key, item_group, component, amount, currency, notes }] }]
   const [vendorCards, setVendorCards] = useState([]);
@@ -71,12 +95,23 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const [rates, setRates] = useState({});                 // prf.exchange_rates → { USD:'16200' }; IDR implisit 1
   const [answer, setAnswer] = useState({ suggested_rate: '', rate_currency: 'IDR', valid_from: '', valid_until: '', pricing_notes: '' });
   const [answeredName, setAnsweredName] = useState('');
+  const [primaryContact, setPrimaryContact] = useState(null); // kontak utama tabel contacts (bukan accounts.pic_*)
   const [vendors, setVendors] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [prfQuotes, setPrfQuotes] = useState([]);
+  const [vendorOffers, setVendorOffers] = useState([]); // prf_vendor_offers milik PRF ini
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [claimBusy, setClaimBusy] = useState(false);    // klaim/lepas PRF (terpisah dari `saving` panel harga)
   const [error, setError] = useState(null);
+  // Batch 3B — sisi tulis kartu "Penawaran Vendor".
+  const [offerModalOpen, setOfferModalOpen] = useState(false);
+  const [editingOffer, setEditingOffer] = useState(null); // null = mode tambah; objek = mode edit
+  const [deleteOfferTarget, setDeleteOfferTarget] = useState(null); // offer yg sedang dikonfirmasi hapus
+  const [deletingOffer, setDeletingOffer] = useState(false);
+  // Batch 3C — "Nyatakan Penawaran Siap" (ACKNOWLEDGED → QUOTED, prf_mark_quoted).
+  const [markQuotedBusy, setMarkQuotedBusy] = useState(false);
+  const [waiverModalOpen, setWaiverModalOpen] = useState(false); // dialog alasan saat penawaran < 3
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -100,12 +135,20 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     const { data: ci } = await supabase.from('prf_cost_items').select(COST_SELECT).eq('prf_id', prfId).order('sort_order', { ascending: true });
     setSavedCostItems(ci || []);
 
-    // Kelompokkan baris flat → kartu. PRF LAMA (vendor_id NULL, cost_type='vendor')
-    // jatuh ke SATU kartu "vendor belum dipilih" → tetap terbuka & tetap bisa disimpan
-    // (vendor_id null tak dihitung guard RPC, jadi tak pernah memicu RAISE).
+    // Kelompokkan baris flat → kartu. HANYA baris WARISAN (offer_id NULL) — baris
+    // ber-offer_id terisi adalah milik penawaran vendor (kartu "Penawaran Vendor" di
+    // atas, lihat costItemsByOffer) dan SENGAJA tak ikut dikelompokkan di sini: kalau
+    // ikut, panel lama menampilkannya lagi sebagai kartu vendor duplikat, dan menyimpan
+    // panel lama akan menulisnya ulang TANPA offer_id (p_items di handleSave tak pernah
+    // mengisi offer_id) → baris asli (masih ber-offer_id, tak ikut ter-DELETE karena
+    // save_prf_pricing hanya menghapus offer_id IS NULL) + baris baru ber-offer_id NULL
+    // hidup berdampingan → dobel, angka terhitung dua kali.
+    // PRF LAMA (vendor_id NULL, cost_type='vendor') jatuh ke SATU kartu "vendor belum
+    // dipilih" → tetap terbuka & tetap bisa disimpan (vendor_id null tak dihitung guard
+    // RPC, jadi tak pernah memicu RAISE).
     const internal = [];
     const byVendor = new Map();
-    (ci || []).forEach((r) => {
+    (ci || []).filter((r) => !r.offer_id).forEach((r) => {
       const row = {
         key: uid(),
         item_group: r.item_group || '',
@@ -126,15 +169,53 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     setAwardedKey(cards.find(c => c.awarded)?.key ?? null);
     setInternalRows(internal);
 
+    // Penawaran vendor (modul "Penawaran Vendor", batch 3A) — READ-ONLY di sini.
+    // Tanpa filter company_id eksplisit: RLS prf_vendor_offers_select sudah cukup,
+    // sama seperti fetch `prf`/`prf_cost_items` di atas (satu PRF spesifik, bukan
+    // daftar lintas-PRF yang butuh scoping tambahan).
+    const { data: offers, error: offersErr } = await supabase.from('prf_vendor_offers')
+      .select('id, vendor_id, currency, valid_from, valid_until, pros, cons, notes, vendor:vendors!prf_vendor_offers_vendor_id_fkey(name)')
+      .eq('prf_id', prfId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true })
+      .limit(1000);
+    if (offersErr) { console.error('[PRF] gagal memuat penawaran vendor:', offersErr.message); showToast?.('Gagal memuat penawaran vendor: ' + offersErr.message, 'error'); }
+    setVendorOffers(offers || []);
+
     if (p.answered_by) {
       const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', p.answered_by).maybeSingle();
       setAnsweredName(prof?.full_name || '');
     } else { setAnsweredName(''); }
     setLoading(false);
+    // showToast sengaja tak dimasukkan dep — alasan sama seperti effect vendor/currency
+    // di bawah (tak dimemo di App.jsx; memasukkannya akan membuat load() dibuat ulang
+    // tiap App.jsx re-render → useEffect([load]) refetch berulang).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prfId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
+
+  // Kontak utama akun ini — tabel `contacts` (is_primary=true), BUKAN accounts.pic_*
+  // (pensiunan). Pola sama persis CustomerDetailPage.jsx (primaryContact). Menunggu
+  // prf.account_id yang baru terisi setelah load() selesai.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!prf?.account_id) { setPrimaryContact(null); return undefined; }
+    let cancelled = false;
+    supabase.from('contacts')
+      .select('id, name, position, email, phone')
+      .eq('account_id', prf.account_id)
+      .eq('is_primary', true)
+      .is('deleted_at', null)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('[PRF] gagal memuat kontak utama:', error.message); return; }
+        setPrimaryContact(data || null);
+      });
+    return () => { cancelled = true; };
+  }, [prf?.account_id]);
 
   // Dropdown vendor — WAJIB tiga filter. `deleted_at` tak lagi disaring RLS (TD-115).
   useEffect(() => {
@@ -147,15 +228,28 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       .is('deleted_at', null)
       .order('code')
       .limit(1000)
-      .then(({ data }) => { if (!cancelled) setVendors(data || []); });
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('[PRF] gagal memuat daftar vendor:', error.message); showToast?.('Gagal memuat daftar vendor: ' + error.message, 'error'); return; }
+        setVendors(data || []);
+      });
     return () => { cancelled = true; };
+    // showToast sengaja tak dimasukkan dep — tak dimemo di App.jsx, memasukkannya akan
+    // memicu effect ini re-run (refetch vendor) tiap App.jsx re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId]);
 
   useEffect(() => {
     let cancelled = false;
     supabase.from('currencies').select('code, name').eq('is_active', true).order('code')
-      .then(({ data }) => { if (!cancelled) setCurrencies(data || []); });
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('[PRF] gagal memuat daftar currency:', error.message); showToast?.('Gagal memuat daftar currency: ' + error.message, 'error'); return; }
+        setCurrencies(data || []);
+      });
     return () => { cancelled = true; };
+    // showToast sengaja tak dimasukkan dep — alasan sama seperti effect vendor di atas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -208,6 +302,19 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     [usedCurrencies, rates]
   );
 
+  // Kartu "Penawaran Vendor" (batch 3A, read-only) — kelompokkan savedCostItems
+  // (bukan state form vendorCards) per offer_id supaya total tiap penawaran
+  // menggambarkan angka yang sudah TERSIMPAN, bukan draft panel Jawaban Harga lama.
+  const costItemsByOffer = useMemo(() => {
+    const m = new Map();
+    savedCostItems.forEach((r) => {
+      if (!r.offer_id) return;
+      if (!m.has(r.offer_id)) m.set(r.offer_id, []);
+      m.get(r.offer_id).push(r);
+    });
+    return m;
+  }, [savedCostItems]);
+
   const awardedCard = vendorCards.find(c => c.key === awardedKey) || null;
   // Tiga titik hitung: HANYA baris ter-award (vendor pemenang + seluruh biaya internal).
   const awardedRows = useMemo(
@@ -238,9 +345,27 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const savedRateCurrency = prf?.rate_currency || 'IDR';
   const savedRates = (prf?.exchange_rates && typeof prf.exchange_rates === 'object') ? prf.exchange_rates : {};
   const savedRateFor = (c) => ((c || 'IDR') === 'IDR' ? 1 : (num(savedRates[c]) || 1));
-  // Baris ter-award di DB = baris kartu pemenang + SELURUH biaya internal (internal selalu
-  // disimpan is_awarded=true) — ekuivalen dengan `awardedRows` di sisi form.
-  const savedModalByCurrency = totalsOf(savedCostItems.filter(r => r.is_awarded));
+  // Batch 3C — dasar modal PINDAH ke prf.selected_offer_id (TD-156). Model lama
+  // (filter is_awarded di SELURUH savedCostItems) tak pernah melihat baris
+  // ber-offer_id (batch 3B sengaja is_awarded=false untuk baris itu) → modal
+  // penawaran vendor baru TIDAK PERNAH terhitung. Formula baru = union dua bucket:
+  //   (a) baris offer_id NULL (warisan sebelum modul "Penawaran Vendor" ada) —
+  //       TETAP difilter is_awarded=true, PERSIS formula lama. is_awarded pada
+  //       baris warisan ini adalah penanda model LAMA yang membedakan vendor
+  //       menang vs kalah (bisa >1 vendor card per PRF, offer_id sama-sama NULL)
+  //       — kalau filter ini dibuang, vendor yang KALAH di PRF lama ikut
+  //       kehitung sebagai modal. Filter ini gugur bersamaan saat is_awarded
+  //       sendiri dibuang di Fase 4 (lihat TD-122).
+  //   (b) baris offer_id = selected_offer_id (penawaran yang DIPILIH SALES) —
+  //       tanpa syarat is_awarded (baris ini selalu is_awarded=false, tak lagi
+  //       relevan — keputusan "menang" sekarang murni dari selected_offer_id).
+  // hasOffers menandai PRF yang PUNYA prf_vendor_offers sama sekali — PRF lama
+  // murni (nol offer) tak pernah masuk cabang "belum tersedia" di bawah, jadi
+  // modalnya tetap terhitung dari bucket (a) seperti sebelumnya, tanpa regresi.
+  const hasOffers = vendorOffers.length > 0;
+  const legacyRows = savedCostItems.filter(r => r.offer_id == null && r.is_awarded);
+  const selectedOfferRows = prf?.selected_offer_id ? (costItemsByOffer.get(prf.selected_offer_id) || []) : [];
+  const savedModalByCurrency = totalsOf([...legacyRows, ...selectedOfferRows]);
   const awardedNonIdr = Object.keys(savedModalByCurrency).filter(c => c !== 'IDR' && num(savedModalByCurrency[c]) !== 0);
   const needConvert = awardedNonIdr.length > 0;                              // modal campur → konversi ke IDR
   const convertBlocked = awardedNonIdr.filter(c => !(num(savedRates[c]) > 0)); // kurs belum diisi → tak bisa konversi
@@ -248,11 +373,126 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     .reduce((s, [c, amt]) => s + (c === 'IDR' ? num(amt) : num(amt) * savedRateFor(c)), 0);
 
   let quotationBlockReason = null;
-  if (savedRateCurrency !== 'IDR') {
+  if (hasOffers && !prf?.selected_offer_id) {
+    quotationBlockReason = 'Sales belum memilih penawaran. Modal belum bisa dihitung sampai salah satu penawaran vendor dipilih.';
+  } else if (savedRateCurrency !== 'IDR') {
     quotationBlockReason = 'Harga jual atau modal bukan IDR. Quotation untuk kasus ini harus dibuat manual — dukungan multi-currency di quotation belum tersedia.';
   } else if (convertBlocked.length > 0) {
     quotationBlockReason = `Kurs ${convertBlocked.join(', ')} belum diisi, jadi modal tak bisa dikonversi ke IDR. Isi kurs di atas terlebih dahulu.`;
   }
+
+  // ── Klaim / Lepas PRF (batch 3A) — panggil RPC apa adanya, JANGAN duplikasi
+  // pengecekan izin di sini selain yang sudah dipakai untuk gate render tombol
+  // (canClaim/canRelease, dihitung setelah guard loading/error di bawah). Kedua
+  // RPC SECURITY DEFINER dan menegakkan izin sendiri; pesan error ditampilkan
+  // apa adanya (sudah Bahasa Indonesia yang jelas dari RAISE Postgres).
+  const handleClaim = async () => {
+    setClaimBusy(true);
+    try {
+      const { error: e } = await supabase.rpc('prf_claim', { p_prf_id: prfId });
+      if (e) throw e;
+      showToast?.('PRF berhasil diambil.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.CLAIM_PRF,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setClaimBusy(false);
+    }
+  };
+
+  const handleRelease = async () => {
+    // Force-release oleh manager (bukan pemegang asli) dicatat eksplisit di notes —
+    // release oleh diri sendiri tak kehilangan informasi apa pun, jadi notes kosong.
+    const isForceRelease = !!prf?.acknowledged_by && prf.acknowledged_by !== profile?.id;
+    setClaimBusy(true);
+    try {
+      const { error: e } = await supabase.rpc('prf_release', { p_prf_id: prfId });
+      if (e) throw e;
+      showToast?.('PRF berhasil dilepas.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.RELEASE_PRF,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: isForceRelease ? `Dilepas paksa oleh manager (sebelumnya dipegang ${prf?.holder?.full_name || 'tidak diketahui'})` : null,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setClaimBusy(false);
+    }
+  };
+
+  // ── Hapus penawaran vendor (batch 3B) — SOFT DELETE prf_vendor_offers
+  // (deleted_at; DELETE fisik super_admin-only per RLS, tak dipakai di sini),
+  // HARD DELETE prf_cost_items miliknya (tabel itu tak punya deleted_at).
+  // Diblokir di render kalau offer ini prf.selected_offer_id (lihat JSX) —
+  // fungsi ini sendiri tak mengulang cek itu, murni eksekusi.
+  const handleDeleteOffer = async (offer) => {
+    setDeletingOffer(true);
+    try {
+      const { error: eDel } = await supabase.from('prf_cost_items').delete().eq('offer_id', offer.id);
+      if (eDel) throw eDel;
+      const { error: eUpd } = await supabase.from('prf_vendor_offers').update({ deleted_at: new Date().toISOString() }).eq('id', offer.id);
+      if (eUpd) throw eUpd;
+      showToast?.('Penawaran berhasil dihapus.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.DELETE_VENDOR_OFFER,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: `Penawaran dihapus: ${offer.vendor?.name || offer.vendor_id} (offer ${offer.id})`,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setDeletingOffer(false);
+      setDeleteOfferTarget(null);
+    }
+  };
+
+  // ── Nyatakan Penawaran Siap (batch 3C) — ACKNOWLEDGED → QUOTED via
+  // prf_mark_quoted. RPC menolak kalau bukan pemegang PRF atau nol penawaran
+  // (gate render `canMarkQuoted` di bawah sudah menutup dua kasus itu duluan);
+  // guard minimum-3-atau-alasan sepenuhnya milik RPC — reason di sini HANYA
+  // dikirim kalau dialog waiver sudah mengumpulkannya.
+  const handleMarkQuoted = async (reason) => {
+    setMarkQuotedBusy(true);
+    try {
+      const { error: e } = await supabase.rpc('prf_mark_quoted', { p_prf_id: prfId, p_waiver_reason: reason || null });
+      if (e) throw e;
+      showToast?.('Penawaran dinyatakan siap dikutip.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.MARK_PRF_QUOTED,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: reason
+          ? `Disetujui dengan ${vendorOffers.length} penawaran (kurang dari 3). Alasan: ${reason}`
+          : `Disetujui dengan ${vendorOffers.length} penawaran.`,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      setWaiverModalOpen(false);
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setMarkQuotedBusy(false);
+    }
+  };
+  // Klik tombol header — buka dialog alasan HANYA kalau penawaran < 3 (alasan
+  // wajib diisi di dialog itu sebelum RPC dipanggil); ≥3 langsung tanpa dialog.
+  const handleMarkQuotedClick = () => {
+    if (vendorOffers.length < 3) { setWaiverModalOpen(true); return; }
+    handleMarkQuoted(null);
+  };
 
   const handleSave = async () => {
     if (!canEdit) return;
@@ -316,6 +556,13 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       const { error: e } = await supabase.rpc('save_prf_pricing', { p_prf_id: prfId, p_header, p_items });
       if (e) throw e;
       showToast?.('Jawaban harga tersimpan');
+      logAudit(supabase, {
+        action: ACTION_TYPES.UPDATE_PRF_PRICING,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: `Harga jual ${answer.rate_currency || 'IDR'} ${money(sell)}${awardedCard?.vendor_id ? ' · vendor dipilih' : ''}`,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
       await load();
     } catch (err) {
       showToast?.('Gagal menyimpan: ' + err.message, 'error');
@@ -350,21 +597,59 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
 
   const customer = prf.account?.name || prf.account_name_manual || '—';
 
+  // Klaim/lepas — gate TOMBOL saja; RPC prf_claim/prf_release menegakkan izin
+  // sebenarnya (SECURITY DEFINER, guard sudah di dalamnya).
+  const canClaim = canEdit && prf.status === 'SUBMITTED' && !prf.acknowledged_by;
+  const canRelease = prf.status === 'ACKNOWLEDGED' && (prf.acknowledged_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole));
+
+  // Tambah/edit/hapus penawaran vendor (batch 3B) — gate TOMBOL saja, cermin
+  // PERSIS syarat RLS prf_vendor_offers_insert/update: acknowledged_by HARUS
+  // sama dengan auth.uid() (bukan IS NULL OR — beda dari canRelease di atas).
+  // Status eksplisit ACKNOWLEDGED/QUOTED (batch 3C, keputusan desain #4): harga
+  // vendor boleh berubah setelah sales memilih, jadi tombol tambah/edit TETAP
+  // aktif saat QUOTED — RLS prf_vendor_offers_insert/update sendiri sudah tak
+  // membatasi status sama sekali (lihat migrasi 20260727000004), pengecekan di
+  // sini murni dokumentasi niat + jaga-jaga bila kelak ada status baru
+  // (CANCELLED/EXPIRED, TD-154, belum ada RPC-nya) yang seharusnya menutup akses.
+  const canManageOffers = canEdit && prf.acknowledged_by === profile?.id && ['ACKNOWLEDGED', 'QUOTED'].includes(prf.status);
+  // Batch 3C — "Nyatakan Penawaran Siap". RPC prf_mark_quoted menegakkan syarat
+  // sebenarnya (pemegang PRF + status ACKNOWLEDGED + ≥1 penawaran); gate di sini
+  // hanya menyembunyikan tombol saat pasti akan RAISE.
+  const canMarkQuoted = canEdit && prf.status === 'ACKNOWLEDGED' && prf.acknowledged_by === profile?.id && vendorOffers.length >= 1;
+
+  // Batch penutup — gerbang "Buat Quotation" kini punya DUA jalur independen
+  // yang harus hidup berdampingan (harga jual pindah jadi wilayah SALES, bukan
+  // lagi syarat procurement menjawab suggested_rate):
+  //   (a) BARU — selected_offer_id terisi (sales sudah memilih penawaran vendor;
+  //       modal dihitung dari situ via savedModalByCurrency/costTotalIdr di atas,
+  //       harga jual BELUM ada — sales yang menentukan sendiri di form Quotation).
+  //   (b) LAMA — answered_at + suggested_rate>0 (panel "Jawaban Harga" lama,
+  //       tak tersentuh modul Penawaran Vendor sama sekali) — PRF lama TIDAK
+  //       BOLEH kehilangan tombolnya.
+  // `hasOffers` (BUKAN hasNewPath/hasOldPath) yang membuka gerbang render supaya
+  // quotationBlockReason "Sales belum memilih penawaran" (batch 3C) tetap punya
+  // tempat tampil — tombol TETAP dirender (disabled + alasan), bukan disembunyikan,
+  // supaya procurement tahu jalurnya ada dan tinggal menunggu sales memilih.
+  const hasNewPath = !!prf.selected_offer_id;
+  const hasOldPath = !!prf.answered_at && num(prf.suggested_rate) > 0;
   const canCreateQuotation =
     typeof onCreateQuotation === 'function' &&
     canSeeQuotations &&
-    !!prf.answered_at &&
-    num(prf.suggested_rate) > 0 &&
+    (hasNewPath || hasOldPath || hasOffers) &&
     !['CANCELLED', 'EXPIRED'].includes(String(prf.status || '').toUpperCase());
 
   // cost_total: satu mata uang (IDR) → apa adanya; campur → konversi ke IDR pakai kurs
   // yang diinput (dilabeli eksplisit di UI). Jalur non-IDR diblokir, lihat quotationBlockReason.
+  // suggested_rate jalur baru = NULL di DB — dikirim APA ADANYA (null), BUKAN
+  // di-coerce num() jadi 0: 0 akan terbaca sebagai "harga jual Rp 0" (keliru),
+  // bukan "belum ditentukan, sales mengisi sendiri". QuotationFormPage
+  // (prefillFromPrf) membedakan dua kondisi ini di unit_price.
   const handleCreateQuotation = () => onCreateQuotation({
     prf_id:         prf.id,
     inquiry_id:     prf.inquiry_id || null,
     rate_currency:  prf.rate_currency || 'IDR',
     valid_until:    prf.valid_until || null,
-    suggested_rate: num(prf.suggested_rate),
+    suggested_rate: prf.suggested_rate != null ? num(prf.suggested_rate) : null,
     cost_total:     costTotalIdr,
   });
 
@@ -387,6 +672,31 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   ];
 
   const currencyCodes = currencies.length ? currencies.map(c => c.code) : ['IDR', 'USD'];
+
+  // Satu field label+value untuk blok Detail Layanan/Customer & Kontak — TIDAK dirender
+  // sama sekali bila kosong (bukan em-dash diam-diam). Fungsi biasa (pola sama renderRows/
+  // renderTotals di bawah), dipanggil sbg `{infoField(...)}`, BUKAN sbg tag JSX <InfoField/> —
+  // supaya React tak menganggapnya komponen terpisah (aman dari bug remount-kehilangan-fokus).
+  const infoField = (l, v) => {
+    if (v == null || v === '') return null;
+    return <div key={l}><div style={label}>{l}</div><div style={val}>{v}</div></div>;
+  };
+
+  // Blok Detail Layanan (Task 2) — true bila moda dikenal PUNYA minimal satu sub-field
+  // terisi. Dihitung per-moda (bukan gabungan seluruh kolom) supaya PRF air tak "dianggap
+  // terisi" oleh sisa data sea, dst.
+  const modeHasDetail = (() => {
+    switch (prf.service_type) {
+      case 'sea':    return anyFilled(prf.sea_freight_type, prf.sea_container_types, prf.sea_lcl_gw, prf.sea_lcl_dimension, prf.sea_lcl_volume, prf.sea_lcl_koli);
+      case 'air':    return anyFilled(prf.air_gw, prf.air_dimension, prf.air_volume, prf.air_koli);
+      case 'inland': return anyFilled(prf.inland_fleet_types, prf.inland_pickup_address, prf.inland_delivery_address, prf.inland_gw, prf.inland_dimension);
+      case 'custom': return anyFilled(prf.custom_doc_type);
+      case 'project':return anyFilled(prf.project_freight_types, prf.project_qty);
+      default:       return false;
+    }
+  })();
+  const KNOWN_MODES = ['sea', 'air', 'inland', 'custom', 'project'];
+  const showDG = !!(prf.un_number || prf.imo_class || prf.msds_available);
 
   // Tabel baris biaya — dipakai kartu vendor & kartu internal (bentuk sama).
   const renderRows = (rowsArr, onPatch, onRemove) => (
@@ -485,7 +795,37 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: ORANGE, marginBottom: 6 }}>Procurement · PRF</div>
         <h1 style={{ fontFamily: HEAD, fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: NAVY, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{prf.prf_no}</h1>
-        <div style={{ fontSize: 13, color: MUTE, marginTop: 5 }}>Status <b style={{ color: INK }}>{String(prf.status).toUpperCase()}</b> · dibuat {fmtDate(prf.created_at)}</div>
+        <div style={{ fontSize: 13, color: MUTE, marginTop: 5 }}>Status <b style={{ color: INK }}>{String(prf.status).toUpperCase()}</b> · dibuat {fmtDate(prf.created_at)}{prf.creator?.full_name ? ` oleh ${prf.creator.full_name}` : ''}</div>
+        {prf.acknowledged_by && (
+          <div style={{ fontSize: 13, color: MUTE, marginTop: 3 }}>Sedang dikerjakan oleh <b style={{ color: INK }}>{prf.holder?.full_name || '—'}</b> · sejak {fmtDate(prf.acknowledged_at)}</div>
+        )}
+        {prf.status === 'QUOTED' && (
+          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, background: '#EAF0F8', color: NAVY, fontFamily: HEAD, fontWeight: 800, fontSize: 11.5, letterSpacing: '.03em' }}>
+            <Check size={13} />PENAWARAN SIAP DIKUTIP
+          </div>
+        )}
+        {(canClaim || canRelease || canMarkQuoted) && (
+          <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
+            {canClaim && (
+              <button type="button" onClick={handleClaim} disabled={claimBusy}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 10, border: `1px solid ${ORANGE}`, background: ORANGE, color: '#fff', fontFamily: HEAD, fontWeight: 700, fontSize: 13, cursor: claimBusy ? 'not-allowed' : 'pointer', opacity: claimBusy ? 0.7 : 1 }}>
+                {claimBusy ? 'Mengambil…' : 'Ambil PRF Ini'}
+              </button>
+            )}
+            {canRelease && (
+              <button type="button" onClick={handleRelease} disabled={claimBusy}
+                style={{ ...ghostBtn, height: 38, cursor: claimBusy ? 'not-allowed' : 'pointer', opacity: claimBusy ? 0.7 : 1 }}>
+                {claimBusy ? 'Melepas…' : 'Lepas PRF'}
+              </button>
+            )}
+            {canMarkQuoted && (
+              <button type="button" onClick={handleMarkQuotedClick} disabled={markQuotedBusy}
+                style={{ ...ghostBtn, height: 38, cursor: markQuotedBusy ? 'not-allowed' : 'pointer', opacity: markQuotedBusy ? 0.7 : 1 }}>
+                {markQuotedBusy ? 'Memproses…' : 'Nyatakan Penawaran Siap'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <section style={card}>
@@ -497,6 +837,210 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           {prf.notes && <div style={{ marginTop: 16 }}><div style={label}>Catatan</div><div style={{ ...val, whiteSpace: 'pre-wrap' }}>{prf.notes}</div></div>}
         </div>
       </section>
+
+      {/* ── Customer & Kontak — akun dari accounts, kontak utama dari contacts (BUKAN
+          accounts.pic_*, sudah dipensiunkan) ── */}
+      <section style={card}>
+        <div style={secBar}><span style={secTitle}>Customer &amp; Kontak</span></div>
+        <div style={secBody}>
+          {prf.account ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
+                {infoField('Nama Akun', prf.account.name)}
+                {infoField('Kode Akun', prf.account.code)}
+              </div>
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${BORDER}` }}>
+                <div style={{ ...label, marginBottom: 10 }}>Kontak Utama</div>
+                {primaryContact ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
+                    {infoField('Nama', primaryContact.name)}
+                    {infoField('Posisi', primaryContact.position)}
+                    {infoField('Telepon', primaryContact.phone)}
+                    {infoField('Email', primaryContact.email)}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: MUTE }}>Belum ada kontak utama.</div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: MUTE }}>Data akun tidak tersedia.</div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Detail Layanan — kondisional per prf.service_type ── */}
+      <section style={card}>
+        <div style={secBar}><span style={secTitle}>Detail Layanan</span></div>
+        <div style={secBody}>
+          {!prf.service_type ? (
+            <div style={{ fontSize: 13, fontWeight: 600, color: ORANGE }}>Moda layanan belum ditentukan.</div>
+          ) : !KNOWN_MODES.includes(prf.service_type) ? (
+            <div style={{ fontSize: 13, color: MUTE }}>Moda &quot;{prf.service_type}&quot; tidak dikenal.</div>
+          ) : !modeHasDetail ? (
+            <div style={{ fontSize: 13, color: MUTE }}>Belum ada detail layanan untuk moda ini.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
+              {prf.service_type === 'sea' && <>
+                {infoField('Freight Type', SEA_FREIGHT_LABEL[prf.sea_freight_type] || prf.sea_freight_type)}
+                {infoField('Tipe & Qty Kontainer', containerSummary(prf.sea_container_types, prf.sea_container_qty))}
+                {infoField('GW LCL (kg)', prf.sea_lcl_gw)}
+                {infoField('Dimensi LCL', prf.sea_lcl_dimension)}
+                {infoField('Volume LCL (m³)', prf.sea_lcl_volume)}
+                {infoField('Koli LCL', prf.sea_lcl_koli)}
+              </>}
+              {prf.service_type === 'air' && <>
+                {infoField('GW (kg)', prf.air_gw)}
+                {infoField('Dimensi', prf.air_dimension)}
+                {infoField('Volume (m³)', prf.air_volume)}
+                {infoField('Koli', prf.air_koli)}
+              </>}
+              {prf.service_type === 'inland' && <>
+                {infoField('Tipe Armada', Array.isArray(prf.inland_fleet_types) && prf.inland_fleet_types.length ? prf.inland_fleet_types.join(', ') : null)}
+                {infoField('Pickup Address (Inland)', prf.inland_pickup_address)}
+                {infoField('Delivery Address (Inland)', prf.inland_delivery_address)}
+                {infoField('GW (kg)', prf.inland_gw)}
+                {infoField('Dimensi', prf.inland_dimension)}
+              </>}
+              {prf.service_type === 'custom' && infoField('Tipe Dokumen', prf.custom_doc_type)}
+              {prf.service_type === 'project' && <>
+                {infoField('Tipe Freight', Array.isArray(prf.project_freight_types) && prf.project_freight_types.length ? prf.project_freight_types.join(', ') : null)}
+                {infoField('Qty', prf.project_qty)}
+              </>}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Penawaran Vendor (batch 3A baca + 3B tulis) — procurement sediakan
+          opsi, sales yang memilih (prf.selected_offer_id, RPC prf_select_offer,
+          UI-nya = batch 3C). Tambah/edit/hapus di sini hanya boleh oleh
+          procurement yang SEDANG memegang PRF ini (canManageOffers). ── */}
+      <section style={card}>
+        <div style={secBar}><span style={secTitle}>Penawaran Vendor</span></div>
+        <div style={secBody}>
+          {prf.min_offers_waiver_reason && (
+            <div style={{ marginBottom: 14, fontSize: 12.5, fontWeight: 600, color: ORANGE }}>
+              Disetujui dengan kurang dari 3 penawaran. Alasan: {prf.min_offers_waiver_reason}
+            </div>
+          )}
+          {canManageOffers && (
+            <button type="button" onClick={() => { setEditingOffer(null); setOfferModalOpen(true); }} style={{ ...ghostBtn, marginBottom: 14 }}>
+              <Plus size={15} />Tambah Penawaran
+            </button>
+          )}
+          {canEdit && !canManageOffers && (
+            <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 14 }}>Ambil PRF ini dulu untuk menambah penawaran.</div>
+          )}
+
+          {vendorOffers.length === 0 ? (
+            <div style={{ fontSize: 13, color: MUTE }}>Belum ada penawaran vendor.</div>
+          ) : (
+            vendorOffers.map((o) => {
+              const isSelected = prf.selected_offer_id === o.id;
+              const offerTotals = totalsOf(costItemsByOffer.get(o.id) || []);
+              return (
+                <div key={o.id} style={{ border: `${isSelected ? 2 : 1}px solid ${isSelected ? NAVY : BORDER}`, borderRadius: 14, padding: 16, marginBottom: 16, background: '#fff' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div>
+                      <div style={label}>Vendor</div>
+                      <div style={{ ...val, fontWeight: 700 }}>{o.vendor?.name || '—'}</div>
+                    </div>
+                    {isSelected && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, background: '#EAF0F8', color: NAVY, fontFamily: HEAD, fontWeight: 800, fontSize: 11.5, letterSpacing: '.03em' }}>
+                        <Check size={13} />DIPILIH SALES
+                      </span>
+                    )}
+                    {canManageOffers && (
+                      <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                        <button type="button" onClick={() => { setEditingOffer({ ...o, costItems: costItemsByOffer.get(o.id) || [] }); setOfferModalOpen(true); }}
+                          style={iconBtn} title="Edit penawaran"><Pencil size={14} /></button>
+                        <button type="button" onClick={() => !isSelected && setDeleteOfferTarget(o)} disabled={isSelected}
+                          style={{ ...iconBtn, color: isSelected ? MUTE : DANGER, borderColor: isSelected ? BORDER : '#F0D2D2', cursor: isSelected ? 'not-allowed' : 'pointer', opacity: isSelected ? 0.5 : 1 }}
+                          title={isSelected ? 'Penawaran ini sedang dipakai sales untuk quotation. Hubungi sales kalau perlu diganti.' : 'Hapus penawaran'}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {isSelected && canManageOffers && (
+                    <div style={{ fontSize: 11.5, color: MUTE, marginBottom: 12, marginTop: -6 }}>
+                      Penawaran ini sedang dipakai sales untuk quotation — tak bisa dihapus. Hubungi sales kalau perlu diganti.
+                    </div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px 20px', marginBottom: 14 }}>
+                    {infoField('Currency', o.currency)}
+                    {o.valid_from && infoField('Berlaku Dari', fmtDate(o.valid_from))}
+                    {o.valid_until && infoField('Berlaku Sampai', fmtDate(o.valid_until))}
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={label}>Total Biaya</div>
+                    {renderTotals(offerTotals)}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+                    <div>
+                      <div style={label}>Kelebihan</div>
+                      <div style={{ ...val, whiteSpace: 'pre-wrap' }}>{o.pros}</div>
+                    </div>
+                    <div>
+                      <div style={label}>Kekurangan</div>
+                      <div style={{ ...val, whiteSpace: 'pre-wrap' }}>{o.cons}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      {offerModalOpen && (
+        <PRFVendorOfferModal
+          key={editingOffer?.id || 'new'}
+          offer={editingOffer}
+          prfId={prfId}
+          prfNo={prf.prf_no}
+          companyId={companyId}
+          vendors={vendors}
+          currencyCodes={currencyCodes}
+          actor={{ id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id }}
+          showToast={showToast}
+          onClose={() => { setOfferModalOpen(false); setEditingOffer(null); }}
+          onSaved={() => { setOfferModalOpen(false); setEditingOffer(null); load(); }}
+        />
+      )}
+
+      <ConfirmModal
+        open={!!deleteOfferTarget}
+        title="Hapus Penawaran"
+        message={`Hapus penawaran dari ${deleteOfferTarget?.vendor?.name || 'vendor ini'}? Rincian biayanya ikut terhapus.`}
+        confirmLabel={deletingOffer ? 'Menghapus…' : 'Ya, Hapus'}
+        variant="danger"
+        onConfirm={() => deleteOfferTarget && handleDeleteOffer(deleteOfferTarget)}
+        onCancel={() => !deletingOffer && setDeleteOfferTarget(null)}
+      />
+
+      {waiverModalOpen && (
+        <MinOffersWaiverModal
+          offerCount={vendorOffers.length}
+          onClose={() => setWaiverModalOpen(false)}
+          onConfirm={handleMarkQuoted}
+        />
+      )}
+
+      {/* ── Dangerous Goods — seluruh blok disembunyikan kalau nol data DG ── */}
+      {showDG && (
+        <section style={card}>
+          <div style={secBar}><span style={secTitle}>Dangerous Goods (DG)</span></div>
+          <div style={secBody}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
+              <div><div style={label}>MSDS Tersedia</div><div style={val}>{prf.msds_available ? 'Ya' : 'Tidak'}</div></div>
+              {infoField('UN Number', prf.un_number)}
+              {infoField('IMO Class', prf.imo_class)}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── Panel Jawaban Harga (multi-vendor) ── */}
       <section style={card}>
@@ -749,6 +1293,52 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+// ── Batch 3C — dialog alasan waiver saat penawaran < 3 (RPC prf_mark_quoted
+// menolak tanpa alasan). Pola sama CancelModal (SalesOrderDetailPage.jsx):
+// state lokal + onConfirm(reason) diserahkan ke pemanggil, modal urus loading
+// sendiri sambil menunggu promise-nya. ──
+function MinOffersWaiverModal({ offerCount, onClose, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  const ok = reason.trim().length > 0;
+
+  const handleConfirm = async () => {
+    if (!ok) return;
+    setLoading(true);
+    await onConfirm(reason.trim());
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
+        <h2 style={{ fontFamily: HEAD, fontSize: 17, fontWeight: 800, color: NAVY, margin: '0 0 10px' }}>Penawaran Kurang dari Minimum</h2>
+        <p style={{ fontSize: 13, color: INK, lineHeight: 1.55, margin: '0 0 4px' }}>
+          Baru ada <b>{offerCount}</b> penawaran vendor (minimum 3). Isi alasan kenapa jumlahnya kurang — <b>alasan ini akan terlihat oleh sales</b> pemilik PRF ini.
+        </p>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={4}
+          autoFocus
+          placeholder="mis. Rute ini hanya dilayani 2 vendor aktif"
+          style={{ width: '100%', boxSizing: 'border-box', marginTop: 14, borderRadius: 9, border: `1px solid ${BORDER}`, padding: '10px 12px', fontSize: 13, fontFamily: BODY, color: INK, resize: 'vertical', lineHeight: 1.5, outline: 'none' }}
+        />
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button type="button" onClick={onClose} disabled={loading}
+            style={{ padding: '10px 24px', borderRadius: 10, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+            Batal
+          </button>
+          <button type="button" onClick={handleConfirm} disabled={!ok || loading}
+            style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: ORANGE, color: 'white', fontSize: 14, fontWeight: 600, cursor: (!ok || loading) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (!ok || loading) ? 0.6 : 1 }}>
+            {loading ? 'Memproses…' : 'Nyatakan Siap'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
