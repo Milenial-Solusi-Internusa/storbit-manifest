@@ -49,6 +49,8 @@ export const ACTION_TYPES = {
   DELETE_MOM:          'DELETE_MOM',
   CREATE_PRF:          'CREATE_PRF',
   UPDATE_PRF_PRICING:  'UPDATE_PRF_PRICING',
+  CLAIM_PRF:           'CLAIM_PRF',
+  RELEASE_PRF:         'RELEASE_PRF',
 };
 
 export const ENTITY_TYPES = {
