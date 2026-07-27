@@ -35,6 +35,12 @@ import WinLossModal from './WinLossModal';
 // aksinya tidak dirender sama sekali (bukan disabled).
 const LOSABLE_INQUIRY_STATUS = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
 
+// Batch 3C — gate tombol "Pakai/Ganti Penawaran Ini" (RPC prf_select_offer
+// menegakkan izin sebenarnya). Mirrors DB is_manager_or_above() — sama persis
+// daftar di PRFDetailPage.jsx (tidak diekspor dari sana, jadi disalin di sini;
+// pola mirror-per-file ini sudah berulang di codebase).
+const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
+
 const SERVICE_LABEL = {
   freight_forwarding: 'Freight Forwarding',
   customs: 'Customs Clearance',
@@ -140,6 +146,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Tandai inquiry KALAH (Task 4) — memakai ulang WinLossModal mode='lost'.
   const [lossOpen, setLossOpen] = useState(false);
   const [lossSaving, setLossSaving] = useState(false);
+  // Batch 3C — pilih/ganti penawaran vendor (prf_select_offer). Konfirmasi
+  // HANYA dibutuhkan saat MENGGANTI pilihan yang sudah ada; pilihan pertama
+  // langsung jalan tanpa dialog.
+  const [offerSwitchConfirm, setOfferSwitchConfirm] = useState({ open: false, prf: null, offer: null });
+  const [offerActionBusy, setOfferActionBusy] = useState(false);
 
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -176,9 +187,51 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       // PRF born from this inquiry (RLS-scoped as-is — sales sees only own PRF).
       const { data: prfRows } = await supabase
         .from('prf')
-        .select('id, prf_no, service_type, status, created_at')
+        .select('id, prf_no, service_type, status, created_at, created_by, selected_offer_id, min_offers_waiver_reason')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(200);
+
+      // Batch 3C — untuk PRF berstatus QUOTED, tarik penawaran vendornya (read-only;
+      // RLS prf_vendor_offers_select/prf_cost_items_select sudah mengizinkan sales
+      // pembuat PRF membaca lewat EXISTS ke prf.created_by, tak perlu policy baru)
+      // + total biaya per penawaran (dari prf_cost_items, dikelompokkan per offer_id).
+      const quotedPrfIds = (prfRows || []).filter((p) => p.status === 'QUOTED').map((p) => p.id);
+      const offersByPrf = {};
+      if (quotedPrfIds.length) {
+        const { data: offerRows } = await supabase
+          .from('prf_vendor_offers')
+          .select('id, prf_id, vendor_id, currency, pros, cons, vendor:vendors!prf_vendor_offers_vendor_id_fkey(name)')
+          .in('prf_id', quotedPrfIds).is('deleted_at', null)
+          .order('created_at', { ascending: true }).limit(500);
+        const offerIds = (offerRows || []).map((o) => o.id);
+        const totalsByOffer = {};
+        if (offerIds.length) {
+          const { data: costRows } = await supabase
+            .from('prf_cost_items')
+            .select('offer_id, amount, currency')
+            .in('offer_id', offerIds).limit(2000);
+          (costRows || []).forEach((r) => {
+            if (!r.offer_id) return;
+            const m = totalsByOffer[r.offer_id] || (totalsByOffer[r.offer_id] = {});
+            const cur = r.currency || 'IDR';
+            m[cur] = (m[cur] || 0) + (Number(r.amount) || 0);
+          });
+        }
+        (offerRows || []).forEach((o) => {
+          if (!offersByPrf[o.prf_id]) offersByPrf[o.prf_id] = [];
+          offersByPrf[o.prf_id].push({
+            id: o.id,
+            vendorName: o.vendor?.name || '—',
+            currency: o.currency,
+            totals: totalsByOffer[o.id] || {},
+            pros: o.pros,
+            cons: o.cons,
+          });
+        });
+      }
+      const prfsAugmented = (prfRows || []).map((p) => (
+        p.status === 'QUOTED' ? { ...p, vendorOffers: offersByPrf[p.id] || [] } : p
+      ));
 
       let acts = [];
       if (inq.prospect_id) {
@@ -210,7 +263,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       setInquiry(inq);
       setAccount(acc);
       setQuotations(quos || []);
-      setPrfs(prfRows || []);
+      setPrfs(prfsAugmented);
       setActivities(acts);
       setProfMap(pMap);
       setTermMap(tMap);
@@ -351,6 +404,44 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
+  // ── Batch 3C — pilih/ganti penawaran vendor terpilih (prf.selected_offer_id).
+  // RPC prf_select_offer boleh dipanggil berulang untuk MENGGANTI pilihan (tidak
+  // ada guard yang melarangnya) — konfirmasi di sini murni UX, bukan penegak izin. ──
+  async function doSelectOffer(prf, offer) {
+    const prevOffer = prf.selected_offer_id
+      ? (prf.vendorOffers || []).find((o) => o.id === prf.selected_offer_id)
+      : null;
+    const isSwitch = !!prf.selected_offer_id && prf.selected_offer_id !== offer.id;
+    setOfferActionBusy(true);
+    try {
+      const { error } = await supabase.rpc('prf_select_offer', { p_prf_id: prf.id, p_offer_id: offer.id });
+      if (error) throw error;
+      logAudit(supabase, {
+        action: ACTION_TYPES.SELECT_VENDOR_OFFER,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prf.id,
+        entityLabel: prf.prf_no,
+        notes: isSwitch
+          ? `Ganti pilihan: ${prevOffer?.vendorName || 'vendor sebelumnya'} (offer ${prf.selected_offer_id}) → ${offer.vendorName} (offer ${offer.id})`
+          : `Penawaran dipilih: ${offer.vendorName} (offer ${offer.id})`,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      showToast?.('Penawaran vendor dipilih.', 'success');
+      refetch();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setOfferActionBusy(false);
+    }
+  }
+
+  function handleSelectOffer(prf, offer) {
+    if (prf.selected_offer_id && prf.selected_offer_id !== offer.id) {
+      setOfferSwitchConfirm({ open: true, prf, offer });
+    } else {
+      doSelectOffer(prf, offer);
+    }
+  }
+
   // ── loading / not-found ──
   if (loading) {
     return (
@@ -480,7 +571,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         {/* RIGHT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
           <QuotationListCard quotations={quotations} onCreate={onCreateQuotation} onView={onViewQuotation} />
-          <PrfListCard prfs={prfs} canCreate={['sales', 'gm_bd', 'super_admin'].includes(erpRole)} onCreate={onCreatePRF} />
+          <PrfListCard
+            prfs={prfs}
+            canCreate={['sales', 'gm_bd', 'super_admin'].includes(erpRole)}
+            onCreate={onCreatePRF}
+            canSelectOffer={(p) => p.created_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole)}
+            onSelectOffer={handleSelectOffer}
+            offerActionBusy={offerActionBusy}
+          />
           <PriceSummaryCard quotations={quotations} termMap={termMap} />
         </div>
       </div>
@@ -503,6 +601,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         cancelLabel="Batal"
         onConfirm={() => { stageGate.onYes?.(); setStageGate({ open: false, message: '', onYes: null }); }}
         onCancel={() => setStageGate({ open: false, message: '', onYes: null })}
+      />
+
+      {/* Ganti penawaran vendor terpilih — konfirmasi HANYA saat mengganti pilihan lama */}
+      <ConfirmModal
+        open={offerSwitchConfirm.open}
+        variant="warning"
+        title="Ganti Penawaran Terpilih"
+        message={`Ganti pilihan penawaran ke vendor ${offerSwitchConfirm.offer?.vendorName || ''}? Ini akan menggantikan penawaran yang sedang dipakai untuk quotation.`}
+        confirmLabel="Ya, Ganti"
+        cancelLabel="Batal"
+        onConfirm={() => {
+          const { prf, offer } = offerSwitchConfirm;
+          setOfferSwitchConfirm({ open: false, prf: null, offer: null });
+          doSelectOffer(prf, offer);
+        }}
+        onCancel={() => setOfferSwitchConfirm({ open: false, prf: null, offer: null })}
       />
 
       {/* Tandai inquiry KALAH — kategori alasan memakai kosakata WinLossModal apa adanya */}

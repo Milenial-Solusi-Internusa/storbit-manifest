@@ -71,7 +71,7 @@ function containerSummary(types, qty) {
 // True bila salah satu nilai terisi (dipakai fallback "belum ada detail" per moda).
 const anyFilled = (...vals) => vals.some((v) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0));
 
-const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, acknowledged_by, acknowledged_at, selected_offer_id, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email), holder:profiles!prf_acknowledged_by_fkey(full_name)';
+const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, acknowledged_by, acknowledged_at, selected_offer_id, min_offers_waiver_reason, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email), holder:profiles!prf_acknowledged_by_fkey(full_name)';
 const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate, offer_id';
 
 export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation }) {
@@ -109,6 +109,9 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const [editingOffer, setEditingOffer] = useState(null); // null = mode tambah; objek = mode edit
   const [deleteOfferTarget, setDeleteOfferTarget] = useState(null); // offer yg sedang dikonfirmasi hapus
   const [deletingOffer, setDeletingOffer] = useState(false);
+  // Batch 3C — "Nyatakan Penawaran Siap" (ACKNOWLEDGED → QUOTED, prf_mark_quoted).
+  const [markQuotedBusy, setMarkQuotedBusy] = useState(false);
+  const [waiverModalOpen, setWaiverModalOpen] = useState(false); // dialog alasan saat penawaran < 3
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -342,9 +345,27 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const savedRateCurrency = prf?.rate_currency || 'IDR';
   const savedRates = (prf?.exchange_rates && typeof prf.exchange_rates === 'object') ? prf.exchange_rates : {};
   const savedRateFor = (c) => ((c || 'IDR') === 'IDR' ? 1 : (num(savedRates[c]) || 1));
-  // Baris ter-award di DB = baris kartu pemenang + SELURUH biaya internal (internal selalu
-  // disimpan is_awarded=true) — ekuivalen dengan `awardedRows` di sisi form.
-  const savedModalByCurrency = totalsOf(savedCostItems.filter(r => r.is_awarded));
+  // Batch 3C — dasar modal PINDAH ke prf.selected_offer_id (TD-156). Model lama
+  // (filter is_awarded di SELURUH savedCostItems) tak pernah melihat baris
+  // ber-offer_id (batch 3B sengaja is_awarded=false untuk baris itu) → modal
+  // penawaran vendor baru TIDAK PERNAH terhitung. Formula baru = union dua bucket:
+  //   (a) baris offer_id NULL (warisan sebelum modul "Penawaran Vendor" ada) —
+  //       TETAP difilter is_awarded=true, PERSIS formula lama. is_awarded pada
+  //       baris warisan ini adalah penanda model LAMA yang membedakan vendor
+  //       menang vs kalah (bisa >1 vendor card per PRF, offer_id sama-sama NULL)
+  //       — kalau filter ini dibuang, vendor yang KALAH di PRF lama ikut
+  //       kehitung sebagai modal. Filter ini gugur bersamaan saat is_awarded
+  //       sendiri dibuang di Fase 4 (lihat TD-122).
+  //   (b) baris offer_id = selected_offer_id (penawaran yang DIPILIH SALES) —
+  //       tanpa syarat is_awarded (baris ini selalu is_awarded=false, tak lagi
+  //       relevan — keputusan "menang" sekarang murni dari selected_offer_id).
+  // hasOffers menandai PRF yang PUNYA prf_vendor_offers sama sekali — PRF lama
+  // murni (nol offer) tak pernah masuk cabang "belum tersedia" di bawah, jadi
+  // modalnya tetap terhitung dari bucket (a) seperti sebelumnya, tanpa regresi.
+  const hasOffers = vendorOffers.length > 0;
+  const legacyRows = savedCostItems.filter(r => r.offer_id == null && r.is_awarded);
+  const selectedOfferRows = prf?.selected_offer_id ? (costItemsByOffer.get(prf.selected_offer_id) || []) : [];
+  const savedModalByCurrency = totalsOf([...legacyRows, ...selectedOfferRows]);
   const awardedNonIdr = Object.keys(savedModalByCurrency).filter(c => c !== 'IDR' && num(savedModalByCurrency[c]) !== 0);
   const needConvert = awardedNonIdr.length > 0;                              // modal campur → konversi ke IDR
   const convertBlocked = awardedNonIdr.filter(c => !(num(savedRates[c]) > 0)); // kurs belum diisi → tak bisa konversi
@@ -352,7 +373,9 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     .reduce((s, [c, amt]) => s + (c === 'IDR' ? num(amt) : num(amt) * savedRateFor(c)), 0);
 
   let quotationBlockReason = null;
-  if (savedRateCurrency !== 'IDR') {
+  if (hasOffers && !prf?.selected_offer_id) {
+    quotationBlockReason = 'Sales belum memilih penawaran. Modal belum bisa dihitung sampai salah satu penawaran vendor dipilih.';
+  } else if (savedRateCurrency !== 'IDR') {
     quotationBlockReason = 'Harga jual atau modal bukan IDR. Quotation untuk kasus ini harus dibuat manual — dukungan multi-currency di quotation belum tersedia.';
   } else if (convertBlocked.length > 0) {
     quotationBlockReason = `Kurs ${convertBlocked.join(', ')} belum diisi, jadi modal tak bisa dikonversi ke IDR. Isi kurs di atas terlebih dahulu.`;
@@ -434,6 +457,41 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       setDeletingOffer(false);
       setDeleteOfferTarget(null);
     }
+  };
+
+  // ── Nyatakan Penawaran Siap (batch 3C) — ACKNOWLEDGED → QUOTED via
+  // prf_mark_quoted. RPC menolak kalau bukan pemegang PRF atau nol penawaran
+  // (gate render `canMarkQuoted` di bawah sudah menutup dua kasus itu duluan);
+  // guard minimum-3-atau-alasan sepenuhnya milik RPC — reason di sini HANYA
+  // dikirim kalau dialog waiver sudah mengumpulkannya.
+  const handleMarkQuoted = async (reason) => {
+    setMarkQuotedBusy(true);
+    try {
+      const { error: e } = await supabase.rpc('prf_mark_quoted', { p_prf_id: prfId, p_waiver_reason: reason || null });
+      if (e) throw e;
+      showToast?.('Penawaran dinyatakan siap dikutip.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.MARK_PRF_QUOTED,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: reason
+          ? `Disetujui dengan ${vendorOffers.length} penawaran (kurang dari 3). Alasan: ${reason}`
+          : `Disetujui dengan ${vendorOffers.length} penawaran.`,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      setWaiverModalOpen(false);
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setMarkQuotedBusy(false);
+    }
+  };
+  // Klik tombol header — buka dialog alasan HANYA kalau penawaran < 3 (alasan
+  // wajib diisi di dialog itu sebelum RPC dipanggil); ≥3 langsung tanpa dialog.
+  const handleMarkQuotedClick = () => {
+    if (vendorOffers.length < 3) { setWaiverModalOpen(true); return; }
+    handleMarkQuoted(null);
   };
 
   const handleSave = async () => {
@@ -547,7 +605,17 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // Tambah/edit/hapus penawaran vendor (batch 3B) — gate TOMBOL saja, cermin
   // PERSIS syarat RLS prf_vendor_offers_insert/update: acknowledged_by HARUS
   // sama dengan auth.uid() (bukan IS NULL OR — beda dari canRelease di atas).
-  const canManageOffers = canEdit && prf.acknowledged_by === profile?.id;
+  // Status eksplisit ACKNOWLEDGED/QUOTED (batch 3C, keputusan desain #4): harga
+  // vendor boleh berubah setelah sales memilih, jadi tombol tambah/edit TETAP
+  // aktif saat QUOTED — RLS prf_vendor_offers_insert/update sendiri sudah tak
+  // membatasi status sama sekali (lihat migrasi 20260727000004), pengecekan di
+  // sini murni dokumentasi niat + jaga-jaga bila kelak ada status baru
+  // (CANCELLED/EXPIRED, TD-154, belum ada RPC-nya) yang seharusnya menutup akses.
+  const canManageOffers = canEdit && prf.acknowledged_by === profile?.id && ['ACKNOWLEDGED', 'QUOTED'].includes(prf.status);
+  // Batch 3C — "Nyatakan Penawaran Siap". RPC prf_mark_quoted menegakkan syarat
+  // sebenarnya (pemegang PRF + status ACKNOWLEDGED + ≥1 penawaran); gate di sini
+  // hanya menyembunyikan tombol saat pasti akan RAISE.
+  const canMarkQuoted = canEdit && prf.status === 'ACKNOWLEDGED' && prf.acknowledged_by === profile?.id && vendorOffers.length >= 1;
 
   const canCreateQuotation =
     typeof onCreateQuotation === 'function' &&
@@ -713,7 +781,12 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
         {prf.acknowledged_by && (
           <div style={{ fontSize: 13, color: MUTE, marginTop: 3 }}>Sedang dikerjakan oleh <b style={{ color: INK }}>{prf.holder?.full_name || '—'}</b> · sejak {fmtDate(prf.acknowledged_at)}</div>
         )}
-        {(canClaim || canRelease) && (
+        {prf.status === 'QUOTED' && (
+          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, background: '#EAF0F8', color: NAVY, fontFamily: HEAD, fontWeight: 800, fontSize: 11.5, letterSpacing: '.03em' }}>
+            <Check size={13} />PENAWARAN SIAP DIKUTIP
+          </div>
+        )}
+        {(canClaim || canRelease || canMarkQuoted) && (
           <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
             {canClaim && (
               <button type="button" onClick={handleClaim} disabled={claimBusy}
@@ -725,6 +798,12 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
               <button type="button" onClick={handleRelease} disabled={claimBusy}
                 style={{ ...ghostBtn, height: 38, cursor: claimBusy ? 'not-allowed' : 'pointer', opacity: claimBusy ? 0.7 : 1 }}>
                 {claimBusy ? 'Melepas…' : 'Lepas PRF'}
+              </button>
+            )}
+            {canMarkQuoted && (
+              <button type="button" onClick={handleMarkQuotedClick} disabled={markQuotedBusy}
+                style={{ ...ghostBtn, height: 38, cursor: markQuotedBusy ? 'not-allowed' : 'pointer', opacity: markQuotedBusy ? 0.7 : 1 }}>
+                {markQuotedBusy ? 'Memproses…' : 'Nyatakan Penawaran Siap'}
               </button>
             )}
           </div>
@@ -822,6 +901,11 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       <section style={card}>
         <div style={secBar}><span style={secTitle}>Penawaran Vendor</span></div>
         <div style={secBody}>
+          {prf.min_offers_waiver_reason && (
+            <div style={{ marginBottom: 14, fontSize: 12.5, fontWeight: 600, color: ORANGE }}>
+              Disetujui dengan kurang dari 3 penawaran. Alasan: {prf.min_offers_waiver_reason}
+            </div>
+          )}
           {canManageOffers && (
             <button type="button" onClick={() => { setEditingOffer(null); setOfferModalOpen(true); }} style={{ ...ghostBtn, marginBottom: 14 }}>
               <Plus size={15} />Tambah Penawaran
@@ -917,6 +1001,14 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
         onConfirm={() => deleteOfferTarget && handleDeleteOffer(deleteOfferTarget)}
         onCancel={() => !deletingOffer && setDeleteOfferTarget(null)}
       />
+
+      {waiverModalOpen && (
+        <MinOffersWaiverModal
+          offerCount={vendorOffers.length}
+          onClose={() => setWaiverModalOpen(false)}
+          onConfirm={handleMarkQuoted}
+        />
+      )}
 
       {/* ── Dangerous Goods — seluruh blok disembunyikan kalau nol data DG ── */}
       {showDG && (
@@ -1183,6 +1275,52 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+// ── Batch 3C — dialog alasan waiver saat penawaran < 3 (RPC prf_mark_quoted
+// menolak tanpa alasan). Pola sama CancelModal (SalesOrderDetailPage.jsx):
+// state lokal + onConfirm(reason) diserahkan ke pemanggil, modal urus loading
+// sendiri sambil menunggu promise-nya. ──
+function MinOffersWaiverModal({ offerCount, onClose, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  const ok = reason.trim().length > 0;
+
+  const handleConfirm = async () => {
+    if (!ok) return;
+    setLoading(true);
+    await onConfirm(reason.trim());
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
+        <h2 style={{ fontFamily: HEAD, fontSize: 17, fontWeight: 800, color: NAVY, margin: '0 0 10px' }}>Penawaran Kurang dari Minimum</h2>
+        <p style={{ fontSize: 13, color: INK, lineHeight: 1.55, margin: '0 0 4px' }}>
+          Baru ada <b>{offerCount}</b> penawaran vendor (minimum 3). Isi alasan kenapa jumlahnya kurang — <b>alasan ini akan terlihat oleh sales</b> pemilik PRF ini.
+        </p>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={4}
+          autoFocus
+          placeholder="mis. Rute ini hanya dilayani 2 vendor aktif"
+          style={{ width: '100%', boxSizing: 'border-box', marginTop: 14, borderRadius: 9, border: `1px solid ${BORDER}`, padding: '10px 12px', fontSize: 13, fontFamily: BODY, color: INK, resize: 'vertical', lineHeight: 1.5, outline: 'none' }}
+        />
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button type="button" onClick={onClose} disabled={loading}
+            style={{ padding: '10px 24px', borderRadius: 10, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+            Batal
+          </button>
+          <button type="button" onClick={handleConfirm} disabled={!ok || loading}
+            style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: ORANGE, color: 'white', fontSize: 14, fontWeight: 600, cursor: (!ok || loading) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (!ok || loading) ? 0.6 : 1 }}>
+            {loading ? 'Memproses…' : 'Nyatakan Siap'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
