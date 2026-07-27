@@ -33,6 +33,9 @@ const DANGER = '#C0392B';
 const SERVICE_LABEL = { sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom' };
 // Kategori biaya = daftar tetap (kolom item_group). Aturan bisnis, bukan CHECK di DB.
 const ITEM_GROUPS = ['Origin Charges', 'Freight Charges', 'Destination Charges'];
+// Mirrors DB is_manager_or_above() (schema_snapshot.sql, fungsi is_manager_or_above).
+// Dipakai HANYA untuk gate tombol render (RPC prf_release menegakkan izin sebenarnya).
+const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
 // Blok "Detail Layanan" (Section 03) — label tampilan, mirror kosakata PRFFormPage.jsx.
 const SEA_FREIGHT_LABEL = { fcl: 'FCL', lcl: 'LCL' };
 const CONTAINER_LABEL = { '20': "20'", '40': "40'", '40HC': "40' HC", '20RF': "20' Reefer", '40RF': "40' Reefer" };
@@ -66,8 +69,8 @@ function containerSummary(types, qty) {
 // True bila salah satu nilai terisi (dipakai fallback "belum ada detail" per moda).
 const anyFilled = (...vals) => vals.some((v) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0));
 
-const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email)';
-const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate';
+const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, acknowledged_by, acknowledged_at, selected_offer_id, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email), holder:profiles!prf_acknowledged_by_fkey(full_name)';
+const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate, offer_id';
 
 export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation }) {
   const { profile, erpRole, hasMenuPermission, user } = useAuth();
@@ -90,8 +93,10 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const [vendors, setVendors] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [prfQuotes, setPrfQuotes] = useState([]);
+  const [vendorOffers, setVendorOffers] = useState([]); // prf_vendor_offers milik PRF ini — READ-ONLY (batch 3A)
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [claimBusy, setClaimBusy] = useState(false);    // klaim/lepas PRF (terpisah dari `saving` panel harga)
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
@@ -142,11 +147,28 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     setAwardedKey(cards.find(c => c.awarded)?.key ?? null);
     setInternalRows(internal);
 
+    // Penawaran vendor (modul "Penawaran Vendor", batch 3A) — READ-ONLY di sini.
+    // Tanpa filter company_id eksplisit: RLS prf_vendor_offers_select sudah cukup,
+    // sama seperti fetch `prf`/`prf_cost_items` di atas (satu PRF spesifik, bukan
+    // daftar lintas-PRF yang butuh scoping tambahan).
+    const { data: offers, error: offersErr } = await supabase.from('prf_vendor_offers')
+      .select('id, vendor_id, currency, valid_from, valid_until, pros, cons, vendor:vendors!prf_vendor_offers_vendor_id_fkey(name)')
+      .eq('prf_id', prfId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true })
+      .limit(1000);
+    if (offersErr) { console.error('[PRF] gagal memuat penawaran vendor:', offersErr.message); showToast?.('Gagal memuat penawaran vendor: ' + offersErr.message, 'error'); }
+    setVendorOffers(offers || []);
+
     if (p.answered_by) {
       const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', p.answered_by).maybeSingle();
       setAnsweredName(prof?.full_name || '');
     } else { setAnsweredName(''); }
     setLoading(false);
+    // showToast sengaja tak dimasukkan dep — alasan sama seperti effect vendor/currency
+    // di bawah (tak dimemo di App.jsx; memasukkannya akan membuat load() dibuat ulang
+    // tiap App.jsx re-render → useEffect([load]) refetch berulang).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prfId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -258,6 +280,19 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     [usedCurrencies, rates]
   );
 
+  // Kartu "Penawaran Vendor" (batch 3A, read-only) — kelompokkan savedCostItems
+  // (bukan state form vendorCards) per offer_id supaya total tiap penawaran
+  // menggambarkan angka yang sudah TERSIMPAN, bukan draft panel Jawaban Harga lama.
+  const costItemsByOffer = useMemo(() => {
+    const m = new Map();
+    savedCostItems.forEach((r) => {
+      if (!r.offer_id) return;
+      if (!m.has(r.offer_id)) m.set(r.offer_id, []);
+      m.get(r.offer_id).push(r);
+    });
+    return m;
+  }, [savedCostItems]);
+
   const awardedCard = vendorCards.find(c => c.key === awardedKey) || null;
   // Tiga titik hitung: HANYA baris ter-award (vendor pemenang + seluruh biaya internal).
   const awardedRows = useMemo(
@@ -303,6 +338,55 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   } else if (convertBlocked.length > 0) {
     quotationBlockReason = `Kurs ${convertBlocked.join(', ')} belum diisi, jadi modal tak bisa dikonversi ke IDR. Isi kurs di atas terlebih dahulu.`;
   }
+
+  // ── Klaim / Lepas PRF (batch 3A) — panggil RPC apa adanya, JANGAN duplikasi
+  // pengecekan izin di sini selain yang sudah dipakai untuk gate render tombol
+  // (canClaim/canRelease, dihitung setelah guard loading/error di bawah). Kedua
+  // RPC SECURITY DEFINER dan menegakkan izin sendiri; pesan error ditampilkan
+  // apa adanya (sudah Bahasa Indonesia yang jelas dari RAISE Postgres).
+  const handleClaim = async () => {
+    setClaimBusy(true);
+    try {
+      const { error: e } = await supabase.rpc('prf_claim', { p_prf_id: prfId });
+      if (e) throw e;
+      showToast?.('PRF berhasil diambil.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.CLAIM_PRF,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setClaimBusy(false);
+    }
+  };
+
+  const handleRelease = async () => {
+    // Force-release oleh manager (bukan pemegang asli) dicatat eksplisit di notes —
+    // release oleh diri sendiri tak kehilangan informasi apa pun, jadi notes kosong.
+    const isForceRelease = !!prf?.acknowledged_by && prf.acknowledged_by !== profile?.id;
+    setClaimBusy(true);
+    try {
+      const { error: e } = await supabase.rpc('prf_release', { p_prf_id: prfId });
+      if (e) throw e;
+      showToast?.('PRF berhasil dilepas.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.RELEASE_PRF,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: isForceRelease ? `Dilepas paksa oleh manager (sebelumnya dipegang ${prf?.holder?.full_name || 'tidak diketahui'})` : null,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setClaimBusy(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!canEdit) return;
@@ -406,6 +490,11 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   );
 
   const customer = prf.account?.name || prf.account_name_manual || '—';
+
+  // Klaim/lepas — gate TOMBOL saja; RPC prf_claim/prf_release menegakkan izin
+  // sebenarnya (SECURITY DEFINER, guard sudah di dalamnya).
+  const canClaim = canEdit && prf.status === 'SUBMITTED' && !prf.acknowledged_by;
+  const canRelease = prf.status === 'ACKNOWLEDGED' && (prf.acknowledged_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole));
 
   const canCreateQuotation =
     typeof onCreateQuotation === 'function' &&
@@ -568,6 +657,25 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: ORANGE, marginBottom: 6 }}>Procurement · PRF</div>
         <h1 style={{ fontFamily: HEAD, fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: NAVY, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{prf.prf_no}</h1>
         <div style={{ fontSize: 13, color: MUTE, marginTop: 5 }}>Status <b style={{ color: INK }}>{String(prf.status).toUpperCase()}</b> · dibuat {fmtDate(prf.created_at)}{prf.creator?.full_name ? ` oleh ${prf.creator.full_name}` : ''}</div>
+        {prf.acknowledged_by && (
+          <div style={{ fontSize: 13, color: MUTE, marginTop: 3 }}>Sedang dikerjakan oleh <b style={{ color: INK }}>{prf.holder?.full_name || '—'}</b> · sejak {fmtDate(prf.acknowledged_at)}</div>
+        )}
+        {(canClaim || canRelease) && (
+          <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
+            {canClaim && (
+              <button type="button" onClick={handleClaim} disabled={claimBusy}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 10, border: `1px solid ${ORANGE}`, background: ORANGE, color: '#fff', fontFamily: HEAD, fontWeight: 700, fontSize: 13, cursor: claimBusy ? 'not-allowed' : 'pointer', opacity: claimBusy ? 0.7 : 1 }}>
+                {claimBusy ? 'Mengambil…' : 'Ambil PRF Ini'}
+              </button>
+            )}
+            {canRelease && (
+              <button type="button" onClick={handleRelease} disabled={claimBusy}
+                style={{ ...ghostBtn, height: 38, cursor: claimBusy ? 'not-allowed' : 'pointer', opacity: claimBusy ? 0.7 : 1 }}>
+                {claimBusy ? 'Melepas…' : 'Lepas PRF'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <section style={card}>
@@ -650,6 +758,56 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
                 {infoField('Qty', prf.project_qty)}
               </>}
             </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Penawaran Vendor (batch 3A, READ-ONLY) — procurement sediakan opsi,
+          sales yang memilih (prf.selected_offer_id). Form tambah/edit = batch 3B. ── */}
+      <section style={card}>
+        <div style={secBar}><span style={secTitle}>Penawaran Vendor</span></div>
+        <div style={secBody}>
+          {vendorOffers.length === 0 ? (
+            <div style={{ fontSize: 13, color: MUTE }}>Belum ada penawaran vendor.</div>
+          ) : (
+            vendorOffers.map((o) => {
+              const isSelected = prf.selected_offer_id === o.id;
+              const offerTotals = totalsOf(costItemsByOffer.get(o.id) || []);
+              return (
+                <div key={o.id} style={{ border: `${isSelected ? 2 : 1}px solid ${isSelected ? NAVY : BORDER}`, borderRadius: 14, padding: 16, marginBottom: 16, background: '#fff' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div>
+                      <div style={label}>Vendor</div>
+                      <div style={{ ...val, fontWeight: 700 }}>{o.vendor?.name || '—'}</div>
+                    </div>
+                    {isSelected && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, background: '#EAF0F8', color: NAVY, fontFamily: HEAD, fontWeight: 800, fontSize: 11.5, letterSpacing: '.03em' }}>
+                        <Check size={13} />DIPILIH SALES
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px 20px', marginBottom: 14 }}>
+                    {infoField('Currency', o.currency)}
+                    {o.valid_from && infoField('Berlaku Dari', fmtDate(o.valid_from))}
+                    {o.valid_until && infoField('Berlaku Sampai', fmtDate(o.valid_until))}
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={label}>Total Biaya</div>
+                    {renderTotals(offerTotals)}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+                    <div>
+                      <div style={label}>Kelebihan</div>
+                      <div style={{ ...val, whiteSpace: 'pre-wrap' }}>{o.pros}</div>
+                    </div>
+                    <div>
+                      <div style={label}>Kekurangan</div>
+                      <div style={{ ...val, whiteSpace: 'pre-wrap' }}>{o.cons}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </section>
