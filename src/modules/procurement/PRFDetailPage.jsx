@@ -16,10 +16,12 @@
 // Tombol "Buat Quotation" + panel riwayat quotation di-gate hasMenuPermission('crm_quotation','view')
 // (fail-CLOSED — beda dari canRenderPage/TD-103; konsisten TD-90).
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, Plus, Trash2, FileText, Check } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, FileText, Check, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import ConfirmModal from '../../components/ConfirmModal';
+import PRFVendorOfferModal from './PRFVendorOfferModal';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
@@ -97,11 +99,16 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const [vendors, setVendors] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [prfQuotes, setPrfQuotes] = useState([]);
-  const [vendorOffers, setVendorOffers] = useState([]); // prf_vendor_offers milik PRF ini — READ-ONLY (batch 3A)
+  const [vendorOffers, setVendorOffers] = useState([]); // prf_vendor_offers milik PRF ini
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [claimBusy, setClaimBusy] = useState(false);    // klaim/lepas PRF (terpisah dari `saving` panel harga)
   const [error, setError] = useState(null);
+  // Batch 3B — sisi tulis kartu "Penawaran Vendor".
+  const [offerModalOpen, setOfferModalOpen] = useState(false);
+  const [editingOffer, setEditingOffer] = useState(null); // null = mode tambah; objek = mode edit
+  const [deleteOfferTarget, setDeleteOfferTarget] = useState(null); // offer yg sedang dikonfirmasi hapus
+  const [deletingOffer, setDeletingOffer] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -164,7 +171,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     // sama seperti fetch `prf`/`prf_cost_items` di atas (satu PRF spesifik, bukan
     // daftar lintas-PRF yang butuh scoping tambahan).
     const { data: offers, error: offersErr } = await supabase.from('prf_vendor_offers')
-      .select('id, vendor_id, currency, valid_from, valid_until, pros, cons, vendor:vendors!prf_vendor_offers_vendor_id_fkey(name)')
+      .select('id, vendor_id, currency, valid_from, valid_until, pros, cons, notes, vendor:vendors!prf_vendor_offers_vendor_id_fkey(name)')
       .eq('prf_id', prfId)
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
@@ -400,6 +407,35 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     }
   };
 
+  // ── Hapus penawaran vendor (batch 3B) — SOFT DELETE prf_vendor_offers
+  // (deleted_at; DELETE fisik super_admin-only per RLS, tak dipakai di sini),
+  // HARD DELETE prf_cost_items miliknya (tabel itu tak punya deleted_at).
+  // Diblokir di render kalau offer ini prf.selected_offer_id (lihat JSX) —
+  // fungsi ini sendiri tak mengulang cek itu, murni eksekusi.
+  const handleDeleteOffer = async (offer) => {
+    setDeletingOffer(true);
+    try {
+      const { error: eDel } = await supabase.from('prf_cost_items').delete().eq('offer_id', offer.id);
+      if (eDel) throw eDel;
+      const { error: eUpd } = await supabase.from('prf_vendor_offers').update({ deleted_at: new Date().toISOString() }).eq('id', offer.id);
+      if (eUpd) throw eUpd;
+      showToast?.('Penawaran berhasil dihapus.');
+      logAudit(supabase, {
+        action: ACTION_TYPES.DELETE_VENDOR_OFFER,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: `Penawaran dihapus: ${offer.vendor?.name || offer.vendor_id} (offer ${offer.id})`,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+      await load();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setDeletingOffer(false);
+      setDeleteOfferTarget(null);
+    }
+  };
+
   const handleSave = async () => {
     if (!canEdit) return;
     // Cegah RAISE dari guard RPC + cegah biaya vendor tersimpan senyap sebagai
@@ -507,6 +543,11 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // sebenarnya (SECURITY DEFINER, guard sudah di dalamnya).
   const canClaim = canEdit && prf.status === 'SUBMITTED' && !prf.acknowledged_by;
   const canRelease = prf.status === 'ACKNOWLEDGED' && (prf.acknowledged_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole));
+
+  // Tambah/edit/hapus penawaran vendor (batch 3B) — gate TOMBOL saja, cermin
+  // PERSIS syarat RLS prf_vendor_offers_insert/update: acknowledged_by HARUS
+  // sama dengan auth.uid() (bukan IS NULL OR — beda dari canRelease di atas).
+  const canManageOffers = canEdit && prf.acknowledged_by === profile?.id;
 
   const canCreateQuotation =
     typeof onCreateQuotation === 'function' &&
@@ -774,11 +815,22 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
         </div>
       </section>
 
-      {/* ── Penawaran Vendor (batch 3A, READ-ONLY) — procurement sediakan opsi,
-          sales yang memilih (prf.selected_offer_id). Form tambah/edit = batch 3B. ── */}
+      {/* ── Penawaran Vendor (batch 3A baca + 3B tulis) — procurement sediakan
+          opsi, sales yang memilih (prf.selected_offer_id, RPC prf_select_offer,
+          UI-nya = batch 3C). Tambah/edit/hapus di sini hanya boleh oleh
+          procurement yang SEDANG memegang PRF ini (canManageOffers). ── */}
       <section style={card}>
         <div style={secBar}><span style={secTitle}>Penawaran Vendor</span></div>
         <div style={secBody}>
+          {canManageOffers && (
+            <button type="button" onClick={() => { setEditingOffer(null); setOfferModalOpen(true); }} style={{ ...ghostBtn, marginBottom: 14 }}>
+              <Plus size={15} />Tambah Penawaran
+            </button>
+          )}
+          {canEdit && !canManageOffers && (
+            <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 14 }}>Ambil PRF ini dulu untuk menambah penawaran.</div>
+          )}
+
           {vendorOffers.length === 0 ? (
             <div style={{ fontSize: 13, color: MUTE }}>Belum ada penawaran vendor.</div>
           ) : (
@@ -797,7 +849,23 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
                         <Check size={13} />DIPILIH SALES
                       </span>
                     )}
+                    {canManageOffers && (
+                      <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                        <button type="button" onClick={() => { setEditingOffer({ ...o, costItems: costItemsByOffer.get(o.id) || [] }); setOfferModalOpen(true); }}
+                          style={iconBtn} title="Edit penawaran"><Pencil size={14} /></button>
+                        <button type="button" onClick={() => !isSelected && setDeleteOfferTarget(o)} disabled={isSelected}
+                          style={{ ...iconBtn, color: isSelected ? MUTE : DANGER, borderColor: isSelected ? BORDER : '#F0D2D2', cursor: isSelected ? 'not-allowed' : 'pointer', opacity: isSelected ? 0.5 : 1 }}
+                          title={isSelected ? 'Penawaran ini sedang dipakai sales untuk quotation. Hubungi sales kalau perlu diganti.' : 'Hapus penawaran'}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
+                  {isSelected && canManageOffers && (
+                    <div style={{ fontSize: 11.5, color: MUTE, marginBottom: 12, marginTop: -6 }}>
+                      Penawaran ini sedang dipakai sales untuk quotation — tak bisa dihapus. Hubungi sales kalau perlu diganti.
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px 20px', marginBottom: 14 }}>
                     {infoField('Currency', o.currency)}
                     {o.valid_from && infoField('Berlaku Dari', fmtDate(o.valid_from))}
@@ -823,6 +891,32 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           )}
         </div>
       </section>
+
+      {offerModalOpen && (
+        <PRFVendorOfferModal
+          key={editingOffer?.id || 'new'}
+          offer={editingOffer}
+          prfId={prfId}
+          prfNo={prf.prf_no}
+          companyId={companyId}
+          vendors={vendors}
+          currencyCodes={currencyCodes}
+          actor={{ id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id }}
+          showToast={showToast}
+          onClose={() => { setOfferModalOpen(false); setEditingOffer(null); }}
+          onSaved={() => { setOfferModalOpen(false); setEditingOffer(null); load(); }}
+        />
+      )}
+
+      <ConfirmModal
+        open={!!deleteOfferTarget}
+        title="Hapus Penawaran"
+        message={`Hapus penawaran dari ${deleteOfferTarget?.vendor?.name || 'vendor ini'}? Rincian biayanya ikut terhapus.`}
+        confirmLabel={deletingOffer ? 'Menghapus…' : 'Ya, Hapus'}
+        variant="danger"
+        onConfirm={() => deleteOfferTarget && handleDeleteOffer(deleteOfferTarget)}
+        onCancel={() => !deletingOffer && setDeleteOfferTarget(null)}
+      />
 
       {/* ── Dangerous Goods — seluruh blok disembunyikan kalau nol data DG ── */}
       {showDG && (
