@@ -79,8 +79,12 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const companyId = profile?.company_id || null;
 
   const [prf, setPrf] = useState(null);
-  // Salinan MENTAH prf_cost_items dari DB (bukan bentuk kartu). Dipakai HANYA oleh gate +
-  // payload "Buat Quotation" supaya keduanya menggambarkan PRF versi tersimpan.
+  // Salinan MENTAH prf_cost_items dari DB (bukan bentuk kartu, TAK difilter offer_id).
+  // Dua pemakai: (1) gate + payload "Buat Quotation" (savedModalByCurrency/costTotalIdr,
+  // filter is_awarded) supaya menggambarkan PRF versi tersimpan; (2) costItemsByOffer utk
+  // kartu "Penawaran Vendor" (filter offer_id terisi). Panel "Jawaban Harga" lama TIDAK
+  // memakai state ini langsung — vendorCards/internalRows dibangun dari `ci` di load(),
+  // difilter offer_id NULL di sana (lihat komentar di titik itu).
   const [savedCostItems, setSavedCostItems] = useState([]);
   // Kartu vendor: [{ key, vendor_id, rows: [{ key, item_group, component, amount, currency, notes }] }]
   const [vendorCards, setVendorCards] = useState([]);
@@ -121,12 +125,20 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     const { data: ci } = await supabase.from('prf_cost_items').select(COST_SELECT).eq('prf_id', prfId).order('sort_order', { ascending: true });
     setSavedCostItems(ci || []);
 
-    // Kelompokkan baris flat → kartu. PRF LAMA (vendor_id NULL, cost_type='vendor')
-    // jatuh ke SATU kartu "vendor belum dipilih" → tetap terbuka & tetap bisa disimpan
-    // (vendor_id null tak dihitung guard RPC, jadi tak pernah memicu RAISE).
+    // Kelompokkan baris flat → kartu. HANYA baris WARISAN (offer_id NULL) — baris
+    // ber-offer_id terisi adalah milik penawaran vendor (kartu "Penawaran Vendor" di
+    // atas, lihat costItemsByOffer) dan SENGAJA tak ikut dikelompokkan di sini: kalau
+    // ikut, panel lama menampilkannya lagi sebagai kartu vendor duplikat, dan menyimpan
+    // panel lama akan menulisnya ulang TANPA offer_id (p_items di handleSave tak pernah
+    // mengisi offer_id) → baris asli (masih ber-offer_id, tak ikut ter-DELETE karena
+    // save_prf_pricing hanya menghapus offer_id IS NULL) + baris baru ber-offer_id NULL
+    // hidup berdampingan → dobel, angka terhitung dua kali.
+    // PRF LAMA (vendor_id NULL, cost_type='vendor') jatuh ke SATU kartu "vendor belum
+    // dipilih" → tetap terbuka & tetap bisa disimpan (vendor_id null tak dihitung guard
+    // RPC, jadi tak pernah memicu RAISE).
     const internal = [];
     const byVendor = new Map();
-    (ci || []).forEach((r) => {
+    (ci || []).filter((r) => !r.offer_id).forEach((r) => {
       const row = {
         key: uid(),
         item_group: r.item_group || '',
