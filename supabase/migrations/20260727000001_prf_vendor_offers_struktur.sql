@@ -93,7 +93,7 @@ USING (
 )
 WITH CHECK (
   is_super_admin() OR (
-    company_id = get_user_company_id()
+    company_id = get_user_company_id() AND has_role('procurement')
     AND EXISTS (SELECT 1 FROM public.prf p
                 WHERE p.id = prf_vendor_offers.prf_id AND p.acknowledged_by = auth.uid())
   )
