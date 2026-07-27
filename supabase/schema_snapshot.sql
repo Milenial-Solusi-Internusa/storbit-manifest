@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict QZgb3SL5wBr83sBtc5aN66SWxrLWeSsDlrq2FPa2w2sqxzfsHIOZ0SVRC18cJCM
+\restrict vqcRr8wXjdGL5co5ypmx3qF1XbjEdUMZQe6V8lUN3Xfl7tAFMhTC3lGuVQYLa6G
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1260,7 +1260,7 @@ DECLARE
   v_count   int;
   v_vendors int;
 BEGIN
-  -- 1) Header jawaban harga (RLS prf_update_status: procurement + status='SUBMITTED').
+  -- 1) Header jawaban harga (RLS prf_update_status: procurement + SUBMITTED/ACKNOWLEDGED).
   UPDATE public.prf SET
     suggested_rate = NULLIF(p_header->>'suggested_rate','')::numeric,
     rate_currency  = COALESCE(NULLIF(p_header->>'rate_currency',''), 'IDR'),
@@ -1293,8 +1293,12 @@ BEGIN
     END IF;
   END IF;
 
-  -- 2) Replace rincian biaya (RLS prf_cost_items_delete + _insert: procurement + SUBMITTED).
-  DELETE FROM public.prf_cost_items WHERE prf_id = p_prf_id;
+  -- 2) Replace rincian biaya WARISAN saja.
+  -- ⭐ 27 Jul 2026: DELETE dibatasi ke baris ber-offer_id NULL. Tanpa syarat ini,
+  -- panel "Jawaban Harga" lama akan MENGHAPUS seluruh baris biaya milik
+  -- prf_vendor_offers (modul Penawaran Vendor) secara diam-diam.
+  DELETE FROM public.prf_cost_items
+  WHERE prf_id = p_prf_id AND offer_id IS NULL;
 
   IF p_items IS NOT NULL AND jsonb_typeof(p_items) = 'array' THEN
     INSERT INTO public.prf_cost_items (
@@ -12995,7 +12999,7 @@ ALTER TABLE public.prf_cost_items ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY prf_cost_items_delete ON public.prf_cost_items FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = 'SUBMITTED'::text)))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
@@ -13004,7 +13008,7 @@ CREATE POLICY prf_cost_items_delete ON public.prf_cost_items FOR DELETE TO authe
 
 CREATE POLICY prf_cost_items_insert ON public.prf_cost_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = 'SUBMITTED'::text)))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
@@ -13022,9 +13026,9 @@ CREATE POLICY prf_cost_items_select ON public.prf_cost_items FOR SELECT TO authe
 
 CREATE POLICY prf_cost_items_update ON public.prf_cost_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = 'SUBMITTED'::text))))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid())))))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = 'SUBMITTED'::text)))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
@@ -13052,7 +13056,7 @@ CREATE POLICY prf_update_draft ON public.prf FOR UPDATE TO authenticated USING (
 -- Name: prf prf_update_status; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((status)::text = 'SUBMITTED'::text)))) WITH CHECK ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text])) AND ((acknowledged_by IS NULL) OR (acknowledged_by = auth.uid()))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text))));
 
 
 --
@@ -13954,5 +13958,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict QZgb3SL5wBr83sBtc5aN66SWxrLWeSsDlrq2FPa2w2sqxzfsHIOZ0SVRC18cJCM
+\unrestrict vqcRr8wXjdGL5co5ypmx3qF1XbjEdUMZQe6V8lUN3Xfl7tAFMhTC3lGuVQYLa6G
 
