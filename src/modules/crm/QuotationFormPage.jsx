@@ -680,7 +680,12 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         description: `Jasa ${svcLabel}`,
         qty:         1,
         currency:    p.rate_currency || 'IDR',
-        unit_price:  Number(p.suggested_rate) || 0,
+        // Jalur PRF baru (modul Penawaran Vendor): suggested_rate NULL — harga
+        // jual belum ditentukan procurement, sales mengisi sendiri. Dibiarkan
+        // '' (bukan 0) supaya field tampil KOSONG, bukan angka 0 yang terbaca
+        // sebagai harga jual valid di sebelah cost_price yang sudah terisi
+        // nyata. Jalur PRF lama (suggested_rate terisi) tidak berubah.
+        unit_price:  p.suggested_rate != null ? Number(p.suggested_rate) : '',
         cost_price:  Number(p.cost_total) || 0,
       };
       row.total = calcRowTotal(row);

@@ -617,21 +617,39 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // hanya menyembunyikan tombol saat pasti akan RAISE.
   const canMarkQuoted = canEdit && prf.status === 'ACKNOWLEDGED' && prf.acknowledged_by === profile?.id && vendorOffers.length >= 1;
 
+  // Batch penutup — gerbang "Buat Quotation" kini punya DUA jalur independen
+  // yang harus hidup berdampingan (harga jual pindah jadi wilayah SALES, bukan
+  // lagi syarat procurement menjawab suggested_rate):
+  //   (a) BARU — selected_offer_id terisi (sales sudah memilih penawaran vendor;
+  //       modal dihitung dari situ via savedModalByCurrency/costTotalIdr di atas,
+  //       harga jual BELUM ada — sales yang menentukan sendiri di form Quotation).
+  //   (b) LAMA — answered_at + suggested_rate>0 (panel "Jawaban Harga" lama,
+  //       tak tersentuh modul Penawaran Vendor sama sekali) — PRF lama TIDAK
+  //       BOLEH kehilangan tombolnya.
+  // `hasOffers` (BUKAN hasNewPath/hasOldPath) yang membuka gerbang render supaya
+  // quotationBlockReason "Sales belum memilih penawaran" (batch 3C) tetap punya
+  // tempat tampil — tombol TETAP dirender (disabled + alasan), bukan disembunyikan,
+  // supaya procurement tahu jalurnya ada dan tinggal menunggu sales memilih.
+  const hasNewPath = !!prf.selected_offer_id;
+  const hasOldPath = !!prf.answered_at && num(prf.suggested_rate) > 0;
   const canCreateQuotation =
     typeof onCreateQuotation === 'function' &&
     canSeeQuotations &&
-    !!prf.answered_at &&
-    num(prf.suggested_rate) > 0 &&
+    (hasNewPath || hasOldPath || hasOffers) &&
     !['CANCELLED', 'EXPIRED'].includes(String(prf.status || '').toUpperCase());
 
   // cost_total: satu mata uang (IDR) → apa adanya; campur → konversi ke IDR pakai kurs
   // yang diinput (dilabeli eksplisit di UI). Jalur non-IDR diblokir, lihat quotationBlockReason.
+  // suggested_rate jalur baru = NULL di DB — dikirim APA ADANYA (null), BUKAN
+  // di-coerce num() jadi 0: 0 akan terbaca sebagai "harga jual Rp 0" (keliru),
+  // bukan "belum ditentukan, sales mengisi sendiri". QuotationFormPage
+  // (prefillFromPrf) membedakan dua kondisi ini di unit_price.
   const handleCreateQuotation = () => onCreateQuotation({
     prf_id:         prf.id,
     inquiry_id:     prf.inquiry_id || null,
     rate_currency:  prf.rate_currency || 'IDR',
     valid_until:    prf.valid_until || null,
-    suggested_rate: num(prf.suggested_rate),
+    suggested_rate: prf.suggested_rate != null ? num(prf.suggested_rate) : null,
     cost_total:     costTotalIdr,
   });
 
