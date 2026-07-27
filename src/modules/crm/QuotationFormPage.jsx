@@ -461,9 +461,9 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
     if (!profile?.company_id) return;
     supabase
       .from('inquiries')
-      .select('id, inquiry_no, service_type, route, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
+      .select('id, inquiry_no, status, service_type, route, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
       .eq('company_id', profile.company_id)
-      .eq('status', 'OPEN')
+      .in('status', ['OPEN', 'IN_REVIEW'])
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .then(({ data }) => setInquiries(data || []));
@@ -1080,10 +1080,11 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
               <Field label="Inquiry" req full>
                 <select value={header.inquiry_id} onChange={handleInquiryChange} style={selStyle}>
-                  <option value="">— Pilih inquiry open —</option>
+                  <option value="">— Pilih inquiry —</option>
                   {inquiries.map(inq => (
                     <option key={inq.id} value={inq.id}>
                       {inq.inquiry_no} — {inq.prospect?.name || inq.customer?.name || '?'}
+                      {inq.status === 'IN_REVIEW' ? ' (menunggu harga beli)' : ''}
                     </option>
                   ))}
                 </select>
