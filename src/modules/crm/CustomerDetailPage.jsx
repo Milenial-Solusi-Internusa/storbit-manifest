@@ -721,7 +721,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   const canDelete = erpRole === 'super_admin';
   // Gate Cetak PRF — DISALIN APA ADANYA dari DealDetailPage.jsx:373 (nol perubahan
   // perilaku). erpRole = role primer; lihat TD (user multi-role). Tombol muncul iff true.
-  const canCreatePRF = ['sales', 'gm_bd'].includes(erpRole);
+  const canCreatePRF = ['sales', 'gm_bd', 'super_admin'].includes(erpRole);
 
   const [customer, setCustomer] = useState(null);
   const [loading,  setLoading]  = useState(true);

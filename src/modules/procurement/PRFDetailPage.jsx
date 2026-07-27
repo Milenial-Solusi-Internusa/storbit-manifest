@@ -19,6 +19,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Plus, Trash2, FileText, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
@@ -32,6 +33,9 @@ const DANGER = '#C0392B';
 const SERVICE_LABEL = { sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom' };
 // Kategori biaya = daftar tetap (kolom item_group). Aturan bisnis, bukan CHECK di DB.
 const ITEM_GROUPS = ['Origin Charges', 'Freight Charges', 'Destination Charges'];
+// Blok "Detail Layanan" (Section 03) — label tampilan, mirror kosakata PRFFormPage.jsx.
+const SEA_FREIGHT_LABEL = { fcl: 'FCL', lcl: 'LCL' };
+const CONTAINER_LABEL = { '20': "20'", '40': "40'", '40HC': "40' HC", '20RF': "20' Reefer", '40RF': "40' Reefer" };
 
 const fmtDate = (iso) => {
   if (!iso) return '—';
@@ -51,11 +55,22 @@ const totalsOf = (rows) => rows.reduce((m, r) => {
   return m;
 }, {});
 
-const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, account:accounts!prf_account_id_fkey(name), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)';
+// Gabungkan tipe+qty kontainer FCL jadi satu baris terbaca, mis. "20' × 2, 40' HC × 1".
+function containerSummary(types, qty) {
+  if (!Array.isArray(types) || types.length === 0) return null;
+  return types.map((t) => {
+    const q = qty && qty[t] != null ? qty[t] : null;
+    return `${CONTAINER_LABEL[t] || t}${q != null ? ` × ${q}` : ''}`;
+  }).join(', ');
+}
+// True bila salah satu nilai terisi (dipakai fallback "belum ada detail" per moda).
+const anyFilled = (...vals) => vals.some((v) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0));
+
+const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)';
 const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate';
 
 export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation }) {
-  const { profile, erpRole, hasMenuPermission } = useAuth();
+  const { profile, erpRole, hasMenuPermission, user } = useAuth();
   const canEdit = ['procurement', 'super_admin'].includes(erpRole);
   const canSeeQuotations = hasMenuPermission('crm_quotation', 'view');
   const companyId = profile?.company_id || null;
@@ -71,6 +86,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const [rates, setRates] = useState({});                 // prf.exchange_rates → { USD:'16200' }; IDR implisit 1
   const [answer, setAnswer] = useState({ suggested_rate: '', rate_currency: 'IDR', valid_from: '', valid_until: '', pricing_notes: '' });
   const [answeredName, setAnsweredName] = useState('');
+  const [primaryContact, setPrimaryContact] = useState(null); // kontak utama tabel contacts (bukan accounts.pic_*)
   const [vendors, setVendors] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [prfQuotes, setPrfQuotes] = useState([]);
@@ -136,6 +152,27 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
+  // Kontak utama akun ini — tabel `contacts` (is_primary=true), BUKAN accounts.pic_*
+  // (pensiunan). Pola sama persis CustomerDetailPage.jsx (primaryContact). Menunggu
+  // prf.account_id yang baru terisi setelah load() selesai.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!prf?.account_id) { setPrimaryContact(null); return undefined; }
+    let cancelled = false;
+    supabase.from('contacts')
+      .select('id, name, position, email, phone')
+      .eq('account_id', prf.account_id)
+      .eq('is_primary', true)
+      .is('deleted_at', null)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('[PRF] gagal memuat kontak utama:', error.message); return; }
+        setPrimaryContact(data || null);
+      });
+    return () => { cancelled = true; };
+  }, [prf?.account_id]);
+
   // Dropdown vendor — WAJIB tiga filter. `deleted_at` tak lagi disaring RLS (TD-115).
   useEffect(() => {
     if (!companyId) return;
@@ -147,15 +184,28 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       .is('deleted_at', null)
       .order('code')
       .limit(1000)
-      .then(({ data }) => { if (!cancelled) setVendors(data || []); });
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('[PRF] gagal memuat daftar vendor:', error.message); showToast?.('Gagal memuat daftar vendor: ' + error.message, 'error'); return; }
+        setVendors(data || []);
+      });
     return () => { cancelled = true; };
+    // showToast sengaja tak dimasukkan dep — tak dimemo di App.jsx, memasukkannya akan
+    // memicu effect ini re-run (refetch vendor) tiap App.jsx re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId]);
 
   useEffect(() => {
     let cancelled = false;
     supabase.from('currencies').select('code, name').eq('is_active', true).order('code')
-      .then(({ data }) => { if (!cancelled) setCurrencies(data || []); });
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('[PRF] gagal memuat daftar currency:', error.message); showToast?.('Gagal memuat daftar currency: ' + error.message, 'error'); return; }
+        setCurrencies(data || []);
+      });
     return () => { cancelled = true; };
+    // showToast sengaja tak dimasukkan dep — alasan sama seperti effect vendor di atas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -316,6 +366,13 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       const { error: e } = await supabase.rpc('save_prf_pricing', { p_prf_id: prfId, p_header, p_items });
       if (e) throw e;
       showToast?.('Jawaban harga tersimpan');
+      logAudit(supabase, {
+        action: ACTION_TYPES.UPDATE_PRF_PRICING,
+        entityType: ENTITY_TYPES.PRF,
+        entityId: prfId,
+        entityLabel: prf?.prf_no,
+        notes: `Harga jual ${answer.rate_currency || 'IDR'} ${money(sell)}${awardedCard?.vendor_id ? ' · vendor dipilih' : ''}`,
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
       await load();
     } catch (err) {
       showToast?.('Gagal menyimpan: ' + err.message, 'error');
@@ -387,6 +444,31 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   ];
 
   const currencyCodes = currencies.length ? currencies.map(c => c.code) : ['IDR', 'USD'];
+
+  // Satu field label+value untuk blok Detail Layanan/Customer & Kontak — TIDAK dirender
+  // sama sekali bila kosong (bukan em-dash diam-diam). Fungsi biasa (pola sama renderRows/
+  // renderTotals di bawah), dipanggil sbg `{infoField(...)}`, BUKAN sbg tag JSX <InfoField/> —
+  // supaya React tak menganggapnya komponen terpisah (aman dari bug remount-kehilangan-fokus).
+  const infoField = (l, v) => {
+    if (v == null || v === '') return null;
+    return <div key={l}><div style={label}>{l}</div><div style={val}>{v}</div></div>;
+  };
+
+  // Blok Detail Layanan (Task 2) — true bila moda dikenal PUNYA minimal satu sub-field
+  // terisi. Dihitung per-moda (bukan gabungan seluruh kolom) supaya PRF air tak "dianggap
+  // terisi" oleh sisa data sea, dst.
+  const modeHasDetail = (() => {
+    switch (prf.service_type) {
+      case 'sea':    return anyFilled(prf.sea_freight_type, prf.sea_container_types, prf.sea_lcl_gw, prf.sea_lcl_dimension, prf.sea_lcl_volume, prf.sea_lcl_koli);
+      case 'air':    return anyFilled(prf.air_gw, prf.air_dimension, prf.air_volume, prf.air_koli);
+      case 'inland': return anyFilled(prf.inland_fleet_types, prf.inland_pickup_address, prf.inland_delivery_address, prf.inland_gw, prf.inland_dimension);
+      case 'custom': return anyFilled(prf.custom_doc_type);
+      case 'project':return anyFilled(prf.project_freight_types, prf.project_qty);
+      default:       return false;
+    }
+  })();
+  const KNOWN_MODES = ['sea', 'air', 'inland', 'custom', 'project'];
+  const showDG = !!(prf.un_number || prf.imo_class || prf.msds_available);
 
   // Tabel baris biaya — dipakai kartu vendor & kartu internal (bentuk sama).
   const renderRows = (rowsArr, onPatch, onRemove) => (
@@ -497,6 +579,94 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           {prf.notes && <div style={{ marginTop: 16 }}><div style={label}>Catatan</div><div style={{ ...val, whiteSpace: 'pre-wrap' }}>{prf.notes}</div></div>}
         </div>
       </section>
+
+      {/* ── Customer & Kontak — akun dari accounts, kontak utama dari contacts (BUKAN
+          accounts.pic_*, sudah dipensiunkan) ── */}
+      <section style={card}>
+        <div style={secBar}><span style={secTitle}>Customer &amp; Kontak</span></div>
+        <div style={secBody}>
+          {prf.account ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
+                {infoField('Nama Akun', prf.account.name)}
+                {infoField('Kode Akun', prf.account.code)}
+              </div>
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${BORDER}` }}>
+                <div style={{ ...label, marginBottom: 10 }}>Kontak Utama</div>
+                {primaryContact ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
+                    {infoField('Nama', primaryContact.name)}
+                    {infoField('Posisi', primaryContact.position)}
+                    {infoField('Telepon', primaryContact.phone)}
+                    {infoField('Email', primaryContact.email)}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: MUTE }}>Belum ada kontak utama.</div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: MUTE }}>Data akun tidak tersedia.</div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Detail Layanan — kondisional per prf.service_type ── */}
+      <section style={card}>
+        <div style={secBar}><span style={secTitle}>Detail Layanan</span></div>
+        <div style={secBody}>
+          {!prf.service_type ? (
+            <div style={{ fontSize: 13, fontWeight: 600, color: ORANGE }}>Moda layanan belum ditentukan.</div>
+          ) : !KNOWN_MODES.includes(prf.service_type) ? (
+            <div style={{ fontSize: 13, color: MUTE }}>Moda &quot;{prf.service_type}&quot; tidak dikenal.</div>
+          ) : !modeHasDetail ? (
+            <div style={{ fontSize: 13, color: MUTE }}>Belum ada detail layanan untuk moda ini.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
+              {prf.service_type === 'sea' && <>
+                {infoField('Freight Type', SEA_FREIGHT_LABEL[prf.sea_freight_type] || prf.sea_freight_type)}
+                {infoField('Tipe & Qty Kontainer', containerSummary(prf.sea_container_types, prf.sea_container_qty))}
+                {infoField('GW LCL (kg)', prf.sea_lcl_gw)}
+                {infoField('Dimensi LCL', prf.sea_lcl_dimension)}
+                {infoField('Volume LCL (m³)', prf.sea_lcl_volume)}
+                {infoField('Koli LCL', prf.sea_lcl_koli)}
+              </>}
+              {prf.service_type === 'air' && <>
+                {infoField('GW (kg)', prf.air_gw)}
+                {infoField('Dimensi', prf.air_dimension)}
+                {infoField('Volume (m³)', prf.air_volume)}
+                {infoField('Koli', prf.air_koli)}
+              </>}
+              {prf.service_type === 'inland' && <>
+                {infoField('Tipe Armada', Array.isArray(prf.inland_fleet_types) && prf.inland_fleet_types.length ? prf.inland_fleet_types.join(', ') : null)}
+                {infoField('Pickup Address (Inland)', prf.inland_pickup_address)}
+                {infoField('Delivery Address (Inland)', prf.inland_delivery_address)}
+                {infoField('GW (kg)', prf.inland_gw)}
+                {infoField('Dimensi', prf.inland_dimension)}
+              </>}
+              {prf.service_type === 'custom' && infoField('Tipe Dokumen', prf.custom_doc_type)}
+              {prf.service_type === 'project' && <>
+                {infoField('Tipe Freight', Array.isArray(prf.project_freight_types) && prf.project_freight_types.length ? prf.project_freight_types.join(', ') : null)}
+                {infoField('Qty', prf.project_qty)}
+              </>}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Dangerous Goods — seluruh blok disembunyikan kalau nol data DG ── */}
+      {showDG && (
+        <section style={card}>
+          <div style={secBar}><span style={secTitle}>Dangerous Goods (DG)</span></div>
+          <div style={secBody}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
+              <div><div style={label}>MSDS Tersedia</div><div style={val}>{prf.msds_available ? 'Ya' : 'Tidak'}</div></div>
+              {infoField('UN Number', prf.un_number)}
+              {infoField('IMO Class', prf.imo_class)}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── Panel Jawaban Harga (multi-vendor) ── */}
       <section style={card}>

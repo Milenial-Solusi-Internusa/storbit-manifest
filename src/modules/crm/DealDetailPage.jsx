@@ -480,7 +480,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         {/* RIGHT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
           <QuotationListCard quotations={quotations} onCreate={onCreateQuotation} onView={onViewQuotation} />
-          <PrfListCard prfs={prfs} canCreate={['sales', 'gm_bd'].includes(erpRole)} onCreate={onCreatePRF} />
+          <PrfListCard prfs={prfs} canCreate={['sales', 'gm_bd', 'super_admin'].includes(erpRole)} onCreate={onCreatePRF} />
           <PriceSummaryCard quotations={quotations} termMap={termMap} />
         </div>
       </div>

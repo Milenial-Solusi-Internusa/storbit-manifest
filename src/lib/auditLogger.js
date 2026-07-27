@@ -47,6 +47,8 @@ export const ACTION_TYPES = {
   CREATE_MOM:          'CREATE_MOM',
   UPDATE_MOM:          'UPDATE_MOM',
   DELETE_MOM:          'DELETE_MOM',
+  CREATE_PRF:          'CREATE_PRF',
+  UPDATE_PRF_PRICING:  'UPDATE_PRF_PRICING',
 };
 
 export const ENTITY_TYPES = {
@@ -59,6 +61,7 @@ export const ENTITY_TYPES = {
   DEAL:      'DEAL',
   ASSET:     'ASSET',
   MOM:       'MOM',
+  PRF:       'PRF',
 };
 
 /**
