@@ -481,7 +481,9 @@ const CRM_MENU_ITEMS = [
   { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList, role: ['sales','gm_bd','manager','ceo','admin','super_admin'] },
-  { id: 'crm-rate-list',   label: 'Rate List',       icon: Tag, role: ['super_admin','admin','ceo','gm','gm_bd','manager','sales'] },
+  // Rate List dipindah keluar dari grup CRM (batch restrukturisasi menu CRM #1) —
+  // sekarang grup top-level tersendiri 'Shared Reference' di ERP_MENU_GROUPS,
+  // dirender sbg leaf 'nav-rate-list' di NEXUS_NAV 'Shared Services'.
   // Tahap 2a: 5 entri Master Customer (induk + 4 anak entitas) digabung jadi SATU
   // item "Customer". Sumbu entitas (MSI/JCI/SOA/Semua) & status (Customer/Free
   // Agent/Semua) kini jadi filter di dalam CustomerListPage, bukan submenu.
@@ -495,8 +497,8 @@ const CRM_MENU_ITEMS = [
   {
     id: 'crm-aktivitas', label: 'Aktivitas', icon: Activity,
     children: [
-      { id: 'crm-calls',        label: 'Activities',    icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-      { id: 'crm-activity-log', label: 'Activity Log',  icon: History,  role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+      { id: 'crm-calls',        label: 'Jadwal & Tugas', icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+      { id: 'crm-activity-log', label: 'Log Aktivitas',  icon: History,  role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
       { id: 'riwayat-visit',    label: 'Riwayat Visit', icon: History,  role: ['super_admin','ceo','gm_bd'] },
     ],
   },
@@ -518,7 +520,7 @@ const isAccountTab = (id) => ACCOUNT_TAB_IDS.includes(id);
 // children of 'crm-aktivitas' in CRM_MENU_ITEMS). activeMenu stays the tab id.
 const ACTIVITY_TABS = [
   { id: 'crm-calls',        label: 'Jadwal & Tugas' },
-  { id: 'crm-activity-log', label: 'Riwayat'        },
+  { id: 'crm-activity-log', label: 'Log Aktivitas'  },
   { id: 'riwayat-visit',    label: 'Riwayat Visit'  },
 ];
 const ACTIVITY_TAB_IDS = ACTIVITY_TABS.map(t => t.id);
@@ -579,6 +581,19 @@ const ERP_MENU_GROUPS = [
       },
     ],
   },
+  // ── SHARED REFERENCE ──────────────────────────────────────────────────────
+  // Standalone group for cross-team reference data that isn't a daily CRM
+  // working tool (Rate List moved out of Commercial & CRM). Deliberately its
+  // own group, not nested under Procurement & Vendor — crm-rate-list's role
+  // gate excludes 'procurement', and this is meant to be the future home of
+  // other pricing references (e.g. per-customer rate agreements), not
+  // procurement-owned data.
+  {
+    label: 'Shared Reference',
+    items: [
+      { id: 'crm-rate-list', label: 'Rate List', icon: Tag, role: ['super_admin','admin','ceo','gm','gm_bd','manager','sales'] },
+    ],
+  },
   // ── LOGISTICS ─────────────────────────────────────────────────────────────
   {
     label: 'Logistics',
@@ -600,7 +615,7 @@ const ERP_MENU_GROUPS = [
           { id: 'trading-rekap',     label: 'Rekap Trading', icon: BarChart2 },
         ],
       },
-      { id: 'crm-customers', label: 'Master Customer', icon: Building2, note: 'Di CRM' },
+      { id: 'ref-crm-customers-pointer', label: 'Master Customer', icon: Building2, note: 'Di CRM' },
       { section: 'MSI — Freight Forwarding' },
       {
         id: 'job', label: 'Job Management', icon: BriefcaseBusiness,
@@ -1103,6 +1118,11 @@ const NEXUS_NAV = [
           },
         ],
       },
+      // Rate List (crm-rate-list) — moved out of the CRM module. No inline
+      // `role` here: navModuleVisible resolves the gate via findMenuItemById
+      // against its ERP_MENU_GROUPS entry ('Shared Reference'), so the role
+      // array stays single-sourced there.
+      { id: 'nav-rate-list', label: 'Rate List', icon: Tag, tone: 'slate', target: 'crm-rate-list' },
       {
         id: 'nav-hrga', label: 'HRGA', icon: Users, tone: 'rose',
         children: [
@@ -3608,6 +3628,15 @@ export default function StorbitManifest() {
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
           ))}
 
+          {/* ── Shared Reference: Rate List (rate_sheets) ───────────────────── */}
+          {activeMenu === 'crm-rate-list' && (
+            <ErrorBoundary title="Rate List temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <RateListPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
           {/* ── Sales Order (SO) — Procurement side: list (read-only) / detail ─── */}
           {activeMenu === 'proc-sales-order' && (canRenderPage('proc-sales-order') ? (
             <ErrorBoundary title="Sales Order temporarily unavailable">
@@ -3781,15 +3810,6 @@ export default function StorbitManifest() {
                   onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); }}
                   showToast={showToast}
                 />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── CRM: Rate List (rate_sheets) ────────────────────────────────── */}
-          {activeMenu === 'crm-rate-list' && (
-            <ErrorBoundary title="Rate List temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <RateListPage showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           )}

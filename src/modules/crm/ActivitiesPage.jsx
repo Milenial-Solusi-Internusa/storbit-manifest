@@ -841,7 +841,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
             <Activity size={20} color={C.navy} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Activities</h1>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Jadwal & Tugas</h1>
             <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>Catat dan pantau semua aktivitas sales — call, whatsapp, visit, meeting, email, follow-up</p>
           </div>
         </div>

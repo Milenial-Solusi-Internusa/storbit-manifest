@@ -145,7 +145,7 @@ export default function ActivityLogPage({ showToast }) {
           <History size={20} color={C.navy} />
         </div>
         <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Activity Log</h1>
+          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Log Aktivitas</h1>
           <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>Feed kronologis — prospect, inquiry, quotation &amp; aktivitas terbaru</p>
         </div>
       </div>
