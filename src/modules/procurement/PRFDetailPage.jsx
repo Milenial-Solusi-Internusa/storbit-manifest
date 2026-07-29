@@ -22,6 +22,7 @@ import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 import PRFVendorOfferModal from './PRFVendorOfferModal';
+import { fmtDate, SERVICE_LABEL, COMMODITY_LABEL, ADD_ON_LABEL } from './prfShared';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
@@ -31,8 +32,12 @@ const MUTE = '#7E8899';
 const HEAD = "'Montserrat',sans-serif";
 const BODY = "'Inter',system-ui,sans-serif";
 const DANGER = '#C0392B';
+// Tint navy/orange — nilai sama persis dgn C.navySoft/orangeSoft/orangeDark di
+// PRFFormPage.jsx & modul CRM sekitarnya (bukan hex baru).
+const NAVY_SOFT = '#EEF3FB';
+const ORANGE_SOFT = '#FDF0E9';
+const ORANGE_DARK = '#C94D18';
 
-const SERVICE_LABEL = { sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom' };
 // Kategori biaya = daftar tetap (kolom item_group). Aturan bisnis, bukan CHECK di DB.
 const ITEM_GROUPS = ['Origin Charges', 'Freight Charges', 'Destination Charges'];
 // Mirrors DB is_manager_or_above() (schema_snapshot.sql, fungsi is_manager_or_above).
@@ -42,13 +47,6 @@ const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager
 const SEA_FREIGHT_LABEL = { fcl: 'FCL', lcl: 'LCL' };
 const CONTAINER_LABEL = { '20': "20'", '40': "40'", '40HC': "40' HC", '20RF': "20' Reefer", '40RF': "40' Reefer" };
 
-const fmtDate = (iso) => {
-  if (!iso) return '—';
-  const M = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
-  return `${d.getDate()} ${M[d.getMonth()]} ${d.getFullYear()}`;
-};
 const num = (v) => (Number(v) || 0);
 const money = (v) => (Number(v) || 0).toLocaleString('id-ID', { maximumFractionDigits: 2 });
 const uid = () => crypto.randomUUID();
@@ -71,10 +69,10 @@ function containerSummary(types, qty) {
 // True bila salah satu nilai terisi (dipakai fallback "belum ada detail" per moda).
 const anyFilled = (...vals) => vals.some((v) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0));
 
-const PRF_SELECT = 'id, prf_no, status, created_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, acknowledged_by, acknowledged_at, selected_offer_id, min_offers_waiver_reason, account:accounts!prf_account_id_fkey(name, code), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email), holder:profiles!prf_acknowledged_by_fkey(full_name)';
+const PRF_SELECT = 'id, prf_no, status, created_at, created_by, submitted_at, customer_source, account_id, account_name_manual, stream, deadline_quotation, direction, commodity, goods_name, hs_code, msds_available, un_number, imo_class, service_type, incoterms, origin, destination, pickup_address, delivery_address, cargo_ready_date, add_on_services, notes, inquiry_id, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, custom_doc_type, project_freight_types, project_qty, suggested_rate, rate_currency, valid_from, valid_until, pricing_notes, exchange_rates, answered_by, answered_at, acknowledged_by, acknowledged_at, selected_offer_id, selected_by, selected_at, min_offers_waiver_reason, account:accounts!prf_account_id_fkey(name, code, address), inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no), creator:profiles!prf_created_by_fkey(full_name, email), holder:profiles!prf_acknowledged_by_fkey(full_name)';
 const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate, offer_id';
 
-export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation }) {
+export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation, onEditDraft }) {
   const { profile, erpRole, hasMenuPermission, user } = useAuth();
   const canEdit = ['procurement', 'super_admin'].includes(erpRole);
   const canSeeQuotations = hasMenuPermission('crm_quotation', 'view');
@@ -95,6 +93,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   const [rates, setRates] = useState({});                 // prf.exchange_rates → { USD:'16200' }; IDR implisit 1
   const [answer, setAnswer] = useState({ suggested_rate: '', rate_currency: 'IDR', valid_from: '', valid_until: '', pricing_notes: '' });
   const [answeredName, setAnsweredName] = useState('');
+  const [selectedByName, setSelectedByName] = useState(''); // nama sales yang memilih penawaran (prf.selected_by)
   const [primaryContact, setPrimaryContact] = useState(null); // kontak utama tabel contacts (bukan accounts.pic_*)
   const [vendors, setVendors] = useState([]);
   const [currencies, setCurrencies] = useState([]);
@@ -186,6 +185,10 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', p.answered_by).maybeSingle();
       setAnsweredName(prof?.full_name || '');
     } else { setAnsweredName(''); }
+    if (p.selected_by) {
+      const { data: selProf } = await supabase.from('profiles').select('full_name').eq('id', p.selected_by).maybeSingle();
+      setSelectedByName(selProf?.full_name || '');
+    } else { setSelectedByName(''); }
     setLoading(false);
     // showToast sengaja tak dimasukkan dep — alasan sama seperti effect vendor/currency
     // di bawah (tak dimemo di App.jsx; memasukkannya akan membuat load() dibuat ulang
@@ -374,7 +377,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
 
   let quotationBlockReason = null;
   if (hasOffers && !prf?.selected_offer_id) {
-    quotationBlockReason = 'Sales belum memilih penawaran. Modal belum bisa dihitung sampai salah satu penawaran vendor dipilih.';
+    quotationBlockReason = 'Sales belum memilih penawaran. Buka menu CRM → Inquiry → Detail Inquiry ini untuk memilih salah satu penawaran vendor sebelum modal bisa dihitung.';
   } else if (savedRateCurrency !== 'IDR') {
     quotationBlockReason = 'Harga jual atau modal bukan IDR. Quotation untuk kasus ini harus dibuat manual — dukungan multi-currency di quotation belum tersedia.';
   } else if (convertBlocked.length > 0) {
@@ -572,14 +575,34 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   };
 
   // ── Styles ──
-  const page = { maxWidth: 1060, margin: '0 auto', padding: '24px 24px 48px', fontFamily: BODY };
+  // Lebar penuh (Bagian 3) — maxWidth dulu 1060, TERKONFIRMASI lokal ke file ini
+  // (dicek: tak ada wrapper bersama App.jsx yang membatasi lebar; tiap halaman
+  // procurement pakai maxWidth sendiri-sendiri, bukan diwarisi satu sumber).
+  const page = { margin: '0 auto', padding: '24px 24px 48px', fontFamily: BODY };
   const backBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', borderRadius: 10, border: `1px solid ${NAVY}`, background: '#fff', color: NAVY, fontFamily: HEAD, fontWeight: 700, fontSize: 13, cursor: 'pointer', marginBottom: 18 };
   const card = { background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 16, overflow: 'hidden', marginBottom: 20 };
-  const secBar = { display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderBottom: `1px solid ${BORDER}`, background: '#F7F9FB' };
-  const secTitle = { fontFamily: HEAD, fontWeight: 700, fontSize: 14, color: NAVY };
+  // Aksen Dangerous Goods (Bagian 4) — varian card, dipakai HANYA di section DG.
+  const dgCard = { ...card, border: `1px solid ${ORANGE_SOFT}`, borderLeft: `3px solid ${ORANGE}` };
+  const secBar = { display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderBottom: `0.5px solid ${BORDER}`, background: '#F7F9FB' };
+  const secNum = { width: 30, height: 30, borderRadius: 999, background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: HEAD, fontWeight: 700, fontSize: 13, flex: '0 0 30px' };
+  const secTitle = { fontFamily: HEAD, fontWeight: 700, fontSize: 15, color: INK };
+  const secSub = { fontSize: 12, color: MUTE, marginTop: 2 };
   const secBody = { padding: 20 };
-  const label = { fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTE, marginBottom: 4 };
-  const val = { fontSize: 13.5, color: INK, fontFamily: BODY };
+  // Label field: bold + navy + titik dua (teks) — dulu abu/600, dipakai jg oleh field
+  // di luar tabel bergaris (Vendor/Total Biaya/Kelebihan/Kekurangan/Total di Penawaran
+  // Vendor & Jawaban Harga). "Kurs ke IDR"/"Kontak Utama" SENGAJA tak ikut (itu heading
+  // pembagi, bukan pasangan label-value) — teksnya di render langsung, bukan lewat const ini.
+  const label = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px', color: NAVY, marginBottom: 4 };
+  const val = { fontSize: 13, color: INK, fontFamily: BODY };
+  // Kotak label|value TERPISAH (Bagian 2) — CSS Grid ganti <table>: label & isi kini
+  // masing-masing kotak sendiri (border+radius sendiri, TAK berbagi garis), dgn gap
+  // kecil antar kotak. 6 kolom tetap (13% label|1fr isi, ×3 pasang) — rasio sama persis
+  // dgn colgroup tabel sebelumnya; wideRow pakai gridColumn:'span 5' pada kotak isi
+  // (padanan colSpan=5 lama). `align-items` default (stretch) menyamakan tinggi kotak
+  // isi & kotak kosong dlm satu baris grid, sama seperti tinggi baris tabel dulu.
+  const fieldGrid = { display: 'grid', gridTemplateColumns: 'repeat(3, 13% 1fr)', gap: 8 };
+  const fieldLabelBox = { background: '#F7F9FB', border: `1px solid ${BORDER}`, borderRadius: 8, padding: '6px 14px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px', color: NAVY, textAlign: 'left', overflowWrap: 'break-word' };
+  const fieldValueBox = { background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 8, padding: '6px 14px', fontSize: 13, color: INK, fontFamily: BODY, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' };
   const input = { height: 38, width: '100%', borderRadius: 9, border: `1px solid ${BORDER}`, padding: '0 10px', fontSize: 13, fontFamily: BODY, color: INK, boxSizing: 'border-box', outline: 'none', background: canEdit ? '#fff' : '#F7F9FB' };
   const th = { textAlign: 'left', padding: '9px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: MUTE, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' };
   const td = { padding: '7px 10px', fontSize: 13, color: INK, borderBottom: `1px solid ${BORDER}`, verticalAlign: 'middle' };
@@ -594,8 +617,6 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       <div style={{ padding: '40px 0', textAlign: 'center', color: DANGER }}>{error}</div>
     </div>
   );
-
-  const customer = prf.account?.name || prf.account_name_manual || '—';
 
   // Klaim/lepas — gate TOMBOL saja; RPC prf_claim/prf_release menegakkan izin
   // sebenarnya (SECURITY DEFINER, guard sudah di dalamnya).
@@ -616,6 +637,10 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // sebenarnya (pemegang PRF + status ACKNOWLEDGED + ≥1 penawaran); gate di sini
   // hanya menyembunyikan tombol saat pasti akan RAISE.
   const canMarkQuoted = canEdit && prf.status === 'ACKNOWLEDGED' && prf.acknowledged_by === profile?.id && vendorOffers.length >= 1;
+  // Edit draft (TD-76) — gate TOMBOL saja, cermin PERSIS RLS prf_update_draft:
+  // hanya pemilik (created_by=auth.uid()) ATAU super_admin, TANPA bypass manager
+  // (beda dari canRelease di atas — prf_update_draft memang tak punya klausa itu).
+  const canEditDraft = typeof onEditDraft === 'function' && prf.status === 'DRAFT' && (prf.created_by === profile?.id || erpRole === 'super_admin');
 
   // Batch penutup — gerbang "Buat Quotation" kini punya DUA jalur independen
   // yang harus hidup berdampingan (harga jual pindah jadi wilayah SALES, bukan
@@ -653,34 +678,88 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     cost_total:     costTotalIdr,
   });
 
-  const summary = [
-    ['Customer', customer],
-    ['Inquiry', prf.inquiry?.inquiry_no || '—'],
+  // Identitas & Urgensi — "Dibuat Oleh" digabung dengan tanggal jadi SATU baris
+  // (dulu cuma nempel di kalimat status header; sekarang baris tersendiri, tapi
+  // tanggalnya tetap menyertainya — tak ada info lama yang hilang).
+  const dibuatOlehValue = prf.creator?.full_name
+    ? `${prf.creator.full_name} · ${fmtDate(prf.created_at)}`
+    : fmtDate(prf.created_at);
+  const identitasRows = [
+    ['PRF No', prf.prf_no],
+    ['Status', String(prf.status).toUpperCase()],
+    ['Dibuat Oleh', dibuatOlehValue],
+    ['Submitted At', fmtDate(prf.submitted_at)],
+    ['Inquiry No', prf.inquiry?.inquiry_no || '—'],
+    ['Deadline Quotation', fmtDate(prf.deadline_quotation)],
+  ];
+
+  // Rute & Ringkasan Kargo — Customer sengaja tak diulang di sini (sudah
+  // representatif di section Customer & Kontak, tak hilang, cuma tak dobel).
+  // Commodity diterjemahkan via COMMODITY_LABEL (fallback nilai mentah bila
+  // enum tak dikenal — jangan sembunyikan, jangan tebak). Origin/Destination
+  // TIDAK di sini — pindah ke box dua-warna tersendiri (Bagian 3, di atas grid ini).
+  // Pickup/Delivery SENGAJA di luar array ini (baris melebar tersendiri, sama
+  // perlakuan spt Alamat — isinya alamat, berisiko kepotong kalau dipadatkan).
+  const kargoRows = [
     ['Service Type', SERVICE_LABEL[prf.service_type] || prf.service_type || '—'],
     ['Direction', prf.direction || '—'],
-    ['Commodity', prf.commodity || '—'],
-    ['HS Code', prf.hs_code || '—'],
     ['Incoterms', prf.incoterms || '—'],
-    ['Origin', prf.origin || '—'],
-    ['Destination', prf.destination || '—'],
-    ['Pickup', prf.pickup_address || '—'],
-    ['Delivery', prf.delivery_address || '—'],
+    ['Commodity', COMMODITY_LABEL[prf.commodity] || prf.commodity || '—'],
+    ['Nama Barang', prf.goods_name || '—'],
+    ['HS Code', prf.hs_code || '—'],
     ['Stream', prf.stream || '—'],
-    ['Deadline Quotation', fmtDate(prf.deadline_quotation)],
     ['Cargo Ready', fmtDate(prf.cargo_ready_date)],
-    ['Add-On', Array.isArray(prf.add_on_services) && prf.add_on_services.length ? prf.add_on_services.join(', ') : '—'],
   ];
+
+  // Subtitle Detail Layanan (Bagian 2) — HANYA section ini yang dapat subtitle
+  // (keputusan Den). "Sea · LCL" / "Custom · PIB" / "Air" dst — null bila
+  // service_type belum diisi (section itu sendiri sudah pesan "belum ditentukan").
+  const detailLayananSub = prf.service_type
+    ? [
+        SERVICE_LABEL[prf.service_type] || prf.service_type,
+        prf.service_type === 'sea' ? (SEA_FREIGHT_LABEL[prf.sea_freight_type] || prf.sea_freight_type) : null,
+        prf.service_type === 'custom' ? prf.custom_doc_type : null,
+      ].filter(Boolean).join(' · ')
+    : null;
+
+  // Niaga & Catatan — Add-On diterjemahkan via ADD_ON_LABEL (fallback mentah).
+  const addOnDisplay = Array.isArray(prf.add_on_services) && prf.add_on_services.length
+    ? prf.add_on_services.map((v) => ADD_ON_LABEL[v] || v).join(', ')
+    : '—';
 
   const currencyCodes = currencies.length ? currencies.map(c => c.code) : ['IDR', 'USD'];
 
-  // Satu field label+value untuk blok Detail Layanan/Customer & Kontak — TIDAK dirender
-  // sama sekali bila kosong (bukan em-dash diam-diam). Fungsi biasa (pola sama renderRows/
-  // renderTotals di bawah), dipanggil sbg `{infoField(...)}`, BUKAN sbg tag JSX <InfoField/> —
-  // supaya React tak menganggapnya komponen terpisah (aman dari bug remount-kehilangan-fokus).
-  const infoField = (l, v) => {
+  // Baris PADAT — sampai 3 pasang label|value per baris (field pendek). Value `null`/''
+  // difilter SEBELUM di-chunk (supaya "sisa <3" dihitung dari yg benar-benar tampil, bukan
+  // slot aslinya) — value berupa elemen JSX (mis. <input>) TIDAK PERNAH kena filter (selalu
+  // tampil, dipakai field yg memang harus selalu ada+editable spt Jawaban Harga). Sisa <3 di
+  // baris terakhir → slot kosong (kotak kosong tetap ada, bukan baris jomplang) — CSS Grid
+  // otomatis menyamakan tinggi kotak isi & kotak kosong dlm satu baris (align-items default
+  // stretch), sama seperti tinggi baris tabel dulu. Titik dua ditempel langsung ke label.
+  function packedRows(pairs) {
+    const visible = pairs.filter(([, v]) => v != null && v !== '');
+    const chunks = [];
+    for (let i = 0; i < visible.length; i += 3) chunks.push(visible.slice(i, i + 3));
+    return chunks.flatMap((chunk, ci) =>
+      [0, 1, 2].flatMap((slot) => {
+        const pair = chunk[slot];
+        return [
+          <div key={`${ci}-${slot}l`} style={fieldLabelBox}>{pair ? `${pair[0]}:` : ''}</div>,
+          <div key={`${ci}-${slot}v`} style={fieldValueBox}>{pair ? pair[1] : ''}</div>,
+        ];
+      })
+    );
+  }
+
+  // Baris MELEBAR — 1 pasang, kotak isi gridColumn:'span 5' (field panjang yg berisiko
+  // kepotong: Alamat/Catatan/Pickup/Delivery). TIDAK dirender sama sekali bila kosong.
+  function wideRow(l, v) {
     if (v == null || v === '') return null;
-    return <div key={l}><div style={label}>{l}</div><div style={val}>{v}</div></div>;
-  };
+    return [
+      <div key={`${l}-l`} style={fieldLabelBox}>{l}:</div>,
+      <div key={`${l}-v`} style={{ ...fieldValueBox, gridColumn: 'span 5' }}>{v}</div>,
+    ];
+  }
 
   // Blok Detail Layanan (Task 2) — true bila moda dikenal PUNYA minimal satu sub-field
   // terisi. Dihitung per-moda (bukan gabungan seluruh kolom) supaya PRF air tak "dianggap
@@ -697,6 +776,40 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   })();
   const KNOWN_MODES = ['sea', 'air', 'inland', 'custom', 'project'];
   const showDG = !!(prf.un_number || prf.imo_class || prf.msds_available);
+
+  // Pasangan [label,value] Detail Layanan per-moda — dikonsumsi packedRows() (semua
+  // field pendek). Hanya moda AKTIF yang punya isi; moda lain array kosong.
+  const detailPairs = (() => {
+    switch (prf.service_type) {
+      case 'sea': return [
+        ['Freight Type', SEA_FREIGHT_LABEL[prf.sea_freight_type] || prf.sea_freight_type],
+        ['Tipe & Qty Kontainer', containerSummary(prf.sea_container_types, prf.sea_container_qty)],
+        ['GW LCL (kg)', prf.sea_lcl_gw],
+        ['Dimensi LCL', prf.sea_lcl_dimension],
+        ['Volume LCL (m³)', prf.sea_lcl_volume],
+        ['Koli LCL', prf.sea_lcl_koli],
+      ];
+      case 'air': return [
+        ['GW (kg)', prf.air_gw],
+        ['Dimensi', prf.air_dimension],
+        ['Volume (m³)', prf.air_volume],
+        ['Koli', prf.air_koli],
+      ];
+      case 'inland': return [
+        ['Tipe Armada', Array.isArray(prf.inland_fleet_types) && prf.inland_fleet_types.length ? prf.inland_fleet_types.join(', ') : null],
+        ['Pickup Address (Inland)', prf.inland_pickup_address],
+        ['Delivery Address (Inland)', prf.inland_delivery_address],
+        ['GW (kg)', prf.inland_gw],
+        ['Dimensi', prf.inland_dimension],
+      ];
+      case 'custom': return [['Tipe Dokumen', prf.custom_doc_type]];
+      case 'project': return [
+        ['Tipe Freight', Array.isArray(prf.project_freight_types) && prf.project_freight_types.length ? prf.project_freight_types.join(', ') : null],
+        ['Qty', prf.project_qty],
+      ];
+      default: return [];
+    }
+  })();
 
   // Tabel baris biaya — dipakai kartu vendor & kartu internal (bentuk sama).
   const renderRows = (rowsArr, onPatch, onRemove) => (
@@ -794,8 +907,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
 
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: ORANGE, marginBottom: 6 }}>Procurement · PRF</div>
-        <h1 style={{ fontFamily: HEAD, fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: NAVY, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{prf.prf_no}</h1>
-        <div style={{ fontSize: 13, color: MUTE, marginTop: 5 }}>Status <b style={{ color: INK }}>{String(prf.status).toUpperCase()}</b> · dibuat {fmtDate(prf.created_at)}{prf.creator?.full_name ? ` oleh ${prf.creator.full_name}` : ''}</div>
+        <h1 style={{ fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: NAVY, margin: 0, fontVariantNumeric: 'tabular-nums' }}>{prf.prf_no}</h1>
         {prf.acknowledged_by && (
           <div style={{ fontSize: 13, color: MUTE, marginTop: 3 }}>Sedang dikerjakan oleh <b style={{ color: INK }}>{prf.holder?.full_name || '—'}</b> · sejak {fmtDate(prf.acknowledged_at)}</div>
         )}
@@ -804,8 +916,14 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
             <Check size={13} />PENAWARAN SIAP DIKUTIP
           </div>
         )}
-        {(canClaim || canRelease || canMarkQuoted) && (
+        {(canClaim || canRelease || canMarkQuoted || canEditDraft) && (
           <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
+            {canEditDraft && (
+              <button type="button" onClick={() => onEditDraft(prf.id)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 10, border: `1px solid ${ORANGE}`, background: ORANGE, color: '#fff', fontFamily: HEAD, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                <Pencil size={15} />Edit PRF
+              </button>
+            )}
             {canClaim && (
               <button type="button" onClick={handleClaim} disabled={claimBusy}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 10, border: `1px solid ${ORANGE}`, background: ORANGE, color: '#fff', fontFamily: HEAD, fontWeight: 700, fontSize: 13, cursor: claimBusy ? 'not-allowed' : 'pointer', opacity: claimBusy ? 0.7 : 1 }}>
@@ -829,34 +947,33 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
       </div>
 
       <section style={card}>
-        <div style={secBar}><span style={secTitle}>Ringkasan Permintaan</span></div>
+        <div style={secBar}><div style={secNum}>01</div><div style={secTitle}>Identitas &amp; Urgensi</div></div>
         <div style={secBody}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
-            {summary.map(([k, v]) => (<div key={k}><div style={label}>{k}</div><div style={val}>{v}</div></div>))}
-          </div>
-          {prf.notes && <div style={{ marginTop: 16 }}><div style={label}>Catatan</div><div style={{ ...val, whiteSpace: 'pre-wrap' }}>{prf.notes}</div></div>}
+          <div style={fieldGrid}>{packedRows(identitasRows)}</div>
         </div>
       </section>
 
       {/* ── Customer & Kontak — akun dari accounts, kontak utama dari contacts (BUKAN
           accounts.pic_*, sudah dipensiunkan) ── */}
       <section style={card}>
-        <div style={secBar}><span style={secTitle}>Customer &amp; Kontak</span></div>
+        <div style={secBar}><div style={secNum}>02</div><div style={secTitle}>Customer &amp; Kontak</div></div>
         <div style={secBody}>
           {prf.account ? (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
-                {infoField('Nama Akun', prf.account.name)}
-                {infoField('Kode Akun', prf.account.code)}
+              <div style={fieldGrid}>
+                {packedRows([['Nama Akun', prf.account.name], ['Kode Akun', prf.account.code]])}
+                {wideRow('Alamat', prf.account.address)}
               </div>
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${BORDER}` }}>
-                <div style={{ ...label, marginBottom: 10 }}>Kontak Utama</div>
+                <div style={{ ...label, fontWeight: 600, color: MUTE, marginBottom: 10 }}>Kontak Utama</div>
                 {primaryContact ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
-                    {infoField('Nama', primaryContact.name)}
-                    {infoField('Posisi', primaryContact.position)}
-                    {infoField('Telepon', primaryContact.phone)}
-                    {infoField('Email', primaryContact.email)}
+                  <div style={fieldGrid}>
+                    {packedRows([
+                      ['Nama', primaryContact.name],
+                      ['Posisi', primaryContact.position],
+                      ['Telepon', primaryContact.phone],
+                      ['Email', primaryContact.email],
+                    ])}
                   </div>
                 ) : (
                   <div style={{ fontSize: 13, color: MUTE }}>Belum ada kontak utama.</div>
@@ -869,9 +986,43 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
         </div>
       </section>
 
+      {/* ── Rute & Ringkasan Kargo (dulu "Ringkasan Permintaan") ── */}
+      <section style={card}>
+        <div style={secBar}><div style={secNum}>03</div><div style={secTitle}>Rute &amp; Ringkasan Kargo</div></div>
+        <div style={secBody}>
+          {/* Box Origin-Destination — elemen paling menonjol di section ini (Bagian 3),
+              BUKAN field label-value biasa spt sisa grid di bawahnya. */}
+          <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, marginBottom: 20 }}>
+            <div style={{ flex: 1, background: NAVY_SOFT, borderRadius: 12, padding: '16px 18px' }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: NAVY, marginBottom: 6 }}>Origin — Port of Loading</div>
+              <div style={{ fontFamily: HEAD, fontSize: 20, fontWeight: 800, color: NAVY, textTransform: 'uppercase' }}>{prf.origin || '—'}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', fontSize: 18, fontWeight: 700, color: MUTE }}>,</div>
+            <div style={{ flex: 1, background: ORANGE_SOFT, borderRadius: 12, padding: '16px 18px' }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: ORANGE_DARK, marginBottom: 6 }}>Destination — Port of Discharge</div>
+              <div style={{ fontFamily: HEAD, fontSize: 20, fontWeight: 800, color: ORANGE_DARK, textTransform: 'uppercase' }}>{prf.destination || '—'}</div>
+            </div>
+          </div>
+          <div style={fieldGrid}>
+            {packedRows(kargoRows)}
+            {/* Pickup/Delivery dulu selalu tampil ('—' bila kosong, bukan hide-jika-
+                kosong spt infoField) — fallback dipertahankan di sini, biar wideRow
+                (yg hide-jika-kosong) tak menyembunyikan field yg dulu selalu tampil. */}
+            {wideRow('Pickup', prf.pickup_address || '—')}
+            {wideRow('Delivery', prf.delivery_address || '—')}
+          </div>
+        </div>
+      </section>
+
       {/* ── Detail Layanan — kondisional per prf.service_type ── */}
       <section style={card}>
-        <div style={secBar}><span style={secTitle}>Detail Layanan</span></div>
+        <div style={secBar}>
+          <div style={secNum}>04</div>
+          <div>
+            <div style={secTitle}>Detail Layanan</div>
+            {detailLayananSub && <div style={secSub}>{detailLayananSub}</div>}
+          </div>
+        </div>
         <div style={secBody}>
           {!prf.service_type ? (
             <div style={{ fontSize: 13, fontWeight: 600, color: ORANGE }}>Moda layanan belum ditentukan.</div>
@@ -880,35 +1031,36 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           ) : !modeHasDetail ? (
             <div style={{ fontSize: 13, color: MUTE }}>Belum ada detail layanan untuk moda ini.</div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
-              {prf.service_type === 'sea' && <>
-                {infoField('Freight Type', SEA_FREIGHT_LABEL[prf.sea_freight_type] || prf.sea_freight_type)}
-                {infoField('Tipe & Qty Kontainer', containerSummary(prf.sea_container_types, prf.sea_container_qty))}
-                {infoField('GW LCL (kg)', prf.sea_lcl_gw)}
-                {infoField('Dimensi LCL', prf.sea_lcl_dimension)}
-                {infoField('Volume LCL (m³)', prf.sea_lcl_volume)}
-                {infoField('Koli LCL', prf.sea_lcl_koli)}
-              </>}
-              {prf.service_type === 'air' && <>
-                {infoField('GW (kg)', prf.air_gw)}
-                {infoField('Dimensi', prf.air_dimension)}
-                {infoField('Volume (m³)', prf.air_volume)}
-                {infoField('Koli', prf.air_koli)}
-              </>}
-              {prf.service_type === 'inland' && <>
-                {infoField('Tipe Armada', Array.isArray(prf.inland_fleet_types) && prf.inland_fleet_types.length ? prf.inland_fleet_types.join(', ') : null)}
-                {infoField('Pickup Address (Inland)', prf.inland_pickup_address)}
-                {infoField('Delivery Address (Inland)', prf.inland_delivery_address)}
-                {infoField('GW (kg)', prf.inland_gw)}
-                {infoField('Dimensi', prf.inland_dimension)}
-              </>}
-              {prf.service_type === 'custom' && infoField('Tipe Dokumen', prf.custom_doc_type)}
-              {prf.service_type === 'project' && <>
-                {infoField('Tipe Freight', Array.isArray(prf.project_freight_types) && prf.project_freight_types.length ? prf.project_freight_types.join(', ') : null)}
-                {infoField('Qty', prf.project_qty)}
-              </>}
-            </div>
+            <div style={fieldGrid}>{packedRows(detailPairs)}</div>
           )}
+        </div>
+      </section>
+
+      {/* ── Dangerous Goods — seluruh blok disembunyikan kalau nol data DG ── */}
+      {showDG && (
+        <section style={dgCard}>
+          <div style={secBar}><div style={secNum}>05</div><div style={secTitle}>Dangerous Goods (DG)</div></div>
+          <div style={secBody}>
+            <div style={fieldGrid}>
+              {packedRows([
+                ['MSDS Tersedia', prf.msds_available ? 'Ya' : 'Tidak'],
+                ['UN Number', prf.un_number],
+                ['IMO Class', prf.imo_class],
+              ])}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── Niaga & Catatan — Add-On diterjemahkan; Catatan pindah dari section
+          Rute & Ringkasan Kargo lama. ── */}
+      <section style={card}>
+        <div style={secBar}><div style={secNum}>06</div><div style={secTitle}>Niaga &amp; Catatan</div></div>
+        <div style={secBody}>
+          <div style={fieldGrid}>
+            {wideRow('Add-On Services', addOnDisplay)}
+            {wideRow('Catatan', prf.notes)}
+          </div>
         </div>
       </section>
 
@@ -917,7 +1069,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           UI-nya = batch 3C). Tambah/edit/hapus di sini hanya boleh oleh
           procurement yang SEDANG memegang PRF ini (canManageOffers). ── */}
       <section style={card}>
-        <div style={secBar}><span style={secTitle}>Penawaran Vendor</span></div>
+        <div style={secBar}><div style={secNum}>07</div><div style={secTitle}>Penawaran Vendor</div></div>
         <div style={secBody}>
           {prf.min_offers_waiver_reason && (
             <div style={{ marginBottom: 14, fontSize: 12.5, fontWeight: 600, color: ORANGE }}>
@@ -943,12 +1095,17 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
                 <div key={o.id} style={{ border: `${isSelected ? 2 : 1}px solid ${isSelected ? NAVY : BORDER}`, borderRadius: 14, padding: 16, marginBottom: 16, background: '#fff' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
-                      <div style={label}>Vendor</div>
+                      <div style={label}>Vendor:</div>
                       <div style={{ ...val, fontWeight: 700 }}>{o.vendor?.name || '—'}</div>
                     </div>
                     {isSelected && (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 20, background: '#EAF0F8', color: NAVY, fontFamily: HEAD, fontWeight: 800, fontSize: 11.5, letterSpacing: '.03em' }}>
                         <Check size={13} />DIPILIH SALES
+                      </span>
+                    )}
+                    {isSelected && (selectedByName || prf.selected_at) && (
+                      <span style={{ fontSize: 11, color: MUTE }}>
+                        {selectedByName ? `oleh ${selectedByName}` : ''}{prf.selected_at ? ` · ${fmtDate(prf.selected_at)}` : ''}
                       </span>
                     )}
                     {canManageOffers && (
@@ -968,22 +1125,24 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
                       Penawaran ini sedang dipakai sales untuk quotation — tak bisa dihapus. Hubungi sales kalau perlu diganti.
                     </div>
                   )}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px 20px', marginBottom: 14 }}>
-                    {infoField('Currency', o.currency)}
-                    {o.valid_from && infoField('Berlaku Dari', fmtDate(o.valid_from))}
-                    {o.valid_until && infoField('Berlaku Sampai', fmtDate(o.valid_until))}
+                  <div style={{ ...fieldGrid, marginBottom: 14 }}>
+                    {packedRows([
+                      ['Currency', o.currency],
+                      ['Berlaku Dari', o.valid_from ? fmtDate(o.valid_from) : null],
+                      ['Berlaku Sampai', o.valid_until ? fmtDate(o.valid_until) : null],
+                    ])}
                   </div>
                   <div style={{ marginBottom: 14 }}>
-                    <div style={label}>Total Biaya</div>
+                    <div style={label}>Total Biaya:</div>
                     {renderTotals(offerTotals)}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
                     <div>
-                      <div style={label}>Kelebihan</div>
+                      <div style={label}>Kelebihan:</div>
                       <div style={{ ...val, whiteSpace: 'pre-wrap' }}>{o.pros}</div>
                     </div>
                     <div>
-                      <div style={label}>Kekurangan</div>
+                      <div style={label}>Kekurangan:</div>
                       <div style={{ ...val, whiteSpace: 'pre-wrap' }}>{o.cons}</div>
                     </div>
                   </div>
@@ -1028,23 +1187,10 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
         />
       )}
 
-      {/* ── Dangerous Goods — seluruh blok disembunyikan kalau nol data DG ── */}
-      {showDG && (
-        <section style={card}>
-          <div style={secBar}><span style={secTitle}>Dangerous Goods (DG)</span></div>
-          <div style={secBody}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 20px' }}>
-              <div><div style={label}>MSDS Tersedia</div><div style={val}>{prf.msds_available ? 'Ya' : 'Tidak'}</div></div>
-              {infoField('UN Number', prf.un_number)}
-              {infoField('IMO Class', prf.imo_class)}
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* ── Panel Jawaban Harga (multi-vendor) ── */}
       <section style={card}>
         <div style={secBar}>
+          <div style={secNum}>08</div>
           <span style={secTitle}>Jawaban Harga</span>
           {!canEdit && <span style={{ fontSize: 11.5, color: MUTE }}>(hanya bisa dilihat — pengisian oleh procurement)</span>}
           {prf.answered_at && <span style={{ marginLeft: 'auto', fontSize: 11.5, color: MUTE }}>Dijawab {answeredName ? `oleh ${answeredName} ` : ''}· {fmtDate(prf.answered_at)}</span>}
@@ -1053,7 +1199,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
 
           {/* Tabel kurs (header panel) — pola sama quotations.exchange_rates. IDR selalu 1. */}
           <div style={{ marginBottom: 20, padding: 14, border: `1px solid ${BORDER}`, borderRadius: 12, background: '#F7F9FB' }}>
-            <div style={label}>Kurs ke IDR</div>
+            <div style={{ ...label, fontWeight: 600, color: MUTE }}>Kurs ke IDR</div>
             {Object.keys(rates).length === 0 && (
               <div style={{ fontSize: 12.5, color: MUTE, marginBottom: 8 }}>Belum ada kurs. Tambahkan mata uang yang dipakai baris biaya (IDR selalu 1).</div>
             )}
@@ -1090,7 +1236,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
           )}
 
           {vendorCards.length === 0 && (
-            <div style={{ fontSize: 13, color: MUTE, marginBottom: 16 }}>Belum ada penawaran vendor.</div>
+            <div style={{ fontSize: 13, color: MUTE, marginBottom: 16 }}>Belum ada kartu vendor.</div>
           )}
 
           {vendorCards.map((c) => {
@@ -1109,7 +1255,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
               <div key={c.key} style={{ border: `${showAward ? 2 : 1}px solid ${showAward ? NAVY : BORDER}`, borderRadius: 14, padding: 16, marginBottom: 16, background: '#fff' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
                   <div style={{ flex: '1 1 260px', minWidth: 220 }}>
-                    <div style={label}>Vendor</div>
+                    <div style={label}>Vendor:</div>
                     {canEdit
                       ? <select value={c.vendor_id} onChange={e => setCardVendor(c.key, e.target.value)} style={{ ...input, cursor: 'pointer' }}>
                           <option value="">— Pilih Vendor —</option>
@@ -1135,7 +1281,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
                 )}
 
                 <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                  <span style={{ ...label, marginBottom: 0 }}>Total</span>
+                  <span style={{ ...label, marginBottom: 0 }}>Total:</span>
                   {renderTotals(totalsOf(c.rows))}
                   {canEdit && !isAw && (
                     <button type="button" onClick={() => setAwardedKey(c.key)} style={{ ...ghostBtn, marginLeft: 'auto' }}><Check size={14} />Pilih Vendor Ini</button>
@@ -1156,7 +1302,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
               <button type="button" onClick={addInternalRow} style={{ ...ghostBtn, marginTop: 10 }}><Plus size={14} />Tambah Baris</button>
             )}
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-              <span style={{ ...label, marginBottom: 0 }}>Total</span>
+              <span style={{ ...label, marginBottom: 0 }}>Total:</span>
               {renderTotals(totalsOf(internalRows))}
             </div>
           </div>
@@ -1204,40 +1350,29 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
             </div>
           </div>
 
-          {/* Field header jawaban */}
-          <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-            <div>
-              <div style={label}>Harga Jual</div>
-              {canEdit
+          {/* Field header jawaban — value berupa elemen JSX (input/select/textarea saat
+              canEdit, else <div> read-only) → packedRows/wideRow tak pernah menganggapnya
+              kosong, jadi baris ini SELALU tampil (perilaku lama, tak berubah). */}
+          <div style={{ ...fieldGrid, marginTop: 20 }}>
+            {packedRows([
+              ['Harga Jual', canEdit
                 ? <input value={answer.suggested_rate} onChange={e => setAnswer(a => ({ ...a, suggested_rate: e.target.value.replace(/[^\d.]/g, '') }))} onWheel={e => e.currentTarget.blur()} inputMode="decimal" style={input} placeholder="0" />
-                : <div style={{ ...val, fontWeight: 700 }}>{money(sell)}</div>}
-            </div>
-            <div>
-              <div style={label}>Rate Currency</div>
-              {canEdit
+                : <div style={{ ...val, fontWeight: 700 }}>{money(sell)}</div>],
+              ['Rate Currency', canEdit
                 ? <select value={answer.rate_currency} onChange={e => setAnswer(a => ({ ...a, rate_currency: e.target.value }))} style={{ ...input, cursor: 'pointer' }}>
                     {currencyCodes.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
-                : <div style={val}>{answer.rate_currency || 'IDR'}</div>}
-            </div>
-            <div>
-              <div style={label}>Berlaku Dari</div>
-              {canEdit
+                : <div style={val}>{answer.rate_currency || 'IDR'}</div>],
+              ['Berlaku Dari', canEdit
                 ? <input type="date" value={answer.valid_from} onChange={e => setAnswer(a => ({ ...a, valid_from: e.target.value }))} style={input} />
-                : <div style={val}>{fmtDate(answer.valid_from)}</div>}
-            </div>
-            <div>
-              <div style={label}>Berlaku Sampai</div>
-              {canEdit
+                : <div style={val}>{fmtDate(answer.valid_from)}</div>],
+              ['Berlaku Sampai', canEdit
                 ? <input type="date" value={answer.valid_until} onChange={e => setAnswer(a => ({ ...a, valid_until: e.target.value }))} style={input} />
-                : <div style={val}>{fmtDate(answer.valid_until)}</div>}
-            </div>
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <div style={label}>Catatan Pricing</div>
-            {canEdit
+                : <div style={val}>{fmtDate(answer.valid_until)}</div>],
+            ])}
+            {wideRow('Catatan Pricing', canEdit
               ? <textarea value={answer.pricing_notes} onChange={e => setAnswer(a => ({ ...a, pricing_notes: e.target.value }))} rows={3} style={{ ...input, height: 'auto', padding: '10px 12px', resize: 'vertical', lineHeight: 1.5 }} placeholder="Catatan untuk sales / syarat harga…" />
-              : <div style={{ ...val, whiteSpace: 'pre-wrap' }}>{answer.pricing_notes || '—'}</div>}
+              : <div style={{ ...val, whiteSpace: 'pre-wrap' }}>{answer.pricing_notes || '—'}</div>)}
           </div>
 
           {/* Peringatan LUNAK — bukan blokir. Kartu pemenang tanpa vendor tetap boleh
@@ -1262,7 +1397,7 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
 
       {canSeeQuotations && (
         <section style={card}>
-          <div style={secBar}><span style={secTitle}>Quotation dari PRF Ini</span></div>
+          <div style={secBar}><div style={secNum}>09</div><div style={secTitle}>Quotation dari PRF Ini</div></div>
           <div style={secBody}>
             {prfQuotes.length === 0 ? (
               <div style={{ fontSize: 13, color: MUTE }}>Belum ada quotation yang dibuat dari PRF ini.</div>

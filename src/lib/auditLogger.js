@@ -48,6 +48,7 @@ export const ACTION_TYPES = {
   UPDATE_MOM:          'UPDATE_MOM',
   DELETE_MOM:          'DELETE_MOM',
   CREATE_PRF:          'CREATE_PRF',
+  UPDATE_PRF:          'UPDATE_PRF',
   UPDATE_PRF_PRICING:  'UPDATE_PRF_PRICING',
   CLAIM_PRF:           'CLAIM_PRF',
   RELEASE_PRF:         'RELEASE_PRF',

@@ -495,7 +495,7 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry, onViewQuotation, onCrea
         {onCreatePRF && (
           <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5, flex: '0 0 auto' }}
             onClick={() => onCreatePRF(inq)}>
-            <Icon name="filecheck" size={14} />Cetak PRF
+            <Icon name="filecheck" size={14} />Buat PRF
           </button>
         )}
       </div>
@@ -1401,7 +1401,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
           <div style={S.tierValBox} className="cd-tierval">
             <div style={S.tierValLbl}>Credit Limit</div>
             <div style={S.tierValNum}>{fmtRupiah(customer.credit_limit)}</div>
-            <div style={S.tierValSince}>Customer sejak {fmtDate(customer.created_at)}</div>
+            <div style={S.tierValSince}>{statusKey === 'customer' ? 'Customer sejak' : 'Terdaftar sejak'} {fmtDate(customer.created_at)}</div>
           </div>
         </div>
 

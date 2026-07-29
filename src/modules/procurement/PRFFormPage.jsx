@@ -12,9 +12,11 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import InquiryPicker from '../../components/InquiryPicker';
+import { COMMODITIES, ADD_ONS } from './prfShared';
 
 const C = {
-  navy: '#1B4D8A', navyDark: '#0F3768', navySoft: '#EEF3FB',
+  navy: '#144682', navyDark: '#0F3768', navySoft: '#EEF3FB',
   orange: '#E85A1E', orangeDark: '#C94D18', orangeSoft: '#FDF0E9',
   pageBg: '#F8FAFC', card: '#FFFFFF',
   border: '#E2E8F0', borderStrong: '#CBD5E1',
@@ -27,15 +29,6 @@ const DIRECTIONS = [
   { value: 'import', label: 'Import' },
   { value: 'export', label: 'Export' },
   { value: 'domestic', label: 'Domestic' },
-];
-const COMMODITIES = [
-  { value: 'general', label: 'General Cargo' },
-  { value: 'special_permit', label: 'Special Permit' },
-  { value: 'dg', label: 'Dangerous Good' },
-  { value: 'perishable', label: 'Perishable' },
-  { value: 'live_animal', label: 'Live Animal' },
-  { value: 'valuable', label: 'Valuable' },
-  { value: 'pharma', label: 'Pharma' },
 ];
 // IMO hazard classes — nilai string IDENTIK dengan InquiryFormPage.IMO_CLASSES supaya
 // nilai imo_class yang di-prefill dari inquiry cocok dengan salah satu opsi dropdown.
@@ -56,20 +49,6 @@ const STREAM_FALLBACK = [
   { value: 'FCL', label: 'FCL' }, { value: 'LCL', label: 'LCL' },
   { value: 'Project', label: 'Project' }, { value: 'Domestic', label: 'Domestic' },
   { value: 'Warehouse', label: 'Warehouse' },
-];
-// Add-on services (11). Customs-family (disabled when direction = domestic) marked customs:true.
-const ADD_ONS = [
-  { value: 'custom_clearance', label: 'Custom Clearance', customs: true },
-  { value: 'inland', label: 'Inland', customs: false },
-  { value: 'import_license_undername', label: 'Import License (Undername)', customs: true },
-  { value: 'import_license_pi', label: 'Import License (PI)', customs: true },
-  { value: 'export_license', label: 'Export License', customs: true },
-  { value: 'ls', label: 'LS', customs: true },
-  { value: 'warehouse_umum', label: 'Warehouse Umum', customs: false },
-  { value: 'warehouse_reefer', label: 'Warehouse Reefer', customs: false },
-  { value: 'tkbm', label: 'TKBM', customs: false },
-  { value: 'insurance', label: 'Insurance', customs: false },
-  { value: 'others', label: 'Others', customs: false },
 ];
 // ── Child field option lists (Fase 2) ──
 const SEA_CONTAINERS = [
@@ -178,7 +157,7 @@ function ActionsBar({ saving, onBack, onSave }) {
   );
 }
 
-export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
+export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editPrfId }) {
   const { profile, user, erpRole } = useAuth();
   const { options: streamOpts } = useDropdownOptions('stream', STREAM_FALLBACK);
 
@@ -203,6 +182,16 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   const [companyCode, setCompanyCode] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const isEdit = !!editPrfId;
+  // Display text for the searchable inquiry picker. form.inquiry_id stays the
+  // stored source of truth; this holds only what's shown in the input.
+  const [inquiryText, setInquiryText] = useState('');
+  // Edit mode (TD-76) — fetch the existing DRAFT PRF once; editRow keeps the raw
+  // row (prf_no/status) so handleSave can preserve identity fields and not
+  // re-generate a document number on update.
+  const [editLoading, setEditLoading] = useState(isEdit);
+  const [editRow, setEditRow] = useState(null);
+  const [editError, setEditError] = useState(null);
 
   // Load accounts + inquiries + currencies + company code (company-scoped).
   useEffect(() => {
@@ -265,6 +254,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
           return;
         }
         // Identity (customer_source/inquiry_id/account_id) di-set tanpa syarat; field data fill-empty-only via helper.
+        setInquiryText(inq.inquiry_no || '');
         setForm(f => applyInquiryData({
           ...f,
           customer_source: 'inquiry',
@@ -274,6 +264,58 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
       });
     return () => { cancelled = true; };
   }, [prefillInquiryId]);
+
+  // Edit mode (TD-76) — fetch the existing PRF and populate the form once. Guard:
+  // status must still be DRAFT — prf_update_draft RLS only allows UPDATE while
+  // DRAFT, and the "Edit PRF" button in PRFDetailPage already only renders for
+  // DRAFT rows; this is a defensive re-check for races (e.g. someone else submits
+  // it in another tab between viewing detail and clicking edit).
+  useEffect(() => {
+    if (!editPrfId) return undefined;
+    let cancelled = false;
+    supabase.from('prf')
+      .select('id, prf_no, status, created_by, company_id, submitted_at, customer_source, account_id, account_name_manual, inquiry_id, stream, deadline_quotation, direction, commodity, goods_name, hs_code, msds_available, un_number, imo_class, service_type, incoterms, commercial_value, commercial_currency, origin, destination, pickup_address, delivery_address, add_on_services, add_on_others, cargo_ready_date, sea_freight_type, sea_container_types, sea_container_qty, sea_lcl_gw, sea_lcl_dimension, sea_lcl_volume, sea_lcl_koli, air_gw, air_dimension, air_volume, air_koli, inland_fleet_types, inland_pickup_address, inland_delivery_address, inland_gw, inland_dimension, project_freight_types, project_qty, notes, inquiry:inquiries!prf_inquiry_id_fkey(inquiry_no)')
+      .eq('id', editPrfId).is('deleted_at', null).maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { setEditError('Gagal memuat PRF: ' + error.message); setEditLoading(false); return; }
+        if (!data) { setEditError('PRF tidak ditemukan atau tidak ada akses.'); setEditLoading(false); return; }
+        if (data.status !== 'DRAFT') { setEditError('PRF ini sudah bukan draft, tidak bisa diedit dari sini.'); setEditLoading(false); return; }
+        setEditRow(data);
+        setInquiryText(data.inquiry?.inquiry_no || '');
+        setForm({
+          customer_source: 'inquiry', account_id: data.account_id || '', inquiry_id: data.inquiry_id || '',
+          stream: data.stream || '', deadline_quotation: data.deadline_quotation || '',
+          direction: data.direction || '', commodity: data.commodity || '', goods_name: data.goods_name || '',
+          hs_code: data.hs_code || '', msds_available: !!data.msds_available,
+          un_number: data.un_number || '', imo_class: data.imo_class || '',
+          service_type: data.service_type || '', incoterms: data.incoterms || '',
+          commercial_value: data.commercial_value != null ? String(data.commercial_value) : '',
+          commercial_currency: data.commercial_currency || '',
+          origin: data.origin || '', destination: data.destination || '',
+          pickup_address: data.pickup_address || '', delivery_address: data.delivery_address || '',
+          add_on_services: data.add_on_services || [], add_on_others: data.add_on_others || '',
+          cargo_ready_date: data.cargo_ready_date || '',
+          sea_freight_type: data.sea_freight_type || '', sea_container_types: data.sea_container_types || [],
+          sea_container_qty: data.sea_container_qty || {},
+          sea_lcl_gw: data.sea_lcl_gw != null ? String(data.sea_lcl_gw) : '',
+          sea_lcl_dimension: data.sea_lcl_dimension || '',
+          sea_lcl_volume: data.sea_lcl_volume != null ? String(data.sea_lcl_volume) : '',
+          sea_lcl_koli: data.sea_lcl_koli != null ? String(data.sea_lcl_koli) : '',
+          air_gw: data.air_gw != null ? String(data.air_gw) : '', air_dimension: data.air_dimension || '',
+          air_volume: data.air_volume != null ? String(data.air_volume) : '',
+          air_koli: data.air_koli != null ? String(data.air_koli) : '',
+          inland_fleet_types: data.inland_fleet_types || [],
+          inland_pickup_address: data.inland_pickup_address || '', inland_delivery_address: data.inland_delivery_address || '',
+          inland_gw: data.inland_gw != null ? String(data.inland_gw) : '', inland_dimension: data.inland_dimension || '',
+          project_freight_types: data.project_freight_types || [],
+          project_qty: data.project_qty != null ? String(data.project_qty) : '',
+          notes: data.notes || '',
+        });
+        setEditLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [editPrfId]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
   const setNum = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value.replace(/[^\d.]/g, '') }));
@@ -315,9 +357,8 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
     }));
   };
   // Inquiry pick: store inquiry_id + auto-fill account_id + prefill field AMAN (fill-empty-only).
-  const onInquiryPick = (e) => {
-    const inq = inquiries.find(i => i.id === e.target.value);
-    setForm(f => applyInquiryData({ ...f, inquiry_id: e.target.value, account_id: inq ? (inq.customer_id || inq.prospect_id || '') : '' }, inq));
+  const onInquiryPick = (inq) => {
+    setForm(f => applyInquiryData({ ...f, inquiry_id: inq?.id || '', account_id: inq ? (inq.customer_id || inq.prospect_id || '') : '' }, inq));
   };
 
   // Inquiry sumber (utk penanda + teks bantu read-only field yg tak di-prefill). PRF selalu dari inquiry.
@@ -396,10 +437,19 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
   }
 
   const handleSave = async (status) => {
-    // PRF wajib lahir dari inquiry — tegakkan untuk DRAFT maupun SUBMIT (form create-only).
+    // PRF wajib lahir dari inquiry — tegakkan untuk DRAFT maupun SUBMIT (create & edit).
     if (!form.inquiry_id) {
       setErrors(e => ({ ...e, account: 'Pilih inquiry' }));
       showToast?.('Pilih inquiry terlebih dahulu', 'error');
+      return;
+    }
+    // Service Type wajib walau baru Simpan Draft — tanpa ini Section 03 tak
+    // punya arah sama sekali (moda tak diketahui). Ditegakkan tanpa syarat
+    // status (draft & submit, create & edit) — TIDAK lewat validate() penuh
+    // supaya field lain tetap boleh kosong saat draft.
+    if (!form.service_type) {
+      setErrors(e => ({ ...e, service_type: 'Wajib diisi' }));
+      showToast?.('Pilih service type terlebih dahulu', 'error');
       return;
     }
     if (status === 'SUBMITTED' && !validate()) return;
@@ -417,17 +467,19 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
         showToast?.('Akun inquiry ini sedang di Lead Pool. Tarik dari Lead Pool dulu sebelum membuat PRF.', 'error');
         return;
       }
-      const prf_no = await generatePrfNo(profile.company_id, companyCode);
+      // Nomor PRF: baris BARU generate nomor baru; edit draft PAKAI ULANG nomor yang
+      // sudah ada — jangan generate lagi (draft sudah pernah menghanguskan satu nomor
+      // di jalur create-only lama; itulah TD-76 / insiden PRF/MSI/2026/VII/004).
+      const prf_no = isEdit ? editRow.prf_no : await generatePrfNo(profile.company_id, companyCode);
       // Sea FCL qty jsonb — only checked types, numeric.
       const qtyClean = {};
       if (showSea && isFCL) form.sea_container_types.forEach(c => {
         const v = form.sea_container_qty[c];
         if (v !== '' && v != null && !Number.isNaN(Number(v))) qtyClean[c] = Number(v);
       });
-      const payload = {
-        prf_no,
-        company_id: profile.company_id,
-        created_by: profile.id,
+      // Fields shared by create + edit (prf_no / company_id / created_by are NOT
+      // mutated on edit — identity fields, excluded from the update payload below).
+      const fields = {
         status,
         submitted_at: status === 'SUBMITTED' ? new Date().toISOString() : null,
         // Informasi Dasar
@@ -480,7 +532,23 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
         project_qty: (showProject && form.project_qty !== '') ? Number(form.project_qty) : null,
         notes: form.notes.trim() || null,
       };
-      const { error } = await supabase.from('prf').insert(payload);
+
+      if (isEdit) {
+        const { error } = await supabase.from('prf').update(fields).eq('id', editPrfId);
+        if (error) throw error;
+        logAudit(supabase, {
+          action: ACTION_TYPES.UPDATE_PRF,
+          entityType: ENTITY_TYPES.PRF,
+          entityId: editPrfId,
+          entityLabel: prf_no,
+          notes: `status: ${editRow.status} → ${status}`,
+        }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+        showToast?.(status === 'SUBMITTED' ? `PRF ${prf_no} berhasil dikirim` : `Draft PRF ${prf_no} diperbarui`);
+        onBack();
+        return;
+      }
+
+      const { error } = await supabase.from('prf').insert({ ...fields, prf_no, company_id: profile.company_id, created_by: profile.id });
       if (error) throw error;
       // entityId null — insert ini tak pakai .select('id') (pola sama modul lain yang tak
       // butuh id balik); entityLabel (prf_no) sudah cukup unik utk identifikasi di audit log.
@@ -502,9 +570,27 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
 
   const year = new Date().getFullYear();
   const monthRoman = toRoman(new Date().getMonth() + 1);
-  const badgePreview = `PRF/${companyCode || '—'}/${year}/${monthRoman}/—`;
+  const badgePreview = `PRF/${companyCode || '—'}/${year}/${monthRoman}/XXX`;
 
   const errText = (k) => errors[k] && <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors[k]}</span>;
+
+  if (isEdit && editLoading) {
+    return (
+      <div style={{ background: C.pageBg, padding: '60px 8px', borderRadius: 16, textAlign: 'center', color: C.sub, fontSize: 14 }}>Memuat PRF…</div>
+    );
+  }
+  if (isEdit && editError) {
+    return (
+      <div style={{ background: C.pageBg, padding: '8px 8px 40px', borderRadius: 16 }}>
+        <div style={S.page}>
+          <div style={S.headerCard}>
+            <button type="button" style={S.btnGhost} onClick={onBack}><ChevronLeft size={16} />Kembali</button>
+            <div style={{ marginTop: 16, color: C.error, fontSize: 14 }}>{editError}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ background: C.pageBg, padding: '8px 8px 40px', borderRadius: 16 }}>
@@ -513,10 +599,10 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
         <div style={S.headerCard}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0 }}>
-              <h1 style={S.hTitle}>Buat PRF Baru</h1>
+              <h1 style={S.hTitle}>{isEdit ? 'Edit PRF (Draft)' : 'Buat PRF Baru'}</h1>
               <div style={S.hSub}>Price Request Form</div>
             </div>
-            <span style={S.inqBadge}>{badgePreview}</span>
+            <span style={S.inqBadge}>{isEdit ? (editRow?.prf_no || '—') : badgePreview}</span>
           </div>
           <div style={{ marginTop: 20 }}><ActionsBar saving={saving} onBack={onBack} onSave={handleSave} /></div>
         </div>
@@ -533,7 +619,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
               <div style={S.infoDiv} />
               <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Tanggal PRF</span><span style={S.infoChipV}>{todayISO().split('-').reverse().join('/')}</span></span></div>
               <div style={S.infoDiv} />
-              <div style={S.infoChip}><Hash size={16} color={C.navy} /><span><span style={S.infoChipK}>No. PRF</span><span style={{ ...S.infoChipV, fontFamily: "'IBM Plex Mono',monospace" }}>{badgePreview}</span></span></div>
+              <div style={S.infoChip}><Hash size={16} color={C.navy} /><span><span style={S.infoChipK}>No. PRF</span><span style={{ ...S.infoChipV, fontFamily: "'IBM Plex Mono',monospace" }}>{isEdit ? (editRow?.prf_no || '—') : badgePreview}</span></span></div>
             </div>
 
             <div style={{ display: 'grid', gap: 18 }}>
@@ -545,12 +631,14 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId }) {
               </Field>
 
               <Field label="Inquiry" required>
-                <div style={{ position: 'relative' }}>
-                  <select value={form.inquiry_id} onChange={onInquiryPick} style={selInput}>
-                    <option value="">— Pilih inquiry —</option>
-                    {inquiries.map(i => <option key={i.id} value={i.id}>{i.inquiry_no}</option>)}
-                  </select><Chevron />
-                </div>
+                <InquiryPicker
+                  value={inquiryText}
+                  inquiries={inquiries}
+                  inputStyle={S.input}
+                  placeholder="Cari inquiry…"
+                  onChangeText={(v) => { setInquiryText(v); setForm(f => ({ ...f, inquiry_id: '' })); }}
+                  onPick={(inq) => { setInquiryText(inq.inquiry_no); onInquiryPick(inq); }}
+                />
                 {errText('account')}
                 {srcInq && <span style={S.hint}>Sebagian data disalin otomatis dari inquiry {srcInq.inquiry_no}.</span>}
               </Field>
