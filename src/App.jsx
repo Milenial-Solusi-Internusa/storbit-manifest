@@ -1706,6 +1706,7 @@ export default function StorbitManifest() {
   const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
   const [prfPrefillInquiryId, setPrfPrefillInquiryId] = useState(null);  // inquiry id → prefill PRF form (Cetak PRF)
   const [procPrfDetailId, setProcPrfDetailId] = useState(null);  // prf id → PRFDetailPage (dari list Forwarding MSI)
+  const [procPrfEditId, setProcPrfEditId] = useState(null);  // prf id → PRFFormPage mode edit (TD-76, hanya status DRAFT)
   const [quotationFromPrf, setQuotationFromPrf] = useState(null); // payload prefill PRF → QuotationFormPage ("Buat Quotation" di PRFDetailPage)
   const [soDetailId, setSoDetailId] = useState(null);  // SO id → tampilkan SO detail (crm/proc)
   const [soFormOpen, setSoFormOpen] = useState(false); // buka SO create form (crm)
@@ -1853,6 +1854,7 @@ export default function StorbitManifest() {
     setCustomerDetailTab('info');
     setPrfPrefillInquiryId(null);
     setProcPrfDetailId(null);
+    setProcPrfEditId(null);
     setSoDetailId(null);
     setSoFormOpen(false);
     setReportingMomMode('list');
@@ -3544,7 +3546,7 @@ export default function StorbitManifest() {
           ))}
 
           {/* ── Procurement: Inquiry/RFQ → Direct → Forwarding (MSI) placeholder ─ */}
-          {activeMenu === 'proc-inquiry-fwd-msi' && !procPrfDetailId && (canRenderPage('proc-inquiry-fwd-msi') ? (
+          {activeMenu === 'proc-inquiry-fwd-msi' && !procPrfDetailId && !procPrfEditId && (canRenderPage('proc-inquiry-fwd-msi') ? (
             <ErrorBoundary title="Procurement Forwarding temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <ProcInquiryForwardingPage onBack={() => setActiveMenu('home')} onSelect={setProcPrfDetailId} />
@@ -3554,11 +3556,24 @@ export default function StorbitManifest() {
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
           ))}
           {/* ── Procurement: PRF Detail (dari list Forwarding MSI) ───────────── */}
-          {activeMenu === 'proc-inquiry-fwd-msi' && procPrfDetailId && (canRenderPage('proc-inquiry-fwd-msi') ? (
+          {activeMenu === 'proc-inquiry-fwd-msi' && procPrfDetailId && !procPrfEditId && (canRenderPage('proc-inquiry-fwd-msi') ? (
             <ErrorBoundary title="PRF Detail temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <PRFDetailPage prfId={procPrfDetailId} onBack={() => setProcPrfDetailId(null)} showToast={showToast}
-                  onCreateQuotation={(payload) => { setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(payload); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }} />
+                  onCreateQuotation={(payload) => { setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(payload); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onEditDraft={(id) => setProcPrfEditId(id)} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+          {/* ── Procurement: Edit PRF Draft (dari PRF Detail, TD-76 — hanya status
+              DRAFT). onBack → clear → PRFDetailPage remount otomatis (fresh fetch,
+              pola sama customerInquiryEdit) krn guard di atas kembali true. ────── */}
+          {activeMenu === 'proc-inquiry-fwd-msi' && procPrfEditId && (canRenderPage('proc-inquiry-fwd-msi') ? (
+            <ErrorBoundary title="Edit PRF temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <PRFFormPage editPrfId={procPrfEditId} onBack={() => setProcPrfEditId(null)} showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           ) : (

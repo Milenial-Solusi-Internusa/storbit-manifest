@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { fmtDate, SERVICE_LABEL } from './prfShared';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
@@ -12,7 +13,6 @@ const BORDER = '#E8ECF2';
 const HEAD = "'Montserrat',sans-serif";
 const BODY = "'Inter',system-ui,sans-serif";
 
-const SERVICE_LABEL = { sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom' };
 const BADGE = {
   DRAFT:        { bg: '#EEF0F3', fg: '#5E6675' },
   SUBMITTED:    { bg: '#E1ECF7', fg: '#2563EB' },
@@ -20,14 +20,6 @@ const BADGE = {
   QUOTED:       { bg: '#E4F0E5', fg: '#1F8B4D' },
   CANCELLED:    { bg: '#FBE3E3', fg: '#C0392B' },
   EXPIRED:      { bg: '#EEF0F3', fg: '#5E6675' },
-};
-
-const fmtDate = (iso) => {
-  if (!iso) return '—';
-  const M = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
-  return `${d.getDate()} ${M[d.getMonth()]} ${d.getFullYear()}`;
 };
 
 export default function ProcInquiryForwardingPage({ onBack, onSelect }) {
@@ -106,7 +98,7 @@ export default function ProcInquiryForwardingPage({ onBack, onSelect }) {
                   return (
                     <tr key={r.id} onClick={() => onSelect?.(r.id)} style={{ cursor: onSelect ? 'pointer' : 'default' }}>
                       <td style={{ ...td, color: '#8A8E7C' }}>{i + 1}</td>
-                      <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: NAVY }}>{r.prf_no}</td>
+                      <td style={{ ...td, fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, color: NAVY }}>{r.prf_no}</td>
                       <td style={{ ...td, color: '#5E6553' }}>{fmtDate(r.created_at)}</td>
                       <td style={td}>{customer}</td>
                       <td style={{ ...td, color: '#5E6553' }}>{SERVICE_LABEL[r.service_type] || r.service_type || '—'}</td>

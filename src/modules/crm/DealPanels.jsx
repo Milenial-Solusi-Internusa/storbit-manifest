@@ -435,7 +435,7 @@ export function QuotationListCard({ quotations, onCreate, onView }) {
 }
 
 /* ---------- PrfListCard ---------- */
-// canCreate + onCreate → tombol "Cetak PRF" (role check dilakukan pemanggil).
+// canCreate + onCreate → tombol "Buat PRF" (role check dilakukan pemanggil).
 //
 // Batch 3C — perluasan OPT-IN: kalau caller mengisi `prf.vendorOffers` (array)
 // pada baris PRF berstatus QUOTED, kartu ini menampilkan daftar penawaran
@@ -451,7 +451,7 @@ export function PrfListCard({ prfs, canCreate, onCreate, canSelectOffer, onSelec
       icon={<FileText size={17} />}
       right={canCreate ? (
         <button onClick={() => onCreate?.()} style={{ height: 34, padding: '0 12px', borderRadius: 9, border: 'none', background: C.orange, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <FileText size={14} />Cetak PRF
+          <Plus size={14} />Buat PRF
         </button>
       ) : null}
     >
