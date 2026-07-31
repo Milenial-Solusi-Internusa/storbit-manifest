@@ -22,6 +22,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
 import { useUrlState } from './hooks/useUrlState';
 import CustomFieldsSection from './components/CustomFieldsSection';
+import ProfileMiniView from './components/ProfileMiniView';
 import { calcItem } from './lib/spCalc';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
@@ -2058,6 +2059,9 @@ export default function StorbitManifest() {
   const [arSearch, setArSearch] = useState('');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  // Mini profil read-only rekan kerja (klik nama, mis. sales di Header DealDetailPage).
+  // Terpisah dari showProfile/MyProfilePage (yang selalu tentang diri sendiri).
+  const [viewingProfileId, setViewingProfileId] = useState(null);
 
   // Persist active menu and module across browser refresh
   useEffect(() => {
@@ -2913,6 +2917,9 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
+          {/* ── MINI PROFIL rekan kerja (read-only, klik nama — mis. Header DealDetailPage) ── */}
+          <ProfileMiniView userId={viewingProfileId} onClose={() => setViewingProfileId(null)} />
+
           {/* ── HOME DASHBOARD (replaces the old app launcher) ── */}
           {activeMenu === 'home' && (
             <ErrorBoundary title="Beranda tidak tersedia">
@@ -3331,6 +3338,8 @@ export default function StorbitManifest() {
                   onEditInquiry={() => setShowInquiryForm(true)}
                   onCreatePRF={() => { setPrfPrefillInquiryId(crmDealInquiry.id); setCrmDealInquiry(null); setActiveMenu('prf'); }}
                   onViewPRF={(p) => { setCrmDealInquiry(null); setProcPrfDetailId(p.id); setActiveMenu('proc-inquiry-fwd-msi'); }}
+                  onViewProfile={setViewingProfileId}
+                  onViewCustomer={(customerId) => { setCrmDealInquiry(null); navigateToCustomerDetail(customerId); }}
                   showToast={showToast}
                 />
               </Suspense>

@@ -84,7 +84,14 @@ function StageBadge({ idx }) {
 }
 
 /* ---------- Header ---------- */
-function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, closeDate, value, onBack, onEdit, onPickStage }) {
+function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, assignedProfileId, onViewProfile, accountId, onViewCustomer, closeDate, value, onBack, onEdit, onPickStage }) {
+  // Nama assignee jadi klik-able HANYA bila id-nya dan handler-nya tersedia — kalau
+  // tidak (belum di-assign, atau prop tak dikirim dari pemanggil), render persis
+  // seperti sebelumnya (teks polos, tanpa cursor pointer). Nol regresi kasus kosong.
+  const canViewProfile = !!(assignedProfileId && onViewProfile);
+  // Sama pola utk nama akun (h1) — accountId & name sama-sama turunan account?.*,
+  // jadi "account kosong" otomatis jatuh ke cabang non-klik (bukan crash).
+  const canViewCustomer = !!(accountId && onViewCustomer);
   return (
     <div style={{ padding: '4px 0 8px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -97,16 +104,39 @@ function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, closeDate, 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 260 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-            <h1 style={{ margin: 0, fontFamily: HEAD, fontSize: 25, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>{name || '—'}</h1>
+            {canViewCustomer ? (
+              <h1
+                className="dd-account-name"
+                onClick={() => onViewCustomer(accountId)}
+                title="Lihat detail akun"
+                style={{ margin: 0, fontFamily: HEAD, fontSize: 25, fontWeight: 800, color: C.text, letterSpacing: '-0.02em', cursor: 'pointer' }}
+              >
+                {name || '—'}
+              </h1>
+            ) : (
+              <h1 style={{ margin: 0, fontFamily: HEAD, fontSize: 25, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>{name || '—'}</h1>
+            )}
             <StageBadge idx={stageIdx} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, fontWeight: 600, color: C.navy, background: C.navySoft, padding: '4px 11px', borderRadius: 8 }}>
               <Hash size={13} />{inquiryNo || '—'}
             </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: BODY, fontSize: 13, color: C.textMute }}>
-              <Avatar name={assignedName} size={26} />{assignedName || 'Belum di-assign'}
-            </span>
+            {canViewProfile ? (
+              <button
+                type="button"
+                onClick={() => onViewProfile(assignedProfileId)}
+                title="Lihat profil"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: BODY, fontSize: 13, color: C.textMute, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+              >
+                <Avatar name={assignedName} size={26} />
+                <span style={{ textDecoration: 'underline', textDecorationColor: C.border, textUnderlineOffset: 3 }}>{assignedName}</span>
+              </button>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: BODY, fontSize: 13, color: C.textMute }}>
+                <Avatar name={assignedName} size={26} />{assignedName || 'Belum di-assign'}
+              </span>
+            )}
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: BODY, fontSize: 13, color: C.textMute }}>
               <CalendarClock size={15} color={C.textFaint} />Est. closing {fmtDate(closeDate)}
             </span>
@@ -236,7 +266,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
 }
 
 /* ========================================================================= */
-export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, showToast }) {
+export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, onViewProfile, onViewCustomer, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -437,6 +467,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const stageIdx = stageIndex(account?.pipeline_stage);
   const estValue = Number(account?.estimated_value || 0);
   const assignedName = profMap[account?.assigned_profile] || profMap[account?.assigned_to] || null;
+  // Id di balik assignedName — fallback SAMA PERSIS supaya id-nya konsisten dgn
+  // nama yang tampil. Dipakai utk buka mini profil (klik nama sales di Header).
+  const assignedProfileId = account?.assigned_profile || account?.assigned_to || null;
   const createdByName = profMap[inquiry?.created_by] || null;
   // Aksi "Tandai Kalah" hanya untuk status yang belum terminal (default 'OPEN' bila
   // kolomnya kosong). WON / LOST / CANCELLED → tombolnya tidak dirender sama sekali.
@@ -618,7 +651,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           Tab (dari DealPanels.jsx) sama-sama merender className="cd-tab" di kedua
           halaman, tapi rule hover-nya sendiri hanya hidup di mana pun <style> ini
           dirender (CustomerDetailPage punya rule identik di file-nya sendiri). */}
-      <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}`}</style>
+      <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}.dd-account-name:hover{text-decoration:underline;}`}</style>
 
       <DealStepper current={stageIdx} value={estValue} />
 
@@ -628,6 +661,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         stageKey={account?.pipeline_stage || 'NEW'}
         inquiryNo={inquiry.inquiry_no}
         assignedName={assignedName}
+        assignedProfileId={assignedProfileId}
+        onViewProfile={onViewProfile}
+        accountId={account?.id}
+        onViewCustomer={onViewCustomer}
         closeDate={account?.estimated_closing_date}
         value={estValue}
         onBack={onBack}
