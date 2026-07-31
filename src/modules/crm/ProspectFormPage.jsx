@@ -567,7 +567,9 @@ function PrefixNameField({ prefix, onPrefix, name, onName, onNameBlur, error }) 
 }
 
 /* ---------- BANT card ---------- */
-function BantCard({ dim, value, onChange }) {
+// Diekspor supaya bisa dipakai ulang di CustomerDetailPage.jsx (mode edit inline
+// BANT & Pipeline) — perilaku/tampilan di file ini sendiri tidak berubah.
+export function BantCard({ dim, value, onChange }) {
   const [h, setH] = useState(false);
   const DimIcon = BANT_ICON[dim.key] || Target;
   const selected = dim.options.find(o => o.value === value);

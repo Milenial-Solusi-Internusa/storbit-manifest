@@ -155,8 +155,14 @@ export async function fetchAssignees(companyId) {
 // SINGLE write path for a deal/stage update — used by DealDetailPage AND
 // CustomerDetailPage so the audit trail + toast behave identically. Returns bool.
 export async function saveDealUpdate({ accountId, patch, auditStageKey, prevStage, accountName, actor, showToast }) {
-  const { error } = await supabase.from('accounts').update(patch).eq('id', accountId);
+  const { data, error } = await supabase.from('accounts').update(patch).eq('id', accountId).select('id');
   if (error) { showToast?.('Gagal menyimpan: ' + error.message, 'error'); return false; }
+  // RLS bisa menyaring baris (0 baris ter-update) tanpa Postgres mengembalikan
+  // error — tanpa cek ini, penolakan RLS akan salah dilaporkan sebagai sukses.
+  if (!data || data.length === 0) {
+    showToast?.('Gagal menyimpan: tidak ada izin untuk mengubah akun ini, atau akun tidak ditemukan.', 'error');
+    return false;
+  }
   if (auditStageKey) {
     logAudit(supabase, {
       action: ACTION_TYPES.CHANGE_PIPELINE_STAGE,
