@@ -2013,22 +2013,6 @@ export default function StorbitManifest() {
     } catch (e) { console.debug('[notifications] markAll failed:', e?.message || e); }
   }, [profile?.id]);
 
-  const handleNotifClick = useCallback((n) => {
-    setNotifications(prev => prev.filter(x => x.id !== n.id));
-    setUnreadCount(c => Math.max(0, c - 1));
-    setNotifOpen(false);
-    supabase.from('notifications')
-      .update({ is_read: true, read_at: new Date().toISOString() })
-      .eq('id', n.id)
-      .then(({ error }) => { if (error) console.debug('[notifications] markRead failed:', error.message); });
-    const dest = n.reference_type === 'hrga_request' ? 'hrga-semua-request'
-               : n.reference_type === 'activity'     ? 'crm-calls'
-               : n.reference_type === 'lead_pool'     ? 'crm-lead-pool'
-               : n.reference_type === 'mom'           ? 'reporting-mom'
-               : null;
-    if (dest) navigateTo(dest);
-  }, [navigateTo]);
-
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editingAR, setEditingAR] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -2218,6 +2202,57 @@ export default function StorbitManifest() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 2800);
   };
+
+  // Moved here (below showToast/setActiveModule/setShowInquiryForm/setCrmDealInquiry/
+  // setActiveMenu) so its 'inquiry' mention branch can call showToast in its body
+  // without a TDZ reference — same reasoning that already places this function after
+  // navigateTo (see the notifications state comment above), extended to showToast.
+  const handleNotifClick = useCallback((n) => {
+    setNotifications(prev => prev.filter(x => x.id !== n.id));
+    setUnreadCount(c => Math.max(0, c - 1));
+    setNotifOpen(false);
+    const markReadDone = supabase.from('notifications')
+      .update({ is_read: true, read_at: new Date().toISOString() })
+      .eq('id', n.id)
+      .then(({ error }) => { if (error) console.debug('[notifications] markRead failed:', error.message); });
+
+    // Mention komentar Chatter — deep-link ke Detail Inquiry-nya, bukan menu generik
+    // spt cabang lain di bawah. TIDAK pakai navigateTo(): fungsi itu me-null-kan
+    // crmDealInquiry sbg bagian cleanup-nya (lihat definisinya di atas), yang akan
+    // langsung membatalkan state yg baru saja di-set di sini. Cek existence dulu
+    // (bukan fetch penuh — crmDealInquiry cukup {id}, DealDetailPage fetch sendiri
+    // detailnya) supaya inquiry yang sudah dihapus/RLS-ditolak tak memindah halaman
+    // sama sekali — toast error, tetap di halaman sekarang.
+    //
+    // Probe dirantai SETELAH markReadDone selesai (sequential), bukan ditembak
+    // bersamaan — dua request Supabase konkuren persis di titik ini (mark-as-read
+    // + probe) terbukti lewat tes diagnostik jadi pemicu race condition yang cuma
+    // muncul di jalur notifikasi (klik baris biasa ke Detail Inquiry yang sama
+    // selalu bersih).
+    if (n.reference_type === 'inquiry' && n.reference_id) {
+      markReadDone
+        .then(() => supabase.from('inquiries').select('id').eq('id', n.reference_id).is('deleted_at', null).maybeSingle())
+        .then(({ data, error }) => {
+          if (error || !data) {
+            showToast('Inquiry yang di-tag tidak ditemukan, atau Anda tidak punya akses.', 'error');
+            return;
+          }
+          const group = ERP_MENU_GROUPS.find(g =>
+            g.items.some(i => i.id === 'crm-inquiry' || i.children?.some(c => c.id === 'crm-inquiry')));
+          if (group) setActiveModule(group.label);
+          setShowInquiryForm(false);
+          setCrmDealInquiry({ id: n.reference_id });
+          setActiveMenu('crm-inquiry');
+        });
+      return;
+    }
+    const dest = n.reference_type === 'hrga_request' ? 'hrga-semua-request'
+               : n.reference_type === 'activity'     ? 'crm-calls'
+               : n.reference_type === 'lead_pool'     ? 'crm-lead-pool'
+               : n.reference_type === 'mom'           ? 'reporting-mom'
+               : null;
+    if (dest) navigateTo(dest);
+  }, [navigateTo]);
 
   // Generate a picking list from a confirmed SP, then jump to its detail.
   // Errors from the RPC (belum confirmed / tidak ada outstanding / sudah ada)
