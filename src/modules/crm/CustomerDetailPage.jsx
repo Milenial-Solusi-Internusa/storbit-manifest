@@ -717,7 +717,7 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────────
-export default function CustomerDetailPage({ id, onBack, showToast, onEditInquiry, onViewQuotation, onCreatePRF, initialTab }) {
+export default function CustomerDetailPage({ id, onBack, showToast, onEditInquiry, onViewQuotation, onCreatePRF, onViewPRF, initialTab }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   // Delete customer is restricted to super_admin (soft-delete via deleted_at).
   const canDelete = erpRole === 'super_admin';
@@ -1586,7 +1586,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
             <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div></div>
           ) : (
             <>
-              <PrfListCard prfs={docPrfs} canCreate={false} />
+              <PrfListCard prfs={docPrfs} canCreate={false} onView={onViewPRF} />
               <div style={S.card}>
                 <div style={S.cardHead}>
                   <h3 style={S.cardHeadTitle}>Sales Order</h3>
