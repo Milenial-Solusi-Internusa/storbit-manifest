@@ -15,7 +15,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Sparkles, Phone, BadgeCheck, FileText, Handshake, Trophy, XCircle,
   ChevronDown, Check, Pencil, X, ArrowRightLeft,
-  Plus, Eye, Download, Loader2,
+  Plus, Download, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
@@ -419,14 +419,15 @@ export function QuotationListCard({ quotations, onCreate, onView }) {
                 return (
                   <tr key={q.id} style={{ borderBottom: `1px solid ${C.border}` }}>
                     <td style={{ padding: '8px', color: C.textFaint }}>{i + 1}</td>
-                    <td style={{ padding: '8px', fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: C.navy, whiteSpace: 'nowrap' }}>{q.quotation_no}</td>
+                    <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                      <button type="button" onClick={() => onView?.(q)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy, textDecoration: 'underline' }}>{q.quotation_no}</button>
+                    </td>
                     <td style={{ padding: '8px', color: C.textMute, whiteSpace: 'nowrap' }}>{fmtDate(q.created_at)}</td>
                     <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRp(q.total_amount)}</td>
                     <td style={{ padding: '8px' }}>
                       <span style={{ padding: '3px 9px', borderRadius: 99, background: b.bg, color: b.fg, border: `1px solid ${b.bd}`, fontFamily: HEAD, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}>{String(q.status).toUpperCase()}</span>
                     </td>
                     <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
-                      <button title="Lihat detail" onClick={() => onView?.(q)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.navy, padding: 4 }}><Eye size={15} /></button>
                       <button title="Download (segera hadir)" disabled style={{ background: 'none', border: 'none', cursor: 'not-allowed', color: C.textFaint, padding: 4, opacity: 0.5 }}><Download size={15} /></button>
                     </td>
                   </tr>
@@ -447,9 +448,11 @@ export function QuotationListCard({ quotations, onCreate, onView }) {
 // pada baris PRF berstatus QUOTED, kartu ini menampilkan daftar penawaran
 // vendornya (read-only) + tombol pilih/ganti (via canSelectOffer/onSelectOffer).
 // PRF yang TIDAK punya field itu (mis. tab "Dokumen" CustomerDetailPage, yang
-// hanya fetch kolom dasar) dirender PERSIS seperti sebelumnya — tabel ringkasan
-// di bawah ini SAMA SEKALI tidak berubah.
-export function PrfListCard({ prfs, canCreate, onCreate, canSelectOffer, onSelectOffer, offerActionBusy }) {
+// hanya fetch kolom dasar) tetap tak menampilkan blok penawaran vendor itu.
+//
+// onView (belakangan) — OPT-IN terpisah: diberikan → nomor PRF jadi link (gaya
+// sama QuotationListCard); tak diberikan → tetap teks biasa seperti sebelumnya.
+export function PrfListCard({ prfs, canCreate, onCreate, onView, canSelectOffer, onSelectOffer, offerActionBusy }) {
   const quotedWithOffers = prfs.filter((p) => String(p.status).toUpperCase() === 'QUOTED' && Array.isArray(p.vendorOffers));
   return (
     <Card
@@ -479,7 +482,13 @@ export function PrfListCard({ prfs, canCreate, onCreate, canSelectOffer, onSelec
                 return (
                   <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}` }}>
                     <td style={{ padding: '8px', color: C.textFaint }}>{i + 1}</td>
-                    <td style={{ padding: '8px', fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: C.navy, whiteSpace: 'nowrap' }}>{p.prf_no}</td>
+                    <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                      {onView ? (
+                        <button type="button" onClick={() => onView(p)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy, textDecoration: 'underline' }}>{p.prf_no}</button>
+                      ) : (
+                        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: C.navy }}>{p.prf_no}</span>
+                      )}
+                    </td>
                     <td style={{ padding: '8px', color: C.textMute, whiteSpace: 'nowrap' }}>{fmtDate(p.created_at)}</td>
                     <td style={{ padding: '8px', color: C.textMute, whiteSpace: 'nowrap' }}>{PRF_SERVICE_LABEL[p.service_type] || p.service_type || '—'}</td>
                     <td style={{ padding: '8px' }}>

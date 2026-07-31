@@ -76,6 +76,11 @@ const toRoman = (m) => ROMAN[m] || String(m);
 const INQ_SERVICE_LABEL = { freight_forwarding: 'Freight Forwarding', customs: 'Customs Clearance', trading: 'General Trading' };
 const INQ_ADDON_LABEL = { customs: 'Custom Clearance', warehouse: 'Warehouse', undername: 'Undername', insurance: 'Cargo Insurance', trucking: 'Trucking' };
 
+// Teks tampilan InquiryPicker/input — nomor inquiry + nama akun (kalau ada).
+// Dipakai baik oleh onPick (pilih manual) maupun prefill otomatis, supaya
+// formatnya selalu sama di kedua jalur.
+const inquiryDisplay = (no, accountName) => (accountName ? `${no} — ${accountName}` : (no || ''));
+
 // Prefill dari inquiry — HANYA field AMAN (padanan 1:1 aman). Pengaman:
 //  #2 fill-empty-only: isi hanya bila field PRF masih kosong (tak menimpa isian user).
 //  #3 non-null: hanya set bila nilai inquiry ada (tak menghapus isian PRF).
@@ -202,7 +207,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
     // JARING 1 — akun parkir Lead Pool tak boleh dipakai untuk PRF baru (aturan 18 Jul 2026;
     // filter aslinya ikut terhapus saat picker akun dicabut). `inquiries` punya DUA FK ke
     // `accounts` → embed kedua sisi dan buang barisnya bila SALAH SATU parkir.
-    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, goods_name, un_number, imo_class, cargo_types, additional_services, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
+    supabase.from('inquiries').select('id, inquiry_no, customer_id, prospect_id, pol, pod, hs_code, pickup_address, delivery_address, deadline_quote, incoterms, notes, service_type, goods_name, un_number, imo_class, cargo_types, additional_services, prospect:accounts!inquiries_prospect_id_fkey(name, is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(name, is_in_lead_pool)').eq('company_id', cid).is('deleted_at', null).order('created_at', { ascending: false }).limit(1000)
       .then(({ data, error }) => {
         if (error) { console.error('[PRF] gagal memuat daftar inquiry:', error.message); showToast?.('Gagal memuat daftar inquiry: ' + error.message, 'error'); return; }
         setInquiries((data || []).filter(i => !i.prospect?.is_in_lead_pool && !i.customer?.is_in_lead_pool));
@@ -229,10 +234,15 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
   useEffect(() => {
     if (!prefillInquiryId) return undefined;
     let cancelled = false;
+    // Fetch dipisah jadi DUA query polos (inquiry lalu akun), TANPA embed —
+    // `inquiries` punya dua FK ke `accounts` (prospect_id/customer_id), dan
+    // walau embed !fk_hint di sini SUDAH benar (bukan akar masalahnya), fetch
+    // terpisah ini meniru pola DealDetailPage.jsx (yang terbukti benar) supaya
+    // bentuknya tak lagi rawan salah-sangka ambigu di masa depan.
     supabase.from('inquiries')
-      .select('id, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms, notes, goods_name, un_number, imo_class, prospect:accounts!inquiries_prospect_id_fkey(is_in_lead_pool), customer:accounts!inquiries_customer_id_fkey(is_in_lead_pool)')
+      .select('id, inquiry_no, customer_id, prospect_id, hs_code, pickup_address, delivery_address, pol, pod, deadline_quote, incoterms, notes, goods_name, un_number, imo_class')
       .eq('id', prefillInquiryId).is('deleted_at', null).maybeSingle()
-      .then(({ data: inq, error }) => {
+      .then(async ({ data: inq, error }) => {
         if (cancelled) return;
         // Error fetch (RLS/jaringan) — errors.account dipakai (bukan showToast), pola sama
         // persis dgn JARING 2 di bawah: showToast tak dimemo di App.jsx, memasukkannya ke dep
@@ -243,23 +253,36 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
           return;
         }
         if (!inq) return;
+        const accountId = inq.customer_id || inq.prospect_id || null;
+        let account = null;
+        if (accountId) {
+          const { data: accRow, error: accErr } = await supabase
+            .from('accounts').select('name, is_in_lead_pool').eq('id', accountId).maybeSingle();
+          if (cancelled) return;
+          if (accErr) {
+            console.error('[PRF] gagal memuat data akun untuk prefill:', accErr.message);
+            setErrors(e => ({ ...e, account: 'Gagal memuat data akun untuk prefill: ' + accErr.message }));
+            return;
+          }
+          account = accRow || null;
+        }
         // JARING 2 — prefill masuk lewat query by-id, MELEWATI dropdown yang sudah disaring.
         // Kalau akunnya parkir: JANGAN set inquiry_id. Menyetelnya akan membuat dropdown tampil
         // kosong (id-nya tak ada di antara option) tapi form TETAP bisa disimpan — lebih buruk
         // dari kondisi sebelum disaring. Pesan lewat `errors.account` (dirender errText di bawah
         // field Inquiry), BUKAN showToast: showToast tak dimemo di App.jsx sehingga memasukkannya
         // ke dep array effect ini akan memicu fetch+prefill ulang tiap render.
-        if (inq.prospect?.is_in_lead_pool || inq.customer?.is_in_lead_pool) {
+        if (account?.is_in_lead_pool) {
           setErrors(e => ({ ...e, account: 'Akun inquiry ini sedang di Lead Pool — tarik dari Lead Pool dulu sebelum membuat PRF.' }));
           return;
         }
         // Identity (customer_source/inquiry_id/account_id) di-set tanpa syarat; field data fill-empty-only via helper.
-        setInquiryText(inq.inquiry_no || '');
+        setInquiryText(inquiryDisplay(inq.inquiry_no, account?.name));
         setForm(f => applyInquiryData({
           ...f,
           customer_source: 'inquiry',
           inquiry_id: inq.id,
-          account_id: inq.customer_id || inq.prospect_id || '',
+          account_id: accountId || '',
         }, inq));
       });
     return () => { cancelled = true; };
@@ -637,7 +660,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
                   inputStyle={S.input}
                   placeholder="Cari inquiry…"
                   onChangeText={(v) => { setInquiryText(v); setForm(f => ({ ...f, inquiry_id: '' })); }}
-                  onPick={(inq) => { setInquiryText(inq.inquiry_no); onInquiryPick(inq); }}
+                  onPick={(inq) => { setInquiryText(inquiryDisplay(inq.inquiry_no, inq.customer?.name || inq.prospect?.name)); onInquiryPick(inq); }}
                 />
                 {errText('account')}
                 {srcInq && <span style={S.hint}>Sebagian data disalin otomatis dari inquiry {srcInq.inquiry_no}.</span>}

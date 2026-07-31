@@ -1720,6 +1720,9 @@ export default function StorbitManifest() {
   // crmDealInquiry (DealDetailPage) supaya jalur DDP tak berubah. Balik → clear → remount tab Riwayat.
   const [customerQuotationView, setCustomerQuotationView] = useState(null); // quotation id → QuotationDetail
   const [customerPrfInquiryId,  setCustomerPrfInquiryId]  = useState(null); // inquiry id → PRFFormPage prefill
+  // Lihat PRF dari tab Dokumen Detail Account — jalur TERPISAH dari customerPrfInquiryId
+  // (yang untuk BUAT PRF baru dari tab Riwayat). Balik → clear → CustomerDetailPage remount.
+  const [customerPrfViewId,     setCustomerPrfViewId]     = useState(null); // prf id → PRFDetailPage (dari tab Dokumen)
   const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
   const [spOrderMap, setSpOrderMap]       = useState({});    // FASE 2E L0: uid → {status, hadCancelledPicking}
   const [selectedPickingId, setSelectedPickingId] = useState(null);  // picking detail page
@@ -1882,6 +1885,7 @@ export default function StorbitManifest() {
     setCustomerInquiryEdit(null);
     setCustomerQuotationView(null);
     setCustomerPrfInquiryId(null);
+    setCustomerPrfViewId(null);
     setCustomerDetailTab('info');
     setPrfPrefillInquiryId(null);
     setProcPrfDetailId(null);
@@ -1923,10 +1927,11 @@ export default function StorbitManifest() {
     setPrevCustomerMenu(activeMenu);
     setActiveCustomerId(customerId);
     // Buka akun selalu mulai bersih: tab default + tak ada sub-view (edit inquiry /
-    // lihat quotation / cetak PRF) yang nyangkut.
+    // lihat quotation / cetak PRF / lihat PRF) yang nyangkut.
     setCustomerInquiryEdit(null);
     setCustomerQuotationView(null);
     setCustomerPrfInquiryId(null);
+    setCustomerPrfViewId(null);
     setCustomerDetailTab('info');
     setActiveMenu('customer-detail');
   }, [activeMenu]);
@@ -3325,6 +3330,7 @@ export default function StorbitManifest() {
                   onViewQuotation={(q) => { setCrmDealInquiry(null); setCrmQuotationDetail(q); setActiveMenu('quotation-draft'); }}
                   onEditInquiry={() => setShowInquiryForm(true)}
                   onCreatePRF={() => { setPrfPrefillInquiryId(crmDealInquiry.id); setCrmDealInquiry(null); setActiveMenu('prf'); }}
+                  onViewPRF={(p) => { setCrmDealInquiry(null); setProcPrfDetailId(p.id); setActiveMenu('proc-inquiry-fwd-msi'); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -3473,7 +3479,7 @@ export default function StorbitManifest() {
           )}
 
           {/* ── CRM: Customer Detail (full page) ─────────────────────────────── */}
-          {activeMenu === 'customer-detail' && !customerInquiryEdit && !customerQuotationView && !customerPrfInquiryId && (
+          {activeMenu === 'customer-detail' && !customerInquiryEdit && !customerQuotationView && !customerPrfInquiryId && !customerPrfViewId && (
             <ErrorBoundary title="Customer Detail temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <CustomerDetailPage
@@ -3484,6 +3490,7 @@ export default function StorbitManifest() {
                   onEditInquiry={hasMenuPermission('crm_inquiry', 'view') ? (inq) => { setCustomerDetailTab('riwayat'); setCustomerInquiryEdit(inq.id); } : undefined}
                   onViewQuotation={(q) => { setCustomerDetailTab('riwayat'); setCustomerQuotationView(q.id); }}
                   onCreatePRF={(inq) => { setCustomerDetailTab('riwayat'); setCustomerPrfInquiryId(inq.id); }}
+                  onViewPRF={(p) => { setCustomerDetailTab('dokumen'); setCustomerPrfViewId(p.id); }}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -3528,6 +3535,21 @@ export default function StorbitManifest() {
                 <PRFFormPage
                   prefillInquiryId={customerPrfInquiryId}
                   onBack={() => setCustomerPrfInquiryId(null)}
+                  showToast={showToast}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {/* Lihat PRF dari tab Dokumen Detail Account — jalur TERPISAH dari
+              proc-inquiry-fwd-msi/procPrfDetailId (list Forwarding MSI). onBack →
+              clear → CustomerDetailPage remount di tab Dokumen, BUKAN pindah ke
+              list Forwarding MSI. */}
+          {activeMenu === 'customer-detail' && customerPrfViewId && (
+            <ErrorBoundary title="PRF Detail temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <PRFDetailPage
+                  prfId={customerPrfViewId}
+                  onBack={() => setCustomerPrfViewId(null)}
                   showToast={showToast}
                 />
               </Suspense>

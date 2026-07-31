@@ -126,7 +126,7 @@ function BadgeRow({ label, values, full }) {
 }
 
 /* ========================================================================= */
-export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, showToast }) {
+export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -580,6 +580,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             // user_roles, bukan role primer).
             canCreate={erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code))}
             onCreate={onCreatePRF}
+            onView={onViewPRF}
             canSelectOffer={(p) => p.created_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole)}
             onSelectOffer={handleSelectOffer}
             offerActionBusy={offerActionBusy}

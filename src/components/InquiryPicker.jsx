@@ -1,10 +1,11 @@
 // src/components/InquiryPicker.jsx
 // Searchable inquiry combobox (portal dropdown, filter by inquiry_no, flip-up).
 // Sibling of AccountPicker.jsx (itself based on ProductPicker), not a
-// generalization — inquiries have no `name`/`account_status`, just
-// `inquiry_no`, so the shape doesn't fit AccountPicker's props. Mechanics
-// (portal menu, realtime filter, flip-up, outside-click close) copied as-is.
-// AccountPicker/ProductPicker + their consumers untouched.
+// generalization — inquiries have no single `name`; the account name/type
+// shown per row come from the CALLER's own embed (customer:/prospect: on
+// each inquiry row passed in via `inquiries`), not a fetch owned by this
+// component. Mechanics (portal menu, realtime filter, flip-up, outside-click
+// close) copied as-is. AccountPicker/ProductPicker + their consumers untouched.
 //
 // Navy is the canonical brand color (#144682), not AccountPicker's #1B4D8A —
 // matches its host, PRFFormPage.jsx.
@@ -18,7 +19,12 @@ const C = {
   inkFaint: '#94A3B8',
   line:     '#E2E8F0',
   lineSoft: '#F1F5F9',
+  navy:     '#144682',
+  navyBg:   '#EEF3FB',
 };
+
+// Tipe akun DIPERMANIS untuk badge dropdown — bukan account_status mentah.
+const ACCOUNT_TYPE_LABEL = { customer: 'Customer', prospect: 'Prospect' };
 
 export default function InquiryPicker({
   value,
@@ -102,25 +108,38 @@ export default function InquiryPicker({
         >
           {matches.length === 0 ? (
             <div style={{ padding: '10px 12px', fontSize: 12, color: C.inkFaint }}>{emptyText}</div>
-          ) : matches.map((i) => (
-            <button
-              key={i.id}
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); onPick(i); setOpen(false); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                padding: '8px 10px', background: 'none', border: 'none',
-                borderBottom: `1px solid ${C.lineSoft}`, cursor: 'pointer',
-                textAlign: 'left', fontFamily: 'inherit',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = C.surface2)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
-            >
-              <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "'IBM Plex Mono',monospace" }}>
-                {i.inquiry_no}
-              </span>
-            </button>
-          ))}
+          ) : matches.map((i) => {
+            const accountName = i.customer?.name || i.prospect?.name || null;
+            const accountType = i.customer_id ? 'customer' : (i.prospect_id ? 'prospect' : null);
+            return (
+              <button
+                key={i.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); onPick(i); setOpen(false); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                  padding: '8px 10px', background: 'none', border: 'none',
+                  borderBottom: `1px solid ${C.lineSoft}`, cursor: 'pointer',
+                  textAlign: 'left', fontFamily: 'inherit',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = C.surface2)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+              >
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontFamily: "'IBM Plex Mono',monospace" }}>{i.inquiry_no}</span>
+                  {accountName && ` — ${accountName}`}
+                </span>
+                {accountType && (
+                  <span style={{
+                    flex: '0 0 auto', fontSize: 10.5, fontWeight: 600, color: C.navy,
+                    background: C.navyBg, borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap',
+                  }}>
+                    {ACCOUNT_TYPE_LABEL[accountType]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>,
         document.body
       )}
