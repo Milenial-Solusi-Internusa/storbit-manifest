@@ -1,5 +1,36 @@
 # Nexus MSI — Development Progress Log
 
+## Catatan Susulan — fix kecil lama yang belum tercatat (ditambahkan 31 Jul 2026)
+
+> 19 perbaikan kecil (masing-masing 1 file, umumnya <10 baris kode) yang sebelumnya HANYA
+> tercatat di `CLAUDE.md` — ditemukan saat verifikasi housekeeping/pemangkasan changelog
+> `CLAUDE.md` 31 Jul 2026 (143 bullet dipangkas jadi 5, sisanya diverifikasi satu-per-satu
+> terhadap isi file ini; ke-19 ini genuinely tak punya salinan di mana pun walau sudah
+> dicoba banyak variasi kata kunci). Dipindahkan APA ADANYA (tanggal asli dari
+> `git log`/`git blame`, BUKAN tanggal hari ini) sebelum dihapus dari `CLAUDE.md`, sesuai
+> aturan "jangan hilangkan info yang tak ada salinannya di tempat lain". Section ini murni
+> tambahan di puncak file — tidak ada baris `PROGRESS.md` lain yang diubah/dihapus.
+
+- **[2026-06-22]** `.nexus-shell-bg` background cream gradient → `#ffffff` (app shell putih, seluruh app). Commit `7fb4249`.
+- **[2026-06-22]** CRM Dashboard `D.root` bg `#F7F7F8` → `#ffffff` (fix belang vs card putih). Commit `10442f6`.
+- **[2026-06-22]** CRM Dashboard fit lebar: `D.wrap` `maxWidth:1280`→`"100%"` + padding L/R `28px`→`20px`, chart stretch full-width. Commit `844819a`.
+- **[2026-06-22]** QuotationPDF: divider dipindah nempel footer + teks "Customer Representative" dirata-tengah. Commit `ef8aecb`.
+- **[2026-06-22]** Quotation: konversi kurs per-baris untuk EUR/SGD/MYR/JPY (form+detail+PDF), `calcRowTotal` IDR→1/USD→`header.usd_rate`/lainnya→`row.exchange_rate`. Commit `4bc1b0e`.
+- **[2026-06-22]** Quotation: unifikasi kurs jadi satu sumber per-baris — hapus field header "Kurs USD (IDR)", semua non-IDR (termasuk USD) pakai `exchange_rate` per baris. Commit `af28bec`.
+- **[2026-06-22]** Navbar "Pending Approval" badge — count dari `hrga_requests` pending/under_review × `hrga_approval_configs`, auto-refresh 60 detik, navigasi ke inbox HRGA. Commit `e867e9f`.
+- **[2026-06-22]** Notification bell re-apply TDZ-safe — bug asal: `handleNotifClick` (dependensi `[navigateTo]`) diletakkan sebelum `navigateTo` dideklarasikan di scope yang sama → `ReferenceError` white-screen produksi (commit `3d03fc3`, langsung di-revert `49f9437`). Fix: seluruh blok state+handler notifikasi dipindah ke bawah deklarasi `navigateTo`. Ini kejadian ASLI yang jadi alasan komentar "jangan pindahkan blok ini" masih ada di `App.jsx` hari ini. Commit `0d794d5`.
+- **[2026-06-22]** CRMReportPage: filter bar lepas dari `position:sticky`, `maxWidth` 1440→100% biar fit shell Nexus (styling-only). Commit `55d3489`.
+- **[2026-06-23]** Fix dropdown customer/prospek `AddVisitModal` (kalender CRM) — `.limit(200)`→`.limit(1000)`, huruf Q–Z yang sebelumnya ke-cut kini muncul. Commit `a27ade9`.
+- **[2026-06-24]** `ProductDescInput` (QuotationFormPage): dropdown flip ke atas otomatis saat ruang di bawah viewport kurang. Commit `ff3082e`.
+- **[2026-06-25]** Fix padding/margin `DealDetailPage` (wrapper maxWidth 1180→1280, padding disesuaikan). Commit `9e1f849`.
+- **[2026-06-25]** Quotation header: field baru persist ke DB (`attention_to`/`cargo_mode`/kargo/pickup-delivery address) + label "MARKETING"→"SALES REP" di PDF + email sales. Commit `e985c36`.
+- **[2026-06-26]** Sanitize `fileName` download Inquiry PDF (`InquiryListPage`) — "/" pada nomor inquiry diganti "-" agar tak diinterpretasi subfolder. Commit `61f789b`.
+- **[2026-06-26]** Inquiry PDF baru (`InquiryPDF.jsx`) + tombol download per-row di Inquiry List. Commit `61f789b` (commit yang sama dengan item sebelumnya).
+- **[2026-06-26]** Redesign form Prospect + Inquiry ikut Lovable design system (`PrefixNameField`, BANT score bar 4× `BantCard`) + 14 field RFQ baru di form Inquiry. Commit `a74e8d4`.
+- **[2026-06-30]** Gate tombol "Ajukan TOP Request" (`CustomerDetailPage`) supaya hanya tampil untuk customer payment terms TEMPO (whitelist 5 nilai by nama). Commit `83efc99`.
+- **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
+- **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
+
 ## 2026-07-30
 
 ### Tab "BANT & Pipeline" (Detail Account) — tampilkan + edit 4 dimensi BANT + fix silent-fail RLS di `saveDealUpdate` (dampak retroaktif ke Pindah Stage/Edit Deal)
