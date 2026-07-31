@@ -15,7 +15,7 @@ import TOPRequestModal from './TOPRequestModal';
 import { BantCard } from './ProspectFormPage';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import {
-  DealStepper, DealHeaderControls, EditDealModal, PrfListCard,
+  DealStepper, DealHeaderControls, EditDealModal, PrfListCard, Tab,
   STAGES, stageIndex, isKnownStage, isActiveStage, saveDealUpdate, fetchAssignees,
 } from './DealPanels';
 
@@ -303,14 +303,6 @@ function PicAvatar({ name, size = 26 }) {
     <span style={{ ...S.whoAv, width: size, height: size, flex: `0 0 ${size}px`, fontSize: size * 0.38, background: colorFor(name) }}>
       {picInitials(name)}
     </span>
-  );
-}
-function Tab({ id, icon, label, active, onClick, count }) {
-  return (
-    <button type="button" className="cd-tab" onClick={() => onClick(id)} style={active ? { ...S.tab, ...S.tabActive } : S.tab}>
-      <Icon name={icon} size={15} strokeWidth={active ? 2.1 : 1.8} />{label}
-      {count != null ? <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, fontWeight: 700, background: active ? '#FBE6DA' : '#F0E7D6', color: active ? ORANGE : INK_FAINT, borderRadius: 20, padding: '1px 7px', marginLeft: 1 }}>{count}</span> : null}
-    </button>
   );
 }
 function GridSection({ label, icon, children }) {

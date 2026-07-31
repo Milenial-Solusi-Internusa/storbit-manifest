@@ -200,6 +200,47 @@ export function InfoRow({ label, value, full }) {
   );
 }
 
+/* ---------- Tab (shared tab-bar button — CustomerDetailPage's 10 tabs + DealDetailPage's 4) ----------
+   Extracted verbatim from CustomerDetailPage.jsx (byte-identical rendering for its call site — its
+   `TABS` array + <Tab icon={t.icon} .../> usage are untouched). CustomerDetailPage's own `S`/`Icon`/
+   `ICONS` (35 entries, used all over that file) are NOT moved here — only the 9 icon names Tab itself
+   ever renders are copied below. `icon` is dual-mode: a STRING resolves through TabIcon below (exact
+   parity with CustomerDetailPage's existing string-based usage); anything else (a JSX node, e.g. a
+   lucide-react element) renders as-is — this is what lets DealDetailPage's tabs use plain lucide icons
+   without CustomerDetailPage's call site having to change at all. */
+const TAB_ICON_PATHS = {
+  info:      '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  briefcase: '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
+  user:      '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  clock:     '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  filecheck: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m9 15 2 2 4-4"/>',
+  route:     '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+  activity:  '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  target:    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  notebook:  '<path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M16 2v20"/>',
+};
+function TabIcon({ name, size = 15, strokeWidth = 1.7 }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor"
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+      style={{ display: 'block', flex: '0 0 auto' }}
+      dangerouslySetInnerHTML={{ __html: TAB_ICON_PATHS[name] || TAB_ICON_PATHS.info }} />
+  );
+}
+// Values copied verbatim from CustomerDetailPage.jsx's S.tab/S.tabActive + its module-level
+// ORANGE ('#E85A1E') / INK_FAINT ('#A29684') consts — kept as local literals (not wired into
+// this file's own `C`) so a future change to `C` can't silently shift CustomerDetailPage's tabs.
+const TAB_STYLE = { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 14px', border: 0, borderBottomWidth: 2, borderBottomStyle: 'solid', borderBottomColor: 'transparent', background: 'transparent', color: '#857A68', fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: -0.1, cursor: 'pointer', marginBottom: -1, whiteSpace: 'nowrap' };
+const TAB_STYLE_ACTIVE = { color: '#E85A1E', borderBottomColor: '#E85A1E' };
+export function Tab({ id, icon, label, active, onClick, count }) {
+  return (
+    <button type="button" className="cd-tab" onClick={() => onClick(id)} style={active ? { ...TAB_STYLE, ...TAB_STYLE_ACTIVE } : TAB_STYLE}>
+      {typeof icon === 'string' ? <TabIcon name={icon} size={15} strokeWidth={active ? 2.1 : 1.8} /> : icon}{label}
+      {count != null ? <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, fontWeight: 700, background: active ? '#FBE6DA' : '#F0E7D6', color: active ? '#E85A1E' : '#A29684', borderRadius: 20, padding: '1px 7px', marginLeft: 1 }}>{count}</span> : null}
+    </button>
+  );
+}
+
 /* ---------- DealStepper (7-stage chevron pipeline) ---------- */
 export function DealStepper({ current, value }) {
   const mobile = useIsMobile();

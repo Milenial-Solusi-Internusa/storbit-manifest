@@ -14,7 +14,7 @@
 // activities (WHERE account_id = inquiry.prospect_id) + profiles + payment_terms.
 // No DB schema change. Stage updates write accounts.pipeline_stage.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, Hash, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
@@ -22,7 +22,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import {
-  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, Card, InfoRow,
+  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card, InfoRow, Tab,
   DealStepper, DealHeaderControls, EditDealModal, QuotationListCard,
   PrfListCard, PriceSummaryCard, fetchAssignees, saveDealUpdate,
 } from './DealPanels';
@@ -51,6 +51,17 @@ const ACT_ICON = {
   email: Mail, followup: ListChecks,
 };
 
+// Detail Inquiry BUKAN tab — itu primary view, selalu tampil di atas tab bar
+// ini (lihat render). Cuma 3 tab di bawahnya. Icon sengaja pakai FileText yang
+// sama untuk Quotation/PRF — kedua Card-nya sendiri sudah memakai FileText
+// sebagai icon-nya masing-masing, jadi ini bukan oversight, cuma meneruskan
+// pilihan visual yang sudah ada.
+const DEAL_TABS = [
+  { id: 'aktivitas', icon: <ListChecks size={15} />, label: 'Aktivitas' },
+  { id: 'quotation', icon: <FileText size={15} />,   label: 'Quotation' },
+  { id: 'prf',       icon: <FileText size={15} />,   label: 'PRF' },
+];
+
 function Avatar({ name, size = 28 }) {
   const init = (name && name !== '—')
     ? name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
@@ -75,7 +86,7 @@ function StageBadge({ idx }) {
 /* ---------- Header ---------- */
 function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, closeDate, value, onBack, onEdit, onPickStage }) {
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px' }}>
+    <div style={{ padding: '4px 0 8px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textMute }}><ChevronLeft size={18} /></button>
         <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Inquiry List</button>
@@ -125,6 +136,105 @@ function BadgeRow({ label, values, full }) {
   );
 }
 
+// ---------- QuotationItemsCard (lokal — bukan shared DealPanels) ----------
+// Rincian harga itemized untuk SATU quotation (yang terbaru dibuat/diedit dari
+// daftar di tab ini). Grouping/kalkulasi & struktur render disalin PERSIS dari
+// QuotationDetailPage.jsx (sections by group_name, exclude baris if_any dari
+// total) — tidak ada logic baru di sini, cuma dipindah ke konteks tab ini.
+function QuotationItemsCard({ quotation, items, loading }) {
+  const sections = useMemo(() => {
+    if (!items.length) return [];
+    const order = [];
+    const map = {};
+    items.forEach((row) => {
+      const key = row.group_name || 'CHARGES';
+      if (!map[key]) { map[key] = []; order.push(key); }
+      map[key].push(row);
+    });
+    return order.map((name) => ({
+      name,
+      rows: map[name],
+      total: map[name].reduce((s, r) => s + (r.if_any ? 0 : (Number(r.total) || 0)), 0),
+    }));
+  }, [items]);
+
+  return (
+    <Card title="Rincian Harga" icon={<FileText size={17} />}>
+      <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, marginBottom: 14 }}>
+        — <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy }}>{quotation.quotation_no}</span>
+        {' '}· terakhir diedit {fmtDate(quotation.updated_at || quotation.created_at)}
+      </div>
+      {loading ? (
+        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Memuat rincian harga…</div>
+      ) : sections.length === 0 ? (
+        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Tidak ada item</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {sections.map((sec, si) => {
+            const secCost = sec.rows.reduce((s, r) =>
+              r.if_any ? s : s + Math.round((Number(r.cost_price) || 0) * (Number(r.qty) || 0) * (Number(r.exchange_rate) || 1)), 0);
+            return (
+              <div key={si} style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+                <div style={{ background: C.surfaceAlt, padding: '10px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontFamily: HEAD, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.5px', color: C.textMute }}>{sec.name}</span>
+                  <span style={{ fontFamily: BODY, fontSize: 12.5, fontWeight: 700, color: C.text }}>{fmtRp(sec.total)}</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Description</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Cost Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Currency</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Sell Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Unit Label</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>QTY</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Total IDR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sec.rows.map((row, ri) => (
+                        <tr key={row.id || ri} style={{ borderBottom: `1px solid ${C.border}` }}>
+                          <td style={{ padding: '9px 12px', color: C.text }}>{row.description || '—'}</td>
+                          <td style={{ padding: '9px 8px', textAlign: 'right', color: C.textMute, fontSize: 12 }}>
+                            {(Number(row.cost_price) || 0).toLocaleString('id-ID')}
+                          </td>
+                          <td style={{ padding: '9px 8px', textAlign: 'center', color: row.currency === 'USD' ? C.orange : C.textMute, fontWeight: 600, fontSize: 12 }}>
+                            {row.currency || 'IDR'}
+                          </td>
+                          <td style={{ padding: '9px 8px', textAlign: 'right', color: C.text, fontSize: 12 }}>
+                            {(Number(row.unit_price) || 0).toLocaleString('id-ID')}
+                          </td>
+                          <td style={{ padding: '9px 8px', textAlign: 'center', color: C.textMute, fontSize: 12 }}>{row.unit_label || '—'}</td>
+                          <td style={{ padding: '9px 8px', textAlign: 'center', color: C.text, fontWeight: 600 }}>{row.qty || 1}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: row.currency !== 'IDR' ? C.orange : C.text, whiteSpace: 'nowrap' }}>
+                            {fmtRp(row.total)}
+                            {row.currency !== 'IDR' && (
+                              <div style={{ fontSize: 10, color: C.textFaint, fontWeight: 400 }}>
+                                × kurs {(Number(row.exchange_rate) || 1).toLocaleString('id-ID')}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ padding: '8px 14px', borderTop: `1px solid ${C.border}`, background: C.surfaceAlt, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint }}>
+                    Cost: {fmtRp(secCost)} • Margin: {sec.total > 0 ? ((sec.total - secCost) / sec.total * 100).toFixed(1) : '0'}%
+                  </span>
+                  <span style={{ fontFamily: HEAD, fontSize: 13, fontWeight: 700, color: C.text }}>Section total: {fmtRp(sec.total)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ========================================================================= */
 export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, onViewQuotation, onEditInquiry, onCreatePRF, onViewPRF, showToast }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
@@ -133,6 +243,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [inquiry, setInquiry] = useState(null);
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
+  // Rincian Harga (tab Quotation) — items HANYA untuk quotation terbaru (lihat
+  // `latestQuotation` di bawah), bukan untuk semua quotation di daftar.
+  const [latestQuotationItems, setLatestQuotationItems] = useState([]);
+  const [latestItemsLoading, setLatestItemsLoading] = useState(false);
   const [prfs, setPrfs] = useState([]);
   const [activities, setActivities] = useState([]);
   const [profMap, setProfMap] = useState({});
@@ -140,6 +254,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [assignees, setAssignees] = useState([]);
   const [editOpen, setEditOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [tab, setTab] = useState('aktivitas');
   // Konfirmasi lunak gate BANT (skor 5–7 → QUALIFIED) — pola pending-action yang sama
   // dengan stageGate di PipelineKanbanPage.
   const [stageGate, setStageGate] = useState({ open: false, message: '', onYes: null });
@@ -180,7 +295,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
       const { data: quos } = await supabase
         .from('quotations')
-        .select('id, quotation_no, total_amount, status, valid_until, created_at, payment_terms_id')
+        .select('id, quotation_no, total_amount, status, valid_until, created_at, updated_at, payment_terms_id')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
 
@@ -283,6 +398,41 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     fetchAssignees(profile.company_id).then((a) => { if (!cancelled) setAssignees(a); });
     return () => { cancelled = true; };
   }, [profile?.company_id]);
+
+  // Quotation paling baru dibuat/diedit (updated_at, fallback created_at) — dipilih
+  // dari `quotations` yang SUDAH difetch di atas (bukan query list baru). Satu inquiry
+  // bisa punya banyak quotation/revisi; section "Rincian Harga" hanya menampilkan SATU.
+  const latestQuotation = useMemo(() => {
+    if (!quotations.length) return null;
+    return quotations.reduce((latest, q) => {
+      const qTime = new Date(q.updated_at || q.created_at).getTime();
+      const latestTime = new Date(latest.updated_at || latest.created_at).getTime();
+      return qTime > latestTime ? q : latest;
+    }, quotations[0]);
+  }, [quotations]);
+
+  // Rincian Harga — SATU query tambahan setelah identitas quotation-terbaru diketahui
+  // (bukan N+1: tidak fetch item untuk quotation lain di daftar). Di-key ke id saja,
+  // supaya tidak fetch ulang kalau quotation-terbaru tak berganti (mis. refetch() akibat
+  // Pindah Stage / aksi lain di halaman ini).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!latestQuotation?.id) { setLatestQuotationItems([]); return undefined; }
+    let cancelled = false;
+    setLatestItemsLoading(true);
+    supabase
+      .from('quotation_items')
+      .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes, if_any')
+      .eq('quotation_id', latestQuotation.id)
+      .order('sort_order', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) showToast?.('Gagal memuat rincian harga: ' + error.message, 'error');
+        setLatestQuotationItems(data || []);
+        setLatestItemsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [latestQuotation?.id, showToast]);
 
   const stageIdx = stageIndex(account?.pipeline_stage);
   const estValue = Number(account?.estimated_value || 0);
@@ -445,7 +595,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // ── loading / not-found ──
   if (loading) {
     return (
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textFaint, fontFamily: BODY }}>
+      <div style={{ margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textFaint, fontFamily: BODY }}>
         <Loader2 size={30} className="dd-spin" />
         <div style={{ fontSize: 13.5 }}>Memuat detail deal…</div>
         <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}`}</style>
@@ -454,7 +604,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   }
   if (notFound || !inquiry) {
     return (
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textMute, fontFamily: BODY }}>
+      <div style={{ margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textMute, fontFamily: BODY }}>
         <AlertCircle size={30} color={C.red} />
         <div style={{ fontFamily: HEAD, fontSize: 16, fontWeight: 700, color: C.text }}>Inquiry tidak ditemukan</div>
         <button onClick={onBack} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}><ChevronLeft size={15} />Kembali</button>
@@ -463,8 +613,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   }
 
   return (
-    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 24px 48px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: BODY, color: C.text }}>
-      <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}`}</style>
+    <div style={{ margin: '0 auto', padding: '24px 24px 48px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: BODY, color: C.text }}>
+      {/* .cd-tab:hover di sini SUPAYA hover tab konsisten dengan CustomerDetailPage —
+          Tab (dari DealPanels.jsx) sama-sama merender className="cd-tab" di kedua
+          halaman, tapi rule hover-nya sendiri hanya hidup di mana pun <style> ini
+          dirender (CustomerDetailPage punya rule identik di file-nya sendiri). */}
+      <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}`}</style>
 
       <DealStepper current={stageIdx} value={estValue} />
 
@@ -481,113 +635,126 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         onPickStage={pickStage}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: 20, alignItems: 'start' }} className="dd-cols">
-        {/* LEFT */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
-          <Card
-            title="Detail Inquiry"
-            icon={<FileText size={17} />}
-            right={(onEditInquiry || canMarkLost) ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {onEditInquiry && (
-                  <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <Pencil size={14} />Edit Inquiry
-                  </button>
-                )}
-                {canMarkLost && (
-                  <button onClick={() => setLossOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.redBd}`, background: '#fff', color: C.red, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <XCircle size={14} />Tandai Kalah
-                  </button>
-                )}
-              </div>
-            ) : null}
-          >
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-              <span style={{ padding: '4px 11px', borderRadius: 99, background: C.orangeSoft, color: C.orange, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
-                {SERVICE_LABEL[inquiry.service_type] || inquiry.service_type || '—'}
-              </span>
-              <span style={{ padding: '4px 11px', borderRadius: 99, background: C.navySoft, color: C.navy, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
-                {inquiry.status || 'OPEN'}
-              </span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px' }}>
-              <InfoRow label="Jenis Layanan" value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type} />
-              <InfoRow label="Status" value={inquiry.status} />
-              {/* POL → POD */}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <Anchor size={15} color={C.navy} />
-                    <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{inquiry.pol || '—'}</span>
-                  </span>
-                  <ChevronRight size={15} color={C.textFaint} />
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <MapPin size={15} color={C.orange} />
-                    <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{inquiry.pod || '—'}</span>
-                  </span>
-                </div>
-              </div>
-              <BadgeRow label="Incoterm" values={inquiry.incoterms} />
-              <BadgeRow label="Jenis Kontainer" values={inquiry.container_types} />
-              <InfoRow label="Nama Barang" value={inquiry.goods_name} />
-              <InfoRow label="HS Code" value={inquiry.hs_code} />
-              <InfoRow label="Berat Total (KG)" value={inquiry.weight_kg != null ? String(inquiry.weight_kg) : ''} />
-              <InfoRow label="Volume (CBM)" value={inquiry.volume_cbm != null ? String(inquiry.volume_cbm) : ''} />
-              <BadgeRow label="Cargo Type" values={inquiry.cargo_types} />
-              <BadgeRow label="Layanan Tambahan" values={inquiry.additional_services} />
-              <InfoRow label="Deadline Quote" value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''} />
-              <InfoRow label="Route" value={inquiry.route} />
-              <InfoRow label="Dibuat Oleh" value={createdByName} />
-              <InfoRow label="Tanggal Dibuat" value={fmtDate(inquiry.created_at)} />
-              <InfoRow label="Notes" value={inquiry.notes} full />
-            </div>
-          </Card>
-
-          <Card title="Aktivitas Terkait" icon={<ListChecks size={17} />}>
-            {activities.length === 0 ? (
-              <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Belum ada aktivitas</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {activities.map((a) => {
-                  const AIcon = ACT_ICON[a.type] || ListChecks;
-                  return (
-                    <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
-                      <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
-                          {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Aktivitas')}{a.contact_name ? ` · ${a.contact_name}` : ''}
-                        </div>
-                        {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
-                        <div style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, marginTop: 2 }}>{fmtDate(a.created_at)}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+      {/* Primary view — SELALU tampil, bukan bagian dari tab (koreksi struktur: sesuai
+          referensi Odoo, field utama tak boleh hilang saat pindah tab). Tab bar 3 tab
+          (Aktivitas/Quotation/PRF) ada DI BAWAH kartu ini, bukan di atasnya. */}
+      <Card
+        title="Detail Inquiry"
+        icon={<FileText size={17} />}
+        right={(onEditInquiry || canMarkLost) ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {onEditInquiry && (
+              <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Pencil size={14} />Edit Inquiry
+              </button>
             )}
-          </Card>
+            {canMarkLost && (
+              <button onClick={() => setLossOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.redBd}`, background: '#fff', color: C.red, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <XCircle size={14} />Tandai Kalah
+              </button>
+            )}
+          </div>
+        ) : null}
+      >
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          <span style={{ padding: '4px 11px', borderRadius: 99, background: C.orangeSoft, color: C.orange, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
+            {SERVICE_LABEL[inquiry.service_type] || inquiry.service_type || '—'}
+          </span>
+          <span style={{ padding: '4px 11px', borderRadius: 99, background: C.navySoft, color: C.navy, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
+            {inquiry.status || 'OPEN'}
+          </span>
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px' }}>
+          <InfoRow label="Jenis Layanan" value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type} />
+          <InfoRow label="Status" value={inquiry.status} />
+          {/* POL → POD */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Anchor size={15} color={C.navy} />
+                <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{inquiry.pol || '—'}</span>
+              </span>
+              <ChevronRight size={15} color={C.textFaint} />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <MapPin size={15} color={C.orange} />
+                <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{inquiry.pod || '—'}</span>
+              </span>
+            </div>
+          </div>
+          <BadgeRow label="Incoterm" values={inquiry.incoterms} />
+          <BadgeRow label="Jenis Kontainer" values={inquiry.container_types} />
+          <InfoRow label="Nama Barang" value={inquiry.goods_name} />
+          <InfoRow label="HS Code" value={inquiry.hs_code} />
+          <InfoRow label="Berat Total (KG)" value={inquiry.weight_kg != null ? String(inquiry.weight_kg) : ''} />
+          <InfoRow label="Volume (CBM)" value={inquiry.volume_cbm != null ? String(inquiry.volume_cbm) : ''} />
+          <BadgeRow label="Cargo Type" values={inquiry.cargo_types} />
+          <BadgeRow label="Layanan Tambahan" values={inquiry.additional_services} />
+          <InfoRow label="Deadline Quote" value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''} />
+          <InfoRow label="Route" value={inquiry.route} />
+          <InfoRow label="Dibuat Oleh" value={createdByName} />
+          <InfoRow label="Tanggal Dibuat" value={fmtDate(inquiry.created_at)} />
+          <InfoRow label="Notes" value={inquiry.notes} full />
+        </div>
+      </Card>
 
-        {/* RIGHT */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+      <div style={{ borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'stretch', gap: 4, flexWrap: 'wrap' }}>
+        {DEAL_TABS.map((t) => (
+          <Tab key={t.id} id={t.id} icon={t.icon} label={t.label} active={tab === t.id} onClick={setTab} />
+        ))}
+      </div>
+
+      {tab === 'aktivitas' && (
+        <Card title="Aktivitas Terkait" icon={<ListChecks size={17} />}>
+          {activities.length === 0 ? (
+            <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Belum ada aktivitas</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {activities.map((a) => {
+                const AIcon = ACT_ICON[a.type] || ListChecks;
+                return (
+                  <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+                    <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
+                        {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Aktivitas')}{a.contact_name ? ` · ${a.contact_name}` : ''}
+                      </div>
+                      {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
+                      <div style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, marginTop: 2 }}>{fmtDate(a.created_at)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {tab === 'quotation' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <QuotationListCard quotations={quotations} onCreate={onCreateQuotation} onView={onViewQuotation} />
-          <PrfListCard
-            prfs={prfs}
-            // Cetak PRF — cek SELURUH role aktif (erpRoles), bukan erpRole (role
-            // primer). User multi-role (mis. manager+sales) sebelumnya kehilangan
-            // tombol ini karena role prioritas lebih tinggi menutupi 'sales' di
-            // erpRole. Cermin RLS prf_insert (has_role('sales') = EXISTS lintas
-            // user_roles, bukan role primer).
-            canCreate={erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code))}
-            onCreate={onCreatePRF}
-            onView={onViewPRF}
-            canSelectOffer={(p) => p.created_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole)}
-            onSelectOffer={handleSelectOffer}
-            offerActionBusy={offerActionBusy}
-          />
+          {latestQuotation && (
+            <QuotationItemsCard quotation={latestQuotation} items={latestQuotationItems} loading={latestItemsLoading} />
+          )}
           <PriceSummaryCard quotations={quotations} termMap={termMap} />
         </div>
-      </div>
+      )}
+
+      {tab === 'prf' && (
+        <PrfListCard
+          prfs={prfs}
+          // Cetak PRF — cek SELURUH role aktif (erpRoles), bukan erpRole (role
+          // primer). User multi-role (mis. manager+sales) sebelumnya kehilangan
+          // tombol ini karena role prioritas lebih tinggi menutupi 'sales' di
+          // erpRole. Cermin RLS prf_insert (has_role('sales') = EXISTS lintas
+          // user_roles, bukan role primer).
+          canCreate={erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code))}
+          onCreate={onCreatePRF}
+          onView={onViewPRF}
+          canSelectOffer={(p) => p.created_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole)}
+          onSelectOffer={handleSelectOffer}
+          offerActionBusy={offerActionBusy}
+        />
+      )}
 
       <EditDealModal
         open={editOpen}
@@ -635,8 +802,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         onSave={markInquiryLost}
         onCancel={() => setLossOpen(false)}
       />
-
-      <style>{`@media (max-width: 860px){ .dd-cols{ grid-template-columns: 1fr !important; } }`}</style>
     </div>
   );
 }
