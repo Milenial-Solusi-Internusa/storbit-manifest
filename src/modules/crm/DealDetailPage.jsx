@@ -30,6 +30,7 @@ import { bantQualifyGate } from './bant';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 import WinLossModal from './WinLossModal';
+import InquiryChatter from './InquiryChatter';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
@@ -471,6 +472,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // nama yang tampil. Dipakai utk buka mini profil (klik nama sales di Header).
   const assignedProfileId = account?.assigned_profile || account?.assigned_to || null;
   const createdByName = profMap[inquiry?.created_by] || null;
+  // Orang yang diprioritaskan di dropdown @mention Chatter — SAMA PERSIS logic
+  // `pIds` di effect fetch utama (:393), tapi diturunkan ulang di scope render dari
+  // state `account`/`inquiry` (effect itu pakai `acc`/`inq` lokal, tak bisa diakses
+  // dari sini).
+  const priorityUserIds = [...new Set([account?.assigned_profile, account?.assigned_to, inquiry?.created_by].filter(Boolean))];
   // Aksi "Tandai Kalah" hanya untuk status yang belum terminal (default 'OPEN' bila
   // kolomnya kosong). WON / LOST / CANCELLED → tombolnya tidak dirender sama sekali.
   const canMarkLost = LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
@@ -672,6 +678,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         onPickStage={pickStage}
       />
 
+      {/* 2 kolom di bawah Header: kiri = konten existing (Detail Inquiry + tab bar
+          + tab content, verbatim, cuma dipindah satu level nesting), kanan = Chatter
+          PERSISTEN (tak berubah apa pun tab kiri yang aktif). Reuse class `.nx-stack`
+          (index.css) — sama persis dipakai QuotationDetailPage.jsx: collapse jadi
+          1 kolom + sticky→static di bawah 1024px, nol CSS baru. */}
+      <div className="nx-stack" style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
       {/* Primary view — SELALU tampil, bukan bagian dari tab (koreksi struktur: sesuai
           referensi Odoo, field utama tak boleh hilang saat pindah tab). Tab bar 3 tab
           (Aktivitas/Quotation/PRF) ada DI BAWAH kartu ini, bukan di atasnya. */}
@@ -792,6 +806,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           offerActionBusy={offerActionBusy}
         />
       )}
+
+      </div>
+
+      <div style={{ flex: '0 0 400px', position: 'sticky', top: 24 }}>
+        <InquiryChatter
+          inquiryId={inquiry.id}
+          companyId={profile?.company_id}
+          inquiryNo={inquiry.inquiry_no}
+          priorityUserIds={priorityUserIds}
+        />
+      </div>
+      </div>
 
       <EditDealModal
         open={editOpen}
