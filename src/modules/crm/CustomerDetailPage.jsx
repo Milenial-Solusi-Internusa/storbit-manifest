@@ -8,10 +8,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import BantScoreBar from './BantScoreBar';
-import { calcBantScore, bantQualifyGate } from './bant';
+import { calcBantScore, bantQualifyGate, BANT_DIMENSIONS } from './bant';
 import ConfirmModal from '../../components/ConfirmModal';
 import { CustomerFormModal } from './CustomerListPage';
 import TOPRequestModal from './TOPRequestModal';
+import { BantCard } from './ProspectFormPage';
+import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import {
   DealStepper, DealHeaderControls, EditDealModal, PrfListCard,
   STAGES, stageIndex, isKnownStage, isActiveStage, saveDealUpdate, fetchAssignees,
@@ -754,6 +756,13 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   // sama dengan stageGate di PipelineKanbanPage.
   const [stageGate,     setStageGate]     = useState({ open: false, message: '', onYes: null });
 
+  // ── Mode edit inline 4 dimensi BANT (card "Kriteria BANT", tab BANT & Pipeline).
+  // Ditulis lewat saveDealUpdate yang sama dengan Deal controls (bukan saveNotes,
+  // bukan fungsi tulis baru) — draft lokal, commit sekali saat Simpan. ──
+  const [editBant,   setEditBant]   = useState(false);
+  const [bantDraft,  setBantDraft]  = useState({ bant_budget: 0, bant_authority: 0, bant_need: 0, bant_timeline: 0 });
+  const [savingBant, setSavingBant] = useState(false);
+
   // ── Lazy tab data: Riwayat (inquiry+quotation) & Dokumen (PRF+SO) ──
   const [histLoaded,    setHistLoaded]    = useState(false);
   const [histLoading,   setHistLoading]   = useState(false);
@@ -1089,6 +1098,41 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         : `Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
     }
     return ok;
+  };
+
+  // ── Edit inline 4 dimensi BANT (card "Kriteria BANT") ──
+  // startEditBant menyemai draft dari state halaman (customer) — cukup krn tak ada
+  // gate skor yang membaca ulang nilai ini di tempat lain saat modal ini dibuka
+  // (beda dari openDealEdit yang sengaja fetch segar demi bantQualifyGate).
+  const startEditBant = () => {
+    setBantDraft({
+      bant_budget:    Number(customer?.bant_budget)    || 0,
+      bant_authority: Number(customer?.bant_authority) || 0,
+      bant_need:      Number(customer?.bant_need)      || 0,
+      bant_timeline:  Number(customer?.bant_timeline)  || 0,
+    });
+    setEditBant(true);
+  };
+  const cancelEditBant = () => setEditBant(false); // draft dibuang; startEditBant menyemai ulang dari customer lain kali dibuka
+  const setBantDim = (key) => (e) => setBantDraft(d => ({ ...d, [key]: Number(e.target.value) }));
+
+  const saveBant = async () => {
+    setSavingBant(true);
+    const bant_score = calcBantScore(bantDraft);
+    // auditStageKey sengaja TIDAK dikirim — ini bukan perubahan stage, jadi
+    // saveDealUpdate tidak boleh ikut mencatat audit CHANGE_PIPELINE_STAGE.
+    const ok = await saveDealUpdate({
+      accountId: id, patch: { ...bantDraft, bant_score },
+      accountName: customer?.name, actor: dealActor, showToast,
+    });
+    setSavingBant(false);
+    if (!ok) return; // saveDealUpdate sudah menampilkan toast error; draft & mode edit tetap terbuka
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_PROSPECT, entityType: ENTITY_TYPES.PROSPECT,
+      entityId: id, entityLabel: customer?.name,
+    }, dealActor);
+    setEditBant(false);
+    fetchCustomer();
   };
 
   const handleDelete = async () => {
@@ -1649,8 +1693,32 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
             <div style={S.card}>
               <div style={S.cardHead}>
                 <h3 style={S.cardHeadTitle}>Kriteria BANT</h3>
-                <span style={S.cardHeadSub}>Budget · Authority · Need · Timeline</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={S.cardHeadSub}>Budget · Authority · Need · Timeline</span>
+                  {!editBant && (
+                    <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5 }} onClick={startEditBant}>
+                      <Icon name="pencil" size={14} />Edit BANT
+                    </button>
+                  )}
+                </div>
               </div>
+              {editBant && (
+                <div style={{ padding: '18px 22px', borderBottom: '1px solid ' + LINE_SOFT }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 16, marginBottom: 16 }}>
+                    {BANT_DIMENSIONS.map(dim => (
+                      <BantCard key={dim.key} dim={dim} value={Number(bantDraft[dim.key]) || 0} onChange={setBantDim(dim.key)} />
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 38 }} onClick={cancelEditBant} disabled={savingBant}>
+                      <Icon name="x" size={14} />Batal
+                    </button>
+                    <button type="button" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 11, border: 'none', background: NAVY, color: '#fff', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: savingBant ? 'not-allowed' : 'pointer', opacity: savingBant ? 0.6 : 1 }} onClick={saveBant} disabled={savingBant}>
+                      <Icon name="save" size={15} color="#fff" />{savingBant ? 'Menyimpan…' : 'Simpan BANT'}
+                    </button>
+                  </div>
+                </div>
+              )}
               <div style={S.bantGrid}>
                 {BANT_FIELD_DEFS.map((f, i) => {
                   const lastRowStart = BANT_FIELD_DEFS.length % 2 === 0 ? BANT_FIELD_DEFS.length - 2 : BANT_FIELD_DEFS.length - 1;
