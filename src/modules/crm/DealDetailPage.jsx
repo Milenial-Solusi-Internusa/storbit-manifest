@@ -815,6 +815,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           companyId={profile?.company_id}
           inquiryNo={inquiry.inquiry_no}
           priorityUserIds={priorityUserIds}
+          showToast={showToast}
         />
       </div>
       </div>

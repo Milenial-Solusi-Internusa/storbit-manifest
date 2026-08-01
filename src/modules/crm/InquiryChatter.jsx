@@ -10,6 +10,8 @@
 //   inquiryNo        : string — dipakai di teks notifikasi mention
 //   priorityUserIds  : string[] — id assigned_profile/assigned_to/created_by
 //                       (dihitung DealDetailPage.jsx), tampil duluan di dropdown mention
+//   showToast        : (msg, type?) => void — dari DealDetailPage.jsx, dipanggil di
+//                       tiap jalur tulis yang gagal (TD-164)
 //
 // FK `inquiry_comments.created_by` belum terverifikasi di schema_snapshot.sql (tabel
 // baru, pg_dump belum jalan) — sengaja TIDAK pakai PostgREST embed (nama constraint
@@ -57,7 +59,7 @@ const ghostBtn = (danger) => ({
   cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5,
 });
 
-export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priorityUserIds }) {
+export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priorityUserIds, showToast }) {
   const { profile, user } = useAuth();
   const currentUserId = user?.id || profile?.id;
 
@@ -96,7 +98,12 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(200);
-    if (error) { console.error('[chatter] fetch comments failed:', error.message); setLoadingComments(false); return; }
+    if (error) {
+      console.error('[chatter] fetch comments failed:', error.message);
+      showToast?.('Gagal memuat komentar: ' + error.message, 'error');
+      setLoadingComments(false);
+      return;
+    }
     const list = rows || [];
     const authorIds = [...new Set(list.map((r) => r.created_by).filter(Boolean))];
     let map = {};
@@ -108,7 +115,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
     setAuthorMap(map);
     setComments(list);
     setLoadingComments(false);
-  }, [inquiryId]);
+  }, [inquiryId, showToast]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refetchComments(); }, [refetchComments]);
@@ -218,7 +225,10 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
         try {
           await supabase.from('inquiry_comment_mentions')
             .insert(finalTags.map((m) => ({ comment_id: newCommentId, user_id: m.userId })));
-        } catch (e) { console.error('[chatter] insert mentions failed:', e?.message || e); }
+        } catch (e) {
+          console.error('[chatter] insert mentions failed:', e?.message || e);
+          showToast?.('Komentar terkirim, tapi menandai beberapa orang gagal.', 'error');
+        }
 
         const taggerName = profile?.full_name || user?.email || 'Seseorang';
         const notifRows = finalTags
@@ -234,7 +244,10 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
           }));
         if (notifRows.length) {
           try { await supabase.from('notifications').insert(notifRows); }
-          catch (e) { console.error('[chatter] notify mentions failed:', e?.message || e); }
+          catch (e) {
+            console.error('[chatter] notify mentions failed:', e?.message || e);
+            showToast?.('Komentar terkirim, tapi notifikasi ke beberapa orang gagal terkirim.', 'error');
+          }
         }
       }
 
@@ -243,6 +256,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       await refetchComments();
     } catch (e) {
       console.error('[chatter] submit comment failed:', e?.message || e);
+      showToast?.('Gagal mengirim komentar: ' + (e?.message || e), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -267,6 +281,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       await refetchComments();
     } catch (e) {
       console.error('[chatter] edit comment failed:', e?.message || e);
+      showToast?.('Gagal menyimpan perubahan komentar: ' + (e?.message || e), 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -287,6 +302,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       await refetchComments();
     } catch (e) {
       console.error('[chatter] delete comment failed:', e?.message || e);
+      showToast?.('Gagal menghapus komentar: ' + (e?.message || e), 'error');
     } finally {
       setDeleting(false);
     }
