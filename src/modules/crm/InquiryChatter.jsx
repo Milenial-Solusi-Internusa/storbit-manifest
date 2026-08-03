@@ -30,6 +30,12 @@ function initialsOf(name) {
   return ((p[0]?.[0] || '') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
 }
 
+// Escape user-controlled text (tagger name / inquiry no) before it lands in
+// the HTML email body sent via the `send-email` Edge Function.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // Waktu relatif — wording sama gaya notifTimeAgo (App.jsx), yang tak diekspor
 // (closure lokal di komponen App) jadi disalin di sini, bukan diimpor.
 function timeAgo(iso) {
@@ -247,6 +253,29 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
           catch (e) {
             console.error('[chatter] notify mentions failed:', e?.message || e);
             showToast?.('Komentar terkirim, tapi notifikasi ke beberapa orang gagal terkirim.', 'error');
+          }
+
+          // Best-effort email fan-out (secondary channel, inquiry_mention only —
+          // TD-43/TD-53 context: this is intentionally NOT wired through the
+          // dormant `notification_rules` table). Failures here stay
+          // console.error-only, no showToast — email is a bonus channel, not
+          // the core action, so it shouldn't compete for attention with the
+          // in-app notification result above.
+          try {
+            const { data: recipients } = await supabase
+              .from('profiles').select('id, email').in('id', notifRows.map((n) => n.user_id));
+            const emailOf = {};
+            (recipients || []).forEach((p) => { if (p.email) emailOf[p.id] = p.email; });
+            await Promise.all(notifRows.map((n) => {
+              const to = emailOf[n.user_id];
+              if (!to) return null; // no email on file for this user — skip them, not the rest
+              const subject = inquiryNo ? `Anda di-tag di komentar — Inquiry ${inquiryNo}` : 'Anda di-tag di komentar';
+              const html = `<p>Halo,</p><p><strong>${escapeHtml(taggerName)}</strong> men-tag Anda di komentar pada inquiry <strong>${escapeHtml(inquiryNo || '')}</strong> di Nexus.</p><p><a href="https://nexus.msigroup.co.id">Buka Nexus</a> untuk melihat komentar selengkapnya.</p><p style="color:#7A828E;font-size:12px;margin-top:24px;">Email otomatis dari Nexus by MSI — balas lewat aplikasi, bukan email ini.</p>`;
+              return supabase.functions.invoke('send-email', { body: { to, subject, html } })
+                .catch((e) => console.error('[chatter] send-email failed for', n.user_id, e?.message || e));
+            }));
+          } catch (e) {
+            console.error('[chatter] email fan-out failed:', e?.message || e);
           }
         }
       }
