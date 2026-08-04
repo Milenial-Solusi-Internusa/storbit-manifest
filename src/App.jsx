@@ -62,6 +62,8 @@ const RateListPage         = lazy(() => import('./modules/crm/RateListPage'));
 const MOMListPage          = lazy(() => import('./modules/reporting/MOMListPage'));
 const MOMFormPage          = lazy(() => import('./modules/reporting/MOMFormPage'));
 const MOMDetailPage        = lazy(() => import('./modules/reporting/MOMDetailPage'));
+const BNFListPage          = lazy(() => import('./modules/bnf/BNFListPage'));
+const BNFOrgRolesPage      = lazy(() => import('./modules/bnf/BNFOrgRolesPage'));
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
 const ActivityLogPage      = lazy(() => import('./modules/crm/ActivityLogPage'));
@@ -934,6 +936,19 @@ const ERP_MENU_GROUPS = [
           { id: 'audit-compliance', label: 'Compliance Report', icon: Shield     },
         ],
       },
+      // ⚠️ INTENTIONAL EXCEPTION — public:true here is deliberate, NOT an
+      // oversight to "fix" by matching the role/permission gates of the 6
+      // siblings above (reporting-sales/indomarco-dashboard/reporting-mom/
+      // reports/performance/audit). BNF must stay open to every logged-in
+      // user regardless of role — confirmed product decision. Known, accepted
+      // side effect: this group's own visibility = OR across all its
+      // children's gates (navModuleVisible / navChildGate), so having ANY
+      // public:true child here means the whole "Reporting & Governance"
+      // parent becomes visible to everyone, including roles that can't see
+      // any of the 6 siblings above. This was confirmed and accepted, not an
+      // accident — do not narrow this gate to "clean up" the inconsistency
+      // without checking with product first.
+      { id: 'bnf', label: 'BNF (Bad News First)', icon: AlertTriangle, public: true },
     ],
   },
   // ── FOUNDATION ────────────────────────────────────────────────────────────
@@ -944,6 +959,7 @@ const ERP_MENU_GROUPS = [
       { id: 'admin',         label: 'Master Data',       icon: Database },
       { id: 'products',      label: 'Products & Services', icon: Package },
       { id: 'bulk-edit-price', label: 'Update Harga Massal', icon: TrendingUp, role: ['super_admin'] },
+      { id: 'bnf-org-roles', label: 'BNF — Kepala & Direktur', icon: UsersRound, role: ['super_admin','admin'] },
       { id: 'schema-manager',label: 'Schema Manager',    icon: Database },
       { section: 'Admin Settings' },
       { id: 'admin-settings', label: 'Admin Settings', icon: Settings },
@@ -1181,6 +1197,14 @@ const NEXUS_NAV = [
           { id: 'reports',         label: 'Reporting & Dashboard', icon: LayoutDashboard },
           { id: 'performance',     label: 'Performance & Cache',   icon: Zap },
           { id: 'audit',           label: 'Audit & Compliance',    icon: ScrollText },
+          // ⚠️ INTENTIONAL EXCEPTION — public:true (set on the 'bnf' entry in
+          // ERP_MENU_GROUPS) is deliberate, not an oversight vs. the 6
+          // siblings above. Known/accepted side effect: this makes the whole
+          // "Reporting" parent module visible to everyone, since a module's
+          // visibility is an OR across its children's gates. See the matching
+          // comment on the 'bnf' item in ERP_MENU_GROUPS for full rationale —
+          // do not "fix" this by giving BNF a role/permission gate.
+          { id: 'bnf', label: 'BNF (Bad News First)', icon: AlertTriangle },
         ],
       },
       {
@@ -1189,6 +1213,7 @@ const NEXUS_NAV = [
           { id: 'admin',          label: 'Master Data',         icon: Database },
           { id: 'products',       label: 'Products & Services', icon: Package },
           { id: 'bulk-edit-price', label: 'Update Harga Massal', icon: TrendingUp },
+          { id: 'bnf-org-roles', label: 'BNF — Kepala & Direktur', icon: UsersRound },
           { id: 'schema-manager', label: 'Schema Manager',      icon: Database },
           { id: 'admin-settings', label: 'Admin Settings',      icon: Settings },
         ],
@@ -3026,7 +3051,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3252,6 +3277,19 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <BulkEditPricePage />
+              </Suspense>
+            </ErrorBoundary>
+          ))}
+          {activeMenu === 'bnf-org-roles' && (!canRenderPage('bnf-org-roles') ? (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ) : (
+            <ErrorBoundary title="BNF — Kepala & Direktur temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <BNFOrgRolesPage showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           ))}
@@ -3727,6 +3765,17 @@ export default function StorbitManifest() {
               </Suspense>
             </ErrorBoundary>
           )}
+
+          {/* ── Reporting & Governance: BNF (Bad News First) — cross-division incident reporting, public:true by design (see comment on the 'bnf' menu entry) ── */}
+          {activeMenu === 'bnf' && (canRenderPage('bnf') ? (
+            <ErrorBoundary title="BNF temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <BNFListPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
 
           {/* ── Sales Order (SO) — Procurement side: list (read-only) / detail ─── */}
           {activeMenu === 'proc-sales-order' && (canRenderPage('proc-sales-order') ? (

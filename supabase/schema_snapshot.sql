@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict c01FdyQP6HMAQv7obSGp68oFh5QuZa2ilfI8Ue6RgrkrtaIFgOVqWTRAsVZDa2O
+\restrict ij2l29fozB01L1OxEGkM3b8E86npzdNHGi8hqSiUVM1HD26d5BNgIXklJaq7Rbn
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -3308,20 +3308,6 @@ CREATE TABLE public.bnf_departments (
 
 
 --
--- Name: bnf_division_recipients; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.bnf_division_recipients (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    division_id uuid NOT NULL,
-    profile_id uuid NOT NULL,
-    is_active boolean DEFAULT true NOT NULL,
-    created_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: bnf_divisions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6325,22 +6311,6 @@ ALTER TABLE ONLY public.bnf_departments
 
 
 --
--- Name: bnf_division_recipients bnf_division_recipients_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bnf_division_recipients
-    ADD CONSTRAINT bnf_division_recipients_pkey PRIMARY KEY (id);
-
-
---
--- Name: bnf_division_recipients bnf_division_recipients_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bnf_division_recipients
-    ADD CONSTRAINT bnf_division_recipients_unique UNIQUE (division_id, profile_id);
-
-
---
 -- Name: bnf_divisions bnf_divisions_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7739,13 +7709,6 @@ CREATE UNIQUE INDEX idx_bank_accounts_default ON public.entity_bank_accounts USI
 --
 
 CREATE INDEX idx_bnf_departments_division ON public.bnf_departments USING btree (division_id);
-
-
---
--- Name: idx_bnf_division_recipients_division; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_bnf_division_recipients_division ON public.bnf_division_recipients USING btree (division_id);
 
 
 --
@@ -9578,30 +9541,6 @@ ALTER TABLE ONLY public.bnf_departments
 
 ALTER TABLE ONLY public.bnf_departments
     ADD CONSTRAINT bnf_departments_head_profile_id_fkey FOREIGN KEY (head_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: bnf_division_recipients bnf_division_recipients_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bnf_division_recipients
-    ADD CONSTRAINT bnf_division_recipients_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
-
-
---
--- Name: bnf_division_recipients bnf_division_recipients_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bnf_division_recipients
-    ADD CONSTRAINT bnf_division_recipients_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.bnf_divisions(id) ON DELETE CASCADE;
-
-
---
--- Name: bnf_division_recipients bnf_division_recipients_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bnf_division_recipients
-    ADD CONSTRAINT bnf_division_recipients_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -12111,50 +12050,6 @@ CREATE POLICY bnf_departments_read ON public.bnf_departments FOR SELECT TO authe
 --
 
 CREATE POLICY bnf_departments_update ON public.bnf_departments FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
-
-
---
--- Name: bnf_division_recipients; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.bnf_division_recipients ENABLE ROW LEVEL SECURITY;
-
---
--- Name: bnf_division_recipients bnf_division_recipients_delete; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY bnf_division_recipients_delete ON public.bnf_division_recipients FOR DELETE TO authenticated USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (EXISTS ( SELECT 1
-   FROM public.bnf_divisions d
-  WHERE ((d.id = bnf_division_recipients.division_id) AND (d.company_id = public.get_user_company_id())))))));
-
-
---
--- Name: bnf_division_recipients bnf_division_recipients_insert; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY bnf_division_recipients_insert ON public.bnf_division_recipients FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (EXISTS ( SELECT 1
-   FROM public.bnf_divisions d
-  WHERE ((d.id = bnf_division_recipients.division_id) AND (d.company_id = public.get_user_company_id())))))));
-
-
---
--- Name: bnf_division_recipients bnf_division_recipients_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY bnf_division_recipients_read ON public.bnf_division_recipients FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
-   FROM public.bnf_divisions d
-  WHERE ((d.id = bnf_division_recipients.division_id) AND (d.company_id = public.get_user_company_id()))))));
-
-
---
--- Name: bnf_division_recipients bnf_division_recipients_update; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY bnf_division_recipients_update ON public.bnf_division_recipients FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (EXISTS ( SELECT 1
-   FROM public.bnf_divisions d
-  WHERE ((d.id = bnf_division_recipients.division_id) AND (d.company_id = public.get_user_company_id()))))))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (EXISTS ( SELECT 1
-   FROM public.bnf_divisions d
-  WHERE ((d.id = bnf_division_recipients.division_id) AND (d.company_id = public.get_user_company_id())))))));
 
 
 --
@@ -14692,5 +14587,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict c01FdyQP6HMAQv7obSGp68oFh5QuZa2ilfI8Ue6RgrkrtaIFgOVqWTRAsVZDa2O
+\unrestrict ij2l29fozB01L1OxEGkM3b8E86npzdNHGi8hqSiUVM1HD26d5BNgIXklJaq7Rbn
 
