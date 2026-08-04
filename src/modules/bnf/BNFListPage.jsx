@@ -18,11 +18,12 @@
 // else in Nexus for document numbers) — so this file deliberately avoids
 // Tailwind's font-family utility classes and sets fontFamily inline instead.
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { AlertTriangle, ChevronDown, Send, Mail, ArrowUpRight, FileText, AlertCircle, Wrench, Target, X, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Send, Mail, ArrowUpRight, FileText, AlertCircle, Wrench, Target, X, Search, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import CodeNamePicker from '../../components/CodeNamePicker';
+import ConfirmModal from '../../components/ConfirmModal';
 
 // ============================================================================
 // Tokens — restrained on purpose: navy carries structure (header bar, key
@@ -130,6 +131,32 @@ async function notifyDepartmentHead({ departmentId, reportNo, description }) {
   } catch (e) {
     console.error('[bnf] send-email failed for department head', departmentId, e?.message || e);
     return { sent: 0, total: 1 };
+  }
+}
+
+// Best-effort notification to a report's original reporter when its status
+// changes, regardless of who changed it (Tier 3 stays open by design) —
+// skipped by the caller when the reporter is the one making the change.
+// Fase C (2026-08-04). Simpler than notifyDepartmentHead: no join needed,
+// the caller already has created_by in hand.
+async function notifyReporterOnStatusChange({ createdBy, reportNo, newStatus }) {
+  const { data: reporter, error: repErr } = await supabase
+    .from('profiles')
+    .select('email, full_name')
+    .eq('id', createdBy)
+    .maybeSingle();
+  if (repErr) throw repErr;
+  const email = reporter?.email;
+  if (!email) {
+    console.warn('[bnf] reporter', createdBy, 'has no email — status-change notification skipped');
+    return;
+  }
+  const subject = `Status Laporan BNF Berubah — ${reportNo}`;
+  const html = `<p>Halo,</p><p>Status laporan BNF <strong>${escapeHtml(reportNo)}</strong> yang Anda laporkan telah berubah menjadi <strong>${escapeHtml(newStatus)}</strong>.</p><p><a href="https://nexus.msigroup.co.id">Buka Nexus</a> untuk melihat detail laporan.</p><p style="color:#7A828E;font-size:12px;margin-top:24px;">Email otomatis dari Nexus by MSI.</p>`;
+  try {
+    await supabase.functions.invoke('send-email', { body: { to: email, subject, html } });
+  } catch (e) {
+    console.error('[bnf] send-email failed for reporter', createdBy, e?.message || e);
   }
 }
 
@@ -490,14 +517,45 @@ function OverviewTab({ loading, filtered, search, setSearch, filterStatus, setFi
 // ============================================================================
 // Detail slide-over (right side panel, replaces the old centered modal)
 // ============================================================================
-function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending, onChangeStatus, onSendReminder, onClose }) {
+function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending, canEdit, divisions, departments, onChangeStatus, onSendReminder, onSaveEdit, onDelete, onClose }) {
   const [newStatus, setNewStatus] = useState('');
   const [note, setNote] = useState('');
+  const [editMode, setEditMode] = useState(false);
+  const [editDraft, setEditDraft] = useState(null);
+  // Same "picker shows text, draft holds the id" split as BuatLaporanTab.
+  const [divisionText, setDivisionText] = useState('');
+  const [departmentText, setDepartmentText] = useState('');
+  const [relatedDeptText, setRelatedDeptText] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  useEffect(() => { setNewStatus(report?.status || ''); setNote(''); }, [report?.id, report?.status]);
+  useEffect(() => { setNewStatus(report?.status || ''); setNote(''); setEditMode(false); }, [report?.id, report?.status]);
 
   if (!report) return null;
   const u = urgencyLabel(report);
+
+  const startEdit = () => {
+    setEditDraft({
+      division_id: report.division_id,
+      department_id: report.department_id,
+      related_department_id: report.related_department_id || '',
+      description: report.description || '',
+      root_cause: report.root_cause || '',
+      solution: report.solution || '',
+      target_date: report.target_date || '',
+      escalation_level: report.escalation_level || '',
+    });
+    setDivisionText(report.division?.name || '');
+    setDepartmentText(report.department?.name || '');
+    setRelatedDeptText(report.related_department?.name || '');
+    setEditMode(true);
+  };
+  const cancelEdit = () => { setEditMode(false); setEditDraft(null); };
+
+  const deptOptions = editDraft ? departments.filter((d) => d.division_id === editDraft.division_id) : [];
+  const allDeptsWithDivision = departments.map((d) => ({
+    ...d,
+    category: divisions.find((dv) => dv.id === d.division_id)?.name,
+  }));
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40">
@@ -507,9 +565,24 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
             <div className="text-[12px] font-semibold text-slate-400" style={{ fontFamily: "'IBM Plex Mono',monospace" }}>{report.report_no}</div>
             <div className="mt-0.5 text-[15px] font-bold text-slate-800">{report.division?.name || '—'} · {report.department?.name || '—'}</div>
           </div>
-          <button onClick={onClose} className="rounded p-1.5 text-slate-400 hover:bg-slate-100">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Defense-in-depth only — canEdit hides the affordance for
+                non-owner/non-admin, but guard_bnf_reports_field_update
+                (Fase A trigger, Tier 2) is the real enforcement either way. */}
+            {canEdit && !editMode && (
+              <>
+                <button onClick={startEdit} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Edit laporan">
+                  <Pencil size={16} />
+                </button>
+                <button onClick={() => setDeleteConfirmOpen(true)} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Hapus laporan">
+                  <Trash2 size={16} />
+                </button>
+              </>
+            )}
+            <button onClick={onClose} className="rounded p-1.5 text-slate-400 hover:bg-slate-100">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-5 px-6 py-5">
@@ -518,27 +591,111 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
             <span className="text-slate-500">Pelapor: <strong className="text-slate-700">{report.reporter_name || '—'}</strong></span>
           </div>
 
-          {[
-            ['Deskripsi Masalah', report.description],
-            ['Root Cause', report.root_cause],
-            ['Solusi Penanganan', report.solution],
-          ].map(([label, text]) => (
-            <div key={label} className="rounded-md border p-4" style={{ borderColor: LINE }}>
-              <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>{text || '—'}</p>
+          {editMode ? (
+            <div className="space-y-4 rounded-md border p-4" style={{ borderColor: LINE }}>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel required>Divisi</FieldLabel>
+                  <CodeNamePicker
+                    value={divisionText}
+                    items={divisions}
+                    inputClassName={inputCls}
+                    inputStyle={{ borderColor: LINE }}
+                    placeholder="Cari / pilih divisi…"
+                    onChangeText={(v) => { setDivisionText(v); setEditDraft((d) => ({ ...d, division_id: '' })); }}
+                    onPick={(item) => {
+                      setDivisionText(item.name);
+                      setDepartmentText('');
+                      setEditDraft((d) => ({ ...d, division_id: item.id, department_id: '' }));
+                    }}
+                  />
+                </div>
+                <div>
+                  <FieldLabel required>Departemen</FieldLabel>
+                  <CodeNamePicker
+                    value={departmentText}
+                    items={deptOptions}
+                    disabled={!editDraft.division_id}
+                    inputClassName={inputCls}
+                    inputStyle={{ borderColor: LINE }}
+                    placeholder={editDraft.division_id ? 'Cari / pilih departemen…' : 'Pilih divisi dulu'}
+                    onChangeText={(v) => { setDepartmentText(v); setEditDraft((d) => ({ ...d, department_id: '' })); }}
+                    onPick={(item) => { setDepartmentText(item.name); setEditDraft((d) => ({ ...d, department_id: item.id })); }}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <FieldLabel>Divisi/Dept Irisan (opsional)</FieldLabel>
+                  <CodeNamePicker
+                    value={relatedDeptText}
+                    items={allDeptsWithDivision}
+                    inputClassName={inputCls}
+                    inputStyle={{ borderColor: LINE }}
+                    placeholder="Cari departemen lain yang terdampak (opsional)…"
+                    emptyText="Tidak ada departemen yang cocok"
+                    onChangeText={(v) => { setRelatedDeptText(v); setEditDraft((d) => ({ ...d, related_department_id: '' })); }}
+                    onPick={(item) => { setRelatedDeptText(item.name); setEditDraft((d) => ({ ...d, related_department_id: item.id })); }}
+                  />
+                </div>
+              </div>
+              <div>
+                <FieldLabel required>Deskripsi Masalah</FieldLabel>
+                <textarea rows={3} value={editDraft.description} onChange={(e) => setEditDraft((d) => ({ ...d, description: e.target.value }))} className={inputCls} style={{ borderColor: LINE }} />
+              </div>
+              <div>
+                <FieldLabel>Root Cause</FieldLabel>
+                <textarea rows={2} value={editDraft.root_cause} onChange={(e) => setEditDraft((d) => ({ ...d, root_cause: e.target.value }))} className={inputCls} style={{ borderColor: LINE }} />
+              </div>
+              <div>
+                <FieldLabel>Solusi Penanganan</FieldLabel>
+                <textarea rows={2} value={editDraft.solution} onChange={(e) => setEditDraft((d) => ({ ...d, solution: e.target.value }))} className={inputCls} style={{ borderColor: LINE }} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel required>Target Penyelesaian</FieldLabel>
+                  <input type="date" value={editDraft.target_date} onChange={(e) => setEditDraft((d) => ({ ...d, target_date: e.target.value }))} className={inputCls} style={{ borderColor: LINE }} />
+                </div>
+                <div>
+                  <FieldLabel>Eskalasi Lanjutan</FieldLabel>
+                  <Select value={editDraft.escalation_level} onChange={(e) => setEditDraft((d) => ({ ...d, escalation_level: e.target.value }))}>
+                    <option value="">Tidak ada</option>
+                    {ESCALATION_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button onClick={cancelEdit} disabled={saving} className="rounded-md border px-4 py-2 text-[13px] font-semibold text-slate-600 disabled:opacity-50" style={{ borderColor: LINE }}>
+                  Batal
+                </button>
+                <button onClick={() => onSaveEdit(editDraft)} disabled={saving} className="rounded-md px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: ORANGE }}>
+                  {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
+                </button>
+              </div>
             </div>
-          ))}
+          ) : (
+            <>
+              {[
+                ['Deskripsi Masalah', report.description],
+                ['Root Cause', report.root_cause],
+                ['Solusi Penanganan', report.solution],
+              ].map(([label, text]) => (
+                <div key={label} className="rounded-md border p-4" style={{ borderColor: LINE }}>
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>{text || '—'}</p>
+                </div>
+              ))}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-md border p-4" style={{ borderColor: LINE }}>
-              <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Divisi/Dept Irisan</div>
-              <div className="mt-1.5 text-[13px] text-slate-700">{report.related_department?.name || '—'}</div>
-            </div>
-            <div className="rounded-md border p-4" style={{ borderColor: LINE }}>
-              <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Eskalasi Lanjutan</div>
-              <div className="mt-1.5 text-[13px] text-slate-700">{report.escalation_level ? escalationLabel(report.escalation_level) : '—'}</div>
-            </div>
-          </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-md border p-4" style={{ borderColor: LINE }}>
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Divisi/Dept Irisan</div>
+                  <div className="mt-1.5 text-[13px] text-slate-700">{report.related_department?.name || '—'}</div>
+                </div>
+                <div className="rounded-md border p-4" style={{ borderColor: LINE }}>
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Eskalasi Lanjutan</div>
+                  <div className="mt-1.5 text-[13px] text-slate-700">{report.escalation_level ? escalationLabel(report.escalation_level) : '—'}</div>
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-md border p-4" style={{ borderColor: LINE }}>
@@ -600,6 +757,17 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
           </button>
         </div>
       </div>
+
+      <ConfirmModal
+        open={deleteConfirmOpen}
+        title="Hapus laporan?"
+        message="Laporan ini akan dihapus dan tidak lagi muncul di daftar. Tindakan ini tidak bisa dibatalkan."
+        confirmLabel="Hapus"
+        cancelLabel="Batal"
+        variant="danger"
+        onConfirm={() => { setDeleteConfirmOpen(false); onDelete(); }}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
     </div>
   );
 }
@@ -780,11 +948,90 @@ export default function BNFListPage({ showToast }) {
         notes: `${detail.status} → ${newStatus}`,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
 
+      // Best-effort notification to the original reporter — never blocks the
+      // status-change itself. Skipped when the reporter is the one making
+      // the change (no point notifying yourself).
+      if (detail.created_by !== profile.id) {
+        notifyReporterOnStatusChange({ createdBy: detail.created_by, reportNo: detail.report_no, newStatus })
+          .catch((e) => console.error('[bnf] reporter notify failed:', e?.message || e));
+      }
+
       showToast?.('Status laporan diperbarui');
       setDetail(null);
       fetchReports();
     } catch (err) {
       setDetailError('Gagal mengubah status: ' + err.message);
+    } finally {
+      setDetailSaving(false);
+    }
+  }, [detail, profile, user, erpRole, fetchReports, showToast]);
+
+  // Edit isi laporan (Fase C) — FE-side gate is defense-in-depth only;
+  // guard_bnf_reports_field_update (DB trigger, Fase A) is the real
+  // enforcement (Tier 2: creator or admin_or_above may touch these fields).
+  const handleSaveEdit = useCallback(async (editDraft) => {
+    if (!detail) return;
+    if (!editDraft.division_id)   { setDetailError('Divisi wajib dipilih.'); return; }
+    if (!editDraft.department_id) { setDetailError('Departemen wajib dipilih.'); return; }
+    if (!editDraft.description.trim()) { setDetailError('Deskripsi masalah wajib diisi.'); return; }
+    if (!editDraft.target_date)   { setDetailError('Target penyelesaian wajib diisi.'); return; }
+    setDetailSaving(true);
+    setDetailError(null);
+    try {
+      const payload = {
+        division_id: editDraft.division_id,
+        department_id: editDraft.department_id,
+        related_department_id: editDraft.related_department_id || null,
+        description: editDraft.description.trim(),
+        root_cause: editDraft.root_cause?.trim() || null,
+        solution: editDraft.solution?.trim() || null,
+        target_date: editDraft.target_date,
+        escalation_level: editDraft.escalation_level || null,
+      };
+      const { error } = await supabase.from('bnf_reports').update(payload).eq('id', detail.id);
+      if (error) throw error;
+
+      logAudit(supabase, {
+        action: ACTION_TYPES.UPDATE_BNF_REPORT,
+        entityType: ENTITY_TYPES.BNF_REPORT,
+        entityId: detail.id,
+        entityLabel: detail.report_no,
+        notes: 'Edit isi laporan',
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+
+      showToast?.('Laporan berhasil diperbarui');
+      setDetail(null);
+      fetchReports();
+    } catch (err) {
+      setDetailError('Gagal menyimpan perubahan: ' + err.message);
+    } finally {
+      setDetailSaving(false);
+    }
+  }, [detail, profile, user, erpRole, fetchReports, showToast]);
+
+  // Hapus laporan (soft-delete, Fase C) — akses sama seperti edit isi
+  // (Tier 2 trigger yang sama menjaga deleted_at juga).
+  const handleDeleteReport = useCallback(async () => {
+    if (!detail) return;
+    setDetailSaving(true);
+    setDetailError(null);
+    try {
+      const { error } = await supabase.from('bnf_reports').update({ deleted_at: new Date().toISOString() }).eq('id', detail.id);
+      if (error) throw error;
+
+      logAudit(supabase, {
+        action: ACTION_TYPES.UPDATE_BNF_REPORT,
+        entityType: ENTITY_TYPES.BNF_REPORT,
+        entityId: detail.id,
+        entityLabel: detail.report_no,
+        notes: 'Hapus laporan (soft-delete)',
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+
+      showToast?.('Laporan berhasil dihapus');
+      setDetail(null);
+      fetchReports();
+    } catch (err) {
+      setDetailError('Gagal menghapus laporan: ' + err.message);
     } finally {
       setDetailSaving(false);
     }
@@ -847,6 +1094,11 @@ export default function BNFListPage({ showToast }) {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const pageRows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  // Edit/hapus affordance gate (Fase C) — mirrors InquiryChatter.jsx's
+  // `isMine` pattern, extended with the admin_or_above case. FE-only hiding;
+  // the trigger (Tier 2) is what actually enforces this.
+  const canEditDetail = !!detail && (detail.created_by === profile?.id || erpRole === 'admin' || erpRole === 'super_admin');
 
   return (
     <div className="min-h-full bg-slate-50" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -918,8 +1170,13 @@ export default function BNFListPage({ showToast }) {
         saving={detailSaving}
         error={detailError}
         reminderSending={reminderSending}
+        canEdit={canEditDetail}
+        divisions={divisions}
+        departments={departments}
         onChangeStatus={handleStatusChange}
         onSendReminder={handleSendReminder}
+        onSaveEdit={handleSaveEdit}
+        onDelete={handleDeleteReport}
         onClose={() => { setDetail(null); setDetailError(null); }}
       />
     </div>
