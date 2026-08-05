@@ -2223,10 +2223,18 @@ export default function StorbitManifest() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlMenu, urlMenuReady, canRenderPage, setUrlMenu]);
 
-  const showToast = (msg, type = 'success') => {
+  // useCallback with an empty dependency array — showToast only closes over
+  // setToast (a useState setter, guaranteed referentially stable by React)
+  // and its own params, nothing else. Without this, every App.jsx re-render
+  // handed every page a new showToast identity, which any page's own
+  // useCallback(..., [showToast, ...]) would then propagate into ITS OWN new
+  // identity — if that callback is also the dependency of a mount useEffect
+  // and calls showToast again on failure, the result is a render/refetch
+  // loop (confirmed root cause of the BNF Fase G 403 incident, 2026-08-05).
+  const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 2800);
-  };
+  }, []);
 
   // Moved here (below showToast/setActiveModule/setShowInquiryForm/setCrmDealInquiry/
   // setActiveMenu) so its 'inquiry' mention branch can call showToast in its body
@@ -2277,7 +2285,7 @@ export default function StorbitManifest() {
                : n.reference_type === 'mom'           ? 'reporting-mom'
                : null;
     if (dest) navigateTo(dest);
-  }, [navigateTo]);
+  }, [navigateTo, showToast]);
 
   // Generate a picking list from a confirmed SP, then jump to its detail.
   // Errors from the RPC (belum confirmed / tidak ada outstanding / sudah ada)
