@@ -1,0 +1,76 @@
+-- =============================================================================
+-- Migration: 20260805000003_bnf_report_related_departments_grant_fix
+-- Phase:     BNF module — HOTFIX pasca-merge Fase A-G (regresi produksi, 3aea7b6)
+-- Purpose:   Fase G (20260805000002) membuat tabel bnf_report_related_departments
+--            + 3 RLS policy (read/insert/delete), TAPI LUPA GRANT table-level ke
+--            authenticated — pola wajib CLAUDE.md "GRANT setelah CREATE (tabel
+--            CLI tak auto-grant)" sudah benar diikuti utk 5 tabel BNF lain di
+--            Fase A (bnf_divisions/bnf_departments/bnf_reports/
+--            bnf_division_recipients/bnf_report_logs, lihat migrasi
+--            20260803000002), terlewat khusus di Fase G.
+--
+--            RLS TANPA GRANT dasar tidak cukup — Postgres mengecek table-level
+--            privilege DULU, SEBELUM RLS policy dievaluasi sama sekali. Tanpa
+--            GRANT, SEMUA query ke tabel ini (termasuk sebagai embed dari
+--            bnf_reports) gagal "permission denied for table
+--            bnf_report_related_departments" (SQLSTATE 42501) -> PostgREST
+--            memetakan ini jadi HTTP 403.
+--
+-- Impact:    fetchReports() di BNFListPage.jsx meng-embed tabel ini di SETIAP
+--            page load (query gabungan 1x ke bnf_reports) -> 403 di setiap
+--            percobaan, browser menunjukkan resource gagal sebagai
+--            "bnf_reports" (base resource di URL) walau akar masalah ada di
+--            tabel yang di-embed. catch block lalu panggil showToast ->
+--            showToast (App.jsx:2226, bukan useCallback) dapat identitas baru
+--            tiap kali App.jsx re-render -> fetchReports (useCallback dengan
+--            showToast di dependency array, BNFListPage.jsx) ikut dapat
+--            identitas baru -> useEffect(() => fetchReports(), [fetchReports])
+--            refire -> fetch ulang -> gagal lagi -> loop. GRANT ini memutus
+--            loop di titik pemicunya (403) — TIDAK mengubah struktur
+--            effect/useCallback itu sendiri (bug laten terpisah, sudah ada
+--            sebelum Fase G, dibahas terpisah sebagai hardening, bukan
+--            bagian hotfix darurat ini).
+--
+-- STATUS:    SUDAH DIJALANKAN MANUAL, DI LUAR DRAFT DI BAWAH INI. Draft asli
+--            Claude (di bawah, GRANT SELECT/INSERT/DELETE — 3 verb, sengaja
+--            tanpa UPDATE karena tabel ini tak punya RLS policy UPDATE)
+--            BELUM sempat direview user sebelum dieksekusi — user menjalankan
+--            versi 4-verb (SELECT/INSERT/UPDATE/DELETE, menyamai pola
+--            seragam Fase A persis) secara manual lebih dulu sebagai tindakan
+--            darurat, sebelum laporan investigasi ini selesai ditulis. File
+--            ini di-retrofit SETELAH kejadian supaya isinya cocok dengan apa
+--            yang SUNGGUHAN berjalan di database, bukan draft ideal yang
+--            sudah dilewati kenyataan (pola sama seperti retrofit insiden
+--            increment_document_sequence sebelumnya).
+--
+--            Evaluasi GRANT UPDATE tambahan (diminta user, dijawab di chat):
+--            AMAN, bukan lubang keamanan — tabel ini ENABLE ROW LEVEL SECURITY
+--            dan TIDAK punya policy UPDATE atau FOR ALL apa pun (cuma 3:
+--            _read/_insert/_delete, dikonfirmasi via grep schema_snapshot.sql).
+--            RLS default-deny per command kalau tak ada policy yang berlaku
+--            untuk command itu — jadi walau authenticated sekarang punya
+--            table-level UPDATE privilege, SETIAP percobaan UPDATE tetap
+--            diblokir total oleh RLS (0 baris ter-update, bukan error).
+--            Kode aplikasi juga tak pernah memanggil .update() ke tabel ini
+--            (sinkronisasi edit pakai delete-then-reinsert, Fase G) — privilege
+--            ini murni tak terpakai, bukan cuma "tidak berbahaya" tapi juga
+--            "tidak pernah dipakai jalur mana pun yang ada sekarang."
+-- =============================================================================
+
+-- ROLLBACK:
+-- REVOKE SELECT, INSERT, UPDATE, DELETE ON public.bnf_report_related_departments FROM authenticated;
+-- =============================================================================
+
+-- SELECT/INSERT/DELETE menutup 3 RLS policy yang benar-benar ada
+-- (bnf_report_related_departments_read/_insert/_delete, lihat 20260805000002).
+-- UPDATE disertakan karena itu yang SUNGGUHAN dijalankan manual user (bukan
+-- draft asli Claude) — menyamai pola Fase A yang GRANT keempat verb sekaligus
+-- secara seragam di semua tabel BNF, tanpa per-tabel dipersempit ke verb yang
+-- benar-benar dipakai. Aman: lihat evaluasi GRANT UPDATE di blok STATUS di atas.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.bnf_report_related_departments TO authenticated;
+
+-- Verifikasi:
+-- SELECT grantee, privilege_type FROM information_schema.role_table_grants
+-- WHERE table_name = 'bnf_report_related_departments' AND grantee = 'authenticated'
+-- ORDER BY privilege_type;
+-- -- harus muncul 4 baris: DELETE, INSERT, SELECT, UPDATE
