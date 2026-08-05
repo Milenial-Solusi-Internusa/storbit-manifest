@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict pp0rIJiMzJSpSPScirhDFJTms7Tin9c2UeqD5qbDtWvX3ymUce8244a0kSxNrmB
+\restrict huAJHX4DT0EyRdPtzZUlMQzEH4BCHumsXabZLUT6yqwSeAJVpTmeap3vYTNU7NS
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -658,6 +658,56 @@ $$;
 
 
 --
+-- Name: guard_bnf_reports_field_update(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_bnf_reports_field_update() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.id          IS DISTINCT FROM OLD.id
+     OR NEW.company_id IS DISTINCT FROM OLD.company_id
+     OR NEW.report_no  IS DISTINCT FROM OLD.report_no
+     OR NEW.created_by IS DISTINCT FROM OLD.created_by
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at
+  THEN
+    RAISE EXCEPTION 'Field id/company_id/report_no/created_by/created_at bersifat permanen — tidak bisa diubah lewat UPDATE aplikasi. Perbaikan data harus lewat SQL Editor.';
+  END IF;
+
+  IF OLD.created_by = auth.uid() OR public.is_admin_or_above() THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.division_id            IS DISTINCT FROM OLD.division_id
+     OR NEW.department_id         IS DISTINCT FROM OLD.department_id
+     OR NEW.description           IS DISTINCT FROM OLD.description
+     OR NEW.root_cause            IS DISTINCT FROM OLD.root_cause
+     OR NEW.solution              IS DISTINCT FROM OLD.solution
+     OR NEW.target_date           IS DISTINCT FROM OLD.target_date
+     OR NEW.escalation_level      IS DISTINCT FROM OLD.escalation_level
+     OR NEW.deleted_at            IS DISTINCT FROM OLD.deleted_at
+  THEN
+    RAISE EXCEPTION 'Hanya pelapor asli atau admin yang boleh mengubah field ini pada laporan BNF';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION guard_bnf_reports_field_update(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.guard_bnf_reports_field_update() IS 'BEFORE UPDATE guard on bnf_reports, 4 tiers: (0) auth.uid() IS NULL (SQL Editor/migrations/service-role) bypasses everything; (1) id/company_id/report_no/created_by/created_at always locked, no exceptions; (2) created_by = auth.uid() or is_admin_or_above() may edit remaining report-content columns; (3) everyone else in the company (existing bnf_reports_update RLS row-scope, unchanged) may only edit status/updated_by/closed_at. Fase G (2026-08-05): related_department_id removed from Tier 2 list — moved to bnf_report_related_departments junction table with its own RLS.';
+
+
+--
 -- Name: guard_quotation_prf_consistency(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -821,17 +871,16 @@ COMMENT ON FUNCTION public.has_role(role_code text) IS 'True if the current user
 
 
 --
--- Name: increment_document_sequence(uuid, text, text, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: increment_document_sequence(uuid, text, text, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.increment_document_sequence(p_company_id uuid, p_document_type text, p_department_code text, p_year integer, p_month integer DEFAULT 0) RETURNS integer
+CREATE FUNCTION public.increment_document_sequence(p_company_id uuid, p_document_type text, p_department_code text, p_year integer, p_month integer DEFAULT 0, p_day integer DEFAULT 0) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
 DECLARE
   v_new_seq integer;
 BEGIN
-  -- Attempt atomic increment on existing row
   UPDATE document_sequences
   SET    last_sequence = last_sequence + 1
   WHERE  company_id      = p_company_id
@@ -839,15 +888,15 @@ BEGIN
     AND  department_code = p_department_code
     AND  year            = p_year
     AND  month           = p_month
+    AND  day             = p_day
   RETURNING last_sequence INTO v_new_seq;
 
-  -- If no row existed, insert it and return 1
   IF NOT FOUND THEN
     INSERT INTO document_sequences
-      (company_id, document_type, department_code, year, month, last_sequence)
+      (company_id, document_type, department_code, year, month, day, last_sequence)
     VALUES
-      (p_company_id, p_document_type, p_department_code, p_year, p_month, 1)
-    ON CONFLICT (company_id, document_type, department_code, year, month)
+      (p_company_id, p_document_type, p_department_code, p_year, p_month, p_day, 1)
+    ON CONFLICT (company_id, document_type, department_code, year, month, day)
     DO UPDATE SET last_sequence = document_sequences.last_sequence + 1
     RETURNING last_sequence INTO v_new_seq;
   END IF;
@@ -855,13 +904,6 @@ BEGIN
   RETURN v_new_seq;
 END;
 $$;
-
-
---
--- Name: FUNCTION increment_document_sequence(p_company_id uuid, p_document_type text, p_department_code text, p_year integer, p_month integer); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.increment_document_sequence(p_company_id uuid, p_document_type text, p_department_code text, p_year integer, p_month integer) IS 'Atomically increments the document sequence counter for the given key. Inserts the row with last_sequence=1 if it does not yet exist. SECURITY DEFINER — bypasses RLS; safe because company_id is validated. Returns the new sequence number.';
 
 
 --
@@ -3246,6 +3288,104 @@ CREATE TABLE public.backup_prf_cost_items_20260727 (
 
 
 --
+-- Name: bnf_departments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bnf_departments (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    company_id uuid NOT NULL,
+    division_id uuid NOT NULL,
+    code character varying(20) NOT NULL,
+    name character varying(100) NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    head_profile_id uuid
+);
+
+
+--
+-- Name: bnf_divisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bnf_divisions (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    company_id uuid NOT NULL,
+    code character varying(20) NOT NULL,
+    name character varying(100) NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    director_profile_id uuid
+);
+
+
+--
+-- Name: bnf_report_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bnf_report_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    report_id uuid NOT NULL,
+    from_status character varying(20),
+    to_status character varying(20) NOT NULL,
+    note text,
+    changed_by uuid NOT NULL,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: bnf_report_related_departments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bnf_report_related_departments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    report_id uuid NOT NULL,
+    department_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: bnf_reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bnf_reports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    report_no character varying(30) NOT NULL,
+    division_id uuid NOT NULL,
+    department_id uuid NOT NULL,
+    description text NOT NULL,
+    root_cause text,
+    solution text,
+    target_date date NOT NULL,
+    escalation_level character varying(20),
+    status character varying(20) DEFAULT 'Open'::character varying NOT NULL,
+    closed_at timestamp with time zone,
+    created_by uuid NOT NULL,
+    updated_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT bnf_reports_escalation_level_check CHECK (((escalation_level IS NULL) OR ((escalation_level)::text = ANY ((ARRAY['manager_direct'::character varying, 'direktur_divisi'::character varying, 'ceo'::character varying])::text[])))),
+    CONSTRAINT bnf_reports_status_check CHECK (((status)::text = ANY ((ARRAY['Open'::character varying, 'In Progress'::character varying, 'Escalated'::character varying, 'Closed'::character varying])::text[])))
+);
+
+
+--
+-- Name: COLUMN bnf_reports.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bnf_reports.status IS 'Title Case by design (Open/In Progress/Escalated/Closed) — mirrors App.jsx StatusBadge value convention, unlike lowercase status on activities/hrga_requests.';
+
+
+--
 -- Name: branches; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3877,7 +4017,8 @@ CREATE TABLE public.document_sequences (
     month smallint DEFAULT 0 NOT NULL,
     last_sequence integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    day smallint DEFAULT 0 NOT NULL
 );
 
 
@@ -3900,6 +4041,13 @@ COMMENT ON COLUMN public.document_sequences.month IS '0 = yearly reset (most com
 --
 
 COMMENT ON COLUMN public.document_sequences.last_sequence IS 'The last assigned sequence number. Increment atomically: UPDATE ... SET last_sequence = last_sequence + 1 ... RETURNING last_sequence. Never SELECT then UPDATE.';
+
+
+--
+-- Name: COLUMN document_sequences.day; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.document_sequences.day IS '0 = not day-scoped (yearly/monthly reset, all pre-existing callers). 1-31 = daily reset (BNF).';
 
 
 --
@@ -4368,6 +4516,34 @@ CREATE TABLE public.inquiries (
     estimated_value numeric,
     contact_id uuid,
     CONSTRAINT inquiries_status_check CHECK (((status)::text = ANY ((ARRAY['OPEN'::character varying, 'IN_REVIEW'::character varying, 'QUOTED'::character varying, 'NEGOTIATION'::character varying, 'WON'::character varying, 'LOST'::character varying, 'CANCELLED'::character varying])::text[])))
+);
+
+
+--
+-- Name: inquiry_comment_mentions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inquiry_comment_mentions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    comment_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: inquiry_comments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inquiry_comments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    inquiry_id uuid NOT NULL,
+    created_by uuid NOT NULL,
+    body text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone
 );
 
 
@@ -6129,6 +6305,78 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: bnf_departments bnf_departments_division_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_departments
+    ADD CONSTRAINT bnf_departments_division_code_unique UNIQUE (division_id, code);
+
+
+--
+-- Name: bnf_departments bnf_departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_departments
+    ADD CONSTRAINT bnf_departments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bnf_divisions bnf_divisions_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_divisions
+    ADD CONSTRAINT bnf_divisions_company_code_unique UNIQUE (company_id, code);
+
+
+--
+-- Name: bnf_divisions bnf_divisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_divisions
+    ADD CONSTRAINT bnf_divisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bnf_report_logs bnf_report_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_logs
+    ADD CONSTRAINT bnf_report_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_related_departments
+    ADD CONSTRAINT bnf_report_related_departments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_related_departments
+    ADD CONSTRAINT bnf_report_related_departments_unique UNIQUE (report_id, department_id);
+
+
+--
+-- Name: bnf_reports bnf_reports_company_report_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_reports
+    ADD CONSTRAINT bnf_reports_company_report_no_unique UNIQUE (company_id, report_no);
+
+
+--
+-- Name: bnf_reports bnf_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_reports
+    ADD CONSTRAINT bnf_reports_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: branches branches_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6309,7 +6557,7 @@ ALTER TABLE ONLY public.document_sequences
 --
 
 ALTER TABLE ONLY public.document_sequences
-    ADD CONSTRAINT document_sequences_unique UNIQUE (company_id, document_type, department_code, year, month);
+    ADD CONSTRAINT document_sequences_unique UNIQUE (company_id, document_type, department_code, year, month, day);
 
 
 --
@@ -6510,6 +6758,22 @@ ALTER TABLE ONLY public.inquiries
 
 ALTER TABLE ONLY public.inquiries
     ADD CONSTRAINT inquiries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inquiry_comment_mentions
+    ADD CONSTRAINT inquiry_comment_mentions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inquiry_comments inquiry_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inquiry_comments
+    ADD CONSTRAINT inquiry_comments_pkey PRIMARY KEY (id);
 
 
 --
@@ -7467,6 +7731,48 @@ CREATE UNIQUE INDEX idx_bank_accounts_default ON public.entity_bank_accounts USI
 
 
 --
+-- Name: idx_bnf_departments_division; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bnf_departments_division ON public.bnf_departments USING btree (division_id);
+
+
+--
+-- Name: idx_bnf_report_logs_report; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bnf_report_logs_report ON public.bnf_report_logs USING btree (report_id);
+
+
+--
+-- Name: idx_bnf_report_related_departments_report; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bnf_report_related_departments_report ON public.bnf_report_related_departments USING btree (report_id);
+
+
+--
+-- Name: idx_bnf_reports_company_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bnf_reports_company_status ON public.bnf_reports USING btree (company_id, status);
+
+
+--
+-- Name: idx_bnf_reports_created_by; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bnf_reports_created_by ON public.bnf_reports USING btree (created_by);
+
+
+--
+-- Name: idx_bnf_reports_division; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bnf_reports_division ON public.bnf_reports USING btree (division_id);
+
+
+--
 -- Name: idx_branches_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7835,6 +8141,34 @@ CREATE INDEX idx_inquiries_contact ON public.inquiries USING btree (contact_id);
 --
 
 CREATE INDEX idx_inquiries_prospect_id ON public.inquiries USING btree (prospect_id);
+
+
+--
+-- Name: idx_inquiry_comment_mentions_comment_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inquiry_comment_mentions_comment_id ON public.inquiry_comment_mentions USING btree (comment_id);
+
+
+--
+-- Name: idx_inquiry_comment_mentions_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inquiry_comment_mentions_user_id ON public.inquiry_comment_mentions USING btree (user_id);
+
+
+--
+-- Name: idx_inquiry_comments_company_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inquiry_comments_company_id ON public.inquiry_comments USING btree (company_id);
+
+
+--
+-- Name: idx_inquiry_comments_inquiry_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inquiry_comments_inquiry_id ON public.inquiry_comments USING btree (inquiry_id, created_at DESC);
 
 
 --
@@ -8566,6 +8900,13 @@ CREATE TRIGGER trg_gen_customer_code_ins BEFORE INSERT ON public.accounts FOR EA
 
 
 --
+-- Name: bnf_reports trg_guard_bnf_reports_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_guard_bnf_reports_update BEFORE UPDATE ON public.bnf_reports FOR EACH ROW EXECUTE FUNCTION public.guard_bnf_reports_field_update();
+
+
+--
 -- Name: quotations trg_inquiry_quoted; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9201,6 +9542,134 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.audit_logs
     ADD CONSTRAINT audit_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: bnf_departments bnf_departments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_departments
+    ADD CONSTRAINT bnf_departments_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_departments bnf_departments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_departments
+    ADD CONSTRAINT bnf_departments_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_departments bnf_departments_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_departments
+    ADD CONSTRAINT bnf_departments_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.bnf_divisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_departments bnf_departments_head_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_departments
+    ADD CONSTRAINT bnf_departments_head_profile_id_fkey FOREIGN KEY (head_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: bnf_divisions bnf_divisions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_divisions
+    ADD CONSTRAINT bnf_divisions_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_divisions bnf_divisions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_divisions
+    ADD CONSTRAINT bnf_divisions_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_divisions bnf_divisions_director_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_divisions
+    ADD CONSTRAINT bnf_divisions_director_profile_id_fkey FOREIGN KEY (director_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: bnf_report_logs bnf_report_logs_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_logs
+    ADD CONSTRAINT bnf_report_logs_changed_by_fkey FOREIGN KEY (changed_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_report_logs bnf_report_logs_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_logs
+    ADD CONSTRAINT bnf_report_logs_report_id_fkey FOREIGN KEY (report_id) REFERENCES public.bnf_reports(id) ON DELETE CASCADE;
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_related_departments
+    ADD CONSTRAINT bnf_report_related_departments_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.bnf_departments(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_related_departments
+    ADD CONSTRAINT bnf_report_related_departments_report_id_fkey FOREIGN KEY (report_id) REFERENCES public.bnf_reports(id) ON DELETE CASCADE;
+
+
+--
+-- Name: bnf_reports bnf_reports_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_reports
+    ADD CONSTRAINT bnf_reports_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_reports bnf_reports_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_reports
+    ADD CONSTRAINT bnf_reports_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_reports bnf_reports_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_reports
+    ADD CONSTRAINT bnf_reports_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.bnf_departments(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_reports bnf_reports_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_reports
+    ADD CONSTRAINT bnf_reports_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.bnf_divisions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_reports bnf_reports_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_reports
+    ADD CONSTRAINT bnf_reports_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id);
 
 
 --
@@ -9953,6 +10422,46 @@ ALTER TABLE ONLY public.inquiries
 
 ALTER TABLE ONLY public.inquiries
     ADD CONSTRAINT inquiries_prospect_id_fkey FOREIGN KEY (prospect_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_comment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inquiry_comment_mentions
+    ADD CONSTRAINT inquiry_comment_mentions_comment_id_fkey FOREIGN KEY (comment_id) REFERENCES public.inquiry_comments(id) ON DELETE CASCADE;
+
+
+--
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inquiry_comment_mentions
+    ADD CONSTRAINT inquiry_comment_mentions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id);
+
+
+--
+-- Name: inquiry_comments inquiry_comments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inquiry_comments
+    ADD CONSTRAINT inquiry_comments_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: inquiry_comments inquiry_comments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inquiry_comments
+    ADD CONSTRAINT inquiry_comments_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: inquiry_comments inquiry_comments_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inquiry_comments
+    ADD CONSTRAINT inquiry_comments_inquiry_id_fkey FOREIGN KEY (inquiry_id) REFERENCES public.inquiries(id);
 
 
 --
@@ -11558,6 +12067,144 @@ ALTER TABLE public.backup_prf_20260727 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backup_prf_cost_items_20260727 ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: bnf_departments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bnf_departments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_departments bnf_departments_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_departments_insert ON public.bnf_departments FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
+
+
+--
+-- Name: bnf_departments bnf_departments_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_departments_read ON public.bnf_departments FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
+
+
+--
+-- Name: bnf_departments bnf_departments_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_departments_update ON public.bnf_departments FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
+
+
+--
+-- Name: bnf_divisions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bnf_divisions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_divisions bnf_divisions_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_divisions_insert ON public.bnf_divisions FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
+
+
+--
+-- Name: bnf_divisions bnf_divisions_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_divisions_read ON public.bnf_divisions FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
+
+
+--
+-- Name: bnf_divisions bnf_divisions_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_divisions_update ON public.bnf_divisions FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
+
+
+--
+-- Name: bnf_report_logs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bnf_report_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_report_logs bnf_report_logs_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_report_logs_insert ON public.bnf_report_logs FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.bnf_reports r
+  WHERE ((r.id = bnf_report_logs.report_id) AND (r.company_id = public.get_user_company_id()))))));
+
+
+--
+-- Name: bnf_report_logs bnf_report_logs_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_report_logs_read ON public.bnf_report_logs FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.bnf_reports r
+  WHERE ((r.id = bnf_report_logs.report_id) AND (r.company_id = public.get_user_company_id()))))));
+
+
+--
+-- Name: bnf_report_related_departments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bnf_report_related_departments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_report_related_departments_delete ON public.bnf_report_related_departments FOR DELETE TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.bnf_reports r
+  WHERE ((r.id = bnf_report_related_departments.report_id) AND (r.company_id = public.get_user_company_id()) AND ((r.created_by = auth.uid()) OR public.is_admin_or_above()))))));
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_report_related_departments_insert ON public.bnf_report_related_departments FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.bnf_reports r
+  WHERE ((r.id = bnf_report_related_departments.report_id) AND (r.company_id = public.get_user_company_id()) AND ((r.created_by = auth.uid()) OR public.is_admin_or_above()))))));
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_report_related_departments_read ON public.bnf_report_related_departments FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.bnf_reports r
+  WHERE ((r.id = bnf_report_related_departments.report_id) AND (r.company_id = public.get_user_company_id()))))));
+
+
+--
+-- Name: bnf_reports; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bnf_reports ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_reports bnf_reports_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_reports_insert ON public.bnf_reports FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (created_by = auth.uid())));
+
+
+--
+-- Name: bnf_reports bnf_reports_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_reports_select ON public.bnf_reports FOR SELECT TO authenticated USING ((((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR public.is_super_admin()));
+
+
+--
+-- Name: bnf_reports bnf_reports_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_reports_update ON public.bnf_reports FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) OR public.is_super_admin())) WITH CHECK (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
+
+
+--
 -- Name: branches; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -12425,6 +13072,62 @@ CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((public.is_su
 --
 
 CREATE POLICY inquiries_update ON public.inquiries FOR UPDATE TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
+
+
+--
+-- Name: inquiry_comment_mentions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inquiry_comment_mentions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY inquiry_comment_mentions_insert ON public.inquiry_comment_mentions FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM public.inquiry_comments c
+  WHERE ((c.id = inquiry_comment_mentions.comment_id) AND (c.created_by = auth.uid())))));
+
+
+--
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY inquiry_comment_mentions_read ON public.inquiry_comment_mentions FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM (public.inquiry_comments c
+     JOIN public.inquiries i ON ((i.id = c.inquiry_id)))
+  WHERE (c.id = inquiry_comment_mentions.comment_id))));
+
+
+--
+-- Name: inquiry_comments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inquiry_comments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: inquiry_comments inquiry_comments_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY inquiry_comments_insert ON public.inquiry_comments FOR INSERT WITH CHECK (((created_by = auth.uid()) AND (EXISTS ( SELECT 1
+   FROM public.inquiries i
+  WHERE (i.id = inquiry_comments.inquiry_id)))));
+
+
+--
+-- Name: inquiry_comments inquiry_comments_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY inquiry_comments_read ON public.inquiry_comments FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.inquiries i
+  WHERE (i.id = inquiry_comments.inquiry_id))));
+
+
+--
+-- Name: inquiry_comments inquiry_comments_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY inquiry_comments_update ON public.inquiry_comments FOR UPDATE USING ((created_by = auth.uid())) WITH CHECK ((created_by = auth.uid()));
 
 
 --
@@ -13958,5 +14661,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict pp0rIJiMzJSpSPScirhDFJTms7Tin9c2UeqD5qbDtWvX3ymUce8244a0kSxNrmB
+\unrestrict huAJHX4DT0EyRdPtzZUlMQzEH4BCHumsXabZLUT6yqwSeAJVpTmeap3vYTNU7NS
 
