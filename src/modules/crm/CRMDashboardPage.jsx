@@ -1825,11 +1825,20 @@ function CRMDashboardPage() {
   const [calVisits, setCalVisits] = useState([]);
   const [calLoading, setCalLoading] = useState(true);
 
-  function showToast(msg, icon) {
+  // useCallback with an empty dependency array — same fix as App.jsx's
+  // showToast (2026-08-05, BNF Fase G 403 incident): this closes over only
+  // setToast (useState setter, stable) and toastTimer (useRef object, stable
+  // — mutating .current doesn't require it in deps). Without this, every
+  // CRMDashboardPage render handed ActivityReportTab a new showToast prop,
+  // which sits in that component's own fetch-effect dependency array (see
+  // ActivityReportTab below) — a failed fetch calling showToast would set
+  // state here, re-render, hand down a new identity, and refire the effect,
+  // same render/refetch loop as the BNF incident.
+  const showToast = useCallback((msg, icon) => {
     setToast({ msg, icon: icon || "info", show: true });
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 2200);
-  }
+  }, []);
 
   // ── fetch dashboard data from Supabase ───────────────────────────────────
   const fetchDash = useCallback(async () => {
