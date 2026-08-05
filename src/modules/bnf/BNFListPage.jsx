@@ -120,7 +120,7 @@ async function notifyDepartmentHead({ departmentId, reportNo, description }) {
   if (deptErr) throw deptErr;
   const email = department?.profiles?.email;
   if (!email) {
-    console.warn('[bnf] no head_profile_id set for department', departmentId, '— email skipped, report still saved');
+    console.warn('[bnf] no head_profile_id set for department', departmentId, 'report', reportNo, '— email skipped, report still saved');
     return { sent: 0, total: 0 };
   }
   const subject = `Laporan BNF Baru — ${reportNo}`;
@@ -129,7 +129,7 @@ async function notifyDepartmentHead({ departmentId, reportNo, description }) {
     await supabase.functions.invoke('send-email', { body: { to: email, subject, html } });
     return { sent: 1, total: 1 };
   } catch (e) {
-    console.error('[bnf] send-email failed for department head', departmentId, e?.message || e);
+    console.error('[bnf] send-email failed for department head, report', reportNo, 'department', departmentId, e?.message || e);
     return { sent: 0, total: 1 };
   }
 }
@@ -148,7 +148,7 @@ async function notifyReporterOnStatusChange({ createdBy, reportNo, newStatus }) 
   if (repErr) throw repErr;
   const email = reporter?.email;
   if (!email) {
-    console.warn('[bnf] reporter', createdBy, 'has no email — status-change notification skipped');
+    console.warn('[bnf] reporter', createdBy, 'has no email, report', reportNo, '— status-change notification skipped');
     return;
   }
   const subject = `Status Laporan BNF Berubah — ${reportNo}`;
@@ -156,8 +156,62 @@ async function notifyReporterOnStatusChange({ createdBy, reportNo, newStatus }) 
   try {
     await supabase.functions.invoke('send-email', { body: { to: email, subject, html } });
   } catch (e) {
-    console.error('[bnf] send-email failed for reporter', createdBy, e?.message || e);
+    console.error('[bnf] send-email failed for reporter, report', reportNo, 'reporter', createdBy, e?.message || e);
   }
+}
+
+// Best-effort ADDITIONAL notification when a report's escalation_level is
+// direktur_divisi/ceo — sent alongside (never instead of) notifyDepartmentHead
+// at the same 2 call sites. No-op for '' / 'manager_direct' (Tier 3 default
+// behavior stays exactly as before Fase D). Fase D (2026-08-04).
+//
+// 'direktur_divisi': single resolve via bnf_divisions.director_profile_id
+// (same shape as notifyDepartmentHead's department lookup).
+// 'ceo': role resolution (roles -> user_roles, company_id + code='ceo')
+// mirrors MOMFormPage.jsx's notifyCEO() — but that function inserts in-app
+// `notifications` rows, not email; this file is all-email, so only the
+// role-lookup query is reused, delivery is adapted to send-email. A company
+// can have multiple CEO-role holders (confirmed by MOM's own Set-dedup) —
+// this sends to all of them, not just one.
+async function notifyEscalationRecipients({ escalationLevel, divisionId, companyId, reportNo, description }) {
+  if (escalationLevel !== 'direktur_divisi' && escalationLevel !== 'ceo') return;
+
+  let emails = [];
+  if (escalationLevel === 'direktur_divisi') {
+    const { data: division, error: divErr } = await supabase
+      .from('bnf_divisions')
+      .select('director_profile_id, profiles(email, full_name)')
+      .eq('id', divisionId)
+      .maybeSingle();
+    if (divErr) throw divErr;
+    if (division?.profiles?.email) emails = [division.profiles.email];
+    else console.warn('[bnf] no director_profile_id set for division', divisionId, 'report', reportNo, '— escalation email skipped');
+  } else {
+    const { data: roleRows, error: roleErr } = await supabase.from('roles').select('id').eq('company_id', companyId).eq('code', 'ceo');
+    if (roleErr) throw roleErr;
+    const roleIds = (roleRows || []).map((r) => r.id);
+    if (roleIds.length) {
+      const { data: urs, error: urErr } = await supabase.from('user_roles').select('user_id').eq('company_id', companyId).in('role_id', roleIds).eq('is_active', true).is('revoked_at', null);
+      if (urErr) throw urErr;
+      const userIds = [...new Set((urs || []).map((u) => u.user_id).filter(Boolean))];
+      if (userIds.length) {
+        const { data: profs, error: profErr } = await supabase.from('profiles').select('email').in('id', userIds);
+        if (profErr) throw profErr;
+        emails = (profs || []).map((p) => p.email).filter(Boolean);
+      }
+    }
+    if (!emails.length) console.warn('[bnf] no CEO found for company', companyId, 'report', reportNo, '— escalation email skipped');
+  }
+
+  if (!emails.length) return;
+
+  const levelLabel = escalationLabel(escalationLevel);
+  const subject = `[Eskalasi ${levelLabel}] Laporan BNF — ${reportNo}`;
+  const html = `<p>Halo,</p><p>Laporan BNF <strong>${escapeHtml(reportNo)}</strong> telah dieskalasi ke level <strong>${escapeHtml(levelLabel)}</strong>:</p><p>${escapeHtml((description || '').slice(0, 300))}</p><p><a href="https://nexus.msigroup.co.id">Buka Nexus</a> untuk melihat detail laporan.</p><p style="color:#7A828E;font-size:12px;margin-top:24px;">Email otomatis dari Nexus by MSI.</p>`;
+  await Promise.all(emails.map((email) =>
+    supabase.functions.invoke('send-email', { body: { to: email, subject, html } })
+      .catch((e) => console.error('[bnf] escalation send-email failed, report', reportNo, 'recipient', email, e?.message || e))
+  ));
 }
 
 async function generateBnfNo(companyId) {
@@ -894,6 +948,11 @@ export default function BNFListPage({ showToast }) {
       // or fails the submit itself, console-only on failure.
       notifyDepartmentHead({ departmentId: draft.department_id, reportNo, description: draft.description })
         .catch((e) => console.error('[bnf] create-time notify failed:', e?.message || e));
+      // Escalation add-on (Fase D) — no-op unless escalation_level is
+      // direktur_divisi/ceo. companyId = profile.company_id here is correct:
+      // a report is always created under the creator's own company.
+      notifyEscalationRecipients({ escalationLevel: draft.escalation_level, divisionId: draft.division_id, companyId: profile.company_id, reportNo, description: draft.description })
+        .catch((e) => console.error('[bnf] create-time escalation notify failed:', e?.message || e));
 
       showToast?.(`Laporan ${reportNo} berhasil dibuat`);
       resetDraft();
@@ -1052,6 +1111,14 @@ export default function BNFListPage({ showToast }) {
       } else {
         showToast?.('Gagal mengirim reminder', 'error');
       }
+      // Escalation add-on (Fase D), silent like the reporter-notify in Fase C
+      // — not folded into the toast above. companyId MUST be detail.company_id
+      // (the report's own company), not profile.company_id — a super_admin
+      // can be viewing a report that belongs to a different company than
+      // their own, and using the wrong one would silently notify the wrong
+      // company's CEO (or find none).
+      notifyEscalationRecipients({ escalationLevel: detail.escalation_level, divisionId: detail.division_id, companyId: detail.company_id, reportNo: detail.report_no, description: detail.description })
+        .catch((e) => console.error('[bnf] reminder escalation notify failed:', e?.message || e));
     } catch (e) {
       showToast?.('Gagal mengirim reminder: ' + (e?.message || e), 'error');
     } finally {
