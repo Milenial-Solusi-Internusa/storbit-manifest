@@ -14,3 +14,8 @@ entrypoint = "./functions/manage-schema/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/aging-pipeline/index.ts"
+
+[functions.bnf-overdue-reminder]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/bnf-overdue-reminder/index.ts"

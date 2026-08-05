@@ -1,0 +1,38 @@
+-- Fix: 20260803000001 added a `p_day` parameter to increment_document_sequence
+-- via CREATE OR REPLACE FUNCTION. Because the parameter list changed (5 args
+-- -> 6 args), Postgres did NOT replace the function — function identity is
+-- name + parameter type list, so a changed signature creates a new, separate
+-- overload instead. The OLD 5-parameter function was left behind, unchanged,
+-- with a body that still does:
+--   INSERT ... ON CONFLICT (company_id, document_type, department_code, year, month)
+-- — a 5-column conflict target that no longer matches any constraint, since
+-- 20260803000001 also DROPped the old 5-column unique constraint in favor of
+-- a 6-column one (+day). Any call that lands on the old overload's
+-- `IF NOT FOUND` branch (i.e. the first document of a brand-new
+-- company+type+department+year+month bucket) would error with "there is no
+-- unique or exclusion constraint matching the ON CONFLICT specification".
+--
+-- Affects every pre-existing caller (all call with only 5 named args, no
+-- p_day): PRFFormPage.jsx, QuotationFormPage.jsx, InquiryFormPage.jsx,
+-- MOMFormPage.jsx, useHrgaRequests.js, SalesOrderDocFormPage.jsx.
+--
+-- Fix: explicitly drop the stale 5-parameter overload by its exact type
+-- signature, leaving only the correct 6-parameter version (which already
+-- matches the current 6-column constraint). This removes the ambiguity and
+-- the broken ON CONFLICT reference in one step; nothing else changes.
+--
+-- Status: APPLIED — run manually against production 2026-08-03, verified
+-- afterward that only the 6-parameter function remains (confirmed by the
+-- user directly, not via this session's own DB access). PRF/Quotation/
+-- Inquiry/MOM/HRGA Request/Sales Order Doc all depend on this being fixed.
+--
+-- Note on redundancy: 20260803000001 has since been retrofitted with this
+-- exact same DROP FUNCTION statement, inline, before its CREATE OR REPLACE —
+-- so a FRESH replay of all migrations from scratch never needs this file at
+-- all (the retrofitted 000001 is self-correcting on its own). This file stays
+-- in history because it's what was ACTUALLY run, standalone, against this
+-- production database at the time — 000001's original (buggy) run had
+-- already happened before the retrofit existed. Re-running this file on an
+-- already-fixed database is a harmless no-op (IF EXISTS).
+
+DROP FUNCTION IF EXISTS public.increment_document_sequence(uuid, text, text, integer, integer);
