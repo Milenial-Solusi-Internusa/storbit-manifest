@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ij2l29fozB01L1OxEGkM3b8E86npzdNHGi8hqSiUVM1HD26d5BNgIXklJaq7Rbn
+\restrict huAJHX4DT0EyRdPtzZUlMQzEH4BCHumsXabZLUT6yqwSeAJVpTmeap3vYTNU7NS
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -685,7 +685,6 @@ BEGIN
 
   IF NEW.division_id            IS DISTINCT FROM OLD.division_id
      OR NEW.department_id         IS DISTINCT FROM OLD.department_id
-     OR NEW.related_department_id IS DISTINCT FROM OLD.related_department_id
      OR NEW.description           IS DISTINCT FROM OLD.description
      OR NEW.root_cause            IS DISTINCT FROM OLD.root_cause
      OR NEW.solution              IS DISTINCT FROM OLD.solution
@@ -705,7 +704,7 @@ $$;
 -- Name: FUNCTION guard_bnf_reports_field_update(); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.guard_bnf_reports_field_update() IS 'BEFORE UPDATE guard on bnf_reports, 4 tiers: (0) auth.uid() IS NULL (SQL Editor/migrations/service-role) bypasses everything; (1) id/company_id/report_no/created_by/created_at always locked, no exceptions; (2) created_by = auth.uid() or is_admin_or_above() may edit remaining report-content columns; (3) everyone else in the company (existing bnf_reports_update RLS row-scope, unchanged) may only edit status/updated_by/closed_at.';
+COMMENT ON FUNCTION public.guard_bnf_reports_field_update() IS 'BEFORE UPDATE guard on bnf_reports, 4 tiers: (0) auth.uid() IS NULL (SQL Editor/migrations/service-role) bypasses everything; (1) id/company_id/report_no/created_by/created_at always locked, no exceptions; (2) created_by = auth.uid() or is_admin_or_above() may edit remaining report-content columns; (3) everyone else in the company (existing bnf_reports_update RLS row-scope, unchanged) may only edit status/updated_by/closed_at. Fase G (2026-08-05): related_department_id removed from Tier 2 list — moved to bnf_report_related_departments junction table with its own RLS.';
 
 
 --
@@ -3341,6 +3340,18 @@ CREATE TABLE public.bnf_report_logs (
 
 
 --
+-- Name: bnf_report_related_departments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bnf_report_related_departments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    report_id uuid NOT NULL,
+    department_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: bnf_reports; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3350,7 +3361,6 @@ CREATE TABLE public.bnf_reports (
     report_no character varying(30) NOT NULL,
     division_id uuid NOT NULL,
     department_id uuid NOT NULL,
-    related_department_id uuid,
     description text NOT NULL,
     root_cause text,
     solution text,
@@ -6335,6 +6345,22 @@ ALTER TABLE ONLY public.bnf_report_logs
 
 
 --
+-- Name: bnf_report_related_departments bnf_report_related_departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_related_departments
+    ADD CONSTRAINT bnf_report_related_departments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_related_departments
+    ADD CONSTRAINT bnf_report_related_departments_unique UNIQUE (report_id, department_id);
+
+
+--
 -- Name: bnf_reports bnf_reports_company_report_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7716,6 +7742,13 @@ CREATE INDEX idx_bnf_departments_division ON public.bnf_departments USING btree 
 --
 
 CREATE INDEX idx_bnf_report_logs_report ON public.bnf_report_logs USING btree (report_id);
+
+
+--
+-- Name: idx_bnf_report_related_departments_report; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bnf_report_related_departments_report ON public.bnf_report_related_departments USING btree (report_id);
 
 
 --
@@ -9584,6 +9617,22 @@ ALTER TABLE ONLY public.bnf_report_logs
 
 
 --
+-- Name: bnf_report_related_departments bnf_report_related_departments_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_related_departments
+    ADD CONSTRAINT bnf_report_related_departments_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.bnf_departments(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bnf_report_related_departments
+    ADD CONSTRAINT bnf_report_related_departments_report_id_fkey FOREIGN KEY (report_id) REFERENCES public.bnf_reports(id) ON DELETE CASCADE;
+
+
+--
 -- Name: bnf_reports bnf_reports_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9613,14 +9662,6 @@ ALTER TABLE ONLY public.bnf_reports
 
 ALTER TABLE ONLY public.bnf_reports
     ADD CONSTRAINT bnf_reports_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.bnf_divisions(id) ON DELETE RESTRICT;
-
-
---
--- Name: bnf_reports bnf_reports_related_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bnf_reports
-    ADD CONSTRAINT bnf_reports_related_department_id_fkey FOREIGN KEY (related_department_id) REFERENCES public.bnf_departments(id) ON DELETE SET NULL;
 
 
 --
@@ -12101,6 +12142,39 @@ CREATE POLICY bnf_report_logs_insert ON public.bnf_report_logs FOR INSERT TO aut
 CREATE POLICY bnf_report_logs_read ON public.bnf_report_logs FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
    FROM public.bnf_reports r
   WHERE ((r.id = bnf_report_logs.report_id) AND (r.company_id = public.get_user_company_id()))))));
+
+
+--
+-- Name: bnf_report_related_departments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bnf_report_related_departments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_report_related_departments_delete ON public.bnf_report_related_departments FOR DELETE TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.bnf_reports r
+  WHERE ((r.id = bnf_report_related_departments.report_id) AND (r.company_id = public.get_user_company_id()) AND ((r.created_by = auth.uid()) OR public.is_admin_or_above()))))));
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_report_related_departments_insert ON public.bnf_report_related_departments FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.bnf_reports r
+  WHERE ((r.id = bnf_report_related_departments.report_id) AND (r.company_id = public.get_user_company_id()) AND ((r.created_by = auth.uid()) OR public.is_admin_or_above()))))));
+
+
+--
+-- Name: bnf_report_related_departments bnf_report_related_departments_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY bnf_report_related_departments_read ON public.bnf_report_related_departments FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.bnf_reports r
+  WHERE ((r.id = bnf_report_related_departments.report_id) AND (r.company_id = public.get_user_company_id()))))));
 
 
 --
@@ -14587,5 +14661,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ij2l29fozB01L1OxEGkM3b8E86npzdNHGi8hqSiUVM1HD26d5BNgIXklJaq7Rbn
+\unrestrict huAJHX4DT0EyRdPtzZUlMQzEH4BCHumsXabZLUT6yqwSeAJVpTmeap3vYTNU7NS
 

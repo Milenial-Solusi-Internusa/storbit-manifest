@@ -266,6 +266,50 @@ function Select({ children, ...props }) {
   );
 }
 
+// Multi-select chip list + picker for Divisi/Dept Irisan (Fase G) —
+// generalizes BNFOrgRolesPage.jsx's AssigneeCell (single chip + X-remove,
+// swap to picker when empty) into an array: one chip per selected id, with
+// the picker always available below to add more. Local to this file — this
+// exact composition (CodeNamePicker + chip list) is only used in 2 places,
+// both in this file (BuatLaporanTab, DetailPanel edit-mode), unlike
+// CodeNamePicker itself which is a cross-module picker.
+function RelatedDepartmentsField({ selectedIds, allDepts, onAdd, onRemove }) {
+  const [pickText, setPickText] = useState('');
+  const selected = selectedIds.map((id) => allDepts.find((d) => d.id === id)).filter(Boolean);
+  const pickableDepts = allDepts.filter((d) => !selectedIds.includes(d.id));
+
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {selected.map((d) => (
+            <span
+              key={d.id}
+              className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] font-medium text-slate-700"
+              style={{ borderColor: LINE, backgroundColor: '#FAFBFC' }}
+            >
+              {d.name}
+              <button type="button" onClick={() => onRemove(d.id)} className="text-slate-400 hover:text-red-600">
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <CodeNamePicker
+        value={pickText}
+        items={pickableDepts}
+        inputClassName={inputCls}
+        inputStyle={{ borderColor: LINE }}
+        placeholder="Cari departemen lain yang terdampak (opsional)…"
+        emptyText="Tidak ada departemen yang cocok"
+        onChangeText={setPickText}
+        onPick={(item) => { onAdd(item.id); setPickText(''); }}
+      />
+    </div>
+  );
+}
+
 // ============================================================================
 // Tab 1 — Buat Laporan (form, always on, no modal)
 // ============================================================================
@@ -288,19 +332,19 @@ function SectionHeading({ id }) {
 }
 
 const EMPTY_DRAFT = {
-  division_id: '', department_id: '', related_department_id: '',
+  division_id: '', department_id: '', related_department_ids: [],
   description: '', root_cause: '', solution: '',
   target_date: todayStr(), escalation_level: '',
 };
 
 function BuatLaporanTab({ profile, draft, setDraft, divisions, departments, saving, error, onReset, onSave }) {
-  // Display text for the searchable Divisi/Departemen/Irisan pickers.
-  // draft.division_id/department_id/related_department_id stay the stored
-  // source of truth; these hold only what's shown in each input — mirrors
-  // InquiryFormPage.jsx's prospectText/customerText pattern for AccountPicker.
+  // Display text for the searchable Divisi/Departemen pickers. draft.division_id/
+  // department_id stay the stored source of truth; these hold only what's
+  // shown in each input — mirrors InquiryFormPage.jsx's prospectText/
+  // customerText pattern for AccountPicker. Irisan (Fase G, multi-select) is
+  // handled by RelatedDepartmentsField below, which owns its own picker text.
   const [divisionText, setDivisionText] = useState('');
   const [departmentText, setDepartmentText] = useState('');
-  const [relatedDeptText, setRelatedDeptText] = useState('');
 
   const deptOptions = departments.filter((d) => d.division_id === draft.division_id);
   // All departments, each annotated with its parent division's name as a
@@ -319,7 +363,6 @@ function BuatLaporanTab({ profile, draft, setDraft, divisions, departments, savi
     onReset();
     setDivisionText('');
     setDepartmentText('');
-    setRelatedDeptText('');
   };
 
   return (
@@ -377,15 +420,11 @@ function BuatLaporanTab({ profile, draft, setDraft, divisions, departments, savi
               </div>
               <div className="col-span-2">
                 <FieldLabel>Divisi/Dept Irisan (opsional)</FieldLabel>
-                <CodeNamePicker
-                  value={relatedDeptText}
-                  items={allDeptsWithDivision}
-                  inputClassName={pickInputCls}
-                  inputStyle={{ borderColor: LINE }}
-                  placeholder="Cari departemen lain yang terdampak (opsional)…"
-                  emptyText="Tidak ada departemen yang cocok"
-                  onChangeText={(v) => { setRelatedDeptText(v); upd('related_department_id', ''); }}
-                  onPick={(item) => { setRelatedDeptText(item.name); upd('related_department_id', item.id); }}
+                <RelatedDepartmentsField
+                  selectedIds={draft.related_department_ids}
+                  allDepts={allDeptsWithDivision}
+                  onAdd={(id) => upd('related_department_ids', [...draft.related_department_ids, id])}
+                  onRemove={(id) => upd('related_department_ids', draft.related_department_ids.filter((x) => x !== id))}
                 />
               </div>
             </div>
@@ -577,9 +616,10 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
   const [editMode, setEditMode] = useState(false);
   const [editDraft, setEditDraft] = useState(null);
   // Same "picker shows text, draft holds the id" split as BuatLaporanTab.
+  // Irisan (Fase G, multi-select) has no single text — RelatedDepartmentsField
+  // owns its own picker-input text internally.
   const [divisionText, setDivisionText] = useState('');
   const [departmentText, setDepartmentText] = useState('');
-  const [relatedDeptText, setRelatedDeptText] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   useEffect(() => { setNewStatus(report?.status || ''); setNote(''); setEditMode(false); }, [report?.id, report?.status]);
@@ -591,7 +631,7 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
     setEditDraft({
       division_id: report.division_id,
       department_id: report.department_id,
-      related_department_id: report.related_department_id || '',
+      related_department_ids: (report.related_departments || []).map((rd) => rd.department?.id).filter(Boolean),
       description: report.description || '',
       root_cause: report.root_cause || '',
       solution: report.solution || '',
@@ -600,7 +640,6 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
     });
     setDivisionText(report.division?.name || '');
     setDepartmentText(report.department?.name || '');
-    setRelatedDeptText(report.related_department?.name || '');
     setEditMode(true);
   };
   const cancelEdit = () => { setEditMode(false); setEditDraft(null); };
@@ -679,15 +718,11 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
                 </div>
                 <div className="col-span-2">
                   <FieldLabel>Divisi/Dept Irisan (opsional)</FieldLabel>
-                  <CodeNamePicker
-                    value={relatedDeptText}
-                    items={allDeptsWithDivision}
-                    inputClassName={inputCls}
-                    inputStyle={{ borderColor: LINE }}
-                    placeholder="Cari departemen lain yang terdampak (opsional)…"
-                    emptyText="Tidak ada departemen yang cocok"
-                    onChangeText={(v) => { setRelatedDeptText(v); setEditDraft((d) => ({ ...d, related_department_id: '' })); }}
-                    onPick={(item) => { setRelatedDeptText(item.name); setEditDraft((d) => ({ ...d, related_department_id: item.id })); }}
+                  <RelatedDepartmentsField
+                    selectedIds={editDraft.related_department_ids}
+                    allDepts={allDeptsWithDivision}
+                    onAdd={(id) => setEditDraft((d) => ({ ...d, related_department_ids: [...d.related_department_ids, id] }))}
+                    onRemove={(id) => setEditDraft((d) => ({ ...d, related_department_ids: d.related_department_ids.filter((x) => x !== id) }))}
                   />
                 </div>
               </div>
@@ -741,7 +776,7 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-md border p-4" style={{ borderColor: LINE }}>
                   <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Divisi/Dept Irisan</div>
-                  <div className="mt-1.5 text-[13px] text-slate-700">{report.related_department?.name || '—'}</div>
+                  <div className="mt-1.5 text-[13px] text-slate-700">{report.related_departments?.length ? report.related_departments.map((rd) => rd.department?.name).filter(Boolean).join(', ') : '—'}</div>
                 </div>
                 <div className="rounded-md border p-4" style={{ borderColor: LINE }}>
                   <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Eskalasi Lanjutan</div>
@@ -866,8 +901,12 @@ export default function BNFListPage({ showToast }) {
           *,
           division:bnf_divisions!bnf_reports_division_id_fkey(name),
           department:bnf_departments!bnf_reports_department_id_fkey(name),
-          related_department:bnf_departments!bnf_reports_related_department_id_fkey(name)
+          related_departments:bnf_report_related_departments!bnf_report_related_departments_report_id_fkey(department:bnf_departments!bnf_report_related_departments_department_id_fkey(id, name))
         `)
+        // Ascending — insertion order, so chips/list stay in the order the
+        // user picked them in (not affected by the outer .order() below,
+        // which only sorts bnf_reports itself, not embedded relations).
+        .order('created_at', { referencedTable: 'related_departments', ascending: true })
         .is('deleted_at', null);
       if (!isAllEntities) query = query.eq('company_id', profile.company_id);
 
@@ -925,7 +964,6 @@ export default function BNFListPage({ showToast }) {
         company_id: profile.company_id,
         division_id: draft.division_id,
         department_id: draft.department_id,
-        related_department_id: draft.related_department_id || null,
         description: draft.description.trim(),
         root_cause: draft.root_cause?.trim() || null,
         solution: draft.solution?.trim() || null,
@@ -936,6 +974,18 @@ export default function BNFListPage({ showToast }) {
       };
       const { data: created, error } = await supabase.from('bnf_reports').insert(payload).select('id').single();
       if (error) throw error;
+
+      // Irisan (Fase G) — separate insert into the junction table, same
+      // "console.error and continue" tolerance as the bnf_report_logs insert
+      // in handleStatusChange below: the report row itself is already saved
+      // and complete (Irisan is optional), so a failure here shouldn't be
+      // treated as fatal to the whole submit.
+      if (draft.related_department_ids.length) {
+        const { error: relErr } = await supabase.from('bnf_report_related_departments').insert(
+          draft.related_department_ids.map((department_id) => ({ report_id: created.id, department_id }))
+        );
+        if (relErr) console.error('[bnf] related-departments insert failed:', relErr.message);
+      }
 
       logAudit(supabase, {
         action: ACTION_TYPES.CREATE_BNF_REPORT,
@@ -1040,7 +1090,6 @@ export default function BNFListPage({ showToast }) {
       const payload = {
         division_id: editDraft.division_id,
         department_id: editDraft.department_id,
-        related_department_id: editDraft.related_department_id || null,
         description: editDraft.description.trim(),
         root_cause: editDraft.root_cause?.trim() || null,
         solution: editDraft.solution?.trim() || null,
@@ -1049,6 +1098,24 @@ export default function BNFListPage({ showToast }) {
       };
       const { error } = await supabase.from('bnf_reports').update(payload).eq('id', detail.id);
       if (error) throw error;
+
+      // Sync Irisan (Fase G) — delete all existing junction rows for this
+      // report, then reinsert exactly the current selection. Always converges
+      // to editDraft's current state regardless of what was there before;
+      // simpler than diffing old-vs-new for a field this small in scale.
+      // Not wrapped in one atomic call (2 separate requests) — accepted
+      // trade-off (see plan): if insert fails right after delete succeeds,
+      // the report loses its Irisan tags until the next save, but the
+      // failure is logged, not silent, and no other field is affected.
+      const { error: delRelErr } = await supabase.from('bnf_report_related_departments').delete().eq('report_id', detail.id);
+      if (delRelErr) {
+        console.error('[bnf] related-departments delete failed:', delRelErr.message);
+      } else if (editDraft.related_department_ids.length) {
+        const { error: relErr } = await supabase.from('bnf_report_related_departments').insert(
+          editDraft.related_department_ids.map((department_id) => ({ report_id: detail.id, department_id }))
+        );
+        if (relErr) console.error('[bnf] related-departments insert failed:', relErr.message);
+      }
 
       logAudit(supabase, {
         action: ACTION_TYPES.UPDATE_BNF_REPORT,
