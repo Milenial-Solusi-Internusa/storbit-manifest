@@ -166,10 +166,12 @@ const S = {
 
 const valColorFor = stage => stage === 'won' ? '#1F8B4D' : stage === 'lost' ? '#9AA0AC' : '#1B4D8A';
 
-// Aging limits (hari) per stage — selaras Edge Function aging-pipeline.
-const AGING_LIMITS = { contacted: 5, qualified: 5, proposal: 3, negotiation: 14 };
-// Hitung badge aging dari stage_changed_at. null bila stage tak ter-aging / aman.
-function agingBadge(stageId, stageChangedAt) {
+// Aging limits (hari) per stage — selaras Edge Function aging-pipeline (AGING_RULES).
+const AGING_LIMITS = { new: 7, contacted: 5, qualified: 5 };
+// Hitung badge aging dari stage_changed_at. null bila stage tak ter-aging / aman,
+// atau bila entitas akun ini aging_enabled=false (lihat fetchAgingEnabled).
+function agingBadge(stageId, stageChangedAt, agingEnabled) {
+  if (!agingEnabled) return null;
   const limit = AGING_LIMITS[stageId];
   if (!limit || !stageChangedAt) return null;
   const days = Math.floor((Date.now() - new Date(stageChangedAt).getTime()) / 86400000);
@@ -301,11 +303,11 @@ function CheckRow({ checked, round, onClick, children }) {
 }
 
 /* ── Deal card ── */
-function DealCard({ deal, stColor, onDragStart, onDragEnd, dragging, onClick }) {
+function DealCard({ deal, stColor, onDragStart, onDragEnd, dragging, onClick, agingEnabled }) {
   const [h, setH] = useState(false);
   const isDragging = useRef(false);
   const svc = SVC[deal.svc] || SVC.sea;
-  const aging = agingBadge(deal.stage, deal.stageChangedAt);
+  const aging = agingBadge(deal.stage, deal.stageChangedAt, agingEnabled);
   return (
     <div
       draggable
@@ -424,6 +426,9 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   const [prospects,    setProspects]    = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [draggingId,   setDraggingId]   = useState(null);
+  // Gate untuk badge aging (lihat agingBadge) — false sampai terkonfirmasi true,
+  // supaya entitas ber-aging_enabled=false (JCI/SOA) tak sempat kelihatan badge.
+  const [agingEnabled, setAgingEnabled] = useState(false);
 
   // ── New UI-only state ──────────────────────────────────────────────────────
   const [view,      setView]      = useState('board');
@@ -477,6 +482,28 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, showToast]);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
+
+  // ── Aging badge gate — companies.aging_enabled untuk entitas user sendiri.
+  // Backend (Edge Function aging-pipeline) hanya memproses entitas ber-flag ini
+  // true (MSI); badge FE ikut digate sama supaya JCI/SOA tak lihat sinyal yang
+  // tak berkonsekuensi. Best-effort: gagal fetch → tetap false (bukan toast),
+  // pola sama notifyManagers/notifySales di LeadPoolPage/LeadPoolApprovalPage.
+  const fetchAgingEnabled = useCallback(async () => {
+    if (!profile?.company_id) { setAgingEnabled(false); return; }
+    const { data, error } = await supabase
+      .from('companies')
+      .select('aging_enabled')
+      .eq('id', profile.company_id)
+      .maybeSingle();
+    if (error) {
+      console.error('[pipeline] gagal memuat aging_enabled:', error.message);
+      setAgingEnabled(false);
+      return;
+    }
+    setAgingEnabled(!!data?.aging_enabled);
+  }, [profile?.company_id]);
+
+  useEffect(() => { fetchAgingEnabled(); }, [fetchAgingEnabled]);
 
   // ── Drag-and-drop handler — Supabase logic unchanged, adapted for new design ─
   // New design calls handleDrop(stageId) with lowercase id; DB needs uppercase.
@@ -837,6 +864,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
                             dragging={draggingId === d.id}
                             onDragStart={onDragStart} onDragEnd={onDragEnd}
                             onClick={(deal) => onSelectAccount?.(deal.id)}
+                            agingEnabled={agingEnabled}
                           />
                         ))
                       : <div style={S.colEmpty}>Tidak ada deal</div>}
