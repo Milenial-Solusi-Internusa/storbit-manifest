@@ -152,28 +152,45 @@ export async function fetchAssignees(companyId) {
   return profs || [];
 }
 
+// Kunci in-flight per account id, level MODUL (bukan per-komponen) — fungsi
+// ini dipanggil dari DealDetailPage DAN CustomerDetailPage, dua file terpisah
+// dengan closure/render sendiri-sendiri, jadi kuncinya harus hidup di luar
+// keduanya supaya tulisan untuk akun yang sama saling menunggu dari mana pun
+// panggilannya berasal. Lihat DRAG_STAGE_BUG_AUDIT.md. Keterbatasan: hanya
+// berlaku dalam SATU tab/sesi browser (tiap tab punya module JS terpisah) —
+// dua tab berbeda yang mengedit akun yang sama tetap tidak saling tahu.
+const dealUpdateInFlightIds = new Set();
+
 // SINGLE write path for a deal/stage update — used by DealDetailPage AND
 // CustomerDetailPage so the audit trail + toast behave identically. Returns bool.
 export async function saveDealUpdate({ accountId, patch, auditStageKey, prevStage, accountName, actor, showToast }) {
-  const { data, error } = await supabase.from('accounts').update(patch).eq('id', accountId).select('id');
-  if (error) { showToast?.('Gagal menyimpan: ' + error.message, 'error'); return false; }
-  // RLS bisa menyaring baris (0 baris ter-update) tanpa Postgres mengembalikan
-  // error — tanpa cek ini, penolakan RLS akan salah dilaporkan sebagai sukses.
-  if (!data || data.length === 0) {
-    showToast?.('Gagal menyimpan: tidak ada izin untuk mengubah akun ini, atau akun tidak ditemukan.', 'error');
-    return false;
+  // Tulisan lain untuk akun ini masih berlangsung — abaikan (bukan rate-limit:
+  // dilepas lagi begitu tulisan yang sedang jalan selesai).
+  if (dealUpdateInFlightIds.has(accountId)) return false;
+  dealUpdateInFlightIds.add(accountId);
+  try {
+    const { data, error } = await supabase.from('accounts').update(patch).eq('id', accountId).select('id');
+    if (error) { showToast?.('Gagal menyimpan: ' + error.message, 'error'); return false; }
+    // RLS bisa menyaring baris (0 baris ter-update) tanpa Postgres mengembalikan
+    // error — tanpa cek ini, penolakan RLS akan salah dilaporkan sebagai sukses.
+    if (!data || data.length === 0) {
+      showToast?.('Gagal menyimpan: tidak ada izin untuk mengubah akun ini, atau akun tidak ditemukan.', 'error');
+      return false;
+    }
+    if (auditStageKey) {
+      logAudit(supabase, {
+        action: ACTION_TYPES.CHANGE_PIPELINE_STAGE,
+        entityType: ENTITY_TYPES.DEAL,
+        entityId: accountId,
+        entityLabel: accountName,
+        notes: `${prevStage || 'NEW'} → ${auditStageKey}`,
+      }, actor);
+    }
+    showToast?.('Perubahan disimpan', 'success');
+    return true;
+  } finally {
+    dealUpdateInFlightIds.delete(accountId);
   }
-  if (auditStageKey) {
-    logAudit(supabase, {
-      action: ACTION_TYPES.CHANGE_PIPELINE_STAGE,
-      entityType: ENTITY_TYPES.DEAL,
-      entityId: accountId,
-      entityLabel: accountName,
-      notes: `${prevStage || 'NEW'} → ${auditStageKey}`,
-    }, actor);
-  }
-  showToast?.('Perubahan disimpan', 'success');
-  return true;
 }
 
 /* ---------- small layout helpers (shared) ---------- */
