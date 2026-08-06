@@ -2282,6 +2282,9 @@ export default function StorbitManifest() {
     const dest = n.reference_type === 'hrga_request' ? 'hrga-semua-request'
                : n.reference_type === 'activity'     ? 'crm-calls'
                : n.reference_type === 'lead_pool'     ? 'crm-lead-pool'
+               // 'account' = notifikasi 'crm.lead_idle' Edge Function aging-pipeline
+               // (Prospect Masuk Lead Pool) — tujuan sama dengan 'lead_pool'.
+               : n.reference_type === 'account'       ? 'crm-lead-pool'
                : n.reference_type === 'mom'           ? 'reporting-mom'
                : null;
     if (dest) navigateTo(dest);
