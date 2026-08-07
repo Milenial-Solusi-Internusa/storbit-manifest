@@ -14,7 +14,7 @@
 // activities (WHERE account_id = inquiry.prospect_id) + profiles + payment_terms.
 // No DB schema change. Stage updates write accounts.pipeline_stage.
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, Hash, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
@@ -273,6 +273,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [notFound, setNotFound] = useState(false);
   const [inquiry, setInquiry] = useState(null);
   const [account, setAccount] = useState(null);
+  // Kunci in-flight tulis pipeline_stage — cegah updateAccount ditulis dobel
+  // (pickStage, gate BANT confirm, Edit Deal — ketiganya lewat fungsi ini)
+  // selagi tulisan sebelumnya masih berlangsung. Boolean cukup: halaman ini
+  // scope satu akun, bukan papan banyak kartu spt Kanban (lihat DRAG_STAGE_BUG_AUDIT.md).
+  const stageUpdateInFlight = useRef(false);
   const [quotations, setQuotations] = useState([]);
   // Rincian Harga (tab Quotation) — items HANYA untuk quotation terbaru (lihat
   // `latestQuotation` di bawah), bukan untuk semua quotation di daftar.
@@ -486,14 +491,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // CustomerDetailPage's deal controls exactly.
   async function updateAccount(patch, auditStageKey) {
     if (!account?.id) { showToast?.('Prospect tidak ditemukan untuk deal ini', 'error'); return false; }
-    const ok = await saveDealUpdate({
-      accountId: account.id, patch, auditStageKey,
-      prevStage: account.pipeline_stage, accountName: account.name,
-      actor: { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id },
-      showToast,
-    });
-    if (ok) refetch();
-    return ok;
+    // Tulisan lain untuk akun ini masih berlangsung — abaikan (bukan rate-limit:
+    // dilepas lagi begitu tulisan yang sedang jalan selesai).
+    if (stageUpdateInFlight.current) return false;
+    stageUpdateInFlight.current = true;
+    try {
+      const ok = await saveDealUpdate({
+        accountId: account.id, patch, auditStageKey,
+        prevStage: account.pipeline_stage, accountName: account.name,
+        actor: { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id },
+        showToast,
+      });
+      if (ok) refetch();
+      return ok;
+    } finally {
+      stageUpdateInFlight.current = false;
+    }
   }
 
   // onPickStage kini mengirim KEY stage (menu hanya menawarkan ACTIVE_STAGES).
