@@ -31,6 +31,96 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-08-07
+
+### Fix privilege escalation `user_roles` — admin biasa dulu bisa assign role `super_admin`
+
+**Ringkas:** 1 fungsi SQL baru + 2 `ALTER POLICY` (DB, sudah live) + 1 file FE (`UserEditPage.jsx`). CRITICAL, sudah RESOLVED.
+
+Ditemukan sesi audit RLS/RBAC hari ini: RLS `user_roles_insert`/`user_roles_update` cuma mensyaratkan `company_id` cocok + caller `is_admin_or_above()` (role `admin` ATAU `super_admin`) — **tak pernah** memvalidasi `role_id` yang ditulis. Akibatnya admin biasa bisa INSERT/UPDATE baris `user_roles` yang menetapkan `role_id = super_admin` untuk dirinya sendiri atau siapa pun se-company — privilege escalation penuh, murni lewat RLS, tanpa perlu bug frontend sama sekali.
+
+**Fix:** fungsi baru `is_admin_tier_role(p_role_id uuid)` (`LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'`) mengecek apakah role TARGET adalah `super_admin`/`admin`, independen dari visibilitas RLS `roles` milik pemanggil. Dipasang di `user_roles_insert` (`WITH CHECK`) dan `user_roles_update` (predikat sama di `USING` **dan** `WITH CHECK`, supaya admin biasa juga tak bisa menyentuh baris admin-tier milik orang lain yang sudah ada). FE: `UserEditPage.jsx` — tombol "Save Changes" + dropdown "ERP Role" digate `isSuperAdmin` (defense-in-depth).
+
+**DB sudah live** (dijalankan manual), migrasi direkam `supabase/migrations/20260807000001_user_roles_block_privilege_escalation.sql`, snapshot sudah di-refresh (commit `87620fe`, pagi — SEBELUM dua batch di bawah). → `08_TECH_DEBT.md` **TD-170 (RESOLVED)**.
+
+### Pensiun sistem `role_permissions` legacy dari kode
+
+**Ringkas:** 4 file (`src/App.jsx`, `src/contexts/AuthContext.jsx`, `src/modules/admin/AdminShell.jsx`, hapus `src/modules/launcher/AppLauncher.jsx` 410 baris). NOL perubahan DB.
+
+`role_permissions`/`hasPermission()` sudah lama ditinggalkan sengaja (ada komentar developer eksplisit di kode). Dibersihkan hari ini: tab "Roles" dihapus dari `AdminShell.jsx` (import + `NAV_SECTIONS` + `PAGE_MAP`); dead branch fallback `hasPermission` di `canSeeMenuItem` (`App.jsx`) dihapus — diverifikasi nol menu yang masih punya properti `module:` sehingga cabang itu tak pernah ke-trigger lagi; `AppLauncher.jsx` dihapus total (diverifikasi **orphan — nol importer** di seluruh repo sebelum dihapus); `useEffect` fetch `role_permissions` dimatikan di `AuthContext.jsx`.
+
+**Sengaja DIBIARKAN, bukan lupa:** struktur `hasPermission`/`isCrossEntity`/`userPermissions`/`refreshPermissions` tetap ada di `AuthContext.jsx` (vestigial — `userPermissions` akan selalu `[]`). `RolesPage.jsx` filenya tetap ada (26.752 byte) tapi **unreachable dari UI** — disimpan sbg referensi. Tabel DB `permissions`/`role_permissions` + fungsi SQL `has_permission()` juga dibiarkan ada, cuma kodenya berhenti memakai (diverifikasi doc-keeper sesi ini: 0 hit `has_permission` di definisi `CREATE POLICY` manapun di `schema_snapshot.sql`, 0 hit `rpc('has_permission'` di `src/`).
+
+→ `08_TECH_DEBT.md` **TD-02** (diperbarui — konfirmasi orphan), **TD-06** (PARTIAL — axis FE kini satu, axis RLS tetap terpisah), **TD-33** (catatan `RolesPage.jsx` kini dorman).
+
+### Sistem role-based menu permission baru — Fase B (`role_menu_permissions` + resolusi 3-tingkat + Role Defaults page)
+
+**Ringkas:** 2 objek DB baru (tabel + kolom, sudah live, migrasi direkam **tapi snapshot belum di-refresh**) + 5 file FE.
+
+Tabel baru **`role_menu_permissions`** — role-level default menu permission, mirror struktural `user_menu_permissions` tapi `role_id`-keyed, **sengaja TANPA kolom `effect`** (role cuma bisa grant, tak ada deny di level role — keputusan desain). Kolom baru **`user_menu_permissions.effect`** (`'grant'`/`'deny'`, default `'grant'`, backward-compatible — baris lama otomatis grant).
+
+`hasMenuPermission` (`AuthContext.jsx`) kini resolusi **3-tingkat**: `super_admin` selalu true → user override (KALAU ADA baris `user_menu_permissions` yang cocok, menang mutlak sesuai `effect`) → union `role_menu_permissions` dari SEMUA role AKTIF user (union, **sengaja BUKAN** role primer/utama — menghindari reproduksi pola `get_user_role_code()` yang sudah terbukti non-deterministic untuk user multi-role) → default deny.
+
+Halaman baru **`RoleDefaultsPage.jsx`** (Admin Settings, **super_admin only** — gate diterapkan di titik render `AdminShell.jsx`, bukan cuma di filter Sidebar, supaya tak bisa dipaksa muncul lewat manipulasi state) — atur default izin per role, + fitur "Salin dari role lain" (destructive replace: hapus semua izin role tujuan lalu ganti persis dari role sumber, wajib dialog konfirmasi eksplisit yang menyebut ini MENIMPA bukan menggabung).
+
+`PermissionMatrix` (`userAccessShared.jsx`, komponen bersama) dapat mode 3-state OPSIONAL lewat prop baru `roleDefaults` — kalau prop itu tak di-pass, perilakunya identik seperti sebelumnya (2-state boolean checkbox biasa, dipakai `RoleDefaultsPage.jsx`). Dipakai `UserEditPage.jsx` (checkbox 3-keadaan: ikut role / boleh / larang, `roleDefaults` di-pass) — commit terpisah `e87cdf4` juga memperbaiki verifikasi jumlah baris di `RoleDefaultsPage` supaya silent-fail (RLS menolak tanpa error) kelihatan, bukan diam-diam gagal.
+
+**⚠️ Status sebenarnya, JANGAN dibaca sebagai "selesai" utuh:**
+- **Fase B3** (isi default izin tiap role via `RoleDefaultsPage`) — tabel `role_menu_permissions` **KOSONG TOTAL** sampai sekarang. Fitur bisa dipakai, belum ADA datanya. BELUM DIMULAI.
+- **Fase C** (satukan 4 struktur menu hardcode `App.jsx` — `CRM_MENU_ITEMS`/`ERP_MENU_GROUPS`/`NEXUS_NAV`/`MENU_KEY_MAP`, ~300 titik id-menu — dengan katalog DB `modules`/`module_menus`/`menu_actions`/`module_actions`, yang sekarang cuma dipakai Permission Matrix, bukan sumber render menu utama) — BELUM DIMULAI, dua sumber ini belum disatukan sama sekali.
+- **Snapshot BELUM di-refresh** untuk migrasi `20260807000002_role_menu_permissions_and_effect_column.sql` — diverifikasi doc-keeper: `role_menu_permissions` 0 hit, kolom `effect` absen dari `schema_snapshot.sql`. Migrasi keduanya direkam (byte-exact dari SQL yang sudah dijalankan manual).
+- **Belum tes manual runtime** (kode "build clean" per klaim sesi, belum diverifikasi doc-keeper end-to-end).
+
+→ `03_DATA_MODEL.md` §3 RBAC (schema baru), `04_ROLE_PERMISSION_MATRIX.md` §4-5, `09_ROADMAP.md` (Next Up 4a/4b).
+
+### Fix double-write `accounts.pipeline_stage` — 3 jalur tulis tanpa guard pemanggilan-dobel
+
+**Ringkas:** 3 file (`PipelineKanbanPage.jsx`, `DealDetailPage.jsx`, `DealPanels.jsx`), FE-only, NOL perubahan DB. Kode selesai; **Test A & B lolos, Test D & E belum dijalankan.**
+
+Ditemukan dari `audit_logs` PRODUKSI (bukan dugaan/simulasi): `applyStageMove` (Kanban), `pickStage`/`updateAccount` (Detail Deal), `saveDealUpdate` (fungsi bersama Detail Deal + Customer Detail) — ketiganya awalnya tanpa guard terhadap pemanggilan dobel untuk entity yang sama. Terbukti minimal 1 kejadian ORGANIK dari sales asli (bukan sesi tes) yang sempat menyentuh stage WON dan meninggalkan efek samping PERMANEN (`account_status='customer'` via trigger `set_customer_on_won()`) walau `pipeline_stage`-nya sendiri kembali ke `NEW` setelah double-write.
+
+Ini juga MENJAWAB pertanyaan terbuka yang ditinggalkan audit read-only sebelumnya (`DRAG_STAGE_BUG_AUDIT.md`, root repo — investigasi drag NEW→CONTACTED yang tampak sukses di UI tapi DB tetap NEW) soal kenapa `stage_changed_at` bisa berubah walau `pipeline_stage` akhirnya balik ke nilai lama: jawabannya persis skenario "ada tulisan kedua yang sungguhan terjadi" yang diprediksi (tapi tak bisa dipastikan tanpa akses query DB) audit itu.
+
+**Fix:** in-flight lock per `entity_id` di ketiga jalur — `useRef(new Set())` di `PipelineKanbanPage.jsx` (papan banyak kartu, kunci per-id), `useRef(boolean)` di `DealDetailPage.jsx` (scope satu akun), `Set` level-modul di `DealPanels.jsx` (fungsi dipakai 2 file berbeda, kunci harus hidup di luar keduanya — keterbatasan disengaja: hanya berlaku 1 tab/sesi browser).
+
+**Status sebenarnya (jangan digeneralisasi jadi "selesai"):** kode sudah ditulis (konteks: branch `fix/pipeline-stage-double-write`). Test A (skenario Kanban) dan Test B (skenario Detail Deal + Customer Detail) sudah dijalankan manual dan LOLOS. **Test D dan Test E (skenario regresi tambahan yang direncanakan) BELUM sempat dijalankan sama sekali** — sesi kerja berpindah fokus ke audit RLS/RBAC sebelum tes itu dilakukan. Trigger `set_customer_on_won()` itu sendiri — nol validasi legitimasi sebelum menandai akun jadi customer — **sengaja belum disentuh** (keputusan bisnis terpisah, di luar scope fix ini).
+
+**Temuan tambahan, ditutup sesi ini:** `applyStageMove` (Kanban) MASIH menulis `pipeline_stage` tanpa `.select()` (kelas bug sama TD-161, implementasi terpisah) — diverifikasi doc-keeper via `git show` bahwa fix di atas TAK menyentuh baris ini, cuma menambah kunci in-flight. Direkam sebagai temuan terbuka terpisah.
+
+→ `08_TECH_DEBT.md` **TD-171 (PARTIAL)** + **TD-172 (OPEN, baru)** + **TD-94** (diperbarui, cross-ref).
+
+### Audit RLS/RBAC menyeluruh — temuan direkam, BELUM DIEKSEKUSI
+
+**Ringkas:** audit read-only, tidak ada perubahan kode/DB dari audit itu sendiri (di luar TD-170 yang langsung ditindak same-session). Skor ringkasan: RLS Coverage 7/10, Company Isolation 3/10, RBAC Consistency 4/10.
+
+**⚠️ Audit ini HANYA pernah ada di riwayat chat sesi ini — tidak pernah ditulis ke file mana pun (aturan sesi eksplisit "jangan buat file, tulis di chat saja").** Direkam permanen di sini + `08_TECH_DEBT.md` **TD-173** supaya tidak hilang begitu sesi berakhir.
+
+**19 tabel CRITICAL:** seluruh modul Storbit SP/Fulfillment (11 tabel — `sp_items`, `sp_btbs`, `picking_lists`+`_items`+`_materials`, `delivery_notes`+`_items`, `ar_btbs`, `ar_ttfs`, `product_warehouse_location`, `stock_ledger` — RLS `USING(true)` total) + `warehouses` (kerabat TD-119) + `rate_sheets` (kerabat TD-55) + `profiles` (kerabat TD-04) + `app_settings`/`audit_logs` (bocor lintas-company, `audit_logs` INSERT juga bisa dipalsukan) + `contacts`/`inquiry_comments`/`inquiry_comment_mentions` (pola EXISTS-to-parent tanpa cek `company_id` di dalamnya, berulang 3×).
+
+**HIGH:** `notifications_insert` `WITH CHECK(true)` (spoofing) · `accounts prospects_read` kemungkinan over-broad untuk `procurement`/`operations` — **butuh keputusan bisnis**, ditambahkan ke `09_ROADMAP.md` §Keputusan Terbuka #22, JANGAN diperbaiki sepihak.
+
+**MEDIUM:** 5 tabel anak `asset_*` kurang syarat `is_admin_or_above()` di insert/update (induknya punya) · pola sistemik "missing `TO authenticated`".
+
+**LOW:** `is_admin_or_above()`/`is_super_admin()` (73 & 169 pemanggilan) kehilangan `SET search_path`, padahal `docs/security/rls-policy-draft.md` mewajibkannya untuk `SECURITY DEFINER`.
+
+**Diverifikasi AMAN, BUKAN temuan terbuka:** `exec_sql(text)` sempat jadi kandidat CRITICAL tertinggi (status live belum terverifikasi saat itu) — dicek langsung: cuma `service_role`/`postgres` punya `EXECUTE`, tidak exploitable.
+
+**Temuan FE (bukan RLS):** Asset Management bisa di-bypass total lewat `localStorage.setItem('nexus_last_menu','assets-xxx')` (`canAccessActiveMenu` punya shortcut prefix `assets-*` yang skip `hasMenuPermission`) · Approval HRGA (`PendingApprovalPage.jsx`) tidak mencocokkan role approver terhadap level yang seharusnya approve — siapa pun di daftar role approval bisa approve/reject level apa pun · `GRANT ALL ON TABLE public.prf TO anon` di migrasi lama — belum exploitable (RLS `prf` masih menahan `anon`), sebaiknya di-REVOKE untuk defense-in-depth.
+
+**Pola standar yang SUDAH TERBUKTI BENAR** (rujukan/template, bukan desain baru): migrasi `vendors` 21 Jul 2026, `sp_orders`/`sp_order_items`/`sp_btb` (skema BARU), `hrga_request_items`, `mom_action_plans`, `quotation_items`, `prf_cost_items` — company-scoped langsung atau EXISTS-to-parent yang benar (menyertakan `company_id` parent di dalam EXISTS).
+
+Rencana "batch RLS besar" yang sudah ada (`09_ROADMAP.md` Next Up #4, `10_TASK_BREAKDOWN.md` §D) **diselaraskan & diperluas** dengan cakupan audit ini — bukan rencana baru terpisah.
+
+→ `08_TECH_DEBT.md` **TD-173 (baru, CRITICAL)**, cross-ref TD-01/TD-03/TD-04/TD-39/TD-55/TD-119.
+
+### Temuan sampingan — jalur konversi customer tanpa WON (investigasi) + kandidat duplikat akun baru
+
+**Jalur konversi tanpa WON:** tidak ada jalur UI yang diketahui bisa mencapai stage WON sama sekali sekarang (Kanban diblokir sejak 22 Jul 2026, modal Edit Deal dan dropdown Pindah Stage juga tidak menawarkan opsi WON) — tapi ada akun dengan `became_customer_at` SETELAH 22 Jul 2026 (contoh: "Haneda Sukses Mandiri", "PT LDE Pro Tehnology") dengan `pipeline_stage` tetap `NEW` dan NOL jejak di `audit_logs`. Berarti ada jalur konversi ke customer lain yang sama sekali tak lewat WON, asalnya belum diketahui — kandidat paling mungkin adalah pembuatan customer manual lewat `CustomerFormModal` (jalur yang memang ada, tak perlu WON), belum dikonfirmasi untuk kedua akun contoh ini secara spesifik. → `08_TECH_DEBT.md` **TD-174 (baru)**, investigasi lanjutan diperlukan.
+
+**Kandidat duplikat akun baru:** dua pasangan baru untuk verifikasi manual — "MESIN KAFE & SERVICES" vs "MESIN KAFE DAN SERVICE", "CHEMCO NUSANTARA" vs "CHEMCO HARAPAN NUSANTARA". **Catatan penting:** instruksi sesi ini meminta pasangan ini ditambahkan ke daftar "~18 kandidat fuzzy dari K-3 sebelumnya" yang disebut sudah ada — doc-keeper MENCARI daftar itu (di `09_ROADMAP.md`, `PROGRESS.md`, `docs/archive/audits/AUDIT_DEDUP.md`) dan **tidak menemukannya** (yang ada di `AUDIT_DEDUP.md` §Q3b hanya query SQL template, tanpa hasil tersimpan). Dicatat sebagai item baru di `09_ROADMAP.md` §Keputusan Terbuka #23, dengan catatan tambahan: pasangan CHEMCO sudah pernah tercatat sebagai di-merge 25 Jul 2026 (§Keputusan Terbuka #20) — perlu klarifikasi Den apakah merge lama tidak lengkap atau ini kasus berbeda.
+
+**NOL tes runtime untuk seluruh entri hari ini** (kecuali Test A/B fix double-write yang disebut di atas). Detail per tema: lihat entri masing-masing di atas.
+
 ## 2026-08-06
 
 ### 3 fix kecil FE — sinkronisasi badge "Overdue" Kanban Pipeline dgn Edge Function `aging-pipeline` (tindak lanjut audit read-only `OVERDUE_STATUS_AUDIT.md`)
