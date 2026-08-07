@@ -206,8 +206,14 @@ export default function RoleDefaultsPage({ showToast }) {
     if (removedKeys.length) {
       const ids = removedKeys.map(k => keyToRowId[k]).filter(Boolean);
       if (ids.length) {
-        const { error: delErr } = await supabase.from('role_menu_permissions').delete().in('id', ids);
+        const { data: delData, error: delErr } = await supabase
+          .from('role_menu_permissions').delete().in('id', ids).select('id');
         if (delErr) { setPermError(`Delete failed: ${delErr.message}`); setPermSaving(false); return; }
+        if (!delData || delData.length !== ids.length) {
+          setPermError(`Perubahan tidak tersimpan penuh — ${delData?.length ?? 0} dari ${ids.length} baris berhasil dihapus. Kemungkinan izin database menahan sebagian operasi ini, bukan bug tampilan. Hubungi admin DB.`);
+          setPermSaving(false);
+          return;
+        }
       }
     }
 
@@ -218,13 +224,19 @@ export default function RoleDefaultsPage({ showToast }) {
         else                      r.menu_action_id   = k.slice(4);
         return r;
       });
-      const { error: insErr } = await supabase.from('role_menu_permissions').insert(rows);
+      const { data: insData, error: insErr } = await supabase
+        .from('role_menu_permissions').insert(rows).select('id');
       if (insErr) { setPermError(`Insert failed: ${insErr.message}`); setPermSaving(false); return; }
+      if (!insData || insData.length !== rows.length) {
+        setPermError(`Perubahan tidak tersimpan penuh — ${insData?.length ?? 0} dari ${rows.length} baris berhasil ditambah. Kemungkinan izin database menahan sebagian operasi ini, bukan bug tampilan. Hubungi admin DB.`);
+        setPermSaving(false);
+        return;
+      }
     }
 
+    await fetchMatrixData(selectedRole.id);
     setPermSaving(false);
     showToast?.('Role defaults updated.');
-    fetchMatrixData(selectedRole.id);
   }, [selectedRole, originalPerms, permDraft, showToast, fetchMatrixData]);
 
   // ── Copy from another role — destructive replace ───────────────────────────
@@ -247,11 +259,18 @@ export default function RoleDefaultsPage({ showToast }) {
         .eq('role_id', copySourceId);
       if (srcErr) { setPermError(`Gagal membaca role sumber: ${srcErr.message}`); setCopying(false); return; }
 
-      const { error: delErr } = await supabase
+      const expectedDeleteCount = originalPerms.length;
+      const { data: delData, error: delErr } = await supabase
         .from('role_menu_permissions')
         .delete()
-        .eq('role_id', selectedRole.id);
+        .eq('role_id', selectedRole.id)
+        .select('id');
       if (delErr) { setPermError(`Gagal menghapus izin lama: ${delErr.message}`); setCopying(false); return; }
+      if ((delData?.length ?? 0) !== expectedDeleteCount) {
+        setPermError(`Salin dibatalkan — ${delData?.length ?? 0} dari ${expectedDeleteCount} baris lama berhasil dihapus. Kemungkinan izin database menahan sebagian operasi ini, bukan bug tampilan. Hubungi admin DB.`);
+        setCopying(false);
+        return;
+      }
 
       if (sourceRows?.length) {
         const rows = sourceRows.map(r => ({
@@ -260,20 +279,26 @@ export default function RoleDefaultsPage({ showToast }) {
           module_action_id: r.module_action_id,
           granted_by: grantedBy,
         }));
-        const { error: insErr } = await supabase.from('role_menu_permissions').insert(rows);
+        const { data: insData, error: insErr } = await supabase
+          .from('role_menu_permissions').insert(rows).select('id');
         if (insErr) { setPermError(`Gagal menyalin: ${insErr.message}`); setCopying(false); return; }
+        if (!insData || insData.length !== rows.length) {
+          setPermError(`Salin sebagian gagal — ${insData?.length ?? 0} dari ${rows.length} baris berhasil disalin. Kemungkinan izin database menahan sebagian operasi ini, bukan bug tampilan. Hubungi admin DB.`);
+          setCopying(false);
+          return;
+        }
       }
 
-      setCopying(false);
       setCopyModalOpen(false);
       setCopySourceId('');
+      await fetchMatrixData(selectedRole.id);
+      setCopying(false);
       showToast?.('Role defaults disalin.');
-      fetchMatrixData(selectedRole.id);
     } catch (e) {
       setPermError(e?.message || 'Gagal menyalin role defaults.');
       setCopying(false);
     }
-  }, [selectedRole, copySourceId, showToast, fetchMatrixData]);
+  }, [selectedRole, copySourceId, originalPerms.length, showToast, fetchMatrixData]);
 
   return (
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
