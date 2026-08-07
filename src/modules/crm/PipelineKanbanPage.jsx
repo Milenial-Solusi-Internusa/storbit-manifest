@@ -444,6 +444,11 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   const [filterDraft,  setFilterDraft]  = useState(EMPTY_FILTERS);  // panel working copy
   const dragId      = useRef(null);
   const toastTimer  = useRef(null);
+  // Kunci in-flight per account id — cegah applyStageMove ditulis dobel untuk
+  // akun yang sama selagi tulisan sebelumnya masih berlangsung (lihat
+  // DRAG_STAGE_BUG_AUDIT.md). Keyed per id, BUKAN satu flag global, supaya
+  // drag dua kartu berbeda secara cepat tetap jalan dua-duanya.
+  const inFlightStageMoveIds = useRef(new Set());
 
   // Internal toast (move confirmations); errors still go to app-level showToast
   function notify(msg, icon) {
@@ -510,6 +515,11 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
   // Perform the actual stage move. Shared by handleDropStage (no gating needed)
   // and the soft-gate confirm handler (user chose "Ya, Lanjut").
   const applyStageMove = useCallback(async (stageId, id, prospect) => {
+    // Tulisan lain untuk akun yang sama masih berlangsung — abaikan (bukan
+    // rate-limit: dilepas lagi begitu tulisan yang sedang jalan selesai).
+    if (inFlightStageMoveIds.current.has(id)) return;
+    inFlightStageMoveIds.current.add(id);
+
     const newStage = stageId.toUpperCase();           // DB stores uppercase
 
     // Optimistic update
@@ -535,16 +545,20 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
       // Rollback
       setProspects(prev => prev.map(p => p.id === id ? { ...p, pipeline_stage: prospect.pipeline_stage } : p));
       showToast?.('Gagal memindah stage: ' + err.message, 'error');
+    } finally {
+      inFlightStageMoveIds.current.delete(id);
     }
   }, [profile?.id, showToast]);
 
   const handleDropStage = useCallback(async (stageId) => {
     const id = dragId.current;
+    dragId.current = null;                            // konsumsi sekali — drop/dragend susulan
+                                                        // untuk gesture yang sama jadi tak berefek
     setDraggingId(null);                              // always clear fade immediately
     const newStage = stageId.toUpperCase();           // DB stores uppercase
     const prospect = prospects.find(p => p.id === id);
     setDropStage(null);
-    if (!prospect || (prospect.pipeline_stage || 'NEW') === newStage) {
+    if (!id || !prospect || (prospect.pipeline_stage || 'NEW') === newStage) {
       return;
     }
 
