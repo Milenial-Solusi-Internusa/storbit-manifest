@@ -281,17 +281,30 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
   }, [draft, myProfile?.id, myProfile?.company_id, erpRole, user, showToast, onBack]);
 
   // ── Permission matrix ────────────────────────────────────────
+  // 3-state: permDraft values are 'grant' | 'deny' | undefined (undefined =
+  // no override, follows the role default shown via roleDefaultKeys).
+  // roleDefaultKeys is read-only display data — never diffed or saved.
   const [matrixModules, setMatrixModules] = useState([]);
   const [matrixActions, setMatrixActions] = useState([]);
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [permDraft, setPermDraft] = useState({});
   const [originalPerms, setOriginalPerms] = useState([]);
+  const [roleDefaultKeys, setRoleDefaultKeys] = useState(new Set());
   const [permSaving, setPermSaving] = useState(false);
   const [permError, setPermError] = useState(null);
 
   const fetchMatrixData = useCallback(async (uid, coId) => {
     setMatrixLoading(true);
-    const [modsRes, menusRes, existingRes] = await Promise.all([
+    // Active role_ids for the EDITED user (not the logged-in admin) — already
+    // available in rowMeta.user_roles (same select shape from both the
+    // initialRow list-fetch and the fallback fetch above), no new query needed
+    // just to get the role list itself.
+    const activeRoleIds = (rowMeta?.user_roles || [])
+      .filter(ur => ur.is_active)
+      .map(ur => ur.role_id)
+      .filter(Boolean);
+
+    const [modsRes, menusRes, existingRes, roleRes] = await Promise.all([
       supabase.from('modules')
         .select('id, key, label, sort_order, module_actions(id, action)')
         .eq('is_active', true).order('sort_order').limit(100),
@@ -299,8 +312,13 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
         .select('id, key, label, sort_order, module_id, menu_actions(id, action)')
         .eq('is_active', true).order('sort_order').limit(1000),
       supabase.from('user_menu_permissions')
-        .select('id, module_action_id, menu_action_id')
+        .select('id, effect, module_action_id, menu_action_id')
         .eq('user_id', uid).eq('company_id', coId).limit(1000),
+      activeRoleIds.length
+        ? supabase.from('role_menu_permissions')
+            .select('module_action_id, menu_action_id')
+            .in('role_id', activeRoleIds).limit(1000)
+        : Promise.resolve({ data: [] }),
     ]);
 
     const mods     = modsRes.data  || [];
@@ -325,12 +343,20 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
 
     const pdraft = {};
     existing.forEach(p => {
-      if (p.module_action_id) pdraft[`ma_${p.module_action_id}`]   = true;
-      if (p.menu_action_id)   pdraft[`mea_${p.menu_action_id}`]    = true;
+      if (p.module_action_id) pdraft[`ma_${p.module_action_id}`]  = p.effect;
+      if (p.menu_action_id)   pdraft[`mea_${p.menu_action_id}`]   = p.effect;
     });
     setPermDraft(pdraft);
+
+    const roleKeys = new Set();
+    (roleRes.data || []).forEach(p => {
+      if (p.module_action_id) roleKeys.add(`ma_${p.module_action_id}`);
+      if (p.menu_action_id)   roleKeys.add(`mea_${p.menu_action_id}`);
+    });
+    setRoleDefaultKeys(roleKeys);
+
     setMatrixLoading(false);
-  }, []);
+  }, [rowMeta]);
 
   useEffect(() => {
     if (tab === 'permissions' && draft?.id && draft?.company_id) {
@@ -347,48 +373,80 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
     setPermSaving(true);
     setPermError(null);
 
-    const originalKeys = new Set();
-    const keyToRowId = {};
+    // originalByKey: key -> { id, effect } — effect now tracked so a changed
+    // override (grant<->deny on an existing row) becomes an UPDATE, not a
+    // delete+insert.
+    const originalByKey = new Map();
     originalPerms.forEach(p => {
-      if (p.module_action_id) {
-        const k = `ma_${p.module_action_id}`;
-        originalKeys.add(k);
-        keyToRowId[k] = p.id;
-      }
-      if (p.menu_action_id) {
-        const k = `mea_${p.menu_action_id}`;
-        originalKeys.add(k);
-        keyToRowId[k] = p.id;
-      }
+      if (p.module_action_id) originalByKey.set(`ma_${p.module_action_id}`, { id: p.id, effect: p.effect });
+      if (p.menu_action_id)   originalByKey.set(`mea_${p.menu_action_id}`, { id: p.id, effect: p.effect });
     });
 
-    const newKeys = new Set(Object.entries(permDraft).filter(([, v]) => v).map(([k]) => k));
-    const addedKeys   = [...newKeys].filter(k => !originalKeys.has(k));
-    const removedKeys = [...originalKeys].filter(k => !newKeys.has(k));
+    const allKeys = new Set([...originalByKey.keys(), ...Object.keys(permDraft)]);
+    const toInsert = []; // { key, effect }
+    const toUpdate = []; // { id, effect }
+    const toDelete = []; // id
 
-    if (removedKeys.length) {
-      const ids = removedKeys.map(k => keyToRowId[k]).filter(Boolean);
-      if (ids.length) {
-        const { error: delErr } = await supabase.from('user_menu_permissions').delete().in('id', ids);
-        if (delErr) { setPermError(`Delete failed: ${delErr.message}`); setPermSaving(false); return; }
+    allKeys.forEach(key => {
+      const draftVal = permDraft[key]; // 'grant' | 'deny' | undefined
+      const orig = originalByKey.get(key);
+      if (!orig && draftVal) {
+        toInsert.push({ key, effect: draftVal });
+      } else if (orig && !draftVal) {
+        toDelete.push(orig.id);
+      } else if (orig && draftVal && orig.effect !== draftVal) {
+        toUpdate.push({ id: orig.id, effect: draftVal });
+      }
+      // else: no-op — no override before or after, or unchanged effect.
+    });
+
+    if (toDelete.length) {
+      const { data, error } = await supabase
+        .from('user_menu_permissions').delete().in('id', toDelete).select('id');
+      if (error) { setPermError(`Delete failed: ${error.message}`); setPermSaving(false); return; }
+      if (!data || data.length !== toDelete.length) {
+        setPermError(`Perubahan tidak tersimpan penuh — ${data?.length ?? 0} dari ${toDelete.length} baris berhasil dihapus. Kemungkinan izin database menahan sebagian operasi ini, bukan bug tampilan. Hubungi admin DB.`);
+        setPermSaving(false);
+        return;
       }
     }
 
-    if (addedKeys.length) {
-      const rows = addedKeys.map(k => {
-        const r = { user_id: draft.id, company_id: draft.company_id };
-        if (k.startsWith('ma_'))  r.module_action_id = k.slice(3);
-        else                      r.menu_action_id   = k.slice(4);
+    if (toInsert.length) {
+      const rows = toInsert.map(({ key, effect }) => {
+        const r = { user_id: draft.id, company_id: draft.company_id, effect };
+        if (key.startsWith('ma_'))  r.module_action_id = key.slice(3);
+        else                        r.menu_action_id   = key.slice(4);
         return r;
       });
-      const { error: insErr } = await supabase.from('user_menu_permissions').insert(rows);
-      if (insErr) { setPermError(`Insert failed: ${insErr.message}`); setPermSaving(false); return; }
+      const { data, error } = await supabase
+        .from('user_menu_permissions').insert(rows).select('id');
+      if (error) { setPermError(`Insert failed: ${error.message}`); setPermSaving(false); return; }
+      if (!data || data.length !== rows.length) {
+        setPermError(`Perubahan tidak tersimpan penuh — ${data?.length ?? 0} dari ${rows.length} baris berhasil ditambah. Kemungkinan izin database menahan sebagian operasi ini, bukan bug tampilan. Hubungi admin DB.`);
+        setPermSaving(false);
+        return;
+      }
     }
 
+    if (toUpdate.length) {
+      const results = await Promise.all(toUpdate.map(({ id, effect }) =>
+        supabase.from('user_menu_permissions').update({ effect }).eq('id', id).select('id')
+      ));
+      const failed = results.filter(r => r.error || !r.data || r.data.length !== 1);
+      if (failed.length) {
+        const firstErr = failed.find(r => r.error)?.error?.message;
+        setPermError(`Perubahan tidak tersimpan penuh — ${toUpdate.length - failed.length} dari ${toUpdate.length} baris berhasil diubah.${firstErr ? ` (${firstErr})` : ' Kemungkinan izin database menahan sebagian operasi ini, bukan bug tampilan.'} Hubungi admin DB.`);
+        setPermSaving(false);
+        return;
+      }
+    }
+
+    // Re-sync original rows so subsequent diffs are accurate — awaited so the
+    // spinner stays up until state is genuinely confirmed from DB, not just
+    // assumed, before the success toast fires.
+    await fetchMatrixData(draft.id, draft.company_id);
     setPermSaving(false);
     showToast?.('Permissions updated.');
-    // Re-sync original rows so subsequent diffs are accurate (stay on page)
-    fetchMatrixData(draft.id, draft.company_id);
   }, [draft, originalPerms, permDraft, showToast, fetchMatrixData]);
 
   // ── Delete user ──────────────────────────────────────────────
@@ -746,6 +804,7 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
                 onSave={handleSavePermissions}
                 onCancel={onBack}
                 permError={permError}
+                roleDefaults={roleDefaultKeys}
               />
             )}
           </div>
