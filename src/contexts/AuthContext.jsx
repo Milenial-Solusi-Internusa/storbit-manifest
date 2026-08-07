@@ -24,6 +24,18 @@ function pickPrimaryErpRole(userRoles) {
   return sorted[0];
 }
 
+// matchesMenuAction — shared predicate for user_menu_permissions and
+// role_menu_permissions rows (same nested-embed shape): does this row cover
+// the given menuKey+action, at either menu-level (module_menus.key) or
+// module-level (modules.key)?
+function matchesMenuAction(row, menuKey, action) {
+  if (row.menu_actions?.module_menus?.key === menuKey &&
+      row.menu_actions?.action === action) return true;
+  if (row.module_actions?.modules?.key === menuKey &&
+      row.module_actions?.action === action) return true;
+  return false;
+}
+
 // Helper: fetch profile + active ERP roles for a user
 async function fetchProfileById(userId) {
   const [profileRes, rolesRes] = await Promise.all([
@@ -52,6 +64,7 @@ export function AuthProvider({ children }) {
   const [authError,        setAuthError]        = useState(null);
   const [userPermissions,  setUserPermissions]  = useState([]); // role_permissions rows for primary ERP role
   const [menuPermissions,  setMenuPermissions]  = useState([]); // user_menu_permissions rows for this user
+  const [roleMenuPermissions, setRoleMenuPermissions] = useState([]); // role_menu_permissions rows for all active roles (role-level default)
   const [permissionsLoading, setPermissionsLoading] = useState(true); // true while per-user menu permissions are loading
 
   // Tracks the last authenticated user id. Distinguishes a genuine user change
@@ -235,44 +248,71 @@ export function AuthProvider({ children }) {
     );
   }, [userPermissions, erpRoleCode]);
 
-  // ── Fetch per-user menu permissions ───────────────────────────────────────
+  // ── Fetch per-user + role-level menu permissions ────────────────────────────
+  // 3-tier resolution (see hasMenuPermission below): user_menu_permissions row
+  // wins outright, grant or deny → role_menu_permissions union across ALL
+  // active roles (role-level default, grant-only, no deny concept there) →
+  // deny. erpRoles is read from closure (dep array below) rather than passed
+  // in, so the role_menu_permissions query always uses the latest active-role
+  // list without changing this function's call sites.
   const fetchMenuPermissions = useCallback(async (userId) => {
-    if (!userId) { setMenuPermissions([]); setPermissionsLoading(false); return; }
+    if (!userId) {
+      setMenuPermissions([]);
+      setRoleMenuPermissions([]);
+      setPermissionsLoading(false);
+      return;
+    }
     setPermissionsLoading(true);
     try {
-      const { data } = await supabase
-        .from('user_menu_permissions')
-        .select('id, is_cross_entity, module_action_id, menu_actions(id, action, menu_id, module_menus(id, key)), module_actions(id, action, module_id, modules!module_actions_module_id_fkey(id, key))')
-        .eq('user_id', userId)
-        .limit(1000);
-      setMenuPermissions(data || []);
+      const roleIds = erpRoles.map(r => r.role_id).filter(Boolean);
+      const [userRes, roleRes] = await Promise.all([
+        supabase
+          .from('user_menu_permissions')
+          .select('id, effect, is_cross_entity, module_action_id, menu_actions(id, action, menu_id, module_menus(id, key)), module_actions(id, action, module_id, modules!module_actions_module_id_fkey(id, key))')
+          .eq('user_id', userId)
+          .limit(1000),
+        roleIds.length
+          ? supabase
+              .from('role_menu_permissions')
+              .select('id, menu_action_id, module_action_id, menu_actions(id, action, menu_id, module_menus(id, key)), module_actions(id, action, module_id, modules!module_actions_module_id_fkey(id, key))')
+              .in('role_id', roleIds)
+              .limit(1000)
+          : Promise.resolve({ data: [] }),
+      ]);
+      setMenuPermissions(userRes.data || []);
+      setRoleMenuPermissions(roleRes.data || []);
     } finally {
       setPermissionsLoading(false);
     }
-  }, []);
+  }, [erpRoles]);
 
-  // Re-fetch per-user menu permissions whenever the session changes.
+  // Re-fetch per-user + role-level menu permissions whenever session changes.
+  // Also reacts to erpRoles changing: fetchMenuPermissions depends on erpRoles
+  // (for the role_menu_permissions query), so its identity changes whenever
+  // erpRoles does, which re-runs this effect transitively — erpRoles doesn't
+  // need to be listed here directly.
   // permissionsLoading is managed inside fetchMenuPermissions (async — not the
   // effect body) so menu-gated UI can wait for it before allowing clicks.
   useEffect(() => {
     fetchMenuPermissions(session?.user?.id || null);
   }, [session, fetchMenuPermissions]);
 
-  // hasMenuPermission — check per-user menu permission via user_menu_permissions table.
-  // Supports both menu-level (module_menus.key) and module-level (modules.key) checks.
-  // super_admin always returns true.
+  // hasMenuPermission — 3-tier resolution:
+  //   1. super_admin → always true.
+  //   2. user_menu_permissions row matches → wins outright, effect decides
+  //      (grant → true, deny → false). Does NOT fall through to step 3.
+  //   3. No user-level match → role_menu_permissions union across ALL active
+  //      roles (not just the primary/highest one — a match on ANY active role
+  //      grants access). Role-level rows are grant-only.
+  //   4. No match anywhere → false (default-deny).
   const hasMenuPermission = useCallback((menuKey, action) => {
     if (erpRoleCode === 'super_admin') return true;
-    return menuPermissions.some(p => {
-      // menu-level check
-      if (p.menu_actions?.module_menus?.key === menuKey &&
-          p.menu_actions?.action === action) return true;
-      // module-level check
-      if (p.module_actions?.modules?.key === menuKey &&
-          p.module_actions?.action === action) return true;
-      return false;
-    });
-  }, [menuPermissions, erpRoleCode]);
+
+    const userMatch = menuPermissions.find(p => matchesMenuAction(p, menuKey, action));
+    if (userMatch) return userMatch.effect !== 'deny';
+
+    return roleMenuPermissions.some(p => matchesMenuAction(p, menuKey, action));
+  }, [menuPermissions, roleMenuPermissions, erpRoleCode]);
 
   // isCrossEntity — returns true if the role has cross-entity access for this module.
   // super_admin always returns true.
@@ -302,8 +342,9 @@ export function AuthProvider({ children }) {
     hasPermission,
     isCrossEntity,
     refreshPermissions,
-    // Per-user menu permission helpers
+    // Per-user + role-level menu permission helpers
     menuPermissions,
+    roleMenuPermissions,
     permissionsLoading,
     hasMenuPermission,
     signIn,
