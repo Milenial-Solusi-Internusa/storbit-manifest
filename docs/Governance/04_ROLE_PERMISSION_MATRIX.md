@@ -157,6 +157,7 @@ Sumber: matrix permission `CLAUDE.md`. **CRUD** = full, **R** = read-only, **-**
 | FOUNDATION | Products & Services (+Detail) | ProductsPage · ProductDetailPage | canRenderPage | LIVE |
 | FOUNDATION | Update Harga Massal | BulkEditPricePage | role[super_admin] | LIVE |
 | FOUNDATION | Schema Manager | SchemaManagerPage | **super_admin only** (enforced at render) | LIVE |
+| FOUNDATION | Role Defaults [BARU, 7 Agu 2026] | RoleDefaultsPage | **super_admin only** (`AdminShell.jsx` gate di titik render `content =`, BUKAN cuma filter Sidebar — devtools-forced `activeTab` tetap ditolak) — cermin RLS `role_menu_permissions` yang juga super_admin-only utk tulis | LIVE (kode) — atur default `role_menu_permissions` per role + "Salin dari role lain" (destructive replace). **⚠️ Tabel datanya KOSONG TOTAL** (Fase B3 belum dimulai — fitur bisa dipakai, belum ada isinya). Belum tes manual runtime. |
 | FOUNDATION | Admin Settings (hub + 9 sub-page) | AdminSettingsHub + admin-settings-* | canAdminSettings (super/admin) | LIVE |
 
 ### Matrix granular per action (VIEW/CREATE/EDIT/DELETE/APPROVE/EXPORT/PRINT)
@@ -175,8 +176,9 @@ Model granular sebenarnya disimpan di DB: **`modules` → `module_menus` → `mo
 | `is_admin_or_above()` | **`super_admin`, `admin` SAJA** | ⚠️ TIDAK termasuk manager/ceo/gm — dipakai ~51 policy. Sumber bug akses (CEO ke-block, dropdown sales kosong utk manager). |
 | `is_manager_or_above()` | super_admin, admin, ceo, gm, **gm_bd**, manager, sales_head | Cakupan "lihat seluruh tim/entitas" (RLS accounts/activities). `gm_bd` ditambah 9 Jul 2026 (dieksekusi user di DB MSI). |
 | `get_user_company_id()` | — | `SELECT company_id FROM profiles WHERE id=auth.uid()`. Null sebelum backfill / di SQL Editor. |
-| `has_permission(module, action)` | query `user_roles→roles→role_permissions→permissions` | ⚠️ Flagged broken/unseeded (TECH_DEBT TD-02). |
+| `has_permission(module, action)` | query `user_roles→roles→role_permissions→permissions` | ⚠️ Flagged broken/unseeded (TECH_DEBT TD-02). **[7 Agu 2026]** Dikonfirmasi 0 pemakaian — 0 hit di RLS policy manapun, 0 hit `rpc()` dari FE (frontend `hasPermission()`/`role_permissions` resmi pensiun dari kode, TD-06 kini PARTIAL). |
 | `has_role(role_code)` / `get_user_role_code()` | cek role di `user_roles` | Helper. |
+| **`is_admin_tier_role(p_role_id uuid)`** [BARU, 7 Agu 2026] | — (cek role code TARGET, bukan pemanggil) | SECURITY DEFINER. Dipakai `user_roles_insert`/`user_roles_update` (WITH CHECK/USING) — menolak admin biasa (`is_admin_or_above()` non-super) menulis baris `user_roles` yang menargetkan `role_id` tier `super_admin`/`admin`. Menutup **TD-170** (CRITICAL → RESOLVED), privilege escalation via RLS. |
 | `check_similar_accounts(p_name, p_company_id)` ✅ **berjejak `20260725000004`** (sudah dijalankan DAN TESTED — `SELECT check_similar_accounts('ALLIANCE COSMETIC', <uuid MSI>)` balik 3 baris similarity 1.0/0.842/0.619; smoke test UI 25 Jul 2026: warning fuzzy *"Mirip dengan: ALLIANCE COSMETICS"* muncul di jalur Prospect & Customer CRM — **[KOREKSI 25 Jul 2026 atas klaim lama "belum tes runtime"]**; ⚠️ belum di snapshot) | — (bukan predikat role; **SECURITY DEFINER** → menembus RLS `accounts`) | **Pre-check kemiripan nama akun** untuk peringatan duplikat di form. **Sengaja menembus RLS**: `prospects_read` membatasi sales ke akun **miliknya sendiri**, sehingga pre-check dari klien biasa **buta terhadap akun sales lain** dan akan menjanjikan "aman" untuk nama yang justru ditolak index `uq_accounts_norm_name_per_entitas`. **Batas kebocorannya dijaga dua lapis:** (a) hasil di-scope **satu entitas** lewat argumen `p_company_id`; (b) yang dikembalikan **hanya `id` + `name` + skor** — kolom lain milik akun sales lain **tidak** ikut terbuka. `GRANT EXECUTE TO authenticated`. ⚠️ **Ini pelonggaran visibilitas yang DISENGAJA** — kalau kelak dipakai untuk hal lain, tinjau ulang dulu. *(Atribusi: hasil SELECT + smoke test UI = laporan Den 25 Jul 2026, bukan verifikasi doc-keeper langsung ke DB/browser.)* |
 
 **Pola RLS accounts (acuan utama):**
@@ -188,11 +190,11 @@ Catatan: `profiles_read = USING(true)` (stopgap — semua authenticated baca pro
 
 ## 5. Known Gaps
 
-1. **TIGA sumber kebenaran permission yang tidak sinkron** (TECH_DEBT TD-06):
-   - **RLS DB** — pakai role hardcode (`is_admin_or_above()` ~51 policy, `is_manager_or_above()`).
-   - **`hasPermission(module, action)`** — frontend, baca `role_permissions`/`permissions`.
-   - **`hasMenuPermission(menuKey, action)`** — frontend, baca `user_menu_permissions` (granular per-user).
-   → UI bisa mengizinkan aksi yang RLS tolak (atau sebaliknya). Konsolidasi = bagian migrasi RLS RBAC-driven (TD-01).
+1. **TIGA sumber kebenaran permission yang tidak sinkron** (TECH_DEBT TD-06). **[UPDATE 7 Agu 2026 — kini DUA axis aktif, bukan tiga; TD-06 PARTIAL]:**
+   - **RLS DB** — pakai role hardcode (`is_admin_or_above()` ~51 policy, `is_manager_or_above()`). TAK BERUBAH — TD-01 tetap prasyarat penuh.
+   - ~~**`hasPermission(module, action)`** — frontend, baca `role_permissions`/`permissions`.~~ **PENSIUN DARI KODE (7 Agu 2026)** — struktur JS dibiarkan ada (vestigial), tapi fetch datanya dimatikan; tak lagi dipanggil di mana pun (dead branch `App.jsx canSeeMenuItem` juga dihapus). Objek DB (`role_permissions`/`permissions`) dibiarkan ada, tak dipakai lagi.
+   - **`hasMenuPermission(menuKey, action)`** — frontend, kini **resolusi 3-tingkat**: super_admin → user override (`user_menu_permissions.effect`, grant/deny) → role default (tabel baru `role_menu_permissions`, union semua role aktif) → deny. Lebih canggih dari sebelumnya (dulu cuma baca `user_menu_permissions` tanpa fallback role-level).
+   → UI bisa mengizinkan aksi yang RLS tolak (atau sebaliknya) — axis RLS vs axis FE **TETAP** dua sumber kebenaran terpisah, TAK disatukan sesi ini. Konsolidasi PENUH (termasuk RLS) = bagian migrasi RLS RBAC-driven (TD-01), belum dikerjakan.
 2. **`is_admin_or_above()` tak kenal manager/ceo** → memicu stopgap (`profiles_read USING(true)`, dropdown sales kosong utk manager sudah di-fix di frontend tapi RLS tetap perlu dibenahi).
 3. **`has_permission()` broken/unseeded** (TD-02) — tabel `permissions`/`role_permissions` ada di snapshot tapi status seed belum dikonfirmasi.
 4. **Audit CRUD/DELETE policy belum lengkap** (TD-03) — hanya ~4 dari ~50 tabel punya DELETE policy; UPDATE "admin-only" pernah nyangkut owner-edit.
