@@ -5,8 +5,8 @@
 // so this file exports ONLY components (Fast Refresh requirement).
 
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, RefreshCw as Spinner } from 'lucide-react';
-import { PASTEL, NAVY, ORANGE, LEGACY_ROLES, LEGACY_ROLE_COLOR } from './userAccessTokens';
+import { ChevronDown, ChevronUp, Check, X, RefreshCw as Spinner } from 'lucide-react';
+import { PASTEL, NAVY, ORANGE, RED, LEGACY_ROLES, LEGACY_ROLE_COLOR } from './userAccessTokens';
 
 // ─────────────────────────────────────────────────────────────
 // Small display components
@@ -182,10 +182,18 @@ export function SaveError({ message }) {
 // Permission Matrix — module/menu × action checkbox grid
 // ─────────────────────────────────────────────────────────────
 
-export function PermissionMatrix({ matrixModules, matrixActions, permDraft, onToggle, loading, saving, onSave, onCancel, permError }) {
+// roleDefaults is optional — a Set of 'ma_<id>'/'mea_<id>' keys granted at
+// role level (see RoleDefaultsPage.jsx). When absent (RoleDefaultsPage's own
+// usage), every cell/select-all/count below behaves exactly as before —
+// permDraft values stay plain booleans, checkboxes stay native <input>.
+// When present (UserEditPage's Permissions tab), permDraft values become
+// 'grant' | 'deny' | undefined (undefined = no override, follows the role
+// default shown via roleDefaults) and cells become a 3-state cycle control.
+export function PermissionMatrix({ matrixModules, matrixActions, permDraft, onToggle, loading, saving, onSave, onCancel, permError, roleDefaults }) {
   const [collapsed, setCollapsed] = useState({});
 
-  const totalGranted = Object.values(permDraft).filter(Boolean).length;
+  // 'deny' is truthy as a string but must NOT count as granted.
+  const totalGranted = Object.values(permDraft).filter(v => v === true || v === 'grant').length;
 
   const toggleCollapse = (modId) =>
     setCollapsed(prev => ({ ...prev, [modId]: !prev[modId] }));
@@ -199,13 +207,56 @@ export function PermissionMatrix({ matrixModules, matrixActions, permDraft, onTo
 
   const isFullySelected = (mod) => {
     const keys = modAllKeys(mod);
-    return keys.length > 0 && keys.every(k => permDraft[k]);
+    if (!keys.length) return false;
+    return roleDefaults ? keys.every(k => permDraft[k] === 'grant') : keys.every(k => permDraft[k]);
   };
 
   const handleSelectAll = (mod, select) => {
     const updates = {};
-    modAllKeys(mod).forEach(k => { updates[k] = select; });
+    modAllKeys(mod).forEach(k => {
+      // 3-state: "Select all" grants everything explicitly; "Deselect all"
+      // clears overrides (reverts to follow-role) — it does NOT deny everything.
+      updates[k] = roleDefaults ? (select ? 'grant' : undefined) : select;
+    });
     onToggle(updates);
+  };
+
+  // Cell renderer — native checkbox in 2-state mode (roleDefaults absent),
+  // custom 3-state cycle button when roleDefaults is provided.
+  const renderCell = (key) => {
+    if (!roleDefaults) {
+      return (
+        <input
+          type="checkbox"
+          checked={!!permDraft[key]}
+          onChange={e => onToggle({ [key]: e.target.checked })}
+          style={{ width: 15, height: 15, cursor: 'pointer', accentColor: ORANGE }}
+        />
+      );
+    }
+    const val = permDraft[key]; // 'grant' | 'deny' | undefined
+    const roleGrants = roleDefaults.has(key);
+    const cycle = () => onToggle({ [key]: val === undefined ? 'grant' : val === 'grant' ? 'deny' : undefined });
+    const title = val === 'grant' ? 'Boleh (override user)'
+      : val === 'deny' ? 'Larang (override user)'
+      : roleGrants ? 'Ikut role — role saat ini mengizinkan' : 'Ikut role — role saat ini tidak mengizinkan';
+    return (
+      <button
+        type="button"
+        onClick={cycle}
+        title={title}
+        style={{
+          width: 15, height: 15, borderRadius: 4, padding: 0, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1.5px solid ${val === 'deny' ? RED : val === 'grant' ? ORANGE : PASTEL.line}`,
+          background: val === 'grant' ? ORANGE : val === 'deny' ? RED : 'transparent',
+        }}
+      >
+        {val === 'grant' && <Check size={11} strokeWidth={3} color="white" />}
+        {val === 'deny'  && <X size={11} strokeWidth={3} color="white" />}
+        {val === undefined && roleGrants && <Check size={10} strokeWidth={3} style={{ opacity: 0.35, color: ORANGE }} />}
+      </button>
+    );
   };
 
   const colW = 52; // px per action column
@@ -291,14 +342,7 @@ export function PermissionMatrix({ matrixModules, matrixActions, permDraft, onTo
                     const ma = (mod.module_actions || []).find(a => a.action === act);
                     return (
                       <div key={act} style={{ width: colW, display: 'flex', justifyContent: 'center' }}>
-                        {ma ? (
-                          <input
-                            type="checkbox"
-                            checked={!!permDraft[`ma_${ma.id}`]}
-                            onChange={e => onToggle({ [`ma_${ma.id}`]: e.target.checked })}
-                            style={{ width: 15, height: 15, cursor: 'pointer', accentColor: ORANGE }}
-                          />
-                        ) : (
+                        {ma ? renderCell(`ma_${ma.id}`) : (
                           <span style={{ fontSize: 10, color: PASTEL.line }}>—</span>
                         )}
                       </div>
@@ -343,14 +387,7 @@ export function PermissionMatrix({ matrixModules, matrixActions, permDraft, onTo
                       const mea = (menu.menu_actions || []).find(a => a.action === act);
                       return (
                         <div key={act} style={{ width: colW, display: 'flex', justifyContent: 'center' }}>
-                          {mea ? (
-                            <input
-                              type="checkbox"
-                              checked={!!permDraft[`mea_${mea.id}`]}
-                              onChange={e => onToggle({ [`mea_${mea.id}`]: e.target.checked })}
-                              style={{ width: 15, height: 15, cursor: 'pointer', accentColor: ORANGE }}
-                            />
-                          ) : (
+                          {mea ? renderCell(`mea_${mea.id}`) : (
                             <span style={{ fontSize: 10, color: PASTEL.line }}>—</span>
                           )}
                         </div>
