@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict huAJHX4DT0EyRdPtzZUlMQzEH4BCHumsXabZLUT6yqwSeAJVpTmeap3vYTNU7NS
+\restrict jXTRGy6ZUAqtGae15kjA2B9dShR0xzUfJGfdVaTWkhzvPn2mYxR0Nr518b6osQd
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1007,6 +1007,29 @@ $$;
 --
 
 COMMENT ON FUNCTION public.is_admin_or_above() IS 'True if current user is admin or super_admin. Includes legacy profiles.role=''super'' fallback for Phase 1.0D→1.0F transition.';
+
+
+--
+-- Name: is_admin_tier_role(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_admin_tier_role(p_role_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.roles r
+    WHERE r.id = p_role_id
+      AND r.code IN ('super_admin', 'admin')
+  )
+$$;
+
+
+--
+-- Name: FUNCTION is_admin_tier_role(p_role_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.is_admin_tier_role(p_role_id uuid) IS 'True if the given role_id resolves to super_admin or admin. SECURITY DEFINER so the check is independent of caller''s RLS visibility into roles. Used to gate user_roles writes — see user_roles_insert/update.';
 
 
 --
@@ -14577,7 +14600,7 @@ ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 -- Name: user_roles user_roles_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY user_roles_insert ON public.user_roles FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
+CREATE POLICY user_roles_insert ON public.user_roles FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above() AND (public.is_super_admin() OR (NOT public.is_admin_tier_role(role_id)))));
 
 
 --
@@ -14591,7 +14614,7 @@ CREATE POLICY user_roles_read ON public.user_roles FOR SELECT TO authenticated U
 -- Name: user_roles user_roles_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY user_roles_update ON public.user_roles FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND public.is_admin_or_above())) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
+CREATE POLICY user_roles_update ON public.user_roles FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND public.is_admin_or_above() AND (public.is_super_admin() OR (NOT public.is_admin_tier_role(role_id))))) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above() AND (public.is_super_admin() OR (NOT public.is_admin_tier_role(role_id)))));
 
 
 --
@@ -14661,5 +14684,5 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict huAJHX4DT0EyRdPtzZUlMQzEH4BCHumsXabZLUT6yqwSeAJVpTmeap3vYTNU7NS
+\unrestrict jXTRGy6ZUAqtGae15kjA2B9dShR0xzUfJGfdVaTWkhzvPn2mYxR0Nr518b6osQd
 
