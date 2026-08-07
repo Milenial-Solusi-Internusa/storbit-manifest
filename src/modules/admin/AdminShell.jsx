@@ -9,7 +9,7 @@ import { Check } from 'lucide-react';
 import { useAuth } from '../../contexts/useAuth';
 import {
   Building2, MapPin, Network, Briefcase, GitBranch,
-  ShieldCheck, Users,
+  Users,
   FileText, Tag, Percent, CreditCard,
 } from 'lucide-react';
 import ErrorBoundary from '../../components/ErrorBoundary';
@@ -17,7 +17,6 @@ import CompaniesPage from './pages/CompaniesPage';
 import BranchesPage from './pages/BranchesPage';
 import DepartmentsPage from './pages/DepartmentsPage';
 import PositionsPage from './pages/PositionsPage';
-import RolesPage from './pages/RolesPage';
 import DocumentTypesPage from './pages/DocumentTypesPage';
 import StatusCatalogPage from './pages/StatusCatalogPage';
 import TaxesPage from './pages/TaxesPage';
@@ -62,7 +61,6 @@ const NAV_SECTIONS = [
   {
     label: 'Access Control',
     items: [
-      { id: 'roles',       label: 'Roles',       icon: ShieldCheck, permission: { module: 'admin', action: 'edit' } },
       { id: 'user-access', label: 'User Access', icon: Users,       permission: { module: 'admin', action: 'view' } },
     ],
   },
@@ -177,7 +175,6 @@ const PAGE_MAP = {
   'departments':    <ErrorBoundary title="Departments unavailable"><DepartmentsPage /></ErrorBoundary>,
   'positions':      <ErrorBoundary title="Positions unavailable"><PositionsPage /></ErrorBoundary>,
   'org-structure':  <ErrorBoundary title="Struktur Organisasi unavailable"><OrgStructurePage /></ErrorBoundary>,
-  'roles':          <ErrorBoundary title="Roles unavailable"><RolesPage /></ErrorBoundary>,
   'document-types': <ErrorBoundary title="Document Types unavailable"><DocumentTypesPage /></ErrorBoundary>,
   'status-catalog': <ErrorBoundary title="Status Catalog unavailable"><StatusCatalogPage /></ErrorBoundary>,
   'taxes':          <ErrorBoundary title="Taxes unavailable"><TaxesPage /></ErrorBoundary>,

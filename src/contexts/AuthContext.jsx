@@ -207,13 +207,6 @@ export function AuthProvider({ children }) {
     setUserPermissions(data || []);
   }, []);
 
-  // Re-fetch permissions whenever erpRoles changes (login / role change)
-  useEffect(() => {
-    const primary = pickPrimaryErpRole(erpRoles);
-    const roleId  = primary?.role_id;
-    fetchPermissionsForRoleId(roleId);
-  }, [erpRoles, fetchPermissionsForRoleId]);
-
   // Manual refresh (kalau ada admin update profile dari panel lain)
   const refreshProfile = async () => {
     if (!session?.user) return;

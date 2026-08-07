@@ -1307,9 +1307,9 @@ const MENU_KEY_MAP = {
   'admin-settings':'admin_settings',
 };
 
-// canSeeMenuItem — priority: public → hasMenuPermission (per-user) → hasPermission
-// (role-based) → item.role array → DEFAULT-DENY.
-// Item tanpa gate apa pun (tanpa public/menuKey/module/role) disembunyikan.
+// canSeeMenuItem — priority: public → hasMenuPermission (per-user) → item.role
+// array → DEFAULT-DENY.
+// Item tanpa gate apa pun (tanpa public/menuKey/role) disembunyikan.
 const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
   if (item.section) return true;
   // Item ber-flag public terlihat untuk semua authenticated user.
@@ -1318,10 +1318,6 @@ const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
   if (typeof hasMenuPermission === 'function') {
     const menuKey = MENU_KEY_MAP[item.id];
     if (menuKey) return hasMenuPermission(menuKey, 'view');
-  }
-  // Fallback sistema lama: role-based module permission
-  if (item.module && typeof hasPermission === 'function') {
-    return hasPermission(item.module, 'view');
   }
   if (item.role) return item.role.includes(role);
   // Default-deny.
