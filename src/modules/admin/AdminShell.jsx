@@ -9,7 +9,7 @@ import { Check } from 'lucide-react';
 import { useAuth } from '../../contexts/useAuth';
 import {
   Building2, MapPin, Network, Briefcase, GitBranch,
-  Users,
+  Users, ShieldCheck,
   FileText, Tag, Percent, CreditCard,
 } from 'lucide-react';
 import ErrorBoundary from '../../components/ErrorBoundary';
@@ -23,6 +23,7 @@ import TaxesPage from './pages/TaxesPage';
 import PaymentTermsPage from './pages/PaymentTermsPage';
 import UserAccessPage from './pages/UserAccessPage';
 import UserEditPage from './pages/UserEditPage';
+import RoleDefaultsPage from './pages/RoleDefaultsPage';
 import OrgStructurePage from '../foundation/OrgStructurePage';
 
 // ─────────────────────────────────────────────────────────────
@@ -62,6 +63,7 @@ const NAV_SECTIONS = [
     label: 'Access Control',
     items: [
       { id: 'user-access', label: 'User Access', icon: Users,       permission: { module: 'admin', action: 'view' } },
+      { id: 'role-defaults', label: 'Role Defaults', icon: ShieldCheck, superAdminOnly: true },
     ],
   },
   {
@@ -125,6 +127,11 @@ function Sidebar({ active, onSelect, role }) {
             // (super_admin/admin) instead of the legacy hasPermission('admin',…) —
             // removes the last active role_permissions consumer. Mapping to
             // foundation_master was rejected (granted broadly → would over-expose).
+            // Role Defaults is stricter still (super_admin only) — RLS on
+            // role_menu_permissions only allows writes from is_super_admin(),
+            // so admin-or-above here would be a trap-UX (button visible, save
+            // fails silently).
+            if (item.superAdminOnly) return role === 'super_admin';
             if (!item.permission) return true;
             return role === 'super_admin' || role === 'admin';
           }).map((item) => {
@@ -235,6 +242,17 @@ export default function AdminShell() {
         <UserAccessPage showToast={showToast} onEditUser={openUserEdit} />
       </ErrorBoundary>
     );
+  } else if (activeTab === 'role-defaults') {
+    // Defense-in-depth: super_admin check here too, not just in Sidebar's
+    // filter — activeTab is local state with no re-check otherwise, so a
+    // DevTools-forced activeTab would still reach this branch. RLS on
+    // role_menu_permissions is super_admin-only anyway, but the FE shouldn't
+    // render a page whose actions will silently fail for anyone else.
+    content = role === 'super_admin' ? (
+      <ErrorBoundary title="Role Defaults unavailable">
+        <RoleDefaultsPage showToast={showToast} />
+      </ErrorBoundary>
+    ) : null;
   } else {
     content = PAGE_MAP[activeTab] ?? null;
   }
