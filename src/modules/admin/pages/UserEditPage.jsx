@@ -524,7 +524,7 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
             Hapus User
           </button>
         )}
-        {tab === 'profile' && (
+        {tab === 'profile' && isSuperAdmin && (
           <button
             type="button" onClick={handleSave} disabled={saving || !draft}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
@@ -690,14 +690,25 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
                   <div className="space-y-5">
                     <div>
                       <FieldLabel>ERP Role</FieldLabel>
-                      <FieldSelect value={draft.erp_role_id} onChange={(v) => setDraft((d) => ({ ...d, erp_role_id: v }))} disabled={saving || !draft.company_id}>
-                        <option value="">— No ERP role —</option>
-                        {formOptions.erpRoles.map((r) => (
-                          <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
-                        ))}
-                      </FieldSelect>
-                      {!draft.company_id && (
-                        <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Select a company first.</p>
+                      {isSuperAdmin ? (
+                        <>
+                          <FieldSelect value={draft.erp_role_id} onChange={(v) => setDraft((d) => ({ ...d, erp_role_id: v }))} disabled={saving || !draft.company_id}>
+                            <option value="">— No ERP role —</option>
+                            {formOptions.erpRoles.map((r) => (
+                              <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                            ))}
+                          </FieldSelect>
+                          {!draft.company_id && (
+                            <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Select a company first.</p>
+                          )}
+                        </>
+                      ) : (
+                        <div
+                          className="text-sm px-3.5 py-2.5 rounded-xl"
+                          style={{ background: PASTEL.sky, color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
+                        >
+                          {formOptions.erpRoles.find((r) => r.id === draft.erp_role_id)?.name || '— No ERP role —'}
+                        </div>
                       )}
                     </div>
 
