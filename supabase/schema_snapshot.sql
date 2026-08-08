@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jXTRGy6ZUAqtGae15kjA2B9dShR0xzUfJGfdVaTWkhzvPn2mYxR0Nr518b6osQd
+\restrict 1yRsqje8CD10XrQHoRT8lr02eqsB4sxfwgRjn6N6xPIDfWIO9sBJKw6Lkw29WNV
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -195,6 +195,17 @@ BEGIN
     )
     UPDATE sp_items si SET shipped_qty = GREATEST(si.shipped_qty - agg.qty, 0), updated_at = now()
     FROM agg WHERE si.id = agg.sp_item_id;
+
+    -- ===== BARU: reversal shipped_qty ke sp_order_items (simetris) =====
+    WITH agg AS (
+      SELECT pli.sp_item_id AS sp_item_id, SUM(dni.qty) AS qty
+      FROM delivery_note_items dni
+      JOIN picking_list_items pli ON pli.id = dni.picking_list_item_id
+      WHERE dni.delivery_note_id = p_delivery_note_id AND COALESCE(dni.qty,0) > 0 AND pli.sp_item_id IS NOT NULL
+      GROUP BY pli.sp_item_id
+    )
+    UPDATE sp_order_items soi SET shipped_qty = GREATEST(soi.shipped_qty - agg.qty, 0), updated_at = now()
+    FROM agg WHERE soi.legacy_sp_item_id = agg.sp_item_id;
   END IF;
 
   UPDATE delivery_notes SET status='cancelled', cancelled_at=now() WHERE id=p_delivery_note_id;
@@ -293,6 +304,69 @@ BEGIN
     RAISE EXCEPTION 'Hanya picking pending/in_progress yang bisa diselesaikan (status=%)', v_status; END IF;
   UPDATE picking_lists SET status='done', completed_at=now(), updated_at=now() WHERE id=p_picking_list_id;
   PERFORM sp_recompute_status(v_cust, v_sp);
+END; $$;
+
+
+--
+-- Name: create_invoice(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_invoice(p_sp_order_id uuid) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_company_id   uuid; v_customer_id uuid; v_sp_no text; v_entity_code text;
+  v_year         int := extract(year from now())::int;
+  v_seq          int; v_invoice_no text; v_invoice_id uuid;
+  v_ordered      int; v_shipped int;
+  v_total_dpp    numeric(18,2); v_total_ppn numeric(18,2); v_total_amount numeric(18,2);
+  v_uid          uuid := auth.uid();
+BEGIN
+  IF NOT (is_super_admin() OR is_manager_or_above() OR has_role('finance_controller')) THEN
+    RAISE EXCEPTION 'Tidak punya izin menerbitkan invoice.';
+  END IF;
+
+  SELECT company_id, customer_id, sp_no INTO v_company_id, v_customer_id, v_sp_no
+    FROM sp_orders WHERE id = p_sp_order_id AND deleted_at IS NULL;
+  IF v_company_id IS NULL THEN RAISE EXCEPTION 'SP tidak ditemukan.'; END IF;
+
+  IF EXISTS (SELECT 1 FROM sp_invoices WHERE sp_order_id = p_sp_order_id AND status <> 'void') THEN
+    RAISE EXCEPTION 'SP ini sudah punya invoice aktif.';
+  END IF;
+
+  SELECT COALESCE(SUM(qty),0), COALESCE(SUM(shipped_qty),0) INTO v_ordered, v_shipped
+    FROM sp_order_items WHERE sp_order_id = p_sp_order_id;
+  IF v_ordered = 0 OR v_shipped <> v_ordered THEN
+    RAISE EXCEPTION 'SP belum terkirim penuh (Σshipped=%, Σqty=%) — invoice tidak bisa diterbitkan.', v_shipped, v_ordered;
+  END IF;
+
+  SELECT code INTO v_entity_code FROM companies WHERE id = v_company_id;
+  v_seq := increment_document_sequence(v_company_id, 'INV', 'FIN', v_year, 0, 0);
+  v_invoice_no := 'INV/' || v_entity_code || '/FIN/' || v_year || '/' || lpad(v_seq::text, 4, '0');
+
+  INSERT INTO sp_invoices (company_id, sp_order_id, invoice_no, invoice_date, status, created_by)
+  VALUES (v_company_id, p_sp_order_id, v_invoice_no, current_date, 'issued', v_uid)
+  RETURNING id INTO v_invoice_id;
+
+  INSERT INTO sp_invoice_lines (invoice_id, sp_order_item_id, dpp, ppn, qty, position)
+  SELECT v_invoice_id, i.id,
+         (i.unit_price * i.shipped_qty),
+         ROUND((i.unit_price * i.shipped_qty + i.shipping_price) * 0.11),
+         i.shipped_qty,
+         row_number() OVER (ORDER BY i.created_at)
+    FROM sp_order_items i WHERE i.sp_order_id = p_sp_order_id;
+
+  SELECT COALESCE(SUM(dpp),0), COALESCE(SUM(ppn),0) INTO v_total_dpp, v_total_ppn
+    FROM sp_invoice_lines WHERE invoice_id = v_invoice_id;
+  SELECT v_total_dpp + v_total_ppn + COALESCE(SUM(shipping_price),0) INTO v_total_amount
+    FROM sp_order_items WHERE sp_order_id = p_sp_order_id;
+
+  UPDATE sp_invoices SET total_dpp = v_total_dpp, total_ppn = v_total_ppn, total_amount = v_total_amount
+   WHERE id = v_invoice_id;
+
+  PERFORM sp_recompute_status(v_customer_id, v_sp_no);
+  RETURN v_invoice_id;
 END; $$;
 
 
@@ -437,6 +511,17 @@ BEGIN
   )
   UPDATE sp_items si SET shipped_qty = si.shipped_qty + agg.qty, updated_at = now()
   FROM agg WHERE si.id = agg.sp_item_id;
+
+  -- ===== BARU: jembatan shipped_qty ke sp_order_items (kanonik skema baru) =====
+  WITH agg AS (
+    SELECT pli.sp_item_id AS sp_item_id, SUM(dni.qty) AS qty
+    FROM delivery_note_items dni
+    JOIN picking_list_items pli ON pli.id = dni.picking_list_item_id
+    WHERE dni.delivery_note_id = p_delivery_note_id AND COALESCE(dni.qty,0) > 0 AND pli.sp_item_id IS NOT NULL
+    GROUP BY pli.sp_item_id
+  )
+  UPDATE sp_order_items soi SET shipped_qty = LEAST(soi.shipped_qty + agg.qty, soi.qty), updated_at = now()
+  FROM agg WHERE soi.legacy_sp_item_id = agg.sp_item_id;
 
   PERFORM sp_recompute_status(v_cust, v_sp);
 END; $$;
@@ -1777,12 +1862,12 @@ DECLARE
   v_id uuid; v_status text; v_new text;
   v_confirmed bool; v_has_done bool; v_has_active bool; v_short bool;
   v_ordered int; v_shipped int; v_has_dispatch bool; v_has_delivered bool;
-  v_has_btb bool;
+  v_has_btb bool; v_has_invoice bool; v_submitted bool;
 BEGIN
   SELECT id, status INTO v_id, v_status
     FROM sp_orders WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND deleted_at IS NULL;
   IF v_id IS NULL THEN RETURN; END IF;
-  IF v_status IN ('CANCELLED','INVOICED','SUBMITTED','LUNAS') THEN RETURN; END IF;
+  IF v_status IN ('CANCELLED','LUNAS') THEN RETURN; END IF;
   v_confirmed  := EXISTS(SELECT 1 FROM sp_items WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND sp_status='confirmed');
   v_has_done   := EXISTS(SELECT 1 FROM picking_lists WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status='done');
   v_has_active := EXISTS(SELECT 1 FROM picking_lists WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status IN ('pending','in_progress'));
@@ -1797,8 +1882,12 @@ BEGIN
     FROM sp_items WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND sp_status='confirmed';
   v_has_dispatch  := EXISTS(SELECT 1 FROM delivery_notes WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status IN ('in_transit','delivered'));
   v_has_delivered := EXISTS(SELECT 1 FROM delivery_notes WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status='delivered');
-  v_has_btb := EXISTS(SELECT 1 FROM sp_btb WHERE sp_order_id=v_id AND deleted_at IS NULL);
+  v_has_btb     := EXISTS(SELECT 1 FROM sp_btb      WHERE sp_order_id=v_id AND deleted_at IS NULL);
+  v_has_invoice := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND status <> 'void');
+  v_submitted   := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND status='submitted');
   v_new := CASE
+    WHEN v_submitted                              THEN 'SUBMITTED'
+    WHEN v_has_invoice                            THEN 'INVOICED'
     WHEN v_has_btb                                THEN 'BTB_TERBIT'
     WHEN v_ordered > 0 AND v_shipped >= v_ordered THEN 'TERKIRIM_PENUH'
     WHEN v_has_delivered                          THEN 'SAMPAI'
@@ -1836,6 +1925,35 @@ CREATE FUNCTION public.storbit_sp_customers() RETURNS jsonb
       AND a.company_id = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697'
   ) t;
 $$;
+
+
+--
+-- Name: submit_invoice(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.submit_invoice(p_invoice_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_sp_order_id uuid; v_customer_id uuid; v_sp_no text; v_status text;
+BEGIN
+  IF NOT (is_super_admin() OR is_manager_or_above() OR has_role('finance_controller')) THEN
+    RAISE EXCEPTION 'Tidak punya izin submit invoice.';
+  END IF;
+
+  SELECT sp_order_id, status INTO v_sp_order_id, v_status
+    FROM sp_invoices WHERE id = p_invoice_id AND deleted_at IS NULL;
+  IF v_sp_order_id IS NULL THEN RAISE EXCEPTION 'Invoice tidak ditemukan.'; END IF;
+  IF v_status <> 'issued' THEN
+    RAISE EXCEPTION 'Invoice berstatus % — cuma invoice "issued" yang bisa di-submit.', v_status;
+  END IF;
+
+  UPDATE sp_invoices SET status = 'submitted', submitted_at = now(), updated_at = now()
+   WHERE id = p_invoice_id;
+
+  SELECT customer_id, sp_no INTO v_customer_id, v_sp_no FROM sp_orders WHERE id = v_sp_order_id;
+  PERFORM sp_recompute_status(v_customer_id, v_sp_no);
+END; $$;
 
 
 --
@@ -1929,6 +2047,42 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: update_sp_item_dual(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_sp_item_dual(p_id uuid, p_item jsonb) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_rec sp_items%ROWTYPE;
+BEGIN
+  v_rec := jsonb_populate_record(null::sp_items, p_item);
+
+  UPDATE sp_items SET
+    sp_date = v_rec.sp_date, sp_no = v_rec.sp_no, customer_id = v_rec.customer_id,
+    product_id = v_rec.product_id, product_name = v_rec.product_name, sku = v_rec.sku,
+    qty = v_rec.qty, shipped_qty = v_rec.shipped_qty,
+    exp_date = v_rec.exp_date, expired_date = v_rec.expired_date, dc = v_rec.dc,
+    shipping_date = v_rec.shipping_date, sla_days = v_rec.sla_days,
+    estimated_delivery_date = v_rec.estimated_delivery_date, arrival_date = v_rec.arrival_date,
+    unit_price = v_rec.unit_price, shipping_price = v_rec.shipping_price,
+    inv = v_rec.inv, fp = v_rec.fp, submit = v_rec.submit, kirim = v_rec.kirim,
+    submit_date = v_rec.submit_date, email_status = v_rec.email_status, notes = v_rec.notes,
+    updated_at = now()
+  WHERE id = p_id;
+
+  UPDATE sp_order_items SET
+    qty = v_rec.qty,
+    sla_days = v_rec.sla_days,
+    estimated_delivery_date = v_rec.estimated_delivery_date,
+    shipping_price = v_rec.shipping_price,
+    notes = v_rec.notes,
+    updated_at = now()
+  WHERE legacy_sp_item_id = p_id;
+END; $$;
 
 
 SET default_tablespace = '';
@@ -2359,7 +2513,9 @@ CREATE TABLE public.ar_ttfs (
     tgl_pembayaran date,
     notes text DEFAULT ''::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    sp_order_id uuid,
+    invoice_id uuid
 );
 
 
@@ -2746,6 +2902,25 @@ CREATE TABLE public.audit_logs (
     ip_address text,
     user_agent text,
     notes text
+);
+
+
+--
+-- Name: backfill_sp_order_items_20260808; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.backfill_sp_order_items_20260808 (
+    sp_order_item_id uuid,
+    sp_order_id uuid,
+    sp_item_id uuid,
+    sp_no text,
+    customer_id uuid,
+    qty_lama integer,
+    shipped_qty_lama integer,
+    sla_days_lama integer,
+    estimated_delivery_date_lama date,
+    shipping_price_lama numeric(18,2),
+    notes_lama text
 );
 
 
@@ -5383,6 +5558,21 @@ CREATE TABLE public.rate_sheets (
 
 
 --
+-- Name: role_menu_permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.role_menu_permissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    role_id uuid NOT NULL,
+    menu_action_id uuid,
+    module_action_id uuid,
+    granted_by uuid,
+    granted_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT rmp_one_action_required CHECK ((((module_action_id IS NOT NULL) AND (menu_action_id IS NULL)) OR ((module_action_id IS NULL) AND (menu_action_id IS NOT NULL))))
+);
+
+
+--
 -- Name: role_permission_templates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5603,6 +5793,47 @@ CREATE TABLE public.sp_btbs (
 
 
 --
+-- Name: sp_invoice_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sp_invoice_lines (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    invoice_id uuid NOT NULL,
+    sp_order_item_id uuid,
+    btb_id uuid,
+    dpp numeric(18,2) DEFAULT 0 NOT NULL,
+    ppn numeric(18,2) DEFAULT 0 NOT NULL,
+    qty integer,
+    "position" integer
+);
+
+
+--
+-- Name: sp_invoices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sp_invoices (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    sp_order_id uuid NOT NULL,
+    invoice_no text,
+    faktur_no text,
+    invoice_date date,
+    status text DEFAULT 'draft'::text NOT NULL,
+    submitted_at timestamp with time zone,
+    submit_ref text,
+    total_dpp numeric(18,2) DEFAULT 0 NOT NULL,
+    total_ppn numeric(18,2) DEFAULT 0 NOT NULL,
+    total_amount numeric(18,2) DEFAULT 0 NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT sp_invoices_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'issued'::text, 'submitted'::text, 'partial'::text, 'paid'::text, 'void'::text])))
+);
+
+
+--
 -- Name: sp_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5736,6 +5967,22 @@ CREATE TABLE public.sp_orders (
     deleted_at timestamp with time zone,
     had_cancelled_picking boolean DEFAULT false NOT NULL,
     CONSTRAINT sp_orders_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'CONFIRMED'::text, 'MENUNGGU_STOK'::text, 'PICKING'::text, 'PACKED'::text, 'DIKIRIM'::text, 'SAMPAI'::text, 'BTB_TERBIT'::text, 'TERKIRIM_PENUH'::text, 'INVOICED'::text, 'SUBMITTED'::text, 'LUNAS'::text, 'CANCELLED'::text])))
+);
+
+
+--
+-- Name: sp_payments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sp_payments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    invoice_id uuid NOT NULL,
+    payment_date date,
+    amount numeric(18,2) NOT NULL,
+    pph numeric(18,2) DEFAULT 0 NOT NULL,
+    reference text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -5996,7 +6243,9 @@ CREATE TABLE public.user_menu_permissions (
     granted_by uuid,
     granted_at timestamp with time zone DEFAULT now(),
     module_action_id uuid,
-    CONSTRAINT ump_one_action_required CHECK ((((module_action_id IS NOT NULL) AND (menu_action_id IS NULL)) OR ((module_action_id IS NULL) AND (menu_action_id IS NOT NULL))))
+    effect text DEFAULT 'grant'::text NOT NULL,
+    CONSTRAINT ump_one_action_required CHECK ((((module_action_id IS NOT NULL) AND (menu_action_id IS NULL)) OR ((module_action_id IS NULL) AND (menu_action_id IS NOT NULL)))),
+    CONSTRAINT user_menu_permissions_effect_check CHECK ((effect = ANY (ARRAY['grant'::text, 'deny'::text])))
 );
 
 
@@ -7120,6 +7369,14 @@ ALTER TABLE ONLY public.rate_sheets
 
 
 --
+-- Name: role_menu_permissions role_menu_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_menu_permissions
+    ADD CONSTRAINT role_menu_permissions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: role_permission_templates role_permission_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7224,6 +7481,30 @@ ALTER TABLE ONLY public.sp_btbs
 
 
 --
+-- Name: sp_invoice_lines sp_invoice_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_invoice_lines
+    ADD CONSTRAINT sp_invoice_lines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sp_invoices sp_invoice_one_per_sp; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_invoices
+    ADD CONSTRAINT sp_invoice_one_per_sp UNIQUE (sp_order_id);
+
+
+--
+-- Name: sp_invoices sp_invoices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_invoices
+    ADD CONSTRAINT sp_invoices_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sp_items sp_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7253,6 +7534,14 @@ ALTER TABLE ONLY public.sp_orders
 
 ALTER TABLE ONLY public.sp_orders
     ADD CONSTRAINT sp_orders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sp_payments sp_payments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_payments
+    ADD CONSTRAINT sp_payments_pkey PRIMARY KEY (id);
 
 
 --
@@ -8489,6 +8778,27 @@ CREATE INDEX idx_quotations_status ON public.quotations USING btree (status);
 
 
 --
+-- Name: idx_role_menu_permissions_menu_action_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_role_menu_permissions_menu_action_id ON public.role_menu_permissions USING btree (menu_action_id);
+
+
+--
+-- Name: idx_role_menu_permissions_module_action_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_role_menu_permissions_module_action_id ON public.role_menu_permissions USING btree (module_action_id);
+
+
+--
+-- Name: idx_role_menu_permissions_role_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_role_menu_permissions_role_id ON public.role_menu_permissions USING btree (role_id);
+
+
+--
 -- Name: idx_role_permissions_permission_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8668,6 +8978,20 @@ CREATE INDEX idx_vendors_deleted_at ON public.vendors USING btree (deleted_at) W
 --
 
 CREATE INDEX idx_vendors_is_active ON public.vendors USING btree (is_active);
+
+
+--
+-- Name: role_menu_permissions_role_menu_action_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX role_menu_permissions_role_menu_action_unique ON public.role_menu_permissions USING btree (role_id, menu_action_id) WHERE (menu_action_id IS NOT NULL);
+
+
+--
+-- Name: role_menu_permissions_role_module_action_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX role_menu_permissions_role_module_action_unique ON public.role_menu_permissions USING btree (role_id, module_action_id) WHERE (module_action_id IS NOT NULL);
 
 
 --
@@ -9325,6 +9649,22 @@ ALTER TABLE ONLY public.ar_btbs
 
 ALTER TABLE ONLY public.ar_ttfs
     ADD CONSTRAINT ar_ttfs_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: ar_ttfs ar_ttfs_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ar_ttfs
+    ADD CONSTRAINT ar_ttfs_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.sp_invoices(id);
+
+
+--
+-- Name: ar_ttfs ar_ttfs_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ar_ttfs
+    ADD CONSTRAINT ar_ttfs_sp_order_id_fkey FOREIGN KEY (sp_order_id) REFERENCES public.sp_orders(id);
 
 
 --
@@ -11120,6 +11460,38 @@ ALTER TABLE ONLY public.rate_sheets
 
 
 --
+-- Name: role_menu_permissions role_menu_permissions_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_menu_permissions
+    ADD CONSTRAINT role_menu_permissions_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: role_menu_permissions role_menu_permissions_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_menu_permissions
+    ADD CONSTRAINT role_menu_permissions_menu_action_id_fkey FOREIGN KEY (menu_action_id) REFERENCES public.menu_actions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: role_menu_permissions role_menu_permissions_module_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_menu_permissions
+    ADD CONSTRAINT role_menu_permissions_module_action_id_fkey FOREIGN KEY (module_action_id) REFERENCES public.module_actions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: role_menu_permissions role_menu_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_menu_permissions
+    ADD CONSTRAINT role_menu_permissions_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: role_permission_templates role_permission_templates_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11328,6 +11700,46 @@ ALTER TABLE ONLY public.sp_btb
 
 
 --
+-- Name: sp_invoice_lines sp_invoice_lines_btb_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_invoice_lines
+    ADD CONSTRAINT sp_invoice_lines_btb_id_fkey FOREIGN KEY (btb_id) REFERENCES public.sp_btb(id);
+
+
+--
+-- Name: sp_invoice_lines sp_invoice_lines_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_invoice_lines
+    ADD CONSTRAINT sp_invoice_lines_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.sp_invoices(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sp_invoice_lines sp_invoice_lines_sp_order_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_invoice_lines
+    ADD CONSTRAINT sp_invoice_lines_sp_order_item_id_fkey FOREIGN KEY (sp_order_item_id) REFERENCES public.sp_order_items(id);
+
+
+--
+-- Name: sp_invoices sp_invoices_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_invoices
+    ADD CONSTRAINT sp_invoices_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: sp_invoices sp_invoices_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_invoices
+    ADD CONSTRAINT sp_invoices_sp_order_id_fkey FOREIGN KEY (sp_order_id) REFERENCES public.sp_orders(id);
+
+
+--
 -- Name: sp_items sp_items_cancelled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11405,6 +11817,14 @@ ALTER TABLE ONLY public.sp_orders
 
 ALTER TABLE ONLY public.sp_orders
     ADD CONSTRAINT sp_orders_dc_id_fkey FOREIGN KEY (dc_id) REFERENCES public.dc_master(id);
+
+
+--
+-- Name: sp_payments sp_payments_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sp_payments
+    ADD CONSTRAINT sp_payments_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.sp_invoices(id) ON DELETE CASCADE;
 
 
 --
@@ -12028,6 +12448,12 @@ CREATE POLICY audit_logs_insert ON public.audit_logs FOR INSERT WITH CHECK ((aut
 
 CREATE POLICY audit_logs_read ON public.audit_logs FOR SELECT USING (public.is_admin_or_above());
 
+
+--
+-- Name: backfill_sp_order_items_20260808; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.backfill_sp_order_items_20260808 ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: backup_b4_inquiries_20260725; Type: ROW SECURITY; Schema: public; Owner: -
@@ -14055,6 +14481,28 @@ CREATE POLICY rate_sheets_update ON public.rate_sheets FOR UPDATE TO authenticat
 
 
 --
+-- Name: role_menu_permissions rmp_admin_all; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY rmp_admin_all ON public.role_menu_permissions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+
+
+--
+-- Name: role_menu_permissions rmp_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY rmp_select ON public.role_menu_permissions FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.user_roles ur
+  WHERE ((ur.role_id = role_menu_permissions.role_id) AND (ur.user_id = auth.uid()) AND (ur.is_active = true)))));
+
+
+--
+-- Name: role_menu_permissions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.role_menu_permissions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: role_permission_templates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -14332,6 +14780,80 @@ CREATE POLICY sp_btbs_update ON public.sp_btbs FOR UPDATE USING ((auth.uid() IS 
 
 
 --
+-- Name: sp_invoice_lines; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sp_invoice_lines ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sp_invoice_lines sp_invoice_lines_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_invoice_lines_delete ON public.sp_invoice_lines FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: sp_invoice_lines sp_invoice_lines_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_invoice_lines_insert ON public.sp_invoice_lines FOR INSERT WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.sp_invoices i
+  WHERE ((i.id = sp_invoice_lines.invoice_id) AND (i.company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))))));
+
+
+--
+-- Name: sp_invoice_lines sp_invoice_lines_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_invoice_lines_read ON public.sp_invoice_lines FOR SELECT USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.sp_invoices i
+  WHERE ((i.id = sp_invoice_lines.invoice_id) AND (i.company_id = public.get_user_company_id()))))));
+
+
+--
+-- Name: sp_invoice_lines sp_invoice_lines_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_invoice_lines_update ON public.sp_invoice_lines FOR UPDATE USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.sp_invoices i
+  WHERE ((i.id = sp_invoice_lines.invoice_id) AND (i.company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))))));
+
+
+--
+-- Name: sp_invoices; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sp_invoices ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sp_invoices sp_invoices_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_invoices_delete ON public.sp_invoices FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: sp_invoices sp_invoices_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_invoices_insert ON public.sp_invoices FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))));
+
+
+--
+-- Name: sp_invoices sp_invoices_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_invoices_read ON public.sp_invoices FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+
+
+--
+-- Name: sp_invoices sp_invoices_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_invoices_update ON public.sp_invoices FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))));
+
+
+--
 -- Name: sp_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -14431,6 +14953,46 @@ CREATE POLICY sp_orders_read ON public.sp_orders FOR SELECT USING ((public.is_su
 --
 
 CREATE POLICY sp_orders_update ON public.sp_orders FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
+
+
+--
+-- Name: sp_payments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sp_payments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sp_payments sp_payments_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_payments_delete ON public.sp_payments FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: sp_payments sp_payments_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_payments_insert ON public.sp_payments FOR INSERT WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.sp_invoices i
+  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))))));
+
+
+--
+-- Name: sp_payments sp_payments_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_payments_read ON public.sp_payments FOR SELECT USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.sp_invoices i
+  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id = public.get_user_company_id()))))));
+
+
+--
+-- Name: sp_payments sp_payments_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sp_payments_update ON public.sp_payments FOR UPDATE USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.sp_invoices i
+  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))))));
 
 
 --
@@ -14681,8 +15243,1621 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 
 
 --
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
+--
+
+GRANT USAGE ON SCHEMA public TO postgres;
+GRANT USAGE ON SCHEMA public TO anon;
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT USAGE ON SCHEMA public TO service_role;
+
+
+--
+-- Name: FUNCTION add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer) TO authenticated;
+
+
+--
+-- Name: FUNCTION attach_price_contract_info(p_history_id uuid, p_contract_no text, p_valid_from date, p_valid_until date); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.attach_price_contract_info(p_history_id uuid, p_contract_no text, p_valid_from date, p_valid_until date) TO authenticated;
+
+
+--
+-- Name: FUNCTION bulk_update_product_prices(p_rows jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.bulk_update_product_prices(p_rows jsonb) TO authenticated;
+GRANT ALL ON FUNCTION public.bulk_update_product_prices(p_rows jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION cancel_delivery(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.cancel_delivery(p_delivery_note_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION cancel_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.cancel_picking(p_picking_list_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION check_similar_accounts(p_name text, p_company_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.check_similar_accounts(p_name text, p_company_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION complete_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.complete_picking(p_picking_list_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION create_invoice(p_sp_order_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.create_invoice(p_sp_order_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION delete_picking_material(p_material_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.delete_picking_material(p_material_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION delete_sp_dual(p_customer_id uuid, p_sp_no text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.delete_sp_dual(p_customer_id uuid, p_sp_no text) TO authenticated;
+
+
+--
+-- Name: FUNCTION dispatch_delivery(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.dispatch_delivery(p_delivery_note_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION exec_sql(sql text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exec_sql(sql text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exec_sql(sql text) TO service_role;
+
+
+--
+-- Name: FUNCTION generate_delivery_from_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.generate_delivery_from_picking(p_picking_list_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION get_table_columns(p_table text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.get_table_columns(p_table text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.get_table_columns(p_table text) TO service_role;
+GRANT ALL ON FUNCTION public.get_table_columns(p_table text) TO authenticated;
+GRANT ALL ON FUNCTION public.get_table_columns(p_table text) TO anon;
+
+
+--
+-- Name: FUNCTION indomarco_dashboard_stats(p_customer_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION mark_delivery_delivered(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.mark_delivery_delivered(p_delivery_note_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION prf_claim(p_prf_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.prf_claim(p_prf_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION prf_mark_quoted(p_prf_id uuid, p_waiver_reason text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.prf_mark_quoted(p_prf_id uuid, p_waiver_reason text) TO authenticated;
+
+
+--
+-- Name: FUNCTION prf_release(p_prf_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.prf_release(p_prf_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION prf_select_offer(p_prf_id uuid, p_offer_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.prf_select_offer(p_prf_id uuid, p_offer_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION save_quotation(p_quotation_id uuid, p_header jsonb, p_items jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.save_quotation(p_quotation_id uuid, p_header jsonb, p_items jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION set_product_category_prices(p_product_id uuid, p_semester numeric, p_tahunan numeric, p_project numeric); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.set_product_category_prices(p_product_id uuid, p_semester numeric, p_tahunan numeric, p_project numeric) TO authenticated;
+
+
+--
+-- Name: FUNCTION set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION sp_delete_btb(p_btb_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.sp_delete_btb(p_btb_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION sp_issue_btb(p_customer_id uuid, p_sp_no text, p_btb_no text, p_qty integer, p_btb_date date, p_delivery_note_id uuid, p_remarks text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.sp_issue_btb(p_customer_id uuid, p_sp_no text, p_btb_no text, p_qty integer, p_btb_date date, p_delivery_note_id uuid, p_remarks text) TO authenticated;
+
+
+--
+-- Name: FUNCTION sp_recompute_status(p_customer_id uuid, p_sp_no text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sp_recompute_status(p_customer_id uuid, p_sp_no text) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION storbit_sp_customers(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.storbit_sp_customers() TO anon;
+GRANT ALL ON FUNCTION public.storbit_sp_customers() TO authenticated;
+GRANT ALL ON FUNCTION public.storbit_sp_customers() TO service_role;
+
+
+--
+-- Name: FUNCTION submit_invoice(p_invoice_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.submit_invoice(p_invoice_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION update_sp_item_dual(p_id uuid, p_item jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.update_sp_item_dual(p_id uuid, p_item jsonb) TO authenticated;
+
+
+--
+-- Name: TABLE accounts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.accounts TO authenticated;
+GRANT ALL ON TABLE public.accounts TO service_role;
+
+
+--
+-- Name: TABLE activities; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.activities TO anon;
+GRANT ALL ON TABLE public.activities TO authenticated;
+GRANT ALL ON TABLE public.activities TO service_role;
+
+
+--
+-- Name: TABLE activity_logs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.activity_logs TO anon;
+GRANT ALL ON TABLE public.activity_logs TO authenticated;
+GRANT ALL ON TABLE public.activity_logs TO service_role;
+
+
+--
+-- Name: TABLE app_settings; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.app_settings TO anon;
+GRANT ALL ON TABLE public.app_settings TO authenticated;
+GRANT ALL ON TABLE public.app_settings TO service_role;
+
+
+--
+-- Name: TABLE approval_delegations; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_delegations TO anon;
+GRANT ALL ON TABLE public.approval_delegations TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_delegations TO service_role;
+
+
+--
+-- Name: TABLE approval_logs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_logs TO anon;
+GRANT ALL ON TABLE public.approval_logs TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_logs TO service_role;
+
+
+--
+-- Name: TABLE approval_rules; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_rules TO anon;
+GRANT ALL ON TABLE public.approval_rules TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_rules TO service_role;
+
+
+--
+-- Name: TABLE approval_workflow_steps; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.approval_workflow_steps TO authenticated;
+GRANT ALL ON TABLE public.approval_workflow_steps TO service_role;
+
+
+--
+-- Name: TABLE approval_workflows; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.approval_workflows TO authenticated;
+GRANT ALL ON TABLE public.approval_workflows TO service_role;
+
+
+--
+-- Name: TABLE ar_btbs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.ar_btbs TO anon;
+GRANT ALL ON TABLE public.ar_btbs TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.ar_btbs TO service_role;
+
+
+--
+-- Name: TABLE ar_ttfs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.ar_ttfs TO anon;
+GRANT ALL ON TABLE public.ar_ttfs TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.ar_ttfs TO service_role;
+
+
+--
+-- Name: TABLE asset_categories; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_categories TO anon;
+GRANT ALL ON TABLE public.asset_categories TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_categories TO service_role;
+
+
+--
+-- Name: TABLE asset_fuel_logs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_fuel_logs TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_fuel_logs TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_fuel_logs TO service_role;
+
+
+--
+-- Name: TABLE asset_locations; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_locations TO anon;
+GRANT ALL ON TABLE public.asset_locations TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_locations TO service_role;
+
+
+--
+-- Name: TABLE asset_maintenance_records; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_maintenance_records TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.asset_maintenance_records TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_maintenance_records TO service_role;
+
+
+--
+-- Name: TABLE asset_network; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_network TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.asset_network TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_network TO service_role;
+
+
+--
+-- Name: TABLE asset_software_licenses; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_software_licenses TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.asset_software_licenses TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_software_licenses TO service_role;
+
+
+--
+-- Name: TABLE asset_specifications; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_specifications TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.asset_specifications TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_specifications TO service_role;
+
+
+--
+-- Name: TABLE assets; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.assets TO anon;
+GRANT ALL ON TABLE public.assets TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.assets TO service_role;
+
+
+--
+-- Name: TABLE audit_logs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.audit_logs TO anon;
+GRANT ALL ON TABLE public.audit_logs TO authenticated;
+GRANT ALL ON TABLE public.audit_logs TO service_role;
+
+
+--
+-- Name: TABLE backfill_sp_order_items_20260808; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backfill_sp_order_items_20260808 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backfill_sp_order_items_20260808 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backfill_sp_order_items_20260808 TO service_role;
+
+
+--
+-- Name: TABLE backup_b4_inquiries_20260725; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_b4_inquiries_20260725 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_b4_inquiries_20260725 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_b4_inquiries_20260725 TO service_role;
+
+
+--
+-- Name: TABLE backup_dedup_accounts_20260725; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_accounts_20260725 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_accounts_20260725 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_accounts_20260725 TO service_role;
+
+
+--
+-- Name: TABLE backup_dedup_activities_20260725; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_activities_20260725 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_activities_20260725 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_activities_20260725 TO service_role;
+
+
+--
+-- Name: TABLE backup_dedup_alliance_20260725; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_alliance_20260725 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_alliance_20260725 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_alliance_20260725 TO service_role;
+
+
+--
+-- Name: TABLE backup_dedup_inquiries_20260725; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_inquiries_20260725 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_inquiries_20260725 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_inquiries_20260725 TO service_role;
+
+
+--
+-- Name: TABLE backup_dedup_quotations_20260725; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_quotations_20260725 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_quotations_20260725 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_quotations_20260725 TO service_role;
+
+
+--
+-- Name: TABLE backup_leadpool_c1_won_20260724; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_c1_won_20260724 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_c1_won_20260724 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_c1_won_20260724 TO service_role;
+
+
+--
+-- Name: TABLE backup_leadpool_trap_20260724; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_trap_20260724 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_trap_20260724 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_trap_20260724 TO service_role;
+
+
+--
+-- Name: TABLE backup_prf_20260727; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_20260727 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_20260727 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_20260727 TO service_role;
+
+
+--
+-- Name: TABLE backup_prf_cost_items_20260727; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_cost_items_20260727 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_cost_items_20260727 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_cost_items_20260727 TO service_role;
+
+
+--
+-- Name: TABLE bnf_departments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_departments TO anon;
+GRANT ALL ON TABLE public.bnf_departments TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_departments TO service_role;
+
+
+--
+-- Name: TABLE bnf_divisions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_divisions TO anon;
+GRANT ALL ON TABLE public.bnf_divisions TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_divisions TO service_role;
+
+
+--
+-- Name: TABLE bnf_report_logs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_logs TO anon;
+GRANT ALL ON TABLE public.bnf_report_logs TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_logs TO service_role;
+
+
+--
+-- Name: TABLE bnf_report_related_departments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_related_departments TO anon;
+GRANT ALL ON TABLE public.bnf_report_related_departments TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_related_departments TO service_role;
+
+
+--
+-- Name: TABLE bnf_reports; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_reports TO anon;
+GRANT ALL ON TABLE public.bnf_reports TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_reports TO service_role;
+
+
+--
+-- Name: TABLE branches; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.branches TO anon;
+GRANT ALL ON TABLE public.branches TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.branches TO service_role;
+
+
+--
+-- Name: TABLE chart_of_accounts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.chart_of_accounts TO anon;
+GRANT ALL ON TABLE public.chart_of_accounts TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.chart_of_accounts TO service_role;
+
+
+--
+-- Name: TABLE code_counters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.code_counters TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.code_counters TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.code_counters TO service_role;
+
+
+--
+-- Name: TABLE companies; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.companies TO anon;
+GRANT ALL ON TABLE public.companies TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.companies TO service_role;
+
+
+--
+-- Name: TABLE contacts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.contacts TO anon;
+GRANT ALL ON TABLE public.contacts TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.contacts TO service_role;
+
+
+--
+-- Name: TABLE cost_centers; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.cost_centers TO anon;
+GRANT ALL ON TABLE public.cost_centers TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.cost_centers TO service_role;
+
+
+--
+-- Name: TABLE currencies; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.currencies TO anon;
+GRANT ALL ON TABLE public.currencies TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.currencies TO service_role;
+
+
+--
+-- Name: TABLE customers; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers TO anon;
+GRANT ALL ON TABLE public.customers TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers TO service_role;
+
+
+--
+-- Name: TABLE dc_master; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.dc_master TO anon;
+GRANT ALL ON TABLE public.dc_master TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.dc_master TO service_role;
+
+
+--
+-- Name: TABLE deal_handovers; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.deal_handovers TO anon;
+GRANT ALL ON TABLE public.deal_handovers TO authenticated;
+GRANT ALL ON TABLE public.deal_handovers TO service_role;
+
+
+--
+-- Name: TABLE delivery_note_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.delivery_note_items TO anon;
+GRANT ALL ON TABLE public.delivery_note_items TO authenticated;
+GRANT ALL ON TABLE public.delivery_note_items TO service_role;
+
+
+--
+-- Name: TABLE delivery_notes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.delivery_notes TO anon;
+GRANT ALL ON TABLE public.delivery_notes TO authenticated;
+GRANT ALL ON TABLE public.delivery_notes TO service_role;
+
+
+--
+-- Name: TABLE departments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.departments TO anon;
+GRANT ALL ON TABLE public.departments TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.departments TO service_role;
+
+
+--
+-- Name: TABLE document_numbering; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.document_numbering TO authenticated;
+GRANT ALL ON TABLE public.document_numbering TO service_role;
+
+
+--
+-- Name: TABLE document_sequences; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.document_sequences TO anon;
+GRANT ALL ON TABLE public.document_sequences TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.document_sequences TO service_role;
+
+
+--
+-- Name: TABLE document_templates; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.document_templates TO authenticated;
+GRANT ALL ON TABLE public.document_templates TO service_role;
+
+
+--
+-- Name: TABLE document_types; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.document_types TO anon;
+GRANT ALL ON TABLE public.document_types TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.document_types TO service_role;
+
+
+--
+-- Name: TABLE dropdown_options; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.dropdown_options TO anon;
+GRANT ALL ON TABLE public.dropdown_options TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.dropdown_options TO service_role;
+
+
+--
+-- Name: TABLE entity_bank_accounts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.entity_bank_accounts TO authenticated;
+GRANT ALL ON TABLE public.entity_bank_accounts TO service_role;
+
+
+--
+-- Name: TABLE entity_finance_settings; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.entity_finance_settings TO authenticated;
+GRANT ALL ON TABLE public.entity_finance_settings TO service_role;
+
+
+--
+-- Name: TABLE entity_signatories; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.entity_signatories TO authenticated;
+GRANT ALL ON TABLE public.entity_signatories TO service_role;
+
+
+--
+-- Name: TABLE exchange_rates; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.exchange_rates TO anon;
+GRANT ALL ON TABLE public.exchange_rates TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.exchange_rates TO service_role;
+
+
+--
+-- Name: TABLE hrga_approval_configs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_approval_configs TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.hrga_approval_configs TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_approval_configs TO service_role;
+
+
+--
+-- Name: TABLE hrga_notification_queue; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_notification_queue TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.hrga_notification_queue TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_notification_queue TO service_role;
+
+
+--
+-- Name: TABLE hrga_offboarding_checklists; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_offboarding_checklists TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.hrga_offboarding_checklists TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_offboarding_checklists TO service_role;
+
+
+--
+-- Name: TABLE hrga_offboarding_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_offboarding_items TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.hrga_offboarding_items TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_offboarding_items TO service_role;
+
+
+--
+-- Name: TABLE hrga_request_approvals; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_approvals TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_approvals TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_approvals TO service_role;
+
+
+--
+-- Name: TABLE hrga_request_attachments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_attachments TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.hrga_request_attachments TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_attachments TO service_role;
+
+
+--
+-- Name: TABLE hrga_request_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_items TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.hrga_request_items TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_items TO service_role;
+
+
+--
+-- Name: TABLE hrga_request_types; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_types TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.hrga_request_types TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_types TO service_role;
+
+
+--
+-- Name: TABLE hrga_requests; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_requests TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.hrga_requests TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_requests TO service_role;
+
+
+--
+-- Name: TABLE inquiries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.inquiries TO authenticated;
+GRANT ALL ON TABLE public.inquiries TO service_role;
+
+
+--
+-- Name: TABLE inquiry_comment_mentions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comment_mentions TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comment_mentions TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comment_mentions TO service_role;
+
+
+--
+-- Name: TABLE inquiry_comments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comments TO anon;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN,UPDATE ON TABLE public.inquiry_comments TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comments TO service_role;
+
+
+--
+-- Name: TABLE meeting_moms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.meeting_moms TO anon;
+GRANT ALL ON TABLE public.meeting_moms TO authenticated;
+GRANT ALL ON TABLE public.meeting_moms TO service_role;
+
+
+--
+-- Name: TABLE menu_actions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.menu_actions TO authenticated;
+GRANT ALL ON TABLE public.menu_actions TO service_role;
+
+
+--
+-- Name: TABLE module_actions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.module_actions TO authenticated;
+GRANT ALL ON TABLE public.module_actions TO service_role;
+
+
+--
+-- Name: TABLE module_menus; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.module_menus TO authenticated;
+GRANT ALL ON TABLE public.module_menus TO service_role;
+
+
+--
+-- Name: TABLE modules; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.modules TO authenticated;
+GRANT ALL ON TABLE public.modules TO service_role;
+
+
+--
+-- Name: TABLE mom_action_plans; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.mom_action_plans TO anon;
+GRANT ALL ON TABLE public.mom_action_plans TO authenticated;
+GRANT ALL ON TABLE public.mom_action_plans TO service_role;
+
+
+--
+-- Name: TABLE mom_improvements; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.mom_improvements TO anon;
+GRANT ALL ON TABLE public.mom_improvements TO authenticated;
+GRANT ALL ON TABLE public.mom_improvements TO service_role;
+
+
+--
+-- Name: TABLE mom_issues; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.mom_issues TO anon;
+GRANT ALL ON TABLE public.mom_issues TO authenticated;
+GRANT ALL ON TABLE public.mom_issues TO service_role;
+
+
+--
+-- Name: TABLE mom_progress_updates; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.mom_progress_updates TO anon;
+GRANT ALL ON TABLE public.mom_progress_updates TO authenticated;
+GRANT ALL ON TABLE public.mom_progress_updates TO service_role;
+
+
+--
+-- Name: TABLE notification_rules; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.notification_rules TO authenticated;
+GRANT ALL ON TABLE public.notification_rules TO service_role;
+
+
+--
+-- Name: TABLE notifications; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.notifications TO authenticated;
+GRANT ALL ON TABLE public.notifications TO service_role;
+
+
+--
+-- Name: TABLE payment_terms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.payment_terms TO anon;
+GRANT ALL ON TABLE public.payment_terms TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.payment_terms TO service_role;
+
+
+--
+-- Name: TABLE permissions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.permissions TO anon;
+GRANT ALL ON TABLE public.permissions TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.permissions TO service_role;
+
+
+--
+-- Name: TABLE picking_list_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.picking_list_items TO anon;
+GRANT ALL ON TABLE public.picking_list_items TO authenticated;
+GRANT ALL ON TABLE public.picking_list_items TO service_role;
+
+
+--
+-- Name: TABLE picking_list_materials; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.picking_list_materials TO anon;
+GRANT ALL ON TABLE public.picking_list_materials TO authenticated;
+GRANT ALL ON TABLE public.picking_list_materials TO service_role;
+
+
+--
+-- Name: TABLE picking_lists; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.picking_lists TO anon;
+GRANT ALL ON TABLE public.picking_lists TO authenticated;
+GRANT ALL ON TABLE public.picking_lists TO service_role;
+
+
+--
+-- Name: TABLE positions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.positions TO anon;
+GRANT ALL ON TABLE public.positions TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.positions TO service_role;
+
+
+--
+-- Name: TABLE prf; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.prf TO anon;
+GRANT ALL ON TABLE public.prf TO authenticated;
+GRANT ALL ON TABLE public.prf TO service_role;
+
+
+--
+-- Name: TABLE prf_cost_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.prf_cost_items TO anon;
+GRANT ALL ON TABLE public.prf_cost_items TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.prf_cost_items TO service_role;
+
+
+--
+-- Name: TABLE prf_vendor_offers; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.prf_vendor_offers TO anon;
+GRANT ALL ON TABLE public.prf_vendor_offers TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.prf_vendor_offers TO service_role;
+
+
+--
+-- Name: TABLE product_price_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_price_history TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_price_history TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_price_history TO service_role;
+
+
+--
+-- Name: TABLE product_warehouse_location; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_warehouse_location TO anon;
+GRANT ALL ON TABLE public.product_warehouse_location TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_warehouse_location TO service_role;
+
+
+--
+-- Name: TABLE products; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.products TO authenticated;
+GRANT ALL ON TABLE public.products TO service_role;
+
+
+--
+-- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.profiles TO authenticated;
+GRANT ALL ON TABLE public.profiles TO service_role;
+
+
+--
+-- Name: TABLE quotation_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.quotation_items TO authenticated;
+GRANT ALL ON TABLE public.quotation_items TO service_role;
+
+
+--
+-- Name: TABLE quotations; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.quotations TO authenticated;
+GRANT ALL ON TABLE public.quotations TO service_role;
+
+
+--
+-- Name: TABLE rate_sheets; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.rate_sheets TO anon;
+GRANT ALL ON TABLE public.rate_sheets TO authenticated;
+GRANT ALL ON TABLE public.rate_sheets TO service_role;
+
+
+--
+-- Name: TABLE role_menu_permissions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.role_menu_permissions TO anon;
+GRANT ALL ON TABLE public.role_menu_permissions TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.role_menu_permissions TO service_role;
+
+
+--
+-- Name: TABLE role_permission_templates; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.role_permission_templates TO authenticated;
+GRANT ALL ON TABLE public.role_permission_templates TO service_role;
+
+
+--
+-- Name: TABLE role_permissions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.role_permissions TO anon;
+GRANT ALL ON TABLE public.role_permissions TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.role_permissions TO service_role;
+
+
+--
+-- Name: TABLE roles; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.roles TO anon;
+GRANT ALL ON TABLE public.roles TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.roles TO service_role;
+
+
+--
+-- Name: TABLE sales_calls; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.sales_calls TO authenticated;
+GRANT ALL ON TABLE public.sales_calls TO service_role;
+
+
+--
+-- Name: TABLE sales_orders; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_orders TO anon;
+GRANT ALL ON TABLE public.sales_orders TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_orders TO service_role;
+
+
+--
+-- Name: TABLE sales_visit_logs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.sales_visit_logs TO authenticated;
+GRANT ALL ON TABLE public.sales_visit_logs TO service_role;
+
+
+--
+-- Name: TABLE sales_visits; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.sales_visits TO authenticated;
+GRANT ALL ON TABLE public.sales_visits TO service_role;
+
+
+--
+-- Name: TABLE sp_btb; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_btb TO anon;
+GRANT ALL ON TABLE public.sp_btb TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_btb TO service_role;
+
+
+--
+-- Name: TABLE sp_btbs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.sp_btbs TO authenticated;
+GRANT ALL ON TABLE public.sp_btbs TO service_role;
+
+
+--
+-- Name: TABLE sp_invoice_lines; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoice_lines TO anon;
+GRANT ALL ON TABLE public.sp_invoice_lines TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoice_lines TO service_role;
+
+
+--
+-- Name: TABLE sp_invoices; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoices TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoices TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoices TO service_role;
+
+
+--
+-- Name: COLUMN sp_invoices.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(id) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.company_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(company_id) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.sp_order_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(sp_order_id) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.faktur_no; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(faktur_no) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.invoice_date; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(invoice_date) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.submit_ref; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(submit_ref) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.created_by; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(created_by) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.created_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(created_at) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.updated_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: COLUMN sp_invoices.deleted_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(deleted_at) ON TABLE public.sp_invoices TO authenticated;
+
+
+--
+-- Name: TABLE sp_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_items TO anon;
+GRANT ALL ON TABLE public.sp_items TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_items TO service_role;
+
+
+--
+-- Name: TABLE sp_order_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_order_items TO anon;
+GRANT ALL ON TABLE public.sp_order_items TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_order_items TO service_role;
+
+
+--
+-- Name: TABLE sp_orders; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_orders TO anon;
+GRANT SELECT,INSERT,REFERENCES,DELETE,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_orders TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_orders TO service_role;
+
+
+--
+-- Name: COLUMN sp_orders.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(id) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.company_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(company_id) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.customer_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(customer_id) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.sp_no; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(sp_no) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.sp_date; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(sp_date) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.dc_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(dc_id) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.is_disputed; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(is_disputed) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.dispute_reason; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(dispute_reason) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.disputed_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(disputed_at) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.disputed_by; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(disputed_by) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.expired_date; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(expired_date) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.sp_category; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(sp_category) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.external_url; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(external_url) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.notes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(notes) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.confirmed_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(confirmed_at) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.confirmed_by; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(confirmed_by) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.cancelled_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(cancelled_at) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.cancelled_by; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(cancelled_by) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.cancel_reason; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(cancel_reason) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.created_by; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(created_by) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.created_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(created_at) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.updated_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.deleted_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(deleted_at) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: COLUMN sp_orders.had_cancelled_picking; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(had_cancelled_picking) ON TABLE public.sp_orders TO authenticated;
+
+
+--
+-- Name: TABLE sp_payments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_payments TO anon;
+GRANT ALL ON TABLE public.sp_payments TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_payments TO service_role;
+
+
+--
+-- Name: TABLE status_catalog; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.status_catalog TO anon;
+GRANT ALL ON TABLE public.status_catalog TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.status_catalog TO service_role;
+
+
+--
+-- Name: TABLE stock_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.stock_ledger TO authenticated;
+GRANT ALL ON TABLE public.stock_ledger TO service_role;
+
+
+--
+-- Name: TABLE stock_summary; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.stock_summary TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.stock_summary TO service_role;
+
+
+--
+-- Name: TABLE taxes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.taxes TO anon;
+GRANT ALL ON TABLE public.taxes TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.taxes TO service_role;
+
+
+--
+-- Name: TABLE top_requests; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.top_requests TO anon;
+GRANT ALL ON TABLE public.top_requests TO authenticated;
+GRANT ALL ON TABLE public.top_requests TO service_role;
+
+
+--
+-- Name: TABLE user_login_logs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.user_login_logs TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.user_login_logs TO authenticated;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.user_login_logs TO service_role;
+
+
+--
+-- Name: TABLE user_menu_permissions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.user_menu_permissions TO authenticated;
+GRANT ALL ON TABLE public.user_menu_permissions TO service_role;
+
+
+--
+-- Name: TABLE user_roles; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.user_roles TO anon;
+GRANT ALL ON TABLE public.user_roles TO authenticated;
+GRANT ALL ON TABLE public.user_roles TO service_role;
+
+
+--
+-- Name: TABLE vendors; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.vendors TO authenticated;
+GRANT ALL ON TABLE public.vendors TO service_role;
+
+
+--
+-- Name: TABLE warehouses; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.warehouses TO authenticated;
+GRANT ALL ON TABLE public.warehouses TO service_role;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO postgres;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO service_role;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO postgres;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jXTRGy6ZUAqtGae15kjA2B9dShR0xzUfJGfdVaTWkhzvPn2mYxR0Nr518b6osQd
+\unrestrict 1yRsqje8CD10XrQHoRT8lr02eqsB4sxfwgRjn6N6xPIDfWIO9sBJKw6Lkw29WNV
 
