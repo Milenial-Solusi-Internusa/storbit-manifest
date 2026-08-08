@@ -13,10 +13,15 @@ const ERP_ROLE_PRIORITY = [
   'sales','procurement','hrga','it','viewer',
 ];
 
-function pickPrimaryErpRole(userRoles) {
-  if (!userRoles?.length) return null;
+// activeCompanyId-aware: only roles held IN the active company are eligible.
+// Today every user's roles all share one company_id (their home company), so
+// this filter is a no-op vs the old unfiltered version — see AuthContext's
+// activeCompanyId comment for why.
+function pickPrimaryErpRole(userRoles, activeCompanyId) {
+  const scoped = (userRoles || []).filter(r => r.company_id === activeCompanyId);
+  if (!scoped.length) return null;
   // Sort by priority index (lower = higher privilege)
-  const sorted = [...userRoles].sort((a, b) => {
+  const sorted = [...scoped].sort((a, b) => {
     const ai = ERP_ROLE_PRIORITY.indexOf(a.roles?.code ?? '');
     const bi = ERP_ROLE_PRIORITY.indexOf(b.roles?.code ?? '');
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
@@ -66,6 +71,10 @@ export function AuthProvider({ children }) {
   const [menuPermissions,  setMenuPermissions]  = useState([]); // user_menu_permissions rows for this user
   const [roleMenuPermissions, setRoleMenuPermissions] = useState([]); // role_menu_permissions rows for all active roles (role-level default)
   const [permissionsLoading, setPermissionsLoading] = useState(true); // true while per-user menu permissions are loading
+  // null = no override, "active company" follows profile.company_id (home).
+  // Not set by any UI yet (multi-entity switcher is a separate phase) — exposed
+  // as activeCompanyId/setActiveCompanyId in `value` below for that future work.
+  const [activeCompanyIdOverride, setActiveCompanyId] = useState(null);
 
   // Tracks the last authenticated user id. Distinguishes a genuine user change
   // (first sign-in, or user B replacing user A) from a redundant 'SIGNED_IN' /
@@ -74,6 +83,15 @@ export function AuthProvider({ children }) {
   // setLoading(true) — that unmounts <App/> via AuthGate and wipes in-progress
   // form state (local useState).
   const previousUserIdRef = useRef(null);
+
+  // activeCompanyId: home company by default, or the explicit override once a
+  // future multi-entity switcher calls setActiveCompanyId. Computed inline
+  // (not synced via a separate effect) so it's always consistent with
+  // `profile` in the same render — no one-render-stale window.
+  const activeCompanyId = activeCompanyIdOverride ?? profile?.company_id ?? null;
+  // Distinct companies where the user holds an active role — raw material for
+  // a future company switcher UI (not consumed anywhere yet in this phase).
+  const myCompanyIds = [...new Set(erpRoles.map(r => r.company_id).filter(Boolean))];
 
   useEffect(() => {
     let mounted = true;
@@ -127,6 +145,7 @@ export function AuthProvider({ children }) {
         setSession(s);
         setProfile(null);
         setErpRoles([]);
+        setActiveCompanyId(null); // clear any override so it can't leak to the next login
         return;
       }
 
@@ -146,6 +165,7 @@ export function AuthProvider({ children }) {
       // ── Genuine user change: first sign-in this tab, or user B replacing A ───
       previousUserIdRef.current = newUserId;
       setSession(s);
+      setActiveCompanyId(null); // user B must not inherit user A's override
       // On in-tab SIGNED_IN (user B logs in without a refresh), hold `loading`
       // until the new profile is ready — same gating as the getSession path —
       // so App doesn't render against the previous user's context (Fix 2.3E).
@@ -194,7 +214,7 @@ export function AuthProvider({ children }) {
   const signOut = async () => {
     // Audit: log LOGOUT BEFORE signing out (and await) so the insert still runs
     // while authenticated (audit_logs insert requires authenticated).
-    const primary = pickPrimaryErpRole(erpRoles);
+    const primary = pickPrimaryErpRole(erpRoles, activeCompanyId);
     await logAudit(supabase, {
       action: ACTION_TYPES.LOGOUT,
       entityType: ENTITY_TYPES.USER,
@@ -229,13 +249,14 @@ export function AuthProvider({ children }) {
   };
 
   const refreshPermissions = useCallback(() => {
-    const primary = pickPrimaryErpRole(erpRoles);
+    const primary = pickPrimaryErpRole(erpRoles, activeCompanyId);
     fetchPermissionsForRoleId(primary?.role_id);
-  }, [erpRoles, fetchPermissionsForRoleId]);
+  }, [erpRoles, activeCompanyId, fetchPermissionsForRoleId]);
 
   // Primary ERP role code, sourced solely from user_roles (legacy profiles.role
-  // fallback removed — that column is being deprecated).
-  const primaryErpRole = pickPrimaryErpRole(erpRoles);
+  // fallback removed — that column is being deprecated). Scoped to the active
+  // company — see pickPrimaryErpRole.
+  const primaryErpRole = pickPrimaryErpRole(erpRoles, activeCompanyId);
   const erpRoleCode    = primaryErpRole?.roles?.code || null;
 
   // hasPermission — returns true if user has the given module+action in their role_permissions.
@@ -264,7 +285,12 @@ export function AuthProvider({ children }) {
     }
     setPermissionsLoading(true);
     try {
-      const roleIds = erpRoles.map(r => r.role_id).filter(Boolean);
+      // Only roles held in the active company feed the tier-3 (role default)
+      // union — see activeCompanyId above.
+      const roleIds = erpRoles
+        .filter(r => r.company_id === activeCompanyId)
+        .map(r => r.role_id)
+        .filter(Boolean);
       const [userRes, roleRes] = await Promise.all([
         supabase
           .from('user_menu_permissions')
@@ -284,13 +310,13 @@ export function AuthProvider({ children }) {
     } finally {
       setPermissionsLoading(false);
     }
-  }, [erpRoles]);
+  }, [erpRoles, activeCompanyId]);
 
   // Re-fetch per-user + role-level menu permissions whenever session changes.
-  // Also reacts to erpRoles changing: fetchMenuPermissions depends on erpRoles
-  // (for the role_menu_permissions query), so its identity changes whenever
-  // erpRoles does, which re-runs this effect transitively — erpRoles doesn't
-  // need to be listed here directly.
+  // Also reacts to erpRoles/activeCompanyId changing: fetchMenuPermissions
+  // depends on both (for the role_menu_permissions query), so its identity
+  // changes whenever either does, which re-runs this effect transitively —
+  // neither needs to be listed here directly.
   // permissionsLoading is managed inside fetchMenuPermissions (async — not the
   // effect body) so menu-gated UI can wait for it before allowing clicks.
   useEffect(() => {
@@ -337,6 +363,12 @@ export function AuthProvider({ children }) {
     // role: backward-compat alias for erpRole — used throughout App.jsx
     role: erpRoleCode,
     user: session?.user || null,
+    // activeCompanyId: home company by default, or an explicit override once a
+    // future multi-entity switcher calls setActiveCompanyId (not called by any
+    // UI yet). myCompanyIds: distinct companies where the user holds a role.
+    activeCompanyId,
+    setActiveCompanyId,
+    myCompanyIds,
     // Permission helpers
     userPermissions,
     hasPermission,

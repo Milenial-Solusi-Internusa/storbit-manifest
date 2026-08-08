@@ -13,8 +13,9 @@
 //   await saveSetting('lang', 'en');                   // upsert one key
 //   await saveSettings({ lang: 'en', tz: 'wib' });     // upsert many keys
 //
-// `companyId` is optional — defaults to the signed-in user's company. Pass an
-// explicit company UUID for per-entity pages (EntitySwitcher).
+// `companyId` is optional — defaults to the active company (home company until
+// a multi-entity switcher lets a user override it). Pass an explicit company
+// UUID for per-entity pages (EntitySwitcher).
 //
 // Pattern: setState only inside .then()/await callbacks (project lint rule).
 
@@ -23,8 +24,8 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/useAuth';
 
 export default function useAppSettings(category, companyIdArg) {
-  const { profile } = useAuth();
-  const companyId = companyIdArg || profile?.company_id || null;
+  const { profile, activeCompanyId } = useAuth();
+  const companyId = companyIdArg || activeCompanyId || null;
 
   const [settings, setSettings] = useState({});   // key -> jsonb value ({ v: ... })
   const [loading, setLoading] = useState(true);
