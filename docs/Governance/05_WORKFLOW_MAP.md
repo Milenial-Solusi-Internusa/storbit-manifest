@@ -279,7 +279,7 @@ Konteks saat cron aging dinyalakan (10 Jul): rasio aktivitas tercatat per lead v
 
 ---
 
-## Logistics (Storbit SP) Flow — Mesin Status 12 Tahap (FASE 0-3, LIVE)
+## Logistics (Storbit SP) Flow — Mesin Status 12 Tahap (FASE 0-4 LIVE sejak 8 Agu 2026 — snapshot refresh commit `8117127`; LUNAS/FASE 5 satu-satunya tahap belum dibangun)
 
 Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_status(customer_id, sp_no)` (di-maintain otomatis oleh event, BUKAN diketik). Detail skema/RPC: `docs/03_DATA_MODEL.md §3 (Inventory & Logistics) + §5`.
 
@@ -308,25 +308,27 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
  [Ops] Terbit BTB di Detail SP (sp_issue_btb) → sp_btb  ─⚙ recompute─►  BTB_TERBIT ★ PUNCAK
          │   (BTB_TERBIT = rank TERTINGGI, MENGALAHKAN TERKIRIM_PENUH — "puncak sebelum invoice")
          ▼
- ─────────── FASE 4-5 (📋 PLANNED — belum dibangun, butuh modul invoice/payment) ───────────
- [Finance] Terbit invoice        →  INVOICED   📋
- [Finance] Submit/serah faktur   →  SUBMITTED  📋
- [Finance] Lunas (payment)       →  LUNAS      📋
+ ────────────── FASE 4 (INVOICED/SUBMITTED) — ✅ LIVE sejak 8 Agu 2026 malam ──────────────
+ [Ops/Finance] Terbitkan Invoice (create_invoice; guard Σshipped=Σqty) → sp_invoices ─⚙ recompute─►  INVOICED   ✅
+ [Ops/Finance] Submit invoice (submit_invoice; isi submitted_at)                      ─⚙ recompute─►  SUBMITTED  ✅
+ ─────────────────── FASE 5 (LUNAS) — 📋 PLANNED, belum dibangun sama sekali ───────────────────
+ [Finance] Lunas (payment)       →  LUNAS      📋  (tabel sp_payments sudah ADA sbg skema, kosong-fungsi — nol RPC/UI)
 ```
+✅ = kode/UI/RPC dirancang sesi 8 Agu 2026 (kartu "Invoice" `SalesOrderDetailPage.jsx`: Terbitkan/Submit/Download PDF) **DAN dikonfirmasi LIVE** — `create_invoice`/`submit_invoice`/`sp_recompute_status` (guard+cabang baru) dibaca langsung doc-keeper dari `schema_snapshot.sql` pasca-refresh (commit `8117127`, 23:33 WIB, 8 Agu 2026). **⚠️ NOL tes runtime/UI** — SQL live tidak sama dengan sudah ada yang mengklik tombolnya di browser sungguhan; klaim itu belum berubah.
 
 **Aksi mundur (fact-derived — recompute otomatis balik ke tahap fakta tertinggi):**
 - **Batal picking** (`cancel_picking`): picking → cancelled, release reservasi, set flag **`had_cancelled_picking`** (permanen) → status **mundur ke CONFIRMED**.
-- **Batal Surat Jalan** (`cancel_delivery`): reverse ledger + **kembalikan `sp_items.shipped_qty`** → status mundur (mis. TERKIRIM_PENUH → SAMPAI/DIKIRIM).
+- **Batal Surat Jalan** (`cancel_delivery`): reverse ledger + **kembalikan `sp_items.shipped_qty` DAN `sp_order_items.shipped_qty`** (dual-write trilogy, LIVE sejak 8 Agu 2026) → status mundur (mis. TERKIRIM_PENUH → SAMPAI/DIKIRIM).
 - **Hapus BTB** (`sp_delete_btb`, soft-delete): status **mundur** dari BTB_TERBIT ke tahap fakta tertinggi berikutnya.
 
-**Guard recompute:** `status IN ('CANCELLED','INVOICED','SUBMITTED','LUNAS')` → beku (recompute tak menyentuh). **BTB_TERBIT TIDAK beku** (ikut fakta BTB).
+**Guard recompute — LIVE HARI INI:** `status IN ('CANCELLED','LUNAS')` → beku (recompute tak menyentuh). **BTB_TERBIT TIDAK beku** (ikut fakta BTB). **[8 Agu 2026] Bug lama (ditemukan Den) SUDAH DIPERBAIKI DAN LIVE:** guard lama = `status IN ('CANCELLED','INVOICED','SUBMITTED','LUNAS')` — krn `INVOICED`/`SUBMITTED` ikut masuk daftar freeze-nya SENDIRI, status yang naik ke INVOICED akan **macet permanen** (tak bisa naik ke SUBMITTED). Fix (`CREATE OR REPLACE`, guard dipersempit ke `CANCELLED,LUNAS`) **dikonfirmasi live** — doc-keeper membaca langsung baris `IF v_status IN ('CANCELLED','LUNAS') THEN RETURN;` di `schema_snapshot.sql` pasca-refresh (commit `8117127`).
 
 **Batalkan vs Hapus SP (di Detail SP):**
 - **[Ops/Manager/GM/super_admin] Batalkan SP** (`set_sp_status 'cancelled'`, hanya saat **DRAFT**) — alasan **wajib** (textarea); status → **CANCELLED** (terminal, data tetap tersimpan). Dual-table + komposit `(customer_id, sp_no)`. Tombol "Batalkan SP" di header actions, TERPISAH dari Danger Zone.
 - **[super_admin] Hapus SP** (`delete_sp_dual`, ⚠️ **belum live** — RPC dijalankan user manual, hanya saat **DRAFT**) — hapus permanen dual-table: `sp_orders` (+`sp_order_items` via FK CASCADE) **dan** `sp_items`, di-kunci komposit → nomor bisa dipakai ulang. Guard `is_super_admin()` + DRAFT strict di RPC. Di Danger Zone. **operations kehilangan akses hapus** (dulu `['super_admin','operations']` tanpa gate status) → diberi "Batalkan SP" sebagai gantinya.
 
 **Catatan transisi & yang USANG:**
-- Live sekarang **DRAFT s/d BTB_TERBIT**; **INVOICED/SUBMITTED/LUNAS = FASE 4-5 (planned)**.
+- Live sekarang **DRAFT s/d SUBMITTED**. **[8 Agu 2026] INVOICED/SUBMITTED (FASE 4): kode+UI+SQL SEMUA LIVE**, dikonfirmasi via `schema_snapshot.sql` refresh commit `8117127` (lihat ✅ di diagram atas + `03_DATA_MODEL.md` entri `sp_invoices`) — draft awal entri ini sempat menulis "SQL belum dijalankan" saat snapshot masih basi, sudah dikoreksi. **LUNAS (FASE 5) tetap 📋 planned, belum dibangun sama sekali** — satu-satunya tahap tersisa.
 - ⚠️ **USANG (flag finance lama):** progress per-item **INV → FP → SUB → KRM** (kolom `sp_items.inv/fp/submit/kirim`) = generasi lama, **BUKAN sumber kebenaran status** — digantikan mesin status + (nanti) modul invoice FASE 4-5.
 - ⚠️ `sp_btbs` (BTB legacy per-SP) digantikan `sp_btb`; **AR/TTF (`ar_ttfs`/`ar_btbs`) = domain finance/penagihan terpisah**, bukan status SP.
 
