@@ -1249,6 +1249,8 @@ const MENU_KEY_MAP = {
   // Logistics
   'manifest':            'logistics_sp',
   'input':               'logistics_input',
+  'picking':             'logistics_picking',
+  'surat-jalan':         'logistics_surat_jalan',
   'trading':             'logistics_general_trading',
   'customers':           'logistics_customer_storbit',
   'job':                 'logistics_job_management',
@@ -1730,6 +1732,22 @@ export default function StorbitManifest() {
     localStorage.getItem('nexus_last_menu') || 'home'
   );
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile module-menu drawer
+  // Which AdminShell tab to land on when activeMenu next becomes 'admin' — set
+  // by the legacy 'users' redirect below so it opens straight to User Access
+  // instead of AdminShell's own default ('companies'). Cleared once activeMenu
+  // leaves 'admin' again so a later, unrelated visit to Master Data doesn't
+  // inherit a stale target.
+  const [adminInitialTab, setAdminInitialTab] = useState(null);
+  // Consume adminInitialTab once activeMenu leaves 'admin' again, so it can't
+  // leak into a later, unrelated Master Data visit (e.g. clicking the normal
+  // 'Master Data' sidebar item after having used the legacy redirect once).
+  // Deferred via setTimeout (mirrors AuthContext.jsx's "defer to next tick"
+  // pattern) rather than setState directly in the effect body.
+  useEffect(() => {
+    if (activeMenu === 'admin') return undefined;
+    const t = setTimeout(() => setAdminInitialTab(null), 0);
+    return () => clearTimeout(t);
+  }, [activeMenu]);
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
   const [activeCustomerId, setActiveCustomerId] = useState(null); // for customer-detail page
   const [prevCustomerMenu, setPrevCustomerMenu] = useState('crm-customers'); // back target
@@ -3237,9 +3255,11 @@ export default function StorbitManifest() {
             />
           )}
           {activeMenu === 'users' && (
-            // Legacy 'Org & Access Control' nav item removed — redirect to Master Data (AdminShell).
-            // Handles any stale state or bookmarks pointing to the old menu id.
-            (() => { navigateTo('admin'); return null; })()
+            // Legacy 'Org & Access Control' nav item removed — redirect to Master
+            // Data (AdminShell), landing directly on the User Access tab (that's
+            // what this old menu item meant). Handles any stale state or
+            // bookmarks pointing to the old menu id.
+            (() => { setAdminInitialTab('user-access'); navigateTo('admin'); return null; })()
           )}
           {activeMenu === 'admin' && (!canRenderPage('admin') ? (
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
@@ -3250,7 +3270,7 @@ export default function StorbitManifest() {
                   Loading...
                 </div>
               }>
-                <AdminShell />
+                <AdminShell initialTab={adminInitialTab} />
               </Suspense>
             </ErrorBoundary>
           ))}

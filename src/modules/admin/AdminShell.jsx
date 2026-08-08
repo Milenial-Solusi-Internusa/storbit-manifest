@@ -63,7 +63,7 @@ const NAV_SECTIONS = [
   {
     label: 'Access Control',
     items: [
-      { id: 'user-access', label: 'User Access', icon: Users,       permission: { module: 'admin', action: 'view' } },
+      { id: 'user-access', label: 'User Access', icon: Users },
       { id: 'role-defaults', label: 'Role Defaults', icon: ShieldCheck, superAdminOnly: true },
     ],
   },
@@ -195,8 +195,8 @@ const PAGE_MAP = {
 // Shell
 // ─────────────────────────────────────────────────────────────
 
-export default function AdminShell() {
-  const [activeTab, setActiveTab] = useState('companies');
+export default function AdminShell({ initialTab }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'companies');
   const { role } = useAuth();
 
   // User Access full-page edit — state-swap (mirror of AssetDetailPage pattern)
