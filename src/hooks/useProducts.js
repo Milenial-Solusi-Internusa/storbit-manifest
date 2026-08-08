@@ -3,7 +3,7 @@
 // used to power autocomplete/prefill in forms (e.g. Quotation line items).
 //
 // useProducts({ activeOnly = true, companyId }) → { products, loading, error, refetch }
-//   - scope: company_id = companyId ?? profile.company_id (from useAuth), deleted_at IS NULL
+//   - scope: company_id = companyId ?? activeCompanyId (from useAuth), deleted_at IS NULL
 //   - companyId: optional override to pin the catalog to a specific entity
 //     (e.g. Surat Jalan → Storbit/SOA regardless of the logged-in user's home)
 //   - activeOnly: also filter is_active = true (default true)
@@ -19,10 +19,11 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/useAuth';
 
 export function useProducts({ activeOnly = true, companyId: companyIdOverride } = {}) {
-  const { profile } = useAuth();
-  // Default = logged-in user's home company; override lets a page pin the catalog
-  // to a specific entity (e.g. Surat Jalan always targets Storbit/SOA).
-  const companyId = companyIdOverride || profile?.company_id || null;
+  const { activeCompanyId } = useAuth();
+  // Default = active company (home company until a multi-entity switcher lets
+  // a user override it); explicit override lets a page pin the catalog to a
+  // specific entity (e.g. Surat Jalan always targets Storbit/SOA).
+  const companyId = companyIdOverride || activeCompanyId || null;
 
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
