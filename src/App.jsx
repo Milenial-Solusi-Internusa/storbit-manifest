@@ -1218,7 +1218,6 @@ const NEXUS_NAV = [
           { id: 'admin-settings', label: 'Admin Settings',      icon: Settings },
         ],
       },
-      { id: 'nav-users', label: 'Users & Access', icon: ShieldCheck, tone: 'slate', target: 'users', role: ['super_admin','admin','it'] },
     ],
   },
 ];
