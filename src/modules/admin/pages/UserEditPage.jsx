@@ -667,9 +667,13 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
           </div>
         ) : (
           <div>
-            {/* Tab switcher */}
+            {/* Tab switcher — Permissions hidden for non-super_admin: RLS on
+                user_menu_permissions (ump_admin_all) only allows writes from
+                is_super_admin(), so showing it to an admin would be trap-UX
+                (button visible, save fails). Same reasoning as RoleDefaultsPage
+                being gated out for non-super_admin. */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: `1px solid ${PASTEL.line}` }}>
-              {['profile', 'permissions'].map(t => (
+              {(isSuperAdmin ? ['profile', 'permissions'] : ['profile']).map(t => (
                 <button
                   key={t}
                   type="button"
@@ -792,8 +796,11 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
               </div>
             )}
 
-            {/* Permissions tab */}
-            {tab === 'permissions' && (
+            {/* Permissions tab — defense-in-depth re-check (not just the tab
+                switcher above): a DevTools-forced `tab` state would still reach
+                here otherwise. Mirrors AdminShell's `role === 'super_admin'`
+                render-branch check for RoleDefaultsPage. */}
+            {tab === 'permissions' && isSuperAdmin && (
               <PermissionMatrix
                 matrixModules={matrixModules}
                 matrixActions={matrixActions}
