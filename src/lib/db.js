@@ -310,13 +310,19 @@ export async function bulkInsertSpItems(items) {
   return { data: (data || []).map(spFromDb), error };
 }
 
+// Dual-write via RPC update_sp_item_dual (SECURITY DEFINER): sinkron sp_items
+// PENUH + 5 field overlap (qty/sla_days/estimated_delivery_date/shipping_price/
+// notes) ke sp_order_items lewat legacy_sp_item_id, satu transaksi. RPC RETURNS
+// void → 2 round-trip (RPC lalu SELECT) supaya bentuk return persis sama
+// seperti sebelumnya (caller di useSpItems.js tak perlu berubah).
 export async function updateSpItem(id, item) {
   const payload = spToDb(item);
+  const { error: rpcErr } = await supabase.rpc('update_sp_item_dual', { p_id: id, p_item: payload });
+  if (rpcErr) return { data: null, error: rpcErr };
   const { data, error } = await supabase
     .from('sp_items')
-    .update(payload)
-    .eq('id', id)
     .select('*, customers:accounts!sp_items_customer_id_fkey(name)')
+    .eq('id', id)
     .single();
   return { data: spFromDb(data), error };
 }
@@ -885,6 +891,106 @@ export async function listSpBtbNew(spOrderId) {
     .is('deleted_at', null)
     .order('created_at', { ascending: true });
   return { data: data || [], error };
+}
+
+// FASE 4 (Invoice) — sp_invoices dibaca via sp_order_id, ditulis lewat RPC
+// create_invoice/submit_invoice saja (kolom status/invoice_no/total_* di-GRANT
+// kolom-spesifik, tak bisa ditulis langsung — lihat migrasi Fase 4).
+
+/** Fetch invoice aktif untuk sebuah SP (via sp_order_id). Returns { data: row|null, error }. */
+export async function getSpInvoice(spOrderId) {
+  const { data, error } = await supabase
+    .from('sp_invoices')
+    .select('id, invoice_no, invoice_date, status, total_dpp, total_ppn, total_amount')
+    .eq('sp_order_id', spOrderId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  return { data, error };
+}
+
+/** Terbitkan invoice via RPC (guard Σshipped=Σqty di server). Returns { data: invoice_id, error }. */
+export async function createInvoiceRpc(spOrderId) {
+  const { data, error } = await supabase.rpc('create_invoice', { p_sp_order_id: spOrderId });
+  return { data, error };
+}
+
+/** Submit invoice via RPC (submitted_at terisi otomatis server-side). Returns { error }. */
+export async function submitInvoiceRpc(invoiceId) {
+  const { error } = await supabase.rpc('submit_invoice', { p_invoice_id: invoiceId });
+  return { error };
+}
+
+// Kumpulkan SEMUA data buat cetak InvoicePDF dalam satu panggilan — mirror
+// pola pl/dn (PickingListPDF/DeliveryNotePDF): satu objek flat, semua query
+// di sini biar InvoicePDF.jsx murni presentasi. company_id diambil dari baris
+// sp_orders yang bersangkutan (bukan hardcode SOA_COMPANY_ID di sini) supaya
+// tetap benar kalau modul ini kelak dipakai entitas lain.
+export async function getInvoicePdfData(invoiceId) {
+  const { data: inv, error: invErr } = await supabase
+    .from('sp_invoices')
+    .select('id, invoice_no, invoice_date, faktur_no, status, total_dpp, total_ppn, total_amount, sp_order_id, sp_orders(sp_no, customer_id, dc_id, company_id)')
+    .eq('id', invoiceId)
+    .single();
+  if (invErr) return { data: null, error: invErr };
+
+  const spOrder = inv.sp_orders || {};
+  const companyId = spOrder.company_id || null;
+
+  const [linesRes, customerRes, dcRes, companyRes, bankRes, settingsRes, shippingRes] = await Promise.all([
+    supabase
+      .from('sp_invoice_lines')
+      .select('id, dpp, ppn, qty, position, sp_order_items(product_name, sku, unit_price)')
+      .eq('invoice_id', invoiceId)
+      .order('position', { ascending: true }),
+    spOrder.customer_id
+      ? supabase.from('accounts').select('name').eq('id', spOrder.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    spOrder.dc_id
+      ? supabase.from('dc_master').select('nama').eq('id', spOrder.dc_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    companyId
+      ? supabase.from('companies').select('legal_name, address, address_2, city, province, postal_code, tax_id').eq('id', companyId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    companyId
+      ? supabase.from('entity_bank_accounts').select('bank_name, account_number, account_holder, branch').eq('company_id', companyId).eq('is_default', true).eq('is_active', true).limit(1).maybeSingle()
+      : Promise.resolve({ data: null }),
+    companyId
+      ? supabase.from('entity_finance_settings').select('default_payment_terms').eq('company_id', companyId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase.from('sp_order_items').select('shipping_price').eq('sp_order_id', inv.sp_order_id),
+  ]);
+
+  const firstError = linesRes.error || customerRes.error || dcRes.error || companyRes.error || bankRes.error || settingsRes.error || shippingRes.error || null;
+  const totalShipping = (shippingRes.data || []).reduce((sum, r) => sum + (Number(r.shipping_price) || 0), 0);
+
+  return {
+    data: {
+      id: inv.id,
+      invoice_no: inv.invoice_no,
+      invoice_date: inv.invoice_date,
+      faktur_no: inv.faktur_no,
+      status: inv.status,
+      total_dpp: inv.total_dpp,
+      total_ppn: inv.total_ppn,
+      total_amount: inv.total_amount,
+      total_shipping: totalShipping,
+      sp_no: spOrder.sp_no || '',
+      customer_name: customerRes.data?.name || '',
+      dc_name: dcRes.data?.nama || '',
+      default_payment_terms: settingsRes.data?.default_payment_terms ?? 30,
+      company: companyRes.data || {},
+      bank: bankRes.data || null,
+      lines: (linesRes.data || []).map((l) => ({
+        id: l.id,
+        product_name: l.sp_order_items?.product_name || '',
+        sku: l.sp_order_items?.sku || '',
+        unit_price: Number(l.sp_order_items?.unit_price) || 0,
+        qty: l.qty,
+        dpp: Number(l.dpp) || 0,
+      })),
+    },
+    error: firstError,
+  };
 }
 
 // Dual-write (Fase 0 lanjutan, D2-A): tulis header + items ke skema SP BARU

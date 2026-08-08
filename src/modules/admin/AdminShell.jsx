@@ -10,7 +10,7 @@ import { useAuth } from '../../contexts/useAuth';
 import {
   Building2, MapPin, Network, Briefcase, GitBranch,
   Users, ShieldCheck,
-  FileText, Tag, Percent, CreditCard,
+  FileText, Tag, Percent, CreditCard, Truck,
 } from 'lucide-react';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import CompaniesPage from './pages/CompaniesPage';
@@ -21,6 +21,7 @@ import DocumentTypesPage from './pages/DocumentTypesPage';
 import StatusCatalogPage from './pages/StatusCatalogPage';
 import TaxesPage from './pages/TaxesPage';
 import PaymentTermsPage from './pages/PaymentTermsPage';
+import DcMasterPage from './pages/DcMasterPage';
 import UserAccessPage from './pages/UserAccessPage';
 import UserEditPage from './pages/UserEditPage';
 import RoleDefaultsPage from './pages/RoleDefaultsPage';
@@ -73,6 +74,7 @@ const NAV_SECTIONS = [
       { id: 'status-catalog', label: 'Status Catalog', icon: Tag       },
       { id: 'taxes',          label: 'Taxes',           icon: Percent   },
       { id: 'payment-terms',  label: 'Payment Terms',  icon: CreditCard},
+      { id: 'dc-master',      label: 'DC Master',       icon: Truck     },
     ],
   },
 ];
@@ -186,6 +188,7 @@ const PAGE_MAP = {
   'status-catalog': <ErrorBoundary title="Status Catalog unavailable"><StatusCatalogPage /></ErrorBoundary>,
   'taxes':          <ErrorBoundary title="Taxes unavailable"><TaxesPage /></ErrorBoundary>,
   'payment-terms':  <ErrorBoundary title="Payment Terms unavailable"><PaymentTermsPage /></ErrorBoundary>,
+  'dc-master':      <ErrorBoundary title="DC Master unavailable"><DcMasterPage /></ErrorBoundary>,
 };
 
 // ─────────────────────────────────────────────────────────────
