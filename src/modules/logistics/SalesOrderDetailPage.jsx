@@ -14,16 +14,18 @@
 // Shipment / Dokumen / History tabs → empty states (no SP-level tables yet).
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
+import { pdf } from '@react-pdf/renderer';
 import {
   ChevronRight, ChevronLeft, Pencil, Trash2, Package,
   Calendar, Clock, Wallet, Receipt, FileText, Send, Truck,
-  Check, X, FolderOpen, History, List,
+  Check, X, FolderOpen, History, List, Download,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2,
 } from 'lucide-react';
-import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
+import InvoicePDF from './InvoicePDF';
 
 // SP = entitas Storbit (SOA) → pin katalog produk ke SOA (pola InputSPPage/DeliveryNote).
 const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
@@ -722,6 +724,25 @@ export default function SalesOrderDetailPage({
     return () => { cancelled = true; };
   }, [spOrder?.id]);
 
+  // ── Invoice (SP-level, Fase 4) ───────────────────────────────────────────
+  const [invoice,            setInvoice]            = useState(null);
+  const [invoiceLoading,     setInvoiceLoading]     = useState(true);
+  const [invoiceSaving,      setInvoiceSaving]      = useState(false);
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
+
+  // FASE 4 — baca invoice aktif dari sp_invoices via sp_order_id (dari spOrder.id).
+  useEffect(() => {
+    const oid = spOrder?.id;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!oid) { setInvoiceLoading(false); return undefined; }
+    let cancelled = false;
+    setInvoiceLoading(true);
+    getSpInvoice(oid).then(({ data }) => {
+      if (!cancelled) { setInvoice(data || null); setInvoiceLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [spOrder?.id]);
+
   // Fase 1 — headline status sp_orders (12-tahap) + flag pernah picking dibatalkan (badge additive).
   useEffect(() => {
     const cust = group?.customerId;
@@ -781,6 +802,64 @@ export default function SalesOrderDetailPage({
     await refreshBtbAndStatus();
   };
 
+  // Refetch invoice + headline status setelah create/submit invoice (RPC
+  // memicu sp_recompute_status di belakang layar — kartu status di atas
+  // harus ikut naik ke INVOICED/SUBMITTED tanpa reload manual).
+  const refreshInvoiceAndStatus = async () => {
+    const cust = group?.customerId;
+    if (spOrder?.id) { const { data } = await getSpInvoice(spOrder.id); setInvoice(data || null); }
+    if (cust) { const { data } = await getSpOrderStatus(cust, spNo); setSpOrder(data || null); }
+  };
+
+  const handleCreateInvoice = async () => {
+    if (!spOrder?.id) return;
+    setInvoiceSaving(true);
+    const { error } = await createInvoiceRpc(spOrder.id);
+    setInvoiceSaving(false);
+    if (error) { showToast?.('Gagal menerbitkan invoice: ' + (error.message || 'unknown error'), 'error'); return; }
+    showToast?.('Invoice berhasil diterbitkan', 'success');
+    await refreshInvoiceAndStatus();
+  };
+
+  const handleSubmitInvoice = async () => {
+    if (!invoice?.id) return;
+    setInvoiceSaving(true);
+    const { error } = await submitInvoiceRpc(invoice.id);
+    setInvoiceSaving(false);
+    if (error) { showToast?.('Gagal submit invoice: ' + (error.message || 'unknown error'), 'error'); return; }
+    showToast?.('Invoice berhasil di-submit', 'success');
+    await refreshInvoiceAndStatus();
+  };
+
+  // Generate + download PDF invoice — pola sama persis handlePrint di
+  // PickingListDetailPage.jsx (pdf(...).toBlob() → object URL → klik <a> lalu
+  // revoke), bukan teknik baru. Data PDF diambil fresh via getInvoicePdfData
+  // (join sp_invoice_lines/sp_order_items/companies/entity_bank_accounts/
+  // entity_finance_settings) — bukan dari state `invoice` yang cuma punya
+  // ringkasan header.
+  const handleDownloadInvoice = async () => {
+    if (!invoice?.id) return;
+    setInvoiceDownloading(true);
+    try {
+      const { data: pdfData, error } = await getInvoicePdfData(invoice.id);
+      if (error || !pdfData) {
+        showToast?.('Gagal menyiapkan data invoice: ' + (error?.message || 'unknown error'), 'error');
+        return;
+      }
+      const blob = await pdf(<InvoicePDF invoice={pdfData} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Invoice-${(pdfData.invoice_no || 'INV').replace(/\//g, '-')}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      showToast?.('Gagal membuat PDF: ' + (e?.message || e), 'error');
+    } finally {
+      setInvoiceDownloading(false);
+    }
+  };
+
   // ── Finance stage stats (computed from items) ──────────────────────────
   const finStages = useMemo(() => {
     const total = items.length;
@@ -805,6 +884,11 @@ export default function SalesOrderDetailPage({
   const totalQty    = items.reduce((s, i) => s + Number(i.qty),       0);
   const shippedQty  = items.reduce((s, i) => s + Number(i.shippedQty), 0);
   const outstandQty = totalQty - shippedQty;
+
+  // FASE 4 — invoice cuma boleh diterbitkan saat seluruh qty sudah terkirim
+  // (cermin guard Σshipped=Σqty di RPC create_invoice; dihitung dari items
+  // yang sudah ada di state, bukan query baru).
+  const canCreateInvoice = !!spOrder?.id && totalQty > 0 && shippedQty === totalQty;
 
   // ── Deadline display ───────────────────────────────────────────────────
   const firstDeadline = items.find(i => i.expired_date)?.expired_date || null;
@@ -1113,6 +1197,80 @@ export default function SalesOrderDetailPage({
                 </table>
               </div>
             </div>
+
+            {/* Invoice — Fase 4 */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14 }}>Invoice</div>
+              <div style={{ padding: '6px 18px 18px' }}>
+                {invoiceLoading ? (
+                  <p style={{ fontSize: 13, color: C.inkFaint, padding: '10px 0' }}>Memuat…</p>
+                ) : invoice ? (
+                  <>
+                    {[
+                      { k: 'No. Invoice', v: invoice.invoice_no || '—' },
+                      { k: 'Tanggal',     v: fmtDate(invoice.invoice_date) },
+                      { k: 'DPP',         v: rp(invoice.total_dpp) },
+                      { k: 'PPN',         v: rp(invoice.total_ppn) },
+                    ].map(row => (
+                      <div key={row.k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', fontSize: 13, borderBottom: `1px solid ${C.lineSoft}` }}>
+                        <span style={{ color: C.inkSoft, fontWeight: 600 }}>{row.k}</span>
+                        <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600, color: C.ink }}>{row.v}</span>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0 0', marginTop: 5, borderTop: `1.5px solid ${C.line}` }}>
+                      <span style={{ fontWeight: 800, color: C.ink, fontSize: 14 }}>Total</span>
+                      <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 17, fontWeight: 700, color: C.accent }}>{rp(invoice.total_amount)}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, gap: 8 }}>
+                      {invoice.status === 'submitted' ? (
+                        <Badge bg={C.okBg} color={C.ok} bd={C.okBd}><StatusDot color={C.ok}/>Submitted</Badge>
+                      ) : (
+                        <Badge bg={C.warnBg} color={C.warn} bd={C.warnBd}><StatusDot color={C.warn}/>Issued</Badge>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          onClick={handleDownloadInvoice}
+                          disabled={invoiceDownloading}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, color: invoiceDownloading ? C.inkFaint : C.inkSoft, fontSize: 13, fontWeight: 600, cursor: invoiceDownloading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                        >
+                          <Download size={13}/> {invoiceDownloading ? 'Menyiapkan…' : 'Download'}
+                        </button>
+                        {invoice.status === 'issued' && (
+                          <button
+                            onClick={handleSubmitInvoice}
+                            disabled={invoiceSaving}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: 'none', background: invoiceSaving ? C.lineSoft : C.accent, color: invoiceSaving ? C.inkFaint : '#fff', fontSize: 13, fontWeight: 600, cursor: invoiceSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                          >
+                            <Send size={13}/> {invoiceSaving ? 'Menyimpan…' : 'Submit'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, color: C.inkFaint, marginBottom: 12 }}>Belum ada invoice untuk SP ini.</p>
+                    <button
+                      onClick={handleCreateInvoice}
+                      disabled={!canCreateInvoice || invoiceSaving}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center', padding: '0 14px', height: 38, borderRadius: 8, border: 'none', background: (canCreateInvoice && !invoiceSaving) ? C.accent : C.lineSoft, color: (canCreateInvoice && !invoiceSaving) ? '#fff' : C.inkFaint, fontSize: 13, fontWeight: 600, cursor: (canCreateInvoice && !invoiceSaving) ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}
+                    >
+                      <Receipt size={14}/> {invoiceSaving ? 'Menerbitkan…' : 'Terbitkan Invoice'}
+                    </button>
+                    {!canCreateInvoice && (
+                      <p style={{ fontSize: 12, color: C.inkFaint, marginTop: 8 }}>
+                        {!spOrder?.id
+                          ? 'SP ini belum punya data skema baru (sp_orders) — invoice belum bisa diterbitkan.'
+                          : totalQty === 0
+                          ? 'SP belum punya item.'
+                          : `Belum bisa diterbitkan — outstanding ${(totalQty - shippedQty).toLocaleString('id-ID')} dari ${totalQty.toLocaleString('id-ID')} qty (${shippedQty.toLocaleString('id-ID')} sudah terkirim). Invoice hanya bisa diterbitkan setelah seluruh qty terkirim penuh.`}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* BTB Numbers — SP-level */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden', gridColumn: '1 / -1' }}>
               <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

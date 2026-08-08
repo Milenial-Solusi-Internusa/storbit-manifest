@@ -3114,6 +3114,7 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <SalesOrderDetailPage
+                  key={`${selectedSpId.customerId}|${selectedSpId.spNo}`}
                   spNo={selectedSpId.spNo}
                   items={enrichedRows.filter(r => r.spNo === selectedSpId.spNo && r.customerId === selectedSpId.customerId)}
                   group={groupedSP.find(g => g.uid === `${selectedSpId.customerId}|${selectedSpId.spNo}`) || null}

@@ -20,6 +20,7 @@ import { supabase } from '../../lib/supabase';
 import { bulkInsertSpItems, createSpOrderDual } from '../../lib/db';
 import { useProducts } from '../../hooks/useProducts';
 import ProductPicker from '../../components/ProductPicker';
+import DcPicker from '../../components/DcPicker';
 
 // SP (Storbit manifest) selalu entitas Storbit (SOA) → pin katalog produk ke SOA,
 // bukan company home user (pola sama DeliveryNoteDetailPage).
@@ -156,6 +157,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
   const [dc,         setDc]         = useState('');   // nama DC — dipakai submit legacy (TIDAK diubah)
   const [dcId,       setDcId]       = useState('');   // id dc_master (dropdown baru; belum disimpan — TASK 2)
   const [dcOptions,  setDcOptions]  = useState([]);
+  const [dcText,     setDcText]     = useState('');   // teks tampil DcPicker ("KODE · Nama"); dc tetap cuma nama (submit legacy)
   const [expiredDate, setExpiredDate] = useState('');
   const [notes,      setNotes]      = useState('');
 
@@ -184,15 +186,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
   // Ganti customer → reset DC (DC lama mungkin tak relevan utk customer baru).
   const handleCustomerChange = (e) => {
     setCustomerId(e.target.value);
-    setDcId(''); setDc(''); setDcOptions([]);
-  };
-
-  // Pilih DC: simpan id (dcId) + mirror nama (dc) supaya submit legacy tetap menulis nama DC ke sp_items.dc.
-  const handleDcChange = (e) => {
-    const id = e.target.value;
-    setDcId(id);
-    const opt = dcOptions.find(o => o.id === id);
-    setDc(opt ? opt.nama : '');
+    setDcId(''); setDc(''); setDcOptions([]); setDcText('');
   };
 
   // Item mutations
@@ -413,18 +407,15 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
                   })}
                 </Field>
                 <Field label="Distribution Center" req>
-                  {sel({
-                    value: dcId,
-                    onChange: handleDcChange,
-                    children: (
-                      <>
-                        <option value="">{customerId ? 'Pilih DC…' : 'Pilih customer dulu'}</option>
-                        {dcOptions.map(o => (
-                          <option key={o.id} value={o.id}>{o.kode ? `${o.kode} · ${o.nama}` : o.nama}</option>
-                        ))}
-                      </>
-                    ),
-                  })}
+                  <DcPicker
+                    value={dcText}
+                    dcOptions={dcOptions}
+                    inputStyle={inpStyle()}
+                    placeholder={customerId ? 'Cari DC…' : 'Pilih customer dulu'}
+                    emptyText={customerId ? 'Tidak ada DC yang cocok' : 'Pilih customer dulu'}
+                    onChangeText={(v) => { setDcText(v); setDcId(''); setDc(''); }}
+                    onPick={(o) => { setDcId(o.id); setDc(o.nama); setDcText(o.kode ? `${o.kode} · ${o.nama}` : o.nama); }}
+                  />
                 </Field>
               </div>
 
