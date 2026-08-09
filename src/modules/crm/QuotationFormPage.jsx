@@ -441,6 +441,8 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       .eq('company_id', profile.company_id)
       .eq('is_active', true)
       .is('deleted_at', null)
+      .eq('tax_type', 'percentage')
+      .lte('rate', 1)
       .order('rate', { ascending: true })
       .then(({ data, error }) => {
         if (cancelled) return;
