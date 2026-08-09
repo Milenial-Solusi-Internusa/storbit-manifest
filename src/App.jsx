@@ -25,10 +25,10 @@ import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
 import { calcItem } from './lib/spCalc';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
-const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
-// Fase 1 unifikasi Master Data + Admin Settings — leaf sementara, lihat plan
-// /Users/den/.claude/plans/floating-dreaming-spark.md. Jalur lama (AdminShell,
-// AdminSettingsHub dkk di bawah) TETAP hidup penuh sbg fallback sampai Tahap B.
+// Fase 1 unifikasi Master Data + Admin Settings — entry point permanen.
+// AdminShell.jsx & AdminSettingsHub.jsx (dan kesembilan sub-halamannya)
+// pensiun dari App.jsx — filenya dibiarkan di disk (orphan), 21 halaman yang
+// dulu di-host keduanya kini di-lazy-import langsung oleh AdminHub sendiri.
 const AdminHub          = lazy(() => import('./pages/foundation/AdminHub'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
 const HomeDashboard  = lazy(() => import('./modules/home/HomeDashboard'));
@@ -79,17 +79,7 @@ const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDet
 const InventoryDashboardPage = lazy(() => import('./modules/inventory/pages/InventoryDashboardPage'));
 const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
 const PenerimaanBarangPage   = lazy(() => import('./modules/inventory/pages/PenerimaanBarangPage'));
-const AdminSettingsHub       = lazy(() => import('./pages/foundation/admin-settings/AdminSettingsHub'));
-const EntitySettingsPage     = lazy(() => import('./pages/foundation/admin-settings/EntitySettingsPage'));
-const DocumentSettingsPage   = lazy(() => import('./pages/foundation/admin-settings/DocumentSettingsPage'));
-const FinanceDefaultsPage    = lazy(() => import('./pages/foundation/admin-settings/FinanceDefaultsPage'));
-const ApprovalWorkflowsPage  = lazy(() => import('./pages/foundation/admin-settings/ApprovalWorkflowsPage'));
 const MyProfilePage          = lazy(() => import('./pages/profile/MyProfilePage'));
-const NotificationsPage      = lazy(() => import('./pages/foundation/admin-settings/NotificationsPage'));
-const SecurityPolicyPage     = lazy(() => import('./pages/foundation/admin-settings/SecurityPolicyPage'));
-const AuditLogPage           = lazy(() => import('./pages/foundation/admin-settings/AuditLogPage'));
-const GeneralPreferencesPage = lazy(() => import('./pages/foundation/admin-settings/GeneralPreferencesPage'));
-const IntegrationsPage       = lazy(() => import('./pages/foundation/admin-settings/IntegrationsPage'));
 
 // ============================
 // PASTEL PALETTE
@@ -960,15 +950,12 @@ const ERP_MENU_GROUPS = [
     label: 'Foundation',
     items: [
       { section: 'Master Data' },
-      { id: 'admin',         label: 'Master Data',       icon: Database },
-      { id: 'products',      label: 'Products & Services', icon: Package },
-      { id: 'bulk-edit-price', label: 'Update Harga Massal', icon: TrendingUp, role: ['super_admin'] },
-      { id: 'bnf-org-roles', label: 'BNF — Kepala & Direktur', icon: UsersRound, role: ['super_admin','admin'] },
-      { id: 'schema-manager',label: 'Schema Manager',    icon: Database },
-      { section: 'Admin Settings' },
-      { id: 'admin-settings', label: 'Admin Settings', icon: Settings },
-      // Fase 1 unifikasi (leaf sementara, Tahap A) — lihat plan floating-dreaming-spark.md.
-      { id: 'admin-hub', label: 'Admin Hub (Baru)', icon: Database },
+      // Fase 1 selesai — admin/bulk-edit-price/bnf-org-roles/schema-manager/
+      // admin-settings (5 leaf lama) melebur jadi 1 leaf permanen di bawah ini.
+      // Products & Services SENGAJA tetap terpisah (dual-access — juga jadi
+      // card di dalam AdminHub, lihat plan floating-dreaming-spark.md Q4).
+      { id: 'admin-hub', label: 'Master Data & Admin Settings', icon: Database },
+      { id: 'products',  label: 'Products & Services', icon: Package },
     ],
   },
 ];
@@ -1216,14 +1203,11 @@ const NEXUS_NAV = [
       {
         id: 'nav-master', label: 'Master Data', icon: Database, tone: 'slate',
         children: [
-          { id: 'admin',          label: 'Master Data',         icon: Database },
-          { id: 'products',       label: 'Products & Services', icon: Package },
-          { id: 'bulk-edit-price', label: 'Update Harga Massal', icon: TrendingUp },
-          { id: 'bnf-org-roles', label: 'BNF — Kepala & Direktur', icon: UsersRound },
-          { id: 'schema-manager', label: 'Schema Manager',      icon: Database },
-          { id: 'admin-settings', label: 'Admin Settings',      icon: Settings },
-          // Fase 1 unifikasi (leaf sementara, Tahap A) — lihat plan floating-dreaming-spark.md.
-          { id: 'admin-hub', label: 'Admin Hub (Baru)', icon: Database },
+          // Fase 1 selesai — admin/bulk-edit-price/bnf-org-roles/schema-manager/
+          // admin-settings (5 leaf lama) melebur jadi 1 leaf permanen di bawah
+          // ini. Products & Services SENGAJA tetap terpisah (dual-access).
+          { id: 'admin-hub', label: 'Master Data & Admin Settings', icon: Database },
+          { id: 'products',  label: 'Products & Services', icon: Package },
         ],
       },
     ],
@@ -1313,9 +1297,10 @@ const MENU_KEY_MAP = {
   'schema':        'foundation_schema',
   'schema-manager':'foundation_schema',
   'admin-settings':'admin_settings',
-  // Fase 1 unifikasi (leaf sementara, Tahap A) — sama dgn key 'admin', dikonfirmasi
-  // aman thd data role_menu_permissions/user_menu_permissions live (lihat laporan
-  // Tahap A) — tak ada user yg kehilangan visibility leaf krn pemetaan ini.
+  // Fase 1 unifikasi Master Data + Admin Settings — sama dgn key lama 'admin',
+  // dikonfirmasi aman thd data role_menu_permissions/user_menu_permissions live
+  // (laporan Tahap A) — tak ada user yg kehilangan visibility leaf krn pemetaan
+  // ini. Key lama 'admin'/'admin-settings' di atas dibiarkan (dead, harmless).
   'admin-hub': 'foundation_master',
 };
 
@@ -1742,20 +1727,21 @@ export default function StorbitManifest() {
     localStorage.getItem('nexus_last_menu') || 'home'
   );
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile module-menu drawer
-  // Which AdminShell tab to land on when activeMenu next becomes 'admin' — set
-  // by the legacy 'users' redirect below so it opens straight to User Access
-  // instead of AdminShell's own default ('companies'). Cleared once activeMenu
-  // leaves 'admin' again so a later, unrelated visit to Master Data doesn't
-  // inherit a stale target.
-  const [adminInitialTab, setAdminInitialTab] = useState(null);
-  // Consume adminInitialTab once activeMenu leaves 'admin' again, so it can't
-  // leak into a later, unrelated Master Data visit (e.g. clicking the normal
-  // 'Master Data' sidebar item after having used the legacy redirect once).
-  // Deferred via setTimeout (mirrors AuthContext.jsx's "defer to next tick"
-  // pattern) rather than setState directly in the effect body.
+  // Which AdminHub section to land on when activeMenu next becomes 'admin-hub'
+  // — set by the legacy-id redirect below (Fase 1 Tahap B) so e.g. the old
+  // 'users' bookmark opens straight to User Access instead of AdminHub's own
+  // landing (card grid). Cleared once activeMenu leaves 'admin-hub' again so a
+  // later, unrelated visit to Master Data & Admin Settings doesn't inherit a
+  // stale target.
+  const [adminInitialSection, setAdminInitialSection] = useState(null);
+  // Consume adminInitialSection once activeMenu leaves 'admin-hub' again, so it
+  // can't leak into a later, unrelated visit (e.g. clicking the normal sidebar
+  // item after having used one of the legacy redirects once). Deferred via
+  // setTimeout (mirrors AuthContext.jsx's "defer to next tick" pattern) rather
+  // than setState directly in the effect body.
   useEffect(() => {
-    if (activeMenu === 'admin') return undefined;
-    const t = setTimeout(() => setAdminInitialTab(null), 0);
+    if (activeMenu === 'admin-hub') return undefined;
+    const t = setTimeout(() => setAdminInitialSection(null), 0);
     return () => clearTimeout(t);
   }, [activeMenu]);
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
@@ -2128,8 +2114,7 @@ export default function StorbitManifest() {
     if (SYNTHETIC.includes(activeMenu)) return;
     if (activeMenu?.startsWith('customer-') ||
         activeMenu?.startsWith('assets-') ||
-        activeMenu?.startsWith('product-') ||
-        activeMenu?.startsWith('admin-settings-')) return;
+        activeMenu?.startsWith('product-')) return;
 
     // Validate activeMenu against the SAME per-item gate the sidebar and
     // canAccessActiveMenu (F4) use: isMenuAccessible. A gated item is judged by
@@ -2649,7 +2634,7 @@ export default function StorbitManifest() {
     // are themselves already gated — always allow.
     const SYNTHETIC = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
     if (SYNTHETIC.includes(activeMenu)) return true;
-    if (activeMenu?.startsWith('customer-') || activeMenu?.startsWith('assets-') || activeMenu?.startsWith('product-') || activeMenu?.startsWith('admin-settings-')) return true;
+    if (activeMenu?.startsWith('customer-') || activeMenu?.startsWith('assets-') || activeMenu?.startsWith('product-')) return true;
     // F4: per-item gate mirroring the sidebar (gateless child inherits its
     // module's visibility) — replaces the coarse "parent visible → all children
     // accessible" (collectMenuIds) that let ungranted child pages render.
@@ -2969,7 +2954,7 @@ export default function StorbitManifest() {
                           {[
                             { label: 'My Profile',       icon: User,     action: () => { setProfileDropdownOpen(false); setShowProfile(true); } },
                             { label: 'Account Settings', icon: Settings, action: () => setProfileDropdownOpen(false) },
-                            { label: 'Admin Settings',   icon: Shield,   action: () => { navigateTo('admin-settings'); setProfileDropdownOpen(false); } },
+                            { label: 'Master Data & Admin Settings', icon: Shield, action: () => { navigateTo('admin-hub'); setProfileDropdownOpen(false); } },
                           ].map(({ label, icon: Icon, action }) => (
                             <button key={label} type="button" onClick={action}
                               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-colors"
@@ -3264,26 +3249,23 @@ export default function StorbitManifest() {
               role={role}
             />
           )}
-          {activeMenu === 'users' && (
-            // Legacy 'Org & Access Control' nav item removed — redirect to Master
-            // Data (AdminShell), landing directly on the User Access tab (that's
-            // what this old menu item meant). Handles any stale state or
-            // bookmarks pointing to the old menu id.
-            (() => { setAdminInitialTab('user-access'); navigateTo('admin'); return null; })()
+          {/* Legacy activeMenu ids — Fase 1 Tahap B pensiunkan AdminShell +
+              AdminSettingsHub sepenuhnya, digantikan AdminHub. Browser dengan
+              salah satu 11 id lama ini tersimpan di localStorage
+              ('nexus_last_menu') TIDAK bisa mengandalkan fallback natural:
+              isMenuAccessible() (App.jsx:1453-1460) return true untuk id yang
+              sudah tak resolve ke item/module manapun ("unknown → allow"),
+              jadi validasi restore & canAccessActiveMenu tidak akan redirect —
+              dan render-block-nya sendiri sudah dihapus → halaman blank tanpa
+              redirect eksplisit ini. 'users' tetap dapat initialSection
+              spesifik (User Access); 10 id lain cukup mendarat di landing hub. */}
+          {['users','admin','admin-settings','admin-settings-entity','admin-settings-documents','admin-settings-finance','admin-settings-approvals','admin-settings-notifications','admin-settings-security','admin-settings-audit','admin-settings-general','admin-settings-integrations'].includes(activeMenu) && (
+            (() => {
+              if (activeMenu === 'users') setAdminInitialSection('user-access');
+              navigateTo('admin-hub');
+              return null;
+            })()
           )}
-          {activeMenu === 'admin' && (!canRenderPage('admin') ? (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          ) : (
-            <ErrorBoundary title="Master Data section temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <AdminShell initialTab={adminInitialTab} />
-              </Suspense>
-            </ErrorBoundary>
-          ))}
           {(activeMenu === 'products' || activeMenu === 'product-detail') && (!canRenderPage('products') ? (
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
           ) : (
@@ -3883,111 +3865,22 @@ export default function StorbitManifest() {
           {/* CRM Lead Pool + Approval moved into the consolidated "CRM: Account"
               tabbed block above (Tahap 2b). */}
 
-          {/* ── Foundation: Admin Settings ──────────────────────────────────── */}
-          {/* Routes (activeMenu-based, no react-router in this app):
-                admin-settings           → /foundation/admin-settings           (hub)
-                admin-settings-entity    → /foundation/admin-settings/entity
-                admin-settings-documents → /foundation/admin-settings/documents
-                admin-settings-finance   → /foundation/admin-settings/finance     */}
-          {/* Route-guard (defense-in-depth): block the whole admin-settings family
-              for roles that can't see it, even if activeMenu is forced
-              (FIX-B exempts 'admin-settings-*' from restored-menu validation). */}
-          {activeMenu?.startsWith('admin-settings') && !canAdminSettings && (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          )}
-          {activeMenu === 'admin-settings' && canAdminSettings && (
-            <ErrorBoundary title="Admin Settings temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <AdminSettingsHub onOpen={(id) => setActiveMenu(
-                  id === 'entity' ? 'admin-settings-entity'
-                    : id === 'document' ? 'admin-settings-documents'
-                    : id === 'finance' ? 'admin-settings-finance'
-                    : id === 'approval' ? 'admin-settings-approvals'
-                    : id === 'notif' ? 'admin-settings-notifications'
-                    : id === 'security' ? 'admin-settings-security'
-                    : id === 'audit' ? 'admin-settings-audit'
-                    : id === 'general' ? 'admin-settings-general'
-                    : id === 'integrate' ? 'admin-settings-integrations'
-                    : 'admin-settings'
-                )} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-entity' && canAdminSettings && (
-            <ErrorBoundary title="Entity Settings temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <EntitySettingsPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-documents' && canAdminSettings && (
-            <ErrorBoundary title="Document Settings temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <DocumentSettingsPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-finance' && canAdminSettings && (
-            <ErrorBoundary title="Finance Defaults temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <FinanceDefaultsPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-approvals' && canAdminSettings && (
-            <ErrorBoundary title="Approval Workflows temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <ApprovalWorkflowsPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-notifications' && canAdminSettings && (
-            <ErrorBoundary title="Notifications temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <NotificationsPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-security' && canAdminSettings && (
-            <ErrorBoundary title="Security Policy temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <SecurityPolicyPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-audit' && canAdminSettings && (
-            <ErrorBoundary title="Audit Log temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <AuditLogPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-general' && canAdminSettings && (
-            <ErrorBoundary title="General Preferences temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <GeneralPreferencesPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'admin-settings-integrations' && canAdminSettings && (
-            <ErrorBoundary title="Integrations temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <IntegrationsPage onHome={() => setActiveMenu('admin-settings')} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── Fase 1 unifikasi Master Data + Admin Settings — leaf sementara
-              Tahap A. Gate mount = SATU-SATUNYA tempat union "akses AdminShell
-              ATAU akses AdminSettingsHub" boleh dievaluasi (lihat plan
+          {/* ── Foundation: Master Data & Admin Settings (AdminHub) ─────────────
+              Fase 1 selesai (Tahap B) — AdminShell + AdminSettingsHub (+9
+              sub-halaman) pensiun, digantikan satu shell card-grid. Gate mount
+              ini SATU-SATUNYA tempat union "akses AdminShell ATAU akses
+              AdminSettingsHub" boleh dievaluasi (lihat plan
               floating-dreaming-spark.md, bagian "Pembuktian gate union") — di
               dalam AdminHub sendiri, tiap card/destinasi replikasi kondisi
-              ASLI-nya masing-masing, tak pernah membaca variabel ini. ── */}
+              ASLI-nya masing-masing, tak pernah membaca variabel ini.
+              canRenderPage('admin-hub') dipakai (bukan 'admin', yang idnya
+              sudah tak ada lagi di ERP_MENU_GROUPS) — MENU_KEY_MAP['admin-hub']
+              = 'foundation_master', sama dgn key 'admin' dulu. ── */}
           {activeMenu === 'admin-hub' && (
-            (canRenderPage('admin') || canAdminSettings) ? (
+            (canRenderPage('admin-hub') || canAdminSettings) ? (
               <ErrorBoundary title="Admin Hub temporarily unavailable">
                 <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                  <AdminHub onExit={() => setActiveMenu('home')} />
+                  <AdminHub onExit={() => setActiveMenu('home')} initialSection={adminInitialSection} />
                 </Suspense>
               </ErrorBoundary>
             ) : (
