@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lxcGeXycgcwUkVjhqqHI5G9R6McAkiws2TDPHlOS56AVkmSojqsZfE9HL7TqpfZ
+\restrict m12uUSTTuaYokYwh7GUWqP4Guc1q3uQe6uEbqsZeebfBo2mo2o5U8eyslz5UkPK
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -13117,7 +13117,7 @@ ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
 -- Name: companies companies_read_own; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY companies_read_own ON public.companies FOR SELECT TO authenticated USING (((id = public.get_user_company_id()) OR public.is_super_admin()));
+CREATE POLICY companies_read_own ON public.companies FOR SELECT TO authenticated USING (((id = public.get_user_company_id()) OR (id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin()));
 
 
 --
@@ -14958,7 +14958,7 @@ CREATE POLICY roles_insert ON public.roles FOR INSERT TO authenticated WITH CHEC
 -- Name: roles roles_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY roles_read ON public.roles FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
+CREATE POLICY roles_read ON public.roles FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin()));
 
 
 --
@@ -17266,5 +17266,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lxcGeXycgcwUkVjhqqHI5G9R6McAkiws2TDPHlOS56AVkmSojqsZfE9HL7TqpfZ
+\unrestrict m12uUSTTuaYokYwh7GUWqP4Guc1q3uQe6uEbqsZeebfBo2mo2o5U8eyslz5UkPK
 
