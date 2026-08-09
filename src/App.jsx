@@ -2622,6 +2622,7 @@ export default function StorbitManifest() {
   // eslint-disable-next-line no-unused-vars
   const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
   const currentRoleLabel = ROLES.find(r => r.id === role)?.label || role;
+  console.log('[DEBUG currentRoleLabel]', currentRoleLabel);
 
   // Content-level access gate (Fix C / defense-in-depth): only render a module
   // page if the user can access its menu. The sidebar already gates visibility
