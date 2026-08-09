@@ -1304,7 +1304,6 @@ const MENU_KEY_MAP = {
   'products':      'foundation_products',
   'schema':        'foundation_schema',
   'schema-manager':'foundation_schema',
-  'adminSettings': 'admin_settings',
   'admin-settings':'admin_settings',
 };
 
@@ -2958,7 +2957,7 @@ export default function StorbitManifest() {
                           {[
                             { label: 'My Profile',       icon: User,     action: () => { setProfileDropdownOpen(false); setShowProfile(true); } },
                             { label: 'Account Settings', icon: Settings, action: () => setProfileDropdownOpen(false) },
-                            { label: 'Admin Settings',   icon: Shield,   action: () => { navigateTo('adminSettings'); setProfileDropdownOpen(false); } },
+                            { label: 'Admin Settings',   icon: Shield,   action: () => { navigateTo('admin-settings'); setProfileDropdownOpen(false); } },
                           ].map(({ label, icon: Icon, action }) => (
                             <button key={label} type="button" onClick={action}
                               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm text-left transition-colors"
