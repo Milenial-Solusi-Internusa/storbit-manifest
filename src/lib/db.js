@@ -955,7 +955,7 @@ export async function getInvoicePdfData(invoiceId) {
       ? supabase.from('entity_bank_accounts').select('bank_name, account_number, account_holder, branch').eq('company_id', companyId).eq('is_default', true).eq('is_active', true).limit(1).maybeSingle()
       : Promise.resolve({ data: null }),
     companyId
-      ? supabase.from('entity_finance_settings').select('default_payment_terms').eq('company_id', companyId).maybeSingle()
+      ? supabase.from('entity_finance_settings').select('default_payment_terms, default_payment_term_id, payment_terms(days_due, is_active)').eq('company_id', companyId).maybeSingle()
       : Promise.resolve({ data: null }),
     supabase.from('sp_order_items').select('shipping_price').eq('sp_order_id', inv.sp_order_id),
   ]);
@@ -977,7 +977,10 @@ export async function getInvoicePdfData(invoiceId) {
       sp_no: spOrder.sp_no || '',
       customer_name: customerRes.data?.name || '',
       dc_name: dcRes.data?.nama || '',
-      default_payment_terms: settingsRes.data?.default_payment_terms ?? 30,
+      default_payment_terms:
+        (settingsRes.data?.payment_terms?.is_active ? settingsRes.data.payment_terms.days_due : null)
+        ?? settingsRes.data?.default_payment_terms
+        ?? 30,
       company: companyRes.data || {},
       bank: bankRes.data || null,
       lines: (linesRes.data || []).map((l) => ({
