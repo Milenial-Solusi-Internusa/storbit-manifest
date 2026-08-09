@@ -10,7 +10,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../../lib/supabase";
 import {
   Icon, PageHeader, EntitySwitcher, NumberStepper, Segmented, OutlineBtn,
-  SaveButton, Tooltip, PillToggle, useToast, Skel, Card, KitStyles,
+  SaveButton, Tooltip, PillToggle, useToast, Skel, Card, KitStyles, KitSelect,
 } from "./kit";
 import {
   NAVY, ORANGE, CREAM, SURFACE, LINE, LINE_SOFT, INK, INK_SOFT, MUTED,
@@ -31,7 +31,7 @@ const FIN_SEED = {
   taxMode: "exclusive",
   currencies: ["IDR", "USD"],
   rateMode: "manual",
-  paymentTerms: 30,
+  paymentTermId: "",
   quotationValidity: 14,
   incoterm: "FOB",
   rounding: "round",
@@ -47,7 +47,7 @@ function finToForm(row) {
     taxMode:           row.tax_mode || FIN_SEED.taxMode,
     currencies:        Array.isArray(row.supported_currencies) && row.supported_currencies.length ? row.supported_currencies : FIN_SEED.currencies,
     rateMode:          row.rate_input_mode || FIN_SEED.rateMode,
-    paymentTerms:      row.default_payment_terms ?? FIN_SEED.paymentTerms,
+    paymentTermId:     row?.default_payment_term_id || "",
     quotationValidity: row.quotation_validity_days ?? FIN_SEED.quotationValidity,
     incoterm:          row.default_incoterm || FIN_SEED.incoterm,
     rounding:          row.rounding_mode || FIN_SEED.rounding,
@@ -62,7 +62,7 @@ function formToFin(form, companyId) {
     tax_mode:                form.taxMode,
     supported_currencies:    form.currencies,
     rate_input_mode:         form.rateMode,
-    default_payment_terms:   Number(form.paymentTerms) || 0,
+    default_payment_term_id: form.paymentTermId || null,
     quotation_validity_days: Number(form.quotationValidity) || 0,
     default_incoterm:        form.incoterm,
     rounding_mode:           form.rounding,
@@ -198,7 +198,7 @@ function MetaChip({ label }) {
   return <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: MUTED, background: CREAM, border: "1px solid " + LINE, borderRadius: 20, padding: "4px 10px", whiteSpace: "nowrap" }}>{label}</span>;
 }
 
-function LiveSummary({ form }) {
+function LiveSummary({ form, paymentTermDays }) {
   const unit = 10000000, qty = 2, shipping = 500000;
   const subtotal = unit * qty;
   const rate = (Number(form.ppnRate) || 0) / 100;
@@ -237,7 +237,7 @@ function LiveSummary({ form }) {
             <span style={{ fontFamily: FONT_MONO, fontSize: 19, fontWeight: 700, color: NAVY, letterSpacing: -0.3, whiteSpace: "nowrap" }}>{fmtRp(grand)}</span>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 14 }}>
-            <MetaChip label={"Termin " + form.paymentTerms + " hari"} />
+            <MetaChip label={paymentTermDays != null ? `Termin ${paymentTermDays} hari` : "Termin belum dipilih"} />
             <MetaChip label={form.incoterm} />
             <MetaChip label={"PPh " + form.pphRate + "%"} />
           </div>
@@ -283,6 +283,8 @@ export default function FinanceDefaultsPage({ onHome }) {
   const [state, setState] = useState("loading"); // loading | ready | error
   const [errMsg, setErrMsg] = useState("");
   const [reload, setReload] = useState(0);
+  const [paymentTermOptions, setPaymentTermOptions] = useState([]);
+  const [paymentTermsLoading, setPaymentTermsLoading] = useState(true);
   const [fireToast, toastNode] = useToast();
 
   useEffect(() => {
@@ -297,6 +299,24 @@ export default function FinanceDefaultsPage({ onHome }) {
       });
     return () => { cancelled = true; };
   }, [entity, reload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTimeout(() => setPaymentTermsLoading(true), 0);
+    supabase.from("payment_terms")
+      .select("id, name, days_due")
+      .eq("company_id", ENTITY_IDS[entity])
+      .eq("is_active", true)
+      .is("deleted_at", null)
+      .order("days_due", { ascending: true })
+      .limit(1000)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setPaymentTermOptions(error ? [] : (data || []));
+        setPaymentTermsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [entity]);
 
   const set = (k) => (v) => { setForm((f) => ({ ...f, [k]: v })); setDirty(true); };
   function switchEntity(id) { if (id === entity) return; setFade(true); setTimeout(() => { setEntity(id); setFade(false); }, 200); }
@@ -384,7 +404,21 @@ export default function FinanceDefaultsPage({ onHome }) {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 28 }}>
                 <div>
                   <FLabel>Termin Pembayaran Default</FLabel>
-                  <NumberStepper value={form.paymentTerms} onChange={set("paymentTerms")} suffix="hari" min={0} max={365} width={170} />
+                  {paymentTermsLoading ? (
+                    <Skel w={170} h={46} r={11} />
+                  ) : paymentTermOptions.length === 0 ? (
+                    <div style={{ fontSize: 12, color: DANGER, maxWidth: 240, lineHeight: 1.5 }}>
+                      Belum ada Payment Terms aktif untuk entitas ini. Tambahkan dulu di Master Data → Payment Terms.
+                    </div>
+                  ) : (
+                    <KitSelect
+                      value={form.paymentTermId}
+                      onChange={set("paymentTermId")}
+                      options={[{ value: "", label: "— Pilih termin —" }, ...paymentTermOptions.map((pt) => ({ value: pt.id, label: `${pt.name} (${pt.days_due} hari)` }))]}
+                      width={220}
+                      icon="scale"
+                    />
+                  )}
                 </div>
                 <div>
                   <FLabel>Masa Berlaku Quotation</FLabel>
@@ -403,7 +437,7 @@ export default function FinanceDefaultsPage({ onHome }) {
           </div>
 
           {/* RIGHT — live summary */}
-          <LiveSummary form={form} />
+          <LiveSummary form={form} paymentTermDays={paymentTermOptions.find((pt) => pt.id === form.paymentTermId)?.days_due} />
         </div>
       )}
 
