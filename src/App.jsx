@@ -26,6 +26,10 @@ import ProfileMiniView from './components/ProfileMiniView';
 import { calcItem } from './lib/spCalc';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 const AdminShell        = lazy(() => import('./modules/admin/AdminShell'));
+// Fase 1 unifikasi Master Data + Admin Settings — leaf sementara, lihat plan
+// /Users/den/.claude/plans/floating-dreaming-spark.md. Jalur lama (AdminShell,
+// AdminSettingsHub dkk di bawah) TETAP hidup penuh sbg fallback sampai Tahap B.
+const AdminHub          = lazy(() => import('./pages/foundation/AdminHub'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
 const HomeDashboard  = lazy(() => import('./modules/home/HomeDashboard'));
 const AssetShell     = lazy(() => import('./modules/assets/AssetShell'));
@@ -963,6 +967,8 @@ const ERP_MENU_GROUPS = [
       { id: 'schema-manager',label: 'Schema Manager',    icon: Database },
       { section: 'Admin Settings' },
       { id: 'admin-settings', label: 'Admin Settings', icon: Settings },
+      // Fase 1 unifikasi (leaf sementara, Tahap A) — lihat plan floating-dreaming-spark.md.
+      { id: 'admin-hub', label: 'Admin Hub (Baru)', icon: Database },
     ],
   },
 ];
@@ -1216,6 +1222,8 @@ const NEXUS_NAV = [
           { id: 'bnf-org-roles', label: 'BNF — Kepala & Direktur', icon: UsersRound },
           { id: 'schema-manager', label: 'Schema Manager',      icon: Database },
           { id: 'admin-settings', label: 'Admin Settings',      icon: Settings },
+          // Fase 1 unifikasi (leaf sementara, Tahap A) — lihat plan floating-dreaming-spark.md.
+          { id: 'admin-hub', label: 'Admin Hub (Baru)', icon: Database },
         ],
       },
     ],
@@ -1305,6 +1313,10 @@ const MENU_KEY_MAP = {
   'schema':        'foundation_schema',
   'schema-manager':'foundation_schema',
   'admin-settings':'admin_settings',
+  // Fase 1 unifikasi (leaf sementara, Tahap A) — sama dgn key 'admin', dikonfirmasi
+  // aman thd data role_menu_permissions/user_menu_permissions live (lihat laporan
+  // Tahap A) — tak ada user yg kehilangan visibility leaf krn pemetaan ini.
+  'admin-hub': 'foundation_master',
 };
 
 // canSeeMenuItem — priority: public → hasMenuPermission (per-user) → item.role
@@ -3074,7 +3086,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf','admin-hub'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3963,6 +3975,24 @@ export default function StorbitManifest() {
                 <IntegrationsPage onHome={() => setActiveMenu('admin-settings')} />
               </Suspense>
             </ErrorBoundary>
+          )}
+
+          {/* ── Fase 1 unifikasi Master Data + Admin Settings — leaf sementara
+              Tahap A. Gate mount = SATU-SATUNYA tempat union "akses AdminShell
+              ATAU akses AdminSettingsHub" boleh dievaluasi (lihat plan
+              floating-dreaming-spark.md, bagian "Pembuktian gate union") — di
+              dalam AdminHub sendiri, tiap card/destinasi replikasi kondisi
+              ASLI-nya masing-masing, tak pernah membaca variabel ini. ── */}
+          {activeMenu === 'admin-hub' && (
+            (canRenderPage('admin') || canAdminSettings) ? (
+              <ErrorBoundary title="Admin Hub temporarily unavailable">
+                <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                  <AdminHub onExit={() => setActiveMenu('home')} />
+                </Suspense>
+              </ErrorBoundary>
+            ) : (
+              <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+            )
           )}
 
           {/* ── CRM: Quotation Form (create + edit) ────────────────────────── */}
