@@ -12,6 +12,7 @@
 //       Upgrade to increment_document_sequence RPC in Phase 2.0D.
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { PPN_RATE } from '../../lib/taxConstants';
 import {
   ChevronRight, ChevronLeft, Plus, Trash2,
   Receipt, Check, Save, Package,
@@ -199,7 +200,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
     const qty      = items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
     const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0), 0);
     const shipping = items.reduce((s, i) => s + (Number(i.shippingPrice) || 0), 0);
-    const ppn      = Math.round(subtotal * 0.11);
+    const ppn      = Math.round(subtotal * PPN_RATE);
     return { qty, subtotal, shipping, ppn, grand: subtotal + shipping + ppn };
   }, [items]);
 
