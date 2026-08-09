@@ -89,6 +89,9 @@ export function AuthProvider({ children }) {
   // (not synced via a separate effect) so it's always consistent with
   // `profile` in the same render — no one-render-stale window.
   const activeCompanyId = activeCompanyIdOverride ?? profile?.company_id ?? null;
+  // TEMPORARY DEBUG — diagnosis "Management (legacy)" dropdown, cabut setelah selesai.
+  console.log('[DEBUG activeCompanyId]', activeCompanyId);
+  console.log('[DEBUG erpRoles]', JSON.stringify(erpRoles));
   // Distinct companies where the user holds an active role — raw material for
   // a future company switcher UI (not consumed anywhere yet in this phase).
   const myCompanyIds = [...new Set(erpRoles.map(r => r.company_id).filter(Boolean))];
@@ -258,6 +261,9 @@ export function AuthProvider({ children }) {
   // company — see pickPrimaryErpRole.
   const primaryErpRole = pickPrimaryErpRole(erpRoles, activeCompanyId);
   const erpRoleCode    = primaryErpRole?.roles?.code || null;
+  // TEMPORARY DEBUG — diagnosis "Management (legacy)" dropdown, cabut setelah selesai.
+  console.log('[DEBUG primaryErpRole]', JSON.stringify(primaryErpRole));
+  console.log('[DEBUG authRole]', erpRoleCode);
 
   // hasPermission — returns true if user has the given module+action in their role_permissions.
   // super_admin always returns true.
