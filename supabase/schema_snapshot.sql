@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict cFJYRJqsTEsTexSqWfo8NMOmDXhpFQlSiGgjAQcfti91wrhxC9PFCYe3kKuBzUl
+\restrict mu3ySMimjfcVX6Wfd76psBo8csapHPFDmQaJapiSdBVXKmOvMXuvsBljY2GQYju
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -14958,7 +14958,7 @@ CREATE POLICY roles_insert ON public.roles FOR INSERT TO authenticated WITH CHEC
 -- Name: roles roles_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY roles_read ON public.roles FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin()));
+CREATE POLICY roles_read ON public.roles FOR SELECT TO authenticated USING (((((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))) AND (deleted_at IS NULL)) OR public.is_super_admin()));
 
 
 --
@@ -17266,5 +17266,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict cFJYRJqsTEsTexSqWfo8NMOmDXhpFQlSiGgjAQcfti91wrhxC9PFCYe3kKuBzUl
+\unrestrict mu3ySMimjfcVX6Wfd76psBo8csapHPFDmQaJapiSdBVXKmOvMXuvsBljY2GQYju
 
