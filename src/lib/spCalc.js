@@ -7,6 +7,8 @@
 //   ppn       = round(ppnBase × 0.11)
 //   grandTotal = subtotal + shippingPrice + ppn
 
+import { PPN_RATE } from './taxConstants';
+
 /**
  * Calculate derived fields for a single SP item.
  * @param {Object} item - app-side SP item (camelCase fields)
@@ -18,7 +20,7 @@ export function calcItem(item) {
   const shippingPrice = Number(item.shippingPrice) || 0;
   const subtotal      = unitPrice * qty;
   const ppnBase       = subtotal + shippingPrice;
-  const ppn           = Math.round(ppnBase * 0.11);
+  const ppn           = Math.round(ppnBase * PPN_RATE);
   const grandTotal    = subtotal + shippingPrice + ppn;
   const shippedQty    = Number(item.shippedQty)   || 0;
   const outstandingQty = qty - shippedQty;

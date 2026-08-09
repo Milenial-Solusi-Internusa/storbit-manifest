@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { useProducts } from '../../hooks/useProducts';
+import { PPN_RATE, PPN_RATE_FREIGHT_FORWARDING } from '../../lib/taxConstants';
 
 // Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
 const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
@@ -31,7 +32,7 @@ const C = {
   orange:    '#A45A22', orangeBg: '#F6E8D6', orangeBd: '#E7CDA9',
 };
 
-const VAT_RATE    = 0.011; // 1.1%
+const VAT_RATE    = PPN_RATE_FREIGHT_FORWARDING; // 1.1%
 const DEFAULT_USD = 16000;
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 const today = () => new Date().toISOString().slice(0, 10);
@@ -123,9 +124,9 @@ function seedRatesFromRows(rows, storedRates) {
 const VAT_OPTIONS_FALLBACK = [
   { value: 0,     label: '0%' },
   { value: 0.011, label: '1,1%' },
-  { value: 0.11,  label: '11%' },
+  { value: PPN_RATE, label: '11%' },
 ];
-const vatDefaultFor = (st) => (/custom/i.test(st || '') ? 0.11 : VAT_RATE);
+const vatDefaultFor = (st) => (/custom/i.test(st || '') ? PPN_RATE : VAT_RATE);
 // Indonesian-formatted PPN label, e.g. "PPN 1,1%" / "PPN 11%" / "PPN 0%".
 const vatLabel = (rate) => {
   const r = Number(rate);

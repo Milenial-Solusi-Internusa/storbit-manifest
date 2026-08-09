@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData } from '../../lib/db';
 import { calcItem } from '../../lib/spCalc';
+import { PPN_RATE } from '../../lib/taxConstants';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
 import InvoicePDF from './InvoicePDF';
@@ -277,7 +278,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
   // Auto-calculated fields
   const outstanding = Math.max(0, Number(draft.qty) - Number(draft.shippedQty));
   const subtotal    = Number(draft.qty) * Number(draft.unitPrice);
-  const ppn         = Math.round(subtotal * 0.11);
+  const ppn         = Math.round(subtotal * PPN_RATE);
   const grandTotal  = subtotal + ppn + Number(draft.shippingPrice);
 
   function autoStatus() {
