@@ -6,7 +6,7 @@ import {
   ChevronRight, Save, Calendar, Building2, User,
   ArrowUpDown, Sparkles, ChevronLeft, LogOut, Menu,
   Database, Bell, ClipboardCheck, BriefcaseBusiness, Landmark, ShoppingCart,
-  Boxes, UsersRound, Laptop, BarChart3, Settings, ChevronsUpDown,
+  Boxes, UsersRound, Laptop, BarChart3, Settings,
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
   ClipboardList, LayoutList, Archive, Activity, BookOpen,
@@ -23,6 +23,7 @@ import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
 import { useUrlState } from './hooks/useUrlState';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
+import CompanySwitcher from './components/CompanySwitcher';
 import { calcItem } from './lib/spCalc';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 // Fase 1 unifikasi Master Data + Admin Settings — entry point permanen.
@@ -2813,15 +2814,10 @@ export default function StorbitManifest() {
               {/* ── RIGHT: actions ── */}
               <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap lg:shrink-0">
 
-                {/* Entity selector */}
-                <button type="button"
-                  className="nexus-cmd-btn inline-flex items-center gap-1.5 rounded-[10px] border px-3 text-xs font-semibold shrink-0"
-                  style={{ background: PASTEL.lineSoft, borderColor: '#E8ECF2', color: PASTEL.inkSoft, height: '36px' }}>
-                  <Building2 size={13} style={{ color: PASTEL.inkMute }}/>
-                  <span className="hidden xl:inline">MSI / JCI / Storbit</span>
-                  <span className="xl:hidden">Entity</span>
-                  <ChevronsUpDown size={11} style={{ color: PASTEL.inkMute }}/>
-                </button>
+                {/* Entity selector — src/components/CompanySwitcher.jsx (session-only,
+                    filtered to myCompanyIds; static label if the user only has
+                    one company). Replaces the old dead decorative button. */}
+                <CompanySwitcher />
 
                 {/* Pending Approval — navigates to the real HRGA approver inbox
                     ('approvals' Approval Center is still a ComingSoon placeholder). */}
