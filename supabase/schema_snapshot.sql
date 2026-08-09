@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ycNyA2NmZmawyuzaEHRr8QiGXvCLkgQyX00EJuAjrVGAQ5KNapnRFSUig8mDxei
+\restrict lxcGeXycgcwUkVjhqqHI5G9R6McAkiws2TDPHlOS56AVkmSojqsZfE9HL7TqpfZ
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -4653,6 +4653,7 @@ CREATE TABLE public.entity_finance_settings (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    default_payment_term_id uuid,
     CONSTRAINT entity_finance_settings_ppn_formula_check CHECK (((ppn_formula)::text = ANY ((ARRAY['opsi_a'::character varying, 'opsi_b'::character varying])::text[]))),
     CONSTRAINT entity_finance_settings_rate_input_mode_check CHECK (((rate_input_mode)::text = ANY ((ARRAY['manual'::character varying, 'daily'::character varying])::text[]))),
     CONSTRAINT entity_finance_settings_rounding_mode_check CHECK (((rounding_mode)::text = ANY ((ARRAY['round'::character varying, 'floor'::character varying, 'ceil'::character varying])::text[]))),
@@ -10827,6 +10828,14 @@ ALTER TABLE ONLY public.entity_finance_settings
 
 
 --
+-- Name: entity_finance_settings entity_finance_settings_default_payment_term_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.entity_finance_settings
+    ADD CONSTRAINT entity_finance_settings_default_payment_term_id_fkey FOREIGN KEY (default_payment_term_id) REFERENCES public.payment_terms(id) ON DELETE SET NULL;
+
+
+--
 -- Name: entity_signatories entity_signatories_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -14358,7 +14367,7 @@ CREATE POLICY payment_terms_insert ON public.payment_terms FOR INSERT TO authent
 -- Name: payment_terms payment_terms_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY payment_terms_read ON public.payment_terms FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin())));
+CREATE POLICY payment_terms_read ON public.payment_terms FOR SELECT TO authenticated USING ((((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR public.is_super_admin()));
 
 
 --
@@ -17257,5 +17266,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ycNyA2NmZmawyuzaEHRr8QiGXvCLkgQyX00EJuAjrVGAQ5KNapnRFSUig8mDxei
+\unrestrict lxcGeXycgcwUkVjhqqHI5G9R6McAkiws2TDPHlOS56AVkmSojqsZfE9HL7TqpfZ
 
