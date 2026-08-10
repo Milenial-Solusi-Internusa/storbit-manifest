@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict mu3ySMimjfcVX6Wfd76psBo8csapHPFDmQaJapiSdBVXKmOvMXuvsBljY2GQYju
+\restrict DeSeKwbLHXGutxoafqyt6AhaEZh2ZFVk41hJpAJYtjPMCuwU2fFZGB7ieAmCh8r
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -13050,7 +13050,7 @@ CREATE POLICY bnf_reports_select ON public.bnf_reports FOR SELECT TO authenticat
 -- Name: bnf_reports bnf_reports_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY bnf_reports_update ON public.bnf_reports FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) OR public.is_super_admin())) WITH CHECK (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
+CREATE POLICY bnf_reports_update ON public.bnf_reports FOR UPDATE USING ((((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR public.is_super_admin()));
 
 
 --
@@ -17266,5 +17266,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict mu3ySMimjfcVX6Wfd76psBo8csapHPFDmQaJapiSdBVXKmOvMXuvsBljY2GQYju
+\unrestrict DeSeKwbLHXGutxoafqyt6AhaEZh2ZFVk41hJpAJYtjPMCuwU2fFZGB7ieAmCh8r
 
