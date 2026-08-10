@@ -76,13 +76,79 @@ function AssigneeCell({ currentId, currentName, people, saving, onAssign, onClea
   );
 }
 
+// Scope companies (beyond home) for one division/department row. Company
+// universe is fixed at 3 (see CLAUDE.md Entity UUIDs) so candidates are
+// always <=2 — shown as an always-visible toggle-pill row rather than an
+// expand/search picker (RelatedDepartmentsField's pattern in BNFListPage.jsx
+// exists for a much larger, growing candidate list; not the case here).
+// Filled pill reuses the existing home-company badge style exactly. Outline
+// pill (super_admin only, not-yet-in-scope companies) reuses the muted
+// slate palette already used by AssigneeCell's clear button. Non-admin
+// viewers never see the outline/add pills at all, and filled pills degrade
+// to plain non-interactive spans for them.
+function ScopeChips({ homeCompanyId, scopeCompanyIds, companies, isSuperAdmin, saving, onToggle }) {
+  const candidates = companies.filter((c) => c.id !== homeCompanyId);
+  if (candidates.length === 0) return null;
+  const scoped = candidates.filter((c) => scopeCompanyIds.includes(c.id));
+  const unscoped = candidates.filter((c) => !scopeCompanyIds.includes(c.id));
+  if (!isSuperAdmin && scoped.length === 0) return null;
+
+  const chipCls = 'inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide';
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      {scoped.map((c) => (
+        isSuperAdmin ? (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onToggle(c.id)}
+            disabled={saving}
+            title={`Klik untuk hapus ${c.name || c.code} dari scope`}
+            className={`${chipCls} cursor-pointer hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-50`}
+            style={{ backgroundColor: '#EAF0F8', color: NAVY }}
+          >
+            {c.code}
+          </button>
+        ) : (
+          <span key={c.id} className={chipCls} style={{ backgroundColor: '#EAF0F8', color: NAVY }}>
+            {c.code}
+          </span>
+        )
+      ))}
+      {isSuperAdmin && unscoped.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          onClick={() => onToggle(c.id)}
+          disabled={saving}
+          title={`Klik untuk tambah ${c.name || c.code} ke scope`}
+          className={`${chipCls} border text-slate-400 hover:border-slate-400 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50`}
+          style={{ borderColor: LINE }}
+        >
+          {c.code}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function BNFOrgRolesPage({ showToast }) {
   const { profile, erpRole } = useAuth();
   const isAllEntities = erpRole === 'super_admin';
+  // Separate from isAllEntities on purpose despite the identical predicate
+  // today: isAllEntities is the project-wide convention for fetch/data-scope
+  // branching (CLAUDE.md "Aturan Wajib"), isSuperAdmin (same pattern as
+  // MOMListPage.jsx/UserEditPage.jsx) gates write controls. Different
+  // questions that happen to share an answer right now.
+  const isSuperAdmin = erpRole === 'super_admin';
 
   const [divisions, setDivisions] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [people, setPeople] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [divisionScopes, setDivisionScopes] = useState({});
+  const [departmentScopes, setDepartmentScopes] = useState({});
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
 
@@ -104,18 +170,45 @@ export default function BNFOrgRolesPage({ showToast }) {
         .select('id, code, name, company_id, division_id, head_profile_id, head:profiles!bnf_departments_head_profile_id_fkey(full_name), company:companies!bnf_departments_company_id_fkey(code)')
         .eq('is_active', true).is('deleted_at', null).order('name').limit(1000);
       let profQuery = supabase.from('profiles').select('id, full_name, email').eq('active', true).order('full_name').limit(1000);
+      let divScopeQuery = supabase.from('bnf_division_scopes').select('division_id, company_id').limit(1000);
+      let depScopeQuery = supabase.from('bnf_department_scopes').select('department_id, company_id').limit(1000);
+      // No deleted_at on companies (see useCompanies.js's own comment) and no
+      // company branch below — this query itself IS the company filter, not
+      // a child table scoped by one.
+      let compQuery = supabase.from('companies').select('id, code, name').eq('is_active', true).limit(1000);
       if (!isAllEntities) {
         divQuery = divQuery.eq('company_id', profile.company_id);
         depQuery = depQuery.eq('company_id', profile.company_id);
         profQuery = profQuery.eq('company_id', profile.company_id);
+        divScopeQuery = divScopeQuery.eq('company_id', profile.company_id);
+        depScopeQuery = depScopeQuery.eq('company_id', profile.company_id);
       }
-      const [divRes, depRes, profRes] = await Promise.all([divQuery, depQuery, profQuery]);
+      const [divRes, depRes, profRes, divScopeRes, depScopeRes, compRes] =
+        await Promise.all([divQuery, depQuery, profQuery, divScopeQuery, depScopeQuery, compQuery]);
       if (divRes.error) throw divRes.error;
       if (depRes.error) throw depRes.error;
       if (profRes.error) throw profRes.error;
+      if (divScopeRes.error) throw divScopeRes.error;
+      if (depScopeRes.error) throw depScopeRes.error;
+      if (compRes.error) throw compRes.error;
       setDivisions(divRes.data || []);
       setDepartments(depRes.data || []);
       setPeople(profRes.data || []);
+      setCompanies(compRes.data || []);
+
+      const divScopeMap = {};
+      (divScopeRes.data || []).forEach((r) => {
+        if (!divScopeMap[r.division_id]) divScopeMap[r.division_id] = [];
+        divScopeMap[r.division_id].push(r.company_id);
+      });
+      setDivisionScopes(divScopeMap);
+
+      const depScopeMap = {};
+      (depScopeRes.data || []).forEach((r) => {
+        if (!depScopeMap[r.department_id]) depScopeMap[r.department_id] = [];
+        depScopeMap[r.department_id].push(r.company_id);
+      });
+      setDepartmentScopes(depScopeMap);
     } catch (err) {
       showToast?.('Gagal memuat data: ' + err.message, 'error');
     } finally {
@@ -148,6 +241,50 @@ export default function BNFOrgRolesPage({ showToast }) {
       fetchAll();
     } catch (err) {
       showToast?.('Gagal menyimpan: ' + err.message, 'error');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const toggleDivisionScope = async (division, companyId) => {
+    setSavingId(division.id);
+    try {
+      const inScope = (divisionScopes[division.id] || []).includes(companyId);
+      const companyCode = companies.find((c) => c.id === companyId)?.code || companyId;
+      if (inScope) {
+        const { error } = await supabase.from('bnf_division_scopes').delete().eq('division_id', division.id).eq('company_id', companyId);
+        if (error) throw error;
+        showToast?.(`Scope ${division.name} dihapus dari ${companyCode}`);
+      } else {
+        const { error } = await supabase.from('bnf_division_scopes').insert({ division_id: division.id, company_id: companyId, created_by: profile.id });
+        if (error) throw error;
+        showToast?.(`Scope ${division.name} ditambahkan ke ${companyCode}`);
+      }
+      fetchAll();
+    } catch (err) {
+      showToast?.('Gagal menyimpan scope: ' + err.message, 'error');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const toggleDepartmentScope = async (department, companyId) => {
+    setSavingId(department.id);
+    try {
+      const inScope = (departmentScopes[department.id] || []).includes(companyId);
+      const companyCode = companies.find((c) => c.id === companyId)?.code || companyId;
+      if (inScope) {
+        const { error } = await supabase.from('bnf_department_scopes').delete().eq('department_id', department.id).eq('company_id', companyId);
+        if (error) throw error;
+        showToast?.(`Scope ${department.name} dihapus dari ${companyCode}`);
+      } else {
+        const { error } = await supabase.from('bnf_department_scopes').insert({ department_id: department.id, company_id: companyId, created_by: profile.id });
+        if (error) throw error;
+        showToast?.(`Scope ${department.name} ditambahkan ke ${companyCode}`);
+      }
+      fetchAll();
+    } catch (err) {
+      showToast?.('Gagal menyimpan scope: ' + err.message, 'error');
     } finally {
       setSavingId(null);
     }
@@ -188,6 +325,14 @@ export default function BNFOrgRolesPage({ showToast }) {
                         {d.company.code}
                       </span>
                     )}
+                    <ScopeChips
+                      homeCompanyId={d.company_id}
+                      scopeCompanyIds={divisionScopes[d.id] || []}
+                      companies={companies}
+                      isSuperAdmin={isSuperAdmin}
+                      saving={savingId === d.id}
+                      onToggle={(companyId) => toggleDivisionScope(d, companyId)}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <AssigneeCell
@@ -228,6 +373,14 @@ export default function BNFOrgRolesPage({ showToast }) {
                         </span>
                       )}
                       <div className="text-[11px] font-normal text-slate-400">{divName || '—'}</div>
+                      <ScopeChips
+                        homeCompanyId={dep.company_id}
+                        scopeCompanyIds={departmentScopes[dep.id] || []}
+                        companies={companies}
+                        isSuperAdmin={isSuperAdmin}
+                        saving={savingId === dep.id}
+                        onToggle={(companyId) => toggleDepartmentScope(dep, companyId)}
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <AssigneeCell
