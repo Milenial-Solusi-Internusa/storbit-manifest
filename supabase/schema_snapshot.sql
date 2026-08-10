@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict FgbIRmBs0edR2fjXtEqC6PViTCaex2ksZmZcHMTGz3gt86psXifcmeeurpih3ro
+\restrict aELXyrevl9QqjMv82IPzyVsZkCWmZYwfMjHqnbRTJO4BupZZ4l8zMl1g4evRkLf
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -902,6 +902,29 @@ COMMENT ON FUNCTION public.guard_bnf_reports_field_update() IS 'BEFORE UPDATE gu
 
 
 --
+-- Name: guard_daily_report_items_field_update(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.guard_daily_report_items_field_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT is_bnf_authorized() THEN
+    IF NEW.insiden_resolution IS DISTINCT FROM OLD.insiden_resolution
+       OR NEW.resolved_by IS DISTINCT FROM OLD.resolved_by
+       OR NEW.pulled_to_bnf_report_id IS DISTINCT FROM OLD.pulled_to_bnf_report_id THEN
+      RAISE EXCEPTION 'hanya head atau orang yang diizinkan yang boleh mengubah resolusi insiden';
+    END IF;
+  END IF;
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.guard_daily_report_items_field_update() OWNER TO postgres;
+
+--
 -- Name: guard_quotation_prf_consistency(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -1243,6 +1266,31 @@ ALTER FUNCTION public.is_admin_tier_role(p_role_id uuid) OWNER TO postgres;
 
 COMMENT ON FUNCTION public.is_admin_tier_role(p_role_id uuid) IS 'True if the given role_id resolves to super_admin or admin. SECURITY DEFINER so the check is independent of caller''s RLS visibility into roles. Used to gate user_roles writes — see user_roles_insert/update.';
 
+
+--
+-- Name: is_bnf_authorized(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.is_bnf_authorized() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    AS $$
+  SELECT is_super_admin()
+    OR EXISTS (SELECT 1 FROM bnf_departments WHERE head_profile_id = auth.uid() AND deleted_at IS NULL)
+    OR EXISTS (SELECT 1 FROM bnf_divisions WHERE director_profile_id = auth.uid() AND deleted_at IS NULL)
+    OR EXISTS (
+      SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = auth.uid() AND ur.is_active = true AND r.code = 'ceo'
+    )
+    OR EXISTS (
+      SELECT 1 FROM bnf_authorized_users a
+      WHERE a.profile_id = auth.uid()
+        AND a.company_id = get_user_company_id()
+        AND a.revoked_at IS NULL
+    );
+$$;
+
+
+ALTER FUNCTION public.is_bnf_authorized() OWNER TO postgres;
 
 --
 -- Name: is_manager_or_above(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -3735,6 +3783,23 @@ CREATE TABLE public.backup_prf_cost_items_20260727 (
 ALTER TABLE public.backup_prf_cost_items_20260727 OWNER TO postgres;
 
 --
+-- Name: bnf_authorized_users; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.bnf_authorized_users (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    reason text,
+    granted_by uuid,
+    granted_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone
+);
+
+
+ALTER TABLE public.bnf_authorized_users OWNER TO postgres;
+
+--
 -- Name: bnf_department_scopes; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -3804,6 +3869,25 @@ CREATE TABLE public.bnf_divisions (
 
 
 ALTER TABLE public.bnf_divisions OWNER TO postgres;
+
+--
+-- Name: bnf_report_action_items; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.bnf_report_action_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    report_id uuid NOT NULL,
+    description text NOT NULL,
+    assigned_to uuid NOT NULL,
+    is_done boolean DEFAULT false NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    completed_by uuid
+);
+
+
+ALTER TABLE public.bnf_report_action_items OWNER TO postgres;
 
 --
 -- Name: bnf_report_logs; Type: TABLE; Schema: public; Owner: postgres
@@ -4307,6 +4391,34 @@ COMMENT ON COLUMN public.customers.deleted_at IS 'Soft delete timestamp. NULL = 
 
 COMMENT ON COLUMN public.customers.updated_by IS 'User who last updated this record.';
 
+
+--
+-- Name: daily_report_items; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.daily_report_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    department_id uuid NOT NULL,
+    entry_date date DEFAULT CURRENT_DATE NOT NULL,
+    created_by uuid NOT NULL,
+    category character varying(20) NOT NULL,
+    description text NOT NULL,
+    task_status character varying(20),
+    carried_from_id uuid,
+    insiden_resolution character varying(20),
+    pulled_to_bnf_report_id uuid,
+    resolved_by uuid,
+    resolved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT daily_report_items_category_check CHECK (((category)::text = ANY ((ARRAY['task'::character varying, 'aktivitas'::character varying, 'insiden'::character varying])::text[]))),
+    CONSTRAINT daily_report_items_insiden_resolution_check CHECK (((insiden_resolution)::text = ANY ((ARRAY['pending_review'::character varying, 'resolved_internal'::character varying, 'pulled_to_bnf'::character varying])::text[]))),
+    CONSTRAINT daily_report_items_task_status_check CHECK (((task_status)::text = ANY ((ARRAY['pending'::character varying, 'selesai'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.daily_report_items OWNER TO postgres;
 
 --
 -- Name: dc_master; Type: TABLE; Schema: public; Owner: postgres
@@ -6833,6 +6945,44 @@ CREATE TABLE public.warehouses (
 ALTER TABLE public.warehouses OWNER TO postgres;
 
 --
+-- Name: weekly_meeting_items; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.weekly_meeting_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    weekly_meeting_id uuid NOT NULL,
+    source_type character varying(20) NOT NULL,
+    daily_report_item_id uuid,
+    bnf_report_id uuid,
+    catatan_meeting text,
+    action_plan text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT weekly_meeting_items_source_type_check CHECK (((source_type)::text = ANY ((ARRAY['task_pending'::character varying, 'insiden_resolved'::character varying, 'bnf_report'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.weekly_meeting_items OWNER TO postgres;
+
+--
+-- Name: weekly_meetings; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.weekly_meetings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    department_id uuid NOT NULL,
+    week_start_date date NOT NULL,
+    meeting_date date,
+    peserta text,
+    keterangan text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.weekly_meetings OWNER TO postgres;
+
+--
 -- Name: activities activities_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -7041,6 +7191,14 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: bnf_authorized_users bnf_authorized_users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_authorized_users
+    ADD CONSTRAINT bnf_authorized_users_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: bnf_department_scopes bnf_department_scopes_department_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -7102,6 +7260,14 @@ ALTER TABLE ONLY public.bnf_divisions
 
 ALTER TABLE ONLY public.bnf_divisions
     ADD CONSTRAINT bnf_divisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bnf_report_action_items bnf_report_action_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_report_action_items
+    ADD CONSTRAINT bnf_report_action_items_pkey PRIMARY KEY (id);
 
 
 --
@@ -7238,6 +7404,14 @@ ALTER TABLE ONLY public.currencies
 
 ALTER TABLE ONLY public.customers
     ADD CONSTRAINT customers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: daily_report_items daily_report_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.daily_report_items
+    ADD CONSTRAINT daily_report_items_pkey PRIMARY KEY (id);
 
 
 --
@@ -8158,6 +8332,22 @@ ALTER TABLE ONLY public.warehouses
 
 ALTER TABLE ONLY public.warehouses
     ADD CONSTRAINT warehouses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: weekly_meeting_items weekly_meeting_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.weekly_meeting_items
+    ADD CONSTRAINT weekly_meeting_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: weekly_meetings weekly_meetings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.weekly_meetings
+    ADD CONSTRAINT weekly_meetings_pkey PRIMARY KEY (id);
 
 
 --
@@ -9764,6 +9954,13 @@ CREATE TRIGGER trg_guard_bnf_reports_update BEFORE UPDATE ON public.bnf_reports 
 
 
 --
+-- Name: daily_report_items trg_guard_daily_report_items_field_update; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER trg_guard_daily_report_items_field_update BEFORE UPDATE ON public.daily_report_items FOR EACH ROW EXECUTE FUNCTION public.guard_daily_report_items_field_update();
+
+
+--
 -- Name: quotations trg_inquiry_quoted; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -10418,6 +10615,30 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: bnf_authorized_users bnf_authorized_users_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_authorized_users
+    ADD CONSTRAINT bnf_authorized_users_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_authorized_users bnf_authorized_users_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_authorized_users
+    ADD CONSTRAINT bnf_authorized_users_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_authorized_users bnf_authorized_users_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_authorized_users
+    ADD CONSTRAINT bnf_authorized_users_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: bnf_department_scopes bnf_department_scopes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -10519,6 +10740,38 @@ ALTER TABLE ONLY public.bnf_divisions
 
 ALTER TABLE ONLY public.bnf_divisions
     ADD CONSTRAINT bnf_divisions_director_profile_id_fkey FOREIGN KEY (director_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: bnf_report_action_items bnf_report_action_items_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_report_action_items
+    ADD CONSTRAINT bnf_report_action_items_assigned_to_fkey FOREIGN KEY (assigned_to) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_report_action_items bnf_report_action_items_completed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_report_action_items
+    ADD CONSTRAINT bnf_report_action_items_completed_by_fkey FOREIGN KEY (completed_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_report_action_items bnf_report_action_items_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_report_action_items
+    ADD CONSTRAINT bnf_report_action_items_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_report_action_items bnf_report_action_items_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_report_action_items
+    ADD CONSTRAINT bnf_report_action_items_report_id_fkey FOREIGN KEY (report_id) REFERENCES public.bnf_reports(id) ON DELETE CASCADE;
 
 
 --
@@ -10735,6 +10988,54 @@ ALTER TABLE ONLY public.customers
 
 ALTER TABLE ONLY public.customers
     ADD CONSTRAINT customers_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: daily_report_items daily_report_items_carried_from_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.daily_report_items
+    ADD CONSTRAINT daily_report_items_carried_from_id_fkey FOREIGN KEY (carried_from_id) REFERENCES public.daily_report_items(id);
+
+
+--
+-- Name: daily_report_items daily_report_items_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.daily_report_items
+    ADD CONSTRAINT daily_report_items_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: daily_report_items daily_report_items_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.daily_report_items
+    ADD CONSTRAINT daily_report_items_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: daily_report_items daily_report_items_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.daily_report_items
+    ADD CONSTRAINT daily_report_items_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.bnf_departments(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: daily_report_items daily_report_items_pulled_to_bnf_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.daily_report_items
+    ADD CONSTRAINT daily_report_items_pulled_to_bnf_report_id_fkey FOREIGN KEY (pulled_to_bnf_report_id) REFERENCES public.bnf_reports(id);
+
+
+--
+-- Name: daily_report_items daily_report_items_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.daily_report_items
+    ADD CONSTRAINT daily_report_items_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES auth.users(id);
 
 
 --
@@ -12602,6 +12903,54 @@ ALTER TABLE ONLY public.warehouses
 
 
 --
+-- Name: weekly_meeting_items weekly_meeting_items_bnf_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.weekly_meeting_items
+    ADD CONSTRAINT weekly_meeting_items_bnf_report_id_fkey FOREIGN KEY (bnf_report_id) REFERENCES public.bnf_reports(id);
+
+
+--
+-- Name: weekly_meeting_items weekly_meeting_items_daily_report_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.weekly_meeting_items
+    ADD CONSTRAINT weekly_meeting_items_daily_report_item_id_fkey FOREIGN KEY (daily_report_item_id) REFERENCES public.daily_report_items(id);
+
+
+--
+-- Name: weekly_meeting_items weekly_meeting_items_weekly_meeting_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.weekly_meeting_items
+    ADD CONSTRAINT weekly_meeting_items_weekly_meeting_id_fkey FOREIGN KEY (weekly_meeting_id) REFERENCES public.weekly_meetings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: weekly_meetings weekly_meetings_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.weekly_meetings
+    ADD CONSTRAINT weekly_meetings_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: weekly_meetings weekly_meetings_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.weekly_meetings
+    ADD CONSTRAINT weekly_meetings_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: weekly_meetings weekly_meetings_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.weekly_meetings
+    ADD CONSTRAINT weekly_meetings_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.bnf_departments(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: accounts; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -13082,6 +13431,33 @@ ALTER TABLE public.backup_prf_20260727 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backup_prf_cost_items_20260727 ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: bnf_authorized_users; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.bnf_authorized_users ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_authorized_users bnf_authorized_users_insert; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_authorized_users_insert ON public.bnf_authorized_users FOR INSERT WITH CHECK (public.is_super_admin());
+
+
+--
+-- Name: bnf_authorized_users bnf_authorized_users_read; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_authorized_users_read ON public.bnf_authorized_users FOR SELECT USING (public.is_super_admin());
+
+
+--
+-- Name: bnf_authorized_users bnf_authorized_users_update; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_authorized_users_update ON public.bnf_authorized_users FOR UPDATE USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+
+
+--
 -- Name: bnf_department_scopes; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -13180,6 +13556,49 @@ CREATE POLICY bnf_divisions_update ON public.bnf_divisions FOR UPDATE TO authent
 
 
 --
+-- Name: bnf_report_action_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.bnf_report_action_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_report_action_items bnf_report_action_items_insert; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_report_action_items_insert ON public.bnf_report_action_items FOR INSERT WITH CHECK ((public.is_bnf_authorized() AND (public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM ((public.bnf_reports r
+     LEFT JOIN public.bnf_department_scopes deps ON (((deps.department_id = r.department_id) AND (deps.company_id = public.get_user_company_id()))))
+     LEFT JOIN public.bnf_division_scopes divs ON (((divs.division_id = r.division_id) AND (divs.company_id = public.get_user_company_id()))))
+  WHERE ((r.id = bnf_report_action_items.report_id) AND (r.deleted_at IS NULL) AND ((r.company_id = public.get_user_company_id()) OR (deps.id IS NOT NULL) OR (divs.id IS NOT NULL))))))));
+
+
+--
+-- Name: bnf_report_action_items bnf_report_action_items_read; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_report_action_items_read ON public.bnf_report_action_items FOR SELECT USING ((public.is_bnf_authorized() AND (public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM ((public.bnf_reports r
+     LEFT JOIN public.bnf_department_scopes deps ON (((deps.department_id = r.department_id) AND (deps.company_id = public.get_user_company_id()))))
+     LEFT JOIN public.bnf_division_scopes divs ON (((divs.division_id = r.division_id) AND (divs.company_id = public.get_user_company_id()))))
+  WHERE ((r.id = bnf_report_action_items.report_id) AND (r.deleted_at IS NULL) AND ((r.company_id = public.get_user_company_id()) OR (deps.id IS NOT NULL) OR (divs.id IS NOT NULL))))))));
+
+
+--
+-- Name: bnf_report_action_items bnf_report_action_items_update; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_report_action_items_update ON public.bnf_report_action_items FOR UPDATE USING ((public.is_bnf_authorized() AND (public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM ((public.bnf_reports r
+     LEFT JOIN public.bnf_department_scopes deps ON (((deps.department_id = r.department_id) AND (deps.company_id = public.get_user_company_id()))))
+     LEFT JOIN public.bnf_division_scopes divs ON (((divs.division_id = r.division_id) AND (divs.company_id = public.get_user_company_id()))))
+  WHERE ((r.id = bnf_report_action_items.report_id) AND (r.deleted_at IS NULL) AND ((r.company_id = public.get_user_company_id()) OR (deps.id IS NOT NULL) OR (divs.id IS NOT NULL)))))))) WITH CHECK ((public.is_bnf_authorized() AND (public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM ((public.bnf_reports r
+     LEFT JOIN public.bnf_department_scopes deps ON (((deps.department_id = r.department_id) AND (deps.company_id = public.get_user_company_id()))))
+     LEFT JOIN public.bnf_division_scopes divs ON (((divs.division_id = r.division_id) AND (divs.company_id = public.get_user_company_id()))))
+  WHERE ((r.id = bnf_report_action_items.report_id) AND (r.deleted_at IS NULL) AND ((r.company_id = public.get_user_company_id()) OR (deps.id IS NOT NULL) OR (divs.id IS NOT NULL))))))));
+
+
+--
 -- Name: bnf_report_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -13246,14 +13665,14 @@ ALTER TABLE public.bnf_reports ENABLE ROW LEVEL SECURITY;
 -- Name: bnf_reports bnf_reports_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY bnf_reports_insert ON public.bnf_reports FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (created_by = auth.uid())));
+CREATE POLICY bnf_reports_insert ON public.bnf_reports FOR INSERT WITH CHECK (((company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND public.is_bnf_authorized()));
 
 
 --
 -- Name: bnf_reports bnf_reports_select; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY bnf_reports_select ON public.bnf_reports FOR SELECT TO authenticated USING ((((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR public.is_super_admin()));
+CREATE POLICY bnf_reports_select ON public.bnf_reports FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL) AND public.is_bnf_authorized())));
 
 
 --
@@ -13449,6 +13868,33 @@ CREATE POLICY customers_read ON public.customers FOR SELECT USING (((company_id 
 --
 
 CREATE POLICY customers_update ON public.customers FOR UPDATE USING ((company_id = public.get_user_company_id()));
+
+
+--
+-- Name: daily_report_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.daily_report_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: daily_report_items daily_report_items_insert; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY daily_report_items_insert ON public.daily_report_items FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()))));
+
+
+--
+-- Name: daily_report_items daily_report_items_read; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY daily_report_items_read ON public.daily_report_items FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+
+
+--
+-- Name: daily_report_items daily_report_items_update; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY daily_report_items_update ON public.daily_report_items FOR UPDATE USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()))) WITH CHECK ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
@@ -15853,6 +16299,36 @@ CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 
 
 --
+-- Name: weekly_meeting_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.weekly_meeting_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: weekly_meeting_items weekly_meeting_items_all; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY weekly_meeting_items_all ON public.weekly_meeting_items USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.weekly_meetings m
+  WHERE ((m.id = weekly_meeting_items.weekly_meeting_id) AND (m.company_id = public.get_user_company_id()) AND public.is_bnf_authorized()))))) WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.weekly_meetings m
+  WHERE ((m.id = weekly_meeting_items.weekly_meeting_id) AND (m.company_id = public.get_user_company_id()) AND public.is_bnf_authorized())))));
+
+
+--
+-- Name: weekly_meetings; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.weekly_meetings ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: weekly_meetings weekly_meetings_all; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY weekly_meetings_all ON public.weekly_meetings USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_bnf_authorized()))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_bnf_authorized())));
+
+
+--
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: pg_database_owner
 --
 
@@ -16379,6 +16855,15 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_cost_items
 
 
 --
+-- Name: TABLE bnf_authorized_users; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_authorized_users TO anon;
+GRANT ALL ON TABLE public.bnf_authorized_users TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_authorized_users TO service_role;
+
+
+--
 -- Name: TABLE bnf_department_scopes; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -16412,6 +16897,15 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_division_scopes T
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_divisions TO anon;
 GRANT ALL ON TABLE public.bnf_divisions TO authenticated;
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_divisions TO service_role;
+
+
+--
+-- Name: TABLE bnf_report_action_items; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_action_items TO anon;
+GRANT ALL ON TABLE public.bnf_report_action_items TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_action_items TO service_role;
 
 
 --
@@ -16511,6 +17005,15 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.currencies TO service
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers TO anon;
 GRANT ALL ON TABLE public.customers TO authenticated;
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers TO service_role;
+
+
+--
+-- Name: TABLE daily_report_items; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.daily_report_items TO anon;
+GRANT ALL ON TABLE public.daily_report_items TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.daily_report_items TO service_role;
 
 
 --
@@ -17437,6 +17940,24 @@ GRANT ALL ON TABLE public.warehouses TO service_role;
 
 
 --
+-- Name: TABLE weekly_meeting_items; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.weekly_meeting_items TO anon;
+GRANT ALL ON TABLE public.weekly_meeting_items TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.weekly_meeting_items TO service_role;
+
+
+--
+-- Name: TABLE weekly_meetings; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.weekly_meetings TO anon;
+GRANT ALL ON TABLE public.weekly_meetings TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.weekly_meetings TO service_role;
+
+
+--
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --
 
@@ -17494,5 +18015,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict FgbIRmBs0edR2fjXtEqC6PViTCaex2ksZmZcHMTGz3gt86psXifcmeeurpih3ro
+\unrestrict aELXyrevl9QqjMv82IPzyVsZkCWmZYwfMjHqnbRTJO4BupZZ4l8zMl1g4evRkLf
 
