@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict DeSeKwbLHXGutxoafqyt6AhaEZh2ZFVk41hJpAJYtjPMCuwU2fFZGB7ieAmCh8r
+\restrict FgbIRmBs0edR2fjXtEqC6PViTCaex2ksZmZcHMTGz3gt86psXifcmeeurpih3ro
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -806,6 +806,48 @@ $$;
 
 
 ALTER FUNCTION public.get_user_role_code() OWNER TO postgres;
+
+--
+-- Name: guard_bnf_department_scope_not_home(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.guard_bnf_department_scope_not_home() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM bnf_departments
+    WHERE id = NEW.department_id AND company_id = NEW.company_id
+  ) THEN
+    RAISE EXCEPTION 'company_id % adalah home company departemen %, tidak perlu ditulis di scope', NEW.company_id, NEW.department_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.guard_bnf_department_scope_not_home() OWNER TO postgres;
+
+--
+-- Name: guard_bnf_division_scope_not_home(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.guard_bnf_division_scope_not_home() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM bnf_divisions
+    WHERE id = NEW.division_id AND company_id = NEW.company_id
+  ) THEN
+    RAISE EXCEPTION 'company_id % adalah home company divisi %, tidak perlu ditulis di scope', NEW.company_id, NEW.division_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.guard_bnf_division_scope_not_home() OWNER TO postgres;
 
 --
 -- Name: guard_bnf_reports_field_update(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -3693,6 +3735,21 @@ CREATE TABLE public.backup_prf_cost_items_20260727 (
 ALTER TABLE public.backup_prf_cost_items_20260727 OWNER TO postgres;
 
 --
+-- Name: bnf_department_scopes; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.bnf_department_scopes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    department_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.bnf_department_scopes OWNER TO postgres;
+
+--
 -- Name: bnf_departments; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -3712,6 +3769,21 @@ CREATE TABLE public.bnf_departments (
 
 
 ALTER TABLE public.bnf_departments OWNER TO postgres;
+
+--
+-- Name: bnf_division_scopes; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.bnf_division_scopes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    division_id uuid NOT NULL,
+    company_id uuid NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.bnf_division_scopes OWNER TO postgres;
 
 --
 -- Name: bnf_divisions; Type: TABLE; Schema: public; Owner: postgres
@@ -6969,6 +7041,22 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: bnf_department_scopes bnf_department_scopes_department_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_department_scopes
+    ADD CONSTRAINT bnf_department_scopes_department_id_company_id_key UNIQUE (department_id, company_id);
+
+
+--
+-- Name: bnf_department_scopes bnf_department_scopes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_department_scopes
+    ADD CONSTRAINT bnf_department_scopes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: bnf_departments bnf_departments_division_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -6982,6 +7070,22 @@ ALTER TABLE ONLY public.bnf_departments
 
 ALTER TABLE ONLY public.bnf_departments
     ADD CONSTRAINT bnf_departments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bnf_division_scopes bnf_division_scopes_division_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_division_scopes
+    ADD CONSTRAINT bnf_division_scopes_division_id_company_id_key UNIQUE (division_id, company_id);
+
+
+--
+-- Name: bnf_division_scopes bnf_division_scopes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_division_scopes
+    ADD CONSTRAINT bnf_division_scopes_pkey PRIMARY KEY (id);
 
 
 --
@@ -9639,6 +9743,20 @@ CREATE TRIGGER trg_gen_customer_code_ins BEFORE INSERT ON public.accounts FOR EA
 
 
 --
+-- Name: bnf_department_scopes trg_guard_bnf_department_scope_not_home; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER trg_guard_bnf_department_scope_not_home BEFORE INSERT OR UPDATE ON public.bnf_department_scopes FOR EACH ROW EXECUTE FUNCTION public.guard_bnf_department_scope_not_home();
+
+
+--
+-- Name: bnf_division_scopes trg_guard_bnf_division_scope_not_home; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER trg_guard_bnf_division_scope_not_home BEFORE INSERT OR UPDATE ON public.bnf_division_scopes FOR EACH ROW EXECUTE FUNCTION public.guard_bnf_division_scope_not_home();
+
+
+--
 -- Name: bnf_reports trg_guard_bnf_reports_update; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -10300,6 +10418,30 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: bnf_department_scopes bnf_department_scopes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_department_scopes
+    ADD CONSTRAINT bnf_department_scopes_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_department_scopes bnf_department_scopes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_department_scopes
+    ADD CONSTRAINT bnf_department_scopes_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_department_scopes bnf_department_scopes_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_department_scopes
+    ADD CONSTRAINT bnf_department_scopes_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.bnf_departments(id) ON DELETE CASCADE;
+
+
+--
 -- Name: bnf_departments bnf_departments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -10329,6 +10471,30 @@ ALTER TABLE ONLY public.bnf_departments
 
 ALTER TABLE ONLY public.bnf_departments
     ADD CONSTRAINT bnf_departments_head_profile_id_fkey FOREIGN KEY (head_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: bnf_division_scopes bnf_division_scopes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_division_scopes
+    ADD CONSTRAINT bnf_division_scopes_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: bnf_division_scopes bnf_division_scopes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_division_scopes
+    ADD CONSTRAINT bnf_division_scopes_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: bnf_division_scopes bnf_division_scopes_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.bnf_division_scopes
+    ADD CONSTRAINT bnf_division_scopes_division_id_fkey FOREIGN KEY (division_id) REFERENCES public.bnf_divisions(id) ON DELETE CASCADE;
 
 
 --
@@ -12916,6 +13082,26 @@ ALTER TABLE public.backup_prf_20260727 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backup_prf_cost_items_20260727 ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: bnf_department_scopes; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.bnf_department_scopes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_department_scopes bnf_department_scopes_read; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_department_scopes_read ON public.bnf_department_scopes FOR SELECT USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
+
+
+--
+-- Name: bnf_department_scopes bnf_department_scopes_write; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_department_scopes_write ON public.bnf_department_scopes USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+
+
+--
 -- Name: bnf_departments; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -12932,7 +13118,9 @@ CREATE POLICY bnf_departments_insert ON public.bnf_departments FOR INSERT TO aut
 -- Name: bnf_departments bnf_departments_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY bnf_departments_read ON public.bnf_departments FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
+CREATE POLICY bnf_departments_read ON public.bnf_departments FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR ((deleted_at IS NULL) AND (EXISTS ( SELECT 1
+   FROM public.bnf_department_scopes s
+  WHERE ((s.department_id = bnf_departments.id) AND (s.company_id = public.get_user_company_id())))))));
 
 
 --
@@ -12940,6 +13128,26 @@ CREATE POLICY bnf_departments_read ON public.bnf_departments FOR SELECT TO authe
 --
 
 CREATE POLICY bnf_departments_update ON public.bnf_departments FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
+
+
+--
+-- Name: bnf_division_scopes; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.bnf_division_scopes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bnf_division_scopes bnf_division_scopes_read; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_division_scopes_read ON public.bnf_division_scopes FOR SELECT USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
+
+
+--
+-- Name: bnf_division_scopes bnf_division_scopes_write; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY bnf_division_scopes_write ON public.bnf_division_scopes USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
@@ -12959,7 +13167,9 @@ CREATE POLICY bnf_divisions_insert ON public.bnf_divisions FOR INSERT TO authent
 -- Name: bnf_divisions bnf_divisions_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY bnf_divisions_read ON public.bnf_divisions FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
+CREATE POLICY bnf_divisions_read ON public.bnf_divisions FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR ((deleted_at IS NULL) AND (EXISTS ( SELECT 1
+   FROM public.bnf_division_scopes s
+  WHERE ((s.division_id = bnf_divisions.id) AND (s.company_id = public.get_user_company_id())))))));
 
 
 --
@@ -16169,12 +16379,30 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_cost_items
 
 
 --
+-- Name: TABLE bnf_department_scopes; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_department_scopes TO anon;
+GRANT ALL ON TABLE public.bnf_department_scopes TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_department_scopes TO service_role;
+
+
+--
 -- Name: TABLE bnf_departments; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_departments TO anon;
 GRANT ALL ON TABLE public.bnf_departments TO authenticated;
 GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_departments TO service_role;
+
+
+--
+-- Name: TABLE bnf_division_scopes; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_division_scopes TO anon;
+GRANT ALL ON TABLE public.bnf_division_scopes TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_division_scopes TO service_role;
 
 
 --
@@ -17266,5 +17494,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DeSeKwbLHXGutxoafqyt6AhaEZh2ZFVk41hJpAJYtjPMCuwU2fFZGB7ieAmCh8r
+\unrestrict FgbIRmBs0edR2fjXtEqC6PViTCaex2ksZmZcHMTGz3gt86psXifcmeeurpih3ro
 
