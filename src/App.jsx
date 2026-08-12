@@ -10,7 +10,7 @@ import {
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
   ClipboardList, LayoutList, Archive, Activity, BookOpen,
-  Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck, TrendingUp,
+  Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck, TrendingUp, Sunrise,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { supabase } from './lib/supabase';
@@ -69,6 +69,7 @@ const MOMFormPage          = lazy(() => import('./modules/reporting/MOMFormPage'
 const MOMDetailPage        = lazy(() => import('./modules/reporting/MOMDetailPage'));
 const BNFListPage          = lazy(() => import('./modules/bnf/BNFListPage'));
 const BNFOrgRolesPage      = lazy(() => import('./modules/bnf/BNFOrgRolesPage'));
+const BriefingHarianPage   = lazy(() => import('./modules/briefing-harian/BriefingHarianPage'));
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
 const ActivityLogPage      = lazy(() => import('./modules/crm/ActivityLogPage'));
@@ -931,19 +932,27 @@ const ERP_MENU_GROUPS = [
           { id: 'audit-compliance', label: 'Compliance Report', icon: Shield     },
         ],
       },
-      // ⚠️ INTENTIONAL EXCEPTION — public:true here is deliberate, NOT an
-      // oversight to "fix" by matching the role/permission gates of the 6
-      // siblings above (reporting-sales/indomarco-dashboard/reporting-mom/
-      // reports/performance/audit). BNF must stay open to every logged-in
-      // user regardless of role — confirmed product decision. Known, accepted
-      // side effect: this group's own visibility = OR across all its
-      // children's gates (navModuleVisible / navChildGate), so having ANY
-      // public:true child here means the whole "Reporting & Governance"
-      // parent becomes visible to everyone, including roles that can't see
-      // any of the 6 siblings above. This was confirmed and accepted, not an
-      // accident — do not narrow this gate to "clean up" the inconsistency
-      // without checking with product first.
+      // ⚠️ [Updated 2026-08-11] 'bnf' used to be unconditionally public:true —
+      // "BNF must stay open to every logged-in user regardless of role" was a
+      // confirmed product decision, but it meant staff without real BNF access
+      // (RLS on bnf_reports already required is_bnf_authorized()) could open
+      // the menu and land on an empty/broken page. Product decision revised
+      // (confirmed by Den, 2026-08-11): canSeeMenuItem now special-cases
+      // id==='bnf' to check isBnfAuthorized (from AuthContext, sourced from the
+      // is_bnf_authorized() RPC) BEFORE reaching the public:true branch below.
+      // `public: true` stays set here only so navHasGate() still recognizes
+      // this as a gated item — it no longer decides visibility for this one id
+      // on its own; see canSeeMenuItem. 'briefing-harian' is untouched — still
+      // genuinely public, everyone may submit an insiden there regardless of
+      // BNF access. Known, accepted side effect this doesn't change: this
+      // group's own visibility = OR across all its children's gates
+      // (navModuleVisible / navChildGate) — the "Reporting & Governance"
+      // parent stays visible to everyone, now because of 'briefing-harian'
+      // alone rather than both children.
       { id: 'bnf', label: 'BNF (Bad News First)', icon: AlertTriangle, public: true },
+      // Separate module from BNF (product decision) — genuinely public, see
+      // the 'bnf' comment above for why BNF itself no longer is.
+      { id: 'briefing-harian', label: 'Briefing Harian', icon: Sunrise, public: true },
     ],
   },
   // ── FOUNDATION ────────────────────────────────────────────────────────────
@@ -1191,14 +1200,16 @@ const NEXUS_NAV = [
           { id: 'reports',         label: 'Reporting & Dashboard', icon: LayoutDashboard },
           { id: 'performance',     label: 'Performance & Cache',   icon: Zap },
           { id: 'audit',           label: 'Audit & Compliance',    icon: ScrollText },
-          // ⚠️ INTENTIONAL EXCEPTION — public:true (set on the 'bnf' entry in
-          // ERP_MENU_GROUPS) is deliberate, not an oversight vs. the 6
-          // siblings above. Known/accepted side effect: this makes the whole
-          // "Reporting" parent module visible to everyone, since a module's
-          // visibility is an OR across its children's gates. See the matching
-          // comment on the 'bnf' item in ERP_MENU_GROUPS for full rationale —
-          // do not "fix" this by giving BNF a role/permission gate.
+          // ⚠️ [Updated 2026-08-11] 'bnf' is no longer unconditionally public —
+          // gated to is_bnf_authorized() via a canSeeMenuItem special-case, see
+          // the full comment on the 'bnf' item in ERP_MENU_GROUPS. This node
+          // itself carries no gate props (resolved via findMenuItemById back to
+          // ERP_MENU_GROUPS, same as every other child here) — nothing to
+          // change on this side. 'briefing-harian' stays genuinely public; the
+          // "Reporting" parent module's visible-to-everyone side effect now
+          // comes from it alone.
           { id: 'bnf', label: 'BNF (Bad News First)', icon: AlertTriangle },
+          { id: 'briefing-harian', label: 'Briefing Harian', icon: Sunrise },
         ],
       },
       {
@@ -1308,8 +1319,13 @@ const MENU_KEY_MAP = {
 // canSeeMenuItem — priority: public → hasMenuPermission (per-user) → item.role
 // array → DEFAULT-DENY.
 // Item tanpa gate apa pun (tanpa public/menuKey/role) disembunyikan.
-const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission) => {
+const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission, isBnfAuthorized) => {
   if (item.section) return true;
+  // BNF (2026-08-11): public:true alone is no longer enough for this one item
+  // — checked before the generic public:true branch below so it wins first.
+  // `public: true` stays set on the 'bnf' item itself purely so navHasGate()
+  // still recognizes it as gated; see the item's comment in ERP_MENU_GROUPS.
+  if (item.id === 'bnf') return !!isBnfAuthorized;
   // Item ber-flag public terlihat untuk semua authenticated user.
   if (item.public === true) return true;
   // Sistema baru: per-user menu permission check
@@ -1404,9 +1420,9 @@ function navHasGate(item) {
   return !!(item && (item.public === true || MENU_KEY_MAP[item.id] || item.module || item.role));
 }
 // tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
-function navChildGate(c, role, hasPermission, hasMenuPermission) {
+function navChildGate(c, role, hasPermission, hasMenuPermission, isBnfAuthorized) {
   if (c.children) {
-    const subs = c.children.map(gc => navChildGate(gc, role, hasPermission, hasMenuPermission));
+    const subs = c.children.map(gc => navChildGate(gc, role, hasPermission, hasMenuPermission, isBnfAuthorized));
     if (subs.some(s => s === true)) return true;
     if (subs.every(s => s === null)) return null;
     return false;
@@ -1414,17 +1430,17 @@ function navChildGate(c, role, hasPermission, hasMenuPermission) {
   const real = findMenuItemById(c.id);
   if (!real) return null;              // not in ERP_MENU_GROUPS (e.g. 'users')
   if (!navHasGate(real)) return null;  // gateless → inherit parent module
-  return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
+  return canSeeMenuItem(real, role, hasPermission, hasMenuPermission, isBnfAuthorized);
 }
-function navModuleVisible(m, role, hasPermission, hasMenuPermission) {
+function navModuleVisible(m, role, hasPermission, hasMenuPermission, isBnfAuthorized) {
   if (m.soon) return true;             // roadmap skeleton — shown, disabled
   if (m.target) {                      // direct-navigate leaf (Beranda / Users & Access)
     if (m.role) return m.role.includes(role);
     const real = findMenuItemById(m.target);
     if (!real || !navHasGate(real)) return true;
-    return canSeeMenuItem(real, role, hasPermission, hasMenuPermission);
+    return canSeeMenuItem(real, role, hasPermission, hasMenuPermission, isBnfAuthorized);
   }
-  const gates = (m.children || []).map(c => navChildGate(c, role, hasPermission, hasMenuPermission));
+  const gates = (m.children || []).map(c => navChildGate(c, role, hasPermission, hasMenuPermission, isBnfAuthorized));
   if (gates.some(g => g === true)) return true;                   // a visible gated child
   if (gates.length && gates.every(g => g === null)) return true;  // fully gateless → show
   return false;                                                   // gated children, none visible → hide
@@ -1436,17 +1452,17 @@ function navModuleContaining(id) {
 // Content-level gate (F4): mirror the sidebar so a page can't be rendered by a
 // role that can't see its menu. Gateless child → inherit its NEXUS_NAV module's
 // visibility (NOT default-deny → Asset sub-pages stay reachable when the module is).
-function isMenuAccessible(id, role, hasPermission, hasMenuPermission) {
+function isMenuAccessible(id, role, hasPermission, hasMenuPermission, isBnfAuthorized) {
   if (!id) return true;
   const item = findMenuItemById(id);
-  if (item && navHasGate(item)) return canSeeMenuItem(item, role, hasPermission, hasMenuPermission);
+  if (item && navHasGate(item)) return canSeeMenuItem(item, role, hasPermission, hasMenuPermission, isBnfAuthorized);
   const mod = navModuleContaining(id);
-  if (mod) return navModuleVisible(mod, role, hasPermission, hasMenuPermission);
+  if (mod) return navModuleVisible(mod, role, hasPermission, hasMenuPermission, isBnfAuthorized);
   return true; // unknown/synthetic → allow (caller keeps its SYNTHETIC/prefix allow-list)
 }
 
 function NexusSidebar({
-  activeMenu, onNavigate, role, hasPermission, hasMenuPermission,
+  activeMenu, onNavigate, role, hasPermission, hasMenuPermission, isBnfAuthorized,
   profile, currentRoleLabel,
   asDrawer = false, isOpen = false, onClose,
 }) {
@@ -1458,8 +1474,8 @@ function NexusSidebar({
   // Asset sub-page: they carry no gate, only the module `assets` does).
   // childGate → true (visible) / false (explicitly denied) / null (gateless → inherit).
   // Gating now lives in module-level nav* helpers (F4), shared with canAccessActiveMenu.
-  const childVisible = (c) => navChildGate(c, role, hasPermission, hasMenuPermission) !== false;
-  const moduleVisible = (m) => navModuleVisible(m, role, hasPermission, hasMenuPermission);
+  const childVisible = (c) => navChildGate(c, role, hasPermission, hasMenuPermission, isBnfAuthorized) !== false;
+  const moduleVisible = (m) => navModuleVisible(m, role, hasPermission, hasMenuPermission, isBnfAuthorized);
 
   const activeModId = (() => {
     for (const g of NEXUS_NAV) for (const m of g.items) if (moduleContainsMenu(m, activeMenu)) return m.id;
@@ -1524,7 +1540,7 @@ function NexusSidebar({
       const tabIds = (c.children || []).map(gc => gc.id);
       const firstTab = tabIds.find(id => {
         const it = findMenuItemById(id);
-        return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission);
+        return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission, isBnfAuthorized);
       });
       const tabbedActive = tabIds.includes(activeMenu);
       return (
@@ -1784,7 +1800,7 @@ export default function StorbitManifest() {
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
-  const { role: authRole, erpRoles, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading } = useAuth();
+  const { role: authRole, erpRoles, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading, isBnfAuthorized, bnfAuthLoading } = useAuth();
   const role = authRole || 'management';
 
   // canRenderPage — centralized route-guard (defense-in-depth). Reuses the same
@@ -1811,8 +1827,8 @@ export default function StorbitManifest() {
       console.warn(`[RBAC] canRenderPage: menu id "${menuId}" tidak ditemukan di ERP_MENU_GROUPS — akses DITOLAK (fail-closed). Cek apakah id ini terhapus/berganti nama saat restrukturisasi menu.`);
       return false;
     }
-    return canSeeMenuItem(item, role, hasPermission, hasMenuPermission);
-  }, [role, hasPermission, hasMenuPermission]);
+    return canSeeMenuItem(item, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+  }, [role, hasPermission, hasMenuPermission, isBnfAuthorized]);
 
   // Defense-in-depth for Admin Settings (hub + all admin-settings-* sub-pages):
   // explicit role gate — super_admin OR admin only.
@@ -2107,7 +2123,10 @@ export default function StorbitManifest() {
     const permsLoaded =
       role === 'super_admin' ||
       userPermissions.length > 0 || menuPermissions.length > 0;
-    if (!permsLoaded) return;
+    // bnfAuthLoading: also wait for is_bnf_authorized() before validating, or
+    // a restored activeMenu === 'bnf' would be wrongly bounced away for an
+    // authorized user during the brief post-login RPC window.
+    if (!permsLoaded || bnfAuthLoading) return;
 
     // Synthetic / detail pages are navigated to programmatically (not from the
     // sidebar) and are always valid — skip them.
@@ -2131,18 +2150,18 @@ export default function StorbitManifest() {
     // and this guard bounced the user to the first visible menu (the public
     // Command Center dashboard). Reusing isMenuAccessible keeps the sidebar, the
     // content gate, and this redirect perfectly in sync (opsi A).
-    if (isMenuAccessible(activeMenu, role, hasPermission, hasMenuPermission)) return;
+    if (isMenuAccessible(activeMenu, role, hasPermission, hasMenuPermission, isBnfAuthorized)) return;
 
     // Not accessible → land on the first visible top-level menu (or home).
     const visFlat = ERP_MENU_GROUPS
       .flatMap(g => g.items)
-      .filter(it => !it.section && canSeeMenuItem(it, role, hasPermission, hasMenuPermission));
+      .filter(it => !it.section && canSeeMenuItem(it, role, hasPermission, hasMenuPermission, isBnfAuthorized));
     if (visFlat.length === 0) return;
     // Intentional, self-terminating redirect: after switching to a valid menu the
     // guard passes on the next run, so this does not loop.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveMenu(visFlat[0]?.id || 'home');
-  }, [profile, role, hasPermission, hasMenuPermission, userPermissions, menuPermissions, activeMenu]);
+  }, [profile, role, hasPermission, hasMenuPermission, userPermissions, menuPermissions, activeMenu, isBnfAuthorized, bnfAuthLoading]);
 
   // Close profile dropdown on Escape
   useEffect(() => {
@@ -2616,7 +2635,7 @@ export default function StorbitManifest() {
   }
 
   const visibleMenuGroups = ERP_MENU_GROUPS
-    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role, hasPermission, hasMenuPermission)) }))
+    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role, hasPermission, hasMenuPermission, isBnfAuthorized)) }))
     .filter(group => group.items.some(i => !i.section));
   const visibleMenus = visibleMenuGroups.flatMap(group => group.items.filter(i => !i.section));
   // eslint-disable-next-line no-unused-vars
@@ -2639,7 +2658,7 @@ export default function StorbitManifest() {
     // F4: per-item gate mirroring the sidebar (gateless child inherits its
     // module's visibility) — replaces the coarse "parent visible → all children
     // accessible" (collectMenuIds) that let ungranted child pages render.
-    return isMenuAccessible(activeMenu, role, hasPermission, hasMenuPermission);
+    return isMenuAccessible(activeMenu, role, hasPermission, hasMenuPermission, isBnfAuthorized);
   })();
 
   return (
@@ -2701,6 +2720,7 @@ export default function StorbitManifest() {
           role={role}
           hasPermission={hasPermission}
           hasMenuPermission={hasMenuPermission}
+          isBnfAuthorized={isBnfAuthorized}
           profile={profile}
           currentRoleLabel={currentRoleLabel}
         />
@@ -2726,6 +2746,7 @@ export default function StorbitManifest() {
             role={role}
             hasPermission={hasPermission}
             hasMenuPermission={hasMenuPermission}
+            isBnfAuthorized={isBnfAuthorized}
             profile={profile}
             currentRoleLabel={currentRoleLabel}
           />
@@ -3009,7 +3030,7 @@ export default function StorbitManifest() {
 
           {/* Content-level access gate (Fix C): deny render only once permissions
               have loaded — never during the loading window. */}
-          {!canAccessActiveMenu && !permissionsLoading ? (
+          {!canAccessActiveMenu && !permissionsLoading && !bnfAuthLoading ? (
             <AccessDeniedPage onGoHome={() => { setActiveMenu('home'); }} />
           ) : (
           <>
@@ -3067,7 +3088,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf','admin-hub'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf','briefing-harian','admin-hub'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3487,7 +3508,7 @@ export default function StorbitManifest() {
                 <MenuTabBar
                   tabs={ACCOUNT_TABS.filter(t => {
                     const it = findMenuItemById(t.id);
-                    return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission);
+                    return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission, isBnfAuthorized);
                   })}
                   active={activeMenu}
                   onSelect={navigateTo}
@@ -3663,7 +3684,7 @@ export default function StorbitManifest() {
               <MenuTabBar
                 tabs={ACTIVITY_TABS.filter(t => {
                   const it = findMenuItemById(t.id);
-                  return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission);
+                  return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission, isBnfAuthorized);
                 })}
                 active={activeMenu}
                 onSelect={navigateTo}
@@ -3782,11 +3803,22 @@ export default function StorbitManifest() {
             </ErrorBoundary>
           )}
 
-          {/* ── Reporting & Governance: BNF (Bad News First) — cross-division incident reporting, public:true by design (see comment on the 'bnf' menu entry) ── */}
-          {activeMenu === 'bnf' && (canRenderPage('bnf') ? (
+          {/* ── Reporting & Governance: BNF (Bad News First) — cross-division incident reporting, gated to is_bnf_authorized() (see comment on the 'bnf' menu entry) ── */}
+          {activeMenu === 'bnf' && !bnfAuthLoading && (canRenderPage('bnf') ? (
             <ErrorBoundary title="BNF temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <BNFListPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+
+          {/* ── Reporting & Governance: Briefing Harian — daily task/aktivitas/insiden log, public:true by design (see comment on the 'briefing-harian' menu entry) ── */}
+          {activeMenu === 'briefing-harian' && (canRenderPage('briefing-harian') ? (
+            <ErrorBoundary title="Briefing Harian temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <BriefingHarianPage showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           ) : (
