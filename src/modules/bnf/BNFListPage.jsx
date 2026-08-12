@@ -1064,7 +1064,10 @@ export default function BNFListPage({ showToast }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('active'); // active = bukan Closed
+  // Default 'all' (Den, 2026-08-12) — Closed reports stay visible by default;
+  // 'active' ("bukan Closed") remains an explicit option in the dropdown for
+  // anyone who wants to filter it back out.
+  const [filterStatus, setFilterStatus] = useState('all');
   const [page, setPage] = useState(0);
 
   const [divisions, setDivisions] = useState([]);
