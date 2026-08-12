@@ -2,7 +2,9 @@
 
 > Alur bisnis per modul live. Sumber: `CLAUDE.md` (CRM Flow, phase notes), `docs/03_DATA_MODEL.md`. Notasi: **[role]** = pelaku, **⚙** = trigger/otomatis DB.
 >
-> **Diperbarui 2026-08-06 (audit read-only `OVERDUE_STATUS_AUDIT.md` [root repo] + 3 fix kecil FE-only turunannya — `PipelineKanbanPage.jsx`+`App.jsx`, 2 file, NOL perubahan DB/RLS/Edge Function):** Audit menemukan badge "Overdue" kartu Kanban (`agingBadge()`) sudah **drift** dari backend `aging-pipeline` (`AGING_RULES`, blok "Batas diam per stage" di bawah) sejak `proposal`/`negotiation` dicabut 24 Jul 2026 (lihat blok "⭐ Tiga perbaikan EF" di bawah) — FE tak ikut diperbarui saat itu. **Tiga perbaikan:** **(1)** `AGING_LIMITS` (`:170`) disamakan persis `AGING_RULES`: `{ new: 7, contacted: 5, qualified: 5 }` (dulu `{ contacted: 5, qualified: 5, proposal: 3, negotiation: 14 }`) — stage **NEW** (populasi ter-pool terbesar, lihat "Simulasi `dry_run`" di bawah) akhirnya dapat badge peringatan; kartu warisan **proposal/negotiation** (stage pensiun, `stage_changed_at` beku permanen) berhenti menampilkan "Overdue" yang sudah tak berkonsekuensi nyata di backend. **(2)** Badge kini digate ke `companies.aging_enabled` milik entitas user login (`fetchAgingEnabled()`, `:491-504`, pola disalin dari `fetchProspects` yang sudah ada di file yang sama) — `agingBadge(stageId, stageChangedAt, agingEnabled)` (`:173`) early-return `null` bila `false`, mencegah badge tampil untuk entitas yang backend tak pernah proses (JCI/SOA). ⚠️ **Keterbatasan disengaja, dicatat apa adanya (BUKAN bug):** gate ini SATU nilai per `profile.company_id` user login, diterapkan ke SELURUH papan — bukan pengecekan per-kartu per-`company_id` (kolom itu tak pernah di-fetch per baris di query papan ini). `super_admin` yang melihat papan lintas-entitas (campuran MSI+JCI+SOA) tetap bisa melihat badge di kartu JCI/SOA bila home company-nya MSI. **(3)** Notifikasi pertama **"Prospect Masuk Lead Pool"** (dikirim EF saat lead PERTAMA KALI ter-pool, `reference_type:'account'`, `aging-pipeline/index.ts:188` — **satu-satunya penulis nilai ini di seluruh codebase**) tak pernah match ternary navigasi klik-notifikasi (`App.jsx handleNotifClick`, `:2243`) sejak notifikasi ini ada → klik **tak menavigasi ke mana pun** (hanya tandai terbaca). Fix: +cabang `n.reference_type === 'account' ? 'crm-lead-pool'` (`:2287`, tujuan sama dgn cabang `'lead_pool'` yang sudah lama berfungsi untuk notifikasi susulan approve/reject) — notifikasi LAMA yang sudah terlanjur ada di tabel `notifications` ikut langsung berfungsi, tanpa backfill data. **Diverifikasi doc-keeper independen:** `npm run build` clean (2601 modules, 1.57s); lint whole-repo baseline **171→173 problems** (**net +2 errors, 0 warning baru**), keduanya di `PipelineKanbanPage.jsx` (`useCallback fetchAgingEnabled` + `useEffect` pemanggilnya, baris 491/506) — **rule IDENTIK** (`react-hooks/preserve-manual-memoization`+`react-hooks/set-state-in-effect`) dgn yang sudah ada persis di atasnya untuk `fetchProspects` (baris 456/484), bukan kelas masalah baru; `App.jsx` **nol lint baru** (7 finding pre-existing, isi identik, hanya nomor baris bergeser). **NOL tes runtime.** Sumber audit lengkap (empat konsep "Overdue" berbeda di codebase ini, TAK saling terhubung): `OVERDUE_STATUS_AUDIT.md` (root repo). **Terpisah (sesi sama, TAPI BUKAN bagian dari tiga fix di atas — murni koreksi fakta dokumentasi, dipicu audit lain `REPORTING_READINESS.md`):** dua klaim salah tentang trigger `track_stage_change()`/`trg_z_track_stage_change` dikoreksi di §CRM/Sales Flow di bawah (blok "Struktur pipeline" & "Trigger otomatis terkait") — trigger ini **hanya** menstempel `accounts.stage_changed_at`, **TIDAK PERNAH** menulis ke `activity_logs` seperti tertulis sebelumnya (verifikasi langsung ke source: `schema_snapshot.sql:1898-1908`). → `08_TECH_DEBT` TD-168/TD-169 (baru) + `03_DATA_MODEL` (koreksi trigger) + `PROGRESS.md` 2026-08-06.
+> **Diperbarui 2026-08-12 (BNF extension 4-lapis: Briefing Harian [modul baru] + BNF diperluas + Meeting Mingguan [modul baru] + Akses BNF Tambahan — dikerjakan 10 & 12 Agu 2026):** +section baru "BNF (Bad News First) / Briefing Harian / Meeting Mingguan Flow" di bawah (net-new — dokumen ini sebelumnya NOL mendokumentasikan modul BNF sama sekali, termasuk fondasinya 3-5 Agu 2026). Ringkas: gate akses BNF berubah dari `public:true` (semua staff login) jadi bersyarat `is_bnf_authorized()` (RPC baru); Briefing Harian jadi entry point harian baru (task/aktivitas/insiden, `public:true` genuinely terbuka semua staff); insiden bisa ditarik jadi laporan BNF oleh head/authorized viewer; Meeting Mingguan menyusun agenda mingguan dari 3 sumber (task pending/insiden selesai internal/laporan BNF aktif). Detail lengkap skema: `03_DATA_MODEL.md` §"BNF (Bad News First), Briefing Harian & Meeting Mingguan". Detail proses: `PROGRESS.md` 2026-08-10 & 2026-08-12.
+>
+> Sebelumnya **2026-08-06 (audit read-only `OVERDUE_STATUS_AUDIT.md` [root repo] + 3 fix kecil FE-only turunannya — `PipelineKanbanPage.jsx`+`App.jsx`, 2 file, NOL perubahan DB/RLS/Edge Function):** Audit menemukan badge "Overdue" kartu Kanban (`agingBadge()`) sudah **drift** dari backend `aging-pipeline` (`AGING_RULES`, blok "Batas diam per stage" di bawah) sejak `proposal`/`negotiation` dicabut 24 Jul 2026 (lihat blok "⭐ Tiga perbaikan EF" di bawah) — FE tak ikut diperbarui saat itu. **Tiga perbaikan:** **(1)** `AGING_LIMITS` (`:170`) disamakan persis `AGING_RULES`: `{ new: 7, contacted: 5, qualified: 5 }` (dulu `{ contacted: 5, qualified: 5, proposal: 3, negotiation: 14 }`) — stage **NEW** (populasi ter-pool terbesar, lihat "Simulasi `dry_run`" di bawah) akhirnya dapat badge peringatan; kartu warisan **proposal/negotiation** (stage pensiun, `stage_changed_at` beku permanen) berhenti menampilkan "Overdue" yang sudah tak berkonsekuensi nyata di backend. **(2)** Badge kini digate ke `companies.aging_enabled` milik entitas user login (`fetchAgingEnabled()`, `:491-504`, pola disalin dari `fetchProspects` yang sudah ada di file yang sama) — `agingBadge(stageId, stageChangedAt, agingEnabled)` (`:173`) early-return `null` bila `false`, mencegah badge tampil untuk entitas yang backend tak pernah proses (JCI/SOA). ⚠️ **Keterbatasan disengaja, dicatat apa adanya (BUKAN bug):** gate ini SATU nilai per `profile.company_id` user login, diterapkan ke SELURUH papan — bukan pengecekan per-kartu per-`company_id` (kolom itu tak pernah di-fetch per baris di query papan ini). `super_admin` yang melihat papan lintas-entitas (campuran MSI+JCI+SOA) tetap bisa melihat badge di kartu JCI/SOA bila home company-nya MSI. **(3)** Notifikasi pertama **"Prospect Masuk Lead Pool"** (dikirim EF saat lead PERTAMA KALI ter-pool, `reference_type:'account'`, `aging-pipeline/index.ts:188` — **satu-satunya penulis nilai ini di seluruh codebase**) tak pernah match ternary navigasi klik-notifikasi (`App.jsx handleNotifClick`, `:2243`) sejak notifikasi ini ada → klik **tak menavigasi ke mana pun** (hanya tandai terbaca). Fix: +cabang `n.reference_type === 'account' ? 'crm-lead-pool'` (`:2287`, tujuan sama dgn cabang `'lead_pool'` yang sudah lama berfungsi untuk notifikasi susulan approve/reject) — notifikasi LAMA yang sudah terlanjur ada di tabel `notifications` ikut langsung berfungsi, tanpa backfill data. **Diverifikasi doc-keeper independen:** `npm run build` clean (2601 modules, 1.57s); lint whole-repo baseline **171→173 problems** (**net +2 errors, 0 warning baru**), keduanya di `PipelineKanbanPage.jsx` (`useCallback fetchAgingEnabled` + `useEffect` pemanggilnya, baris 491/506) — **rule IDENTIK** (`react-hooks/preserve-manual-memoization`+`react-hooks/set-state-in-effect`) dgn yang sudah ada persis di atasnya untuk `fetchProspects` (baris 456/484), bukan kelas masalah baru; `App.jsx` **nol lint baru** (7 finding pre-existing, isi identik, hanya nomor baris bergeser). **NOL tes runtime.** Sumber audit lengkap (empat konsep "Overdue" berbeda di codebase ini, TAK saling terhubung): `OVERDUE_STATUS_AUDIT.md` (root repo). **Terpisah (sesi sama, TAPI BUKAN bagian dari tiga fix di atas — murni koreksi fakta dokumentasi, dipicu audit lain `REPORTING_READINESS.md`):** dua klaim salah tentang trigger `track_stage_change()`/`trg_z_track_stage_change` dikoreksi di §CRM/Sales Flow di bawah (blok "Struktur pipeline" & "Trigger otomatis terkait") — trigger ini **hanya** menstempel `accounts.stage_changed_at`, **TIDAK PERNAH** menulis ke `activity_logs` seperti tertulis sebelumnya (verifikasi langsung ke source: `schema_snapshot.sql:1898-1908`). → `08_TECH_DEBT` TD-168/TD-169 (baru) + `03_DATA_MODEL` (koreksi trigger) + `PROGRESS.md` 2026-08-06.
 >
 > Sebelumnya **2026-07-29 (PRF draft bisa diedit [TD-76] + redesign Detail PRF jadi 9 section bernomor + rename "Cetak PRF"→"Buat PRF" — SATU commit `ccd7a7e`, 9 file [7 diubah + 2 baru], NOL perubahan DB/RLS/migrasi):** `PRFFormPage.jsx` +prop opsional `editPrfId` — mode edit utk PRF berstatus DRAFT (fetch+populate+UPDATE; `prf_no`/`company_id`/`created_by` TAK ditulis ulang), dipicu tombol baru **"Edit PRF"** di `PRFDetailPage.jsx` (gate `canEditDraft`, cermin PERSIS RLS `prf_update_draft` — pemilik ATAU super_admin, TANPA bypass manager). Field "Inquiry" kini `InquiryPicker` (combobox baru, sibling `AccountPicker.jsx`). `PRFDetailPage.jsx` dirombak jadi **9 section bernomor** (01 Identitas & Urgensi → 02 Customer & Kontak → 03 Rute & Ringkasan Kargo → 04 Detail Layanan → 05 Dangerous Goods → 06 Niaga & Catatan → 07 Penawaran Vendor → 08 Jawaban Harga → 09 Quotation dari PRF Ini) +field baru (`goods_name`/`submitted_at`/alamat akun/`selected_by`+`selected_at`). Tombol "Cetak PRF" di-rename **"Buat PRF"** (CRM `CustomerDetailPage.jsx`+`DealPanels.jsx` — dikonfirmasi nol komponen print PRF ada di `src/`, tombol ini selalu shortcut membuat PRF baru). **Diverifikasi ULANG doc-keeper:** `git diff --numstat` cocok; gate `canEditDraft` dibaca cocok persis teks RLS; build clean 2595 modules + lint 164 = IDENTIK baseline commit sebelumnya. **NOL tes runtime.** Menutup TD-76 (VERIFY kode) + TD-148/TD-149 (promosi usulan `AUDIT_PRF.md`, VERIFY kode); +TD-159/TD-160 (baru, LOW). → `08_TECH_DEBT` TD-76/TD-148/TD-149/TD-159/TD-160 + `04_ROLE_PERMISSION_MATRIX` (baris "↳ Buat PRF" + "PRF — Detail + Jawaban Harga") + `PROGRESS.md` 2026-07-29.
 >
@@ -636,6 +638,85 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 - **Menu 2 sisi:** `crm-sales-order` (child nav-crm; gate `[sales,gm_bd,manager,ceo,admin,super_admin]`, tombol "Buat SO") + `proc-sales-order` (node top-level nav-proc; gate `[procurement,manager,ceo,admin,super_admin]`, read-only).
 - **⚠️ Known limitation v1 (RLS quotation ≠ procurement):** RLS `quotations_read` = `manager+ OR created_by OR super` → **procurement TIDAK termasuk**. Di sisi Procurement (dan role non-manager), panel History Quotation bisa **kosong bukan karena tak ada quotation, tapi karena RLS memblokir**. UI menangani jujur: role manager-or-above/super → "Belum ada quotation" (definitif); role lain → pesan **netral** "Quotation tidak dapat ditampilkan untuk role ini (kebijakan akses)". **Keterbatasan klien:** tak bisa membedakan 100% RLS-blocked vs genuinely-empty untuk role non-definitif → dipakai pesan netral. History PRF aman (`prf_select` memuat `procurement`). **RLS quotations TIDAK dilonggarkan di task ini** — calon perubahan = keputusan forum terpisah. Detail: `08_TECH_DEBT` TD-90.
 - Skema: `03_DATA_MODEL` (tabel `sales_orders`). Belum tes runtime.
+
+---
+
+## BNF (Bad News First) / Briefing Harian / Meeting Mingguan Flow (Layer 0-4 LIVE 10 & 12 Agu 2026)
+
+> Tiga menu top-level terkait, satu grup sidebar "Reporting & Governance" › section "Governance": **Briefing Harian** (entry harian, terbuka semua staff login), **BNF** (eskalasi insiden formal, terbatas `is_bnf_authorized()`), **Meeting Mingguan** (rollup mingguan per departemen, terbatas `is_bnf_authorized()` juga). **Net-new section** — dokumen ini sebelumnya nol mendokumentasikan modul BNF, termasuk fondasinya (3-5 Agu 2026). Skema lengkap: `03_DATA_MODEL.md` §"BNF (Bad News First), Briefing Harian & Meeting Mingguan".
+
+**Briefing Harian — isi harian + carry-forward:**
+```
+[Semua staff login] Menu "Briefing Harian" (public:true genuinely terbuka) → tab "Isi Hari Ini"
+   → isi kategori (Task/Aktivitas/Insiden) + departemen + deskripsi → INSERT daily_report_items
+        ⚙ trigger set default: task→task_status='pending', insiden→insiden_resolution='pending_review'
+   → mount halaman: ⚙ auto carry-forward — task 'pending' bertanggal SEBELUM hari ini yang belum py penerus
+        → disalin jadi baris baru bertanggal HARI INI (carried_from_id=baris lama), sekali per mount, idempoten
+   → tab "Overview" bercabang is_bnf_authorized():
+        [staff biasa] → entry sendiri hari ini + umur task pending sendiri (jalan mundur rantai carried_from_id)
+        [head/direktur/CEO/authorized-grantee] → rekap per-departemen se-company (count task pending/orang, count insiden pending_review)
+```
+- Insiden yang sudah ditarik ke BNF (lihat alur BNF di bawah) menampilkan badge status live via RPC `get_linked_bnf_status()` — TANPA expose nomor laporan ke pelapor yang bukan `is_bnf_authorized()`.
+
+**BNF — tarik insiden jadi laporan formal + Action Items:**
+```
+[Head/Direktur/CEO/authorized-grantee] Menu "BNF" — gate is_bnf_authorized(), SEBELUMNYA public:true (dibalik 12 Agu 2026)
+   → tab "Buat Laporan" (form manual — fondasi 3-5 Agu 2026, TAK berubah sesi ini)
+   → tab BARU "Tarik dari Insiden" → daftar daily_report_items kategori='insiden' AND insiden_resolution='pending_review'
+        di-scope jangkauan departemen viewer (resolveMyDeptScope(): dept sendiri + dept di bawah divisi yg diarahi
+        + scope lintas-company via bnf_department_scopes/bnf_division_scopes)
+        → aksi "Selesai Internal" → UPDATE daily_report_items SET insiden_resolution='resolved_internal' (nol sentuh bnf_reports)
+        → aksi "Tarik jadi Laporan BNF" → modal (divisi/dept prefill dari insiden, editable) → INSERT bnf_reports BARU
+             → UPDATE daily_report_items SET insiden_resolution='pulled_to_bnf', pulled_to_bnf_report_id=<id laporan baru>
+   → tab "Overview" (struktur tak berubah, KECUALI default filter status: 'active'→'all', 12 Agu 2026 — laporan
+        Closed kini langsung terlihat; sebelumnya tersembunyi diam-diam di balik default dropdown "Aktif [bukan Closed]")
+   → Detail laporan (slide-over) → section BARU "Action Items" (checklist bnf_report_action_items, PIC wajib per
+        item, badge non-blocking "Siap Closed" saat semua item selesai — TAK PERNAH menggerbang kontrol ubah-status)
+```
+- Trigger 4-tingkat `guard_bnf_reports_field_update` (fondasi, TAK disentuh sesi ini) tetap penjaga utama field isi laporan di level DB; gate FE `is_bnf_authorized()` cuma menentukan siapa BISA MELIHAT menu ini sama sekali — lapisan BARU di atas trigger lama, bukan pengganti.
+
+**Meeting Mingguan — susun agenda dari 3 sumber:**
+```
+[Head/Direktur/CEO/authorized-grantee] Menu "Meeting Mingguan" (BARU — gate is_bnf_authorized(), RPC sama dgn BNF)
+   → pilih departemen (auto-pilih bila hanya 1 dlm jangkauan resolveMyDeptScope(); picker bila >1 — BEDA dari BNF:
+        di sini PICKER DEPARTEMEN sendiri yg dibatasi scope; di BNF cuma kandidat insiden yg dibatasi, form tarik
+        tetap company-wide)
+   → tab "Susun dari Minggu Ini" → 3 daftar kandidat minggu berjalan:
+        task_pending (ujung rantai carry-forward per departemen, algoritma umur sama dgn Overview Briefing Harian)
+        insiden_resolved (daily_report_items.insiden_resolution='resolved_internal')
+        bnf_report (bnf_reports.status IN ('Open','Escalated'))
+        [tiap kandidat] badge "Sudah pernah dibahas" bila pernah masuk weekly_meeting_items minggu KAPAN PUN
+   → centang multi-select → find-or-create weekly_meetings minggu ini (week_start_date=Senin, dihitung LOKAL,
+        BUKAN toISOString() — hindari pergeseran tanggal UTC)
+        → INSERT weekly_meeting_items per kandidat tercentang
+   → per-item: catatan_meeting (semua sumber) + action_plan teks bebas (task_pending/insiden_resolved)
+        ATAU checklist Action Items BNF (sumber bnf_report — tulis LANGSUNG ke bnf_report_action_items, data SAMA
+        persis dgn yg ditampilkan Detail laporan BNF, bukan salinan terpisah)
+        → simpan via tombol "Simpan" eksplisit per item (BUKAN autosave)
+   → MeetingInfoForm (meeting_date/peserta/keterangan) — selalu bisa diedit, kapan saja, oleh head yg bisa akses meeting itu
+   → tab "Riwayat Meeting" → daftar+detail weekly_meetings lampau (terbaru dulu), catatan level-item READ-ONLY di riwayat
+```
+- `meeting_date` (tanggal rapat sungguhan, field "Tanggal" dari template kertas lama) **≠** `week_start_date` (murni key dedup internal, tak pernah ditampilkan sbg "tanggal meeting").
+- **Tanpa unique constraint DB** pada `(department_id, week_start_date)` — dedup murni application-level (SELECT-first sebelum INSERT), race window kecil diterima sbg trade-off sadar.
+
+**Akses BNF Tambahan (Layer 4) — grant/revoke di luar jalur struktural:**
+```
+[super_admin ONLY] Foundation › Master Data & Admin Settings › grup "Sistem" › card "BNF — Kepala & Direktur"
+   → (section 1 "Direktur Divisi", section 2 "Kepala Departemen" — fondasi, tak berubah sesi ini)
+   → section BARU "Akses BNF Tambahan" — HANYA tampil utk super_admin (halaman induknya sendiri bisa dibuka
+        role[super_admin,admin], tapi section ini disembunyikan TOTAL utk admin biasa — RLS bnf_authorized_users_read
+        juga super_admin-only, read-only render utk admin biasa akan selalu kosong, jadi section-nya tak ditampilkan)
+   → "+ Beri Akses" → pilih orang + company + alasan opsional → INSERT bnf_authorized_users
+   → "Cabut" (baris aktif) → UPDATE revoked_at=now() — SOFT-REVOKE, tak ada hapus permanen; baris revoked tetap
+        terlihat, dicoret, badge "Dicabut"
+```
+- Konsekuensi: satu grant di sini langsung meloloskan `is_bnf_authorized()` di KETIGA menu di atas (BNF penuh, Overview-authorized-view Briefing Harian, Meeting Mingguan) — satu titik kontrol, tiga permukaan.
+
+**Gate `is_bnf_authorized()` — siapa lolos (ringkas; detail penuh `03_DATA_MODEL.md` §4 & §BNF):** `super_admin` · kepala departemen (`bnf_departments.head_profile_id`) · direktur divisi (`bnf_divisions.director_profile_id`) · role aktif `ceo`/`gm`/`gm_bd`/`manager`/`finance_controller` (diperluas 12 Agu 2026 dari `ceo` saja — keputusan: seluruh staff akan dilatih SOP BNF, gate per-assignment struktural dianggap terlalu sempit) · grant `bnf_authorized_users` non-revoked. Role FUNGSIONAL (`hrga`/`it`/`operations`/`procurement`/`sales`/`finance`) sengaja TIDAK otomatis lolos — tag departemen/fungsi, bukan level jabatan.
+
+**Bug fixes 10/12 Agu 2026** (detail penuh + root cause: `03_DATA_MODEL.md` §BNF "Bug fixes"): RLS `bnf_reports_update` kini ikut cek `deleted_at IS NULL` · badge "Jadi BNF" pakai RPC `get_linked_bnf_status()` bukan embed langsung (RLS memblokir embed utk reporter non-authorized, PostgREST resolve NULL senyap) · default filter tab Overview BNF `'active'`→`'all'`.
+
+**⚠️ NOL tes runtime independen oleh doc-keeper** — Den melaporkan smoke test penuh Passed, di luar kapasitas verifikasi sesi dokumentasi ini.
 
 ---
 

@@ -2,7 +2,9 @@
 
 > Breakdown task aktif & backlog jadi unit yang bisa langsung dikerjakan Claude Code. Sumber: `docs/09_ROADMAP.md` (Next Up), `docs/08_TECH_DEBT.md`. Update saat task selesai / prioritas berubah.
 >
-> **Diperbarui 2026-08-08, KOREKSI SUSULAN SAMA HARI (snapshot di-refresh, commit `8117127`) — H1 (FASE 4) KODE+UI+SQL SEMUA LIVE (bukan lagi "SQL belum dijalankan"); TD-40 (H6) RESOLVED; TD-175 RESOLVED; TD-176/178 diverifikasi ulang.** Catatan "Diperbarui 8 Agu 2026" sebelumnya (ditulis sblm snapshot refresh) sempat bilang H1 "SQL belum dijalankan" — sudah tidak akurat, dikoreksi. Detail: §H di bawah + `08_TECH_DEBT.md` TD-40/TD-175…TD-178 + `09_ROADMAP.md`/`03_DATA_MODEL.md` + `PROGRESS.md` 2026-08-08 (entri susulan).
+> **Diperbarui 2026-08-12 — +section J (BNF/Briefing Harian/Meeting Mingguan follow-up, dari 11 TD baru TD-184…TD-194).** Modul BNF diperluas 4-lapis (Layer 0-4, 10 & 12 Agu 2026) — kode+SQL semua live, NOL tes runtime independen doc-keeper (Den lapor smoke test Passed). Detail: §J di bawah + `08_TECH_DEBT.md` TD-184…TD-194 + `09_ROADMAP.md` + `PROGRESS.md` 2026-08-10 & 2026-08-12.
+>
+> Sebelumnya **2026-08-08, KOREKSI SUSULAN SAMA HARI (snapshot di-refresh, commit `8117127`) — H1 (FASE 4) KODE+UI+SQL SEMUA LIVE (bukan lagi "SQL belum dijalankan"); TD-40 (H6) RESOLVED; TD-175 RESOLVED; TD-176/178 diverifikasi ulang.** Catatan "Diperbarui 8 Agu 2026" sebelumnya (ditulis sblm snapshot refresh) sempat bilang H1 "SQL belum dijalankan" — sudah tidak akurat, dikoreksi. Detail: §H di bawah + `08_TECH_DEBT.md` TD-40/TD-175…TD-178 + `09_ROADMAP.md`/`03_DATA_MODEL.md` + `PROGRESS.md` 2026-08-08 (entri susulan).
 >
 > Sebelumnya **2026-08-07 (RBAC hardening) — D1 sebagian terjawab (`has_permission()` dikonfirmasi orphan), +D0 (fix privilege escalation `user_roles`, DONE), +D4 (audit RLS/RBAC menyeluruh TD-173 — 19 tabel CRITICAL, belum dieksekusi).** Detail: §D di atas + `08_TECH_DEBT.md` TD-170…TD-174 + `PROGRESS.md` 2026-08-07.
 >
@@ -109,6 +111,16 @@
 - [ ] **I1. Rename tombol "Tambah Deal" → "Tambah Leads"** — 1 baris FE, `PipelineKanbanPage.jsx:899` (label terverifikasi). (dari 14_BACKLOG_RECON.md B5)
 - [ ] **I2. Template note (preset) di quotation** — sekarang `quotations.notes`/`terms` = field bebas, tak ada preset (terverifikasi nol preset). Perlu desain kecil (daftar preset + picker). (dari 14_BACKLOG_RECON.md B8)
 - [ ] **I3. Mekanisme email → email group** — ubah konfigurasi/proses notifikasi ke email group. **Perlu keputusan Den** (konfigurasi, bukan murni kode; kerabat TD-43). (dari 14_BACKLOG_RECON.md B4)
+
+### J. BNF / Briefing Harian / Meeting Mingguan — follow-up (dari 11 TD baru, 12 Agu 2026)
+- [ ] **J1. Rekonsiliasi `bnf_divisions`/`bnf_departments` ke SK org chart resmi** (TD-184, MEDIUM) — audit dedicated: petakan SK 002/OD/HCGA-MSI/V/2026 → tabel BNF, putuskan mana posisi genuinely group-wide (pakai `bnf_division_scopes`/`bnf_department_scopes`) vs genuinely per-company, isi posisi yang belum ada barisnya.
+- [ ] **J2. Audit dampak role `super_admin` profil "Deny Triawan" SEBELUM diubah** (TD-193, MEDIUM, kehati-hatian) — cek modul lain yang diakses lewat hak `super_admin` hari ini, baru putuskan role pengganti (kemungkinan `manager`+akses Logistik) tanpa memutus alur kerja berjalan.
+- [ ] **J3. Fix scope dropdown `loadFormOptions()` `BNFListPage.jsx`** (TD-185, LOW) — ganti scope company dari `profile.company_id` ke `detail.company_id` (company laporan yang dibuka, bukan company user login).
+- [ ] **J4. Notifikasi downgrade eskalasi + selaraskan cron `bnf-overdue-reminder` dgn `escalation_level`** (TD-187+TD-188, LOW/MEDIUM) — putuskan dulu apakah downgrade genuinely butuh notif; selaraskan penerima reminder cron dgn `notifyEscalationRecipients()`.
+- [ ] **J5. Riwayat reassign PIC `bnf_report_action_items` + notifikasi Irisan departemen** (TD-190+TD-189, LOW) — desain tabel log kepemilikan PIC (spt `bnf_report_logs`); putuskan apakah "Irisan" (`bnf_report_related_departments`) perlu notif atau tetap murni tampilan.
+- [ ] **J6. Notice rantai carry-forward panjang** (TD-191, LOW) — bangun ambang + UI notice di atas algoritma umur task pending yang sudah ada (`pendingWithAge`/kandidat `task_pending` Meeting Mingguan).
+- [ ] **J7. Verifikasi email domain "Ayun Ngainurrohmah"** (TD-194, LOW) — cek dgn HR/HCGA apakah `info.hrga@exportimportdept.com` valid atau perlu dikoreksi ke `@msigroup.co.id`.
+- [ ] **J8. Auto-pull kategori "Aktivitas" Briefing Harian dari modul lain** (TD-192, LOW) — desain per-sumber (CRM `activities`, HRGA, dll), prinsip sudah disepakati, teknis belum ada.
 
 ---
 
