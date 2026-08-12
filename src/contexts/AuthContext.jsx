@@ -71,6 +71,8 @@ export function AuthProvider({ children }) {
   const [menuPermissions,  setMenuPermissions]  = useState([]); // user_menu_permissions rows for this user
   const [roleMenuPermissions, setRoleMenuPermissions] = useState([]); // role_menu_permissions rows for all active roles (role-level default)
   const [permissionsLoading, setPermissionsLoading] = useState(true); // true while per-user menu permissions are loading
+  const [isBnfAuthorized, setIsBnfAuthorized] = useState(false); // is_bnf_authorized() RPC result — gates the 'bnf' menu item (see App.jsx canSeeMenuItem)
+  const [bnfAuthLoading,  setBnfAuthLoading]  = useState(true);  // true while is_bnf_authorized() is loading — same defer-until-loaded discipline as permissionsLoading
   // null = no override, "active company" follows profile.company_id (home).
   // Not set by any UI yet (multi-entity switcher is a separate phase) — exposed
   // as activeCompanyId/setActiveCompanyId in `value` below for that future work.
@@ -323,6 +325,41 @@ export function AuthProvider({ children }) {
     fetchMenuPermissions(session?.user?.id || null);
   }, [session, fetchMenuPermissions]);
 
+  // ── Fetch is_bnf_authorized() once per session ──────────────────────────────
+  // Gates the 'bnf' menu item (App.jsx canSeeMenuItem special-case). Kept
+  // separate from BriefingHarianPage.jsx's own page-internal call to the same
+  // RPC (that one gates its Overview tab content, not the sidebar, and can't
+  // run before a page mounts) — accepted trade-off, not consolidated. The RPC
+  // reads only auth.uid()/get_user_company_id() server-side, so no erpRoles/
+  // activeCompanyId dependency is needed here, unlike fetchMenuPermissions.
+  const fetchBnfAuthorized = useCallback(async (userId) => {
+    if (!userId) {
+      setIsBnfAuthorized(false);
+      setBnfAuthLoading(false);
+      return;
+    }
+    setBnfAuthLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('is_bnf_authorized');
+      if (error) {
+        console.error('[AuthContext] is_bnf_authorized failed:', error.message);
+        setIsBnfAuthorized(false);
+        return;
+      }
+      setIsBnfAuthorized(!!data);
+    } finally {
+      setBnfAuthLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Same accepted fetch-on-session-change shape as fetchMenuPermissions
+    // immediately above (also flagged by this rule, left as-is there too) —
+    // not a new pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchBnfAuthorized(session?.user?.id || null);
+  }, [session, fetchBnfAuthorized]);
+
   // hasMenuPermission — 3-tier resolution:
   //   1. super_admin → always true.
   //   2. user_menu_permissions row matches → wins outright, effect decides
@@ -379,6 +416,9 @@ export function AuthProvider({ children }) {
     roleMenuPermissions,
     permissionsLoading,
     hasMenuPermission,
+    // is_bnf_authorized() RPC result — see fetchBnfAuthorized above.
+    isBnfAuthorized,
+    bnfAuthLoading,
     signIn,
     signOut,
     refreshProfile,
