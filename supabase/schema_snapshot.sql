@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict aELXyrevl9QqjMv82IPzyVsZkCWmZYwfMjHqnbRTJO4BupZZ4l8zMl1g4evRkLf
+\restrict wIOBMwpIdFxWgLP7M4tY90UTbsanQ3jhtwzp68XsqJagkpMv63PIsXWemwGRBya
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1279,7 +1279,8 @@ CREATE FUNCTION public.is_bnf_authorized() RETURNS boolean
     OR EXISTS (SELECT 1 FROM bnf_divisions WHERE director_profile_id = auth.uid() AND deleted_at IS NULL)
     OR EXISTS (
       SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-      WHERE ur.user_id = auth.uid() AND ur.is_active = true AND r.code = 'ceo'
+      WHERE ur.user_id = auth.uid() AND ur.is_active = true
+        AND r.code IN ('ceo', 'gm', 'gm_bd', 'manager', 'finance_controller')
     )
     OR EXISTS (
       SELECT 1 FROM bnf_authorized_users a
@@ -1806,6 +1807,27 @@ $$;
 
 
 ALTER FUNCTION public.set_customer_on_won() OWNER TO postgres;
+
+--
+-- Name: set_daily_report_items_defaults(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.set_daily_report_items_defaults() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.category = 'task' AND NEW.task_status IS NULL THEN
+    NEW.task_status := 'pending';
+  END IF;
+  IF NEW.category = 'insiden' AND NEW.insiden_resolution IS NULL THEN
+    NEW.insiden_resolution := 'pending_review';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.set_daily_report_items_defaults() OWNER TO postgres;
 
 --
 -- Name: set_inquiry_quoted_on_quotation_sent(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -6459,6 +6481,23 @@ COMMENT ON COLUMN public.sp_items.email_status IS 'Stored as text (not date). Ap
 
 
 --
+-- Name: sp_manifest_staging_20260810; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.sp_manifest_staging_20260810 (
+    sheet text,
+    sp_no text,
+    sheet_status text,
+    inconsistent_flag text,
+    dc text,
+    btb_no text,
+    submit_date text
+);
+
+
+ALTER TABLE public.sp_manifest_staging_20260810 OWNER TO postgres;
+
+--
 -- Name: sp_order_items; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -10056,6 +10095,13 @@ CREATE TRIGGER trg_set_customer_on_inquiry_won AFTER INSERT OR UPDATE ON public.
 --
 
 CREATE TRIGGER trg_set_customer_on_won BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.set_customer_on_won();
+
+
+--
+-- Name: daily_report_items trg_set_daily_report_items_defaults; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER trg_set_daily_report_items_defaults BEFORE INSERT ON public.daily_report_items FOR EACH ROW EXECUTE FUNCTION public.set_daily_report_items_defaults();
 
 
 --
@@ -15944,6 +15990,12 @@ CREATE POLICY sp_items_update ON public.sp_items FOR UPDATE TO authenticated USI
 
 
 --
+-- Name: sp_manifest_staging_20260810; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.sp_manifest_staging_20260810 ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: sp_order_items; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -17660,6 +17712,15 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_items TO service_r
 
 
 --
+-- Name: TABLE sp_manifest_staging_20260810; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_manifest_staging_20260810 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_manifest_staging_20260810 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_manifest_staging_20260810 TO service_role;
+
+
+--
 -- Name: TABLE sp_order_items; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -18015,5 +18076,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict aELXyrevl9QqjMv82IPzyVsZkCWmZYwfMjHqnbRTJO4BupZZ4l8zMl1g4evRkLf
+\unrestrict wIOBMwpIdFxWgLP7M4tY90UTbsanQ3jhtwzp68XsqJagkpMv63PIsXWemwGRBya
 
