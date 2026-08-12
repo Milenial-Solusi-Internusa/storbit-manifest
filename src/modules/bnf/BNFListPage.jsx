@@ -18,13 +18,14 @@
 // else in Nexus for document numbers) — so this file deliberately avoids
 // Tailwind's font-family utility classes and sets fontFamily inline instead.
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { AlertTriangle, ChevronDown, Send, Mail, ArrowUpRight, FileText, AlertCircle, Wrench, Target, X, Search, Pencil, Trash2, Check, ClipboardList } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Send, Mail, ArrowUpRight, FileText, AlertCircle, Wrench, Target, X, Search, Pencil, Trash2, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import { resolveMyDeptScope as resolveMyDeptScopeShared } from '../../lib/bnfOrgScope';
 import CodeNamePicker from '../../components/CodeNamePicker';
-import ProfilePicker from '../../components/ProfilePicker';
 import ConfirmModal from '../../components/ConfirmModal';
+import BnfActionItemsChecklist from '../../components/BnfActionItemsChecklist';
 
 // ============================================================================
 // Tokens — restrained on purpose: navy carries structure (header bar, key
@@ -772,92 +773,9 @@ function PullToBnfModal({ item, divisions, departments, saving, error, onSubmit,
   );
 }
 
-// ============================================================================
-// Action Items checklist (Detail slide-over section, Tugas 3)
-// ============================================================================
-function ActionItemsSection({ items, loading, saving, people, onToggle, onAdd }) {
-  const [newDescription, setNewDescription] = useState('');
-  const [assigneeText, setAssigneeText] = useState('');
-  const [assigneeId, setAssigneeId] = useState('');
-  const [formError, setFormError] = useState(null);
-
-  const handleAdd = () => {
-    if (!newDescription.trim()) { setFormError('Deskripsi wajib diisi.'); return; }
-    if (!assigneeId) { setFormError('PIC wajib dipilih.'); return; }
-    setFormError(null);
-    onAdd({ description: newDescription.trim(), assigned_to: assigneeId }, () => {
-      setNewDescription('');
-      setAssigneeText('');
-      setAssigneeId('');
-    });
-  };
-
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-slate-400">
-        <ClipboardList size={12} /> Action Items
-      </div>
-      <div className="space-y-2">
-        {loading ? (
-          <div className="text-[13px] text-slate-400">Memuat…</div>
-        ) : items.length === 0 ? (
-          <div className="text-[13px] italic text-slate-400">Belum ada action item.</div>
-        ) : items.map((it) => (
-          <div key={it.id} className="flex items-start gap-3 rounded-md border p-3" style={{ borderColor: LINE }}>
-            <button
-              type="button"
-              onClick={() => onToggle(it)}
-              disabled={saving === it.id}
-              className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border disabled:opacity-50"
-              style={{ borderColor: it.is_done ? '#15803D' : LINE, backgroundColor: it.is_done ? '#15803D' : 'white' }}
-              title={it.is_done ? 'Tandai belum selesai' : 'Tandai selesai'}
-            >
-              {it.is_done && <Check size={13} color="white" strokeWidth={3} />}
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] text-slate-700" style={{ whiteSpace: 'pre-wrap', textDecoration: it.is_done ? 'line-through' : 'none' }}>{it.description}</p>
-              <div className="mt-1 text-[11px] text-slate-400">
-                PIC: {it.assignee_name || '—'}
-                {it.is_done && it.completed_at && <> · Selesai {fmtDateTime(it.completed_at)} oleh {it.completed_by_name || '—'}</>}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 space-y-2 rounded-md border p-3" style={{ borderColor: LINE }}>
-        <textarea
-          rows={2}
-          value={newDescription}
-          onChange={(e) => setNewDescription(e.target.value)}
-          placeholder="Deskripsi action item baru…"
-          className={inputCls}
-          style={{ borderColor: LINE }}
-        />
-        <ProfilePicker
-          value={assigneeText}
-          people={people}
-          inputClassName={inputCls}
-          inputStyle={{ borderColor: LINE, fontFamily: 'inherit' }}
-          placeholder="Cari PIC…"
-          onChangeText={(v) => { setAssigneeText(v); setAssigneeId(''); }}
-          onPick={(p) => { setAssigneeText(p.full_name); setAssigneeId(p.id); }}
-        />
-        {formError && <div className="text-[12px]" style={{ color: DANGER }}>{formError}</div>}
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={saving === 'new'}
-            className="rounded-md px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-60"
-            style={{ backgroundColor: NAVY }}
-          >
-            {saving === 'new' ? 'Menyimpan…' : '+ Tambah Item'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ActionItemsSection extracted to src/components/BnfActionItemsChecklist.jsx
+// (2026-08-12) — reused as-is by MeetingMingguanPage.jsx for BNF-sourced
+// weekly meeting items. See its usage in DetailPanel below.
 
 // ============================================================================
 // Detail slide-over (right side panel, replaces the old centered modal)
@@ -1081,7 +999,7 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
 
           {error && <div className="rounded-md p-3 text-[13px]" style={{ backgroundColor: '#FEF2F2', color: DANGER }}>{error}</div>}
 
-          <ActionItemsSection
+          <BnfActionItemsChecklist
             items={actionItems}
             loading={actionItemsLoading}
             saving={actionItemSaving}
@@ -1238,47 +1156,15 @@ export default function BNFListPage({ showToast }) {
   // ==========================================================================
   // Tugas 2 — Tarik dari Insiden
   // ==========================================================================
-  // Resolves which bnf_departments ids should scope the current user's
-  // insiden picker. Confirmed with Den (2026-08-11): super_admin/ceo/
-  // bnf_authorized_users-only grants all see company-wide (null = no filter);
-  // a head/director sees their own department(s) + cross-company scope, via
-  // the exact same bnf_department_scopes/bnf_division_scopes mechanism
-  // bnf_report_action_items' own RLS already uses. Note: that scope
-  // expansion is a no-op for daily_report_items specifically today (its own
-  // RLS is same-company-only and doesn't recognize the scope tables the way
-  // bnf_reports/bnf_report_action_items do) — kept anyway per the confirmed
-  // design; it starts working automatically if that RLS is ever extended to
-  // match, with no further change needed here. Distinguishing "is this user
-  // a head/director at all" purely by whether either query below returns any
-  // row means super_admin/ceo/bnf_authorized_users-only all fall through to
-  // the company-wide `null` return without needing their own role check.
-  const resolveMyDeptScope = useCallback(async () => {
-    if (isAllEntities) return null; // super_admin: company-wide, all companies (matches fetchReports)
-    const [headRes, dirRes] = await Promise.all([
-      supabase.from('bnf_departments').select('id').eq('head_profile_id', profile.id).is('deleted_at', null).limit(1000),
-      supabase.from('bnf_divisions').select('id').eq('director_profile_id', profile.id).is('deleted_at', null).limit(1000),
-    ]);
-    const headDeptIds = (headRes.data || []).map((d) => d.id);
-    const myDivisionIds = (dirRes.data || []).map((d) => d.id);
-    if (headDeptIds.length === 0 && myDivisionIds.length === 0) return null; // ceo / bnf_authorized_users-only: company-wide
-
-    const deptIds = new Set(headDeptIds);
-    if (myDivisionIds.length) {
-      const { data: divDepts } = await supabase.from('bnf_departments').select('id').in('division_id', myDivisionIds).is('deleted_at', null).limit(1000);
-      (divDepts || []).forEach((d) => deptIds.add(d.id));
-    }
-    const [depScopeRes, divScopeRes] = await Promise.all([
-      supabase.from('bnf_department_scopes').select('department_id').eq('company_id', profile.company_id).limit(1000),
-      supabase.from('bnf_division_scopes').select('division_id').eq('company_id', profile.company_id).limit(1000),
-    ]);
-    (depScopeRes.data || []).forEach((r) => deptIds.add(r.department_id));
-    const scopedDivisionIds = (divScopeRes.data || []).map((r) => r.division_id);
-    if (scopedDivisionIds.length) {
-      const { data: scopedDivDepts } = await supabase.from('bnf_departments').select('id').in('division_id', scopedDivisionIds).is('deleted_at', null).limit(1000);
-      (scopedDivDepts || []).forEach((d) => deptIds.add(d.id));
-    }
-    return [...deptIds];
-  }, [isAllEntities, profile]);
+  // Body extracted to src/lib/bnfOrgScope.js (2026-08-12) so
+  // MeetingMingguanPage.jsx's department picker can reuse the exact same
+  // resolution — see that file for the full explanation of what this
+  // returns. Thin local wrapper kept so the call site below
+  // (resolveMyDeptScope()) and its dependency-array shape stay unchanged.
+  const resolveMyDeptScope = useCallback(
+    () => resolveMyDeptScopeShared({ isAllEntities, profileId: profile?.id, companyId: profile?.company_id }),
+    [isAllEntities, profile]
+  );
 
   const fetchPendingInsiden = useCallback(async () => {
     if (!profile?.id) return;
