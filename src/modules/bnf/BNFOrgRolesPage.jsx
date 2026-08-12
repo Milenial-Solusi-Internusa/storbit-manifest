@@ -22,11 +22,19 @@ const NAVY = '#0F3A66';
 const NAVY_DARK = '#0A2745';
 const ORANGE = '#E85A1E';
 const LINE = '#E2E8F0';
+const DANGER = '#DC2626';
 
 function initials(name) {
   if (!name) return '?';
   const p = name.trim().split(/\s+/);
   return ((p[0]?.[0] || '') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 const pickInputCls =
@@ -133,6 +141,80 @@ function ScopeChips({ homeCompanyId, scopeCompanyIds, companies, isSuperAdmin, s
   );
 }
 
+// Inline form for granting bnf_authorized_users access (super_admin only —
+// caller only ever mounts this behind that gate). Not reused elsewhere, kept
+// local rather than extracted to components/ (mirrors AssigneeCell above:
+// small form pulled out of the main return purely for readability).
+function GrantAccessForm({ people, companies, saving, onSubmit, onCancel }) {
+  const [personText, setPersonText] = useState('');
+  const [personId, setPersonId] = useState('');
+  const [companyId, setCompanyId] = useState('');
+  const [reason, setReason] = useState('');
+  const [formError, setFormError] = useState(null);
+
+  const handleSubmit = () => {
+    if (!personId) { setFormError('Pilih orang dulu.'); return; }
+    if (!companyId) { setFormError('Pilih company dulu.'); return; }
+    setFormError(null);
+    onSubmit({ personId, companyId, reason: reason.trim() || null });
+  };
+
+  return (
+    <div className="space-y-2 border-b px-5 py-4" style={{ borderColor: LINE, backgroundColor: '#F8FAFC' }}>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <ProfilePicker
+          value={personText}
+          people={people}
+          inputClassName={pickInputCls}
+          inputStyle={{ borderColor: LINE, fontFamily: 'inherit' }}
+          placeholder="Cari orang…"
+          onChangeText={(v) => { setPersonText(v); setPersonId(''); }}
+          onPick={(p) => { setPersonText(p.full_name); setPersonId(p.id); }}
+        />
+        <select
+          value={companyId}
+          onChange={(e) => setCompanyId(e.target.value)}
+          className={pickInputCls}
+          style={{ borderColor: LINE }}
+        >
+          <option value="">Pilih company…</option>
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
+          ))}
+        </select>
+      </div>
+      <textarea
+        rows={2}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Alasan (opsional)…"
+        className={pickInputCls}
+        style={{ borderColor: LINE }}
+      />
+      {formError && <div className="text-[12px]" style={{ color: DANGER }}>{formError}</div>}
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="rounded-md px-3 py-1.5 text-[12.5px] font-semibold text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={saving}
+          className="rounded-md px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: NAVY }}
+        >
+          {saving ? 'Menyimpan…' : 'Simpan'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function BNFOrgRolesPage({ showToast }) {
   const { profile, erpRole } = useAuth();
   const isAllEntities = erpRole === 'super_admin';
@@ -149,8 +231,12 @@ export default function BNFOrgRolesPage({ showToast }) {
   const [companies, setCompanies] = useState([]);
   const [divisionScopes, setDivisionScopes] = useState({});
   const [departmentScopes, setDepartmentScopes] = useState({});
+  const [bnfAuthUsers, setBnfAuthUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
+  const [showGrantForm, setShowGrantForm] = useState(false);
+  const [grantSaving, setGrantSaving] = useState(false);
+  const [revokingId, setRevokingId] = useState(null);
 
   const fetchAll = useCallback(async () => {
     if (!profile?.id) return;
@@ -176,6 +262,22 @@ export default function BNFOrgRolesPage({ showToast }) {
       // company branch below — this query itself IS the company filter, not
       // a child table scoped by one.
       let compQuery = supabase.from('companies').select('id, code, name').eq('is_active', true).limit(1000);
+      // bnf_authorized_users_read RLS is is_super_admin()-only (not just
+      // insert/update) — admin biasa would get 0 rows back either way, so the
+      // "Akses BNF Tambahan" section is hidden for them entirely (confirmed
+      // with Den, 2026-08-12) and this query is skipped rather than run for
+      // a result nobody sees. No isAllEntities-vs-own-company branch here
+      // either: only super_admin ever reaches this query, and they see all
+      // companies for this feature by design. If bnf_authorized_users_read
+      // is ever loosened for admin biasa, both the section gate below and
+      // this query (incl. a company-scoped branch) need revisiting together.
+      const authQuery = isSuperAdmin
+        ? supabase
+            .from('bnf_authorized_users')
+            .select('id, profile_id, company_id, reason, granted_at, revoked_at, profile:profiles!bnf_authorized_users_profile_id_fkey(full_name), company:companies!bnf_authorized_users_company_id_fkey(code)')
+            .order('granted_at', { ascending: false })
+            .limit(1000)
+        : Promise.resolve({ data: [], error: null });
       if (!isAllEntities) {
         divQuery = divQuery.eq('company_id', profile.company_id);
         depQuery = depQuery.eq('company_id', profile.company_id);
@@ -183,18 +285,20 @@ export default function BNFOrgRolesPage({ showToast }) {
         divScopeQuery = divScopeQuery.eq('company_id', profile.company_id);
         depScopeQuery = depScopeQuery.eq('company_id', profile.company_id);
       }
-      const [divRes, depRes, profRes, divScopeRes, depScopeRes, compRes] =
-        await Promise.all([divQuery, depQuery, profQuery, divScopeQuery, depScopeQuery, compQuery]);
+      const [divRes, depRes, profRes, divScopeRes, depScopeRes, compRes, authRes] =
+        await Promise.all([divQuery, depQuery, profQuery, divScopeQuery, depScopeQuery, compQuery, authQuery]);
       if (divRes.error) throw divRes.error;
       if (depRes.error) throw depRes.error;
       if (profRes.error) throw profRes.error;
       if (divScopeRes.error) throw divScopeRes.error;
       if (depScopeRes.error) throw depScopeRes.error;
       if (compRes.error) throw compRes.error;
+      if (authRes.error) throw authRes.error;
       setDivisions(divRes.data || []);
       setDepartments(depRes.data || []);
       setPeople(profRes.data || []);
       setCompanies(compRes.data || []);
+      setBnfAuthUsers(authRes.data || []);
 
       const divScopeMap = {};
       (divScopeRes.data || []).forEach((r) => {
@@ -214,7 +318,7 @@ export default function BNFOrgRolesPage({ showToast }) {
     } finally {
       setLoading(false);
     }
-  }, [profile, isAllEntities, showToast]);
+  }, [profile, isAllEntities, isSuperAdmin, showToast]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -287,6 +391,41 @@ export default function BNFOrgRolesPage({ showToast }) {
       showToast?.('Gagal menyimpan scope: ' + err.message, 'error');
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const grantBnfAccess = async ({ personId, companyId, reason }) => {
+    setGrantSaving(true);
+    try {
+      const { error } = await supabase.from('bnf_authorized_users').insert({
+        profile_id: personId,
+        company_id: companyId,
+        reason: reason || null,
+        granted_by: profile.id,
+      });
+      if (error) throw error;
+      const personName = people.find((p) => p.id === personId)?.full_name || 'orang ini';
+      showToast?.(`Akses BNF diberikan ke ${personName}`);
+      setShowGrantForm(false);
+      fetchAll();
+    } catch (err) {
+      showToast?.('Gagal memberi akses: ' + err.message, 'error');
+    } finally {
+      setGrantSaving(false);
+    }
+  };
+
+  const revokeBnfAccess = async (row) => {
+    setRevokingId(row.id);
+    try {
+      const { error } = await supabase.from('bnf_authorized_users').update({ revoked_at: new Date().toISOString() }).eq('id', row.id);
+      if (error) throw error;
+      showToast?.(`Akses BNF ${row.profile?.full_name || ''} dicabut`);
+      fetchAll();
+    } catch (err) {
+      showToast?.('Gagal mencabut akses: ' + err.message, 'error');
+    } finally {
+      setRevokingId(null);
     }
   };
 
@@ -398,6 +537,87 @@ export default function BNFOrgRolesPage({ showToast }) {
             </tbody>
           </table>
         </div>
+
+        {isSuperAdmin && (
+          <div className="overflow-hidden rounded-lg border bg-white" style={{ borderColor: LINE }}>
+            <div className="flex items-center justify-between border-b px-5 py-3" style={{ borderColor: LINE }}>
+              <div>
+                <span className="text-[13px] font-semibold text-slate-700">Akses BNF Tambahan</span>
+                <span className="ml-2 text-[11px] text-slate-400">di luar head/direktur/CEO, mis. assessment kenaikan jabatan</span>
+              </div>
+              {!showGrantForm && (
+                <button
+                  type="button"
+                  onClick={() => setShowGrantForm(true)}
+                  className="rounded-md px-3 py-1.5 text-[12.5px] font-semibold text-white"
+                  style={{ backgroundColor: NAVY }}
+                >
+                  + Beri Akses
+                </button>
+              )}
+            </div>
+            {showGrantForm && (
+              <GrantAccessForm
+                people={people}
+                companies={companies}
+                saving={grantSaving}
+                onSubmit={grantBnfAccess}
+                onCancel={() => setShowGrantForm(false)}
+              />
+            )}
+            <table className="w-full text-left text-[13px]">
+              <tbody>
+                {loading ? (
+                  <tr><td className="px-4 py-8 text-center text-slate-400">Memuat…</td></tr>
+                ) : bnfAuthUsers.length === 0 ? (
+                  <tr><td className="px-4 py-8 text-center text-slate-400">Belum ada akses tambahan diberikan</td></tr>
+                ) : bnfAuthUsers.map((row) => {
+                  const revoked = !!row.revoked_at;
+                  return (
+                    <tr key={row.id} style={{ borderBottom: `1px solid ${LINE}` }}>
+                      <td className="px-4 py-3" style={{ width: '30%' }}>
+                        <span
+                          className="font-medium"
+                          style={{ textDecoration: revoked ? 'line-through' : 'none', color: revoked ? '#94A3B8' : '#334155' }}
+                        >
+                          {row.profile?.full_name || '—'}
+                        </span>
+                        {row.company?.code && (
+                          <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ backgroundColor: '#EAF0F8', color: NAVY }}>
+                            {row.company.code}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500" style={{ opacity: revoked ? 0.6 : 1 }}>
+                        {row.reason || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500" style={{ width: '17%', opacity: revoked ? 0.6 : 1 }}>
+                        {fmtDateTime(row.granted_at)}
+                      </td>
+                      <td className="px-4 py-3 text-right" style={{ width: '12%' }}>
+                        {revoked ? (
+                          <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ backgroundColor: '#FEE2E2', color: DANGER }}>
+                            Dicabut
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => revokeBnfAccess(row)}
+                            disabled={revokingId === row.id}
+                            className="rounded-md border px-2.5 py-1 text-[12px] font-semibold disabled:opacity-50"
+                            style={{ borderColor: DANGER, color: DANGER }}
+                          >
+                            {revokingId === row.id ? 'Mencabut…' : 'Cabut'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
