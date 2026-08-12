@@ -18,11 +18,12 @@
 // else in Nexus for document numbers) — so this file deliberately avoids
 // Tailwind's font-family utility classes and sets fontFamily inline instead.
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { AlertTriangle, ChevronDown, Send, Mail, ArrowUpRight, FileText, AlertCircle, Wrench, Target, X, Search, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Send, Mail, ArrowUpRight, FileText, AlertCircle, Wrench, Target, X, Search, Pencil, Trash2, Check, ClipboardList } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import CodeNamePicker from '../../components/CodeNamePicker';
+import ProfilePicker from '../../components/ProfilePicker';
 import ConfirmModal from '../../components/ConfirmModal';
 
 // ============================================================================
@@ -608,9 +609,260 @@ function OverviewTab({ loading, filtered, search, setSearch, filterStatus, setFi
 }
 
 // ============================================================================
+// Tab 3 — Tarik dari Insiden (pending_review daily_report_items → 2 actions)
+// ============================================================================
+function TarikInsidenTab({ items, loading, actionId, onResolveInternal, onOpenPull }) {
+  return (
+    <div className="overflow-hidden rounded-lg border bg-white" style={{ borderColor: LINE }}>
+      <div className="border-b px-5 py-3" style={{ borderColor: LINE }}>
+        <span className="text-[13px] font-semibold text-slate-700">Insiden Menunggu Review</span>
+        <span className="ml-2 text-[11px] text-slate-400">dari Briefing Harian</span>
+      </div>
+      {loading ? (
+        <div className="px-4 py-12 text-center text-[13px] text-slate-400">Memuat…</div>
+      ) : items.length === 0 ? (
+        <div className="px-4 py-12 text-center text-[13px] text-slate-400">Tidak ada insiden menunggu review</div>
+      ) : (
+        <div>
+          {items.map((item) => (
+            <div key={item.id} className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4 last:border-b-0" style={{ borderColor: LINE }}>
+              <div className="min-w-0 flex-1" style={{ minWidth: 240 }}>
+                <p className="text-[13px] leading-relaxed text-slate-700" style={{ whiteSpace: 'pre-wrap' }}>{item.description}</p>
+                <div className="mt-1.5 text-[11px] text-slate-400">
+                  {item.department?.name || '—'} · {item.reporter_name || '—'} · {fmtDate(item.entry_date)}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onResolveInternal(item)}
+                  disabled={actionId === item.id}
+                  className="rounded-md border px-3 py-1.5 text-[12.5px] font-semibold text-slate-600 disabled:opacity-50"
+                  style={{ borderColor: LINE }}
+                >
+                  {actionId === item.id ? 'Menyimpan…' : 'Selesai Internal'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenPull(item)}
+                  disabled={actionId === item.id}
+                  className="rounded-md px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50"
+                  style={{ backgroundColor: ORANGE }}
+                >
+                  Tarik jadi Laporan BNF
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Small centered modal (not the slide-over pattern used by DetailPanel, not
+// BuatLaporanTab's always-on inline form) — this is a secondary, one-off
+// action triggered from a list row, closer in weight to ConfirmModal than to
+// a primary page flow, so a centered modal fits best. description is
+// display-only (read from the source insiden item, per spec); division/
+// department reuse the same CodeNamePicker pair as BuatLaporanTab/DetailPanel
+// edit-mode, prefilled from the item's department but still editable.
+function PullToBnfModal({ item, divisions, departments, saving, error, onSubmit, onClose }) {
+  const [divisionText, setDivisionText] = useState('');
+  const [departmentText, setDepartmentText] = useState('');
+  const [draft, setDraft] = useState(null);
+
+  useEffect(() => {
+    // Derives local form state from the `item` prop on open/close — same
+    // reset-on-prop-change shape as DetailPanel's own pre-existing
+    // newStatus/note/editMode effect just below in this file (also flagged,
+    // left as-is there).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!item) { setDraft(null); return; }
+    const dept = departments.find((d) => d.id === item.department_id) || null;
+    const div = dept ? divisions.find((d) => d.id === dept.division_id) || null : null;
+    setDraft({
+      division_id: div?.id || '',
+      department_id: dept?.id || '',
+      target_date: todayStr(),
+      escalation_level: '',
+    });
+    setDivisionText(div?.name || '');
+    setDepartmentText(dept?.name || '');
+  }, [item, departments, divisions]);
+
+  if (!item || !draft) return null;
+
+  const deptOptions = departments.filter((d) => d.division_id === draft.division_id);
+  const upd = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
+  const canSubmit = !!draft.division_id && !!draft.department_id && !!draft.target_date;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-lg rounded-lg bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: LINE }}>
+          <span className="text-[15px] font-bold text-slate-800">Tarik jadi Laporan BNF</span>
+          <button type="button" onClick={onClose} className="rounded p-1.5 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <div className="space-y-4 px-6 py-5">
+          <div>
+            <FieldLabel>Deskripsi Masalah (dari insiden — tidak bisa diubah)</FieldLabel>
+            <div className="rounded-md border p-3 text-[13px] leading-relaxed text-slate-600" style={{ borderColor: LINE, backgroundColor: '#FAFBFC', whiteSpace: 'pre-wrap' }}>
+              {item.description}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <FieldLabel required>Divisi</FieldLabel>
+              <CodeNamePicker
+                value={divisionText}
+                items={divisions}
+                inputClassName={inputCls}
+                inputStyle={{ borderColor: LINE }}
+                placeholder="Cari / pilih divisi…"
+                onChangeText={(v) => { setDivisionText(v); upd('division_id', ''); }}
+                onPick={(it) => { setDivisionText(it.name); setDepartmentText(''); setDraft((d) => ({ ...d, division_id: it.id, department_id: '' })); }}
+              />
+            </div>
+            <div>
+              <FieldLabel required>Departemen</FieldLabel>
+              <CodeNamePicker
+                value={departmentText}
+                items={deptOptions}
+                disabled={!draft.division_id}
+                inputClassName={inputCls}
+                inputStyle={{ borderColor: LINE }}
+                placeholder={draft.division_id ? 'Cari / pilih departemen…' : 'Pilih divisi dulu'}
+                onChangeText={(v) => { setDepartmentText(v); upd('department_id', ''); }}
+                onPick={(it) => { setDepartmentText(it.name); upd('department_id', it.id); }}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <FieldLabel required>Target Penyelesaian</FieldLabel>
+              <input type="date" value={draft.target_date} onChange={(e) => upd('target_date', e.target.value)} className={inputCls} style={{ borderColor: LINE }} />
+            </div>
+            <div>
+              <FieldLabel>Eskalasi Lanjutan</FieldLabel>
+              <Select value={draft.escalation_level} onChange={(e) => upd('escalation_level', e.target.value)}>
+                <option value="">Tidak ada</option>
+                {ESCALATION_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </div>
+          </div>
+          {error && <div className="rounded-md p-3 text-[13px]" style={{ backgroundColor: '#FEF2F2', color: DANGER }}>{error}</div>}
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t px-6 py-4" style={{ borderColor: LINE, backgroundColor: '#FAFBFC' }}>
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-md border px-4 py-2 text-[13px] font-semibold text-slate-600 disabled:opacity-50" style={{ borderColor: LINE }}>
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={() => onSubmit(draft)}
+            disabled={saving || !canSubmit}
+            className="rounded-md px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-60"
+            style={{ backgroundColor: ORANGE }}
+          >
+            {saving ? 'Menyimpan…' : 'Tarik jadi Laporan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Action Items checklist (Detail slide-over section, Tugas 3)
+// ============================================================================
+function ActionItemsSection({ items, loading, saving, people, onToggle, onAdd }) {
+  const [newDescription, setNewDescription] = useState('');
+  const [assigneeText, setAssigneeText] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [formError, setFormError] = useState(null);
+
+  const handleAdd = () => {
+    if (!newDescription.trim()) { setFormError('Deskripsi wajib diisi.'); return; }
+    if (!assigneeId) { setFormError('PIC wajib dipilih.'); return; }
+    setFormError(null);
+    onAdd({ description: newDescription.trim(), assigned_to: assigneeId }, () => {
+      setNewDescription('');
+      setAssigneeText('');
+      setAssigneeId('');
+    });
+  };
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-slate-400">
+        <ClipboardList size={12} /> Action Items
+      </div>
+      <div className="space-y-2">
+        {loading ? (
+          <div className="text-[13px] text-slate-400">Memuat…</div>
+        ) : items.length === 0 ? (
+          <div className="text-[13px] italic text-slate-400">Belum ada action item.</div>
+        ) : items.map((it) => (
+          <div key={it.id} className="flex items-start gap-3 rounded-md border p-3" style={{ borderColor: LINE }}>
+            <button
+              type="button"
+              onClick={() => onToggle(it)}
+              disabled={saving === it.id}
+              className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border disabled:opacity-50"
+              style={{ borderColor: it.is_done ? '#15803D' : LINE, backgroundColor: it.is_done ? '#15803D' : 'white' }}
+              title={it.is_done ? 'Tandai belum selesai' : 'Tandai selesai'}
+            >
+              {it.is_done && <Check size={13} color="white" strokeWidth={3} />}
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] text-slate-700" style={{ whiteSpace: 'pre-wrap', textDecoration: it.is_done ? 'line-through' : 'none' }}>{it.description}</p>
+              <div className="mt-1 text-[11px] text-slate-400">
+                PIC: {it.assignee_name || '—'}
+                {it.is_done && it.completed_at && <> · Selesai {fmtDateTime(it.completed_at)} oleh {it.completed_by_name || '—'}</>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 space-y-2 rounded-md border p-3" style={{ borderColor: LINE }}>
+        <textarea
+          rows={2}
+          value={newDescription}
+          onChange={(e) => setNewDescription(e.target.value)}
+          placeholder="Deskripsi action item baru…"
+          className={inputCls}
+          style={{ borderColor: LINE }}
+        />
+        <ProfilePicker
+          value={assigneeText}
+          people={people}
+          inputClassName={inputCls}
+          inputStyle={{ borderColor: LINE, fontFamily: 'inherit' }}
+          placeholder="Cari PIC…"
+          onChangeText={(v) => { setAssigneeText(v); setAssigneeId(''); }}
+          onPick={(p) => { setAssigneeText(p.full_name); setAssigneeId(p.id); }}
+        />
+        {formError && <div className="text-[12px]" style={{ color: DANGER }}>{formError}</div>}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={saving === 'new'}
+            className="rounded-md px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-60"
+            style={{ backgroundColor: NAVY }}
+          >
+            {saving === 'new' ? 'Menyimpan…' : '+ Tambah Item'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Detail slide-over (right side panel, replaces the old centered modal)
 // ============================================================================
-function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending, canEdit, divisions, departments, onChangeStatus, onSendReminder, onSaveEdit, onDelete, onClose }) {
+function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending, canEdit, divisions, departments, actionItems, actionItemsLoading, actionItemSaving, actionItemPeople, onToggleActionItem, onAddActionItem, onChangeStatus, onSendReminder, onSaveEdit, onDelete, onClose }) {
   const [newStatus, setNewStatus] = useState('');
   const [note, setNote] = useState('');
   const [editMode, setEditMode] = useState(false);
@@ -626,6 +878,9 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
 
   if (!report) return null;
   const u = urgencyLabel(report);
+  // Tugas 3 "siap Closed" indicator — pure signal, never gates the status
+  // button itself (onChangeStatus/Select above stay untouched).
+  const readyToClose = actionItems.length >= 1 && actionItems.every((it) => it.is_done);
 
   const startEdit = () => {
     setEditDraft({
@@ -793,7 +1048,16 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
               <div className="mt-0.5 text-[12px] font-semibold" style={{ color: u.color }}>{u.text}</div>
             </div>
             <div className="rounded-md border p-4" style={{ borderColor: LINE }}>
-              <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Ubah Status</div>
+              <div className="flex items-center gap-1.5">
+                <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Ubah Status</div>
+                {/* Pure indicator (Tugas 3) — never blocks the Closed action below,
+                    just signals every action item is done before closing. */}
+                {readyToClose && (
+                  <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>
+                    <Check size={10} strokeWidth={3} /> Siap Closed
+                  </span>
+                )}
+              </div>
               <Select value={newStatus} onChange={(e) => setNewStatus(e.target.value)} style={{ marginTop: 4 }}>
                 {STATUS_FORM.map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
@@ -816,6 +1080,15 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
           </div>
 
           {error && <div className="rounded-md p-3 text-[13px]" style={{ backgroundColor: '#FEF2F2', color: DANGER }}>{error}</div>}
+
+          <ActionItemsSection
+            items={actionItems}
+            loading={actionItemsLoading}
+            saving={actionItemSaving}
+            people={actionItemPeople}
+            onToggle={onToggleActionItem}
+            onAdd={onAddActionItem}
+          />
 
           <div>
             <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Riwayat Status</div>
@@ -868,7 +1141,7 @@ export default function BNFListPage({ showToast }) {
   const { profile, erpRole, user } = useAuth();
   const isAllEntities = ['super_admin'].includes(erpRole);
 
-  const [tab, setTab] = useState('form'); // form | overview
+  const [tab, setTab] = useState('form'); // form | insiden | overview
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -889,6 +1162,20 @@ export default function BNFListPage({ showToast }) {
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [reminderSending, setReminderSending] = useState(false);
+
+  // Tugas 2 — Tarik dari Insiden
+  const [pendingInsiden, setPendingInsiden] = useState([]);
+  const [insidenLoading, setInsidenLoading] = useState(true);
+  const [insidenActionId, setInsidenActionId] = useState(null); // row.id currently being resolved/pulled
+  const [pullModalItem, setPullModalItem] = useState(null); // insiden item currently open in PullToBnfModal
+  const [pullSaving, setPullSaving] = useState(false);
+  const [pullError, setPullError] = useState(null);
+
+  // Tugas 3 — Action Items checklist (scoped to whichever report `detail` is open)
+  const [actionItems, setActionItems] = useState([]);
+  const [actionItemsLoading, setActionItemsLoading] = useState(false);
+  const [actionItemSaving, setActionItemSaving] = useState(null); // 'new' or an item id
+  const [actionItemPeople, setActionItemPeople] = useState([]);
 
   const fetchReports = useCallback(async () => {
     if (!profile?.id) return;
@@ -947,6 +1234,177 @@ export default function BNFListPage({ showToast }) {
   // Form is always visible (no more modal trigger) — load Divisi/Departemen
   // options once on mount instead of on an "open" click.
   useEffect(() => { loadFormOptions(); }, [loadFormOptions]);
+
+  // ==========================================================================
+  // Tugas 2 — Tarik dari Insiden
+  // ==========================================================================
+  // Resolves which bnf_departments ids should scope the current user's
+  // insiden picker. Confirmed with Den (2026-08-11): super_admin/ceo/
+  // bnf_authorized_users-only grants all see company-wide (null = no filter);
+  // a head/director sees their own department(s) + cross-company scope, via
+  // the exact same bnf_department_scopes/bnf_division_scopes mechanism
+  // bnf_report_action_items' own RLS already uses. Note: that scope
+  // expansion is a no-op for daily_report_items specifically today (its own
+  // RLS is same-company-only and doesn't recognize the scope tables the way
+  // bnf_reports/bnf_report_action_items do) — kept anyway per the confirmed
+  // design; it starts working automatically if that RLS is ever extended to
+  // match, with no further change needed here. Distinguishing "is this user
+  // a head/director at all" purely by whether either query below returns any
+  // row means super_admin/ceo/bnf_authorized_users-only all fall through to
+  // the company-wide `null` return without needing their own role check.
+  const resolveMyDeptScope = useCallback(async () => {
+    if (isAllEntities) return null; // super_admin: company-wide, all companies (matches fetchReports)
+    const [headRes, dirRes] = await Promise.all([
+      supabase.from('bnf_departments').select('id').eq('head_profile_id', profile.id).is('deleted_at', null).limit(1000),
+      supabase.from('bnf_divisions').select('id').eq('director_profile_id', profile.id).is('deleted_at', null).limit(1000),
+    ]);
+    const headDeptIds = (headRes.data || []).map((d) => d.id);
+    const myDivisionIds = (dirRes.data || []).map((d) => d.id);
+    if (headDeptIds.length === 0 && myDivisionIds.length === 0) return null; // ceo / bnf_authorized_users-only: company-wide
+
+    const deptIds = new Set(headDeptIds);
+    if (myDivisionIds.length) {
+      const { data: divDepts } = await supabase.from('bnf_departments').select('id').in('division_id', myDivisionIds).is('deleted_at', null).limit(1000);
+      (divDepts || []).forEach((d) => deptIds.add(d.id));
+    }
+    const [depScopeRes, divScopeRes] = await Promise.all([
+      supabase.from('bnf_department_scopes').select('department_id').eq('company_id', profile.company_id).limit(1000),
+      supabase.from('bnf_division_scopes').select('division_id').eq('company_id', profile.company_id).limit(1000),
+    ]);
+    (depScopeRes.data || []).forEach((r) => deptIds.add(r.department_id));
+    const scopedDivisionIds = (divScopeRes.data || []).map((r) => r.division_id);
+    if (scopedDivisionIds.length) {
+      const { data: scopedDivDepts } = await supabase.from('bnf_departments').select('id').in('division_id', scopedDivisionIds).is('deleted_at', null).limit(1000);
+      (scopedDivDepts || []).forEach((d) => deptIds.add(d.id));
+    }
+    return [...deptIds];
+  }, [isAllEntities, profile]);
+
+  const fetchPendingInsiden = useCallback(async () => {
+    if (!profile?.id) return;
+    setInsidenLoading(true);
+    try {
+      const deptScope = await resolveMyDeptScope();
+      let query = supabase
+        .from('daily_report_items')
+        .select(`
+          id, entry_date, description, department_id, created_by,
+          department:bnf_departments!daily_report_items_department_id_fkey(id, name, division_id)
+        `)
+        .eq('category', 'insiden')
+        .eq('insiden_resolution', 'pending_review');
+      if (!isAllEntities) query = query.eq('company_id', profile.company_id);
+      if (deptScope) query = query.in('department_id', deptScope);
+
+      const { data, error } = await query.order('entry_date', { ascending: true }).limit(1000);
+      if (error) throw error;
+
+      const list = data || [];
+      const reporterIds = [...new Set(list.map((r) => r.created_by).filter(Boolean))];
+      const nameMap = {};
+      if (reporterIds.length) {
+        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', reporterIds).limit(1000);
+        (profs || []).forEach((p) => { nameMap[p.id] = p.full_name; });
+      }
+      setPendingInsiden(list.map((r) => ({ ...r, reporter_name: nameMap[r.created_by] || null })));
+    } catch (err) {
+      showToast?.('Gagal memuat insiden: ' + err.message, 'error');
+    } finally {
+      setInsidenLoading(false);
+    }
+  }, [profile, isAllEntities, resolveMyDeptScope, showToast]);
+
+  // Same accepted fetch-on-mount shape as fetchReports/loadFormOptions above
+  // (also flagged by this rule, left as-is there too) — not a new pattern.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchPendingInsiden(); }, [fetchPendingInsiden]);
+
+  // "Selesai Internal" — closes the loop at daily_report_items, no bnf_reports
+  // involvement. Passes the guard_daily_report_items_field_update trigger
+  // (Fase A, requires is_bnf_authorized()) purely because this page is
+  // already gated to authorized users (Tugas 1) — no extra FE check needed.
+  const handleResolveInternal = useCallback(async (item) => {
+    setInsidenActionId(item.id);
+    try {
+      const { error } = await supabase.from('daily_report_items').update({
+        insiden_resolution: 'resolved_internal',
+        resolved_by: profile.id,
+        resolved_at: new Date().toISOString(),
+      }).eq('id', item.id);
+      if (error) throw error;
+      showToast?.('Insiden ditandai selesai internal');
+      fetchPendingInsiden();
+    } catch (err) {
+      showToast?.('Gagal menandai selesai: ' + err.message, 'error');
+    } finally {
+      setInsidenActionId(null);
+    }
+  }, [profile, fetchPendingInsiden, showToast]);
+
+  // "Tarik jadi Laporan BNF" — CREATE bnf_reports then UPDATE the source
+  // daily_report_items row. Reuses generateBnfNo (already defined above,
+  // same as the normal Buat Laporan flow) and ACTION_TYPES.CREATE_BNF_REPORT
+  // (same audit action as a normal create, distinguished via `notes`) — no
+  // new audit action type added. If the bnf_reports insert succeeds but the
+  // daily_report_items update fails, the error message says so explicitly
+  // (report already exists, don't retry) rather than presenting a generic
+  // failure that could lead to a duplicate report on retry.
+  const handlePullToBnf = useCallback(async (draft) => {
+    if (!pullModalItem) return;
+    setPullSaving(true);
+    setPullError(null);
+    try {
+      const reportNo = await generateBnfNo(profile.company_id);
+      const payload = {
+        report_no: reportNo,
+        company_id: profile.company_id,
+        division_id: draft.division_id,
+        department_id: draft.department_id,
+        description: pullModalItem.description,
+        root_cause: null,
+        solution: null,
+        target_date: draft.target_date,
+        escalation_level: draft.escalation_level || null,
+        status: 'Open',
+        created_by: profile.id,
+      };
+      const { data: created, error } = await supabase.from('bnf_reports').insert(payload).select('id').single();
+      if (error) throw error;
+
+      const { error: updErr } = await supabase.from('daily_report_items').update({
+        insiden_resolution: 'pulled_to_bnf',
+        pulled_to_bnf_report_id: created.id,
+        resolved_by: profile.id,
+        resolved_at: new Date().toISOString(),
+      }).eq('id', pullModalItem.id);
+      if (updErr) {
+        throw new Error(`Laporan ${reportNo} berhasil dibuat, tapi gagal menandai insiden asal sebagai "ditarik": ${updErr.message}. Jangan tarik ulang — laporan ${reportNo} sudah ada.`);
+      }
+
+      logAudit(supabase, {
+        action: ACTION_TYPES.CREATE_BNF_REPORT,
+        entityType: ENTITY_TYPES.BNF_REPORT,
+        entityId: created?.id ?? null,
+        entityLabel: reportNo,
+        notes: 'Ditarik dari insiden Briefing Harian',
+      }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+
+      // Best-effort notification — same pattern as handleSave's create-time notify.
+      notifyDepartmentHead({ departmentId: draft.department_id, reportNo, description: pullModalItem.description })
+        .catch((e) => console.error('[bnf] pull-to-bnf notify failed:', e?.message || e));
+      notifyEscalationRecipients({ escalationLevel: draft.escalation_level, divisionId: draft.division_id, companyId: profile.company_id, reportNo, description: pullModalItem.description })
+        .catch((e) => console.error('[bnf] pull-to-bnf escalation notify failed:', e?.message || e));
+
+      showToast?.(`Laporan ${reportNo} berhasil dibuat dari insiden`);
+      setPullModalItem(null);
+      fetchPendingInsiden();
+      fetchReports();
+    } catch (err) {
+      setPullError('Gagal menarik ke laporan BNF: ' + err.message);
+    } finally {
+      setPullSaving(false);
+    }
+  }, [pullModalItem, profile, user, erpRole, fetchPendingInsiden, fetchReports, showToast]);
 
   const resetDraft = () => { setDraft({ ...EMPTY_DRAFT, target_date: todayStr() }); setFormError(null); };
 
@@ -1015,6 +1473,79 @@ export default function BNFListPage({ showToast }) {
     }
   }, [draft, profile, user, erpRole, fetchReports, showToast]);
 
+  // ==========================================================================
+  // Tugas 3 — Action Items checklist
+  // ==========================================================================
+  // people scoped to the REPORT's own company (row.company_id), not the
+  // viewer's — mirrors handleSendReminder's existing detail.company_id note
+  // above (a super_admin can be viewing a report from a different company
+  // than their own; PICs must come from the report's company either way).
+  const fetchActionItems = useCallback(async (row) => {
+    setActionItemsLoading(true);
+    try {
+      const [itemsRes, peopleRes] = await Promise.all([
+        supabase.from('bnf_report_action_items').select('*').eq('report_id', row.id).order('created_at', { ascending: true }).limit(1000),
+        supabase.from('profiles').select('id, full_name, email').eq('company_id', row.company_id).eq('active', true).order('full_name').limit(1000),
+      ]);
+      if (itemsRes.error) throw itemsRes.error;
+      if (peopleRes.error) throw peopleRes.error;
+      const people = peopleRes.data || [];
+      const nameMap = {};
+      people.forEach((p) => { nameMap[p.id] = p.full_name; });
+      // completed_by references auth.users(id), assigned_to references
+      // profiles(id) — same underlying id in this schema (profiles.id IS the
+      // auth user id), so one nameMap resolves both, same as reporter_name/
+      // changed_by_name elsewhere in this file.
+      setActionItems((itemsRes.data || []).map((it) => ({
+        ...it,
+        assignee_name: nameMap[it.assigned_to] || null,
+        completed_by_name: it.completed_by ? (nameMap[it.completed_by] || null) : null,
+      })));
+      setActionItemPeople(people);
+    } catch (err) {
+      showToast?.('Gagal memuat action items: ' + err.message, 'error');
+    } finally {
+      setActionItemsLoading(false);
+    }
+  }, [showToast]);
+
+  const handleToggleActionItem = useCallback(async (item) => {
+    if (!detail) return;
+    setActionItemSaving(item.id);
+    try {
+      const payload = item.is_done
+        ? { is_done: false, completed_by: null, completed_at: null }
+        : { is_done: true, completed_by: profile.id, completed_at: new Date().toISOString() };
+      const { error } = await supabase.from('bnf_report_action_items').update(payload).eq('id', item.id);
+      if (error) throw error;
+      fetchActionItems(detail);
+    } catch (err) {
+      showToast?.('Gagal mengubah status action item: ' + err.message, 'error');
+    } finally {
+      setActionItemSaving(null);
+    }
+  }, [detail, profile, fetchActionItems, showToast]);
+
+  const handleAddActionItem = useCallback(async ({ description, assigned_to }, onSuccess) => {
+    if (!detail) return;
+    setActionItemSaving('new');
+    try {
+      const { error } = await supabase.from('bnf_report_action_items').insert({
+        report_id: detail.id,
+        description,
+        assigned_to,
+        created_by: profile.id,
+      });
+      if (error) throw error;
+      onSuccess?.();
+      fetchActionItems(detail);
+    } catch (err) {
+      showToast?.('Gagal menambah action item: ' + err.message, 'error');
+    } finally {
+      setActionItemSaving(null);
+    }
+  }, [detail, profile, fetchActionItems, showToast]);
+
   const openDetail = (row) => {
     setDetail(row);
     setDetailError(null);
@@ -1031,6 +1562,7 @@ export default function BNFListPage({ showToast }) {
         setLogs(list.map((l) => ({ ...l, changed_by_name: nameMap[l.changed_by] || null })));
         setLogsLoading(false);
       });
+    fetchActionItems(row);
   };
 
   const handleStatusChange = useCallback(async (newStatus, note) => {
@@ -1254,7 +1786,7 @@ export default function BNFListPage({ showToast }) {
 
       <div className="py-6">
         <div className="mb-6 flex gap-1 border-b" style={{ borderColor: LINE }}>
-          {[['form', 'Buat Laporan'], ['overview', 'Overview']].map(([key, label]) => (
+          {[['form', 'Buat Laporan'], ['insiden', 'Tarik dari Insiden'], ['overview', 'Overview']].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -1278,6 +1810,14 @@ export default function BNFListPage({ showToast }) {
             error={formError}
             onReset={resetDraft}
             onSave={handleSave}
+          />
+        ) : tab === 'insiden' ? (
+          <TarikInsidenTab
+            items={pendingInsiden}
+            loading={insidenLoading}
+            actionId={insidenActionId}
+            onResolveInternal={handleResolveInternal}
+            onOpenPull={setPullModalItem}
           />
         ) : (
           <OverviewTab
@@ -1307,11 +1847,27 @@ export default function BNFListPage({ showToast }) {
         canEdit={canEditDetail}
         divisions={divisions}
         departments={departments}
+        actionItems={actionItems}
+        actionItemsLoading={actionItemsLoading}
+        actionItemSaving={actionItemSaving}
+        actionItemPeople={actionItemPeople}
+        onToggleActionItem={handleToggleActionItem}
+        onAddActionItem={handleAddActionItem}
         onChangeStatus={handleStatusChange}
         onSendReminder={handleSendReminder}
         onSaveEdit={handleSaveEdit}
         onDelete={handleDeleteReport}
         onClose={() => { setDetail(null); setDetailError(null); }}
+      />
+
+      <PullToBnfModal
+        item={pullModalItem}
+        divisions={divisions}
+        departments={departments}
+        saving={pullSaving}
+        error={pullError}
+        onSubmit={handlePullToBnf}
+        onClose={() => { setPullModalItem(null); setPullError(null); }}
       />
     </div>
   );
