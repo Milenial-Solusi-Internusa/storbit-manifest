@@ -24,6 +24,7 @@ const DANGER = '#DC2626';
 const AMBER = '#D97706';
 const SLATE = '#64748B';
 const BLUE = '#2563EB';
+const PURPLE = '#7C3AED';
 
 const CATEGORIES = ['task', 'aktivitas', 'insiden'];
 const CATEGORY_META = {
@@ -100,12 +101,25 @@ function TaskStatusBadge({ status }) {
   );
 }
 
+// Status word only (Open/In Progress/Escalated/Closed), never the report
+// number — bnf_reports_select RLS (is_bnf_authorized()-gated) blocks a plain
+// embed join from resolving report_no for a reporter who isn't themselves
+// bnf-authorized (the common case: any staff can log an insiden, but only
+// heads/directors/CEO/bnf_authorized_users grantees pass is_bnf_authorized()).
+// get_linked_bnf_status() is a SECURITY DEFINER RPC, already live in the DB,
+// that safely returns just the linked report's status for the original
+// reporter too — see its call in fetchTodayEntries below, which populates
+// item.linked_bnf_status. Confirmed with Den, 2026-08-12.
+const LINKED_BNF_STATUS_COLOR = { Open: BLUE, 'In Progress': AMBER, Escalated: PURPLE, Closed: SLATE };
+
 function InsidenResolutionBadge({ item }) {
   const res = item.insiden_resolution || 'pending_review';
   if (res === 'pulled_to_bnf') {
+    const status = item.linked_bnf_status;
+    const color = LINKED_BNF_STATUS_COLOR[status] || NAVY;
     return (
-      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: `${NAVY}1A`, color: NAVY }}>
-        Jadi {item.pulled_to_bnf?.report_no || 'BNF'}
+      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: `${color}1A`, color }}>
+        {status ? `Jadi BNF · ${status}` : 'Jadi Laporan BNF'}
       </span>
     );
   }
@@ -380,15 +394,28 @@ export default function BriefingHarianPage({ showToast }) {
       .from('daily_report_items')
       .select(`
         id, category, description, task_status, insiden_resolution, department_id, created_at,
-        department:bnf_departments!daily_report_items_department_id_fkey(id, name),
-        pulled_to_bnf:bnf_reports!daily_report_items_pulled_to_bnf_report_id_fkey(report_no)
+        department:bnf_departments!daily_report_items_department_id_fkey(id, name)
       `)
       .eq('created_by', profile.id)
       .eq('entry_date', today)
       .order('created_at', { ascending: false })
       .limit(1000);
     if (error) { showToast?.('Gagal memuat entry hari ini: ' + error.message, 'error'); return; }
-    setTodayEntries(data || []);
+    const list = data || [];
+    // bnf_reports_select RLS blocks a plain embed for non-bnf-authorized
+    // reporters (see InsidenResolutionBadge's comment above) — resolve the
+    // linked report's live status via RPC instead, one call per pulled-to-bnf
+    // item (get_linked_bnf_status takes a single id, no batch variant).
+    const pulledItems = list.filter((r) => r.category === 'insiden' && r.insiden_resolution === 'pulled_to_bnf');
+    if (pulledItems.length === 0) { setTodayEntries(list); return; }
+    const statuses = await Promise.all(pulledItems.map(async (r) => {
+      const { data: status, error: rpcErr } = await supabase.rpc('get_linked_bnf_status', { p_daily_report_item_id: r.id });
+      if (rpcErr) { console.error('[briefing-harian] get_linked_bnf_status failed for', r.id, rpcErr.message); return null; }
+      return status;
+    }));
+    const statusMap = {};
+    pulledItems.forEach((r, i) => { statusMap[r.id] = statuses[i]; });
+    setTodayEntries(list.map((r) => (r.id in statusMap ? { ...r, linked_bnf_status: statusMap[r.id] } : r)));
   }, [profile, today, showToast]);
 
   // Auto carry-forward — runs once before "today" is first shown.
