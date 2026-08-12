@@ -10,7 +10,7 @@ import {
   Users, Ship, Receipt, Globe, Link2, Zap, ScrollText, Shield, FolderOpen, History,
   ChevronDown, Car, Monitor, Sofa, BarChart2, Wrench, FileX, MapPin, Tag,
   ClipboardList, LayoutList, Archive, Activity, BookOpen,
-  Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck, TrendingUp, Sunrise,
+  Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck, TrendingUp, Sunrise, Presentation,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
 import { supabase } from './lib/supabase';
@@ -70,6 +70,7 @@ const MOMDetailPage        = lazy(() => import('./modules/reporting/MOMDetailPag
 const BNFListPage          = lazy(() => import('./modules/bnf/BNFListPage'));
 const BNFOrgRolesPage      = lazy(() => import('./modules/bnf/BNFOrgRolesPage'));
 const BriefingHarianPage   = lazy(() => import('./modules/briefing-harian/BriefingHarianPage'));
+const MeetingMingguanPage  = lazy(() => import('./modules/meeting-mingguan/MeetingMingguanPage'));
 const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
 const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
 const ActivityLogPage      = lazy(() => import('./modules/crm/ActivityLogPage'));
@@ -953,6 +954,12 @@ const ERP_MENU_GROUPS = [
       // Separate module from BNF (product decision) — genuinely public, see
       // the 'bnf' comment above for why BNF itself no longer is.
       { id: 'briefing-harian', label: 'Briefing Harian', icon: Sunrise, public: true },
+      // Meeting Mingguan (2026-08-12) — new top-level menu, same gate as BNF
+      // (isBnfAuthorized), NOT public. `public: true` is still set here for
+      // the same reason as 'bnf': it's what makes navHasGate() route this id
+      // into canSeeMenuItem at all; the actual decision is the id==='bnf' ||
+      // id==='meeting-mingguan' special case there, not this flag.
+      { id: 'meeting-mingguan', label: 'Meeting Mingguan', icon: Presentation, public: true },
     ],
   },
   // ── FOUNDATION ────────────────────────────────────────────────────────────
@@ -1210,6 +1217,7 @@ const NEXUS_NAV = [
           // comes from it alone.
           { id: 'bnf', label: 'BNF (Bad News First)', icon: AlertTriangle },
           { id: 'briefing-harian', label: 'Briefing Harian', icon: Sunrise },
+          { id: 'meeting-mingguan', label: 'Meeting Mingguan', icon: Presentation },
         ],
       },
       {
@@ -1321,11 +1329,12 @@ const MENU_KEY_MAP = {
 // Item tanpa gate apa pun (tanpa public/menuKey/role) disembunyikan.
 const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission, isBnfAuthorized) => {
   if (item.section) return true;
-  // BNF (2026-08-11): public:true alone is no longer enough for this one item
-  // — checked before the generic public:true branch below so it wins first.
-  // `public: true` stays set on the 'bnf' item itself purely so navHasGate()
-  // still recognizes it as gated; see the item's comment in ERP_MENU_GROUPS.
-  if (item.id === 'bnf') return !!isBnfAuthorized;
+  // BNF (2026-08-11) + Meeting Mingguan (2026-08-12): public:true alone is
+  // not enough for these two items — checked before the generic public:true
+  // branch below so it wins first. `public: true` stays set on both items
+  // purely so navHasGate() still recognizes them as gated; see their
+  // comments in ERP_MENU_GROUPS.
+  if (item.id === 'bnf' || item.id === 'meeting-mingguan') return !!isBnfAuthorized;
   // Item ber-flag public terlihat untuk semua authenticated user.
   if (item.public === true) return true;
   // Sistema baru: per-user menu permission check
@@ -3088,7 +3097,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf','briefing-harian','admin-hub'].includes(activeMenu) &&
+           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf','briefing-harian','meeting-mingguan','admin-hub'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3819,6 +3828,17 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Briefing Harian temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <BriefingHarianPage showToast={showToast} />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
+          ))}
+
+          {/* ── Reporting & Governance: Meeting Mingguan — weekly department meeting composer + history, gated to is_bnf_authorized() same as 'bnf' (see comment on the 'meeting-mingguan' menu entry) ── */}
+          {activeMenu === 'meeting-mingguan' && !bnfAuthLoading && (canRenderPage('meeting-mingguan') ? (
+            <ErrorBoundary title="Meeting Mingguan temporarily unavailable">
+              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                <MeetingMingguanPage showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           ) : (
