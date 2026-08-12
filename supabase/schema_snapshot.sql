@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict wIOBMwpIdFxWgLP7M4tY90UTbsanQ3jhtwzp68XsqJagkpMv63PIsXWemwGRBya
+\restrict yOXD34b9v6J95hGbsFBOOfBTeBf2PQcrIlD9GwuRtnWvV8Qk9Ab52HeayVmDyxL
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -718,6 +718,37 @@ END; $$;
 
 
 ALTER FUNCTION public.generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid) OWNER TO postgres;
+
+--
+-- Name: get_linked_bnf_status(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.get_linked_bnf_status(p_daily_report_item_id uuid) RETURNS text
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    AS $$
+DECLARE
+  v_status text;
+  v_created_by uuid;
+  v_pulled_to uuid;
+BEGIN
+  SELECT created_by, pulled_to_bnf_report_id INTO v_created_by, v_pulled_to
+  FROM daily_report_items WHERE id = p_daily_report_item_id;
+
+  IF v_pulled_to IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF v_created_by != auth.uid() AND NOT is_bnf_authorized() THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT status INTO v_status FROM bnf_reports WHERE id = v_pulled_to;
+  RETURN v_status;
+END;
+$$;
+
+
+ALTER FUNCTION public.get_linked_bnf_status(p_daily_report_item_id uuid) OWNER TO postgres;
 
 --
 -- Name: get_table_columns(text); Type: FUNCTION; Schema: public; Owner: postgres
@@ -18076,5 +18107,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict wIOBMwpIdFxWgLP7M4tY90UTbsanQ3jhtwzp68XsqJagkpMv63PIsXWemwGRBya
+\unrestrict yOXD34b9v6J95hGbsFBOOfBTeBf2PQcrIlD9GwuRtnWvV8Qk9Ab52HeayVmDyxL
 
