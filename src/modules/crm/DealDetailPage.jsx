@@ -18,6 +18,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, Hash, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -297,6 +298,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Tandai inquiry KALAH (Task 4) — memakai ulang WinLossModal mode='lost'.
   const [lossOpen, setLossOpen] = useState(false);
   const [lossSaving, setLossSaving] = useState(false);
+  // Tandai inquiry MENANG (jalur manual baru) — ConfirmModal polos (bukan
+  // WinLossModal, nol form alasan diminta), RPC mark_inquiry_won yang
+  // menegakkan izin sebenarnya.
+  const [wonOpen, setWonOpen] = useState(false);
+  const [wonSaving, setWonSaving] = useState(false);
   // Batch 3C — pilih/ganti penawaran vendor (prf_select_offer). Konfirmasi
   // HANYA dibutuhkan saat MENGGANTI pilihan yang sudah ada; pilihan pertama
   // langsung jalan tanpa dialog.
@@ -485,6 +491,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Aksi "Tandai Kalah" hanya untuk status yang belum terminal (default 'OPEN' bila
   // kolomnya kosong). WON / LOST / CANCELLED → tombolnya tidak dirender sama sekali.
   const canMarkLost = LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
+  // Aksi "Tandai sebagai WON" — gate UI murni UX (RPC mark_inquiry_won yang
+  // menegakkan izin sebenarnya): cuma pembuat inquiry atau super_admin, dan
+  // cuma kalau belum WON. Sengaja TIDAK ikut LOSABLE_INQUIRY_STATUS — inquiry
+  // yang sudah LOST/CANCELLED tetap boleh ditandai WON manual (mis. customer
+  // berubah pikiran), sesuai spesifikasi task.
+  const isInquiryCreator = !!(inquiry?.created_by && profile?.id && inquiry.created_by === profile.id);
+  const canMarkWon = (isInquiryCreator || erpRole === 'super_admin')
+    && String(inquiry?.status || 'OPEN').toUpperCase() !== 'WON';
 
   // Update accounts row (used by both Edit modal & Pindah Stage). Returns boolean.
   // Single shared write path (saveDealUpdate) so the audit trail matches
@@ -581,7 +595,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
   // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
-  // Tidak ada aksi "Tandai Menang" tandingannya: WON hanya lahir dari SO lewat trigger.
+  // Aksi "Tandai Menang" tandingannya kini ADA (markInquiryWon, di bawah) — jalur
+  // manual lewat RPC mark_inquiry_won, terpisah dari jalur SO/trigger resmi
+  // (set_inquiry_won_on_so → set_customer_on_inquiry_won, masih hidup berdampingan)
+  // dan terpisah dari pickStage/ACTIVE_STAGE_KEYS (tetap diblok, tak disentuh).
   async function markInquiryLost(values) {
     if (!inquiry?.id) return;
     const prevStatus = inquiry.status || 'OPEN';
@@ -603,6 +620,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setLossOpen(false);
     showToast?.('Inquiry ditandai KALAH.', 'success');
+    refetch();
+  }
+
+  // ── Tandai INQUIRY menang secara manual. RPC mark_inquiry_won menegakkan izin
+  // sebenarnya (creator inquiry atau super_admin) + guard idempotency (sudah WON
+  // → ditolak) — gate `canMarkWon` di atas murni UX, bukan pengganti validasi RPC.
+  // Trigger set_customer_on_inquiry_won yang sudah ada mengurus accounts.account_status
+  // + became_customer_at otomatis; RPC itu sendiri yang sekalian set
+  // accounts.pipeline_stage='WON'. Pesan error ditampilkan apa adanya dari RPC.
+  async function markInquiryWon() {
+    if (!inquiry?.id) return;
+    setWonSaving(true);
+    const { error } = await supabase.rpc('mark_inquiry_won', { p_inquiry_id: inquiry.id });
+    setWonSaving(false);
+    if (error) { showToast?.(error.message, 'error'); return; }
+    showToast?.('Inquiry ditandai WON. Akun terkait sudah jadi customer.', 'success');
     refetch();
   }
 
@@ -705,11 +738,17 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <Card
         title="Detail Inquiry"
         icon={<FileText size={17} />}
-        right={(onEditInquiry || canMarkLost) ? (
+        right={(onEditInquiry || canMarkLost || canMarkWon) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {onEditInquiry && (
               <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Pencil size={14} />Edit Inquiry
+              </button>
+            )}
+            {canMarkWon && (
+              <button onClick={() => setWonOpen(true)} disabled={wonSaving}
+                style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.greenBd}`, background: '#fff', color: C.green, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: wonSaving ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: wonSaving ? 0.6 : 1 }}>
+                <CheckCircle2 size={14} />{wonSaving ? 'Memproses…' : 'Tandai sebagai WON'}
               </button>
             )}
             {canMarkLost && (
@@ -878,6 +917,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         saving={lossSaving}
         onSave={markInquiryLost}
         onCancel={() => setLossOpen(false)}
+      />
+
+      {/* Tandai inquiry MENANG — konfirmasi polos (nol form alasan), RPC yang
+          menegakkan izin. Modal ditutup SEGERA saat konfirmasi (pola sama
+          offerSwitchConfirm di atas) supaya tombol "Ya" tak bisa diklik dobel. */}
+      <ConfirmModal
+        open={wonOpen}
+        variant="info"
+        title="Tandai sebagai WON"
+        message="Tandai inquiry ini sebagai WON? Akun terkait akan otomatis jadi customer."
+        confirmLabel="Ya, Tandai WON"
+        cancelLabel="Batal"
+        onConfirm={() => { setWonOpen(false); markInquiryWon(); }}
+        onCancel={() => setWonOpen(false)}
       />
     </div>
   );
