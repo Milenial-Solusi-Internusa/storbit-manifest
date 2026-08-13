@@ -108,10 +108,10 @@
 ### Admin
 | Fitur | Fungsi | Status |
 |---|---|---|
-| **AdminHub** — unifikasi Master Data + Admin Settings [BARU, 9 Agu 2026] | Landing card-grid tunggal (25 destinasi, 6 grup), ganti `AdminShell`+`AdminSettingsHub` (+9 sub-halaman, kini orphan di disk) sbg entry point | **LIVE** |
+| **AdminHub** — unifikasi Master Data + Admin Settings [BARU, 9 Agu 2026] | Landing card-grid tunggal (25 destinasi, 6 grup), ganti `AdminShell`+`AdminSettingsHub` (+9 sub-halaman, kini orphan di disk) sbg entry point | **LIVE**. **[13 Agu 2026]** 9 dari destinasinya (Companies/Document Types/Status Catalog/Taxes/Payment Terms/Branches/Departments/DC Master/Positions) dimigrasi ke kit desain resmi `admin-settings/kit.jsx`+`tokens.js` — lepas dari `PASTEL` lokal + `AdminPageHeader` lama, 3 batch (read-only → CRUD → kasus khusus multi-entitas Positions). Presentasi murni, nol perubahan CRUD/RLS. Detail: `08_TECH_DEBT.md` TD-14 (PARTIAL, 9/22) · `PROGRESS.md` 2026-08-13 |
 | Admin Settings | Entity / Document / Finance / Approval / Notifications / General / Security / Integrations | **LIVE** (sebagian localStorage fallback). **[9 Agu 2026]** Kini diakses via AdminHub; Finance Defaults — termin pembayaran default jadi dropdown FK `payment_terms` (bukan input angka manual) |
 | Schema Manager | DDL tool super_admin-only | **LIVE**. **[9 Agu 2026]** Card di AdminHub, bukan lagi leaf top-level tersendiri |
-| Users & Access | user/role/permission matrix, Org Chart | **LIVE**. **[9 Agu 2026]** Kini di AdminHub; redirect legacy landing tepat di card ini; tab Permissions `UserEditPage` digate `isSuperAdmin` |
+| Users & Access | user/role/permission matrix, Org Chart | **LIVE**. **[9 Agu 2026]** Kini di AdminHub; redirect legacy landing tepat di card ini; tab Permissions `UserEditPage` digate `isSuperAdmin`. **[12 Agu 2026]** `OrgStructurePage.jsx`: fix garis konektor anak-tunggal (CSS `:only-child` dulu mematikan drop-line vertikal, bukan cuma garis bahu horizontal — celah 34px mengambang) + Ctrl+scroll zoom + **drag-to-pan** (klik-tahan-geser; satu transform `translate(...) scale(...)` bersama, dikecualikan saat klik card `.node`, `useRef` bukan `useState`); zoom-Ctrl verifikasi PARTIAL (belum visual-confirmed di browser asli), drag-to-pan diverifikasi via harness event sintetis (bukti numerik, bukan gesture browser asli). Detail: `PROGRESS.md` 2026-08-12 |
 
 ### BNF / Briefing Harian / Meeting Mingguan
 | Fitur | Fungsi | Status |
