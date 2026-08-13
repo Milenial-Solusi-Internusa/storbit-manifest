@@ -248,10 +248,10 @@ export default function AdminHub({ onExit, initialSection }) {
 
   function renderDestinationContent(id) {
     switch (id) {
-      case "companies":     return <CompaniesPage />;
-      case "branches":      return <BranchesPage />;
-      case "departments":   return <DepartmentsPage />;
-      case "positions":     return <PositionsPage />;
+      case "companies":     return <CompaniesPage onHome={backToLanding} />;
+      case "branches":      return <BranchesPage onHome={backToLanding} />;
+      case "departments":   return <DepartmentsPage onHome={backToLanding} />;
+      case "positions":     return <PositionsPage onHome={backToLanding} />;
       case "org-structure": return <OrgStructurePage />;
       case "user-access":
         return editUserId ? (
@@ -260,11 +260,11 @@ export default function AdminHub({ onExit, initialSection }) {
           <UserAccessPage showToast={showToast} onEditUser={openUserEdit} />
         );
       case "role-defaults":       return <RoleDefaultsPage showToast={showToast} />;
-      case "document-types":      return <DocumentTypesPage />;
-      case "status-catalog":      return <StatusCatalogPage />;
-      case "taxes":                return <TaxesPage />;
-      case "payment-terms":       return <PaymentTermsPage />;
-      case "dc-master":            return <DcMasterPage />;
+      case "document-types":      return <DocumentTypesPage onHome={backToLanding} />;
+      case "status-catalog":      return <StatusCatalogPage onHome={backToLanding} />;
+      case "taxes":                return <TaxesPage onHome={backToLanding} />;
+      case "payment-terms":       return <PaymentTermsPage onHome={backToLanding} />;
+      case "dc-master":            return <DcMasterPage onHome={backToLanding} />;
       case "entity-settings":     return <EntitySettingsPage onHome={backToLanding} />;
       case "document-settings":   return <DocumentSettingsPage onHome={backToLanding} />;
       case "finance-defaults":    return <FinanceDefaultsPage onHome={backToLanding} />;

@@ -1,11 +1,14 @@
 // src/modules/admin/pages/DepartmentsPage.jsx
 // Departments master data — paginated list with create / edit / soft-delete.
 // Phase 1.0I: CRUD via centered AdminFormModal.
+//
+// Migrated to the official admin-settings kit/tokens (2026-08-13) — same
+// migration as BranchesPage.jsx (this page is a structural clone of it).
+// AdminFormModal itself (shared by 6 other pages) is NOT touched — only the
+// content rendered inside it. Fetch/save/CRUD logic unchanged.
 
 import { useState, useEffect, useCallback } from 'react';
-import {
-  Search, RefreshCw, ChevronLeft, ChevronRight, Check, Plus, RefreshCw as Spinner,
-} from 'lucide-react';
+import { Search, RefreshCw, ChevronLeft, ChevronRight, RefreshCw as Spinner } from 'lucide-react';
 import {
   useDepartments, DEPARTMENTS_PAGE_SIZE,
   createDepartment, updateDepartment, softDeleteDepartment,
@@ -13,33 +16,19 @@ import {
 } from '../../../hooks/useDepartments';
 import { fetchAllCompanies } from '../../../hooks/useUserAccess';
 import { useDebounce } from '../../../hooks/useDebounce';
-import AdminPageHeader from '../components/AdminPageHeader';
 import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import ConfirmModal from '../../../components/ConfirmModal';
-
-// ─────────────────────────────────────────────────────────────
-// Design tokens
-// ─────────────────────────────────────────────────────────────
-
-const PASTEL = {
-  ink:          '#2D2A28',
-  inkSoft:      '#5C5550',
-  inkMute:      '#9C948D',
-  line:         '#EDE6DC',
-  lineSoft:     '#F5EFE5',
-  mint:         '#C8EFD9',
-  mintDeep:     '#7FC9A0',
-  rose:         '#F5C8D5',
-  roseDeep:     '#D89AB0',
-  lavender:     '#D8C5F0',
-  lavenderDeep: '#A98FD8',
-  sky:          '#C8E4F5',
-  skyDeep:      '#8FBCD8',
-  butter:       '#FFE9B8',
-};
+import {
+  Icon, PageHeader, KitStyles, FloatingInput, FloatingSelect, Toggle,
+  PrimaryBtn, OutlineBtn, SectionLabel,
+} from '../../../pages/foundation/admin-settings/kit';
+import {
+  NAVY, CREAM, SURFACE, LINE, ROW_HOVER, INK, INK_SOFT, MUTED, DANGER, GREEN,
+  FONT_HEAD, FONT_BODY, FONT_MONO,
+} from '../../../pages/foundation/admin-settings/tokens';
 
 const EMPTY_DRAFT = {
   id: null,
@@ -51,122 +40,64 @@ const EMPTY_DRAFT = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Table badge components
+// Table badges
 // ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ active }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide"
-      style={
-        active
-          ? { background: PASTEL.mint, color: '#1A5C35' }
-          : { background: PASTEL.lineSoft, color: PASTEL.inkMute }
-      }
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wide"
+      style={{
+        fontFamily: FONT_HEAD, fontWeight: 700,
+        background: active ? `${GREEN}1A` : CREAM,
+        color: active ? GREEN : MUTED,
+      }}
     >
-      <span className="w-1 h-1 rounded-full" style={{ background: active ? PASTEL.mintDeep : PASTEL.inkMute }} />
+      <span className="w-1 h-1 rounded-full" style={{ background: active ? GREEN : MUTED }} />
       {active ? 'Active' : 'Inactive'}
     </span>
   );
 }
 
 function CompanyBadge({ company }) {
-  if (!company) return <span style={{ color: PASTEL.inkMute }}>—</span>;
+  if (!company) return <span style={{ color: MUTED }}>—</span>;
   return (
     <span
-      className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-      style={{ background: PASTEL.sky, color: PASTEL.skyDeep }}
+      className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
+      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
     >
       {company.code}
     </span>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// Form field primitives
-// ─────────────────────────────────────────────────────────────
-
-function FieldLabel({ children, required }) {
+function CodeBadge({ children }) {
   return (
-    <div className="text-[11px] font-semibold mb-1.5 uppercase tracking-[0.14em]" style={{ color: PASTEL.inkMute }}>
-      {children}
-      {required && <span style={{ color: PASTEL.roseDeep }}> *</span>}
-    </div>
-  );
-}
-
-function FieldInput({ value, onChange, disabled, placeholder, maxLength }) {
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      placeholder={placeholder}
-      maxLength={maxLength}
-      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 placeholder:text-[#B8AEA6]"
-      style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
-    />
-  );
-}
-
-function FieldSelect({ value, onChange, disabled, children }) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 cursor-pointer"
-      style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
+    <span
+      className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
+      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
     >
       {children}
-    </select>
+    </span>
   );
 }
 
-function FieldToggle({ checked, onChange, disabled }) {
-  return (
-    <button
-      type="button"
-      onClick={() => !disabled && onChange(!checked)}
-      disabled={disabled}
-      className="flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <span
-        className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors"
-        style={{ background: checked ? PASTEL.mintDeep : PASTEL.line }}
-      >
-        <span
-          className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
-          style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
-        />
-      </span>
-      <span className="text-sm font-medium" style={{ color: checked ? '#1A5C35' : PASTEL.inkSoft }}>
-        {checked ? 'Active' : 'Inactive'}
-      </span>
-    </button>
-  );
-}
-
-function SectionLabel({ children }) {
-  return (
-    <div className="text-[10px] uppercase tracking-[0.22em] font-bold mb-4" style={{ color: PASTEL.lavenderDeep }}>
-      {children}
-    </div>
-  );
-}
+// ─────────────────────────────────────────────────────────────
+// Local helper (Divider — no kit equivalent)
+// ─────────────────────────────────────────────────────────────
 
 function Divider() {
-  return <div className="my-6" style={{ borderTop: `1px solid ${PASTEL.line}` }} />;
+  return <div style={{ borderTop: '1px solid ' + LINE, margin: '24px 0' }} />;
 }
 
 // ─────────────────────────────────────────────────────────────
 // Main page
 // ─────────────────────────────────────────────────────────────
 
-export default function DepartmentsPage() {
+export default function DepartmentsPage({ onHome }) {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
+  const [searchFocus, setSearchFocus] = useState(false);
   const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
   const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
   const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));
@@ -271,41 +202,27 @@ export default function DepartmentsPage() {
   }, [draft, closeModal, refresh, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isCreate = !draft?.id;
+  const lockFields = saving; // matches pre-migration behavior: only `saving` disables fields, not `archiving`
 
+  // ── Modal footer ── Cancel/Archive use OutlineBtn, which has no `disabled`
+  // prop in the kit — the guard lives in the onClick handler instead so the
+  // no-double-submit-while-saving behavior is preserved even though the
+  // button won't visually dim during that window.
   const modalFooter = (
-    <div className="flex items-center gap-3">
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
       {!isCreate && (
-        <button
-          type="button"
-          onClick={handleArchive}
-          disabled={saving || archiving}
-          className="px-4 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
-          style={{ background: 'white', color: PASTEL.roseDeep, border: `1px solid ${PASTEL.roseDeep}55` }}
-        >
+        <OutlineBtn danger icon="trash" onClick={() => { if (!saving && !archiving) handleArchive(); }}>
           {archiving ? 'Archiving…' : 'Archive'}
-        </button>
+        </OutlineBtn>
       )}
-      <div className="flex-1" />
-      <button
-        type="button"
-        onClick={closeModal}
-        disabled={saving || archiving}
-        className="px-5 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
-        style={{ background: 'white', color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={saving || archiving}
-        className="px-5 py-2.5 rounded-2xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
-        style={{ background: PASTEL.ink, color: 'white' }}
-      >
-        {saving
-          ? <><Spinner size={13} className="animate-spin" /> Saving…</>
-          : <><Check size={13} /> {isCreate ? 'Create Department' : 'Save Changes'}</>}
-      </button>
+      <div style={{ flex: 1 }} />
+      <OutlineBtn onClick={() => { if (!saving && !archiving) closeModal(); }}>Cancel</OutlineBtn>
+      <PrimaryBtn disabled={saving || archiving} onClick={handleSave}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {saving ? <Spinner size={15} className="animate-spin" /> : <Icon name="check" size={16} />}
+          {saving ? 'Saving…' : (isCreate ? 'Create Department' : 'Save Changes')}
+        </span>
+      </PrimaryBtn>
     </div>
   );
 
@@ -314,58 +231,59 @@ export default function DepartmentsPage() {
   // ─────────────────────────────────────────────────────────
 
   return (
-    <div>
-      <AdminPageHeader
+    <div style={{ fontFamily: FONT_BODY, color: INK }}>
+      <KitStyles />
+      <PageHeader
+        crumbs={[{ label: 'Foundation' }, { label: 'Master Data & Admin Settings', onClick: onHome }, { label: 'Departments' }]}
         title="Departments"
         subtitle="Organizational units. Department codes appear in document numbers."
-        count={loading ? undefined : total}
+        onBack={onHome}
+        right={!loading && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: `${NAVY}1A`, color: NAVY, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
+            {total.toLocaleString('id-ID')}
+          </span>
+        )}
       />
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-5">
         <div
-          className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm"
-          style={{ background: 'white', borderColor: PASTEL.line }}
+          className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm transition-shadow"
+          style={{ background: SURFACE, borderColor: searchFocus ? NAVY : LINE, boxShadow: searchFocus ? `0 0 0 3px ${NAVY}29` : 'none' }}
         >
-          <Search size={14} style={{ color: PASTEL.inkMute }} />
+          <Search size={14} style={{ color: MUTED }} />
           <input
             type="text"
             placeholder="Search by name or code…"
             value={searchInput}
             onChange={(e) => handleSearch(e.target.value)}
-            className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#9C948D]"
-            style={{ color: PASTEL.ink }}
+            onFocus={() => setSearchFocus(true)}
+            onBlur={() => setSearchFocus(false)}
+            className="flex-1 bg-transparent outline-none text-sm"
+            style={{ color: INK }}
           />
         </div>
         <button
           type="button"
           onClick={refresh}
           className="p-2.5 rounded-xl border transition-opacity hover:opacity-70"
-          style={{ background: 'white', borderColor: PASTEL.line }}
+          style={{ background: SURFACE, borderColor: LINE }}
           title="Refresh"
         >
-          <RefreshCw size={14} style={{ color: PASTEL.inkSoft }} />
+          <RefreshCw size={14} style={{ color: INK_SOFT }} />
         </button>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
-          style={{ background: PASTEL.ink, color: 'white' }}
-        >
-          <Plus size={14} />
-          New Department
-        </button>
+        <PrimaryBtn icon="plus" onClick={openCreate}>New Department</PrimaryBtn>
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+      <div className="rounded-2xl border overflow-hidden" style={{ background: SURFACE, borderColor: LINE }}>
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
           style={{
             gridTemplateColumns: '70px 80px 1fr 80px 44px',
-            borderColor: PASTEL.line,
-            background: PASTEL.lineSoft,
-            color: PASTEL.inkMute,
+            borderColor: LINE,
+            background: CREAM,
+            color: MUTED,
           }}
         >
           <div>Company</div>
@@ -382,55 +300,54 @@ export default function DepartmentsPage() {
         ) : data.length === 0 ? (
           <EmptyState message={search ? 'No departments match your search.' : 'No departments found.'} />
         ) : (
-          data.map((row) => (
-            <div
-              key={row.id}
-              className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
-              style={{ gridTemplateColumns: '70px 80px 1fr 80px 44px', borderColor: PASTEL.line }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = PASTEL.lineSoft)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <div><CompanyBadge company={row.companies} /></div>
-              <div>
-                <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold" style={{ background: PASTEL.butter, color: '#5C4416' }}>
-                  {row.code}
-                </span>
+          data.map((row, i) => {
+            const zebra = i % 2 === 1 ? `${CREAM}80` : SURFACE;
+            return (
+              <div
+                key={row.id}
+                className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
+                style={{ gridTemplateColumns: '70px 80px 1fr 80px 44px', borderColor: LINE, background: zebra }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = ROW_HOVER)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = zebra)}
+              >
+                <div><CompanyBadge company={row.companies} /></div>
+                <div><CodeBadge>{row.code}</CodeBadge></div>
+                <div className="font-medium" style={{ color: INK }}>{row.name}</div>
+                <div className="flex justify-end"><StatusBadge active={row.is_active} /></div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(row)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
+                    style={{ background: CREAM, color: INK_SOFT }}
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
-              <div className="font-medium" style={{ color: PASTEL.ink }}>{row.name}</div>
-              <div className="flex justify-end"><StatusBadge active={row.is_active} /></div>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => openEdit(row)}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
-                  style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
-                >
-                  Edit
-                </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
 
         {!error && (
-          <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${PASTEL.line}` }}>
-            <span className="text-xs" style={{ color: PASTEL.inkMute }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${LINE}` }}>
+            <span className="text-xs" style={{ color: MUTED }}>
               {total === 0 ? 'No records' : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
             </span>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
-                <ChevronLeft size={14} style={{ color: PASTEL.inkSoft }} />
+              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: CREAM }}>
+                <ChevronLeft size={14} style={{ color: INK_SOFT }} />
               </button>
-              <span className="px-3 text-xs font-medium" style={{ color: PASTEL.inkSoft }}>{page} / {totalPages}</span>
-              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
-                <ChevronRight size={14} style={{ color: PASTEL.inkSoft }} />
+              <span className="px-3 text-xs font-medium" style={{ color: INK_SOFT }}>{page} / {totalPages}</span>
+              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: CREAM }}>
+                <ChevronRight size={14} style={{ color: INK_SOFT }} />
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* ── Centered modal form ── */}
+      {/* ── Centered modal form (container = AdminFormModal, untouched) ── */}
       <AdminFormModal
         open={!!draft}
         eyebrow={isCreate ? 'New Department' : 'Edit Department'}
@@ -440,106 +357,70 @@ export default function DepartmentsPage() {
         footer={modalFooter}
       >
         {draft && (
-          <div className="space-y-6">
-
+          <div>
             {/* ── Identity ── */}
-            <div>
-              <SectionLabel>Identity</SectionLabel>
-              <div className="space-y-4">
-
-                <div>
-                  <FieldLabel required>Company</FieldLabel>
-                  {isCreate ? (
-                    <FieldSelect
-                      value={draft.company_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, company_id: v, parent_id: '' }))}
-                      disabled={saving}
-                    >
-                      <option value="">— Select company —</option>
-                      {companies.map((c) => (
-                        <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                      ))}
-                    </FieldSelect>
-                  ) : (
-                    <div
-                      className="rounded-2xl border px-4 py-3 text-sm"
-                      style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
-                    >
-                      {companies.find((c) => c.id === draft.company_id)
-                        ? `${companies.find((c) => c.id === draft.company_id).code} — ${companies.find((c) => c.id === draft.company_id).name}`
-                        : 'Loading…'}
-                      <span className="ml-2 text-[10px] uppercase tracking-wide" style={{ color: PASTEL.inkMute }}>(locked)</span>
-                    </div>
-                  )}
+            <SectionLabel style={{ marginBottom: 16 }}>Identity</SectionLabel>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+              {isCreate ? (
+                <div style={{ flex: '1 1 100%', opacity: lockFields ? 0.55 : 1, pointerEvents: lockFields ? 'none' : 'auto', transition: 'opacity .2s' }}>
+                  <FloatingSelect full label="Company *"
+                    value={draft.company_id}
+                    onChange={(v) => setDraft((d) => ({ ...d, company_id: v, parent_id: '' }))}
+                    options={[{ value: '', label: '— Select company —' }, ...companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))]}
+                  />
                 </div>
-
-                {/* Code + Name — 2 col */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <FieldLabel required>Code</FieldLabel>
-                    <FieldInput
-                      value={draft.code}
-                      onChange={(v) => setDraft((d) => ({ ...d, code: v }))}
-                      disabled={saving}
-                      placeholder="e.g. SLS, FIN, IT"
-                      maxLength={20}
-                    />
-                    <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>Appears in document numbers. Saved uppercase.</p>
-                  </div>
-                  <div>
-                    <FieldLabel required>Name</FieldLabel>
-                    <FieldInput
-                      value={draft.name}
-                      onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
-                      disabled={saving}
-                      placeholder="e.g. Sales, Finance"
-                      maxLength={100}
-                    />
+              ) : (
+                <div style={{ flex: '1 1 100%' }}>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: NAVY, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Company</div>
+                  <div style={{ borderRadius: 11, border: '1px solid ' + LINE, background: CREAM, padding: '16px 14px', fontFamily: FONT_BODY, fontSize: 14, color: INK_SOFT }}>
+                    {companies.find((c) => c.id === draft.company_id)
+                      ? `${companies.find((c) => c.id === draft.company_id).code} — ${companies.find((c) => c.id === draft.company_id).name}`
+                      : 'Loading…'}
+                    <span style={{ marginLeft: 8, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED }}>(locked)</span>
                   </div>
                 </div>
-              </div>
+              )}
+
+              <FloatingInput half label="Code *" value={draft.code}
+                onChange={(v) => setDraft((d) => ({ ...d, code: v.slice(0, 20) }))}
+                disabled={saving} placeholder="e.g. SLS, FIN, IT" hint="Appears in document numbers. Saved uppercase." />
+              <FloatingInput half label="Name *" value={draft.name}
+                onChange={(v) => setDraft((d) => ({ ...d, name: v.slice(0, 100) }))}
+                disabled={saving} placeholder="e.g. Sales, Finance" />
             </div>
 
             <Divider />
 
             {/* ── Organization ── */}
-            <div>
-              <SectionLabel>Organization</SectionLabel>
-              <FieldLabel>Parent Department</FieldLabel>
-              <FieldSelect
-                value={draft.parent_id}
-                onChange={(v) => setDraft((d) => ({ ...d, parent_id: v }))}
-                disabled={saving || !draft.company_id}
-              >
-                <option value="">— None (top-level) —</option>
-                {parentDepts.map((dep) => (
-                  <option key={dep.id} value={dep.id}>{dep.code} — {dep.name}</option>
-                ))}
-              </FieldSelect>
-              <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                Optional. Leave blank for top-level departments.
-              </p>
+            <SectionLabel style={{ marginBottom: 14 }}>Organization</SectionLabel>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+              <div style={{ flex: '1 1 100%', opacity: (lockFields || !draft.company_id) ? 0.55 : 1, pointerEvents: (lockFields || !draft.company_id) ? 'none' : 'auto', transition: 'opacity .2s' }}>
+                <FloatingSelect full label="Parent Department"
+                  value={draft.parent_id}
+                  onChange={(v) => setDraft((d) => ({ ...d, parent_id: v }))}
+                  options={[{ value: '', label: '— None (top-level) —' }, ...parentDepts.map((dep) => ({ value: dep.id, label: `${dep.code} — ${dep.name}` }))]}
+                />
+              </div>
             </div>
+            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: MUTED, marginTop: 8 }}>
+              Optional. Leave blank for top-level departments.
+            </p>
 
             <Divider />
 
             {/* ── Status ── */}
-            <div>
-              <SectionLabel>Status</SectionLabel>
-              <FieldToggle
-                checked={draft.is_active}
-                onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))}
-                disabled={saving}
-              />
+            <SectionLabel style={{ marginBottom: 14 }}>Status</SectionLabel>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Toggle on={draft.is_active} onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))} disabled={saving} />
+              <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: draft.is_active ? GREEN : INK_SOFT }}>
+                {draft.is_active ? 'Active' : 'Inactive'}
+              </span>
             </div>
 
             {saveError && (
-              <div
-                className="rounded-2xl px-4 py-3.5"
-                style={{ background: PASTEL.rose, border: `1px solid ${PASTEL.roseDeep}` }}
-              >
-                <div className="text-xs font-semibold mb-0.5" style={{ color: PASTEL.ink }}>Save failed</div>
-                <div className="text-xs" style={{ color: PASTEL.inkSoft }}>{saveError}</div>
+              <div style={{ marginTop: 24, borderRadius: 14, padding: '14px 16px', background: `${DANGER}0F`, border: `1px solid ${DANGER}40` }}>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 2 }}>Save failed</div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{saveError}</div>
               </div>
             )}
           </div>
@@ -548,15 +429,13 @@ export default function DepartmentsPage() {
 
       {/* Toast */}
       {toast && (
-        <div
-          className="fixed bottom-6 right-6 rounded-2xl px-4 py-3 text-sm font-semibold shadow-lg flex items-center gap-2 z-[60]"
-          style={{
-            background: toast.type === 'error' ? PASTEL.rose : PASTEL.mint,
-            color: PASTEL.ink,
-            border: `1px solid ${toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep}`,
-          }}
-        >
-          <Check size={14} />
+        <div style={{
+          position: 'fixed', right: 24, bottom: 24, display: 'flex', alignItems: 'center', gap: 10,
+          background: INK, color: '#fff', padding: '13px 18px', borderRadius: 12,
+          fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500,
+          boxShadow: '0 14px 34px rgba(10,20,40,.3)', zIndex: 200,
+        }}>
+          <Icon name={toast.type === 'error' ? 'alert' : 'checkcircle'} size={18} color={toast.type === 'error' ? '#FF9B9B' : '#7FD6A0'} />
           {toast.msg}
         </div>
       )}

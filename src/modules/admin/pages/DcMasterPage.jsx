@@ -8,12 +8,14 @@
 // Read by src/modules/logistics/InputSPPage.jsx's DC dropdown
 // (.eq('is_active', true).is('deleted_at', null)) — untouched by this file,
 // it just reads whatever rows this page writes to the same table.
+//
+// Migrated to the official admin-settings kit/tokens (2026-08-13) — same
+// migration as BranchesPage.jsx/DepartmentsPage.jsx. AccountPicker.jsx itself
+// is NOT touched (shared by 7 other consumers) — only the local inputStyle
+// object passed into it. Fetch/save logic and WILAYAH_OPTIONS values unchanged.
 
 import { useState, useEffect, useCallback } from 'react';
-import {
-  Search, RefreshCw, ChevronLeft, ChevronRight, Check, Plus, X,
-  RefreshCw as Spinner,
-} from 'lucide-react';
+import { Search, RefreshCw, ChevronLeft, ChevronRight, X, RefreshCw as Spinner } from 'lucide-react';
 import {
   useDcMaster, DC_MASTER_PAGE_SIZE,
   createDcMaster, updateDcMaster,
@@ -21,34 +23,22 @@ import {
 import { fetchAllCompanies } from '../../../hooks/useUserAccess';
 import { useDebounce } from '../../../hooks/useDebounce';
 import { supabase } from '../../../lib/supabase';
-import AdminPageHeader from '../components/AdminPageHeader';
 import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import AccountPicker from '../../../components/AccountPicker';
+import {
+  Icon, PageHeader, KitStyles, FloatingInput, FloatingSelect, Toggle,
+  PrimaryBtn, OutlineBtn, SectionLabel,
+} from '../../../pages/foundation/admin-settings/kit';
+import {
+  NAVY, ORANGE, CREAM, SURFACE, LINE, ROW_HOVER, INK, INK_SOFT, MUTED, DANGER,
+  GREEN, FONT_HEAD, FONT_BODY, FONT_MONO,
+} from '../../../pages/foundation/admin-settings/tokens';
 
-// ─────────────────────────────────────────────────────────────
-// Design tokens
-// ─────────────────────────────────────────────────────────────
-
-const PASTEL = {
-  ink:          '#2D2A28',
-  inkSoft:      '#5C5550',
-  inkMute:      '#9C948D',
-  line:         '#EDE6DC',
-  lineSoft:     '#F5EFE5',
-  mint:         '#C8EFD9',
-  mintDeep:     '#7FC9A0',
-  rose:         '#F5C8D5',
-  roseDeep:     '#D89AB0',
-  lavender:     '#D8C5F0',
-  lavenderDeep: '#A98FD8',
-  sky:          '#C8E4F5',
-  skyDeep:      '#8FBCD8',
-};
-
-// Matches dc_master_wilayah_check exactly (schema_snapshot.sql).
+// Matches dc_master_wilayah_check exactly (schema_snapshot.sql). DO NOT edit
+// these values — the DB CHECK constraint rejects anything else.
 const WILAYAH_OPTIONS = ['Jawa', 'Sumatera', 'Sulawesi', 'Kalimantan', 'Bali & Nusa Tenggara', 'Lainnya'];
 
 const EMPTY_DRAFT = {
@@ -63,80 +53,62 @@ const EMPTY_DRAFT = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Small display components
+// Table badges
 // ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ active }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide"
-      style={
-        active
-          ? { background: PASTEL.mint, color: '#1A5C35' }
-          : { background: PASTEL.lineSoft, color: PASTEL.inkMute }
-      }
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wide"
+      style={{
+        fontFamily: FONT_HEAD, fontWeight: 700,
+        background: active ? `${GREEN}1A` : CREAM,
+        color: active ? GREEN : MUTED,
+      }}
     >
-      <span className="w-1 h-1 rounded-full" style={{ background: active ? PASTEL.mintDeep : PASTEL.inkMute }} />
+      <span className="w-1 h-1 rounded-full" style={{ background: active ? GREEN : MUTED }} />
       {active ? 'Active' : 'Inactive'}
     </span>
   );
 }
 
 function WilayahBadge({ wilayah }) {
-  if (!wilayah) return <span style={{ color: PASTEL.inkMute }}>—</span>;
+  if (!wilayah) return <span style={{ color: MUTED }}>—</span>;
   return (
     <span
-      className="px-2 py-0.5 rounded-lg text-[10px] font-semibold"
-      style={{ background: PASTEL.sky, color: PASTEL.skyDeep }}
+      className="px-2 py-0.5 rounded-lg text-[10px]"
+      style={{ fontFamily: FONT_HEAD, fontWeight: 700, background: `${ORANGE}1A`, color: ORANGE }}
     >
       {wilayah}
     </span>
   );
 }
 
+function KodeBadge({ children }) {
+  return (
+    <span
+      className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
+      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
+    >
+      {children}
+    </span>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────
-// Form field primitives (mirrors BranchesPage's local set)
+// Local helpers (textarea, small label, divider — no kit equivalent)
 // ─────────────────────────────────────────────────────────────
 
-function FieldLabel({ children, required }) {
+function AreaLabel({ children }) {
   return (
-    <div className="text-[11px] font-semibold mb-1.5 uppercase tracking-[0.14em]" style={{ color: PASTEL.inkMute }}>
+    <div style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: MUTED, marginBottom: 7 }}>
       {children}
-      {required && <span style={{ color: PASTEL.roseDeep }}> *</span>}
     </div>
   );
 }
 
-function FieldInput({ value, onChange, disabled, placeholder, maxLength }) {
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      placeholder={placeholder}
-      maxLength={maxLength}
-      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 placeholder:text-[#B8AEA6]"
-      style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
-    />
-  );
-}
-
-function FieldSelect({ value, onChange, disabled, children }) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 cursor-pointer"
-      style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
-    >
-      {children}
-    </select>
-  );
-}
-
-function FieldTextarea({ value, onChange, disabled, placeholder }) {
+function AreaField({ value, onChange, disabled, placeholder }) {
+  const [focus, setFocus] = useState(false);
   return (
     <textarea
       value={value}
@@ -144,61 +116,39 @@ function FieldTextarea({ value, onChange, disabled, placeholder }) {
       disabled={disabled}
       placeholder={placeholder}
       rows={3}
-      className="w-full rounded-2xl border px-4 py-3 text-sm outline-none transition-colors disabled:opacity-50 resize-none placeholder:text-[#B8AEA6]"
-      style={{ borderColor: PASTEL.line, background: 'white', color: PASTEL.ink }}
+      onFocus={() => setFocus(true)}
+      onBlur={() => setFocus(false)}
+      style={{
+        width: '100%', borderRadius: 11, border: '1px solid ' + (focus ? NAVY : LINE),
+        background: disabled ? CREAM : SURFACE, padding: '12px 14px', fontFamily: FONT_BODY,
+        fontSize: 14, color: INK, outline: 'none', resize: 'none',
+        boxShadow: focus ? '0 0 0 3px rgba(20,70,130,.16)' : 'none',
+        transition: 'border-color .2s, box-shadow .2s',
+      }}
     />
   );
 }
 
-function FieldToggle({ label, checked, onChange, disabled }) {
-  return (
-    <button
-      type="button"
-      onClick={() => !disabled && onChange(!checked)}
-      disabled={disabled}
-      className="flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <span
-        className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors"
-        style={{ background: checked ? PASTEL.mintDeep : PASTEL.line }}
-      >
-        <span
-          className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
-          style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
-        />
-      </span>
-      <span className="text-sm font-medium" style={{ color: checked ? '#1A5C35' : PASTEL.inkSoft }}>
-        {label ?? (checked ? 'Active' : 'Inactive')}
-      </span>
-    </button>
-  );
-}
-
-function SectionLabel({ children }) {
-  return (
-    <div className="text-[10px] uppercase tracking-[0.22em] font-bold mb-4" style={{ color: PASTEL.lavenderDeep }}>
-      {children}
-    </div>
-  );
-}
-
 function Divider() {
-  return <div className="my-6" style={{ borderTop: `1px solid ${PASTEL.line}` }} />;
+  return <div style={{ borderTop: '1px solid ' + LINE, margin: '24px 0' }} />;
 }
 
+// AccountPicker takes a plain inputStyle object (no focus-state hook exposed),
+// so this stays static rather than reactive like FloatingInput's border.
 const pickerInputStyle = {
-  width: '100%', borderRadius: 16, border: `1px solid ${PASTEL.line}`,
+  width: '100%', borderRadius: 11, border: `1px solid ${LINE}`,
   padding: '12px 16px', fontSize: 13, outline: 'none',
-  background: 'white', color: PASTEL.ink,
+  background: SURFACE, color: INK, fontFamily: FONT_BODY,
 };
 
 // ─────────────────────────────────────────────────────────────
 // Main page
 // ─────────────────────────────────────────────────────────────
 
-export default function DcMasterPage() {
+export default function DcMasterPage({ onHome }) {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
+  const [searchFocus, setSearchFocus] = useState(false);
   const search = useDebounce(searchInput, 300);
 
   // Toolbar customer filter — AccountPicker-driven, independent of the form.
@@ -297,31 +247,22 @@ export default function DcMasterPage() {
   }, [draft, closeModal, refresh, showToast]);
 
   const isCreate = !draft?.id;
+  const lockFields = saving;
 
-  // ── Modal footer ──
+  // ── Modal footer ── Cancel uses OutlineBtn, which has no `disabled` prop
+  // in the kit — the guard lives in the onClick handler instead so the
+  // no-double-submit-while-saving behavior is preserved even though the
+  // button won't visually dim during that window.
   const modalFooter = (
-    <div className="flex items-center gap-3">
-      <div className="flex-1" />
-      <button
-        type="button"
-        onClick={closeModal}
-        disabled={saving}
-        className="px-5 py-2.5 rounded-2xl text-sm font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
-        style={{ background: 'white', color: PASTEL.inkSoft, border: `1px solid ${PASTEL.line}` }}
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={saving}
-        className="px-5 py-2.5 rounded-2xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
-        style={{ background: PASTEL.ink, color: 'white' }}
-      >
-        {saving
-          ? <><Spinner size={13} className="animate-spin" /> Saving…</>
-          : <><Check size={13} /> {isCreate ? 'Create DC' : 'Save Changes'}</>}
-      </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+      <div style={{ flex: 1 }} />
+      <OutlineBtn onClick={() => { if (!saving) closeModal(); }}>Cancel</OutlineBtn>
+      <PrimaryBtn disabled={saving} onClick={handleSave}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {saving ? <Spinner size={15} className="animate-spin" /> : <Icon name="check" size={16} />}
+          {saving ? 'Saving…' : (isCreate ? 'Create DC' : 'Save Changes')}
+        </span>
+      </PrimaryBtn>
     </div>
   );
 
@@ -330,27 +271,36 @@ export default function DcMasterPage() {
   // ─────────────────────────────────────────────────────────
 
   return (
-    <div>
-      <AdminPageHeader
+    <div style={{ fontFamily: FONT_BODY, color: INK }}>
+      <KitStyles />
+      <PageHeader
+        crumbs={[{ label: 'Foundation' }, { label: 'Master Data & Admin Settings', onClick: onHome }, { label: 'DC Master' }]}
         title="DC Master"
         subtitle="Titik kirim (Distribution Center) per customer. Dipakai dropdown DC di Input SP."
-        count={loading ? undefined : total}
+        onBack={onHome}
+        right={!loading && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: `${NAVY}1A`, color: NAVY, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
+            {total.toLocaleString('id-ID')}
+          </span>
+        )}
       />
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         <div
-          className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm"
-          style={{ background: 'white', borderColor: PASTEL.line }}
+          className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm transition-shadow"
+          style={{ background: SURFACE, borderColor: searchFocus ? NAVY : LINE, boxShadow: searchFocus ? `0 0 0 3px ${NAVY}29` : 'none' }}
         >
-          <Search size={14} style={{ color: PASTEL.inkMute }} />
+          <Search size={14} style={{ color: MUTED }} />
           <input
             type="text"
             placeholder="Cari nama atau kode…"
             value={searchInput}
             onChange={(e) => handleSearch(e.target.value)}
-            className="flex-1 bg-transparent outline-none text-sm placeholder:text-[#9C948D]"
-            style={{ color: PASTEL.ink }}
+            onFocus={() => setSearchFocus(true)}
+            onBlur={() => setSearchFocus(false)}
+            className="flex-1 bg-transparent outline-none text-sm"
+            style={{ color: INK }}
           />
         </div>
 
@@ -360,9 +310,9 @@ export default function DcMasterPage() {
             value={filterCustomerText}
             accounts={accounts}
             inputStyle={{
-              width: '100%', borderRadius: 12, border: `1px solid ${PASTEL.line}`,
+              width: '100%', borderRadius: 11, border: `1px solid ${LINE}`,
               padding: '10.5px 34px 10.5px 14px', fontSize: 13, outline: 'none',
-              background: 'white', color: PASTEL.ink,
+              background: SURFACE, color: INK, fontFamily: FONT_BODY,
             }}
             placeholder="Filter by customer…"
             onChangeText={handleFilterCustomerText}
@@ -376,7 +326,7 @@ export default function DcMasterPage() {
               style={{
                 position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
                 background: 'none', border: 'none', cursor: 'pointer', padding: 4,
-                color: PASTEL.inkMute, display: 'flex',
+                color: MUTED, display: 'flex',
               }}
             >
               <X size={13} />
@@ -388,31 +338,23 @@ export default function DcMasterPage() {
           type="button"
           onClick={refresh}
           className="p-2.5 rounded-xl border transition-opacity hover:opacity-70"
-          style={{ background: 'white', borderColor: PASTEL.line }}
+          style={{ background: SURFACE, borderColor: LINE }}
           title="Refresh"
         >
-          <RefreshCw size={14} style={{ color: PASTEL.inkSoft }} />
+          <RefreshCw size={14} style={{ color: INK_SOFT }} />
         </button>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
-          style={{ background: PASTEL.ink, color: 'white' }}
-        >
-          <Plus size={14} />
-          New DC
-        </button>
+        <PrimaryBtn icon="plus" onClick={openCreate}>New DC</PrimaryBtn>
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: PASTEL.line }}>
+      <div className="rounded-2xl border overflow-hidden" style={{ background: SURFACE, borderColor: LINE }}>
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
           style={{
             gridTemplateColumns: '100px 1fr 160px 1fr 80px 44px',
-            borderColor: PASTEL.line,
-            background: PASTEL.lineSoft,
-            color: PASTEL.inkMute,
+            borderColor: LINE,
+            background: CREAM,
+            color: MUTED,
           }}
         >
           <div>Kode</div>
@@ -430,61 +372,58 @@ export default function DcMasterPage() {
         ) : data.length === 0 ? (
           <EmptyState message={search || filterCustomerId ? 'Tidak ada DC yang cocok.' : 'Belum ada DC.'} />
         ) : (
-          data.map((row) => (
-            <div
-              key={row.id}
-              className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
-              style={{ gridTemplateColumns: '100px 1fr 160px 1fr 80px 44px', borderColor: PASTEL.line }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = PASTEL.lineSoft)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <div>
-                {row.kode ? (
-                  <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg font-semibold" style={{ background: PASTEL.lavender, color: PASTEL.lavenderDeep }}>
-                    {row.kode}
-                  </span>
-                ) : <span style={{ color: PASTEL.inkMute }}>—</span>}
+          data.map((row, i) => {
+            const zebra = i % 2 === 1 ? `${CREAM}80` : SURFACE;
+            return (
+              <div
+                key={row.id}
+                className="grid px-4 py-3.5 border-b items-center text-sm transition-colors"
+                style={{ gridTemplateColumns: '100px 1fr 160px 1fr 80px 44px', borderColor: LINE, background: zebra }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = ROW_HOVER)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = zebra)}
+              >
+                <div>{row.kode ? <KodeBadge>{row.kode}</KodeBadge> : <span style={{ color: MUTED }}>—</span>}</div>
+                <div className="font-medium" style={{ color: INK }}>{row.nama}</div>
+                <div><WilayahBadge wilayah={row.wilayah} /></div>
+                <div style={{ color: INK_SOFT }}>
+                  {row.accounts?.name || <span style={{ color: MUTED }}>— (umum)</span>}
+                </div>
+                <div className="flex justify-end"><StatusBadge active={row.is_active} /></div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(row)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
+                    style={{ background: CREAM, color: INK_SOFT }}
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
-              <div className="font-medium" style={{ color: PASTEL.ink }}>{row.nama}</div>
-              <div><WilayahBadge wilayah={row.wilayah} /></div>
-              <div style={{ color: PASTEL.inkSoft }}>
-                {row.accounts?.name || <span style={{ color: PASTEL.inkMute }}>— (umum)</span>}
-              </div>
-              <div className="flex justify-end"><StatusBadge active={row.is_active} /></div>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => openEdit(row)}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
-                  style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
-                >
-                  Edit
-                </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
 
         {/* Pagination */}
         {!error && (
-          <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${PASTEL.line}` }}>
-            <span className="text-xs" style={{ color: PASTEL.inkMute }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${LINE}` }}>
+            <span className="text-xs" style={{ color: MUTED }}>
               {total === 0 ? 'Tidak ada data' : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
             </span>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
-                <ChevronLeft size={14} style={{ color: PASTEL.inkSoft }} />
+              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: CREAM }}>
+                <ChevronLeft size={14} style={{ color: INK_SOFT }} />
               </button>
-              <span className="px-3 text-xs font-medium" style={{ color: PASTEL.inkSoft }}>{page} / {totalPages}</span>
-              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: PASTEL.lineSoft }}>
-                <ChevronRight size={14} style={{ color: PASTEL.inkSoft }} />
+              <span className="px-3 text-xs font-medium" style={{ color: INK_SOFT }}>{page} / {totalPages}</span>
+              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: CREAM }}>
+                <ChevronRight size={14} style={{ color: INK_SOFT }} />
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* ── Centered modal form ── */}
+      {/* ── Centered modal form (container = AdminFormModal, untouched) ── */}
       <AdminFormModal
         open={!!draft}
         eyebrow={isCreate ? 'New DC' : 'Edit DC'}
@@ -494,131 +433,85 @@ export default function DcMasterPage() {
         footer={modalFooter}
       >
         {draft && (
-          <div className="space-y-6">
-
+          <div>
             {/* ── Identity ── */}
-            <div>
-              <SectionLabel>Identity</SectionLabel>
-              <div className="space-y-4">
-
-                {/* Company */}
-                <div>
-                  <FieldLabel required>Company</FieldLabel>
-                  {isCreate ? (
-                    <FieldSelect
-                      value={draft.company_id}
-                      onChange={(v) => setDraft((d) => ({ ...d, company_id: v }))}
-                      disabled={saving}
-                    >
-                      <option value="">— Select company —</option>
-                      {companies.map((c) => (
-                        <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                      ))}
-                    </FieldSelect>
-                  ) : (
-                    <div
-                      className="rounded-2xl border px-4 py-3 text-sm"
-                      style={{ borderColor: PASTEL.line, background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
-                    >
-                      {companies.find((c) => c.id === draft.company_id)
-                        ? `${companies.find((c) => c.id === draft.company_id).code} — ${companies.find((c) => c.id === draft.company_id).name}`
-                        : 'Loading…'}
-                      <span className="ml-2 text-[10px] uppercase tracking-wide" style={{ color: PASTEL.inkMute }}>(locked)</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Kode + Nama — 2 col */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <FieldLabel>Kode</FieldLabel>
-                    <FieldInput
-                      value={draft.kode}
-                      onChange={(v) => setDraft((d) => ({ ...d, kode: v }))}
-                      disabled={saving}
-                      placeholder="opsional"
-                      maxLength={50}
-                    />
-                  </div>
-                  <div>
-                    <FieldLabel required>Nama</FieldLabel>
-                    <FieldInput
-                      value={draft.nama}
-                      onChange={(v) => setDraft((d) => ({ ...d, nama: v }))}
-                      disabled={saving}
-                      placeholder="e.g. DC JAKARTA 1"
-                      maxLength={200}
-                    />
-                  </div>
-                </div>
-
-                {/* Wilayah */}
-                <div>
-                  <FieldLabel>Wilayah</FieldLabel>
-                  <FieldSelect
-                    value={draft.wilayah}
-                    onChange={(v) => setDraft((d) => ({ ...d, wilayah: v }))}
-                    disabled={saving}
-                  >
-                    <option value="">— Tidak ditentukan —</option>
-                    {WILAYAH_OPTIONS.map((w) => (
-                      <option key={w} value={w}>{w}</option>
-                    ))}
-                  </FieldSelect>
-                </div>
-
-                {/* Customer terkait */}
-                <div>
-                  <FieldLabel>Customer Terkait</FieldLabel>
-                  <AccountPicker
-                    value={draftCustomerText}
-                    accounts={accounts}
-                    inputStyle={pickerInputStyle}
-                    placeholder="Kosongkan untuk DC umum (semua customer)…"
-                    onChangeText={(v) => { setDraftCustomerText(v); setDraft((d) => ({ ...d, customer_id: '' })); }}
-                    onPick={(a) => { setDraftCustomerText(a.name); setDraft((d) => ({ ...d, customer_id: a.id })); }}
-                  />
-                  <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                    Kosong = DC umum, muncul untuk semua customer di dropdown Input SP.
-                  </p>
-                </div>
-
-                {/* Alamat */}
-                <div>
-                  <FieldLabel>Alamat</FieldLabel>
-                  <FieldTextarea
-                    value={draft.alamat}
-                    onChange={(v) => setDraft((d) => ({ ...d, alamat: v }))}
-                    disabled={saving}
-                    placeholder="Alamat lengkap (opsional)"
+            <SectionLabel style={{ marginBottom: 16 }}>Identity</SectionLabel>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+              {isCreate ? (
+                <div style={{ flex: '1 1 100%', opacity: lockFields ? 0.55 : 1, pointerEvents: lockFields ? 'none' : 'auto', transition: 'opacity .2s' }}>
+                  <FloatingSelect full label="Company *"
+                    value={draft.company_id}
+                    onChange={(v) => setDraft((d) => ({ ...d, company_id: v }))}
+                    options={[{ value: '', label: '— Select company —' }, ...companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))]}
                   />
                 </div>
+              ) : (
+                <div style={{ flex: '1 1 100%' }}>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: NAVY, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Company</div>
+                  <div style={{ borderRadius: 11, border: '1px solid ' + LINE, background: CREAM, padding: '16px 14px', fontFamily: FONT_BODY, fontSize: 14, color: INK_SOFT }}>
+                    {companies.find((c) => c.id === draft.company_id)
+                      ? `${companies.find((c) => c.id === draft.company_id).code} — ${companies.find((c) => c.id === draft.company_id).name}`
+                      : 'Loading…'}
+                    <span style={{ marginLeft: 8, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED }}>(locked)</span>
+                  </div>
+                </div>
+              )}
+
+              <FloatingInput half label="Kode" value={draft.kode}
+                onChange={(v) => setDraft((d) => ({ ...d, kode: v.slice(0, 50) }))}
+                disabled={saving} placeholder="opsional" />
+              <FloatingInput half label="Nama *" value={draft.nama}
+                onChange={(v) => setDraft((d) => ({ ...d, nama: v.slice(0, 200) }))}
+                disabled={saving} placeholder="e.g. DC JAKARTA 1" />
+
+              <div style={{ flex: '1 1 100%', opacity: lockFields ? 0.55 : 1, pointerEvents: lockFields ? 'none' : 'auto', transition: 'opacity .2s' }}>
+                <FloatingSelect full label="Wilayah"
+                  value={draft.wilayah}
+                  onChange={(v) => setDraft((d) => ({ ...d, wilayah: v }))}
+                  options={[{ value: '', label: '— Tidak ditentukan —' }, ...WILAYAH_OPTIONS.map((w) => ({ value: w, label: w }))]}
+                />
+              </div>
+
+              <div style={{ flex: '1 1 100%' }}>
+                <AreaLabel>Customer Terkait</AreaLabel>
+                <AccountPicker
+                  value={draftCustomerText}
+                  accounts={accounts}
+                  inputStyle={pickerInputStyle}
+                  placeholder="Kosongkan untuk DC umum (semua customer)…"
+                  onChangeText={(v) => { setDraftCustomerText(v); setDraft((d) => ({ ...d, customer_id: '' })); }}
+                  onPick={(a) => { setDraftCustomerText(a.name); setDraft((d) => ({ ...d, customer_id: a.id })); }}
+                />
+                <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: MUTED, marginTop: 8 }}>
+                  Kosong = DC umum, muncul untuk semua customer di dropdown Input SP.
+                </p>
+              </div>
+
+              <div style={{ flex: '1 1 100%' }}>
+                <AreaLabel>Alamat</AreaLabel>
+                <AreaField value={draft.alamat} onChange={(v) => setDraft((d) => ({ ...d, alamat: v }))} disabled={saving} placeholder="Alamat lengkap (opsional)" />
               </div>
             </div>
 
             <Divider />
 
             {/* ── Status ── */}
-            <div>
-              <SectionLabel>Status</SectionLabel>
-              <FieldToggle
-                checked={draft.is_active}
-                onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))}
-                disabled={saving}
-              />
-              <p className="text-[10px] mt-1.5" style={{ color: PASTEL.inkMute }}>
-                Nonaktif = DC ini tidak lagi muncul di dropdown Input SP, tapi tetap ada di daftar ini.
-              </p>
+            <SectionLabel style={{ marginBottom: 14 }}>Status</SectionLabel>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Toggle on={draft.is_active} onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))} disabled={saving} />
+              <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: draft.is_active ? GREEN : INK_SOFT }}>
+                {draft.is_active ? 'Active' : 'Inactive'}
+              </span>
             </div>
+            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: MUTED, marginTop: 8 }}>
+              Nonaktif = DC ini tidak lagi muncul di dropdown Input SP, tapi tetap ada di daftar ini.
+            </p>
 
             {/* ── Save error ── */}
             {saveError && (
-              <div
-                className="rounded-2xl px-4 py-3.5"
-                style={{ background: PASTEL.rose, border: `1px solid ${PASTEL.roseDeep}` }}
-              >
-                <div className="text-xs font-semibold mb-0.5" style={{ color: PASTEL.ink }}>Save failed</div>
-                <div className="text-xs" style={{ color: PASTEL.inkSoft }}>{saveError}</div>
+              <div style={{ marginTop: 24, borderRadius: 14, padding: '14px 16px', background: `${DANGER}0F`, border: `1px solid ${DANGER}40` }}>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 2 }}>Save failed</div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{saveError}</div>
               </div>
             )}
           </div>
@@ -627,15 +520,13 @@ export default function DcMasterPage() {
 
       {/* Toast */}
       {toast && (
-        <div
-          className="fixed bottom-6 right-6 rounded-2xl px-4 py-3 text-sm font-semibold shadow-lg flex items-center gap-2 z-[60]"
-          style={{
-            background: toast.type === 'error' ? PASTEL.rose : PASTEL.mint,
-            color: PASTEL.ink,
-            border: `1px solid ${toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep}`,
-          }}
-        >
-          <Check size={14} />
+        <div style={{
+          position: 'fixed', right: 24, bottom: 24, display: 'flex', alignItems: 'center', gap: 10,
+          background: INK, color: '#fff', padding: '13px 18px', borderRadius: 12,
+          fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500,
+          boxShadow: '0 14px 34px rgba(10,20,40,.3)', zIndex: 200,
+        }}>
+          <Icon name={toast.type === 'error' ? 'alert' : 'checkcircle'} size={18} color={toast.type === 'error' ? '#FF9B9B' : '#7FD6A0'} />
           {toast.msg}
         </div>
       )}
