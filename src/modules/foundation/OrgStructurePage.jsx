@@ -6,7 +6,7 @@
 // supabase.from('profiles').update({ reports_to }) and re-fetches the tree.
 // Connector pseudo-elements (::before/::after) can't be inline styles, so a single
 // scoped <style> block (.ocp) holds just those rules.
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Search, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -18,6 +18,10 @@ const ENTITY = {
 };
 const FALLBACK_ENTITY = { color: '#6b7280', label: '—' };
 const entityOf = (companyId) => ENTITY[companyId] || FALLBACK_ENTITY;
+
+/* ---------- Ctrl+scroll zoom bounds ---------- */
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 2;
 
 /* ---------- level colour scheme (drives node accent; entity badge stays entity colour) ---------- */
 const LEVEL_COLOR = {
@@ -61,12 +65,17 @@ const TREE_CSS = `
 .ocp .tree li::before,
 .ocp .tree li::after{content:'';position:absolute;top:0;right:50%;width:50%;height:34px;border-top:2px solid #D6DAE0;}
 .ocp .tree li::after{right:auto;left:50%;border-left:2px solid #D6DAE0;}
-.ocp .tree li:only-child::before,
-.ocp .tree li:only-child::after{display:none;}
 .ocp .tree li:first-child::before,
 .ocp .tree li:last-child::after{border:0 none;}
 .ocp .tree li:last-child::before{border-right:2px solid #D6DAE0;border-radius:0 7px 0 0;}
 .ocp .tree li:first-child::after{border-radius:7px 0 0 0;}
+/* :only-child also matches :first-child AND :last-child above, so it must come
+   after them to win the cascade. A lone child needs no horizontal shoulder
+   line, but it still needs its own straight vertical drop down to its card —
+   hiding both pseudo-elements (the old rule) removed that drop entirely,
+   leaving a floating 34px gap between the parent's line and the child's card. */
+.ocp .tree li:only-child::before{display:none;}
+.ocp .tree li:only-child::after{border-top:none;border-left:2px solid #D6DAE0;border-radius:0;}
 .ocp .tree ul ul::before,
 .ocp .tree > li > ul::before{content:'';position:absolute;top:0;left:50%;width:0;height:34px;border-left:2px solid #D6DAE0;}
 .ocp .tree.root-tree > li{padding-top:0;}
@@ -99,7 +108,7 @@ const S = {
   searchInput: { width: "100%", padding: "9px 34px 9px 36px", border: "1px solid #D6DAE0", borderRadius: 9, fontFamily: "inherit", fontSize: 13.5, color: "#1f2733", background: "#fbfcfd", outline: "none" },
   searchClear: { position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", border: 0, background: "#e7eaef", color: "#6b7280", width: 20, height: 20, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 },
   scroll: { flex: "1 1 auto", overflow: "auto", padding: "48px 60px 80px", backgroundImage: "radial-gradient(circle at 1px 1px, #dfe3ea 1px, transparent 0)", backgroundSize: "26px 26px" },
-  inner: { display: "inline-block", minWidth: "100%" },
+  inner: { display: "inline-block", minWidth: "100%", transformOrigin: "top center" },
   centerState: { flex: "1 1 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 40, color: "#6b7280", fontSize: 14 },
 
   avatar: { flex: "0 0 48px", width: 48, height: 48, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 15, letterSpacing: ".3px", fontFamily: "'Montserrat',sans-serif", zIndex: 1, boxShadow: "0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.05)", marginRight: -10 },
@@ -224,6 +233,12 @@ export default function OrgStructurePage() {
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const scrollRef = useRef(null);
+  const innerRef = useRef(null);
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const draggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
   // Fetch active profiles + position/department name + entity (company_id).
   // profiles has no deleted_at — "active" is the `active` boolean (per CLAUDE.md).
@@ -300,6 +315,81 @@ export default function OrgStructurePage() {
     );
   }, [q, people]);
 
+  // Ctrl+scroll zoom + click-drag pan on the chart canvas, combined into one
+  // `transform` on the same inner wrapper so they never fight each other.
+  // Both are applied by mutating the DOM node directly (zoomRef/panRef, not
+  // useState) rather than re-rendering — a wheel or drag gesture can fire
+  // dozens of events/sec, and re-rendering the whole recursive tree on every
+  // tick would make either feel laggy instead of "mulus". Native
+  // addEventListener with {passive:false} is used for wheel instead of the
+  // JSX onWheel prop so preventDefault reliably blocks the browser's own
+  // Ctrl+scroll page-zoom while the cursor is over the chart. translate() is
+  // applied OUTSIDE scale() so a drag of N screen px always moves the content
+  // by N px regardless of the current zoom level — the reverse order would
+  // make pan distance scale with zoom, breaking 1:1 tracking with the mouse.
+  // The effect re-attaches once the real chart DOM exists (chartReady flips
+  // true) — scrollRef/innerRef are null while still loading/erroring/empty,
+  // since that branch of the JSX below doesn't render the chart container.
+  const chartReady = !loading && !error && people.length > 0 && roots.length > 0;
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    const innerEl = innerRef.current;
+    if (!scrollEl || !innerEl) return;
+
+    const applyTransform = () => {
+      const { x, y } = panRef.current;
+      innerEl.style.transform = `translate(${x}px, ${y}px) scale(${zoomRef.current})`;
+    };
+    applyTransform();
+    scrollEl.style.cursor = 'grab';
+
+    const handleWheel = (e) => {
+      if (!e.ctrlKey) return; // no Ctrl → leave normal page scroll/pan untouched
+      e.preventDefault();
+      zoomRef.current = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomRef.current - e.deltaY * 0.001));
+      applyTransform();
+    };
+
+    // Drag-to-pan only starts when the mousedown target isn't inside a person
+    // card (.node) — otherwise clicking a card to open "Atur Atasan" would
+    // get hijacked into a drag instead of registering as a normal click.
+    const handleMouseDown = (e) => {
+      if (e.target.closest('.node')) return;
+      draggingRef.current = true;
+      dragStartRef.current = { x: e.clientX, y: e.clientY, panX: panRef.current.x, panY: panRef.current.y };
+      scrollEl.style.cursor = 'grabbing';
+      e.preventDefault(); // avoid text-selection artifacts while dragging
+    };
+    // mousemove/mouseup listen on window, not scrollEl — a fast drag easily
+    // carries the cursor outside the chart's own bounds mid-gesture, and
+    // losing those events there would leave the drag stuck "on" until the
+    // next click anywhere.
+    const handleMouseMove = (e) => {
+      if (!draggingRef.current) return;
+      panRef.current = {
+        x: dragStartRef.current.panX + (e.clientX - dragStartRef.current.x),
+        y: dragStartRef.current.panY + (e.clientY - dragStartRef.current.y),
+      };
+      applyTransform();
+    };
+    const handleMouseUp = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      scrollEl.style.cursor = 'grab';
+    };
+
+    scrollEl.addEventListener('wheel', handleWheel, { passive: false });
+    scrollEl.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      scrollEl.removeEventListener('wheel', handleWheel);
+      scrollEl.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [chartReady]);
+
   // Persist reports_to to DB, then re-fetch the tree. null = root (no superior).
   const handleSave = useCallback(async (id, newParent) => {
     setSaving(true);
@@ -372,8 +462,8 @@ export default function OrgStructurePage() {
       ) : roots.length === 0 ? (
         <div style={S.centerState}>Tidak ada node root — pastikan minimal satu orang tanpa atasan (reports_to kosong).</div>
       ) : (
-        <div style={S.scroll}>
-          <div style={S.inner}>
+        <div style={S.scroll} ref={scrollRef}>
+          <div style={S.inner} ref={innerRef}>
             <ul className="tree root-tree">
               {roots.map((root) => (
                 <Branch key={root.id} node={root} childrenOf={childrenOf} onClick={(p) => { setSaveError(null); setSelectedId(p.id); }} matchIds={matchIds} />
