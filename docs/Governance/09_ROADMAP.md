@@ -249,6 +249,7 @@ Berdasarkan kondisi LIVE (FASE 0-3 selesai) + `08_TECH_DEBT.md`:
 - **Modul Finance** transaksi umum (Billing/AR-AP) — arah setelah foundation matang. **Audit logging** (TD-05) ✅ done.
 - **Inventory — perencanaan alokasi barang ke klien** 📋 (belum ada; `reserved`/`available` di stok = reservasi SP fulfillment, BUKAN perencanaan alokasi). (dari 14_BACKLOG_RECON.md D19)
 - **Inventory — stock monitoring: aging & turnover** 📋 (belum ada; Inventory Dashboard punya movement-trend & low-stock, tapi **nol** KPI aging/turnover — terverifikasi `grep aging|turnover` inventory = 0; `stock_ledger` bisa jadi basis data). (dari 14_BACKLOG_RECON.md D20)
+- **Inventory — Stock Opname (Full Count/Cycle Count)** 📋 (belum ada; desain skema lengkap 8/8 keputusan terkunci — 4 tabel baru `warehouse_locations`/`stock_count_sessions`/`stock_count_items`/`stock_count_variance_reports` + RLS/RPC dimodel dari pola live `dc_master`/`sp_orders` — belum satu baris pun dieksekusi ke DB). Lihat `DESIGN_STOCK_OPNAME_SCHEMA.md`.
 - **CRM — upload MOU ke Nexus** 📋 (belum ada; **nol `storage.upload` di CRM**, `deal_handovers.msa_status` hanya text; butuh desain Supabase Storage + kolom/tabel MOU). Ini juga rumah untuk item `18` C-13. (dari 14_BACKLOG_RECON.md C16)
 - **CRM — Aktivitas tarik status MOU/TOP** 📋 (belum ada; bergantung MOU di atas; data TOP sudah ada di `top_requests`). (dari 14_BACKLOG_RECON.md C17)
 
