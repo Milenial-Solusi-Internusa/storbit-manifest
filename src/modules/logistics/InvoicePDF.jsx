@@ -16,6 +16,7 @@ import { Document, Page, View, Text, Image, Font, StyleSheet } from '@react-pdf/
 import cormorantSemiBold from '../../assets/fonts/CormorantGaramond-SemiBold.ttf';
 import loraRegular from '../../assets/fonts/Lora-Regular.ttf';
 import loraSemiBold from '../../assets/fonts/Lora-SemiBold.ttf';
+import { DPP_NILAI_LAIN_RATIO } from '../../lib/taxConstants';
 
 Font.register({
   family: 'Cormorant Garamond',
@@ -59,14 +60,6 @@ function fmtDate(input) {
   const d = input instanceof Date ? input : new Date(String(input).length <= 10 ? `${input}T00:00:00` : input);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-}
-
-function addDays(iso, days) {
-  if (!iso) return null;
-  const d = new Date(String(iso).length <= 10 ? `${iso}T00:00:00` : iso);
-  if (isNaN(d.getTime())) return null;
-  d.setDate(d.getDate() + (Number(days) || 0));
-  return d;
 }
 
 const s = StyleSheet.create({
@@ -195,17 +188,23 @@ export default function InvoicePDF({ invoice = {} }) {
   const lines = invoice.lines || [];
   const company = invoice.company || {};
   const bank = invoice.bank || null;
-  const dueDate = addDays(invoice.invoice_date, invoice.default_payment_terms);
+  // Informational-only — TIDAK dari kolom DB, TIDAK ikut dijumlahkan ke Grand
+  // Total (yang tetap total_dpp + total_ppn + total_shipping seperti semula).
+  const dppNilaiLain = ((Number(invoice.total_dpp) || 0) + (Number(invoice.total_shipping) || 0)) * DPP_NILAI_LAIN_RATIO;
 
   const address = [company.address, company.address_2].filter(Boolean).join(', ');
   const cityLine = [company.city, company.province, company.postal_code].filter(Boolean).join(', ');
   const fullAddress = [address, cityLine].filter(Boolean).join(', ') || '—';
 
-  // Buang prefix "INV/" dari invoice_no buat label vertikal — "INVOICE" udah
-  // kepakai sebagai kata di depannya, "INVOICE #INV/SOA/FIN/..." jadi
-  // redundan. Cuma buat tampilan label ini; invoice_no ASLI (dgn "INV/")
-  // tetap dipakai apa adanya di tempat lain (nama file download, dst).
-  const shortInvoiceNo = invoice.invoice_no ? invoice.invoice_no.replace(/^INV\//, '') : '—';
+  // Buang prefix entitas+"-INV-" dari invoice_no buat label vertikal —
+  // "INVOICE" udah kepakai sebagai kata di depannya, "INVOICE #SOA-INV-..."
+  // jadi redundan. [Update 14 Agu 2026] format invoice_no ganti dari
+  // "INV/{entitas}/FIN/{tahun}/{urut}" ke "{entitas}-INV-{bulan romawi}-
+  // {tahun}-{urut}" — regex diperbarui dari /^INV\// (match prefix lama)
+  // ke /^[A-Z]+-INV-/ (match kode entitas apa pun di depan "-INV-").
+  // Cuma buat tampilan label ini; invoice_no ASLI tetap dipakai apa adanya
+  // di tempat lain (nama file download, dst).
+  const shortInvoiceNo = invoice.invoice_no ? invoice.invoice_no.replace(/^[A-Z]+-INV-/, '') : '—';
 
   return (
     <Document>
@@ -223,7 +222,7 @@ export default function InvoicePDF({ invoice = {} }) {
             <Text style={s.invLabel}>Invoice</Text>
             <View style={s.metaRow}>
               <View style={s.metaItem}><Text style={s.metaLabel}>Invoice Date</Text><Text style={s.metaVal}>{fmtDate(invoice.invoice_date)}</Text></View>
-              <View style={s.metaItem}><Text style={s.metaLabel}>Due Date</Text><Text style={s.metaVal}>{fmtDate(dueDate)}</Text></View>
+              <View style={s.metaItem}><Text style={s.metaLabel}>Due Date</Text><Text style={s.metaVal}>{fmtDate(invoice.due_date)}</Text></View>
               <View style={s.metaItem}><Text style={s.metaLabel}>PO No.</Text><Text style={s.metaVal}>{invoice.sp_no || '—'}</Text></View>
             </View>
           </View>
@@ -283,6 +282,7 @@ export default function InvoicePDF({ invoice = {} }) {
           <View style={s.totalsBox}>
             <View style={s.totalRow}><Text style={s.totalLabel}>Subtotal</Text><Text style={s.totalVal}>{rp(invoice.total_dpp)}</Text></View>
             <View style={s.totalRow}><Text style={s.totalLabel}>Shipping</Text><Text style={s.totalVal}>{rp(invoice.total_shipping)}</Text></View>
+            <View style={s.totalRow}><Text style={s.totalLabel}>DPP (Nilai Lain)</Text><Text style={s.totalVal}>{rp(dppNilaiLain)}</Text></View>
             <View style={s.totalRow}><Text style={s.totalLabel}>VAT (11%)</Text><Text style={s.totalVal}>{rp(invoice.total_ppn)}</Text></View>
             <View style={s.totalHr} />
             <View style={s.grandBox}>
