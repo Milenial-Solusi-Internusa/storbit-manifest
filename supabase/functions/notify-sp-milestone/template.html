@@ -1,0 +1,74 @@
+<!--
+Template notifikasi email milestone status SP — Nexus internal.
+Aman untuk email client (tabel, inline style, font web-safe, tanpa font
+ikon/CSS eksternal). Ganti semua {{token}} sebelum dikirim via Resend.
+
+TOKEN WAJIB DIISI:
+  {{sp_no}}          - nomor SP, contoh: 2016810
+  {{customer}}       - nama customer, contoh: INDOMARCO
+  {{dc}}             - nama DC tujuan
+  {{timestamp}}      - waktu perubahan status, format: "11 Agu 2026, 09:14"
+  {{detail_url}}     - link ke halaman Detail SP di Nexus
+  {{old_status_label}} - label status sebelumnya (Bahasa Indonesia)
+  {{new_status_label}} - label status baru (Bahasa Indonesia)
+  {{badge_bg}}       - warna background badge (hex, lihat tabel milestone)
+  {{badge_text}}     - warna teks badge (hex, lihat tabel milestone)
+  {{badge_label}}    - teks badge, contoh: BTB TERBIT
+  {{detail3_label}}  - label baris detail ke-3, beda per milestone
+  {{detail3_value}}  - nilai baris detail ke-3
+
+TABEL WARNA + LABEL PER MILESTONE (badge_bg / badge_text / badge_label):
+  CONFIRMED   -> #E6F1FB / #0C447C / "SP DIKONFIRMASI"   (detail3: "Total Item")
+  BTB_TERBIT  -> #FDEBE3 / #993C1D / "BTB TERBIT"          (detail3: "No. BTB")
+  SUBMITTED   -> #EAF3DE / #3B6D11 / "INVOICE TERKIRIM"    (detail3: "No. Invoice")
+  CANCELLED   -> #FCEBEB / #A32D2D / "SP DIBATALKAN"       (detail3: "Alasan")
+
+NOTE (14 Agu 2026): file ini adalah salinan referensi manusia untuk edit ke
+depan. Versi yang SUNGGUH dikirim ada inline sebagai konstanta TEMPLATE di
+notify-sp-milestone/index.ts (blok komentar di atas dipindah jadi komentar
+JS biasa di sana, markup-nya identik dengan di bawah ini). Kalau edit
+markup/token di sini, salin ulang perubahannya ke index.ts secara manual —
+tidak ada mekanisme sinkron otomatis antara file ini dan index.ts.
+-->
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#F6EFE3; padding:24px 0;">
+<tr><td align="center">
+<table width="480" cellpadding="0" cellspacing="0" style="background:#F6EFE3; border-radius:8px; font-family:Arial,Helvetica,sans-serif;">
+
+<tr><td style="background:#144682; padding:20px 28px; border-radius:8px 8px 0 0;">
+<div style="color:#FFFFFF; font-size:18px; font-weight:bold;">NEXUS</div>
+<div style="color:#B8CBE8; font-size:11px; margin-top:2px;">by MSI Group &middot; Storbit Logistics</div>
+</td></tr>
+
+<tr><td style="padding:28px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#FFFFFF; border-radius:8px; border:1px solid #C9B896;">
+<tr><td style="padding:24px;">
+
+<table cellpadding="0" cellspacing="0"><tr><td style="background:{{badge_bg}}; color:{{badge_text}}; font-size:12px; font-weight:bold; padding:5px 12px; border-radius:20px;">{{badge_label}}</td></tr></table>
+<div style="height:14px; line-height:14px; font-size:1px;">&nbsp;</div>
+
+<div style="font-size:13px; color:#8A8578;">Sales Pesanan</div>
+<div style="font-size:24px; font-weight:bold; color:#1A1A1A; margin:2px 0 16px;">SP {{sp_no}}</div>
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#F6EFE3; border-radius:6px; margin-bottom:16px;">
+<tr><td style="padding:10px 14px; font-size:13px; color:#8A8578;">{{old_status_label}} &nbsp;&rarr;&nbsp; <span style="color:{{badge_text}}; font-weight:bold;">{{new_status_label}}</span></td></tr>
+</table>
+
+<table width="100%" cellpadding="4" cellspacing="0" style="font-size:13px;">
+<tr><td style="color:#8A8578;">Customer</td><td align="right" style="color:#1A1A1A;">{{customer}}</td></tr>
+<tr><td style="color:#8A8578;">DC Tujuan</td><td align="right" style="color:#1A1A1A;">{{dc}}</td></tr>
+<tr><td style="color:#8A8578;">{{detail3_label}}</td><td align="right" style="color:#1A1A1A;">{{detail3_value}}</td></tr>
+<tr><td style="color:#8A8578;">Waktu</td><td align="right" style="color:#1A1A1A;">{{timestamp}}</td></tr>
+</table>
+
+<div style="height:16px; line-height:16px; font-size:1px;">&nbsp;</div>
+<a href="{{detail_url}}" style="display:block; background:#E85A1E; color:#FFFFFF; font-size:14px; font-weight:bold; text-decoration:none; padding:13px; border-radius:6px; text-align:center;">Lihat detail di Nexus</a>
+
+</td></tr>
+</table>
+</td></tr>
+
+<tr><td style="text-align:center; padding:0 28px 22px; font-size:11px; color:#8A8578;">Email otomatis dari sistem Nexus. Jangan dibalas ke alamat ini.</td></tr>
+
+</table>
+</td></tr>
+</table>

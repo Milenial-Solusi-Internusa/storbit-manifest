@@ -19,3 +19,8 @@ entrypoint = "./functions/aging-pipeline/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/bnf-overdue-reminder/index.ts"
+
+[functions.notify-sp-milestone]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/notify-sp-milestone/index.ts"
