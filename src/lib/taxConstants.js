@@ -28,3 +28,11 @@ export const PPN_RATE = 0.11;
  * selain "custom". Jangan "dibenerin" biar sama dengan PPN_RATE.
  */
 export const PPN_RATE_FREIGHT_FORWARDING = 0.011;
+
+/**
+ * Rasio DPP Nilai Lain (11/12) — dasar hukum PPN 12% tetap memakai DPP Nilai
+ * Lain supaya beban pajak efektif setara tarif 11% lama. Dipakai InvoicePDF.jsx
+ * untuk baris informational "DPP (Nilai Lain)" — TIDAK menggantikan total_dpp
+ * (kolom DB, beda definisi) dan TIDAK ikut dijumlahkan ke Grand Total.
+ */
+export const DPP_NILAI_LAIN_RATIO = 11 / 12;

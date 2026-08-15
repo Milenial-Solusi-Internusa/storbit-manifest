@@ -928,7 +928,7 @@ export async function submitInvoiceRpc(invoiceId) {
 export async function getInvoicePdfData(invoiceId) {
   const { data: inv, error: invErr } = await supabase
     .from('sp_invoices')
-    .select('id, invoice_no, invoice_date, faktur_no, status, total_dpp, total_ppn, total_amount, sp_order_id, sp_orders(sp_no, customer_id, dc_id, company_id)')
+    .select('id, invoice_no, invoice_date, due_date, faktur_no, status, total_dpp, total_ppn, total_amount, sp_order_id, sp_orders(sp_no, customer_id, dc_id, company_id)')
     .eq('id', invoiceId)
     .single();
   if (invErr) return { data: null, error: invErr };
@@ -936,7 +936,7 @@ export async function getInvoicePdfData(invoiceId) {
   const spOrder = inv.sp_orders || {};
   const companyId = spOrder.company_id || null;
 
-  const [linesRes, customerRes, dcRes, companyRes, bankRes, settingsRes, shippingRes] = await Promise.all([
+  const [linesRes, customerRes, dcRes, companyRes, bankRes, shippingRes] = await Promise.all([
     supabase
       .from('sp_invoice_lines')
       .select('id, dpp, ppn, qty, position, sp_order_items(product_name, sku, unit_price)')
@@ -954,13 +954,10 @@ export async function getInvoicePdfData(invoiceId) {
     companyId
       ? supabase.from('entity_bank_accounts').select('bank_name, account_number, account_holder, branch').eq('company_id', companyId).eq('is_default', true).eq('is_active', true).limit(1).maybeSingle()
       : Promise.resolve({ data: null }),
-    companyId
-      ? supabase.from('entity_finance_settings').select('default_payment_terms, default_payment_term_id, payment_terms(days_due, is_active)').eq('company_id', companyId).maybeSingle()
-      : Promise.resolve({ data: null }),
     supabase.from('sp_order_items').select('shipping_price').eq('sp_order_id', inv.sp_order_id),
   ]);
 
-  const firstError = linesRes.error || customerRes.error || dcRes.error || companyRes.error || bankRes.error || settingsRes.error || shippingRes.error || null;
+  const firstError = linesRes.error || customerRes.error || dcRes.error || companyRes.error || bankRes.error || shippingRes.error || null;
   const totalShipping = (shippingRes.data || []).reduce((sum, r) => sum + (Number(r.shipping_price) || 0), 0);
 
   return {
@@ -968,6 +965,7 @@ export async function getInvoicePdfData(invoiceId) {
       id: inv.id,
       invoice_no: inv.invoice_no,
       invoice_date: inv.invoice_date,
+      due_date: inv.due_date,
       faktur_no: inv.faktur_no,
       status: inv.status,
       total_dpp: inv.total_dpp,
@@ -977,10 +975,6 @@ export async function getInvoicePdfData(invoiceId) {
       sp_no: spOrder.sp_no || '',
       customer_name: customerRes.data?.name || '',
       dc_name: dcRes.data?.nama || '',
-      default_payment_terms:
-        (settingsRes.data?.payment_terms?.is_active ? settingsRes.data.payment_terms.days_due : null)
-        ?? settingsRes.data?.default_payment_terms
-        ?? 30,
       company: companyRes.data || {},
       bank: bankRes.data || null,
       lines: (linesRes.data || []).map((l) => ({
