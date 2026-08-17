@@ -281,7 +281,7 @@ Konteks saat cron aging dinyalakan (10 Jul): rasio aktivitas tercatat per lead v
 
 ---
 
-## Logistics (Storbit SP) Flow — Mesin Status 12 Tahap (FASE 0-4 LIVE sejak 8 Agu 2026 — snapshot refresh commit `8117127`; LUNAS/FASE 5 satu-satunya tahap belum dibangun)
+## Logistics (Storbit SP) Flow — Mesin Status 12 Tahap (LENGKAP: FASE 0-5 LIVE — FASE 5/LUNAS sejak 17 Agu 2026, snapshot refresh commit `35cb1d3`)
 
 Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_status(customer_id, sp_no)` (di-maintain otomatis oleh event, BUKAN diketik). Detail skema/RPC: `docs/03_DATA_MODEL.md §3 (Inventory & Logistics) + §5`.
 
@@ -313,10 +313,26 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
  ────────────── FASE 4 (INVOICED/SUBMITTED) — ✅ LIVE sejak 8 Agu 2026 malam ──────────────
  [Ops/Finance] Terbitkan Invoice (create_invoice; guard Σshipped=Σqty) → sp_invoices ─⚙ recompute─►  INVOICED   ✅
  [Ops/Finance] Submit invoice (submit_invoice; isi submitted_at)                      ─⚙ recompute─►  SUBMITTED  ✅
- ─────────────────── FASE 5 (LUNAS) — 📋 PLANNED, belum dibangun sama sekali ───────────────────
- [Finance] Lunas (payment)       →  LUNAS      📋  (tabel sp_payments sudah ADA sbg skema, kosong-fungsi — nol RPC/UI)
+ ─────────────────── FASE 5 (LUNAS) — ✅ LIVE sejak 17 Agu 2026 ───────────────────
+ [Finance/super_admin] Terima Pembayaran (record_payment; boleh berkali-kali/parsial)
+         │   → sp_payments + jurnal 'payment_received' (D Bank, D PPh23, K Piutang)
+         │   → sp_invoices.status: partial  (Σ(amount+pph) > 0)
+         │                         paid     (Σ(amount+pph) ≥ total_amount − Rp 1)
+         │   → HANYA saat 'paid' → ⚙ recompute ─►  LUNAS ✅  (beku, tak bisa mundur)
+         ▼
+ [Manager+/Finance] Tandai TTF diterima (mark_ttf_received; UPSERT ke ar_ttfs)
+             → dokumen transmittal, NOL jurnal, TIDAK mengubah status SP
 ```
-✅ = kode/UI/RPC dirancang sesi 8 Agu 2026 (kartu "Invoice" `SalesOrderDetailPage.jsx`: Terbitkan/Submit/Download PDF) **DAN dikonfirmasi LIVE** — `create_invoice`/`submit_invoice`/`sp_recompute_status` (guard+cabang baru) dibaca langsung doc-keeper dari `schema_snapshot.sql` pasca-refresh (commit `8117127`, 23:33 WIB, 8 Agu 2026). **⚠️ NOL tes runtime/UI** — SQL live tidak sama dengan sudah ada yang mengklik tombolnya di browser sungguhan; klaim itu belum berubah.
+✅ = kode/UI/RPC dirancang sesi 8 Agu 2026 (kartu "Invoice" `SalesOrderDetailPage.jsx`: Terbitkan/Submit/Download PDF) **DAN dikonfirmasi LIVE** — `create_invoice`/`submit_invoice`/`sp_recompute_status` (guard+cabang baru) dibaca langsung doc-keeper dari `schema_snapshot.sql` pasca-refresh (commit `8117127`, 23:33 WIB, 8 Agu 2026). ~~**⚠️ NOL tes runtime/UI** — SQL live tidak sama dengan sudah ada yang mengklik tombolnya di browser sungguhan; klaim itu belum berubah.~~ **[USANG 17 Agu 2026]** lihat "Tes end-to-end" di bawah.
+
+**FASE 5 — pembayaran, jurnal AR & TTF (17 Agu 2026, SQL+UI SEMUA LIVE):**
+- **Otorisasi sengaja BEDA antara dua aksi baru** (bukan inkonsistensi): `record_payment` = **HANYA `super_admin`/`finance_controller`** (`is_manager_or_above()` DIKECUALIKAN — mencatat uang masuk bukan wewenang manajer lini); `mark_ttf_received` = `super_admin`/manager-ke-atas/`finance_controller` (menerima faktur = aktivitas operasional). Gate FE mencerminkan keduanya dan **dibaca dari seluruh role aktif (`erpRoles`), bukan role primer** — kalau tidak, user manager+finance_controller kehilangan form karena `pickPrimaryErpRole` menaruh `manager` di atas `finance_controller`.
+- **Jurnal AR minimal, auto-post tanpa approval**, 2 pemicu saja (dikunci CHECK): `invoice_issued` (dari `create_invoice`) & `payment_received` (dari `record_payment`). **Koreksi = jurnal PEMBALIK, bukan UPDATE baris lama** (tabel `journal_entries` sengaja tanpa `updated_at`). Jurnal tak bisa ditulis lewat PostgREST sama sekali (RLS read-only + GRANT SELECT saja). Peta debit/kredit + kode akun: `03_DATA_MODEL.md` §3 (`journal_entries`) + §5.
+- **PPh 23 dihitung sbg BAGIAN pelunasan, bukan potongan hangus** — `paid` ditentukan `Σ(amount)+Σ(pph) ≥ total_amount` dgn toleransi **Rp 1** (selisih pembulatan PPN). UI menyarankan PPh = total ongkir × 2% (saran, bukan paksaan). Bukti potong = **URL manual ke Drive/Storage (interim)**, belum ada upload terintegrasi.
+- **TTF (`ar_ttfs`) kini di-UPSERT** dari Detail SP — tombol "Edit" memanggil RPC yang sama, tak melahirkan TTF kedua. TTF **tidak** menggerakkan status SP.
+- **Gate anti double-entry `ar_btbs` (2 lapis, level aplikasi — sengaja BUKAN trigger DB):** begitu sebuah TTF punya `invoice_id`, seluruh baris BTB di `ARModal` jadi read-only (banner mengarahkan ke Detail SP) **dan** `updateTtf` melewati blok DELETE+re-INSERT `ar_btbs` (guard dibaca dari DB, bukan state klien). Alasan: nilai uang sudah pindah ke `sp_invoice_lines`/`sp_payments` (`DESIGN_SP_SCHEMA.md` §2.5); tanpa gate ini ada dua sumber angka untuk uang yang sama. Murni preventif — kedua tabel dilaporkan masih kosong (klaim COUNT dari Den, tak terverifikasi doc-keeper).
+- **Tes end-to-end (klaim Den, DI-RELAY — bukan verifikasi independen doc-keeper):** SP dummy satu siklus penuh Draft → Confirmed → Picking → Delivered → Invoice → Payment parsial → Payment lunas → SP naik LUNAS → TTF; jurnal **balance** (saldo Piutang net 0 setelah lunas); cleanup total, stok terbukti kembali persis ke angka semula. Ini kemajuan besar dari status FASE 4 sebelumnya ("NOL tes runtime"), tapi tetap laporan yang di-relay: doc-keeper nol akses browser/DB.
+- ⚠️ **Belum diputuskan / belum dikerjakan (JANGAN dianggap selesai):** badge "Issued" + "Lunas" bisa tampil bersamaan di card Invoice (dikonfirmasi doc-keeper dari kode: badge atas cuma bercabang `submitted` vs selain itu, badge "Lunas" blok terpisah saat `status='paid'`) — belum dikonfirmasi disengaja atau bug · lokasi penyimpanan bukti potong FISIK menunggu tim finance · dashboard "Outstanding Finance" lama belum terhubung ke sistem invoice/payment baru · instrumentasi `logAudit` di titik lifecycle SP **belum ada** (tab History Detail SP masih `EmptyState` placeholder).
 
 **Aksi mundur (fact-derived — recompute otomatis balik ke tahap fakta tertinggi):**
 - **Batal picking** (`cancel_picking`): picking → cancelled, release reservasi, set flag **`had_cancelled_picking`** (permanen) → status **mundur ke CONFIRMED**.
@@ -330,8 +346,8 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 - **[super_admin] Hapus SP** (`delete_sp_dual`, ⚠️ **belum live** — RPC dijalankan user manual, hanya saat **DRAFT**) — hapus permanen dual-table: `sp_orders` (+`sp_order_items` via FK CASCADE) **dan** `sp_items`, di-kunci komposit → nomor bisa dipakai ulang. Guard `is_super_admin()` + DRAFT strict di RPC. Di Danger Zone. **operations kehilangan akses hapus** (dulu `['super_admin','operations']` tanpa gate status) → diberi "Batalkan SP" sebagai gantinya.
 
 **Catatan transisi & yang USANG:**
-- Live sekarang **DRAFT s/d SUBMITTED**. **[8 Agu 2026] INVOICED/SUBMITTED (FASE 4): kode+UI+SQL SEMUA LIVE**, dikonfirmasi via `schema_snapshot.sql` refresh commit `8117127` (lihat ✅ di diagram atas + `03_DATA_MODEL.md` entri `sp_invoices`) — draft awal entri ini sempat menulis "SQL belum dijalankan" saat snapshot masih basi, sudah dikoreksi. **LUNAS (FASE 5) tetap 📋 planned, belum dibangun sama sekali** — satu-satunya tahap tersisa.
-- ⚠️ **USANG (flag finance lama):** progress per-item **INV → FP → SUB → KRM** (kolom `sp_items.inv/fp/submit/kirim`) = generasi lama, **BUKAN sumber kebenaran status** — digantikan mesin status + (nanti) modul invoice FASE 4-5.
+- Live sekarang **DRAFT s/d LUNAS — rantai 12 tahap LENGKAP**. **[8 Agu 2026] INVOICED/SUBMITTED (FASE 4)** live, dikonfirmasi snapshot refresh `8117127`. **[17 Agu 2026] LUNAS (FASE 5) live** (`record_payment` + cabang `v_paid` di puncak CASE `sp_recompute_status`), dikonfirmasi snapshot refresh `35cb1d3` — ~~"tetap 📋 planned, belum dibangun sama sekali"~~ **USANG**.
+- ⚠️ **USANG (flag finance lama):** progress per-item **INV → FP → SUB → KRM** (kolom `sp_items.inv/fp/submit/kirim`) = generasi lama, **BUKAN sumber kebenaran status** — digantikan mesin status + modul invoice/payment FASE 4-5 (keduanya kini live).
 - ⚠️ `sp_btbs` (BTB legacy per-SP) digantikan `sp_btb`; **AR/TTF (`ar_ttfs`/`ar_btbs`) = domain finance/penagihan terpisah**, bukan status SP.
 
 ---
