@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 6zknxm4IpbzQkQRLRZrHDCTohAsJZa0NkA9eeqBEb7eEiLRp1FdywOejnatmLfi
+\restrict jTC3Wxdrc7h1zGb8DhoeegM2Yzri3GMeyb9C68Vktooj7C9fr4a1xVfI9dth2uh
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2427,7 +2427,7 @@ BEGIN
   v_has_delivered := EXISTS(SELECT 1 FROM delivery_notes WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND status='delivered');
   v_has_btb     := EXISTS(SELECT 1 FROM sp_btb      WHERE sp_order_id=v_id AND deleted_at IS NULL);
   v_has_invoice := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND status <> 'void');
-  v_submitted   := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND status='submitted');
+  v_submitted   := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND submitted_at IS NOT NULL AND status <> 'void');
   v_paid        := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND status='paid');
   v_new := CASE
     WHEN v_paid                                   THEN 'LUNAS'
@@ -18356,5 +18356,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 6zknxm4IpbzQkQRLRZrHDCTohAsJZa0NkA9eeqBEb7eEiLRp1FdywOejnatmLfi
+\unrestrict jTC3Wxdrc7h1zGb8DhoeegM2Yzri3GMeyb9C68Vktooj7C9fr4a1xVfI9dth2uh
 
