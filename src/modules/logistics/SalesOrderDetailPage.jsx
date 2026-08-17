@@ -16,45 +16,122 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import {
-  ChevronRight, ChevronLeft, Pencil, Trash2, Package,
-  Calendar, Clock, Wallet, Receipt, FileText, Send, Truck,
-  Check, X, FolderOpen, History, List, Download,
-  AlertTriangle, Plus, ClipboardList, ExternalLink, Link2,
+  ChevronLeft, Pencil, Trash2, Package,
+  Receipt, FileText, Send, Truck, Wallet,
+  Check, X, History, Download,
+  AlertTriangle, Plus, ClipboardList, ExternalLink, Link2, Eye, EyeOff,
 } from 'lucide-react';
-import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
+import { useAuth } from '../../contexts/useAuth';
 import { calcItem } from '../../lib/spCalc';
 import { PPN_RATE } from '../../lib/taxConstants';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
 import InvoicePDF from './InvoicePDF';
+// @font-face Cormorant/Lora — di-scope ke chunk halaman ini. Lihat header file CSS-nya.
+// Import polos (bukan `import styles from`) karena isinya cuma @font-face, nol class.
+import './salesOrderDetail.module.css';
 
 // SP = entitas Storbit (SOA) → pin katalog produk ke SOA (pola InputSPPage/DeliveryNote).
 const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 // Cool/navy palette — senyawa dengan SalesOrderPage (list SP) + DealDetailPage (detail
-// Inquiry). Semantik lama (green/steel-blue/mustard/purple/brown) di-remap ke brand
-// navy #1B4D8A / orange #E85A1E / amber. Tanpa dark green, ungu, mustard, teal, coklat.
+// Inquiry). Semantik lama (green/steel-blue/mustard/brown) di-remap ke navy #1B4D8A
+// dan amber. Tanpa dark green, mustard, teal, coklat.
+//
+// KOREKSI: baris ini dulu berbunyi "tanpa ungu". Sudah tidak berlaku — aksi utama,
+// tab/link, dan seluruh badge status halaman ini kini memakai ungu Storbit, mengikuti
+// Claude Design "Detail Surat Pesanan B.dc.html" dan menyamakan diri dengan
+// InvoicePDF.jsx yang memang sudah ungu/krem/serif sejak awal (keputusan Den).
+// Navy/amber/merah TETAP hidup di elemen non-badge (stat card, MiniBar, modal hapus).
 const C = {
   surface:   '#FFFFFF',
   surface2:  '#F4F6F9',
   ink:       '#2A3340',
   inkSoft:   '#6B7686',
   inkFaint:  '#9AA3B2',
-  line:      '#E7EAF0',
-  lineSoft:  '#EEF1F5',
-  accent:    '#E85A1E',
-  accentSoft:'#FEF2EC',
+  // Divider dipertegas. Nilainya = #201f1d (ink mockup) di-composite ke background
+  // halaman #F2F5F9 pada opasitas tetap, jadi hasilnya hex opaque yang aman dipakai
+  // di border MAUPUN background. line = 23%, lineSoft = 16% (tingkat divider mockup)
+  // — hierarki dua tingkat tetap terjaga, tidak menyatu jadi satu tebal.
+  line:      '#C2C4C6',   // was #E7EAF0 (≈5%)
+  lineSoft:  '#D0D3D6',   // was #EEF1F5 (≈3%)
+  // Ungu Storbit — anchor diambil dari InvoicePDF.jsx (PURPLE #5b3fa0 /
+  // PURPLE_DEEP #4a3585) supaya layar & PDF sewarna. Tint pale + border
+  // diturunkan di sini dgn mencampur #5b3fa0 ke putih: 10% → accentSoft,
+  // 25% → accentBd. Ramp mockup (#7c4fd1 dst) SENGAJA tidak dipakai — cuma
+  // perannya yang diambil, basis warnanya ikut token yang sudah ada.
+  accent:    '#5b3fa0',
+  accentDeep:'#4a3585',
+  accentSoft:'#EFECF6',
+  accentBd:  '#D6CFE7',
+  // Grand Total sengaja TETAP keluarga oranye (accent-2-700 mockup), bukan ungu.
+  grandTotal:'#82480F',
+  // Oranye "perlu perhatian" — varian ke-4 di luar tiga varian ungu/outline/netral.
+  // Hex teksnya sengaja SAMA dengan grandTotal (#82480F) tapi perannya beda, jadi
+  // ditulis terpisah supaya tak tertukar saat salah satunya diubah. Tint diturunkan
+  // dgn pola yang sama seperti ungu: 10% pada putih → bg, 25% → border.
+  attn:      '#82480F',
+  attnBg:    '#F3EDE7',
+  attnBd:    '#E0D1C3',
   ok:        '#1B4D8A', okBg:  '#EAF0F8', okBd:  '#CFDDF0',   // positive/done → navy (was dark green)
   warn:      '#B5772A', warnBg:'#FBEEDD', warnBd:'#E6CE94',   // amber (list SP)
   danger:    '#C0392B', dangerBg:'#FBEAE8', dangerBd:'#E6BBB2',
   info:      '#1B4D8A', infoBg:'#EAF0F8', infoBd:'#CFDDF0',   // navy (was steel-blue)
   neutral:   '#6B7686', neutralBg:'#EEF1F5', neutralBd:'#DDE2EA',
-  orange:    '#E85A1E', orangeBg:'#FEF2EC', orangeBd:'#F6C9AE',   // brand orange (was coklat)
+  // orange/orangeBg/orangeBd dihapus — nol pemakaian setelah aksi & badge pindah
+  // ke keluarga ungu. Satu-satunya sisa oranye di halaman ini adalah `grandTotal`
+  // (disengaja) + palet hash `custColor` (identitas customer, bukan status).
   yellow:    '#B5772A', yellowBg:'#FBEEDD', yellowBd:'#E6CE94',   // amber (was mustard)
   purple:    '#B5772A', purpleBg:'#FBEEDD', purpleBd:'#E6CE94',   // amber (was ungu; sisa: stage Faktur Pajak)
   slate:     '#525E70', slateBg:'#EDF0F4', slateBd:'#D7DDE6',   // PICKING/PACKED — slate-blue soft (samain badge Picking List)
 };
+
+// ─── Tipografi & skala spasi (dari design system mockup) ──────────────────
+// FONT_DISPLAY = --font-heading (Cormorant Garamond 600) → nomor dokumen, judul
+// card, label kicker, teks tab, tombol. FONT_TEXT = --font-body (Lora 400/600).
+// Identifier inline (nomor SP di breadcrumb, kolom angka tabel) SENGAJA tetap
+// IBM Plex Mono — konvensi lintas halaman, mockup sendiri nol monospace.
+const FONT_DISPLAY = "'Storbit Display', 'Cormorant Garamond', Georgia, serif";
+const FONT_TEXT    = "'Storbit Text', Lora, Georgia, serif";
+const FONT_MONO    = "'IBM Plex Mono', ui-monospace, monospace";
+
+// Skala spasi & radius mockup — dipakai apa adanya (bukan dibulatkan) supaya
+// ritme vertikalnya sama persis dengan file desain.
+const SP = { s1: 4.6, s2: 9.2, s3: 13.8, s4: 18.4, s6: 27.6 };
+const RADIUS = { sm: 2, md: 4, lg: 7 };
+
+// .card-kicker mockup. Catatan: design system dasarnya mewarnai kicker dgn accent,
+// TAPI file desain ini meng-override-nya jadi muted 60% — kita ikut override itu.
+const kickerStyle = {
+  fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: C.inkSoft,
+};
+// .card-title mockup (17px) — dipakai judul card Overview.
+const cardTitleStyle = {
+  fontFamily: FONT_DISPLAY, fontWeight: 600, fontSize: 17, lineHeight: 1.2, color: C.ink,
+};
+// .table th mockup.
+const thStyle = {
+  fontSize: 11, fontWeight: 400, letterSpacing: '.08em', textTransform: 'uppercase',
+  color: C.inkSoft, padding: SP.s2, textAlign: 'left',
+};
+
+// ─── Vokabular badge (3 varian) ───────────────────────────────────────────
+// Mengikuti statusTagCls() dari Claude Design "Detail Surat Pesanan B.dc.html":
+// hanya tiga varian, semuanya satu hue + abu — tanpa hijau/amber/merah semantik.
+// Aturan pemetaan yang dipakai konsisten di seluruh halaman ini:
+//   PALE    → selesai / terpenuhi / positif
+//   OUTLINE → sedang berjalan ATAU butuh perhatian (aktif, belum selesai)
+//   NEUTRAL → belum mulai / inert / informasi netral
+const TAG_PALE    = { bg: C.accentSoft, color: C.accentDeep, bd: C.accentBd };
+const TAG_OUTLINE = { bg: 'transparent', color: C.accent,    bd: C.accent   };
+const TAG_NEUTRAL = { bg: C.neutralBg,   color: C.neutral,   bd: C.neutralBd };
+// Varian ke-4, PENGECUALIAN sempit: hanya untuk kondisi yang menuntut perhatian
+// (stok kurang, invoice belum diterbitkan). Sumber desain memang punya 4 warna
+// semantik, oranye terpisah dari status siklus hidup biasa. Badge status lain
+// TETAP tiga varian di atas — ini bukan pembatalan keputusan itu.
+const TAG_ATTN    = { bg: C.attnBg,      color: C.attn,      bd: C.attnBd   };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 // Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
@@ -62,6 +139,12 @@ const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTar
 // Pilih seluruh isi saat focus → ketikan menimpa nilai default (0), tak ter-append.
 const selectOnFocus = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.select(); };
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
+// yyyy-mm-dd hari ini untuk default <input type="date"> (pola InputSPPage.jsx)
+const todayStr = () => new Date().toISOString().slice(0, 10);
+// Tabel Baris Pesanan pakai 2 desimal, mengikuti rp()/qtyFmt di mockup.
+const DEC2 = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+const num2 = (n) => (Number(n) || 0).toLocaleString('id-ID', DEC2);
+const rp2  = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID', DEC2);
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -103,23 +186,21 @@ function custColor(name) {
 }
 
 function itemStatusMeta(status) {
-  if (status === 'Closed')  return { bg: C.okBg,      color: C.ok,     bd: C.okBd,     label: 'Shipped'  };
-  if (status === 'Partial') return { bg: C.warnBg,    color: C.warn,   bd: C.warnBd,   label: 'Parsial'  };
-  return                           { bg: C.neutralBg, color: C.neutral,bd: C.neutralBd,label: 'Open'     };
+  if (status === 'Closed')  return { ...TAG_PALE,    label: 'Shipped' };   // terkirim penuh → selesai
+  if (status === 'Partial') return { ...TAG_OUTLINE, label: 'Parsial' };   // sebagian dikirim → berjalan
+  return                           { ...TAG_NEUTRAL, label: 'Open'    };   // belum mulai
 }
 
 // ─── Shared atoms ──────────────────────────────────────────────────────────
-
-function StatusDot({ color }) {
-  return <span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0 }}/>;
-}
 
 function Badge({ bg, color, bd, children }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
       background: bg, color, border: `1px solid ${bd}`,
-      fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap',
+      // Rounded-rect tipis, BUKAN pill — semua badge di halaman ini lewat komponen
+      // ini, jadi satu perubahan di sini berlaku konsisten ke seluruh badge.
+      fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 3, whiteSpace: 'nowrap',
     }}>
       {children}
     </span>
@@ -129,58 +210,26 @@ function Badge({ bg, color, bd, children }) {
 // FASE 2E — status headline SP (sp_orders 12 tahap) → badge Detail SP. Warna kalem,
 // semua badge tint + teks senada (tanpa blok solid, tanpa dark green). Selaras STATUS_META di SalesOrderPage.
 const HEADLINE_META = {
-  DRAFT:          { label: 'Draft',          bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
-  CONFIRMED:      { label: 'Dikonfirmasi',   bg: C.infoBg,    color: C.info,    bd: C.infoBd },
-  MENUNGGU_STOK:  { label: 'Menunggu Stok',  bg: C.warnBg,    color: C.warn,    bd: C.warnBd },
-  PICKING:        { label: 'Picking',        bg: C.slateBg,   color: C.slate,   bd: C.slateBd },
-  PACKED:         { label: 'Dikemas',        bg: C.slateBg,   color: C.slate,   bd: C.slateBd },
-  DIKIRIM:        { label: 'Dikirim',        bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
-  SAMPAI:         { label: 'Sampai',         bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
-  BTB_TERBIT:     { label: 'BTB Terbit',     bg: C.warnBg,    color: C.warn,    bd: C.warnBd },
-  TERKIRIM_PENUH: { label: 'Terkirim Penuh', bg: C.infoBg,    color: C.info,    bd: C.infoBd },
-  INVOICED:       { label: 'Invoiced',       bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
-  SUBMITTED:      { label: 'Submitted',      bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd },
-  LUNAS:          { label: 'Lunas',          bg: C.infoBg,    color: C.info,    bd: C.infoBd },
-  CANCELLED:      { label: 'Dibatalkan',     bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd },
+  DRAFT:          { label: 'Draft',          ...TAG_NEUTRAL },   // belum mulai
+  CONFIRMED:      { label: 'Dikonfirmasi',   ...TAG_OUTLINE },   // 'Confirmed' → outline (eksplisit di mockup)
+  MENUNGGU_STOK:  { label: 'Menunggu Stok',  ...TAG_OUTLINE },   // stockFlag 'menunggu' → outline (eksplisit di mockup)
+  PICKING:        { label: 'Picking',        ...TAG_OUTLINE },   // berjalan
+  PACKED:         { label: 'Dikemas',        ...TAG_OUTLINE },   // berjalan
+  DIKIRIM:        { label: 'Dikirim',        ...TAG_OUTLINE },   // analog 'Proses'/'Sebagian Dikirim'
+  SAMPAI:         { label: 'Sampai',         ...TAG_PALE    },   // analog 'Terkirim'
+  BTB_TERBIT:     { label: 'BTB Terbit',     ...TAG_PALE    },   // milestone tercapai
+  TERKIRIM_PENUH: { label: 'Terkirim Penuh', ...TAG_PALE    },   // analog 'Terkirim'
+  INVOICED:       { label: 'Invoiced',       ...TAG_PALE    },   // milestone tercapai
+  SUBMITTED:      { label: 'Submitted',      ...TAG_PALE    },   // milestone tercapai
+  LUNAS:          { label: 'Lunas',          ...TAG_PALE    },   // analog 'Selesai'
+  CANCELLED:      { label: 'Dibatalkan',     ...TAG_NEUTRAL },   // cabang `else` mockup — lihat catatan ambigu di laporan
 };
-
-function FinPill({ label, active }) {
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
-      border: `1px solid ${active ? C.okBd : C.line}`,
-      background: active ? C.okBg : C.surface2,
-      color: active ? C.ok : C.inkFaint,
-      letterSpacing: '.3px',
-    }}>
-      {active
-        ? <Check size={12} strokeWidth={2.5}/>
-        : <span style={{ width: 12, height: 12, borderRadius: '50%', border: `1.5px solid currentColor`, flexShrink: 0 }}/>}
-      {label}
-    </span>
-  );
-}
-
-function MiniBar({ pct }) {
-  const color = finColor(pct);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 120 }}>
-      <div style={{ flex: 1, height: 7, borderRadius: 4, background: C.lineSoft, overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 4 }}/>
-      </div>
-      <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, fontWeight: 600, width: 34, textAlign: 'right', color, flexShrink: 0 }}>
-        {pct}%
-      </span>
-    </div>
-  );
-}
 
 // ─── Finance status stages config ─────────────────────────────────────────
 const FIN_STAGES = [
   { key: 'inv',    label: 'Invoice',      icon: Receipt,  cls: C.infoBg,    clsColor: C.info    },
   { key: 'fp',     label: 'Faktur Pajak', icon: FileText, cls: C.purpleBg,  clsColor: C.purple  },
-  { key: 'submit', label: 'Submit',        icon: Send,     cls: C.orangeBg,  clsColor: C.orange  },
+  { key: 'submit', label: 'Submit',        icon: Send,     cls: C.accentSoft,clsColor: C.accent  },
   { key: 'kirim',  label: 'Kirim',         icon: Truck,    cls: C.okBg,      clsColor: C.ok      },
 ];
 
@@ -283,10 +332,10 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
 
   function autoStatus() {
     const q = Number(draft.qty), s = Number(draft.shippedQty), out = Math.max(0, q - s);
-    if (s > 0 && out === 0) return { bg: C.okBg,      color: C.ok,     bd: C.okBd,     label: 'Shipped'  };
-    if (s > 0 && out > 0)   return { bg: C.warnBg,    color: C.warn,   bd: C.warnBd,   label: 'Parsial'  };
-    if (q > 0)               return { bg: C.infoBg,    color: C.info,   bd: C.infoBd,   label: 'Confirmed'};
-    return                          { bg: C.neutralBg, color: C.neutral,bd: C.neutralBd,label: 'Open'     };
+    if (s > 0 && out === 0) return { ...TAG_PALE,    label: 'Shipped'   };
+    if (s > 0 && out > 0)   return { ...TAG_OUTLINE, label: 'Parsial'   };
+    if (q > 0)              return { ...TAG_OUTLINE, label: 'Confirmed' };
+    return                         { ...TAG_NEUTRAL, label: 'Open'      };
   }
 
   const handleSave = async () => {
@@ -313,7 +362,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
         zIndex: 81, width: '100%', maxWidth: 760, maxHeight: '90vh',
-        background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14,
+        background: C.surface, border: `1px solid ${C.line}`, borderRadius: RADIUS.lg,
         boxShadow: '0 12px 34px rgba(20,30,45,.18)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Sticky header */}
@@ -427,7 +476,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
             {[
               { label: 'Subtotal',    value: rp(subtotal),   color: null      },
               { label: 'PPN (11%)',   value: rp(ppn),        color: null      },
-              { label: 'Grand Total', value: rp(grandTotal), color: C.accent  },
+              { label: 'Grand Total', value: rp(grandTotal), color: C.grandTotal },
               { label: 'Auto Status', value: null,            status: st      },
             ].map((cc, i, arr) => (
               <div key={cc.label} style={{ padding: '11px 14px', borderRight: i < arr.length - 1 ? `1px solid ${C.lineSoft}` : 'none' }}>
@@ -435,7 +484,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
                 {cc.status ? (
                   <div style={{ marginTop: 4 }}>
                     <Badge bg={cc.status.bg} color={cc.status.color} bd={cc.status.bd}>
-                      <StatusDot color={cc.status.color}/>{cc.status.label}
+                      {cc.status.label}
                     </Badge>
                   </div>
                 ) : (
@@ -496,7 +545,7 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
           </button>
           <button onClick={handleSave} disabled={saving || (wasLinked && !draft.productId)}
             title={wasLinked && !draft.productId ? 'Pilih produk dari dropdown' : undefined}
-            style={{ height: 38, padding: '0 18px', borderRadius: 9, border: `1px solid ${C.orangeBd}`, background: C.accentSoft, color: C.accent, fontSize: 13, fontWeight: 700, cursor: (saving || (wasLinked && !draft.productId)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7, opacity: (saving || (wasLinked && !draft.productId)) ? .7 : 1 }}>
+            style={{ height: 38, padding: '0 18px', borderRadius: 9, border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent, fontSize: 13, fontWeight: 700, cursor: (saving || (wasLinked && !draft.productId)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 7, opacity: (saving || (wasLinked && !draft.productId)) ? .7 : 1 }}>
             <Check size={15}/>{saving ? 'Menyimpan…' : 'Save'}
           </button>
         </div>
@@ -524,7 +573,7 @@ function DeleteModal({ spNo, group, onClose, onConfirm }) {
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
         zIndex: 81, width: '100%', maxWidth: 440,
-        background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14,
+        background: C.surface, border: `1px solid ${C.line}`, borderRadius: RADIUS.lg,
         boxShadow: '0 12px 34px rgba(20,30,45,.18)', overflow: 'hidden',
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, padding: '20px 22px 14px' }}>
@@ -601,7 +650,7 @@ function CancelModal({ spNo, group, onClose, onConfirm }) {
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
         zIndex: 81, width: '100%', maxWidth: 440,
-        background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14,
+        background: C.surface, border: `1px solid ${C.line}`, borderRadius: RADIUS.lg,
         boxShadow: '0 12px 34px rgba(20,30,45,.18)', overflow: 'hidden',
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, padding: '20px 22px 14px' }}>
@@ -646,22 +695,25 @@ function CancelModal({ spNo, group, onClose, onConfirm }) {
 }
 
 // ─── Tab button ─────────────────────────────────────────────────────────────
-function TabBtn({ active, onClick, icon: Icon, label, count }) {
+// Gaya tab mockup: teks polos + garis bawah accent saat aktif. Ikon & pill counter
+// dilepas — aktif memakai FONT_DISPLAY 600, non-aktif FONT_TEXT dgn opacity .55.
+// Counter dipertahankan sebagai angka muted di belakang label (mockup tak punya
+// counter sama sekali; ini penambahan minimal agar informasinya tak hilang).
+function TabBtn({ active, onClick, label, count }) {
   return (
     <button onClick={onClick} style={{
-      background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-      padding: '14px 16px', fontSize: 13, fontWeight: active ? 700 : 500,
-      color: active ? C.info : C.inkSoft,
-      borderBottom: active ? `2.5px solid ${C.info}` : '2.5px solid transparent',
-      whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 7,
+      background: 'none', border: 'none', cursor: 'pointer',
+      padding: '0 0 10px', fontSize: 14,
+      fontFamily: active ? FONT_DISPLAY : FONT_TEXT,
+      fontWeight: active ? 600 : 400,
+      color: C.ink, opacity: active ? 1 : .55,
+      borderBottom: active ? `2px solid ${C.accent}` : '2px solid transparent',
+      whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'baseline', gap: SP.s1,
       marginBottom: -1,
     }}>
-      <Icon size={15} strokeWidth={active ? 2.2 : 1.8}/>
       {label}
       {count != null && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, borderRadius: 20, padding: '0 5px', fontSize: 11, fontWeight: 700, background: active ? C.infoBg : C.lineSoft, color: active ? C.info : C.inkFaint }}>
-          {count}
-        </span>
+        <span style={{ fontSize: 11, opacity: .55 }}>{count}</span>
       )}
     </button>
   );
@@ -676,6 +728,81 @@ function EmptyState({ icon: Icon, title, sub }) {
       </div>
       <b style={{ fontSize: 15, color: C.ink }}>{title}</b>
       <span style={{ fontSize: 13, color: C.inkSoft, margin: '5px 0 0', maxWidth: 340, lineHeight: 1.5 }}>{sub}</span>
+    </div>
+  );
+}
+
+// ─── Preview dokumen SP (on-screen, bukan PDF) ───────────────────────────────
+// Presentasi murni — semua angka dioper dari pemanggil (grandTotal memakai
+// perhitungan calcItem yang sama dengan Financial Summary, bukan hitung sendiri,
+// supaya tak ada dua sumber angka yang bisa melenceng).
+// Box preview mengikuti sumber mockup persis (hasil decode bundle standalone):
+// neutral-100 #F8F4F4 + border divider + shadow-md + radius-md + padding
+// space-6/space-4. Ini SATU-SATUNYA elemen halaman yang memang ber-shadow —
+// `.card` di design system justru transparan tanpa shadow.
+function SpDocPreview({ company, spNo, spDate, customer, lines, grandTotal }) {
+  const companyName = company?.legal_name || company?.name || 'PT Stuja Orbit Abadi';
+  const companyAddr = [company?.address, company?.address_2, company?.city, company?.province, company?.postal_code]
+    .filter(Boolean).join(', ');
+
+  return (
+    <div style={{ background: '#F8F4F4', border: `1px solid ${C.line}`, boxShadow: '0 3px 10px rgba(45,43,43,.16)', borderRadius: RADIUS.md, padding: `${SP.s6}px ${SP.s4}px` }}>
+      {/* Kop surat */}
+      <div style={{ paddingBottom: 11, borderBottom: `1px solid ${C.line}` }}>
+        <div style={{ ...cardTitleStyle, fontSize: 15 }}>{companyName}</div>
+        <div style={{ fontSize: 11.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{companyAddr || '—'}</div>
+      </div>
+
+      {/* Judul dokumen */}
+      <div style={{ textAlign: 'center', padding: '14px 0 12px' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: C.ink }}>Surat Pesanan Penjualan</div>
+        <div style={{ fontSize: 11.5, color: C.inkFaint, marginTop: 3, fontFamily: "'IBM Plex Mono',monospace" }}>
+          No. {spNo || '—'} · {fmtDate(spDate)}
+        </div>
+      </div>
+
+      {/* Tujuan */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11.5, color: C.inkSoft }}>Kepada Yth,</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginTop: 1 }}>{customer || '—'}</div>
+      </div>
+
+      {/* Tabel produk */}
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            {[['Produk', 'left'], ['Qty', 'right'], ['Jumlah', 'right']].map(([h, align]) => (
+              <th key={h} style={{ ...thStyle, textAlign: align, padding: `0 0 ${SP.s1}px`, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {lines.length === 0 ? (
+            <tr><td colSpan={3} style={{ padding: '12px 0', fontSize: 12, color: C.inkFaint, textAlign: 'center' }}>Belum ada item.</td></tr>
+          ) : lines.map(l => (
+            <tr key={l.id}>
+              <td style={{ padding: '7px 8px 7px 0', fontSize: 12, color: C.ink, borderBottom: `1px solid ${C.lineSoft}` }}>{l.productName || '—'}</td>
+              <td style={{ padding: '7px 8px', fontSize: 12, textAlign: 'right', fontFamily: "'IBM Plex Mono',monospace", color: C.inkSoft, borderBottom: `1px solid ${C.lineSoft}`, whiteSpace: 'nowrap' }}>{Number(l.qty || 0).toLocaleString('id-ID')}</td>
+              <td style={{ padding: '7px 0 7px 8px', fontSize: 12, textAlign: 'right', fontFamily: "'IBM Plex Mono',monospace", color: C.ink, borderBottom: `1px solid ${C.lineSoft}`, whiteSpace: 'nowrap' }}>{rp(l.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Grand total */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 10, marginTop: 2 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>Grand Total</span>
+        <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14, fontWeight: 700, color: C.grandTotal }}>{rp(grandTotal)}</span>
+      </div>
+
+      {/* Tanda tangan */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 24 }}>
+        {['Dipesan oleh', 'Disetujui oleh'].map(label => (
+          <div key={label} style={{ textAlign: 'center' }}>
+            <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 6, fontSize: 11, color: C.inkFaint }}>{label}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -725,11 +852,56 @@ export default function SalesOrderDetailPage({
     return () => { cancelled = true; };
   }, [spOrder?.id]);
 
+  // Katalog produk (pin SOA, sama seperti EditItemModal) — dipakai kolom "Unit"
+  // di tabel Baris Pesanan; `unit`/`uom` memang cuma ada di master produk,
+  // tidak di sp_items.
+  const { products } = useProducts({ companyId: SOA_COMPANY_ID });
+
+  // ── Sidebar preview dokumen (kolom kanan, level HALAMAN) ─────────────────
+  // showDocPanel mengontrol seluruh sidebar, bukan card di dalam tab Overview:
+  // false → grid halaman turun dari 2 kolom ke 1, konten kiri melebar penuh, dan
+  // tombol "Tampilkan Preview" muncul di baris tombol header sebagai jalan balik.
+  const [showDocPanel, setShowDocPanel] = useState(true);
+  const [companyHeader, setCompanyHeader] = useState(null);
+
+  // Kop surat entitas untuk preview. SP di-pin ke SOA (sama seperti katalog
+  // produk di halaman ini), jadi tak perlu menunggu spOrder termuat.
+  useEffect(() => {
+    let cancelled = false;
+    getCompanyHeader(SOA_COMPANY_ID).then(({ data }) => { if (!cancelled) setCompanyHeader(data); });
+    return () => { cancelled = true; };
+  }, []);
+
   // ── Invoice (SP-level, Fase 4) ───────────────────────────────────────────
   const [invoice,            setInvoice]            = useState(null);
   const [invoiceLoading,     setInvoiceLoading]     = useState(true);
   const [invoiceSaving,      setInvoiceSaving]      = useState(false);
   const [invoiceDownloading, setInvoiceDownloading] = useState(false);
+
+  // ── FASE 5: pembayaran & TTF ─────────────────────────────────────────────
+  // Gate peran SENGAJA dari erpRoles (array seluruh role aktif), BUKAN prop
+  // `role`. Prop itu hasil pickPrimaryErpRole = satu role berprioritas
+  // tertinggi saja, dan finance_controller berada DI BAWAH manager di daftar
+  // prioritas — jadi user manager+finance_controller akan ter-resolve jadi
+  // 'manager' dan kehilangan akses form, padahal RPC-nya (has_role) meloloskan.
+  // Daftar di bawah menyalin persis body is_manager_or_above() di SQL.
+  const { erpRoles } = useAuth();
+  const roleCodes    = (erpRoles || []).map(r => r.roles?.code).filter(Boolean);
+  const isSuperAdmin   = roleCodes.includes('super_admin');
+  const isFinanceCtl   = roleCodes.includes('finance_controller');
+  const isManagerAbove = roleCodes.some(c =>
+    ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'].includes(c));
+  const canRecordPayment = isFinanceCtl || isSuperAdmin;
+  const canMarkTtf       = isManagerAbove || isFinanceCtl || isSuperAdmin;
+
+  const [payments,    setPayments]    = useState([]);
+  const [ttf,         setTtf]         = useState(null);
+  const [paySaving,   setPaySaving]   = useState(false);
+  const [ttfSaving,   setTtfSaving]   = useState(false);
+  const [payForm,     setPayForm]     = useState({ amount: '', paymentDate: todayStr(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
+  const [pphTouched,  setPphTouched]  = useState(false);
+  const [ttfForm,     setTtfForm]     = useState({ receivedBy: '', ttfNo: '', notes: '' });
+  const [ttfEditing,  setTtfEditing]  = useState(false);
 
   // FASE 4 — baca invoice aktif dari sp_invoices via sp_order_id (dari spOrder.id).
   useEffect(() => {
@@ -743,6 +915,20 @@ export default function SalesOrderDetailPage({
     });
     return () => { cancelled = true; };
   }, [spOrder?.id]);
+
+  // FASE 5 — riwayat pembayaran + status TTF, mengikuti invoice yang aktif.
+  useEffect(() => {
+    const invId = invoice?.id;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!invId) { setPayments([]); setTtf(null); return undefined; }
+    let cancelled = false;
+    Promise.all([getPaymentHistory(invId), getTtfStatus(invId)]).then(([pay, t]) => {
+      if (cancelled) return;
+      setPayments(pay.data || []);
+      setTtf(t.data || null);
+    });
+    return () => { cancelled = true; };
+  }, [invoice?.id]);
 
   // Fase 1 — headline status sp_orders (12-tahap) + flag pernah picking dibatalkan (badge additive).
   useEffect(() => {
@@ -763,17 +949,20 @@ export default function SalesOrderDetailPage({
   }, [group?.spStatus, productIdsKey]);
 
   // Ringkasan kecukupan stok (per item outstanding vs available company-level).
+  // Perhitungan TIDAK berubah — cuma ikut mengumpulkan item mana saja yang kurang,
+  // supaya UI bisa menyebut nama produknya alih-alih cuma jumlah totalnya.
   const stockShort = useMemo(() => {
-    if (group?.spStatus !== 'confirmed') return { checked: 0, short: 0 };
+    if (group?.spStatus !== 'confirmed') return { checked: 0, short: 0, shortItems: [] };
     let checked = 0, short = 0;
+    const shortItems = [];
     items.forEach(i => {
       if (!i.productId) return;
       checked += 1;
       const avail = stockMap[i.productId]?.available ?? 0;
       const out = Number(i.qty) - Number(i.shippedQty);
-      if (avail < out) short += 1;
+      if (avail < out) { short += 1; shortItems.push({ id: i.id, productName: i.productName }); }
     });
-    return { checked, short };
+    return { checked, short, shortItems };
   }, [items, stockMap, group?.spStatus]);
 
   // Refetch BTB list (sp_btb) + headline status (BTB terbit/hapus menggerakkan
@@ -810,6 +999,64 @@ export default function SalesOrderDetailPage({
     const cust = group?.customerId;
     if (spOrder?.id) { const { data } = await getSpInvoice(spOrder.id); setInvoice(data || null); }
     if (cust) { const { data } = await getSpOrderStatus(cust, spNo); setSpOrder(data || null); }
+  };
+
+  // ── FASE 5: catat pembayaran ────────────────────────────────────────────
+  // Pesan RAISE dari record_payment sudah manusiawi & berbahasa Indonesia
+  // (mis. "Akun [1-1200] belum ada di chart_of_accounts…"), jadi diteruskan
+  // apa adanya — jangan dibungkus pesan generik.
+  const handleRecordPayment = async () => {
+    if (!invoice?.id || paySaving) return;
+    const amt = Number(payForm.amount) || 0;
+    if (amt <= 0) { showToast?.('Nominal pembayaran harus lebih besar dari nol', 'error'); return; }
+    setPaySaving(true);
+    const { error } = await recordPayment({
+      invoiceId:      invoice.id,
+      amount:         amt,
+      paymentDate:    payForm.paymentDate || null,
+      reference:      payForm.reference.trim() || null,
+      pph:            Number(payForm.pph) || 0,
+      buktiPotongUrl: payForm.buktiUrl.trim() || null,
+      buktiPotongNo:  payForm.buktiNo.trim() || null,
+    });
+    if (error) {
+      setPaySaving(false);
+      showToast?.(error.message || 'Gagal mencatat pembayaran', 'error');
+      return;
+    }
+    await refreshInvoiceAndStatus();
+    if (invoice?.id) {
+      const { data } = await getPaymentHistory(invoice.id);
+      setPayments(data || []);
+    }
+    setPayForm({ amount: '', paymentDate: todayStr(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
+    setPphTouched(false);
+    setPaySaving(false);
+    showToast?.('Pembayaran dicatat', 'success');
+  };
+
+  // ── FASE 5: tandai TTF diterima ─────────────────────────────────────────
+  const handleMarkTtf = async () => {
+    if (!invoice?.id || ttfSaving) return;
+    if (!ttfForm.receivedBy.trim()) { showToast?.('Nama penerima wajib diisi', 'error'); return; }
+    setTtfSaving(true);
+    const { error } = await markTtfReceived({
+      invoiceId:  invoice.id,
+      receivedBy: ttfForm.receivedBy.trim(),
+      ttfNo:      ttfForm.ttfNo.trim() || null,
+      notes:      ttfForm.notes.trim() || null,
+    });
+    if (error) {
+      setTtfSaving(false);
+      showToast?.(error.message || 'Gagal menandai TTF', 'error');
+      return;
+    }
+    const { data } = await getTtfStatus(invoice.id);
+    setTtf(data || null);
+    setTtfForm({ receivedBy: '', ttfNo: '', notes: '' });
+    setTtfEditing(false);
+    setTtfSaving(false);
+    showToast?.(ttfEditing ? 'TTF diperbarui' : 'TTF ditandai diterima', 'success');
   };
 
   const handleCreateInvoice = async () => {
@@ -874,7 +1121,6 @@ export default function SalesOrderDetailPage({
   const finOverallDone  = finStages.reduce((s, st) => s + st.done, 0);
   const finOverallTotal = finStages.reduce((s, st) => s + st.total, 0);
   const finOverallPct   = finOverallTotal > 0 ? Math.round((finOverallDone / finOverallTotal) * 100) : 0;
-  const finOverallColor = finColor(finOverallPct);
 
   // ── Financial summary numbers (via calcItem — single source of truth) ───
   const allCalc     = items.map(i => calcItem(i));
@@ -885,11 +1131,38 @@ export default function SalesOrderDetailPage({
   const totalQty    = items.reduce((s, i) => s + Number(i.qty),       0);
   const shippedQty  = items.reduce((s, i) => s + Number(i.shippedQty), 0);
   const outstandQty = totalQty - shippedQty;
+  const shipPct     = totalQty > 0 ? Math.round((shippedQty / totalQty) * 100) : 0;
+
+  // Baris untuk preview dokumen — jumlah per baris pakai subtotal dari calcItem
+  // (sumber angka yang sama dengan Financial Summary, bukan hitungan sendiri).
+  const previewLines = items.map((i, idx) => ({
+    id: i.id ?? idx,
+    productName: i.productName,
+    qty: i.qty,
+    amount: allCalc[idx]?.subtotal ?? 0,
+  }));
 
   // FASE 4 — invoice cuma boleh diterbitkan saat seluruh qty sudah terkirim
   // (cermin guard Σshipped=Σqty di RPC create_invoice; dihitung dari items
   // yang sudah ada di state, bukan query baru).
   const canCreateInvoice = !!spOrder?.id && totalQty > 0 && shippedQty === totalQty;
+
+  // ── FASE 5: turunan pembayaran ──────────────────────────────────────────
+  // Sisa tagihan = total_amount − Σ(amount + pph). Dihitung dari `payments`
+  // yang sudah di-fetch → nol query tambahan. TIDAK di-clamp ke nol: kalau
+  // tercatat lebih bayar, angkanya sengaja tampil negatif (sistem belum punya
+  // konsep overpay — lihat catatan di laporan).
+  const paidSettled = payments.reduce((sum, p) => sum + (Number(p.amount) || 0) + (Number(p.pph) || 0), 0);
+  const sisaTagihan = (Number(invoice?.total_amount) || 0) - paidSettled;
+  // Saran PPh 23 = total ongkir × 2%. Suku ongkir = total_amount − dpp − ppn,
+  // persis definisi v_total_amount di create_invoice.
+  const totalOngkirInv = (Number(invoice?.total_amount) || 0)
+    - (Number(invoice?.total_dpp) || 0) - (Number(invoice?.total_ppn) || 0);
+  const pphSuggestion = Math.round(Math.max(0, totalOngkirInv) * 0.02);
+  const invStatus = invoice?.status || null;
+  const showPaymentForm = canRecordPayment && ['issued', 'submitted', 'partial'].includes(invStatus);
+  const showPaymentHistory = !!invStatus && !['draft', 'void'].includes(invStatus);
+  const showTtfBlock = canMarkTtf && ['issued', 'submitted', 'partial', 'paid'].includes(invStatus);
 
   // ── Deadline display ───────────────────────────────────────────────────
   const firstDeadline = items.find(i => i.expired_date)?.expired_date || null;
@@ -944,8 +1217,6 @@ export default function SalesOrderDetailPage({
     showToast(`SP ${spNo} dibatalkan`);
   }, [spNo, group, showToast]);
 
-  const cust = custColor(customer);
-
   // ── Header status (spStatus lifecycle + qty-derived, precedence high→low) ──
   // FASE 2E — headline dari sp_orders.status (12 tahap), fallback DRAFT bila belum termuat.
   const headerStatus = (() => {
@@ -958,31 +1229,106 @@ export default function SalesOrderDetailPage({
   if (!spNo) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 1240, fontFamily: "'Inter', sans-serif", color: C.ink }}>
+    /* Grid level HALAMAN — kolom kiri (1.7fr) memuat seluruh konten & semua tab,
+       kolom kanan (1fr) sidebar preview yang sticky dan PERSISTEN lintas tab.
+       Struktur ini mengikuti markup asli mockup (hasil decode bundle standalone).
+       nx-grid-2 + nx-stack = helper index.css yang sudah ada: <1024px turun jadi
+       1 kolom dan sticky dimatikan. Nol perubahan file global. */
+    <div className="nx-grid-2 nx-stack" style={{ display: 'grid', gridTemplateColumns: showDocPanel ? 'minmax(0,1.7fr) minmax(0,1fr)' : 'minmax(0,1fr)', gap: SP.s6, alignItems: 'start', maxWidth: 1240, fontFamily: FONT_TEXT, fontSize: 15, lineHeight: 1.55, color: C.ink }}>
 
-      {/* ── Breadcrumb + title ────────────────────────────────────────── */}
+    {/* ══════════ BARIS ATAS — membentang 2 kolom ══════════
+        Breadcrumb + kicker + header sengaja DILUAR kolom kiri: header Nexus jauh
+        lebih tinggi daripada mockup (ada breadcrumb, kicker, h1, dan baris badge),
+        jadi kalau ikut kolom kiri, sidebar akan mulai sejajar breadcrumb — bukan
+        sejajar tab. Dengan header jadi barisnya sendiri, baris "Preview Dokumen"
+        otomatis sebaris dengan tab bar tanpa perlu margin-top hardcode yang akan
+        meleset begitu badge/tombol wrap ke baris kedua. */}
+    <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: SP.s4, minWidth: 0 }}>
+
+      {/* ── Breadcrumb + kicker judul ─────────────────────────────────── */}
+      {/* Separator teks "/" menggantikan ikon ChevronRight — pola breadcrumb mockup. */}
       <div>
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.inkFaint, marginBottom: 6 }}>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: SP.s2, fontSize: 12, color: C.inkFaint, marginBottom: SP.s2 }}>
           <span>Logistics</span>
-          <ChevronRight size={12}/>
-          <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: C.inkFaint, fontSize: 12 }}>Sales Order / SP</button>
-          <ChevronRight size={12}/>
-          <span style={{ fontFamily: "'IBM Plex Mono',monospace", color: C.ink, fontWeight: 600 }}>{spNo}</span>
+          <span aria-hidden="true">/</span>
+          <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: C.inkFaint, fontSize: 12, fontFamily: 'inherit' }}>Sales Order / SP</button>
+          <span aria-hidden="true">/</span>
+          <span style={{ fontFamily: FONT_MONO, color: C.ink, fontWeight: 600 }}>{spNo}</span>
         </nav>
-        {/* Heading pakai Space Grotesk — keputusan final (bukan trial), aksen tipografi khas Detail SP. */}
-        <h1 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', lineHeight: 1.15 }}>
+        {/* Kicker dokumen — di mockup ini baris di atas <h1>; judul besarnya sendiri
+            adalah nomor SP, yang dirender di header card di bawah. */}
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 600, fontSize: 12.5, letterSpacing: '.08em', textTransform: 'uppercase', color: C.inkSoft, marginBottom: SP.s1 }}>
           Detail Sales Order
-        </h1>
+        </div>
       </div>
 
-      {/* ── Header card ───────────────────────────────────────────────── */}
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(20,30,45,.05)' }}>
-        {/* Row 1: nomor SP (kiri) + tombol aksi (kanan) */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-          <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 30, fontWeight: 600, letterSpacing: '.5px', lineHeight: 1, color: C.ink }}>
+      {/* ── Header — TANPA kotak. Di mockup nomor SP + badge + baris tombol
+             duduk langsung di background halaman; pemisah dari konten bawah
+             murni spacing (gap flex root), bukan border/shadow. ── */}
+      <div>
+        {/* Row 1 — grid yang MENCERMINKAN grid halaman (template & gap identik).
+            Sel kiri karena itu selebar persis kolom konten, yaitu tempat <hr>
+            divider hidup — jadi tepi kanan blok status jatuh tepat di ujung
+            divider tanpa angka ajaib. Tombol aksi pindah ke sel kanan (di atas
+            sidebar preview) supaya tidak lagi memotong ruang blok status. */}
+        <div className="nx-grid-2 nx-stack" style={{ display: 'grid', gridTemplateColumns: showDocPanel ? 'minmax(0,1.7fr) minmax(0,1fr)' : 'minmax(0,1fr)', gap: SP.s6, alignItems: 'start' }}>
+
+          {/* ── Sel kiri: nomor SP + blok status ── */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, minWidth: 0 }}>
+          {/* Nomor SP = <h1> mockup: Cormorant 600 / 42px / lh 1.12 / ls -0.015em */}
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 42, fontWeight: 600, letterSpacing: '-0.015em', lineHeight: 1.12, color: C.ink }}>
             {spNo}
           </div>
-          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignSelf: 'flex-start', alignItems: 'center' }}>
+          {/* Blok status — lebar mengikuti KONTEN sendiri (`flex: 0 1 auto`), lalu
+              DIDORONG ke kanan pakai `marginLeft: auto`. Sebelumnya blok ini
+              di-flex-grow: wadahnya memang melebar sampai ujung divider, tapi
+              isinya rata kiri sehingga kelebaran itu jadi ruang kosong tak terlihat
+              dan teksnya tetap menempel di sebelah h1. Sekarang yang bergeser blok
+              utuhnya, jadi tepi kanan konten asli (teks terlebar / badge) yang
+              jatuh di ujung sel = ujung divider, dan muncul jarak nyata dari h1.
+              `minWidth: 0` + `flex-shrink: 1` menjaga tetap bisa menyusut di layar
+              sempit; alignment DI DALAM blok tidak diubah — tetap rata kiri. */}
+          <div style={{ flex: '0 1 auto', minWidth: 0, marginLeft: 'auto', display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
+
+            {/* 1. Flag independen — tetap badge, terpisah dari ringkasan status/stok */}
+            {spOrder?.had_cancelled_picking && (
+              <div>
+                <Badge {...TAG_NEUTRAL}>
+                  <AlertTriangle size={12}/>Pernah picking dibatalkan
+                </Badge>
+              </div>
+            )}
+
+            {/* 2. Judul status — nol background/border/radius */}
+            {headerStatus && (
+              <div style={{ ...cardTitleStyle }}>{headerStatus.label}</div>
+            )}
+
+            {/* 3. Info deskriptif */}
+            <div style={{ fontSize: 13, opacity: .8 }}>
+              {totalItems} produk &middot; {totalQty.toLocaleString('id-ID')} qty &middot; {customer}
+            </div>
+
+            {/* 4. Daftar stok kurang — SATU BARIS PER PRODUK, ditumpuk ke bawah.
+                   Gate `canGeneratePicking` dipertahankan supaya kondisi tampilnya
+                   persis sama dengan badge gabungan yang digantikan. Tak ada item
+                   kurang → blok ini tidak dirender sama sekali. */}
+            {canGeneratePicking && stockShort.shortItems.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s1 }}>
+                {stockShort.shortItems.map(it => (
+                  <div key={it.id} style={{ display: 'flex', alignItems: 'baseline', gap: SP.s2, fontSize: 12.5 }}>
+                    <Badge {...TAG_ATTN}>Stok Kurang</Badge>
+                    <span style={{ color: C.inkSoft }}>{it.productName || '—'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          </div>
+          {/* ── /Sel kiri ── */}
+
+          {/* ── Sel kanan: baris tombol aksi ── */}
+          <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 }}>
             {canGeneratePicking && (
               <button
                 onClick={async () => {
@@ -992,14 +1338,14 @@ export default function SalesOrderDetailPage({
                   setGenBusy(false);
                 }}
                 disabled={genBusy}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.orangeBd}`, background: C.accentSoft, color: C.accent, fontSize: 13, fontWeight: 700, cursor: genBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: genBusy ? 0.7 : 1 }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: genBusy ? 'not-allowed' : 'pointer', fontFamily: FONT_DISPLAY, opacity: genBusy ? 0.7 : 1 }}
               >
                 <ClipboardList size={14}/> {genBusy ? 'Membuat…' : 'Generate Picking List'}
               </button>
             )}
             <button
               onClick={() => items[0] && setEditingItem(items[0])}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.ink, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.ink, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: 'pointer', fontFamily: FONT_DISPLAY }}
             >
               <Pencil size={14}/> Edit
             </button>
@@ -1007,202 +1353,144 @@ export default function SalesOrderDetailPage({
               <button
                 onClick={() => setShowCancelSP(true)}
                 title="Batalkan SP (status → Dibatalkan)"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.dangerBd}`, background: C.surface, color: C.danger, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.dangerBd}`, background: 'transparent', color: C.danger, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: 'pointer', fontFamily: FONT_DISPLAY }}
               >
                 <X size={14}/> Batalkan SP
               </button>
             )}
             <button
               onClick={onBack}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: 'pointer', fontFamily: FONT_DISPLAY }}
             >
               <ChevronLeft size={14}/> Back to List
             </button>
-          </div>
-        </div>
-
-        {/* Row 2: badge — STATUS (Dikonfirmasi, flag, Stok cukup) lalu META (customer, produk, qty) */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 13, alignItems: 'center' }}>
-          {headerStatus && (
-            <Badge bg={headerStatus.bg} color={headerStatus.color} bd={headerStatus.bd}>
-              <StatusDot color={headerStatus.color}/>{headerStatus.label}
-            </Badge>
-          )}
-          {spOrder?.had_cancelled_picking && (
-            <Badge bg={C.warnBg} color={C.warn} bd={C.warnBd}>
-              <AlertTriangle size={12}/>Pernah picking dibatalkan
-            </Badge>
-          )}
-          {canGeneratePicking && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '5px 10px', borderRadius: 8,
-              background: stockShort.short > 0 ? C.warnBg : C.okBg, color: stockShort.short > 0 ? C.warn : C.ok, border: `1px solid ${stockShort.short > 0 ? C.warnBd : C.okBd}` }}>
-              {stockShort.short > 0 ? <><AlertTriangle size={13}/> {stockShort.short} item stok kurang</> : <><Check size={13}/> Stok cukup</>}
-            </span>
-          )}
-          <span style={{ display: 'inline-flex', fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 6, background: cust.bg, color: cust.ink, border: '1px solid transparent', whiteSpace: 'nowrap' }}>
-            {customer}
-          </span>
-          <Badge bg={C.neutralBg} color={C.neutral} bd={C.neutralBd}>
-            <span/>{totalItems} produk
-          </Badge>
-          <Badge bg={C.orangeBg} color={C.orange} bd={C.orangeBd}>
-            <Package size={12}/>{totalQty.toLocaleString('id-ID')} qty
-          </Badge>
-        </div>
-      </div>
-
-      {/* ── Stat cards (3) — satu keluarga navy; pembeda hanya ikon + label.
-             Aksen semantik ke angka (Expired mepet → amber; bar Finance navy/amber/red). ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-        {/* SP Date */}
-        <div style={{ background: C.infoBg, border: `1px solid ${C.infoBd}`, borderRadius: 12, padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.info, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>SP Date</span>
-            <span style={{ width: 34, height: 34, borderRadius: 9, background: '#FFFFFF', color: C.info, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Calendar size={17} strokeWidth={1.8}/>
-            </span>
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: C.info, letterSpacing: '-.3px', lineHeight: 1.1 }}>{fmtDate(spDate)}</div>
-          <div style={{ fontSize: 12, color: C.info, opacity: .8, marginTop: 4 }}>Diterima dari customer</div>
-        </div>
-
-        {/* Expired Date */}
-        <div style={{ background: C.infoBg, border: `1px solid ${C.infoBd}`, borderRadius: 12, padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.info, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>Expired Date</span>
-            <span style={{ width: 34, height: 34, borderRadius: 9, background: '#FFFFFF', color: C.info, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Clock size={17} strokeWidth={1.8}/>
-            </span>
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: days != null && days < 2 ? C.warn : C.info, letterSpacing: '-.3px', lineHeight: 1.1 }}>
-            {fmtDate(firstDeadline)}
-          </div>
-          <div style={{ fontSize: 12, color: C.info, opacity: .8, marginTop: 4 }}>{deadlineSub}</div>
-        </div>
-
-        {/* Finance Progress */}
-        <div style={{ background: C.infoBg, border: `1px solid ${C.infoBd}`, borderRadius: 12, padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.info, textTransform: 'uppercase', letterSpacing: '.5px', opacity: .85 }}>Finance Progress</span>
-            <span style={{ width: 34, height: 34, borderRadius: 9, background: '#FFFFFF', color: C.info, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Wallet size={17} strokeWidth={1.8}/>
-            </span>
-          </div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: C.info, letterSpacing: '-.3px', lineHeight: 1.1 }}>{finOverallPct}%</div>
-          <div style={{ height: 7, marginTop: 9, borderRadius: 4, background: '#FFFFFF', overflow: 'hidden' }}>
-            <div style={{ width: `${finOverallPct}%`, height: '100%', background: finOverallColor, borderRadius: 4 }}/>
+            {/* Toggle sidebar level halaman — muncul hanya saat preview disembunyikan,
+                supaya selalu ada titik masuk yang tetap (tak berpindah-pindah). */}
+            {!showDocPanel && (
+              <button
+                onClick={() => setShowDocPanel(true)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: 'pointer', fontFamily: FONT_DISPLAY }}
+              >
+                <Eye size={14}/> Tampilkan Preview
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Tabbed card ───────────────────────────────────────────────── */}
-      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 8px rgba(20,30,45,.06)' }}>
-        {/* Tab bar */}
-        <div style={{ display: 'flex', borderBottom: `1px solid ${C.lineSoft}`, padding: '0 6px', overflowX: 'auto', flexShrink: 0 }}>
-          <TabBtn active={tab==='overview'} onClick={() => setTab('overview')} icon={List}       label="Overview"/>
-          <TabBtn active={tab==='items'}    onClick={() => setTab('items')}    icon={Package}    label="Items"    count={totalItems}/>
-          <TabBtn active={tab==='shipment'} onClick={() => setTab('shipment')} icon={Truck}      label="Shipment" count={0}/>
-          <TabBtn active={tab==='dokumen'}  onClick={() => setTab('dokumen')}  icon={FolderOpen} label="Dokumen"  count={0}/>
-          <TabBtn active={tab==='history'}  onClick={() => setTab('history')}  icon={History}    label="History"/>
+    </div>
+    {/* ══════════ /BARIS ATAS ══════════ */}
+
+    {/* ══════════ KOLOM KIRI — tab bar + isi semua tab ══════════ */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4, minWidth: 0 }}>
+
+      {/* ── Tab + panel — TANPA kotak pembungkus. Pembatas satu-satunya adalah
+             border-bottom baris tab, persis mockup. ── */}
+      <div>
+        {/* Divider di ATAS baris tab — `<hr class="hr">` yang memang ada di markup
+            mockup tepat sebelum container tab. Sempat hilang saat blok info strip
+            dipindah ke grid Overview. Beda elemen dari border-bottom tab di bawah. */}
+        <hr style={{ height: 1, border: 0, margin: `0 0 ${SP.s4}px`, background: C.line }}/>
+
+        {/* Tab bar — `flexWrap` menggantikan `overflowX: 'auto'`. Sumber scrollbar
+            hantu tadi: menyetel overflow-x saja membuat overflow-y ikut jadi `auto`,
+            lalu `marginBottom: -1` pada TabBtn menembus kotak padding 1px → browser
+            memunculkan scrollbar padahal isinya muat. Mockup sendiri pakai wrap. */}
+        <div style={{ display: 'flex', gap: SP.s6, borderBottom: `1px solid ${C.line}`, padding: 0, flexWrap: 'wrap', flexShrink: 0 }}>
+          <TabBtn active={tab==='overview'} onClick={() => setTab('overview')} label="Overview"/>
+          <TabBtn active={tab==='items'}    onClick={() => setTab('items')}    label="Items"/>
+          <TabBtn active={tab==='shipment'} onClick={() => setTab('shipment')} label="Shipment"/>
+          <TabBtn active={tab==='dokumen'}  onClick={() => setTab('dokumen')}  label="Dokumen"/>
+          <TabBtn active={tab==='history'}  onClick={() => setTab('history')}  label="History"/>
         </div>
 
-        {/* ── OVERVIEW panel ── */}
+        {/* ── OVERVIEW panel — grid 2 kolom TETAP. Preview dokumen sudah naik
+               jadi sidebar level halaman, tak lagi menempati kolom ke-3. ── */}
         {tab === 'overview' && (
-          <div style={{ padding: 24, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, alignItems: 'start' }}>
+          <div className="nx-grid-3" style={{ padding: `${SP.s4}px 0 0`, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: SP.s4, alignItems: 'start' }}>
 
-            {/* Financial Summary */}
-            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14 }}>Financial Summary</div>
-              <div style={{ padding: '6px 18px 18px' }}>
+            {/* SP Date & Expired — di mockup ini CARD dgn grid label/nilai 2 kolom
+                (bukan tiga angka besar). Screenshot mengonfirmasi itu. */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3 }}>
+              <div style={{ ...kickerStyle }}>SP Date &amp; Expired</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s1}px ${SP.s3}px`, fontSize: 13, marginTop: SP.s1, alignContent: 'start' }}>
+                <div style={{ color: C.inkSoft }}>SP Date</div>
+                <div>{fmtDate(spDate)}</div>
+                <div style={{ color: C.inkSoft }}>Expired Date</div>
+                <div>
+                  <span style={{ color: days != null && days < 2 ? C.warn : C.ink }}>{fmtDate(firstDeadline)}</span>
+                  <div style={{ color: C.inkSoft, fontSize: 11 }}>{deadlineSub}</div>
+                </div>
+                <div style={{ color: C.inkSoft }}>Finance Progress</div>
+                <div>{finOverallPct}%</div>
+              </div>
+            </div>
+
+            {/* Progress Pengiriman — kicker + card-title + bar + body, pola mockup. */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3 }}>
+              <div style={{ ...kickerStyle }}>Progress Pengiriman</div>
+              <div style={{ ...cardTitleStyle, marginTop: 2 }}>{shipPct}% terkirim</div>
+              <div style={{ height: 8, background: '#EAE7E7', borderRadius: RADIUS.sm, overflow: 'hidden', margin: `${SP.s2}px 0` }}>
+                <div style={{ height: '100%', width: `${shipPct}%`, background: C.accent }}/>
+              </div>
+              <p style={{ margin: 0, fontSize: 13, opacity: .8 }}>
+                Dihitung dari kuantitas barang yang sudah dikirim penuh atau sebagian dari total pesanan.
+              </p>
+            </div>
+
+            {/* Financial Summary — grid 4 kolom label/nilai, full width (pola mockup). */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3, gridColumn: '1 / -1' }}>
+              <div style={{ ...kickerStyle }}>Financial Summary</div>
+              <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: `${SP.s3}px ${SP.s4}px`, fontSize: 13, marginTop: SP.s2 }}>
                 {[
-                  { k: 'Total Items',    v: `${totalItems} produk`, color: null },
-                  { k: 'Total QTY',      v: totalQty.toLocaleString('id-ID'), color: null },
-                  { k: 'Shipped',        v: shippedQty.toLocaleString('id-ID'), color: C.ok },
-                  { k: 'Outstanding',    v: outstandQty.toLocaleString('id-ID'), color: outstandQty > 0 ? C.danger : C.inkSoft },
-                  null, // divider
-                  { k: 'Subtotal',       v: rp(subtotal),    color: null },
-                  { k: 'Ongkos Kirim',   v: rp(ongkosKirim), color: null },
-                  { k: 'PPN (11%)',      v: rp(ppnTotal),    color: null },
-                ].map((row, i) => row === null ? (
-                  <div key={`div-${i}`} style={{ height: 1, background: C.lineSoft, margin: '6px 0' }}/>
-                ) : (
-                  <div key={row.k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', fontSize: 13, borderBottom: `1px solid ${C.lineSoft}` }}>
-                    <span style={{ color: C.inkSoft, fontWeight: 600 }}>{row.k}</span>
-                    <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600, color: row.color || C.ink }}>{row.v}</span>
+                  { k: 'Total Items',  v: String(totalItems) },
+                  { k: 'Total QTY',    v: totalQty.toLocaleString('id-ID') },
+                  { k: 'Shipped',      v: shippedQty.toLocaleString('id-ID') },
+                  { k: 'Outstanding',  v: outstandQty.toLocaleString('id-ID') },
+                  { k: 'Subtotal',     v: rp(subtotal) },
+                  { k: 'Ongkos Kirim', v: rp(ongkosKirim) },
+                  { k: 'PPN 11%',      v: rp(ppnTotal) },
+                  { k: 'Grand Total',  v: rp(grandTotal), color: C.grandTotal },
+                ].map(c => (
+                  <div key={c.k}>
+                    <div style={{ fontSize: 11, color: C.inkSoft }}>{c.k}</div>
+                    <div style={{ fontWeight: 600, whiteSpace: 'nowrap', color: c.color || C.ink }}>{c.v}</div>
                   </div>
                 ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0 0', marginTop: 5, borderTop: `1.5px solid ${C.line}` }}>
-                  <span style={{ fontWeight: 800, color: C.ink, fontSize: 14 }}>Grand Total</span>
-                  <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 17, fontWeight: 700, color: C.accent }}>{rp(grandTotal)}</span>
-                </div>
               </div>
             </div>
 
-            {/* Finance Status */}
-            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14 }}>Finance Status</div>
-              <div style={{ padding: '6px 18px 18px' }}>
-                {/* Overall bar */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 14px', border: `1px solid ${C.line}`, borderRadius: 10, background: C.surface2, marginBottom: 14 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, whiteSpace: 'nowrap' }}>
-                    {finOverallDone} / {finOverallTotal} <span style={{ color: C.inkFaint, fontWeight: 500 }}>langkah selesai</span>
-                  </span>
-                  <div style={{ flex: 1, height: 8, borderRadius: 4, background: C.lineSoft, overflow: 'hidden' }}>
-                    <div style={{ width: `${finOverallPct}%`, height: '100%', background: finOverallColor, borderRadius: 4 }}/>
+            {/* Finance Status — 4 kolom tahap + bar tipis, full width (pola mockup).
+                Warna bar tetap gradasi semantik finColor(), keputusan yang sudah final. */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3, gridColumn: '1 / -1' }}>
+              <div style={{ ...kickerStyle }}>Finance Status</div>
+              <div style={{ ...cardTitleStyle, fontSize: 16, marginTop: 2 }}>{finOverallPct}% selesai</div>
+              <p style={{ margin: '2px 0 0', fontSize: 13, opacity: .8 }}>
+                {finOverallDone}/{finOverallTotal} langkah selesai ({finOverallPct}%)
+              </p>
+              <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: SP.s4, marginTop: SP.s2 }}>
+                {finStages.map(s => (
+                  <div key={s.key}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: SP.s1, gap: SP.s2 }}>
+                      <span>{s.label}</span>
+                      <span style={{ color: C.inkSoft, whiteSpace: 'nowrap' }}>{s.done}/{s.total} &middot; {s.pct}%</span>
+                    </div>
+                    <div style={{ height: 6, background: '#EAE7E7', borderRadius: RADIUS.sm, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${s.pct}%`, background: finColor(s.pct) }}/>
+                    </div>
                   </div>
-                  <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 600, color: C.accent, width: 40, textAlign: 'right', flexShrink: 0 }}>
-                    {finOverallPct}%
-                  </span>
-                </div>
-
-                {/* Finance table */}
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      {['Tahap','Selesai','Progress',''].map((h, i) => (
-                        <th key={h+i} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkFaint, textAlign: i === 3 ? 'right' : 'left', padding: '0 10px 9px', borderBottom: `1px solid ${C.lineSoft}` }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {finStages.map(s => {
-                      const color = finColor(s.pct);
-                      const Icon  = s.icon;
-                      return (
-                        <tr key={s.key}>
-                          <td style={{ padding: '11px 10px', borderBottom: `1px solid ${C.lineSoft}`, fontSize: 13 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontWeight: 600 }}>
-                              <span style={{ width: 26, height: 26, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: s.cls, color: s.clsColor, flexShrink: 0 }}>
-                                <Icon size={14}/>
-                              </span>
-                              {s.label}
-                            </div>
-                          </td>
-                          <td style={{ padding: '11px 10px', borderBottom: `1px solid ${C.lineSoft}`, fontSize: 13 }}>
-                            <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600 }}>{s.done}</span>
-                            {' '}<span style={{ color: C.inkFaint }}>/ {s.total}</span>
-                            {' '}<span style={{ fontSize: 11.5, color: C.inkFaint }}>item</span>
-                          </td>
-                          <td style={{ padding: '11px 10px', borderBottom: `1px solid ${C.lineSoft}` }}>
-                            <MiniBar pct={s.pct}/>
-                          </td>
-                          <td style={{ padding: '11px 10px', borderBottom: `1px solid ${C.lineSoft}`, textAlign: 'right' }}>
-                            <StatusDot color={color}/>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                ))}
               </div>
             </div>
 
-            {/* Invoice — Fase 4 */}
-            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14 }}>Invoice</div>
-              <div style={{ padding: '6px 18px 18px' }}>
+            {/* Invoice — card MANDIRI (hasil un-merge). Di mockup asli ini card
+                terpisah ber-kicker "Invoice" (grid-column 1/-1), duduk antara
+                Finance Status dan Nomor BTB. Preview dokumen sudah naik jadi
+                sidebar level halaman. SELURUH field fungsional dipertahankan —
+                mockup cuma badge+tombol, itu contoh bentuk, bukan spek fungsi. */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3, gridColumn: '1 / -1' }}>
+              <div style={{ ...kickerStyle }}>Invoice</div>
+              <div style={{ marginTop: SP.s2 }}>
                 {invoiceLoading ? (
                   <p style={{ fontSize: 13, color: C.inkFaint, padding: '10px 0' }}>Memuat…</p>
                 ) : invoice ? (
@@ -1210,29 +1498,34 @@ export default function SalesOrderDetailPage({
                     {[
                       { k: 'No. Invoice', v: invoice.invoice_no || '—' },
                       { k: 'Tanggal',     v: fmtDate(invoice.invoice_date) },
+                      // due_date diisi RPC submit_invoice; sebelum submit masih NULL
+                      // → fmtDate() mengembalikan '—'. Baris ini otomatis hanya
+                      // tampil saat invoice ada, karena seluruh blok ini di dalam
+                      // cabang `invoice ? …`.
+                      { k: 'Batas Waktu Pembayaran', v: fmtDate(invoice.due_date) },
                       { k: 'DPP',         v: rp(invoice.total_dpp) },
                       { k: 'PPN',         v: rp(invoice.total_ppn) },
                     ].map(row => (
                       <div key={row.k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', fontSize: 13, borderBottom: `1px solid ${C.lineSoft}` }}>
                         <span style={{ color: C.inkSoft, fontWeight: 600 }}>{row.k}</span>
-                        <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600, color: C.ink }}>{row.v}</span>
+                        <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: C.ink }}>{row.v}</span>
                       </div>
                     ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0 0', marginTop: 5, borderTop: `1.5px solid ${C.line}` }}>
                       <span style={{ fontWeight: 800, color: C.ink, fontSize: 14 }}>Total</span>
-                      <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 17, fontWeight: 700, color: C.accent }}>{rp(invoice.total_amount)}</span>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 17, fontWeight: 700, color: C.grandTotal }}>{rp(invoice.total_amount)}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, gap: 8, flexWrap: 'wrap' }}>
                       {invoice.status === 'submitted' ? (
-                        <Badge bg={C.okBg} color={C.ok} bd={C.okBd}><StatusDot color={C.ok}/>Submitted</Badge>
+                        <Badge {...TAG_PALE}>Submitted</Badge>
                       ) : (
-                        <Badge bg={C.warnBg} color={C.warn} bd={C.warnBd}><StatusDot color={C.warn}/>Issued</Badge>
+                        <Badge {...TAG_OUTLINE}>Issued</Badge>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <button
                           onClick={handleDownloadInvoice}
                           disabled={invoiceDownloading}
-                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, color: invoiceDownloading ? C.inkFaint : C.inkSoft, fontSize: 13, fontWeight: 600, cursor: invoiceDownloading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: 'transparent', color: invoiceDownloading ? C.inkFaint : C.inkSoft, fontSize: 13, fontWeight: 600, cursor: invoiceDownloading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
                         >
                           <Download size={13}/> {invoiceDownloading ? 'Menyiapkan…' : 'Download'}
                         </button>
@@ -1240,45 +1533,241 @@ export default function SalesOrderDetailPage({
                           <button
                             onClick={handleSubmitInvoice}
                             disabled={invoiceSaving}
-                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: 'none', background: invoiceSaving ? C.lineSoft : C.accent, color: invoiceSaving ? C.inkFaint : '#fff', fontSize: 13, fontWeight: 600, cursor: invoiceSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${invoiceSaving ? C.line : C.accent}`, background: 'transparent', color: invoiceSaving ? C.inkFaint : C.accent, fontSize: 13, fontWeight: 600, cursor: invoiceSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
                           >
                             <Send size={13}/> {invoiceSaving ? 'Menyimpan…' : 'Submit'}
                           </button>
                         )}
                       </div>
                     </div>
+
+                    {/* ── TASK 5: badge Lunas ─────────────────────────────── */}
+                    {invStatus === 'paid' && (
+                      <div style={{ marginTop: SP.s3 }}>
+                        <Badge {...TAG_PALE}>Lunas</Badge>
+                      </div>
+                    )}
+
+                    {/* ── TASK 2: Terima Pembayaran (inline) ──────────────── */}
+                    {showPaymentForm && (
+                      <div style={{ borderTop: `1px solid ${C.lineSoft}`, marginTop: SP.s3, paddingTop: SP.s3 }}>
+                        <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Terima Pembayaran</div>
+                        {/* Label dinamis: negatif = kelebihan bayar, ditampilkan
+                            sebagai angka positif dgn warna perlu-perhatian.
+                            Murni tampilan — perhitungan sisaTagihan tak berubah. */}
+                        <div style={{ fontSize: 13, marginBottom: SP.s2 }}>
+                          {sisaTagihan >= 0 ? (
+                            <>
+                              <span style={{ color: C.inkSoft }}>Sisa Tagihan: </span>
+                              <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: C.ink }}>
+                                {rp(sisaTagihan)}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span style={{ color: C.attn }}>Lebih Bayar: </span>
+                              <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: C.attn }}>
+                                {rp(Math.abs(sisaTagihan))}
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        <ModalGrid cols={3}>
+                          <ModalField label="Nominal Pembayaran (Rp)" req>
+                            <ModalInp type="number" value={payForm.amount} onFocus={selectOnFocus}
+                              onChange={e => setPayForm(f => ({ ...f, amount: e.target.value.replace(/^0+(?=\d)/, '') }))}/>
+                          </ModalField>
+                          <ModalField label="Tanggal Bayar">
+                            <ModalInp type="date" value={payForm.paymentDate}
+                              onChange={e => setPayForm(f => ({ ...f, paymentDate: e.target.value }))}/>
+                          </ModalField>
+                          <ModalField label="Referensi / No. Transfer">
+                            <ModalInp value={payForm.reference}
+                              onChange={e => setPayForm(f => ({ ...f, reference: e.target.value }))}/>
+                          </ModalField>
+                        </ModalGrid>
+
+                        <div style={{ marginTop: SP.s2 }}>
+                          <ModalGrid cols={3}>
+                            <ModalField label="PPh 23 (Rp)">
+                              {/* Prefill saran sekali; begitu user mengetik, nilainya tak ditimpa lagi. */}
+                              <ModalInp type="number"
+                                value={pphTouched ? payForm.pph : (payForm.pph || String(pphSuggestion))}
+                                onFocus={selectOnFocus}
+                                onChange={e => { setPphTouched(true); setPayForm(f => ({ ...f, pph: e.target.value })); }}/>
+                              <span style={{ fontSize: 11, color: C.inkFaint }}>
+                                Saran otomatis, sesuaikan dengan bukti potong asli.
+                              </span>
+                            </ModalField>
+                            <ModalField label="Link Bukti Potong">
+                              <ModalInp type="url" placeholder="https://drive.google.com/…" value={payForm.buktiUrl}
+                                onChange={e => setPayForm(f => ({ ...f, buktiUrl: e.target.value }))}/>
+                            </ModalField>
+                            <ModalField label="No. Bukti Potong">
+                              <ModalInp value={payForm.buktiNo}
+                                onChange={e => setPayForm(f => ({ ...f, buktiNo: e.target.value }))}/>
+                            </ModalField>
+                          </ModalGrid>
+                        </div>
+
+                        <button
+                          onClick={handleRecordPayment}
+                          disabled={paySaving || !(Number(payForm.amount) > 0)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: SP.s3, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${(!paySaving && Number(payForm.amount) > 0) ? C.accent : C.line}`, background: 'transparent', color: (!paySaving && Number(payForm.amount) > 0) ? C.accent : C.inkFaint, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: (!paySaving && Number(payForm.amount) > 0) ? 'pointer' : 'not-allowed', fontFamily: FONT_DISPLAY }}
+                        >
+                          <Wallet size={14}/> {paySaving ? 'Menyimpan…' : 'Catat Pembayaran'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* ── TASK 3: Riwayat Pembayaran (inline) ─────────────── */}
+                    {showPaymentHistory && (
+                      <div style={{ borderTop: `1px solid ${C.lineSoft}`, marginTop: SP.s3, paddingTop: SP.s3 }}>
+                        <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Riwayat Pembayaran</div>
+                        {payments.length === 0 ? (
+                          <p style={{ fontSize: 13, color: C.inkFaint, margin: 0 }}>Belum ada pembayaran tercatat.</p>
+                        ) : (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                              <thead>
+                                <tr>
+                                  {[['Tanggal', 'left'], ['Nominal', 'right'], ['PPh', 'right'], ['Referensi', 'left']].map(([h, align]) => (
+                                    <th key={h} style={{ ...thStyle, textAlign: align, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {payments.map(pm => (
+                                  <tr key={pm.id}>
+                                    <td style={{ padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}`, whiteSpace: 'nowrap' }}>{fmtDate(pm.payment_date)}</td>
+                                    <td style={{ padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}`, textAlign: 'right', fontFamily: FONT_MONO, whiteSpace: 'nowrap' }}>{rp(pm.amount)}</td>
+                                    <td style={{ padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}`, textAlign: 'right', fontFamily: FONT_MONO, color: C.inkSoft, whiteSpace: 'nowrap' }}>{rp(pm.pph)}</td>
+                                    <td style={{ padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}` }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                        {pm.reference || '—'}
+                                        {pm.bukti_potong_url && (
+                                          <a href={pm.bukti_potong_url} target="_blank" rel="noopener noreferrer"
+                                             title={pm.bukti_potong_no ? `Bukti potong ${pm.bukti_potong_no}` : 'Bukti potong'}
+                                             style={{ color: C.accent, display: 'inline-flex', alignItems: 'center' }}>
+                                            <Link2 size={13}/>
+                                          </a>
+                                        )}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── TASK 4: TTF (inline) ────────────────────────────── */}
+                    {showTtfBlock && (
+                      <div style={{ borderTop: `1px solid ${C.lineSoft}`, marginTop: SP.s3, paddingTop: SP.s3 }}>
+                        <div style={{ ...kickerStyle, marginBottom: SP.s2 }}>Tanda Terima Faktur</div>
+                        {(ttf?.tanggal_menerima && !ttfEditing) ? (
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: SP.s2, flexWrap: 'wrap' }}>
+                            <p style={{ fontSize: 13, margin: 0 }}>
+                              TTF diterima <b>{fmtDate(ttf.tanggal_menerima)}</b>
+                              {ttf.diterima_oleh ? <> oleh <b>{ttf.diterima_oleh}</b></> : null}
+                              {ttf.no_ttf ? <span style={{ color: C.inkSoft }}> &middot; No. {ttf.no_ttf}</span> : null}
+                            </p>
+                            {/* Masuk mode form dgn data existing sbg prefill. RPC
+                                mark_ttf_received sudah upsert (IF v_ttf_id IS NULL
+                                → INSERT, ELSE → UPDATE), jadi submit yang sama
+                                akan memperbarui baris, bukan bikin TTF kedua. */}
+                            <button
+                              onClick={() => {
+                                setTtfForm({
+                                  receivedBy: ttf.diterima_oleh || '',
+                                  ttfNo:      ttf.no_ttf || '',
+                                  notes:      ttf.notes || '',
+                                });
+                                setTtfEditing(true);
+                              }}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+                            >
+                              <Pencil size={12}/> Edit
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <ModalGrid cols={3}>
+                              <ModalField label="Nama Penerima" req>
+                                <ModalInp value={ttfForm.receivedBy}
+                                  onChange={e => setTtfForm(f => ({ ...f, receivedBy: e.target.value }))}/>
+                              </ModalField>
+                              <ModalField label="No. TTF">
+                                <ModalInp value={ttfForm.ttfNo}
+                                  onChange={e => setTtfForm(f => ({ ...f, ttfNo: e.target.value }))}/>
+                              </ModalField>
+                              <ModalField label="Catatan">
+                                <ModalInp value={ttfForm.notes}
+                                  onChange={e => setTtfForm(f => ({ ...f, notes: e.target.value }))}/>
+                              </ModalField>
+                            </ModalGrid>
+                            <div style={{ display: 'flex', gap: SP.s2, marginTop: SP.s3, flexWrap: 'wrap' }}>
+                              <button
+                                onClick={handleMarkTtf}
+                                disabled={ttfSaving || !ttfForm.receivedBy.trim()}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${(!ttfSaving && ttfForm.receivedBy.trim()) ? C.accent : C.line}`, background: 'transparent', color: (!ttfSaving && ttfForm.receivedBy.trim()) ? C.accent : C.inkFaint, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: (!ttfSaving && ttfForm.receivedBy.trim()) ? 'pointer' : 'not-allowed', fontFamily: FONT_DISPLAY }}
+                              >
+                                <Check size={14}/> {ttfSaving ? 'Menyimpan…' : (ttfEditing ? 'Simpan Perubahan' : 'Tandai TTF Diterima')}
+                              </button>
+                              {ttfEditing && (
+                                <button
+                                  onClick={() => { setTtfEditing(false); setTtfForm({ receivedBy: '', ttfNo: '', notes: '' }); }}
+                                  disabled={ttfSaving}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: ttfSaving ? 'not-allowed' : 'pointer', fontFamily: FONT_DISPLAY }}
+                                >
+                                  Batal
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </>
                 ) : (
-                  <>
-                    <p style={{ fontSize: 13, color: C.inkFaint, marginBottom: 12 }}>Belum ada invoice untuk SP ini.</p>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: SP.s3, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 240 }}>
+                      <Badge {...TAG_ATTN}>Belum Diterbitkan</Badge>
+                      <p style={{ fontSize: 13, opacity: .8, margin: `${SP.s2}px 0 0` }}>
+                        Invoice diterbitkan setelah barang selesai dikirim atau atas permintaan pelanggan.
+                      </p>
+                      {!canCreateInvoice && (
+                        <p style={{ fontSize: 12, color: C.inkFaint, marginTop: SP.s1 }}>
+                          {!spOrder?.id
+                            ? 'SP ini belum punya data skema baru (sp_orders) — invoice belum bisa diterbitkan.'
+                            : totalQty === 0
+                            ? 'SP belum punya item.'
+                            : `Belum bisa diterbitkan — outstanding ${(totalQty - shippedQty).toLocaleString('id-ID')} dari ${totalQty.toLocaleString('id-ID')} qty (${shippedQty.toLocaleString('id-ID')} sudah terkirim). Invoice hanya bisa diterbitkan setelah seluruh qty terkirim penuh.`}
+                        </p>
+                      )}
+                    </div>
                     <button
                       onClick={handleCreateInvoice}
                       disabled={!canCreateInvoice || invoiceSaving}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center', padding: '0 14px', height: 38, borderRadius: 8, border: 'none', background: (canCreateInvoice && !invoiceSaving) ? C.accent : C.lineSoft, color: (canCreateInvoice && !invoiceSaving) ? '#fff' : C.inkFaint, fontSize: 13, fontWeight: 600, cursor: (canCreateInvoice && !invoiceSaving) ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${(canCreateInvoice && !invoiceSaving) ? C.accent : C.line}`, background: 'transparent', color: (canCreateInvoice && !invoiceSaving) ? C.accent : C.inkFaint, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: (canCreateInvoice && !invoiceSaving) ? 'pointer' : 'not-allowed', fontFamily: FONT_DISPLAY, flexShrink: 0 }}
                     >
                       <Receipt size={14}/> {invoiceSaving ? 'Menerbitkan…' : 'Terbitkan Invoice'}
                     </button>
-                    {!canCreateInvoice && (
-                      <p style={{ fontSize: 12, color: C.inkFaint, marginTop: 8 }}>
-                        {!spOrder?.id
-                          ? 'SP ini belum punya data skema baru (sp_orders) — invoice belum bisa diterbitkan.'
-                          : totalQty === 0
-                          ? 'SP belum punya item.'
-                          : `Belum bisa diterbitkan — outstanding ${(totalQty - shippedQty).toLocaleString('id-ID')} dari ${totalQty.toLocaleString('id-ID')} qty (${shippedQty.toLocaleString('id-ID')} sudah terkirim). Invoice hanya bisa diterbitkan setelah seluruh qty terkirim penuh.`}
-                      </p>
-                    )}
-                  </>
+                  </div>
                 )}
               </div>
             </div>
 
             {/* BTB Numbers — SP-level */}
-            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: 11, overflow: 'hidden', gridColumn: '1 / -1' }}>
-              <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.lineSoft}`, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span>BTB Numbers</span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: C.inkFaint }}>{btbs.length} nomor BTB</span>
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, overflow: 'hidden', gridColumn: '1 / -1' }}>
+              <div style={{ padding: `${SP.s3}px ${SP.s3}px 0`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ ...kickerStyle }}>BTB Numbers</span>
+                <span style={{ fontSize: 12, color: C.inkFaint }}>{btbs.length} nomor BTB</span>
               </div>
-              <div style={{ padding: '14px 18px' }}>
+              <div style={{ padding: `${SP.s2}px ${SP.s3}px ${SP.s3}px` }}>
                 {/* Existing BTBs */}
                 {btbs.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
@@ -1322,7 +1811,7 @@ export default function SalesOrderDetailPage({
                     <button
                       onClick={handleAddBtb}
                       disabled={!btbInput.trim() || btbSaving}
-                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 36, borderRadius: 8, border: 'none', background: btbInput.trim() ? C.accent : C.lineSoft, color: btbInput.trim() ? '#fff' : C.inkFaint, fontSize: 13, fontWeight: 600, cursor: btbInput.trim() ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', fontFamily: 'inherit', flexShrink: 0 }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 36, borderRadius: 8, border: `1px solid ${btbInput.trim() ? C.accent : C.line}`, background: 'transparent', color: btbInput.trim() ? C.accent : C.inkFaint, fontSize: 13, fontWeight: 600, cursor: btbInput.trim() ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', fontFamily: 'inherit', flexShrink: 0 }}
                     >
                       <Plus size={13}/> {btbSaving ? 'Menyimpan…' : 'Tambah BTB'}
                     </button>
@@ -1336,137 +1825,83 @@ export default function SalesOrderDetailPage({
 
         {/* ── ITEMS panel ── */}
         {tab === 'items' && (
-          <div style={{ padding: 24 }}>
+          <div style={{ padding: `${SP.s4}px 0 0` }}>
             {items.length === 0 ? (
               <EmptyState icon={Package} title="Tidak ada item" sub="Belum ada item yang tercatat untuk SP ini."/>
-            ) : items.map((item, idx) => {
-              const sm = itemStatusMeta(item.status);
-              const outQty = Number(item.qty) - Number(item.shippedQty);
-              const { subtotal: itemSubtotal, ppn: itemPPN, grandTotal: itemGrand } = calcItem(item);
-              return (
-                <div key={item.id} style={{ border: `1px solid ${C.line}`, borderRadius: 11, background: C.surface, marginBottom: 12, overflow: 'hidden' }}>
-                  {/* it-head */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, padding: '15px 16px 13px' }}>
-                    <span style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: C.surface2, color: C.inkSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600, fontSize: 13 }}>
-                      {idx + 1}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <b style={{ fontSize: 14.5, fontWeight: 700, display: 'block' }}>{item.productName}</b>
-                      <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, color: C.inkFaint, marginTop: 2 }}>
-                        SKU · {item.sku || '—'}
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                {/* Grid 10 kolom — lebar kolom & urutan persis markup mockup. */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.2fr 0.7fr 0.5fr 1fr 0.6fr 0.6fr 1fr 1.1fr 0.5fr', fontSize: 13, minWidth: 880 }}>
+                  {[['Produk','left'],['Akun','left'],['Kuantitas','right'],['Unit','left'],['Harga Satuan','right'],['Pajak','left'],['Diskon','left'],['Subtotal','right'],['Status Pengiriman','left'],['Aksi','left']].map(([h, align]) => (
+                    <div key={h} style={{ ...thStyle, textAlign: align, borderBottom: `1px solid ${C.line}` }}>{h}</div>
+                  ))}
+                  {items.map(item => {
+                    const sm   = itemStatusMeta(item.status);
+                    const { subtotal: itemSubtotal } = calcItem(item);
+                    const prod = products.find(p => p.id === item.productId);
+                    const cell = { padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}` };
+                    return (
+                      <div key={item.id} style={{ display: 'contents' }}>
+                        <div style={cell}>
+                          <div>{item.productName || '—'}</div>
+                          {/* deskripsi mockup = SKU · DC */}
+                          <div style={{ color: C.inkSoft, fontSize: 11.5 }}>
+                            {[item.sku, item.dc].filter(Boolean).join(' · ') || '—'}
+                          </div>
+                        </div>
+                        {/* Akun — belum ada sumber datanya (lihat laporan) */}
+                        <div style={{ ...cell, color: C.inkSoft }}>—</div>
+                        <div style={{ ...cell, textAlign: 'right' }}>{num2(item.qty)}</div>
+                        <div style={cell}>{prod?.unit || prod?.uom || '—'}</div>
+                        <div style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>{rp2(item.unitPrice)}</div>
+                        <div style={cell}>{Math.round(PPN_RATE * 100)}%</div>
+                        {/* Diskon — tak ada kolomnya di skema */}
+                        <div style={cell}>—</div>
+                        <div style={{ ...cell, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{rp2(itemSubtotal)}</div>
+                        <div style={cell}><Badge bg={sm.bg} color={sm.color} bd={sm.bd}>{sm.label}</Badge></div>
+                        {/* Mockup cuma punya ikon Edit di kolom Aksi. Tombol Hapus
+                            DIPERTAHANKAN — aksi nyata yang sudah ada; membuangnya
+                            demi kemiripan = menghilangkan fungsi, bukan restyle. */}
+                        <div style={{ ...cell, display: 'flex', gap: 4 }}>
+                          <button
+                            onClick={() => setEditingItem(item)}
+                            aria-label="Edit baris"
+                            title="Edit item"
+                            style={{ width: 28, height: 28, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.md, color: C.accent, cursor: 'pointer' }}
+                          >
+                            <Pencil size={14}/>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteItem(item.id)}
+                            aria-label="Hapus baris"
+                            title="Hapus item"
+                            style={{ width: 28, height: 28, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.md, color: C.danger, cursor: 'pointer' }}
+                          >
+                            <Trash2 size={14}/>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      {canGeneratePicking && (() => {
-                        if (!item.productId) return <Badge bg={C.neutralBg} color={C.neutral} bd={C.neutralBd}><span/>Tersedia: —</Badge>;
-                        const av = stockMap[item.productId]?.available ?? 0;
-                        const ok = av >= outQty;
-                        return <Badge bg={ok ? C.okBg : C.dangerBg} color={ok ? C.ok : C.danger} bd={ok ? C.okBd : C.dangerBd}>
-                          <span/>Tersedia: {av.toLocaleString('id-ID')}
-                        </Badge>;
-                      })()}
-                      <Badge bg={sm.bg} color={sm.color} bd={sm.bd}>
-                        <StatusDot color={sm.color}/>{sm.label}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  {/* it-grid — 6 cells */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', borderTop: `1px solid ${C.lineSoft}`, background: C.surface2 }}>
-                    {[
-                      { label: 'QTY',        value: Number(item.qty).toLocaleString('id-ID') },
-                      { label: 'Shipped',    value: Number(item.shippedQty).toLocaleString('id-ID') },
-                      { label: 'Outstanding',value: outQty > 0 ? outQty.toLocaleString('id-ID') : '0', danger: outQty > 0 },
-                      { label: 'Unit Price', value: rp(item.unitPrice) },
-                      { label: 'Shipping',   value: rp(item.shippingPrice) },
-                      { label: 'Grand Total',value: rp(itemGrand) },
-                    ].map((cell, ci, arr) => (
-                      <div key={cell.label} style={{ padding: '11px 14px', borderRight: ci < arr.length - 1 ? `1px solid ${C.lineSoft}` : 'none' }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint }}>{cell.label}</div>
-                        <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13.5, fontWeight: 600, marginTop: 3, color: cell.danger ? C.danger : C.ink }}>{cell.value}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* it-foot */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 16px', flexWrap: 'wrap', borderTop: `1px solid ${C.lineSoft}` }}>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-                      <FinPill label="INV" active={!!item.inv}/>
-                      <FinPill label="FP"  active={!!item.fp}/>
-                      <FinPill label="SUB" active={!!item.submit}/>
-                      <FinPill label="KRM" active={!!item.kirim}/>
-                      {/* btbNo display removed — BTB numbers now at SP level */}
-                      {item.deliveredDate ? (
-                        <Badge bg={C.okBg} color={C.ok} bd={C.okBd}>
-                          <StatusDot color={C.ok}/>Delivered: {fmtDate(item.deliveredDate)}
-                        </Badge>
-                      ) : item.estimatedDeliveryDate ? (() => {
-                        const isOverdue = new Date(item.estimatedDeliveryDate) < new Date(new Date().toDateString());
-                        return isOverdue ? (
-                          <Badge bg={C.dangerBg} color={C.danger} bd={C.dangerBd}>
-                            <StatusDot color={C.danger}/>Overdue
-                          </Badge>
-                        ) : (
-                          <Badge bg={C.infoBg} color={C.info} bd={C.infoBd}>
-                            Est. Delivery: {fmtDate(item.estimatedDeliveryDate)}
-                          </Badge>
-                        );
-                      })() : null}
-                    </div>
-                    <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                      <button
-                        onClick={() => showToast('Fitur shipment item akan tersedia setelah migrasi tabel shipment', 'success')}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.orangeBd}`, background: C.surface, color: C.orange, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-                      >
-                        <Truck size={13}/> Shipment
-                      </button>
-                      <button
-                        onClick={() => showToast('Finance update akan tersedia setelah migrasi tabel status', 'success')}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.okBd}`, background: C.surface, color: C.accent, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-                      >
-                        <Wallet size={13}/> Finance
-                      </button>
-                      {(role === 'super_admin' || role === 'operations' || role === 'manager' || role === 'gm') && (
-                        <button
-                          onClick={() => setEditingItem(item)}
-                          title="Edit item"
-                          style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, color: C.inkFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Pencil size={15}/>
-                        </button>
-                      )}
-                      {(role === 'super_admin') && (
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          title="Hapus item"
-                          style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid transparent`, background: 'transparent', color: C.inkFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          onMouseEnter={e => { e.currentTarget.style.color = C.danger; e.currentTarget.style.borderColor = C.dangerBd; e.currentTarget.style.background = C.dangerBg; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = C.inkFaint; e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent'; }}
-                        >
-                          <Trash2 size={15}/>
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
         )}
 
         {/* ── SHIPMENT panel ── */}
         {tab === 'shipment' && (
-          <div style={{ padding: 24 }}>
+          <div style={{ padding: `${SP.s4}px 0 0` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
               <div>
-                <b style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 14.5 }}>Riwayat Pengiriman</b>
+                <b style={{ ...cardTitleStyle, fontWeight: 600 }}>Riwayat Pengiriman</b>
                 <div style={{ fontSize: 12.5, color: C.inkFaint, marginTop: 3 }}>
                   {shippedQty > 0 ? `${shippedQty.toLocaleString('id-ID')} dari ${totalQty.toLocaleString('id-ID')} qty terkirim` : 'Belum ada pengiriman tercatat'}
                 </div>
               </div>
               <button
                 onClick={() => showToast('Form tambah shipment akan tersedia setelah migrasi tabel shipment', 'success')}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 14px', border: `1px solid ${C.orangeBd}`, borderRadius: 9, background: C.orangeBg, color: C.orange, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 14px', border: `1px solid ${C.accent}`, borderRadius: 9, background: 'transparent', color: C.accent, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 + Tambah Shipment
               </button>
@@ -1477,11 +1912,11 @@ export default function SalesOrderDetailPage({
 
         {/* ── DOKUMEN panel ── */}
         {tab === 'dokumen' && (
-          <div style={{ padding: 24 }}>
-            <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: C.surface2, padding: 20 }}>
+          <div style={{ padding: `${SP.s4}px 0 0` }}>
+            <div style={{ border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface2, padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <Link2 size={16} style={{ color: C.accent }}/>
-                <b style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, color: C.ink }}>Link Dokumen SP</b>
+                <b style={{ ...cardTitleStyle, fontWeight: 600 }}>Link Dokumen SP</b>
               </div>
               <p style={{ fontSize: 12.5, color: C.inkSoft, margin: '0 0 14px' }}>
                 Tautan ke folder/berkas Drive terkait SP ini (Surat Jalan, PO Customer, Rincian Harga, bukti BTB). Berlaku untuk seluruh SP {spNo}.
@@ -1518,7 +1953,7 @@ export default function SalesOrderDetailPage({
                       setDocEditing(false);
                       showToast(docUrl.trim() ? 'Link dokumen disimpan' : 'Link dokumen dihapus', 'success');
                     }}
-                    style={{ height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.orangeBd}`, background: C.accentSoft, color: C.accent, fontSize: 13, fontWeight: 700, cursor: docSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: docSaving ? 0.7 : 1 }}>
+                    style={{ height: 38, padding: '0 16px', borderRadius: 9, border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent, fontSize: 13, fontWeight: 700, cursor: docSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: docSaving ? 0.7 : 1 }}>
                     {docSaving ? 'Menyimpan…' : 'Simpan'}
                   </button>
                   {docUrl && !docSaving && (
@@ -1538,7 +1973,7 @@ export default function SalesOrderDetailPage({
 
         {/* ── HISTORY panel ── */}
         {tab === 'history' && (
-          <div style={{ padding: 24 }}>
+          <div style={{ padding: `${SP.s4}px 0 0` }}>
             <EmptyState icon={History} title="History kosong" sub="Log aktivitas SP akan muncul di sini setelah tabel audit log diimplementasikan."/>
           </div>
         )}
@@ -1547,7 +1982,7 @@ export default function SalesOrderDetailPage({
       {/* ── Danger zone ── super_admin only + hanya saat DRAFT ──────────── */}
       {role === 'super_admin' && spOrder?.status === 'DRAFT' && (
         <div style={{
-          border: `1px solid ${C.dangerBd}`, borderRadius: 12, background: C.dangerBg,
+          border: `1px solid ${C.dangerBd}`, borderRadius: RADIUS.md, background: C.dangerBg,
           padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 4,
         }}>
           <div style={{ flex: 1, minWidth: 220 }}>
@@ -1566,6 +2001,37 @@ export default function SalesOrderDetailPage({
           </button>
         </div>
       )}
+
+    </div>
+    {/* ══════════ /KOLOM KIRI ══════════ */}
+
+    {/* ══════════ KOLOM KANAN — sidebar preview, sticky & persisten ══════════
+        Sengaja anak langsung grid halaman, DI LUAR semua kondisional tab, jadi
+        tetap tampil di Overview/Items/Shipment/Dokumen/History. Baris kontrol
+        mockup (search, "1 / 1", zoom −/100%/+) TIDAK dirender — semuanya statis
+        non-fungsional di sumbernya; slot posisinya dipakai kicker + toggle. */}
+    {showDocPanel && (
+      <aside style={{ position: 'sticky', top: 24, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: SP.s3 }}>
+          <span style={{ ...kickerStyle }}>Preview Dokumen</span>
+          <button
+            onClick={() => setShowDocPanel(false)}
+            title="Sembunyikan panel — konten melebar penuh"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+          >
+            <EyeOff size={13}/> Sembunyikan
+          </button>
+        </div>
+        <SpDocPreview
+          company={companyHeader}
+          spNo={spNo}
+          spDate={spDate}
+          customer={customer}
+          lines={previewLines}
+          grandTotal={grandTotal}
+        />
+      </aside>
+    )}
 
       {/* ── Modals ────────────────────────────────────────────────────── */}
       {editingItem && (
