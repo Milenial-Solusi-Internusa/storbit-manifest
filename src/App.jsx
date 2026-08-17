@@ -5200,10 +5200,18 @@ function ARModal({ initial, customers, onClose, onSave }) {
   const calc = calcAR(data);
   const activeCustomers = customers.filter(c => c.active !== false);
 
+  // Begitu TTF tertaut ke sebuah invoice, seluruh baris BTB (No. BTB, DPP+PPN,
+  // PPH, Payment) jadi read-only: sisi uang dikelola di sp_invoice_lines /
+  // sp_payments lewat Detail SP (DESIGN_SP_SCHEMA.md §2.5). Cegah double-entry.
+  // Pasangannya di data layer: guard invoice_id di updateTtf() (src/lib/db.js).
+  const btbLocked = !!initial?.invoiceId;
+
   const submit = () => {
     if (!data.noTTF.trim()) { alert('No. TTF wajib diisi'); return; }
     if (!data.customer) { alert('Customer wajib dipilih'); return; }
-    if (data.btbs.length === 0 || data.btbs.every(b => !b.noBTB.trim())) {
+    // Validasi BTB di-skip saat terkunci — baris BTB tak bisa diisi dari sini,
+    // jadi menegakkannya akan mengunci penyimpanan field header juga.
+    if (!btbLocked && (data.btbs.length === 0 || data.btbs.every(b => !b.noBTB.trim()))) {
       alert('Minimal harus ada 1 BTB dengan nomor');
       return;
     }
@@ -5247,6 +5255,11 @@ function ARModal({ initial, customers, onClose, onSave }) {
         </FormSection>
 
         <FormSection label="BTB Items">
+          {btbLocked && (
+            <div className="mb-3 rounded-2xl p-4 text-sm" style={{ background: PASTEL.butter, color: '#5C4416' }}>
+              Nilai pembayaran invoice ini dikelola di Detail SP{data.noSP ? ` ${data.noSP}` : ''} — buka Invoice di sana untuk mencatat pembayaran atau BTB.
+            </div>
+          )}
           <div className="space-y-2">
             <div className="grid gap-2 items-center text-[10px] uppercase tracking-wider font-semibold px-2" style={{ gridTemplateColumns: '2fr 1.2fr 1fr 1.2fr 1.2fr 1.2fr 32px', color: PASTEL.inkMute }}>
               <div>No. BTB</div>
@@ -5262,30 +5275,63 @@ function ARModal({ initial, customers, onClose, onSave }) {
               const os = total - (Number(b.payment)||0);
               return (
                 <div key={b.id} className="grid gap-2 items-center" style={{ gridTemplateColumns: '2fr 1.2fr 1fr 1.2fr 1.2fr 1.2fr 32px' }}>
-                  <input value={b.noBTB} onChange={e=>updateBTB(idx,'noBTB',e.target.value)} placeholder="2025-BTB-..."
-                    className="rounded-lg px-2.5 py-2 text-xs font-mono focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
-                  <input type="number" value={b.dppPPN} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'dppPPN',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
-                    className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
-                  <input type="number" value={b.pph} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'pph',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
-                    className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
+                  {btbLocked ? (
+                    <>
+                      <div className="rounded-lg px-2.5 py-2 text-xs font-mono" style={{ background: PASTEL.lineSoft }}>
+                        {b.noBTB || '—'}
+                      </div>
+                      <div className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right" style={{ background: PASTEL.lineSoft }}>
+                        {formatRupiah(b.dppPPN)}
+                      </div>
+                      <div className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right" style={{ background: PASTEL.lineSoft }}>
+                        {formatRupiah(b.pph)}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <input value={b.noBTB} onChange={e=>updateBTB(idx,'noBTB',e.target.value)} placeholder="2025-BTB-..."
+                        className="rounded-lg px-2.5 py-2 text-xs font-mono focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
+                      <input type="number" value={b.dppPPN} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'dppPPN',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
+                        className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
+                      <input type="number" value={b.pph} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'pph',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
+                        className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
+                    </>
+                  )}
                   <div className="rounded-lg px-2.5 py-2 text-xs font-numeric font-semibold text-right" style={{ background: PASTEL.lineSoft }}>
                     {formatRupiah(total)}
                   </div>
-                  <input type="number" value={b.payment} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'payment',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
-                    className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
+                  {btbLocked ? (
+                    <div className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right" style={{ background: PASTEL.lineSoft }}>
+                      {formatRupiah(b.payment)}
+                    </div>
+                  ) : (
+                    <input type="number" value={b.payment} onFocus={selectOnFocus} onChange={e=>updateBTB(idx,'payment',e.target.value.replace(/^0+(?=\d)/, ''))} onWheel={blurOnWheel}
+                      className="rounded-lg px-2.5 py-2 text-xs font-numeric text-right focus:outline-none" style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
+                  )}
                   <div className="rounded-lg px-2.5 py-2 text-xs font-numeric font-semibold text-right" style={{ background: Math.abs(os) <= 1 ? PASTEL.mint : os > 0 ? PASTEL.peach : PASTEL.rose, color: PASTEL.ink }}>
                     {formatRupiahShort(os)}
                   </div>
-                  <button type="button" onClick={() => removeBTB(idx)} className="rounded-lg p-1.5 flex items-center justify-center" style={{ background: PASTEL.rose, color: '#7A2240' }}>
-                    <Trash2 size={12}/>
-                  </button>
+                  {btbLocked ? (
+                    <div/>
+                  ) : (
+                    <button type="button" onClick={() => removeBTB(idx)} className="rounded-lg p-1.5 flex items-center justify-center" style={{ background: PASTEL.rose, color: '#7A2240' }}>
+                      <Trash2 size={12}/>
+                    </button>
+                  )}
                 </div>
               );
             })}
+            {btbLocked && data.btbs.length === 0 && (
+              <div className="rounded-lg px-3 py-3 text-xs text-center" style={{ background: PASTEL.lineSoft, color: PASTEL.inkMute }}>
+                Belum ada BTB untuk invoice ini.
+              </div>
+            )}
           </div>
-          <button type="button" onClick={addBTB} className="mt-3 px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2" style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>
-            <Plus size={13}/> Add BTB
-          </button>
+          {!btbLocked && (
+            <button type="button" onClick={addBTB} className="mt-3 px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2" style={{ background: PASTEL.lavender, color: '#3D2B5C' }}>
+              <Plus size={13}/> Add BTB
+            </button>
+          )}
           <div className="mt-4 p-4 rounded-2xl space-y-1.5" style={{ background: PASTEL.lineSoft }}>
             <div className="flex items-center justify-between text-sm">
               <span className="text-xs" style={{ color: PASTEL.inkSoft }}>Total Invoice</span>
