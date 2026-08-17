@@ -155,6 +155,12 @@ export function ttfFromDb(row) {
     noSP: row.no_sp || '',
     customerId: row.customer_id || null,
     customer: row.customers?.name || '',
+    // Tautan ke chain SP baru (Fase 4/5). Aditif — ttfToDb() sengaja TIDAK
+    // menulis balik kedua kolom ini; tautan hanya dibuat dari sisi SP/invoice.
+    // Dipakai ARModal untuk mengunci baris BTB (nilai uang pindah ke
+    // sp_invoice_lines/sp_payments — DESIGN_SP_SCHEMA.md §2.5).
+    invoiceId: row.invoice_id || null,
+    spOrderId: row.sp_order_id || null,
     tglPembayaran: row.tgl_pembayaran || '',
     notes: row.notes || '',
     btbs: (row.ar_btbs || [])
@@ -706,7 +712,8 @@ export async function insertTtf(t) {
     .single();
   if (headerErr) return { data: null, error: headerErr };
 
-  // Insert btbs
+  // Insert btbs — tanpa guard invoice_id (beda dengan updateTtf): ttfToDb()
+  // tak pernah menulis invoice_id, jadi TTF baru selalu lahir belum tertaut.
   const btbPayload = (t.btbs || []).map((b, idx) => ({
     ttf_id: header.id,
     no_btb: b.noBTB || '',
@@ -731,27 +738,42 @@ export async function insertTtf(t) {
 
 export async function updateTtf(id, t) {
   const headerPayload = ttfToDb(t);
-  const { error: headerErr } = await supabase
+  // .select('invoice_id') menumpang pada UPDATE yang memang sudah jalan —
+  // nilainya dipakai sebagai guard di bawah, tanpa roundtrip tambahan.
+  const { data: header, error: headerErr } = await supabase
     .from('ar_ttfs')
     .update(headerPayload)
-    .eq('id', id);
+    .eq('id', id)
+    .select('invoice_id')
+    .single();
   if (headerErr) return { data: null, error: headerErr };
 
-  // Strategy: hapus semua btbs lama, insert ulang. Simple, aman buat skala kecil.
-  const { error: delErr } = await supabase.from('ar_btbs').delete().eq('ttf_id', id);
-  if (delErr) return { data: null, error: delErr };
+  // Jaring pengaman anti double-entry: begitu TTF tertaut ke sebuah invoice,
+  // seluruh sisi uang dikelola di sp_invoice_lines/sp_payments lewat Detail SP
+  // (DESIGN_SP_SCHEMA.md §2.5). Blok DELETE + re-INSERT ar_btbs di bawah
+  // di-skip SELURUHNYA — bukan sebagian — sejalan dengan ARModal yang
+  // merender baris BTB sebagai read-only untuk TTF yang sama.
+  // Guard sengaja dibaca dari DB, bukan dari state klien yang bisa basi.
+  // Header (No. TTF, tanggal, No. INV/SP, customer, notes) tetap tersimpan.
+  const btbLocked = !!header?.invoice_id;
 
-  const btbPayload = (t.btbs || []).map((b, idx) => ({
-    ttf_id: id,
-    no_btb: b.noBTB || '',
-    dpp_ppn: Number(b.dppPpn) || 0,
-    pph: Number(b.pph) || 0,
-    payment: Number(b.payment) || 0,
-    position: idx,
-  }));
-  if (btbPayload.length) {
-    const { error: btbErr } = await supabase.from('ar_btbs').insert(btbPayload);
-    if (btbErr) return { data: null, error: btbErr };
+  if (!btbLocked) {
+    // Strategy: hapus semua btbs lama, insert ulang. Simple, aman buat skala kecil.
+    const { error: delErr } = await supabase.from('ar_btbs').delete().eq('ttf_id', id);
+    if (delErr) return { data: null, error: delErr };
+
+    const btbPayload = (t.btbs || []).map((b, idx) => ({
+      ttf_id: id,
+      no_btb: b.noBTB || '',
+      dpp_ppn: Number(b.dppPpn) || 0,
+      pph: Number(b.pph) || 0,
+      payment: Number(b.payment) || 0,
+      position: idx,
+    }));
+    if (btbPayload.length) {
+      const { error: btbErr } = await supabase.from('ar_btbs').insert(btbPayload);
+      if (btbErr) return { data: null, error: btbErr };
+    }
   }
 
   const { data: full, error: fetchErr } = await supabase
@@ -901,7 +923,7 @@ export async function listSpBtbNew(spOrderId) {
 export async function getSpInvoice(spOrderId) {
   const { data, error } = await supabase
     .from('sp_invoices')
-    .select('id, invoice_no, invoice_date, status, total_dpp, total_ppn, total_amount')
+    .select('id, invoice_no, invoice_date, due_date, status, total_dpp, total_ppn, total_amount')
     .eq('sp_order_id', spOrderId)
     .is('deleted_at', null)
     .maybeSingle();
@@ -918,6 +940,80 @@ export async function createInvoiceRpc(spOrderId) {
 export async function submitInvoiceRpc(invoiceId) {
   const { error } = await supabase.rpc('submit_invoice', { p_invoice_id: invoiceId });
   return { error };
+}
+
+// ============================================================
+// FASE 5 — Pembayaran & TTF (konsumer RPC record_payment / mark_ttf_received)
+// Keduanya SECURITY DEFINER dgn guard peran di dalam fungsi; pesan RAISE-nya
+// sudah berbahasa Indonesia & manusiawi, jadi caller cukup meneruskan
+// error.message apa adanya ke toast (jangan dibungkus pesan generik).
+// ============================================================
+
+/** Catat pembayaran invoice via RPC record_payment. Returns { data: paymentId, error }. */
+export async function recordPayment({
+  invoiceId, amount, paymentDate = null, reference = null,
+  pph = 0, buktiPotongUrl = null, buktiPotongNo = null,
+}) {
+  const { data, error } = await supabase.rpc('record_payment', {
+    p_invoice_id:       invoiceId,
+    p_amount:           Number(amount) || 0,
+    p_payment_date:     paymentDate || null,
+    p_reference:        reference || null,
+    p_pph:              Number(pph) || 0,
+    p_bukti_potong_url: buktiPotongUrl || null,
+    p_bukti_potong_no:  buktiPotongNo || null,
+  });
+  return { data, error };
+}
+
+/** Tandai TTF diterima customer via RPC mark_ttf_received. Returns { data: ttfId, error }. */
+export async function markTtfReceived({ invoiceId, receivedBy, ttfNo = null, notes = null }) {
+  const { data, error } = await supabase.rpc('mark_ttf_received', {
+    p_invoice_id:  invoiceId,
+    p_received_by: receivedBy,
+    p_ttf_no:      ttfNo || null,
+    p_notes:       notes || null,
+  });
+  return { data, error };
+}
+
+/** Riwayat pembayaran satu invoice, terbaru dulu. */
+export async function getPaymentHistory(invoiceId) {
+  const { data, error } = await supabase
+    .from('sp_payments')
+    .select('id, payment_date, amount, pph, reference, bukti_potong_url, bukti_potong_no, created_at')
+    .eq('invoice_id', invoiceId)
+    .order('payment_date', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(1000);
+  return { data: data || [], error };
+}
+
+// Status TTF satu invoice. `ar_ttfs` TIDAK punya UNIQUE di invoice_id, jadi
+// secara teori bisa >1 baris — ambil yang tertua, PERSIS sama dengan baris yang
+// dipilih RPC mark_ttf_received di dalamnya (ORDER BY created_at LIMIT 1).
+export async function getTtfStatus(invoiceId) {
+  const { data, error } = await supabase
+    .from('ar_ttfs')
+    .select('id, no_ttf, tanggal_menerima, diterima_oleh, notes')
+    .eq('invoice_id', invoiceId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return { data: data || null, error };
+}
+
+// Kop surat entitas untuk preview dokumen on-screen (bukan PDF) — subset kolom
+// yang sama dengan yang dipakai getInvoicePdfData di bawah, tanpa join apa pun.
+// Dipakai panel "Dokumen & Invoice" di SalesOrderDetailPage.
+export async function getCompanyHeader(companyId) {
+  if (!companyId) return { data: null, error: null };
+  const { data, error } = await supabase
+    .from('companies')
+    .select('name, legal_name, address, address_2, city, province, postal_code')
+    .eq('id', companyId)
+    .maybeSingle();
+  return { data: data || null, error };
 }
 
 // Kumpulkan SEMUA data buat cetak InvoicePDF dalam satu panggilan — mirror
