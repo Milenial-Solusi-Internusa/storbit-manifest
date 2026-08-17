@@ -1,0 +1,224 @@
+-- =============================================================================
+-- Migration: 20260818000002_storbit_dashboard_stats_rpc
+-- Phase:     Dashboard Storbit (Shipping Manifest + Warehouse) — RPC agregasi
+--            read-only, satu panggilan untuk seluruh angka kartu KPI:
+--            8 metrik Shipping Manifest + 4 metrik Warehouse.
+-- Depends:   20260818000001 (products.reorder_point + sp_orders.price_category)
+--            HARUS sudah live — fungsi ini membaca kedua kolom itu dan akan
+--            gagal compile kalau belum ada.
+-- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi. Jalankan section
+--            1 -> 3 berurutan di SQL Editor, lalu refresh schema_snapshot.sql.
+--
+-- CATATAN DESAIN:
+--   - SECURITY INVOKER (default, sengaja TIDAK ditulis SECURITY DEFINER):
+--     ini read-only, jadi RLS pemanggil harus ikut berlaku. Konsisten dgn
+--     view stock_summary yang juga security_invoker='true'. STABLE — nol
+--     tulis, aman dipanggil berkali-kali.
+--   - GRANT pakai pola FASE 5 (record_payment/mark_ttf_received, 17 Agu 2026):
+--     REVOKE ALL FROM PUBLIC lalu GRANT ke authenticated SAJA. SENGAJA TIDAK
+--     meniru indomarco_dashboard_stats/storbit_sp_customers yang ter-GRANT ke
+--     anon — di sana tidak eksploitabel (sp_items_read di-scope TO
+--     authenticated, jadi anon tetap nol baris), tapi tetap permukaan tanpa
+--     alasan. Default privileges Supabase (schema_snapshot.sql:18354-18356)
+--     meng-GRANT fungsi baru ke anon secara OTOMATIS — itu sebabnya REVOKE
+--     eksplisit di bawah bukan formalitas.
+--
+--   - FILTER company_id EKSPLISIT, tidak cukup mengandalkan RLS. Tiga sebab:
+--       (a) stock_ledger_select = USING(true) (TD-173) -> view stock_summary
+--           nol isolasi entitas;
+--       (b) sp_orders_read & products_read dua-duanya "is_super_admin() OR ..."
+--           -> super_admin lolos SEMUA entitas, padahal Storbit = SOA saja;
+--       (c) p_company_id dikirim FE dari AuthContext.activeCompanyId, BUKAN
+--           hardcode UUID SOA -> tidak menambah kasus TD-178.
+--     Fallback COALESCE ke get_user_company_id() utk pemanggilan tanpa argumen.
+--
+--   - expired_date DIAMBIL DARI sp_items, BUKAN sp_orders.expired_date.
+--     sp_orders.expired_date memang ADA dan terisi saat create, TAPI tidak
+--     pernah di-update sesudahnya: update_sp_item_dual hanya sync 5 kolom
+--     (qty/sla_days/estimated_delivery_date/shipping_price/notes) dan tak
+--     menyentuh header. Sementara SELURUH UI membaca & mengedit versi item
+--     (EditItemModal SalesOrderDetailPage.jsx:436, kartu Deadline :1168,
+--     kolom Expired SalesOrderPage.jsx:689, mapping spFromDb db.js:27).
+--     Membaca header = angka dashboard diam-diam beda dari yang dilihat user
+--     di layar begitu ada yang mengedit deadline. MIN() dipilih (deadline
+--     paling awal = yang mengikat); UI pakai items.find() yang bergantung
+--     urutan fetch, jadi non-deterministik.
+--
+--   - zero_stock pakai '<= 0', bukan '= 0': available bisa NEGATIF kalau
+--     reserved > on_hand. Dengan '= 0' produk over-reserve hilang dari KEDUA
+--     kartu (danger & zero). Produk yang belum pernah punya baris
+--     stock_ledger sama sekali tertangkap COALESCE(...,0) — itu sebabnya CTE
+--     stock digerakkan dari products, BUKAN dari stock_summary (produk tanpa
+--     histori ledger tidak muncul di view itu -> zero_stock akan under-count).
+--
+--   - is_active = true berlaku untuk KETIGA metrik warehouse (keputusan Den,
+--     18 Agu 2026) — ditaruh di WHERE CTE stock, bukan di FILTER satu kartu.
+--
+--   - btb_terbit (kartu ke-6 Shipping Manifest) DITAMBAHKAN SUSULAN, tidak ada
+--     di desain awal. Ketahuan dari smoke test 18 Agu 2026: 390 dari 463 SP
+--     (±84%, mayoritas mutlak data Storbit) berstatus BTB_TERBIT — barang
+--     sudah diterima customer, invoice belum terbit. Tanpa kartu ini, bagian
+--     terbesar data justru tak terwakili di dashboard sama sekali: BTB_TERBIT
+--     tidak masuk pending_open, tidak masuk shipped (peringkatnya di ATAS
+--     SAMPAI di sp_recompute_status), dan belum masuk finance.
+--
+--   - Daftar status di FILTER bawah HARUS tetap sinkron dengan STATUS_GROUPS
+--     di src/lib/spStatusConstants.js (dipakai drill-down FE). Kalau salah
+--     satu diubah, ubah dua-duanya — pelajaran TD-168 (AGING_LIMITS FE vs
+--     AGING_RULES Edge Function yang sempat drift berbulan-bulan).
+-- =============================================================================
+
+-- 1. RPC agregasi.
+CREATE OR REPLACE FUNCTION public.get_storbit_dashboard_stats(
+  p_customer_id    uuid DEFAULT NULL,
+  p_price_category text DEFAULT NULL,
+  p_company_id     uuid DEFAULT NULL
+) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $fn$
+WITH scope AS (
+  SELECT COALESCE(p_company_id, public.get_user_company_id()) AS cid
+),
+sp AS (
+  SELECT
+    o.id,
+    o.status,
+    (SELECT MIN(si.expired_date)
+       FROM public.sp_items si
+      WHERE si.customer_id = o.customer_id
+        AND si.sp_no       = o.sp_no
+        AND si.expired_date IS NOT NULL) AS expired_date,
+    EXISTS (SELECT 1 FROM public.sp_btb b
+             WHERE b.sp_order_id = o.id AND b.deleted_at IS NULL) AS has_btb
+  FROM public.sp_orders o, scope
+  WHERE o.deleted_at IS NULL
+    AND o.company_id = scope.cid
+    AND (p_customer_id    IS NULL OR o.customer_id    = p_customer_id)
+    AND (p_price_category IS NULL OR o.price_category = p_price_category)
+),
+manifest AS (
+  SELECT
+    COUNT(*) FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')) AS pending_open,
+    COUNT(*) FILTER (WHERE status IN ('DIKIRIM','SAMPAI'))                                     AS shipped,
+    -- SAMPAI + TERKIRIM_PENUH dua-duanya berarti "barang sampai, BTB belum".
+    -- BTB_TERBIT peringkatnya DI ATAS keduanya di sp_recompute_status, jadi
+    -- NOT has_btb di sini sabuk pengaman kalau status sempat basi.
+    COUNT(*) FILTER (WHERE status IN ('SAMPAI','TERKIRIM_PENUH') AND NOT has_btb)               AS delivered_belum_btb,
+    -- Kebalikan kartu di atas: BTB sudah terbit, invoice belum. ±84% data
+    -- Storbit ada di sini (lihat CATATAN DESAIN).
+    COUNT(*) FILTER (WHERE status = 'BTB_TERBIT')                                               AS btb_terbit,
+    COUNT(*) FILTER (WHERE expired_date < CURRENT_DATE
+                       AND status NOT IN ('LUNAS','CANCELLED'))                                 AS expired,
+    COUNT(*) FILTER (WHERE expired_date >= CURRENT_DATE
+                       AND date_trunc('month', expired_date) = date_trunc('month', CURRENT_DATE)
+                       AND status NOT IN ('LUNAS','CANCELLED'))                                 AS mendekati_expired,
+    COUNT(*) FILTER (WHERE status IN ('INVOICED','SUBMITTED','LUNAS'))                          AS finance,
+    COUNT(*) FILTER (WHERE status = 'CANCELLED')                                                AS cancelled,
+    COUNT(*)                                                                                    AS total_sp
+  FROM sp
+),
+stock AS (
+  SELECT
+    p.reorder_point,
+    COALESCE((SELECT SUM(ss.available) FROM public.stock_summary ss
+               WHERE ss.product_id = p.id
+                 AND ss.company_id = p.company_id), 0) AS available
+  FROM public.products p, scope
+  WHERE p.deleted_at IS NULL
+    AND p.company_id = scope.cid
+    AND p.is_service = false
+    AND p.is_active  = true
+),
+warehouse AS (
+  SELECT
+    COUNT(*) FILTER (WHERE reorder_point IS NOT NULL AND available < reorder_point) AS danger_stock,
+    COUNT(*) FILTER (WHERE available <= 0)                                          AS zero_stock,
+    COUNT(*) FILTER (WHERE reorder_point IS NULL)                                   AS rop_belum_diisi,
+    COUNT(*)                                                                        AS total_produk
+  FROM stock
+)
+SELECT jsonb_build_object(
+  'manifest', jsonb_build_object(
+    'pending_open',        (SELECT pending_open        FROM manifest),
+    'shipped',             (SELECT shipped             FROM manifest),
+    'delivered_belum_btb', (SELECT delivered_belum_btb FROM manifest),
+    'btb_terbit',          (SELECT btb_terbit          FROM manifest),
+    'expired',             (SELECT expired             FROM manifest),
+    'mendekati_expired',   (SELECT mendekati_expired   FROM manifest),
+    'finance',             (SELECT finance             FROM manifest),
+    'cancelled',           (SELECT cancelled           FROM manifest),
+    'total_sp',            (SELECT total_sp            FROM manifest)
+  ),
+  'warehouse', jsonb_build_object(
+    'danger_stock',    (SELECT danger_stock    FROM warehouse),
+    'zero_stock',      (SELECT zero_stock      FROM warehouse),
+    'rop_belum_diisi', (SELECT rop_belum_diisi FROM warehouse),
+    'total_produk',    (SELECT total_produk    FROM warehouse)
+  ),
+  'generated_at', now()
+);
+$fn$;
+
+-- 2. Hak akses — pola FASE 5. REVOKE dulu (default privileges Supabase sudah
+--    terlanjur meng-GRANT ke anon), baru GRANT ke authenticated saja.
+REVOKE ALL ON FUNCTION public.get_storbit_dashboard_stats(uuid, text, uuid) FROM PUBLIC;
+GRANT ALL  ON FUNCTION public.get_storbit_dashboard_stats(uuid, text, uuid) TO authenticated;
+
+-- 3. Dua index jaga-jaga. TIDAK diperlukan pada skala saat ini (463 SP / ~720
+--    sp_items / ~38 produk aktif -> seq scan hitungan mikrodetik); disertakan
+--    karena murah dan menutup dua kolom yang memang layak ber-index terlepas
+--    dashboard ini. Fakta yang ditutup: sp_btb SAMA SEKALI tak punya index di
+--    sp_order_id (cuma UNIQUE parsial customer_id+btb_no), dan sp_orders cuma
+--    punya PK + UNIQUE(customer_id, sp_no) — nol index di company_id/status.
+--    ⚠️ EXPLAIN belum pernah dijalankan untuk query di atas (sesi desain tanpa
+--    akses DB) — ini penalaran dari struktur + jumlah baris, bukan pengukuran.
+--    Kalau nanti terasa lambat, tersangka pertama BUKAN kedua index ini,
+--    melainkan subquery terkorelasi ke stock_summary (view itu meng-GROUP BY
+--    seluruh stock_ledger tiap dipanggil, sekali per produk) — perbaiki jadi
+--    satu agregasi LEFT JOIN LATERAL dulu, baru pikirkan index lain.
+CREATE INDEX IF NOT EXISTS idx_sp_btb_sp_order_live
+  ON public.sp_btb (sp_order_id) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_sp_orders_company_status
+  ON public.sp_orders (company_id, status) WHERE deleted_at IS NULL;
+
+-- ─── VERIFIKASI (jalankan TERPISAH setelah 1-3) ──────────────────────────────
+--   -- a. Fungsi ada + STABLE + INVOKER (prosecdef harus false):
+--   SELECT proname, provolatile, prosecdef FROM pg_proc WHERE proname='get_storbit_dashboard_stats';
+--   -- provolatile 's' = STABLE, prosecdef false = SECURITY INVOKER
+--
+--   -- b. anon TIDAK boleh punya EXECUTE:
+--   SELECT grantee, privilege_type FROM information_schema.routine_privileges
+--    WHERE routine_name='get_storbit_dashboard_stats';
+--   -- harus TIDAK ada baris grantee='anon'
+--
+--   -- c. Smoke test (SOA). CATATAN: auth.uid() NULL di SQL Editor, jadi
+--   --    p_company_id WAJIB diisi eksplisit di sini; RLS-nya sendiri baru
+--   --    teruji betul lewat browser sebagai user asli.
+--   SELECT public.get_storbit_dashboard_stats(NULL, NULL, 'd2e5e565-5f67-4954-b8d9-5979a2a0c697');
+--
+--   -- d. Silang-cek total_sp:
+--   SELECT COUNT(*) FROM public.sp_orders
+--    WHERE deleted_at IS NULL AND company_id='d2e5e565-5f67-4954-b8d9-5979a2a0c697';
+--
+--   -- e. Silang-cek delivered_belum_btb (angka harus sama dgn payload RPC):
+--   SELECT COUNT(*) FROM public.sp_orders o
+--    WHERE o.deleted_at IS NULL AND o.company_id='d2e5e565-5f67-4954-b8d9-5979a2a0c697'
+--      AND o.status IN ('SAMPAI','TERKIRIM_PENUH')
+--      AND NOT EXISTS (SELECT 1 FROM public.sp_btb b WHERE b.sp_order_id=o.id AND b.deleted_at IS NULL);
+--
+--   -- f. Silang-cek zero_stock:
+--   SELECT COUNT(*) FROM public.products p
+--    WHERE p.deleted_at IS NULL AND p.company_id='d2e5e565-5f67-4954-b8d9-5979a2a0c697'
+--      AND p.is_service=false AND p.is_active=true
+--      AND COALESCE((SELECT SUM(ss.available) FROM public.stock_summary ss
+--                     WHERE ss.product_id=p.id AND ss.company_id=p.company_id),0) <= 0;
+--
+--   -- g. rop_belum_diisi harus = total_produk tepat setelah 20260818000001
+--   --    (reorder_point belum diisi siapa pun).
+--
+-- ─── ROLLBACK ────────────────────────────────────────────────────────────────
+-- DROP FUNCTION IF EXISTS public.get_storbit_dashboard_stats(uuid, text, uuid);
+-- DROP INDEX IF EXISTS public.idx_sp_btb_sp_order_live;
+-- DROP INDEX IF EXISTS public.idx_sp_orders_company_status;
