@@ -11,7 +11,7 @@
 - **Deploy:** Vercel team "MSI Group" (Hobby), project `nexus` · project Vercel lama (akun pribadi Hobby, `storbit-manifest`) dibiarkan hidup sementara (safety net).
 - **Migrasi kepemilikan (9-10 Jul 2026):** Supabase/GitHub/Vercel/domain dipindah dari akun pribadi ke org MSI. Backup penuh (schema+data, 3.5 MB, 96 tabel) diambil sebelum migrasi. **Backlog keamanan (belum dikerjakan):** repo PUBLIC → private; 2FA 2 Owner org GitHub (mhmmdjaelaniii, msigroup-sys); Vercel Hobby → paid (pemakaian komersial); Supabase Auth Site URL masih `localhost:3000` + Redirect URLs kosong (rapikan); rename repo→`nexus` (opsional).
 - **Entity UUID:** MSI `0e1840d8-e6fb-4190-bd09-88338e68b492` · JCI `42569e7c-531b-4d2b-832a-d5a7268c455b` · SOA `d2e5e565-5f67-4954-b8d9-5979a2a0c697`.
-- **Sumber kebenaran DB:** `supabase/schema_snapshot.sql` (**110 tabel, 10 di antaranya tabel backup** — BUKAN `migrations/`, yang berhenti 3 Jun 2026). Status freshness lengkap (riwayat stale/segar 10 Jul–27 Jul + aturan baca snapshot): `03_DATA_MODEL.md` **gotcha #10**.
+- **Sumber kebenaran DB:** `supabase/schema_snapshot.sql` (**132 tabel = 122 bisnis + 10 tabel backup** — BUKAN `migrations/`, yang berhenti 3 Jun 2026). Status freshness lengkap (riwayat stale/segar 10 Jul–27 Jul + aturan baca snapshot): `03_DATA_MODEL.md` **gotcha #10**.
 - **Brand:** navy `#144682` · orange `#E85A1E` · coral `#F08C7D` · app shell putih `#ffffff` · Montserrat (heading) + Inter (body) · Lucide icons · **no emoji, no dark green**.
 
 ## Aturan Wajib (ringkasan — detail: `docs/Governance/02_RULES_GOVERNANCE.md`)
