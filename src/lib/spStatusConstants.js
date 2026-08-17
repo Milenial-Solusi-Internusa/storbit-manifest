@@ -56,8 +56,10 @@ export const SP_STATUS_ORDER = [
  *    dari 463 SP (±84%) ada di status ini — tanpa kartu ini, mayoritas mutlak
  *    data Storbit tak terwakili di dashboard mana pun (BTB_TERBIT tidak masuk
  *    pending_open, tidak masuk shipped, belum masuk finance).
- *  - `expired`/`mendekati_expired` TIDAK ditentukan status, melainkan tanggal,
- *    jadi tak punya entri di sini — lihat STATUS_EXCLUDED_FROM_EXPIRY.
+ *  - `expired`/`mendekati_expired` TIDAK punya entri sendiri: keduanya memakai
+ *    ULANG `pending_open` ditambah syarat tanggal. Lihat catatan di bawah.
+ *  - `pernah_risiko_pinalti` juga tak punya entri: penentunya bukan status SP
+ *    melainkan keberadaan delivery_notes yang berangkat lewat tenggat.
  */
 export const STATUS_GROUPS = {
   pending_open:        ['DRAFT', 'CONFIRMED', 'MENUNGGU_STOK', 'PICKING', 'PACKED'],
@@ -68,11 +70,35 @@ export const STATUS_GROUPS = {
   cancelled:           ['CANCELLED'],
 };
 
+// CATATAN EXPIRY (revisi 18 Agu 2026) — `STATUS_EXCLUDED_FROM_EXPIRY` DIHAPUS.
+//
+// `expired_date` = tenggat SP harus DIKIRIM; lewat tanggal itu Storbit
+// berpotensi kena pinalti dari customer. Rumus lama memakai daftar pengecualian
+// (`NOT IN ('LUNAS','CANCELLED')`) dan karena itu ikut menghitung SP yang sudah
+// dikirim TEPAT WAKTU sebagai "expired" begitu kalender lewat tenggat lamanya.
+//
+// Filter yang benar bersifat POSITIF, bukan pengecualian:
+//   expired            = STATUS_GROUPS.pending_open  DAN expired_date <  hari ini
+//   mendekati_expired  = STATUS_GROUPS.pending_open  DAN expired_date >= hari ini
+//                        DAN expired_date masih di bulan berjalan
+// LUNAS/CANCELLED otomatis tersingkir karena tidak ada di `pending_open`.
+//
+// Pelanggaran yang SUDAH terjadi diukur terpisah oleh `pernah_risiko_pinalti`
+// di RPC (butuh delivery_notes, tak bisa dihitung dari status saja).
+
 /**
- * Status yang membuat sebuah SP TIDAK dihitung kedaluwarsa, berapa pun
- * tanggalnya. Dipakai kartu `expired` dan `mendekatiExpired`.
+ * Kartu `pernah_risiko_pinalti` WAJIB ditampilkan berpasangan dengan penyebut
+ * `dispatch_data_tersedia` — keduanya dikembalikan RPC di blok `manifest`.
+ *
+ * Alasannya bukan estetika: cakupan data pengiriman baru **16,2%** (69 dari 425
+ * SP yang sudah lewat tahap kirim, diukur 18 Agu 2026). SP hasil import Excel
+ * tak pernah melewati alur picking → surat jalan, dan status BTB_TERBIT (±84%
+ * data) tercapai lewat keberadaan sp_btb tanpa perlu delivery_notes sama
+ * sekali. Jadi angka pinalti yang kecil BUKAN berarti tak ada keterlambatan —
+ * datanya memang belum ada. Angka telanjang tanpa penyebut akan dibaca sebagai
+ * "aman", dan itu lebih menyesatkan daripada tidak menampilkan kartunya.
  */
-export const STATUS_EXCLUDED_FROM_EXPIRY = ['LUNAS', 'CANCELLED'];
+export const PENALTY_METRIC_PAIR = ['pernah_risiko_pinalti', 'dispatch_data_tersedia'];
 
 /**
  * Label kartu (Bahasa Indonesia) — dipisah dari array status supaya penamaan
@@ -81,10 +107,11 @@ export const STATUS_EXCLUDED_FROM_EXPIRY = ['LUNAS', 'CANCELLED'];
 export const STATUS_GROUP_LABELS = {
   pending_open:        'Pending / Open',
   shipped:             'Dikirim',
-  delivered_belum_btb: 'Sampai — BTB Belum Terbit',
-  btb_terbit:          'BTB Terbit — Belum Invoice',
-  expired:             'Expired',
-  mendekati_expired:   'Mendekati Expired',
+  delivered_belum_btb: 'Sampai · BTB Belum Terbit',
+  btb_terbit:          'BTB Terbit · Belum Invoice',
+  expired:             'Lewat Tenggat Kirim',
+  mendekati_expired:   'Mendekati Tenggat Kirim',
+  pernah_risiko_pinalti: 'Pernah Kirim Telat · Risiko Pinalti',
   finance:             'Finance',
   cancelled:           'Dibatalkan',
 };

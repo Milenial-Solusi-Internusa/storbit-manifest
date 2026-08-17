@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict FhIjsdcnLc9fC3Usy0Brqj8IY22Hj9ECH9ydvdWyL655jlbmnWapbQ3L4zJpoyr
+\restrict g70TAo91bblRKw5i1ktbEtA6z9uCrQ4rahpiiqT1HBuNjE7AKEzXqvCBhIF9MPc
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -797,6 +797,8 @@ sp AS (
   SELECT
     o.id,
     o.status,
+    o.customer_id,
+    o.sp_no,
     (SELECT MIN(si.expired_date)
        FROM public.sp_items si
       WHERE si.customer_id = o.customer_id
@@ -810,21 +812,48 @@ sp AS (
     AND (p_customer_id    IS NULL OR o.customer_id    = p_customer_id)
     AND (p_price_category IS NULL OR o.price_category = p_price_category)
 ),
+sp_flag AS (
+  SELECT
+    s.*,
+    EXISTS (
+      SELECT 1 FROM public.delivery_notes dn
+       WHERE dn.customer_id = s.customer_id
+         AND dn.sp_no       = s.sp_no
+         AND dn.status <> 'cancelled'
+         AND dn.dispatched_at IS NOT NULL
+         AND s.expired_date IS NOT NULL
+         AND (dn.dispatched_at AT TIME ZONE 'Asia/Jakarta')::date > s.expired_date
+    ) AS late_dispatch,
+    EXISTS (
+      SELECT 1 FROM public.delivery_notes dn
+       WHERE dn.customer_id = s.customer_id
+         AND dn.sp_no       = s.sp_no
+         AND dn.status <> 'cancelled'
+         AND dn.dispatched_at IS NOT NULL
+    ) AS has_dispatch_data
+  FROM sp s
+),
 manifest AS (
   SELECT
     COUNT(*) FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')) AS pending_open,
     COUNT(*) FILTER (WHERE status IN ('DIKIRIM','SAMPAI'))                                     AS shipped,
     COUNT(*) FILTER (WHERE status IN ('SAMPAI','TERKIRIM_PENUH') AND NOT has_btb)               AS delivered_belum_btb,
     COUNT(*) FILTER (WHERE status = 'BTB_TERBIT')                                               AS btb_terbit,
-    COUNT(*) FILTER (WHERE expired_date < CURRENT_DATE
-                       AND status NOT IN ('LUNAS','CANCELLED'))                                 AS expired,
-    COUNT(*) FILTER (WHERE expired_date >= CURRENT_DATE
-                       AND date_trunc('month', expired_date) = date_trunc('month', CURRENT_DATE)
-                       AND status NOT IN ('LUNAS','CANCELLED'))                                 AS mendekati_expired,
+    COUNT(*) FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
+                       AND expired_date < CURRENT_DATE)                                         AS expired,
+    COUNT(*) FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
+                       AND expired_date >= CURRENT_DATE
+                       AND date_trunc('month', expired_date) = date_trunc('month', CURRENT_DATE))
+                                                                                                AS mendekati_expired,
+    COUNT(*) FILTER (WHERE late_dispatch AND status <> 'CANCELLED')                             AS pernah_risiko_pinalti,
+    COUNT(*) FILTER (WHERE has_dispatch_data
+                       AND status <> 'CANCELLED'
+                       AND status IN ('DIKIRIM','SAMPAI','BTB_TERBIT','TERKIRIM_PENUH',
+                                      'INVOICED','SUBMITTED','LUNAS'))                          AS dispatch_data_tersedia,
     COUNT(*) FILTER (WHERE status IN ('INVOICED','SUBMITTED','LUNAS'))                          AS finance,
     COUNT(*) FILTER (WHERE status = 'CANCELLED')                                                AS cancelled,
     COUNT(*)                                                                                    AS total_sp
-  FROM sp
+  FROM sp_flag
 ),
 stock AS (
   SELECT
@@ -854,6 +883,8 @@ SELECT jsonb_build_object(
     'btb_terbit',          (SELECT btb_terbit          FROM manifest),
     'expired',             (SELECT expired             FROM manifest),
     'mendekati_expired',   (SELECT mendekati_expired   FROM manifest),
+    'pernah_risiko_pinalti',  (SELECT pernah_risiko_pinalti  FROM manifest),
+    'dispatch_data_tersedia', (SELECT dispatch_data_tersedia FROM manifest),
     'finance',             (SELECT finance             FROM manifest),
     'cancelled',           (SELECT cancelled           FROM manifest),
     'total_sp',            (SELECT total_sp            FROM manifest)
@@ -18489,5 +18520,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict FhIjsdcnLc9fC3Usy0Brqj8IY22Hj9ECH9ydvdWyL655jlbmnWapbQ3L4zJpoyr
+\unrestrict g70TAo91bblRKw5i1ktbEtA6z9uCrQ4rahpiiqT1HBuNjE7AKEzXqvCBhIF9MPc
 
