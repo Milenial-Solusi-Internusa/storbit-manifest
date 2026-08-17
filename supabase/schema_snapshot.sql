@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Tks2udV5XHFwethjsbMXgvQsYEz3c8skuhS9WaCwidw512RKkNcxYWYIl2EO1FH
+\restrict FhIjsdcnLc9fC3Usy0Brqj8IY22Hj9ECH9ydvdWyL655jlbmnWapbQ3L4zJpoyr
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -779,6 +779,93 @@ BEGIN
   SELECT status INTO v_status FROM bnf_reports WHERE id = v_pulled_to;
   RETURN v_status;
 END;
+$$;
+
+
+--
+-- Name: get_storbit_dashboard_stats(uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_storbit_dashboard_stats(p_customer_id uuid DEFAULT NULL::uuid, p_price_category text DEFAULT NULL::text, p_company_id uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+WITH scope AS (
+  SELECT COALESCE(p_company_id, public.get_user_company_id()) AS cid
+),
+sp AS (
+  SELECT
+    o.id,
+    o.status,
+    (SELECT MIN(si.expired_date)
+       FROM public.sp_items si
+      WHERE si.customer_id = o.customer_id
+        AND si.sp_no       = o.sp_no
+        AND si.expired_date IS NOT NULL) AS expired_date,
+    EXISTS (SELECT 1 FROM public.sp_btb b
+             WHERE b.sp_order_id = o.id AND b.deleted_at IS NULL) AS has_btb
+  FROM public.sp_orders o, scope
+  WHERE o.deleted_at IS NULL
+    AND o.company_id = scope.cid
+    AND (p_customer_id    IS NULL OR o.customer_id    = p_customer_id)
+    AND (p_price_category IS NULL OR o.price_category = p_price_category)
+),
+manifest AS (
+  SELECT
+    COUNT(*) FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')) AS pending_open,
+    COUNT(*) FILTER (WHERE status IN ('DIKIRIM','SAMPAI'))                                     AS shipped,
+    COUNT(*) FILTER (WHERE status IN ('SAMPAI','TERKIRIM_PENUH') AND NOT has_btb)               AS delivered_belum_btb,
+    COUNT(*) FILTER (WHERE status = 'BTB_TERBIT')                                               AS btb_terbit,
+    COUNT(*) FILTER (WHERE expired_date < CURRENT_DATE
+                       AND status NOT IN ('LUNAS','CANCELLED'))                                 AS expired,
+    COUNT(*) FILTER (WHERE expired_date >= CURRENT_DATE
+                       AND date_trunc('month', expired_date) = date_trunc('month', CURRENT_DATE)
+                       AND status NOT IN ('LUNAS','CANCELLED'))                                 AS mendekati_expired,
+    COUNT(*) FILTER (WHERE status IN ('INVOICED','SUBMITTED','LUNAS'))                          AS finance,
+    COUNT(*) FILTER (WHERE status = 'CANCELLED')                                                AS cancelled,
+    COUNT(*)                                                                                    AS total_sp
+  FROM sp
+),
+stock AS (
+  SELECT
+    p.reorder_point,
+    COALESCE((SELECT SUM(ss.available) FROM public.stock_summary ss
+               WHERE ss.product_id = p.id
+                 AND ss.company_id = p.company_id), 0) AS available
+  FROM public.products p, scope
+  WHERE p.deleted_at IS NULL
+    AND p.company_id = scope.cid
+    AND p.is_service = false
+    AND p.is_active  = true
+),
+warehouse AS (
+  SELECT
+    COUNT(*) FILTER (WHERE reorder_point IS NOT NULL AND available < reorder_point) AS danger_stock,
+    COUNT(*) FILTER (WHERE available <= 0)                                          AS zero_stock,
+    COUNT(*) FILTER (WHERE reorder_point IS NULL)                                   AS rop_belum_diisi,
+    COUNT(*)                                                                        AS total_produk
+  FROM stock
+)
+SELECT jsonb_build_object(
+  'manifest', jsonb_build_object(
+    'pending_open',        (SELECT pending_open        FROM manifest),
+    'shipped',             (SELECT shipped             FROM manifest),
+    'delivered_belum_btb', (SELECT delivered_belum_btb FROM manifest),
+    'btb_terbit',          (SELECT btb_terbit          FROM manifest),
+    'expired',             (SELECT expired             FROM manifest),
+    'mendekati_expired',   (SELECT mendekati_expired   FROM manifest),
+    'finance',             (SELECT finance             FROM manifest),
+    'cancelled',           (SELECT cancelled           FROM manifest),
+    'total_sp',            (SELECT total_sp            FROM manifest)
+  ),
+  'warehouse', jsonb_build_object(
+    'danger_stock',    (SELECT danger_stock    FROM warehouse),
+    'zero_stock',      (SELECT zero_stock      FROM warehouse),
+    'rop_belum_diisi', (SELECT rop_belum_diisi FROM warehouse),
+    'total_produk',    (SELECT total_produk    FROM warehouse)
+  ),
+  'generated_at', now()
+);
 $$;
 
 
@@ -9756,6 +9843,13 @@ CREATE INDEX idx_sales_orders_company_created ON public.sales_orders USING btree
 
 
 --
+-- Name: idx_sp_btb_sp_order_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sp_btb_sp_order_live ON public.sp_btb USING btree (sp_order_id) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: idx_sp_items_customer_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9774,6 +9868,13 @@ CREATE INDEX idx_sp_items_sp_date ON public.sp_items USING btree (sp_date DESC N
 --
 
 CREATE INDEX idx_sp_items_sp_no ON public.sp_items USING btree (sp_no);
+
+
+--
+-- Name: idx_sp_orders_company_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sp_orders_company_status ON public.sp_orders USING btree (company_id, status) WHERE (deleted_at IS NULL);
 
 
 --
@@ -16733,6 +16834,14 @@ GRANT ALL ON FUNCTION public.generate_picking_from_sp(p_sp_no text, p_customer_i
 
 
 --
+-- Name: FUNCTION get_storbit_dashboard_stats(p_customer_id uuid, p_price_category text, p_company_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.get_storbit_dashboard_stats(p_customer_id uuid, p_price_category text, p_company_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.get_storbit_dashboard_stats(p_customer_id uuid, p_price_category text, p_company_id uuid) TO authenticated;
+
+
+--
 -- Name: FUNCTION get_table_columns(p_table text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -18380,5 +18489,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Tks2udV5XHFwethjsbMXgvQsYEz3c8skuhS9WaCwidw512RKkNcxYWYIl2EO1FH
+\unrestrict FhIjsdcnLc9fC3Usy0Brqj8IY22Hj9ECH9ydvdWyL655jlbmnWapbQ3L4zJpoyr
 

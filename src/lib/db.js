@@ -1126,3 +1126,35 @@ export async function setSpOrderPriceCategory(orderId, cat) {
     .eq('id', orderId);
   return { error };
 }
+
+// ─── Dashboard Storbit — agregasi read-only ──────────────────────────────────
+// Satu panggilan RPC untuk SELURUH angka kartu (8 Shipping Manifest + 4
+// Warehouse), bukan belasan round-trip atau agregasi client-side. Agregasi
+// sengaja di DB: pola yang sama dipakai indomarco_dashboard_stats untuk lepas
+// dari potong-diam-diam .limit(1000) — masalah yang masih hidup di
+// InventoryDashboardPage (stock_ledger 12 minggu, dihitung di client).
+//
+// RPC-nya SECURITY INVOKER + STABLE, jadi RLS pemanggil tetap berlaku.
+// companyId dikirim EKSPLISIT (dari AuthContext.activeCompanyId, bukan
+// hardcode UUID SOA): RLS sp_orders_read/products_read meloloskan SEMUA
+// entitas untuk super_admin, dan stock_ledger_select = USING(true) (TD-173)
+// membuat view stock_summary nol isolasi entitas. Kalau null, RPC fallback ke
+// get_user_company_id() di sisi DB.
+//
+// Bentuk return: { manifest: {...8 angka}, warehouse: {...4 angka}, generated_at }.
+// Daftar status di balik angka-angka itu: src/lib/spStatusConstants.js.
+/**
+ * Ambil agregat Dashboard Storbit. Semua argumen opsional (null = tanpa filter).
+ * @param {string|null} customerId    - filter satu customer
+ * @param {string|null} priceCategory - 'semester'|'tahunan'|'project'
+ * @param {string|null} companyId     - entitas aktif; null = home company pemanggil
+ * @returns {Promise<{data: object|null, error: object|null}>}
+ */
+export async function getStorbitDashboardStats(customerId = null, priceCategory = null, companyId = null) {
+  const { data, error } = await supabase.rpc('get_storbit_dashboard_stats', {
+    p_customer_id:    customerId    || null,
+    p_price_category: priceCategory || null,
+    p_company_id:     companyId     || null,
+  });
+  return { data, error };
+}
