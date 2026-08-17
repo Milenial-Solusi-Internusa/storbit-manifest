@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict XBrjRADsuninAlpdoI43OExVb5ZbQRb7cyMjxIDRZxOb6N41UrgQGcZVnugfj1w
+\restrict 6zknxm4IpbzQkQRLRZrHDCTohAsJZa0NkA9eeqBEb7eEiLRp1FdywOejnatmLfi
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -323,6 +323,16 @@ DECLARE
   v_ordered      int; v_shipped int;
   v_total_dpp    numeric(18,2); v_total_ppn numeric(18,2); v_total_amount numeric(18,2);
   v_uid          uuid := auth.uid();
+  v_total_ship   numeric(18,2);
+  v_je_id        uuid;
+  v_acc_ar       uuid;
+  v_acc_rev      uuid;
+  v_acc_ship     uuid;
+  v_acc_ppn_out  uuid;
+  c_code_ar      CONSTANT text := '1-1200';
+  c_code_rev     CONSTANT text := '4-1000';
+  c_code_ship    CONSTANT text := '4-1100';
+  c_code_ppn_out CONSTANT text := '2-1200';
 BEGIN
   IF NOT (is_super_admin() OR is_manager_or_above() OR has_role('finance_controller')) THEN
     RAISE EXCEPTION 'Tidak punya izin menerbitkan invoice.';
@@ -370,6 +380,60 @@ BEGIN
 
   UPDATE sp_invoices SET total_dpp = v_total_dpp, total_ppn = v_total_ppn, total_amount = v_total_amount
    WHERE id = v_invoice_id;
+
+  SELECT COALESCE(SUM(shipping_price),0) INTO v_total_ship
+    FROM sp_order_items WHERE sp_order_id = p_sp_order_id;
+
+  SELECT id INTO v_acc_ar FROM chart_of_accounts
+   WHERE company_id = v_company_id AND code = c_code_ar AND deleted_at IS NULL;
+  IF v_acc_ar IS NULL THEN
+    RAISE EXCEPTION 'Akun [%] belum ada di chart_of_accounts untuk company ini — hubungi Finance Controller.', c_code_ar;
+  END IF;
+
+  SELECT id INTO v_acc_rev FROM chart_of_accounts
+   WHERE company_id = v_company_id AND code = c_code_rev AND deleted_at IS NULL;
+  IF v_acc_rev IS NULL THEN
+    RAISE EXCEPTION 'Akun [%] belum ada di chart_of_accounts untuk company ini — hubungi Finance Controller.', c_code_rev;
+  END IF;
+
+  SELECT id INTO v_acc_ppn_out FROM chart_of_accounts
+   WHERE company_id = v_company_id AND code = c_code_ppn_out AND deleted_at IS NULL;
+  IF v_acc_ppn_out IS NULL THEN
+    RAISE EXCEPTION 'Akun [%] belum ada di chart_of_accounts untuk company ini — hubungi Finance Controller.', c_code_ppn_out;
+  END IF;
+
+  IF v_total_ship > 0 THEN
+    SELECT id INTO v_acc_ship FROM chart_of_accounts
+     WHERE company_id = v_company_id AND code = c_code_ship AND deleted_at IS NULL;
+    IF v_acc_ship IS NULL THEN
+      RAISE EXCEPTION 'Akun [%] belum ada di chart_of_accounts untuk company ini — hubungi Finance Controller.', c_code_ship;
+    END IF;
+  END IF;
+
+  INSERT INTO journal_entries
+    (company_id, entry_date, reference_type, reference_id, description, created_by)
+  VALUES
+    (v_company_id, current_date, 'invoice_issued', v_invoice_id,
+     'Penerbitan invoice ' || v_invoice_no || ' (SP ' || v_sp_no || ')', v_uid)
+  RETURNING id INTO v_je_id;
+
+  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+  VALUES (v_je_id, v_acc_ar, v_total_amount, 0);
+
+  IF v_total_dpp > 0 THEN
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+    VALUES (v_je_id, v_acc_rev, 0, v_total_dpp);
+  END IF;
+
+  IF v_total_ship > 0 THEN
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+    VALUES (v_je_id, v_acc_ship, 0, v_total_ship);
+  END IF;
+
+  IF v_total_ppn > 0 THEN
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+    VALUES (v_je_id, v_acc_ppn_out, 0, v_total_ppn);
+  END IF;
 
   PERFORM sp_recompute_status(v_customer_id, v_sp_no);
   RETURN v_invoice_id;
@@ -1416,6 +1480,85 @@ $$;
 
 
 --
+-- Name: mark_ttf_received(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_status      text;
+  v_invoice_no  text;
+  v_sp_order_id uuid;
+  v_customer_id uuid;
+  v_sp_no       text;
+  v_ttf_id      uuid;
+BEGIN
+  IF NOT (is_super_admin() OR is_manager_or_above() OR has_role('finance_controller')) THEN
+    RAISE EXCEPTION 'Tidak punya izin mencatat penerimaan TTF.';
+  END IF;
+
+  IF p_received_by IS NULL OR btrim(p_received_by) = '' THEN
+    RAISE EXCEPTION 'Nama penerima wajib diisi.';
+  END IF;
+
+  SELECT i.status, i.invoice_no, i.sp_order_id
+    INTO v_status, v_invoice_no, v_sp_order_id
+    FROM sp_invoices i
+   WHERE i.id = p_invoice_id AND i.deleted_at IS NULL;
+
+  IF v_status IS NULL   THEN RAISE EXCEPTION 'Invoice tidak ditemukan.'; END IF;
+  IF v_status = 'void'  THEN RAISE EXCEPTION 'Invoice sudah void.';      END IF;
+  IF v_status = 'draft' THEN
+    RAISE EXCEPTION 'Invoice masih draft — terbitkan dulu sebelum menandai TTF diterima.';
+  END IF;
+
+  SELECT o.customer_id, o.sp_no INTO v_customer_id, v_sp_no
+    FROM sp_orders o WHERE o.id = v_sp_order_id AND o.deleted_at IS NULL;
+
+  SELECT t.id INTO v_ttf_id
+    FROM ar_ttfs t
+   WHERE t.invoice_id = p_invoice_id
+   ORDER BY t.created_at
+   LIMIT 1;
+
+  IF v_ttf_id IS NULL THEN
+    INSERT INTO ar_ttfs (
+      no_ttf, tanggal_ttf, tanggal_menerima, no_inv, no_sp,
+      customer_id, notes, sp_order_id, invoice_id, diterima_oleh
+    ) VALUES (
+      COALESCE(NULLIF(btrim(p_ttf_no), ''), ''),
+      CURRENT_DATE,
+      CURRENT_DATE,
+      COALESCE(v_invoice_no, ''),
+      COALESCE(v_sp_no, ''),
+      v_customer_id,
+      COALESCE(NULLIF(btrim(p_notes), ''), ''),
+      v_sp_order_id,
+      p_invoice_id,
+      btrim(p_received_by)
+    )
+    RETURNING id INTO v_ttf_id;
+  ELSE
+    UPDATE ar_ttfs SET
+      tanggal_menerima = CURRENT_DATE,
+      diterima_oleh    = btrim(p_received_by),
+      no_ttf = COALESCE(NULLIF(btrim(p_ttf_no), ''), no_ttf),
+      notes  = COALESCE(NULLIF(btrim(p_notes),  ''), notes),
+      sp_order_id = COALESCE(sp_order_id, v_sp_order_id),
+      customer_id = COALESCE(customer_id, v_customer_id),
+      no_inv = CASE WHEN no_inv = '' THEN COALESCE(v_invoice_no, '') ELSE no_inv END,
+      no_sp  = CASE WHEN no_sp  = '' THEN COALESCE(v_sp_no, '')      ELSE no_sp  END
+     WHERE id = v_ttf_id;
+  END IF;
+
+  RETURN v_ttf_id;
+END;
+$$;
+
+
+--
 -- Name: normalize_account_name(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1642,6 +1785,133 @@ BEGIN
       selected_by = v_uid,
       selected_at = now()
   WHERE id = p_prf_id;
+END;
+$$;
+
+
+--
+-- Name: record_payment(uuid, numeric, date, text, numeric, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date DEFAULT CURRENT_DATE, p_reference text DEFAULT NULL::text, p_pph numeric DEFAULT 0, p_bukti_potong_url text DEFAULT NULL::text, p_bukti_potong_no text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  c_code_bank   CONSTANT text := '1-1101';  -- Bank
+  c_code_ar     CONSTANT text := '1-1200';  -- Piutang Usaha
+  c_code_pph23  CONSTANT text := '1-1300';  -- PPh 23 Dibayar Dimuka
+  c_tolerance   CONSTANT numeric := 1;
+
+  v_uid         uuid := auth.uid();
+  v_company_id  uuid;
+  v_sp_order_id uuid;
+  v_total       numeric(18,2);
+  v_inv_status  text;
+  v_invoice_no  text;
+  v_customer_id uuid;
+  v_sp_no       text;
+  v_payment_id  uuid;
+  v_settled     numeric(18,2);
+  v_new_status  text;
+  v_je_id       uuid;
+  v_acc_bank    uuid;
+  v_acc_ar      uuid;
+  v_acc_pph     uuid;
+BEGIN
+  IF NOT (is_super_admin() OR has_role('finance_controller')) THEN
+    RAISE EXCEPTION 'Tidak punya izin mencatat pembayaran.';
+  END IF;
+
+  IF p_amount IS NULL OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'Nominal pembayaran harus lebih besar dari nol.';
+  END IF;
+  IF COALESCE(p_pph, 0) < 0 THEN
+    RAISE EXCEPTION 'PPh tidak boleh negatif.';
+  END IF;
+
+  SELECT i.company_id, i.sp_order_id, i.total_amount, i.status, i.invoice_no
+    INTO v_company_id, v_sp_order_id, v_total, v_inv_status, v_invoice_no
+    FROM sp_invoices i
+   WHERE i.id = p_invoice_id AND i.deleted_at IS NULL;
+
+  IF v_company_id IS NULL  THEN RAISE EXCEPTION 'Invoice tidak ditemukan.'; END IF;
+  IF v_inv_status = 'void' THEN
+    RAISE EXCEPTION 'Invoice sudah void — pembayaran tidak bisa dicatat.';
+  END IF;
+  IF v_inv_status = 'draft' THEN
+    RAISE EXCEPTION 'Invoice masih draft — terbitkan dulu sebelum mencatat pembayaran.';
+  END IF;
+
+  SELECT id INTO v_acc_bank FROM chart_of_accounts
+   WHERE company_id = v_company_id AND code = c_code_bank AND deleted_at IS NULL;
+  IF v_acc_bank IS NULL THEN
+    RAISE EXCEPTION 'Akun [%] belum ada di chart_of_accounts untuk company ini — hubungi Finance Controller.', c_code_bank;
+  END IF;
+
+  SELECT id INTO v_acc_ar FROM chart_of_accounts
+   WHERE company_id = v_company_id AND code = c_code_ar AND deleted_at IS NULL;
+  IF v_acc_ar IS NULL THEN
+    RAISE EXCEPTION 'Akun [%] belum ada di chart_of_accounts untuk company ini — hubungi Finance Controller.', c_code_ar;
+  END IF;
+
+  IF COALESCE(p_pph, 0) > 0 THEN
+    SELECT id INTO v_acc_pph FROM chart_of_accounts
+     WHERE company_id = v_company_id AND code = c_code_pph23 AND deleted_at IS NULL;
+    IF v_acc_pph IS NULL THEN
+      RAISE EXCEPTION 'Akun [%] belum ada di chart_of_accounts untuk company ini — hubungi Finance Controller.', c_code_pph23;
+    END IF;
+  END IF;
+
+  INSERT INTO sp_payments
+    (invoice_id, payment_date, amount, pph, reference, bukti_potong_url, bukti_potong_no, created_by)
+  VALUES
+    (p_invoice_id, COALESCE(p_payment_date, CURRENT_DATE), p_amount,
+     COALESCE(p_pph, 0), p_reference, p_bukti_potong_url, p_bukti_potong_no, v_uid)
+  RETURNING id INTO v_payment_id;
+
+  SELECT COALESCE(SUM(amount), 0) + COALESCE(SUM(pph), 0)
+    INTO v_settled
+    FROM sp_payments WHERE invoice_id = p_invoice_id;
+
+  v_new_status := CASE
+    WHEN v_settled >= (v_total - c_tolerance) THEN 'paid'
+    WHEN v_settled > 0                        THEN 'partial'
+    ELSE v_inv_status END;
+
+  IF v_new_status IS DISTINCT FROM v_inv_status THEN
+    UPDATE sp_invoices
+       SET status = v_new_status, updated_at = now()
+     WHERE id = p_invoice_id;
+  END IF;
+
+  INSERT INTO journal_entries
+    (company_id, entry_date, reference_type, reference_id, description, created_by)
+  VALUES
+    (v_company_id, COALESCE(p_payment_date, CURRENT_DATE), 'payment_received', v_payment_id,
+     'Penerimaan pembayaran invoice ' || COALESCE(v_invoice_no, '(tanpa nomor)'), v_uid)
+  RETURNING id INTO v_je_id;
+
+  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+  VALUES (v_je_id, v_acc_bank, p_amount, 0);
+
+  IF COALESCE(p_pph, 0) > 0 THEN
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+    VALUES (v_je_id, v_acc_pph, p_pph, 0);
+  END IF;
+
+  INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit)
+  VALUES (v_je_id, v_acc_ar, 0, p_amount + COALESCE(p_pph, 0));
+
+  IF v_new_status = 'paid' THEN
+    SELECT customer_id, sp_no INTO v_customer_id, v_sp_no
+      FROM sp_orders WHERE id = v_sp_order_id AND deleted_at IS NULL;
+    IF v_customer_id IS NOT NULL THEN
+      PERFORM sp_recompute_status(v_customer_id, v_sp_no);
+    END IF;
+  END IF;
+
+  RETURN v_payment_id;
 END;
 $$;
 
@@ -2135,6 +2405,7 @@ DECLARE
   v_confirmed bool; v_has_done bool; v_has_active bool; v_short bool;
   v_ordered int; v_shipped int; v_has_dispatch bool; v_has_delivered bool;
   v_has_btb bool; v_has_invoice bool; v_submitted bool;
+  v_paid bool;
 BEGIN
   SELECT id, status INTO v_id, v_status
     FROM sp_orders WHERE customer_id=p_customer_id AND sp_no=p_sp_no AND deleted_at IS NULL;
@@ -2157,7 +2428,9 @@ BEGIN
   v_has_btb     := EXISTS(SELECT 1 FROM sp_btb      WHERE sp_order_id=v_id AND deleted_at IS NULL);
   v_has_invoice := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND status <> 'void');
   v_submitted   := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND status='submitted');
+  v_paid        := EXISTS(SELECT 1 FROM sp_invoices WHERE sp_order_id=v_id AND status='paid');
   v_new := CASE
+    WHEN v_paid                                   THEN 'LUNAS'
     WHEN v_submitted                              THEN 'SUBMITTED'
     WHEN v_has_invoice                            THEN 'INVOICED'
     WHEN v_has_btb                                THEN 'BTB_TERBIT'
@@ -2813,7 +3086,8 @@ CREATE TABLE public.ar_ttfs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     sp_order_id uuid,
-    invoice_id uuid
+    invoice_id uuid,
+    diterima_oleh text
 );
 
 
@@ -2829,6 +3103,13 @@ COMMENT ON TABLE public.ar_ttfs IS 'AR Tracker TTF (Tanda Terima Faktur) headers
 --
 
 COMMENT ON COLUMN public.ar_ttfs.tgl_pembayaran IS 'Payment receipt date. NULL = not yet paid. calcAR() in App.jsx uses this to determine status: Lunas / Partial / Belum Bayar.';
+
+
+--
+-- Name: COLUMN ar_ttfs.diterima_oleh; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ar_ttfs.diterima_oleh IS 'Nama orang di pihak customer yang menerima faktur. Teks bebas — orang di luar sistem Nexus, sengaja BUKAN FK ke profiles.';
 
 
 --
@@ -5129,6 +5410,44 @@ CREATE TABLE public.inquiry_comments (
 
 
 --
+-- Name: journal_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.journal_entries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    entry_date date DEFAULT CURRENT_DATE NOT NULL,
+    reference_type text NOT NULL,
+    reference_id uuid NOT NULL,
+    description text,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT journal_entries_reference_type_check CHECK ((reference_type = ANY (ARRAY['invoice_issued'::text, 'payment_received'::text])))
+);
+
+
+--
+-- Name: TABLE journal_entries; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.journal_entries IS 'Jurnal AR minimal Fase 5. Auto-post tanpa approval. Tulis HANYA via RPC SECURITY DEFINER. Koreksi = jurnal pembalik, bukan UPDATE.';
+
+
+--
+-- Name: journal_entry_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.journal_entry_lines (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    journal_entry_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    debit numeric(18,2) DEFAULT 0 NOT NULL,
+    credit numeric(18,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT journal_entry_lines_sign_check CHECK (((debit >= (0)::numeric) AND (credit >= (0)::numeric) AND ((debit = (0)::numeric) OR (credit = (0)::numeric))))
+);
+
+
+--
 -- Name: meeting_moms; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6381,8 +6700,24 @@ CREATE TABLE public.sp_payments (
     pph numeric(18,2) DEFAULT 0 NOT NULL,
     reference text,
     created_by uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    bukti_potong_url text,
+    bukti_potong_no text
 );
+
+
+--
+-- Name: COLUMN sp_payments.bukti_potong_url; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sp_payments.bukti_potong_url IS 'Tautan scan bukti potong (Drive/Storage). Interim: URL manual.';
+
+
+--
+-- Name: COLUMN sp_payments.bukti_potong_no; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sp_payments.bukti_potong_no IS 'Nomor bukti potong PPh 23 dari customer.';
 
 
 --
@@ -7538,6 +7873,22 @@ ALTER TABLE ONLY public.inquiry_comments
 
 
 --
+-- Name: journal_entries journal_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_entries
+    ADD CONSTRAINT journal_entries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: journal_entry_lines journal_entry_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_entry_lines
+    ADD CONSTRAINT journal_entry_lines_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: meeting_moms meeting_moms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8338,6 +8689,20 @@ CREATE INDEX idx_ar_ttfs_customer_id ON public.ar_ttfs USING btree (customer_id)
 
 
 --
+-- Name: idx_ar_ttfs_invoice_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ar_ttfs_invoice_id ON public.ar_ttfs USING btree (invoice_id);
+
+
+--
+-- Name: idx_ar_ttfs_sp_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ar_ttfs_sp_order_id ON public.ar_ttfs USING btree (sp_order_id);
+
+
+--
 -- Name: idx_ar_ttfs_tanggal_ttf; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8986,6 +9351,34 @@ CREATE INDEX idx_inquiry_comments_company_id ON public.inquiry_comments USING bt
 --
 
 CREATE INDEX idx_inquiry_comments_inquiry_id ON public.inquiry_comments USING btree (inquiry_id, created_at DESC);
+
+
+--
+-- Name: idx_je_company_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_je_company_date ON public.journal_entries USING btree (company_id, entry_date);
+
+
+--
+-- Name: idx_je_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_je_reference ON public.journal_entries USING btree (reference_type, reference_id);
+
+
+--
+-- Name: idx_jel_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jel_account ON public.journal_entry_lines USING btree (account_id);
+
+
+--
+-- Name: idx_jel_entry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jel_entry ON public.journal_entry_lines USING btree (journal_entry_id);
 
 
 --
@@ -11518,6 +11911,30 @@ ALTER TABLE ONLY public.inquiry_comments
 
 ALTER TABLE ONLY public.inquiry_comments
     ADD CONSTRAINT inquiry_comments_inquiry_id_fkey FOREIGN KEY (inquiry_id) REFERENCES public.inquiries(id);
+
+
+--
+-- Name: journal_entries journal_entries_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_entries
+    ADD CONSTRAINT journal_entries_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: journal_entry_lines journal_entry_lines_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_entry_lines
+    ADD CONSTRAINT journal_entry_lines_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.chart_of_accounts(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: journal_entry_lines journal_entry_lines_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_entry_lines
+    ADD CONSTRAINT journal_entry_lines_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES public.journal_entries(id) ON DELETE CASCADE;
 
 
 --
@@ -14462,6 +14879,34 @@ CREATE POLICY inquiry_comments_update ON public.inquiry_comments FOR UPDATE USIN
 
 
 --
+-- Name: journal_entries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.journal_entries ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: journal_entries journal_entries_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY journal_entries_read ON public.journal_entries FOR SELECT TO authenticated USING ((public.is_super_admin() OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
+
+
+--
+-- Name: journal_entry_lines; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.journal_entry_lines ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: journal_entry_lines journal_entry_lines_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY journal_entry_lines_read ON public.journal_entry_lines FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.journal_entries je
+  WHERE ((je.id = journal_entry_lines.journal_entry_id) AND (je.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)))))));
+
+
+--
 -- Name: asset_maintenance_records maintenance_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -15853,34 +16298,27 @@ ALTER TABLE public.sp_payments ENABLE ROW LEVEL SECURITY;
 -- Name: sp_payments sp_payments_delete; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sp_payments_delete ON public.sp_payments FOR DELETE USING (public.is_super_admin());
-
-
---
--- Name: sp_payments sp_payments_insert; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY sp_payments_insert ON public.sp_payments FOR INSERT WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
-   FROM public.sp_invoices i
-  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))))));
+CREATE POLICY sp_payments_delete ON public.sp_payments FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
 -- Name: sp_payments sp_payments_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sp_payments_read ON public.sp_payments FOR SELECT USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+CREATE POLICY sp_payments_read ON public.sp_payments FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
    FROM public.sp_invoices i
-  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id = public.get_user_company_id()))))));
+  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)))))));
 
 
 --
 -- Name: sp_payments sp_payments_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sp_payments_update ON public.sp_payments FOR UPDATE USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+CREATE POLICY sp_payments_update ON public.sp_payments FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
    FROM public.sp_invoices i
-  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))))));
+  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text))))))) WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.sp_invoices i
+  WHERE ((i.id = sp_payments.invoice_id) AND (i.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))))));
 
 
 --
@@ -16318,6 +16756,14 @@ GRANT ALL ON FUNCTION public.mark_inquiry_won(p_inquiry_id uuid) TO authenticate
 
 
 --
+-- Name: FUNCTION mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text, p_notes text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text, p_notes text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text, p_notes text) TO authenticated;
+
+
+--
 -- Name: FUNCTION prf_claim(p_prf_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -16343,6 +16789,14 @@ GRANT ALL ON FUNCTION public.prf_release(p_prf_id uuid) TO authenticated;
 --
 
 GRANT ALL ON FUNCTION public.prf_select_offer(p_prf_id uuid, p_offer_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_reference text, p_pph numeric, p_bukti_potong_url text, p_bukti_potong_no text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_reference text, p_pph numeric, p_bukti_potong_url text, p_bukti_potong_no text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_reference text, p_pph numeric, p_bukti_potong_url text, p_bukti_potong_no text) TO authenticated;
 
 
 --
@@ -17084,6 +17538,24 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comments TO s
 
 
 --
+-- Name: TABLE journal_entries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entries TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entries TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entries TO service_role;
+
+
+--
+-- Name: TABLE journal_entry_lines; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entry_lines TO anon;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entry_lines TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entry_lines TO service_role;
+
+
+--
 -- Name: TABLE meeting_moms; Type: ACL; Schema: public; Owner: -
 --
 
@@ -17698,8 +18170,29 @@ GRANT UPDATE(had_cancelled_picking) ON TABLE public.sp_orders TO authenticated;
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_payments TO anon;
-GRANT ALL ON TABLE public.sp_payments TO authenticated;
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_payments TO service_role;
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_payments TO authenticated;
+
+
+--
+-- Name: COLUMN sp_payments.reference; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(reference) ON TABLE public.sp_payments TO authenticated;
+
+
+--
+-- Name: COLUMN sp_payments.bukti_potong_url; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(bukti_potong_url) ON TABLE public.sp_payments TO authenticated;
+
+
+--
+-- Name: COLUMN sp_payments.bukti_potong_no; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(bukti_potong_no) ON TABLE public.sp_payments TO authenticated;
 
 
 --
@@ -17863,5 +18356,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict XBrjRADsuninAlpdoI43OExVb5ZbQRb7cyMjxIDRZxOb6N41UrgQGcZVnugfj1w
+\unrestrict 6zknxm4IpbzQkQRLRZrHDCTohAsJZa0NkA9eeqBEb7eEiLRp1FdywOejnatmLfi
 
