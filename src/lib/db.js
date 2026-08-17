@@ -1128,7 +1128,7 @@ export async function setSpOrderPriceCategory(orderId, cat) {
 }
 
 // ─── Dashboard Storbit — agregasi read-only ──────────────────────────────────
-// Satu panggilan RPC untuk SELURUH angka kartu (8 Shipping Manifest + 4
+// Satu panggilan RPC untuk SELURUH angka kartu (9 Shipping Manifest + 4
 // Warehouse), bukan belasan round-trip atau agregasi client-side. Agregasi
 // sengaja di DB: pola yang sama dipakai indomarco_dashboard_stats untuk lepas
 // dari potong-diam-diam .limit(1000) — masalah yang masih hidup di
@@ -1141,8 +1141,14 @@ export async function setSpOrderPriceCategory(orderId, cat) {
 // membuat view stock_summary nol isolasi entitas. Kalau null, RPC fallback ke
 // get_user_company_id() di sisi DB.
 //
-// Bentuk return: { manifest: {...8 angka}, warehouse: {...4 angka}, generated_at }.
+// Bentuk return: { manifest: {...11 angka}, warehouse: {...4 angka}, generated_at }.
 // Daftar status di balik angka-angka itu: src/lib/spStatusConstants.js.
+//
+// ⛔ manifest.pernah_risiko_pinalti TIDAK BOLEH dirender sendirian — WAJIB
+// berpasangan dgn manifest.dispatch_data_tersedia sbg penyebut. Cakupan data
+// pengiriman baru 16,2% (69/425 SP, 18 Agu 2026), jadi angka pinalti yang kecil
+// bukan berarti aman — datanya yang belum ada. Lihat PENALTY_METRIC_PAIR di
+// spStatusConstants.js.
 /**
  * Ambil agregat Dashboard Storbit. Semua argumen opsional (null = tanpa filter).
  * @param {string|null} customerId    - filter satu customer
