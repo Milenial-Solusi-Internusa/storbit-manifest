@@ -1109,3 +1109,20 @@ export async function createSpOrderDual({
   });
   return { data, error };
 }
+
+// Tipe SP level header (sp_orders.price_category) — ditulis UPDATE TERPISAH
+// setelah create_sp_order_dual, bukan lewat parameter RPC: signature RPC tak
+// bisa ditambah tanpa DROP+CREATE atas jalur tulis SP yang paling ramai.
+// Aman karena RLS sp_orders_update syaratnya IDENTIK dgn sp_orders_insert
+// (company + is_manager_or_above() OR has_role('operations'), bypass super_admin)
+// — yang lolos membuat SP pasti lolos meng-update-nya. Prasyarat satu-satunya:
+// GRANT UPDATE(price_category) (migrasi 20260818000001), karena sp_orders tak
+// punya table-level GRANT UPDATE sejak fix TD-175.
+/** Set tipe SP (header). cat = 'semester'|'tahunan'|'project'|null. Returns { error }. */
+export async function setSpOrderPriceCategory(orderId, cat) {
+  const { error } = await supabase
+    .from('sp_orders')
+    .update({ price_category: cat || null })
+    .eq('id', orderId);
+  return { error };
+}

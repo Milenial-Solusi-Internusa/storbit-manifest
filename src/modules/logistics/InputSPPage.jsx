@@ -18,7 +18,7 @@ import {
   Receipt, Check, Save, Package,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { bulkInsertSpItems, createSpOrderDual } from '../../lib/db';
+import { bulkInsertSpItems, createSpOrderDual, setSpOrderPriceCategory } from '../../lib/db';
 import { useProducts } from '../../hooks/useProducts';
 import ProductPicker from '../../components/ProductPicker';
 import DcPicker from '../../components/DcPicker';
@@ -69,6 +69,15 @@ const CAT_DEFS = [
   { key: 'project',  label: 'Project',  col: 'price_project'  },
 ];
 const availCatsOf = (p) => (p ? CAT_DEFS.filter(c => p[c.col] != null) : []);
+
+// Tipe SP level header → sp_orders.price_category (nullable; kosong = "Other").
+// SENGAJA terpisah dari CAT_DEFS di atas: CAT_DEFS punya 'default' yang DITOLAK
+// CHECK sp_orders_price_category_check (semester/tahunan/project saja).
+const SP_TYPE_OPTS = [
+  { value: 'semester', label: 'Semester' },
+  { value: 'tahunan',  label: 'Tahunan'  },
+  { value: 'project',  label: 'Project'  },
+];
 
 // ─── Item row counter ─────────────────────────────────────────────────────────
 let _seq = 0;
@@ -160,6 +169,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
   const [dcOptions,  setDcOptions]  = useState([]);
   const [dcText,     setDcText]     = useState('');   // teks tampil DcPicker ("KODE · Nama"); dc tetap cuma nama (submit legacy)
   const [expiredDate, setExpiredDate] = useState('');
+  const [spType,     setSpType]     = useState('');   // '' | 'semester' | 'tahunan' | 'project' — OPSIONAL, tak masuk headerOk
   const [notes,      setNotes]      = useState('');
 
   // Items
@@ -272,7 +282,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
         legacy_sp_item_id: inserted?.[i]?.id ?? null,
       };
     });
-    const { error: dualErr } = await createSpOrderDual({
+    const { data: newOrderId, error: dualErr } = await createSpOrderDual({
       companyId:   SOA_COMPANY_ID,
       customerId,
       spNo:        spNoValue,
@@ -291,10 +301,24 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
       setSaving(false);
       return true;
     }
+    // 3) Tipe SP (sp_orders.price_category) — UPDATE TERPISAH, hanya bila diisi.
+    //    Sengaja BUKAN parameter RPC (signature create_sp_order_dual tak bisa
+    //    ditambah tanpa DROP+CREATE jalur tulis SP paling ramai). Non-atomik,
+    //    tapi failure mode-nya benign: SP lahir dgn price_category NULL — sama
+    //    persis dgn user yang memang mengosongkan field ini. Tetap return true
+    //    (SP sudah ada; retry cuma bikin dobel).
+    if (spType && newOrderId) {
+      const { error: catErr } = await setSpOrderPriceCategory(newOrderId, spType);
+      if (catErr) {
+        showToast(`${spNoValue} tersimpan, tapi Tipe SP gagal disimpan: ` + (catErr.message || 'unknown'), 'error');
+        setSaving(false);
+        return true;
+      }
+    }
     setSaving(false);
     showToast(`${spNoValue} berhasil dibuat ✓`, 'success');
     return true;
-  }, [items, spDate, spNo, customerId, dc, dcId, expiredDate, notes, showToast]);
+  }, [items, spDate, spNo, customerId, dc, dcId, expiredDate, spType, notes, showToast]);
 
   const handleSubmit = useCallback(async () => {
     if (!isValid) return;
@@ -432,6 +456,18 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
                 </Field>
                 <Field label="Expired Date" req>
                   {inp({ type: 'date', value: expiredDate, min: today(), onChange: e => setExpiredDate(e.target.value) })}
+                </Field>
+                <Field label="Tipe SP">
+                  {sel({
+                    value: spType,
+                    onChange: e => setSpType(e.target.value),
+                    children: (
+                      <>
+                        <option value="">— Tidak ditentukan —</option>
+                        {SP_TYPE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </>
+                    ),
+                  })}
                 </Field>
               </div>
 
