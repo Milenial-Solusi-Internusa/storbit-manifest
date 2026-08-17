@@ -1,6 +1,6 @@
-# DESIGN — Skema DB Modul Stock Opname (Full Count & Cycle Count) — DRAFT v2 (8 keputusan terintegrasi)
+# DESIGN — Skema DB Modul Stock Opname (Full Count & Cycle Count) — DRAFT v3 (12 keputusan terintegrasi — 8 rev.2 + 4 rev.3)
 
-> **Draft SQL untuk direview — BUKAN eksekusi.** Tidak ada kode/DB yang diubah. Konsep sudah dikunci Den; 8 titik yang di rev.1 ditandai butuh keputusan sudah dijawab dan diintegrasikan ke SQL di bawah — lihat §"KEPUTUSAN DEN" untuk rekap tiap keputusan + konsekuensinya di SQL.
+> **Draft SQL untuk direview — BUKAN eksekusi.** Tidak ada kode/DB yang diubah, dan §6 (rev.3) tidak menyentuh RPC live sungguhan. Konsep sudah dikunci Den; 8 titik yang di rev.1 ditandai butuh keputusan sudah dijawab dan diintegrasikan ke SQL di §1-5 — lihat §"KEPUTUSAN DEN" untuk rekap tiap keputusan + konsekuensinya di SQL. **[rev.3, 16 Agu 2026]** 4 keputusan baru merevisi mekanisme freeze Full Count dari pasif jadi AKTIF (blokir aktivitas fulfillment sungguhan) — lihat blok "KEPUTUSAN DEN — REVISI MEKANISME FREEZE" + §6 baru.
 > Basis: `supabase/schema_snapshot.sql` (struktur SEKARANG) + 3 sesi investigasi sebelumnya (fondasi data stok, jejak git fitur opname setengah-jadi, verifikasi `is_manager_or_above()`/blast-radius `rack_location`/`stock_ledger.created_at`) + pola `DESIGN_SP_SCHEMA.md`.
 > Prinsip AGENTS.md dipatuhi: multi-company, FK & constraint eksplisit, RLS company-scoped, additive (tak ada DROP/ALTER destruktif ke apa pun yang sudah ada).
 > ⚠️ Semua blok SQL **wajib diverifikasi ulang saat eksekusi** (branch + staging) — dokumen ini belum pernah dijalankan sama sekali.
@@ -21,6 +21,19 @@
 8. **Parameter `jsonb` untuk `start_stock_count_session` — DISETUJUI.** Tidak ada perubahan SQL.
 
 **⚠️ Satu ketegangan teknis baru, ketemu saat mengimplementasikan Keputusan #6 — perlu konfirmasi cepat, TIDAK menghalangi progres:** instruksi menyatakan "Baris `stock_ledger` (`movement_type='adjustment'`) TETAP hanya untuk item yang variance≠0" **dan** "`last_count_date` WAJIB di-update untuk SEMUA item yang `counted_qty` sudah diisi" sekaligus. Tapi `last_count_date` **cuma hidup di kolom `stock_ledger`** (dikonfirmasi ulang — nol kolom serupa di `products`/`product_warehouse_location`), jadi satu-satunya cara mengubahnya untuk item variance=0 tetap lewat baris `stock_ledger` baru — hanya dengan `qty=0` (tak mengubah `on_hand` sama sekali, murni menumpang kolom `last_count_date`). Diimplementasikan di §4.3 sebagai **dua `INSERT` terpisah** (persis instruksi "dua hal dipisah, jangan digabung jadi satu syarat"): satu untuk koreksi asli (`variance≠0`, qty sungguhan, `reference_type='stock_count'`), satu lagi qty=0 (`variance=0`, `reference_type='stock_count_verified'` — beda, supaya gampang dibedakan dari koreksi sungguhan saat membaca ledger nanti). Kalau maksud sebenarnya "jangan sentuh `stock_ledger` SAMA SEKALI untuk item variance=0" — itu berarti `last_count_date` item yang cocok **tak bisa** diupdate sama sekali dengan skema yang ada sekarang (butuh kolom baru di tabel lain, di luar scope additive draft ini). Interpretasi qty=0 di atas saya jalankan karena itu satu-satunya cara mencapai KEDUA instruksi sekaligus tanpa ubah skema — tapi ini keputusan pengisi-celah dari saya, bukan sesuatu yang eksplisit dikonfirmasi, jadi ditandai di sini alih-alih ditelan diam-diam.
+
+---
+
+## ✅ KEPUTUSAN DEN — REVISI MEKANISME FREEZE (rev.3, 16 Agu 2026)
+
+Freeze Full Count direvisi dari pasif (murni hitung ulang via `freeze_at`, rev.2 di atas) jadi **AKTIF** (genuinely memblokir aktivitas fulfillment). Konteks dari rapat: *"Freeze yang dimaksud adalah tidak ada proses fulfillment SP. SP tetap bisa register (dibuat/dikonfirmasi), tapi tidak bisa ada aktivitas fulfillment."* Melanjutkan penomoran dari rev.2 (bukan menomori ulang 1-8 di atas) — 4 keputusan baru:
+
+9. **Cakupan blokir = SEMUA RPC fulfillment, TERMASUK yang membatalkan/reverse** — bukan cuma yang "mulai baru". Alasan eksplisit Den: staff yang lagi di tengah proses tetap harus berhenti total selama freeze — baik nerusin maupun batalin, dua-duanya bisa bikin angka stok berubah setelah `freeze_at`, merusak akurasi hitungan fisik. Konsekuensi konkret: `cancel_picking`, `cancel_delivery`, `delete_picking_material` ikut dapat guard, sama seperti RPC "mulai baru" (`generate_picking_from_sp`, `dispatch_delivery`, dst).
+10. **2 RPC SENGAJA dikecualikan dari guard**: `sp_issue_btb` (paperwork setelah barang fisik sudah lama meninggalkan gudang — dikonfirmasi ulang baca body live, nol tulis `stock_ledger`, nol dimensi warehouse sama sekali) dan `mark_delivery_delivered` (cuma ganti label status `delivery_notes` dari `in_transit`→`delivered`, nol tulis `stock_ledger`; `delivery_notes` sendiri tak punya kolom `warehouse_id` — nol yang bisa di-scope walau mau). Detail per-RPC di penutup §6.
+11. **Kondisi "freeze sedang aktif"**: `EXISTS(SELECT 1 FROM stock_count_sessions WHERE warehouse_id=<resolved> AND session_type='full' AND status <> 'closed')` — mencakup `draft`/`in_progress`/`review`, **BUKAN cuma `in_progress`**. Alasan: `status` baru pindah dari `draft`→`in_progress` saat item PERTAMA disubmit (`submit_count_item`, §4.2) — sementara `freeze_at` sendiri sudah terkunci sejak sesi *dibuat* (`start_stock_count_session`, §4.1, masih `status='draft'` saat itu). Kalau guard cuma cek `in_progress`, ada celah nyata: sesi bisa duduk di `draft` dengan `freeze_at` sudah terkunci tanpa batas waktu, dan selama itu fulfillment TETAP jalan normal — persis kebalikan dari yang diminta rapat. Ini kenapa Cycle Count (tak pernah pakai kondisi ini, lihat update di §1.2) sengaja tidak disamakan dengan Full Count.
+12. **`set_sp_status` dan `create_sp_order_dual` DIKONFIRMASI TIDAK disentuh guard apa pun** — dibaca ulang body live keduanya sebelum keputusan ini dikunci: `create_sp_order_dual` murni `INSERT` ke `sp_orders`/`sp_order_items`, nol interaksi `stock_ledger`. `set_sp_status` cabang `'confirmed'` cuma menstempel `confirmed_at`/`confirmed_by` lalu memanggil `sp_recompute_status` (yang sendiri cuma MEMBACA fakta buat menentukan label status, bukan menggerakkan stok — pergerakan fisik baru terjadi belakangan lewat `generate_picking_from_sp` yang terpisah). Ini match persis prinsip "SP tetap bisa register" dari rapat — kedua fungsi ini memang sudah nol dampak stok hari ini, tak butuh guard apa pun ditambahkan.
+
+Implementasi lengkap (8 RPC yang dapat guard, body penuh sebelum/sesudah, plus rasional pengecualian 2 RPC di atas) ada di **§6** — bagian baru, disisipkan setelah §5.
 
 ---
 
@@ -66,6 +79,8 @@ CREATE TABLE public.stock_count_sessions (
 );
 ```
 `freeze_at` mengunci prinsip freeze non-destruktif dari brief: **satu timestamp**, bukan mematikan sistem — `system_qty` tiap item full-count dihitung `SUM` `stock_ledger` sampai timestamp ini (§1.3, §4.2).
+
+**[Update rev.3, 16 Agu 2026]** Mekanisme di atas tetap berlaku PENUH tanpa perubahan untuk kedua tipe sesi (Full & Cycle) — murni soal bagaimana `system_qty` dihitung, lapisan itu tidak disentuh sama sekali. Full Count SEKARANG **juga** dapat lapisan freeze AKTIF terpisah yang genuinely memblokir aktivitas fulfillment (bukan cuma hitungan pasif) — lihat §6. Cycle Count TIDAK terpengaruh sama sekali oleh §6, tetap murni pasif seperti didesain di sini — dua mekanisme ini SENGAJA tidak disamakan (lihat Keputusan #11).
 
 ### 1.3 `stock_count_items` — baris per produk dalam satu sesi
 ```sql
@@ -658,6 +673,413 @@ Kode yang dipakai contoh live: `'INV'`/`'FIN'` (invoice), `'SJ'`/`'WH'` (surat j
 
 ---
 
+## 6. Freeze AKTIF — Guard di RPC Fulfillment Existing (rev.3, 16 Agu 2026)
+
+Implementasi Keputusan #9-12 (lihat blok "KEPUTUSAN DEN — REVISI MEKANISME FREEZE" di atas). **Beda sifat dari §1-5**: §1-5 merancang RPC/tabel BARU untuk modul ini sendiri; bagian ini menyisipkan guard ke **8 RPC yang SUDAH LIVE hari ini** di `schema_snapshot.sql` — `generate_picking_from_sp`, `add_picking_material`, `complete_picking`, `cancel_picking`, `delete_picking_material`, `generate_delivery_from_picking`, `dispatch_delivery`, `cancel_delivery`. Body penuh tiap RPC di bawah dikutip persis dari `schema_snapshot.sql` (dibaca langsung via `pg_get_functiondef`, bukan dari ingatan), dengan guard disisipkan — belum ada satu baris pun dari bagian ini yang dijalankan ke DB atau menyentuh RPC live sungguhan; ini tetap draft, sama seperti seluruh dokumen ini.
+
+**Pola guard seragam di kedelapannya:**
+```sql
+SELECT session_no INTO v_freeze_session_no
+  FROM stock_count_sessions
+ WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+ LIMIT 1;
+IF v_freeze_session_no IS NOT NULL THEN
+  RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+END IF;
+```
+Mengikuti gaya `RAISE EXCEPTION` yang sudah konsisten di seluruh RPC live project ini (Bahasa Indonesia, pesan langsung, interpolasi `%` untuk nilai yang relevan — pola sama seperti `'Invoice berstatus % — ...'` di `submit_invoice`, `'SP % tidak ditemukan...'` di `generate_picking_from_sp`) — bukan pola baru. Disisipkan **setelah** validasi input/status yang sudah ada (supaya error "tidak ditemukan"/"status salah" untuk input yang genuinely tidak valid tetap muncul duluan), **sebelum** tulisan pertama — di mana "tulisan pertama" termasuk pemanggilan `increment_document_sequence(...)` (itu sendiri `UPDATE`/`INSERT` ke `document_sequences`), bukan cuma `INSERT`/`UPDATE` ke tabel domain yang lebih terlihat.
+
+Lima dari delapan RPC di bawah (`complete_picking`, `cancel_picking`, `delete_picking_material`, `generate_delivery_from_picking`, `cancel_delivery`) **belum pernah resolve `warehouse_id` sama sekali** di versi live sekarang — kelimanya dapat resolusi BARU (join tambahan ke `picking_lists.warehouse_id`, langsung atau lewat `delivery_notes.picking_list_id`/`picking_list_materials.picking_list_id`), memakai fallback hardcode `303c3d4c-570e-40a1-b738-6b0ed1cb5078` yang SUDAH ada di 3 RPC lainnya — **bukan** perbaikan/penghapusan fallback itu (itu TD-178, di luar scope revisi ini), murni mereplikasi konvensi yang sudah berlaku ke RPC yang sebelumnya belum butuh `warehouse_id` sama sekali.
+
+### 6.1 `generate_picking_from_sp` — guard setelah cek item outstanding, sebelum `increment_document_sequence`
+```sql
+CREATE OR REPLACE FUNCTION public.generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid DEFAULT NULL::uuid) RETURNS TABLE(picking_list_id uuid, picking_no text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_company_id uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+  v_wh uuid := COALESCE(p_warehouse_id, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+  v_entity text; v_year int := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
+  v_seq int; v_no text; v_pl_id uuid; v_uid uuid := auth.uid(); v_outstanding int;
+  v_freeze_session_no text;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed') THEN
+    RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no; END IF;
+  IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND status <> 'cancelled') THEN
+    RAISE EXCEPTION 'Picking list untuk SP % sudah ada', p_sp_no; END IF;
+  SELECT count(*) INTO v_outstanding FROM sp_items
+    WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed' AND (qty - shipped_qty) > 0;
+  IF v_outstanding = 0 THEN RAISE EXCEPTION 'SP % tidak punya item outstanding', p_sp_no; END IF;
+
+  SELECT session_no INTO v_freeze_session_no
+    FROM stock_count_sessions
+   WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+   LIMIT 1;
+  IF v_freeze_session_no IS NOT NULL THEN
+    RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+  END IF;
+
+  SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
+  v_seq := increment_document_sequence(v_company_id,'PICK','WH',v_year,0);
+  v_no  := 'PICK/'||COALESCE(v_entity,'SOA')||'/WH/'||v_year||'/'||lpad(v_seq::text,4,'0');
+  INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by, customer_id)
+  VALUES (v_company_id, v_no, p_sp_no, v_wh, 'pending', v_uid, p_customer_id)
+  RETURNING id INTO v_pl_id;
+  WITH src AS (
+    SELECT si.id AS sp_item_id, si.product_id, si.product_name, si.sku,
+           GREATEST(si.qty - si.shipped_qty, 0) AS req
+    FROM sp_items si
+    WHERE si.sp_no=p_sp_no AND si.customer_id=p_customer_id AND si.sp_status='confirmed' AND (si.qty - si.shipped_qty) > 0
+  ),
+  av AS (
+    SELECT src.*,
+           COALESCE((SELECT SUM(ss.available) FROM stock_summary ss
+                     WHERE ss.company_id = v_company_id AND ss.product_id = src.product_id), 0) AS avail
+    FROM src
+  ),
+  ins_items AS (
+    INSERT INTO picking_list_items
+      (picking_list_id, sp_item_id, product_id, product_name, sku, qty_requested, qty_short, location_detail)
+    SELECT v_pl_id, sp_item_id, product_id, product_name, sku, req,
+           CASE WHEN product_id IS NULL THEN 0 ELSE GREATEST(req - LEAST(req, avail), 0) END,
+           (SELECT pwl.rack_location FROM product_warehouse_location pwl
+             WHERE pwl.product_id = av.product_id AND pwl.warehouse_id = v_wh LIMIT 1)
+    FROM av
+    RETURNING 1
+  )
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT v_company_id, v_wh, product_id, 'reserved', LEAST(req, avail), 'picking', v_pl_id, v_no, v_uid
+  FROM av
+  WHERE product_id IS NOT NULL AND LEAST(req, avail) > 0;
+  PERFORM sp_recompute_status(p_customer_id, p_sp_no);
+  RETURN QUERY SELECT v_pl_id, v_no;
+END; $$;
+```
+
+### 6.2 `add_picking_material` — guard tepat setelah `v_wh` selesai di-resolve
+```sql
+CREATE OR REPLACE FUNCTION public.add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_company uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+        v_wh uuid; v_status text; v_no text; v_uid uuid := auth.uid();
+        v_pname text; v_sku text; v_mid uuid; v_freeze_session_no text;
+BEGIN
+  IF p_product_id IS NULL THEN RAISE EXCEPTION 'product_id wajib'; END IF;
+  IF COALESCE(p_qty,0) <= 0 THEN RAISE EXCEPTION 'qty harus > 0'; END IF;
+  SELECT status, warehouse_id, picking_no INTO v_status, v_wh, v_no FROM picking_lists WHERE id=p_picking_list_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
+  IF v_status <> 'done' THEN RAISE EXCEPTION 'Material hanya bisa dicatat saat picking selesai (status=%)', v_status; END IF;
+  IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id=p_picking_list_id AND status <> 'cancelled') THEN
+    RAISE EXCEPTION 'Surat jalan sudah dibuat — material tak bisa ditambah lagi'; END IF;
+  v_wh := COALESCE(v_wh, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+
+  SELECT session_no INTO v_freeze_session_no
+    FROM stock_count_sessions
+   WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+   LIMIT 1;
+  IF v_freeze_session_no IS NOT NULL THEN
+    RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+  END IF;
+
+  SELECT name, code INTO v_pname, v_sku FROM products WHERE id=p_product_id;
+  IF v_pname IS NULL THEN RAISE EXCEPTION 'Produk tidak ditemukan'; END IF;
+
+  INSERT INTO picking_list_materials (picking_list_id, product_id, product_name, sku, qty, created_by)
+  VALUES (p_picking_list_id, p_product_id, v_pname, COALESCE(v_sku,''), p_qty, v_uid)
+  RETURNING id INTO v_mid;
+
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  VALUES (v_company, v_wh, p_product_id, 'outbound', -abs(p_qty), 'picking_material', v_mid, v_no, v_uid);
+
+  RETURN v_mid;
+END; $$;
+```
+
+### 6.3 `complete_picking` — resolusi `warehouse_id` BARU (sebelumnya tak diambil sama sekali), guard sebelum `UPDATE`
+```sql
+CREATE OR REPLACE FUNCTION public.complete_picking(p_picking_list_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_status text; v_cust uuid; v_sp text; v_wh uuid; v_freeze_session_no text;
+BEGIN
+  SELECT status, customer_id, sp_no, warehouse_id INTO v_status, v_cust, v_sp, v_wh FROM picking_lists WHERE id=p_picking_list_id;
+  IF v_sp IS NULL THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
+  IF v_status NOT IN ('pending','in_progress') THEN
+    RAISE EXCEPTION 'Hanya picking pending/in_progress yang bisa diselesaikan (status=%)', v_status; END IF;
+
+  v_wh := COALESCE(v_wh, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+  SELECT session_no INTO v_freeze_session_no
+    FROM stock_count_sessions
+   WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+   LIMIT 1;
+  IF v_freeze_session_no IS NOT NULL THEN
+    RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+  END IF;
+
+  UPDATE picking_lists SET status='done', completed_at=now(), updated_at=now() WHERE id=p_picking_list_id;
+  PERFORM sp_recompute_status(v_cust, v_sp);
+END; $$;
+```
+
+### 6.4 `cancel_picking` — resolusi `warehouse_id` BARU, guard sebelum `INSERT` pembalik reservasi
+```sql
+CREATE OR REPLACE FUNCTION public.cancel_picking(p_picking_list_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_status text; v_uid uuid := auth.uid(); v_cust uuid; v_sp text; v_wh uuid; v_freeze_session_no text;
+BEGIN
+  SELECT status, customer_id, sp_no, warehouse_id INTO v_status, v_cust, v_sp, v_wh FROM picking_lists WHERE id=p_picking_list_id;
+  IF v_sp IS NULL THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
+  IF v_status NOT IN ('pending','in_progress') THEN
+    RAISE EXCEPTION 'Hanya picking pending/in_progress yang bisa dibatalkan (status=%)', v_status; END IF;
+
+  v_wh := COALESCE(v_wh, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+  SELECT session_no INTO v_freeze_session_no
+    FROM stock_count_sessions
+   WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+   LIMIT 1;
+  IF v_freeze_session_no IS NOT NULL THEN
+    RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+  END IF;
+
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT company_id, warehouse_id, product_id, 'unreserved', qty, 'picking', reference_id, reference_no, v_uid
+  FROM stock_ledger
+  WHERE reference_type='picking' AND reference_id=p_picking_list_id AND movement_type='reserved';
+  UPDATE picking_lists SET status='cancelled', cancelled_at=now() WHERE id=p_picking_list_id;
+  UPDATE public.sp_orders SET had_cancelled_picking=true, updated_at=now()
+    WHERE customer_id=v_cust AND sp_no=v_sp;
+  PERFORM sp_recompute_status(v_cust, v_sp);
+END; $$;
+```
+
+### 6.5 `delete_picking_material` — resolusi `warehouse_id` BARU, 2 hop (`picking_list_materials.picking_list_id` → `picking_lists.warehouse_id`), guard sebelum `INSERT` pembalik
+```sql
+CREATE OR REPLACE FUNCTION public.delete_picking_material(p_material_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_pick uuid; v_uid uuid := auth.uid(); v_wh uuid; v_freeze_session_no text;
+BEGIN
+  SELECT picking_list_id INTO v_pick FROM picking_list_materials WHERE id=p_material_id;
+  IF v_pick IS NULL THEN RAISE EXCEPTION 'Material tidak ditemukan'; END IF;
+  IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id=v_pick AND status <> 'cancelled') THEN
+    RAISE EXCEPTION 'Tak bisa hapus material: surat jalan sudah dibuat'; END IF;
+
+  SELECT COALESCE(warehouse_id, '303c3d4c-570e-40a1-b738-6b0ed1cb5078') INTO v_wh FROM picking_lists WHERE id=v_pick;
+  SELECT session_no INTO v_freeze_session_no
+    FROM stock_count_sessions
+   WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+   LIMIT 1;
+  IF v_freeze_session_no IS NOT NULL THEN
+    RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+  END IF;
+
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT company_id, warehouse_id, product_id, 'inbound', abs(qty), 'material_reverse', p_material_id, reference_no, v_uid
+  FROM stock_ledger
+  WHERE reference_type='picking_material' AND reference_id=p_material_id AND movement_type='outbound';
+  DELETE FROM public.picking_list_materials WHERE id=p_material_id;
+END; $$;
+```
+
+### 6.6 `generate_delivery_from_picking` — resolusi `warehouse_id` BARU, guard sebelum `increment_document_sequence`
+```sql
+CREATE OR REPLACE FUNCTION public.generate_delivery_from_picking(p_picking_list_id uuid) RETURNS TABLE(delivery_note_id uuid, do_no text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_company_id uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+  v_entity text;
+  v_year int := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
+  v_seq int; v_no text; v_dn_id uuid; v_uid uuid := auth.uid();
+  v_sp_no text; v_pick_status text; v_wh uuid; v_freeze_session_no text;
+  v_customer uuid; v_cust_name text; v_addr text;
+  v_item_count int;
+BEGIN
+  SELECT sp_no, status, customer_id, warehouse_id INTO v_sp_no, v_pick_status, v_customer, v_wh
+    FROM picking_lists WHERE id = p_picking_list_id;
+  IF v_sp_no IS NULL THEN RAISE EXCEPTION 'Picking list tidak ditemukan'; END IF;
+  IF v_pick_status <> 'done' THEN RAISE EXCEPTION 'Picking list belum selesai (status=%)', v_pick_status; END IF;
+  IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id = p_picking_list_id AND status <> 'cancelled') THEN
+    RAISE EXCEPTION 'Surat jalan untuk picking ini sudah ada'; END IF;
+  SELECT count(*) INTO v_item_count FROM picking_list_items
+    WHERE picking_list_id = p_picking_list_id AND COALESCE(qty_picked,0) > 0;
+  IF v_item_count = 0 THEN RAISE EXCEPTION 'Tak ada item ter-pick untuk dikirim'; END IF;
+
+  v_wh := COALESCE(v_wh, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+  SELECT session_no INTO v_freeze_session_no
+    FROM stock_count_sessions
+   WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+   LIMIT 1;
+  IF v_freeze_session_no IS NOT NULL THEN
+    RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+  END IF;
+
+  IF v_customer IS NULL THEN
+    SELECT si.customer_id INTO v_customer FROM sp_items si WHERE si.sp_no = v_sp_no LIMIT 1;
+  END IF;
+  SELECT a.name, a.address INTO v_cust_name, v_addr FROM accounts a WHERE a.id = v_customer;
+
+  SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
+  v_seq := increment_document_sequence(v_company_id, 'SJ', 'WH', v_year, 0);
+  v_no  := 'SJ/' || COALESCE(v_entity,'SOA') || '/WH/' || v_year || '/' || lpad(v_seq::text, 4, '0');
+
+  INSERT INTO delivery_notes
+    (company_id, do_no, sp_no, picking_list_id, customer_id, customer_name, destination_address, status, created_by)
+  VALUES (v_company_id, v_no, v_sp_no, p_picking_list_id, v_customer, v_cust_name, v_addr, 'draft', v_uid)
+  RETURNING id INTO v_dn_id;
+
+  INSERT INTO delivery_note_items (delivery_note_id, picking_list_item_id, product_id, product_name, sku, qty)
+  SELECT v_dn_id, pli.id, pli.product_id, pli.product_name, pli.sku, pli.qty_picked
+  FROM picking_list_items pli
+  WHERE pli.picking_list_id = p_picking_list_id AND COALESCE(pli.qty_picked,0) > 0;
+
+  RETURN QUERY SELECT v_dn_id, v_no;
+END;
+$$;
+```
+
+### 6.7 `dispatch_delivery` — guard tepat setelah `v_wh` selesai di-resolve (pola sudah ada)
+```sql
+CREATE OR REPLACE FUNCTION public.dispatch_delivery(p_delivery_note_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_company uuid := 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
+        v_status text; v_pick uuid; v_wh uuid; v_no text; v_uid uuid := auth.uid();
+        v_cust uuid; v_sp text; v_freeze_session_no text;
+BEGIN
+  SELECT status, picking_list_id, do_no, customer_id, sp_no
+    INTO v_status, v_pick, v_no, v_cust, v_sp
+    FROM delivery_notes WHERE id=p_delivery_note_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Surat jalan tidak ditemukan'; END IF;
+  IF v_status <> 'draft' THEN RAISE EXCEPTION 'Hanya surat jalan draft yang bisa diberangkatkan (status=%)', v_status; END IF;
+  SELECT warehouse_id INTO v_wh FROM picking_lists WHERE id=v_pick;
+  v_wh := COALESCE(v_wh, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
+
+  SELECT session_no INTO v_freeze_session_no
+    FROM stock_count_sessions
+   WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+   LIMIT 1;
+  IF v_freeze_session_no IS NOT NULL THEN
+    RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+  END IF;
+
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT company_id, warehouse_id, product_id, 'unreserved', qty, 'picking', reference_id, reference_no, v_uid
+  FROM stock_ledger
+  WHERE reference_type='picking' AND reference_id=v_pick AND movement_type='reserved';
+
+  INSERT INTO stock_ledger
+    (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+  SELECT v_company, v_wh, dni.product_id, 'outbound', -abs(dni.qty), 'delivery', p_delivery_note_id, v_no, v_uid
+  FROM delivery_note_items dni
+  WHERE dni.delivery_note_id=p_delivery_note_id AND dni.product_id IS NOT NULL AND COALESCE(dni.qty,0) > 0;
+
+  UPDATE delivery_notes SET status='in_transit', dispatched_at=now() WHERE id=p_delivery_note_id;
+
+  WITH agg AS (
+    SELECT pli.sp_item_id AS sp_item_id, SUM(dni.qty) AS qty
+    FROM delivery_note_items dni
+    JOIN picking_list_items pli ON pli.id = dni.picking_list_item_id
+    WHERE dni.delivery_note_id = p_delivery_note_id AND COALESCE(dni.qty,0) > 0 AND pli.sp_item_id IS NOT NULL
+    GROUP BY pli.sp_item_id
+  )
+  UPDATE sp_items si SET shipped_qty = si.shipped_qty + agg.qty, updated_at = now()
+  FROM agg WHERE si.id = agg.sp_item_id;
+
+  WITH agg AS (
+    SELECT pli.sp_item_id AS sp_item_id, SUM(dni.qty) AS qty
+    FROM delivery_note_items dni
+    JOIN picking_list_items pli ON pli.id = dni.picking_list_item_id
+    WHERE dni.delivery_note_id = p_delivery_note_id AND COALESCE(dni.qty,0) > 0 AND pli.sp_item_id IS NOT NULL
+    GROUP BY pli.sp_item_id
+  )
+  UPDATE sp_order_items soi SET shipped_qty = LEAST(soi.shipped_qty + agg.qty, soi.qty), updated_at = now()
+  FROM agg WHERE soi.legacy_sp_item_id = agg.sp_item_id;
+
+  PERFORM sp_recompute_status(v_cust, v_sp);
+END; $$;
+```
+
+### 6.8 `cancel_delivery` — resolusi `warehouse_id` BARU (`delivery_notes.picking_list_id` → `picking_lists.warehouse_id`), guard sebelum SELURUH cabang kondisional (bukan cuma di dalamnya)
+```sql
+CREATE OR REPLACE FUNCTION public.cancel_delivery(p_delivery_note_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_status text; v_uid uuid := auth.uid(); v_cust uuid; v_sp text; v_pick uuid; v_wh uuid; v_freeze_session_no text;
+BEGIN
+  SELECT status, customer_id, sp_no, picking_list_id INTO v_status, v_cust, v_sp, v_pick FROM delivery_notes WHERE id=p_delivery_note_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Surat jalan tidak ditemukan'; END IF;
+  IF v_status='cancelled' THEN RAISE EXCEPTION 'Surat jalan sudah dibatalkan'; END IF;
+
+  SELECT COALESCE(warehouse_id, '303c3d4c-570e-40a1-b738-6b0ed1cb5078') INTO v_wh FROM picking_lists WHERE id=v_pick;
+  SELECT session_no INTO v_freeze_session_no
+    FROM stock_count_sessions
+   WHERE warehouse_id = v_wh AND session_type = 'full' AND status <> 'closed'
+   LIMIT 1;
+  IF v_freeze_session_no IS NOT NULL THEN
+    RAISE EXCEPTION 'Gudang sedang Full Count (sesi %) — aktivitas fulfillment ditahan sampai sesi selesai.', v_freeze_session_no;
+  END IF;
+
+  IF v_status IN ('in_transit','delivered') THEN
+    INSERT INTO stock_ledger
+      (company_id, warehouse_id, product_id, movement_type, qty, reference_type, reference_id, reference_no, created_by)
+    SELECT company_id, warehouse_id, product_id, 'inbound', abs(qty), 'delivery_cancel', reference_id, reference_no, v_uid
+    FROM stock_ledger
+    WHERE reference_type='delivery' AND reference_id=p_delivery_note_id AND movement_type='outbound';
+
+    WITH agg AS (
+      SELECT pli.sp_item_id AS sp_item_id, SUM(dni.qty) AS qty
+      FROM delivery_note_items dni
+      JOIN picking_list_items pli ON pli.id = dni.picking_list_item_id
+      WHERE dni.delivery_note_id = p_delivery_note_id AND COALESCE(dni.qty,0) > 0 AND pli.sp_item_id IS NOT NULL
+      GROUP BY pli.sp_item_id
+    )
+    UPDATE sp_items si SET shipped_qty = GREATEST(si.shipped_qty - agg.qty, 0), updated_at = now()
+    FROM agg WHERE si.id = agg.sp_item_id;
+
+    WITH agg AS (
+      SELECT pli.sp_item_id AS sp_item_id, SUM(dni.qty) AS qty
+      FROM delivery_note_items dni
+      JOIN picking_list_items pli ON pli.id = dni.picking_list_item_id
+      WHERE dni.delivery_note_id = p_delivery_note_id AND COALESCE(dni.qty,0) > 0 AND pli.sp_item_id IS NOT NULL
+      GROUP BY pli.sp_item_id
+    )
+    UPDATE sp_order_items soi SET shipped_qty = GREATEST(soi.shipped_qty - agg.qty, 0), updated_at = now()
+    FROM agg WHERE soi.legacy_sp_item_id = agg.sp_item_id;
+  END IF;
+
+  UPDATE delivery_notes SET status='cancelled', cancelled_at=now() WHERE id=p_delivery_note_id;
+
+  IF v_cust IS NOT NULL AND v_sp IS NOT NULL THEN
+    PERFORM sp_recompute_status(v_cust, v_sp);
+  END IF;
+END; $$;
+```
+Guard ditaruh SEBELUM percabangan `IF v_status IN ('in_transit','delivered')`, bukan di dalamnya — supaya freeze tetap memblokir pembatalan surat jalan `'draft'` (yang belum pernah dispatch, jadi tak akan masuk cabang itu sama sekali) juga, konsisten dengan Keputusan #9 ("berhenti total", bukan hanya sub-jalur yang kebetulan menyentuh `stock_ledger`).
+
+### 6.9 RPC yang SENGAJA dikecualikan — tidak dapat guard sama sekali
+
+**`sp_issue_btb(p_customer_id, p_sp_no, p_btb_no, p_qty, p_btb_date, p_delivery_note_id, p_remarks)`** — dibaca ulang body live: hanya `INSERT INTO sp_btb` (paperwork Bukti Terima Barang) lalu `PERFORM sp_recompute_status`. Nol baris menyentuh `stock_ledger`, nol kolom `warehouse_id` di tabel `sp_btb` itu sendiri. BTB diterbitkan setelah barang secara fisik sudah lama meninggalkan gudang (event pengiriman sudah selesai di `dispatch_delivery`) — tak ada apa pun di sini yang bisa "merusak akurasi hitungan fisik" gudang manapun. Tidak diberi guard.
+
+**`mark_delivery_delivered(p_delivery_note_id)`** — dibaca ulang body live: hanya `UPDATE delivery_notes SET status='delivered'` (dari `'in_transit'`) lalu `PERFORM sp_recompute_status`. Nol baris menyentuh `stock_ledger` — pergerakan stok fisik sudah tercatat sebelumnya, saat `dispatch_delivery` (§6.7). `delivery_notes` sendiri juga tak punya kolom `warehouse_id` — even kalau mau diberi guard, tak ada nilai untuk di-scope ke sesi Full Count mana pun tanpa join tambahan yang tak berguna (RPC ini murni label status pengiriman, bukan aktivitas gudang). Tidak diberi guard.
+
+---
+
 ## Ringkasan status dokumen ini
 
 | # | Keputusan Den | Status di dokumen |
@@ -670,7 +1092,13 @@ Kode yang dipakai contoh live: `'INV'`/`'FIN'` (invoice), `'SJ'`/`'WH'` (surat j
 | 6 | `last_count_date` update utk semua item ter-`counted_qty`, dipisah dari baris adjustment | ✅ Selesai — §4.3 ditulis ulang · ⚠️ 1 ketegangan teknis baru ditandai (lihat §"KEPUTUSAN DEN" di atas — interpretasi qty=0 perlu 1 konfirmasi cepat) |
 | 7 | `reject_variance_report` reset sesi ke `in_progress` + `rejected_snapshot` permanen | ✅ Selesai — kolom baru di §1.4, logic di §4.4 ditulis ulang |
 | 8 | Parameter `jsonb` utk `start_stock_count_session` disetujui | ✅ Selesai — §4.1 bentuk parameternya tak berubah |
+| 9 | Freeze Full Count: cakupan blokir SEMUA RPC fulfillment termasuk pembatalan/reverse, bukan cuma "mulai baru" | ✅ Selesai — §6 baru (rev.3, 16 Agu 2026) |
+| 10 | 2 RPC dikecualikan dari guard: `sp_issue_btb`, `mark_delivery_delivered` | ✅ Selesai — §6.9, rasional dijelaskan eksplisit tiap RPC (nol dampak `stock_ledger`, nol dimensi warehouse) |
+| 11 | Kondisi freeze aktif = `session_type='full' AND status<>'closed'` (mencakup draft/in_progress/review, BUKAN cuma `in_progress`) | ✅ Selesai — §6, celah jendela `draft` dijelaskan di Keputusan #11 |
+| 12 | `set_sp_status`/`create_sp_order_dual` dikonfirmasi TIDAK disentuh guard apa pun — SP tetap bisa register selama freeze | ✅ Selesai — dikonfirmasi via baca body live keduanya, direkap di Keputusan #12 |
 
-**File lain (§1.1–1.3, §2, §3.1, §3.3, §4.2, §5) tidak disentuh** — dikonfirmasi tidak terpengaruh oleh ke-8 keputusan ini, seperti diminta.
+**File lain (§1.1–1.3, §2, §3.1, §3.3, §4.2, §5) tidak disentuh** — dikonfirmasi tidak terpengaruh oleh ke-8 keputusan rev.2, seperti diminta. Keputusan #9-12 (rev.3) juga TIDAK mengubah SQL apa pun di §1-5 — satu-satunya sentuhan di luar §6 baru adalah 1 paragraf penjelasan (bukan SQL) yang ditambahkan di §1.2 (baris cross-reference ke §6, lihat sana), supaya deskripsi freeze pasif lama tidak terbaca kontradiktif dengan mekanisme aktif yang baru. §1.1, §1.3, §1.4, §2, §3.1-3.4, §4.1-4.5 nol sentuhan sama sekali, termasuk nol perubahan prosa.
 
-**Status keseluruhan: 7 dari 8 keputusan terintegrasi bersih tanpa sisa pertanyaan.** Keputusan #6 terintegrasi penuh secara fungsional (SQL-nya lengkap dan konsisten, tidak menghalangi progres), tapi memunculkan satu ketegangan teknis baru — bagaimana caranya `last_count_date` item variance=0 ter-update kalau baris `stock_ledger` "sungguhan" katanya cuma boleh utk variance≠0 — dijelaskan lengkap + interpretasi yang saya jalankan (qty=0) di §"KEPUTUSAN DEN" atas dokumen. Dokumen ini karena itu **belum bisa disebut 100% TERKUNCI** sampai satu poin itu eksplisit dikonfirmasi (tinggal jawaban satu kalimat: qty=0 OK, atau ada mekanisme lain yang dimaksud) — poin 1, 2, 3, 4, 5, 7, dan 8 sudah TERKUNCI penuh. Belum ada satu baris pun dari dokumen ini yang dijalankan ke DB.
+**Status keseluruhan: 7 dari 8 keputusan rev.2 terintegrasi bersih tanpa sisa pertanyaan.** Keputusan #6 terintegrasi penuh secara fungsional (SQL-nya lengkap dan konsisten, tidak menghalangi progres), tapi memunculkan satu ketegangan teknis baru — bagaimana caranya `last_count_date` item variance=0 ter-update kalau baris `stock_ledger` "sungguhan" katanya cuma boleh utk variance≠0 — dijelaskan lengkap + interpretasi yang saya jalankan (qty=0) di §"KEPUTUSAN DEN" atas dokumen. Dokumen ini karena itu **belum bisa disebut 100% TERKUNCI** sampai satu poin itu eksplisit dikonfirmasi (tinggal jawaban satu kalimat: qty=0 OK, atau ada mekanisme lain yang dimaksud) — poin 1, 2, 3, 4, 5, 7, dan 8 sudah TERKUNCI penuh.
+
+**[Update rev.3, 16 Agu 2026]** Poin 9-12 (revisi mekanisme freeze, §6) **TERKUNCI penuh, nol sisa pertanyaan** — beda dari status Keputusan #6 di atas yang masih menunggu 1 konfirmasi terpisah, tidak terkait. §6 murni desain juga, persis prinsip yang sama seperti seluruh dokumen ini — **belum ada satu baris pun dari dokumen ini (termasuk §6) yang dijalankan ke DB atau menyentuh RPC live sungguhan.**
