@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 8ZnPNp5R1yhxNpJh1g2mLWN8cXQGZ57fiZ0SoJkaO2ZljEfpiRMlhzHGBghP7pj
+\restrict Tks2udV5XHFwethjsbMXgvQsYEz3c8skuhS9WaCwidw512RKkNcxYWYIl2EO1FH
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -6017,7 +6017,8 @@ CREATE TABLE public.products (
     revenue_account text,
     price_semester numeric(18,2),
     price_tahunan numeric(18,2),
-    price_project numeric(18,2)
+    price_project numeric(18,2),
+    reorder_point numeric
 );
 
 
@@ -6061,6 +6062,13 @@ COMMENT ON COLUMN public.products.cogs_account_id IS 'Nullable FK to chart_of_ac
 --
 
 COMMENT ON COLUMN public.products.revenue_account_id IS 'Nullable FK to chart_of_accounts for revenue mapping. Set in Phase 3 when COA is configured.';
+
+
+--
+-- Name: COLUMN products.reorder_point; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.products.reorder_point IS 'Reorder point / ROP per produk (unit). Nullable = belum ditentukan. Diisi manual sesuai SOP Storbit (Finance/Warehouse Controller), bukan dihitung sistem. Terpisah dari min_order_qty (text bebas).';
 
 
 --
@@ -6684,8 +6692,17 @@ CREATE TABLE public.sp_orders (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     deleted_at timestamp with time zone,
     had_cancelled_picking boolean DEFAULT false NOT NULL,
+    price_category text,
+    CONSTRAINT sp_orders_price_category_check CHECK ((price_category = ANY (ARRAY['semester'::text, 'tahunan'::text, 'project'::text]))),
     CONSTRAINT sp_orders_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'CONFIRMED'::text, 'MENUNGGU_STOK'::text, 'PICKING'::text, 'PACKED'::text, 'DIKIRIM'::text, 'SAMPAI'::text, 'BTB_TERBIT'::text, 'TERKIRIM_PENUH'::text, 'INVOICED'::text, 'SUBMITTED'::text, 'LUNAS'::text, 'CANCELLED'::text])))
 );
+
+
+--
+-- Name: COLUMN sp_orders.price_category; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sp_orders.price_category IS 'Tipe SP level header: semester/tahunan/project. NULL = tidak ditentukan (tampil "Other" di dashboard). Sengaja senama dgn sp_order_items.price_category (kategori harga per item) — berhubungan tapi tidak wajib sama. BUKAN sp_orders.sp_category, yang artinya kategori produk (reguler/loyang/trolly).';
 
 
 --
@@ -18166,6 +18183,13 @@ GRANT UPDATE(had_cancelled_picking) ON TABLE public.sp_orders TO authenticated;
 
 
 --
+-- Name: COLUMN sp_orders.price_category; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT UPDATE(price_category) ON TABLE public.sp_orders TO authenticated;
+
+
+--
 -- Name: TABLE sp_payments; Type: ACL; Schema: public; Owner: -
 --
 
@@ -18356,5 +18380,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 8ZnPNp5R1yhxNpJh1g2mLWN8cXQGZ57fiZ0SoJkaO2ZljEfpiRMlhzHGBghP7pj
+\unrestrict Tks2udV5XHFwethjsbMXgvQsYEz3c8skuhS9WaCwidw512RKkNcxYWYIl2EO1FH
 
