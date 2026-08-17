@@ -1,0 +1,43 @@
+/* src/modules/logistics/salesOrderDetail.module.css
+ *
+ * Font halaman Detail SP — Cormorant Garamond (display) + Lora (body), mengikuti
+ * Claude Design "Detail Surat Pesanan B.dc.html" (--font-heading / --font-body).
+ *
+ * Kenapa file terpisah, BUKAN index.css/index.html:
+ *   - SalesOrderDetailPage di-lazy() di App.jsx → chunk CSS ini baru diunduh saat
+ *     halaman Detail SP dibuka, tidak ikut bundle awal aplikasi.
+ *   - Nama family di-NAMESPACE ('Storbit Display' / 'Storbit Text'), bukan nama
+ *     asli fontnya. @font-face memang at-rule global begitu chunk termuat, tapi
+ *     karena nol file lain menyebut nama ini, nol elemen di luar halaman ini bisa
+ *     mewarisinya — jaminan yang lebih kuat daripada sekadar scoping selector.
+ *
+ * .ttf-nya file yang SAMA yang sudah dipakai InvoicePDF.jsx (via @react-pdf
+ * Font.register — registry terpisah, tak bentrok). Nol request jaringan.
+ *
+ * font-display: swap → teks langsung tampil pakai fallback serif, tak ada
+ * blocking render sambil menunggu ~934 KB TTF terunduh di kunjungan pertama.
+ */
+
+@font-face {
+  font-family: 'Storbit Display';
+  src: url('../../assets/fonts/CormorantGaramond-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Storbit Text';
+  src: url('../../assets/fonts/Lora-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Storbit Text';
+  src: url('../../assets/fonts/Lora-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
