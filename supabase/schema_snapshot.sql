@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict OGsyhkmxjzpXTbJG8wkHsi4wccxiaI5Zucer0jz1dE0Okrd2pgbhdHhOIU8UL35
+\restrict Og5OaJWtz8IHeVWEdrPFeXxVMeNLcD9ujykLnMHhluhY5psIPcR8YbPh02fT7WH
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -910,7 +910,7 @@ $$;
 -- Name: get_storbit_sp_drilldown(text, uuid, text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_storbit_sp_drilldown(p_category text, p_customer_id uuid DEFAULT NULL::uuid, p_price_category text DEFAULT NULL::text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200) RETURNS TABLE(sp_no text, customer_name text, dc_nama text, sp_date date, status text, expired_date date)
+CREATE FUNCTION public.get_storbit_sp_drilldown(p_category text, p_customer_id uuid DEFAULT NULL::uuid, p_price_category text DEFAULT NULL::text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200) RETURNS TABLE(sp_no text, customer_id uuid, customer_name text, dc_nama text, sp_date date, status text, expired_date date)
     LANGUAGE sql STABLE
     SET search_path TO 'public'
     AS $$
@@ -948,6 +948,7 @@ sp_flag AS (
 )
 SELECT
   f.sp_no,
+  f.customer_id,
   a.name    AS customer_name,
   dm.nama   AS dc_nama,
   f.sp_date,
@@ -981,7 +982,7 @@ $$;
 -- Name: get_storbit_stock_drilldown(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_storbit_stock_drilldown(p_category text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200) RETURNS TABLE(sku text, product_name text, available numeric, reorder_point numeric)
+CREATE FUNCTION public.get_storbit_stock_drilldown(p_category text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200) RETURNS TABLE(product_id uuid, sku text, product_name text, available numeric, reorder_point numeric)
     LANGUAGE sql STABLE
     SET search_path TO 'public'
     AS $$
@@ -990,6 +991,7 @@ WITH scope AS (
 ),
 stock AS (
   SELECT
+    p.id         AS product_id,
     p.code::text AS sku,
     p.name::text AS product_name,
     p.reorder_point,
@@ -1002,7 +1004,7 @@ stock AS (
     AND p.is_service = false
     AND p.is_active  = true
 )
-SELECT s.sku, s.product_name, s.available, s.reorder_point
+SELECT s.product_id, s.sku, s.product_name, s.available, s.reorder_point
 FROM stock s
 WHERE CASE p_category
   WHEN 'danger_stock'    THEN s.reorder_point IS NOT NULL AND s.available < s.reorder_point
@@ -18651,5 +18653,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict OGsyhkmxjzpXTbJG8wkHsi4wccxiaI5Zucer0jz1dE0Okrd2pgbhdHhOIU8UL35
+\unrestrict Og5OaJWtz8IHeVWEdrPFeXxVMeNLcD9ujykLnMHhluhY5psIPcR8YbPh02fT7WH
 

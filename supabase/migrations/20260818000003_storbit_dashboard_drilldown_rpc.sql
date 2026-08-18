@@ -7,6 +7,16 @@
 -- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi. Jalankan section
 --            1 -> 3 berurutan di SQL Editor, lalu refresh schema_snapshot.sql.
 --
+-- ⚠️ DROP + CREATE, BUKAN CREATE OR REPLACE — DAN GRANT WAJIB DIJALANKAN ULANG.
+--    Revisi 18 Agu 2026 menambah kolom identifier ke RETURNS TABLE kedua fungsi
+--    (customer_id / product_id, utk navigasi baris tabel -> halaman detail).
+--    Menambah kolom = mengubah tipe return, dan CREATE OR REPLACE MENOLAK itu
+--    ("cannot change return type of existing function"). Karena itu section 1
+--    dan 2 memakai DROP dulu.
+--    KONSEKUENSI YANG GAMPANG KELEWAT: DROP menghapus GRANT fungsi juga. Kalau
+--    section 3 tidak ikut dijalankan ulang, pemanggilan dari browser gagal
+--    dengan "permission denied for function" — bukan hasil kosong, tapi error.
+--
 -- CATATAN DESAIN:
 --   - KENAPA RPC, BUKAN QUERY POSTGREST BIASA. Empat kategori mustahil
 --     dinyatakan lewat PostgREST: delivered_belum_btb (anti-join sp_btb),
@@ -40,7 +50,9 @@
 -- =============================================================================
 
 -- 1. Drill-down SP — 9 kategori, satu bentuk baris.
-CREATE OR REPLACE FUNCTION public.get_storbit_sp_drilldown(
+DROP FUNCTION IF EXISTS public.get_storbit_sp_drilldown(text, uuid, text, uuid, int);
+
+CREATE FUNCTION public.get_storbit_sp_drilldown(
   p_category       text,
   p_customer_id    uuid DEFAULT NULL,
   p_price_category text DEFAULT NULL,
@@ -48,6 +60,11 @@ CREATE OR REPLACE FUNCTION public.get_storbit_sp_drilldown(
   p_limit          int  DEFAULT 200
 ) RETURNS TABLE(
   sp_no         text,
+  -- customer_id: pasangan komposit sp_no untuk navigasi ke Detail SP. Jalur
+  -- navigasi existing (SalesOrderPage -> App.jsx setSelectedSpId) memakai
+  -- {spNo, customerId}, BUKAN sp_orders.id — jadi id itu sengaja TIDAK ikut
+  -- dikembalikan di sini.
+  customer_id   uuid,
   customer_name text,
   dc_nama       text,
   sp_date       date,
@@ -91,6 +108,7 @@ sp_flag AS (
 )
 SELECT
   f.sp_no,
+  f.customer_id,
   a.name    AS customer_name,
   dm.nama   AS dc_nama,
   f.sp_date,
@@ -125,11 +143,17 @@ $fn$;
 --    Digerakkan dari products (ber-RLS company-scoped), BUKAN dari
 --    stock_summary: produk tanpa histori stock_ledger tidak muncul di view itu
 --    sama sekali, dan justru produk-produk itulah mayoritas isi zero_stock.
-CREATE OR REPLACE FUNCTION public.get_storbit_stock_drilldown(
+DROP FUNCTION IF EXISTS public.get_storbit_stock_drilldown(text, uuid, int);
+
+CREATE FUNCTION public.get_storbit_stock_drilldown(
   p_category   text,
   p_company_id uuid DEFAULT NULL,
   p_limit      int  DEFAULT 200
 ) RETURNS TABLE(
+  -- product_id: satu-satunya identifier yang dibutuhkan Detail Produk —
+  -- ProductDetailPage.jsx:659,669 men-fetch ulang seluruh datanya .eq('id', …),
+  -- jadi sku/product_name di bawah murni untuk tampilan.
+  product_id    uuid,
   sku           text,
   product_name  text,
   available     numeric,
@@ -143,6 +167,7 @@ WITH scope AS (
 ),
 stock AS (
   SELECT
+    p.id         AS product_id,
     p.code::text AS sku,
     p.name::text AS product_name,
     p.reorder_point,
@@ -155,7 +180,7 @@ stock AS (
     AND p.is_service = false
     AND p.is_active  = true
 )
-SELECT s.sku, s.product_name, s.available, s.reorder_point
+SELECT s.product_id, s.sku, s.product_name, s.available, s.reorder_point
 FROM stock s
 WHERE CASE p_category
   WHEN 'danger_stock'    THEN s.reorder_point IS NOT NULL AND s.available < s.reorder_point
@@ -169,6 +194,9 @@ $fn$;
 
 -- 3. Hak akses — pola FASE 5 (default privileges Supabase meng-GRANT fungsi
 --    baru ke anon secara otomatis, jadi REVOKE di bawah bukan formalitas).
+--    ⚠️ WAJIB ikut dijalankan setiap kali section 1/2 di-DROP+CREATE ulang —
+--    DROP menghapus GRANT, dan gejalanya "permission denied for function"
+--    di browser, bukan hasil kosong.
 REVOKE ALL ON FUNCTION public.get_storbit_sp_drilldown(text, uuid, text, uuid, int) FROM PUBLIC;
 GRANT ALL  ON FUNCTION public.get_storbit_sp_drilldown(text, uuid, text, uuid, int) TO authenticated;
 
@@ -190,6 +218,17 @@ GRANT ALL  ON FUNCTION public.get_storbit_stock_drilldown(text, uuid, int) TO au
 --        NULL, NULL, 'd2e5e565-5f67-4954-b8d9-5979a2a0c697') -> 'manifest' ->> 'btb_terbit')::int AS kartu;
 --   -- Ulangi utk: pending_open, shipped, delivered_belum_btb, terkirim_penuh,
 --   -- expired, mendekati_expired, pernah_risiko_pinalti, finance, cancelled.
+--
+--   -- b2. Kolom identifier baru harus TERISI, bukan NULL — kalau NULL, navigasi
+--   --     baris tabel ke halaman detail akan diam-diam membuka halaman kosong:
+--   SELECT COUNT(*) AS total, COUNT(customer_id) AS customer_id_terisi
+--     FROM public.get_storbit_sp_drilldown('btb_terbit', NULL, NULL,
+--            'd2e5e565-5f67-4954-b8d9-5979a2a0c697', 1000);
+--   -- kedua angka harus SAMA
+--   SELECT COUNT(*) AS total, COUNT(product_id) AS product_id_terisi
+--     FROM public.get_storbit_stock_drilldown('rop_belum_diisi',
+--            'd2e5e565-5f67-4954-b8d9-5979a2a0c697', 1000);
+--   -- kedua angka harus SAMA
 --
 --   -- c. Kategori ngawur harus mengembalikan NOL baris (bukan semua SP):
 --   SELECT COUNT(*) FROM public.get_storbit_sp_drilldown('kategori-ngaco', NULL, NULL, NULL, 200);

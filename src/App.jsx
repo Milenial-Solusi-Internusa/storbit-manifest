@@ -3400,7 +3400,25 @@ export default function StorbitManifest() {
                   Loading...
                 </div>
               }>
-                <StorbitDashboardPage customers={customers} showToast={showToast} />
+                <StorbitDashboardPage
+                  customers={customers}
+                  showToast={showToast}
+                  // Navigasi baris tabel drill-down — meniru verbatim dua
+                  // callback yang sudah ada: onSelectSP di SalesOrderPage
+                  // (setSelectedSpId dgn komposit spNo+customerId) dan
+                  // onSelectProduct di ProductsPage (setSelectedProduct + pindah
+                  // menu). Bedanya cuma satu: dashboard hidup di activeMenu
+                  // 'storbit-dashboard', jadi setActiveMenu WAJIB ikut dipanggil
+                  // — detail SP hanya dirender di bawah activeMenu 'manifest'.
+                  onSelectSP={(r) => {
+                    setSelectedSpId({ spNo: r.sp_no, customerId: r.customer_id });
+                    setActiveMenu('manifest');
+                  }}
+                  onSelectProduct={(r) => {
+                    setSelectedProduct({ id: r.product_id });
+                    setActiveMenu('product-detail');
+                  }}
+                />
               </Suspense>
             </ErrorBoundary>
           )}
