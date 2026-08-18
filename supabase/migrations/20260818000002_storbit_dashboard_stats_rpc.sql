@@ -8,8 +8,11 @@
 -- Depends:   20260818000001 (products.reorder_point + sp_orders.price_category)
 --            HARUS sudah live — fungsi ini membaca kedua kolom itu dan akan
 --            gagal compile kalau belum ada.
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi. Jalankan section
---            1 -> 3 berurutan di SQL Editor, lalu refresh schema_snapshot.sql.
+-- Status:    LIVE — dijalankan 18 Agu 2026, terverifikasi lewat
+--            schema_snapshot.sql (body fungsi versi terakhir, sudah memuat
+--            terkirim_penuh + dispatch_eligible). Snapshot sudah di-refresh.
+--            Urutan aslinya section 1 -> 3 berurutan di SQL Editor; fungsi ini
+--            CREATE OR REPLACE, jadi aman dijalankan ulang apa adanya.
 --
 -- CATATAN DESAIN:
 --   - SECURITY INVOKER (default, sengaja TIDAK ditulis SECURITY DEFINER):
@@ -30,9 +33,22 @@
 --           nol isolasi entitas;
 --       (b) sp_orders_read & products_read dua-duanya "is_super_admin() OR ..."
 --           -> super_admin lolos SEMUA entitas, padahal Storbit = SOA saja;
---       (c) p_company_id dikirim FE dari AuthContext.activeCompanyId, BUKAN
---           hardcode UUID SOA -> tidak menambah kasus TD-178.
 --     Fallback COALESCE ke get_user_company_id() utk pemanggilan tanpa argumen.
+--
+--     ⚠️ KOREKSI 18 Agu 2026 (rencana awal TIDAK terwujud): fungsi ini semula
+--     dirancang menerima p_company_id dari AuthContext.activeCompanyId supaya
+--     TIDAK menambah kasus TD-178. Itu dicoba dan GAGAL di produksi — seluruh
+--     kartu menampilkan 0 padahal RPC benar, karena activeCompanyId = home
+--     company user (bisa MSI/JCI) sedangkan SELURUH data Storbit ada di SOA.
+--     Gagalnya SENYAP: CTE agregat tetap mengembalikan satu baris berisi nol,
+--     jadi error NULL dan tak ada toast/banner apa pun.
+--     Pemanggilnya (StorbitDashboardPage.jsx) kini HARDCODE SOA_COMPANY_ID —
+--     jadi ini MEMANG kasus TD-178 di sisi FE, jangan dibaca sebaliknya.
+--     Parameter p_company_id sendiri TETAP dipertahankan dan tetap benar: ia
+--     jalan keluarnya begitu TD-178 dibereskan menyeluruh (FE tinggal mengirim
+--     entitas aktif lagi, TANPA mengubah fungsi ini) — dengan syarat disertai
+--     empty-state untuk entitas non-SOA, kalau tidak bug senyap yang sama
+--     kembali persis dalam bentuk yang sama.
 --
 --   - expired_date DIAMBIL DARI sp_items, BUKAN sp_orders.expired_date.
 --     sp_orders.expired_date memang ADA dan terisi saat create, TAPI tidak

@@ -1135,11 +1135,22 @@ export async function setSpOrderPriceCategory(orderId, cat) {
 // InventoryDashboardPage (stock_ledger 12 minggu, dihitung di client).
 //
 // RPC-nya SECURITY INVOKER + STABLE, jadi RLS pemanggil tetap berlaku.
-// companyId dikirim EKSPLISIT (dari AuthContext.activeCompanyId, bukan
-// hardcode UUID SOA): RLS sp_orders_read/products_read meloloskan SEMUA
-// entitas untuk super_admin, dan stock_ledger_select = USING(true) (TD-173)
-// membuat view stock_summary nol isolasi entitas. Kalau null, RPC fallback ke
-// get_user_company_id() di sisi DB.
+// companyId WAJIB dikirim eksplisit: RLS sp_orders_read/products_read
+// meloloskan SEMUA entitas untuk super_admin, dan stock_ledger_select =
+// USING(true) (TD-173) membuat view stock_summary nol isolasi entitas. Kalau
+// null, RPC fallback ke get_user_company_id() di sisi DB.
+//
+// ⚠️ KOREKSI 18 Agu 2026 — komentar lama di sini menulis companyId datang dari
+// AuthContext.activeCompanyId "bukan hardcode UUID SOA, jadi tidak menambah
+// kasus TD-178". Itu SUDAH TIDAK BENAR, dan kebalikannya yang berlaku:
+// activeCompanyId dicoba lebih dulu dan GAGAL — seluruh kartu menampilkan 0
+// karena activeCompanyId = home company user (bisa MSI/JCI) sementara seluruh
+// data Storbit ada di SOA, dan gagalnya senyap (agregat tetap mengembalikan
+// satu baris berisi nol → error null → nol toast). Satu-satunya pemanggil,
+// StorbitDashboardPage.jsx, kini HARDCODE SOA_COMPANY_ID → ini MEMANG kasus
+// TD-178 di FE. Parameter companyId di sini tetap dipertahankan karena ia
+// jalan keluarnya saat TD-178 dibereskan (cukup ubah pemanggil, bukan wrapper
+// ini), dengan syarat disertai empty-state untuk entitas non-SOA.
 //
 // Bentuk return: { manifest: {...11 angka}, warehouse: {...4 angka}, generated_at }.
 // Daftar status di balik angka-angka itu: src/lib/spStatusConstants.js.

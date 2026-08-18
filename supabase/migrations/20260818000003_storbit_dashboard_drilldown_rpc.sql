@@ -4,8 +4,11 @@
 --            kartu KPI). Read-only, pendamping get_storbit_dashboard_stats.
 -- Depends:   20260818000001 (kolom reorder_point + price_category) DAN
 --            20260818000002 (RPC stats). Keduanya harus live lebih dulu.
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi. Jalankan section
---            1 -> 3 berurutan di SQL Editor, lalu refresh schema_snapshot.sql.
+-- Status:    LIVE — dijalankan 18 Agu 2026 (termasuk revisi kolom identifier
+--            di bawah), terverifikasi lewat schema_snapshot.sql. Snapshot
+--            sudah di-refresh. Urutan aslinya section 1 -> 3 berurutan di SQL
+--            Editor; kalau dijalankan ulang, section 3 (GRANT) WAJIB ikut —
+--            lihat peringatan DROP+CREATE di bawah.
 --
 -- ⚠️ DROP + CREATE, BUKAN CREATE OR REPLACE — DAN GRANT WAJIB DIJALANKAN ULANG.
 --    Revisi 18 Agu 2026 menambah kolom identifier ke RETURNS TABLE kedua fungsi

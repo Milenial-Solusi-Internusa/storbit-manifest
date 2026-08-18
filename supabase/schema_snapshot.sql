@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Og5OaJWtz8IHeVWEdrPFeXxVMeNLcD9ujykLnMHhluhY5psIPcR8YbPh02fT7WH
+\restrict WqrzSUGNPnSVjGf3ui2xZuKcpnaYErjpn6OwvteJ1FLO9x9HQbr7427UbkOyRRk
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -6937,7 +6937,7 @@ CREATE TABLE public.sp_orders (
 -- Name: COLUMN sp_orders.price_category; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.sp_orders.price_category IS 'Tipe SP level header: semester/tahunan/project. NULL = tidak ditentukan (tampil "Other" di dashboard). Sengaja senama dgn sp_order_items.price_category (kategori harga per item) — berhubungan tapi tidak wajib sama. BUKAN sp_orders.sp_category, yang artinya kategori produk (reguler/loyang/trolly).';
+COMMENT ON COLUMN public.sp_orders.price_category IS 'Tipe SP level header: semester/tahunan/project. NULL = belum/tidak dikategorikan. Sengaja senama dgn sp_order_items.price_category (kategori harga per item) — berhubungan tapi tidak wajib sama. BUKAN sp_orders.sp_category, yang artinya kategori produk (reguler/loyang/trolly).';
 
 
 --
@@ -18653,5 +18653,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Og5OaJWtz8IHeVWEdrPFeXxVMeNLcD9ujykLnMHhluhY5psIPcR8YbPh02fT7WH
+\unrestrict WqrzSUGNPnSVjGf3ui2xZuKcpnaYErjpn6OwvteJ1FLO9x9HQbr7427UbkOyRRk
 

@@ -458,10 +458,35 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
     ];
   }, [w]);
 
+  // Prop `customers` datang dari useCustomers() di App.jsx, yang memanggil
+  // listCustomers() — fungsi itu mengambil SELURUH accounts ber-account_status
+  // 'customer' TANPA filter company (nol parameter, cuma andalkan RLS), dan
+  // dioper ke 6 halaman lain. Jadi ia SENGAJA tidak diubah; penyaringannya
+  // dilakukan di sini saja supaya nol efek samping ke konsumen lain.
+  //
+  // Tanpa filter ini, super_admin melihat customer MSI/JCI di dropdown padahal
+  // seluruh angka halaman ini dipin ke SOA — memilih salah satunya menghasilkan
+  // nol baris tanpa penjelasan apa pun.
+  //
+  // ⚠️ KETERBATASAN YANG DISADARI (solusi sementara, bukan yang paling presisi):
+  // filter ini memakai `accounts.company_id`, yaitu entitas PEMILIK RECORD
+  // account — BUKAN "customer yang benar-benar punya SP di SOA". Kalau ada
+  // customer yang dilayani Storbit tapi record account-nya terdaftar di bawah
+  // MSI/JCI, ia TIDAK akan muncul di dropdown ini. Kalau suatu saat ada laporan
+  // "customer X hilang dari filter Dashboard Storbit", inilah sebabnya —
+  // periksa `accounts.company_id` milik customer itu lebih dulu, jangan
+  // investigasi ulang dari nol.
+  // Cara yang benar-benar presisi = menurunkan daftar dari SP yang ada (RPC
+  // `storbit_sp_customers()` sudah melakukan persis itu), tapi RPC tersebut
+  // punya dua masalah sendiri: ter-GRANT ke `anon` dan hardcode UUID SOA di
+  // dalam body-nya. Pindah ke sana adalah pekerjaan tersendiri.
+  //
+  // `company_id` tersedia di objek ini karena customerFromDb() (db.js)
+  // meneruskan seluruh kolom non-standar apa adanya.
   const customerOptions = useMemo(() => ([
     { value: '', label: 'Semua customer' },
     ...customers
-      .filter((c) => c?.id)
+      .filter((c) => c?.id && c.company_id === SOA_COMPANY_ID)
       .map((c) => ({ value: c.id, label: c.name || '(Tanpa nama)' })),
   ]), [customers]);
 
