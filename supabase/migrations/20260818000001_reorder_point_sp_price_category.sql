@@ -5,8 +5,10 @@
 -- Depends:   FASE 0 (sp_orders/sp_order_items live) + TD-175 fix 8 Agu 2026
 --            (table-level GRANT UPDATE pada sp_orders sudah DICABUT, diganti
 --            24 GRANT UPDATE per-kolom) — konsekuensinya lihat section 4.
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi. Jalankan berurutan
---            1 -> 4 di SQL Editor, lalu refresh schema_snapshot.sql via pg_dump.
+-- Status:    LIVE — dijalankan 18 Agu 2026, terverifikasi lewat
+--            schema_snapshot.sql (kedua kolom + GRANT-nya ada di snapshot).
+--            Snapshot sudah di-refresh; nol utang pg_dump untuk migrasi ini.
+--            Urutan aslinya section 1 -> 4 berurutan di SQL Editor.
 --
 -- CATATAN DESAIN:
 --   - products.reorder_point: STRUKTUR SAJA, sengaja TIDAK diisi migrasi ini.
@@ -41,8 +43,15 @@ ALTER TABLE public.sp_orders ADD COLUMN price_category text;
 ALTER TABLE public.sp_orders ADD CONSTRAINT sp_orders_price_category_check
   CHECK ((price_category = ANY (ARRAY['semester'::text, 'tahunan'::text, 'project'::text])));
 
+-- ⚠️ Teks COMMENT di bawah DIPERBAIKI 18 Agu 2026 — versi pertama menjanjikan
+--    NULL 'tampil "Other" di dashboard', padahal nol UI yang pernah merender
+--    label itu (SP_TYPE_OPTIONS di StorbitDashboardPage.jsx cuma punya
+--    "Semua tipe"/semester/tahunan/project). Klaim soal tampilan dibuang;
+--    comment sekarang hanya menyatakan arti kolomnya.
+--    Kalau migrasi ini SUDAH dijalankan dgn teks lama, jalankan ulang statement
+--    COMMENT ini saja — idempoten & non-destruktif, cuma menimpa teks comment.
 COMMENT ON COLUMN public.sp_orders.price_category IS
-  'Tipe SP level header: semester/tahunan/project. NULL = tidak ditentukan (tampil "Other" di dashboard). Sengaja senama dgn sp_order_items.price_category (kategori harga per item) — berhubungan tapi tidak wajib sama. BUKAN sp_orders.sp_category, yang artinya kategori produk (reguler/loyang/trolly).';
+  'Tipe SP level header: semester/tahunan/project. NULL = belum/tidak dikategorikan. Sengaja senama dgn sp_order_items.price_category (kategori harga per item) — berhubungan tapi tidak wajib sama. BUKAN sp_orders.sp_category, yang artinya kategori produk (reguler/loyang/trolly).';
 
 -- 3. products TIDAK perlu GRANT tambahan — sudah GRANT ALL ke authenticated
 --    (schema_snapshot.sql:17754), privilege table-level otomatis mencakup
