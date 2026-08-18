@@ -281,7 +281,7 @@ Konteks saat cron aging dinyalakan (10 Jul): rasio aktivitas tercatat per lead v
 
 ---
 
-## Logistics (Storbit SP) Flow — Mesin Status 12 Tahap (LENGKAP: FASE 0-5 LIVE — FASE 5/LUNAS sejak 17 Agu 2026, snapshot refresh commit `35cb1d3`)
+## Logistics (Storbit SP) Flow — Mesin Status 12 Tahap (LENGKAP: FASE 0-5 LIVE — FASE 5/LUNAS sejak 17 Agu 2026, snapshot refresh commit `35cb1d3`) + Dashboard Storbit (18 Agu 2026)
 
 Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_status(customer_id, sp_no)` (di-maintain otomatis oleh event, BUKAN diketik). Detail skema/RPC: `docs/03_DATA_MODEL.md §3 (Inventory & Logistics) + §5`.
 
@@ -344,6 +344,29 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 **Batalkan vs Hapus SP (di Detail SP):**
 - **[Ops/Manager/GM/super_admin] Batalkan SP** (`set_sp_status 'cancelled'`, hanya saat **DRAFT**) — alasan **wajib** (textarea); status → **CANCELLED** (terminal, data tetap tersimpan). Dual-table + komposit `(customer_id, sp_no)`. Tombol "Batalkan SP" di header actions, TERPISAH dari Danger Zone.
 - **[super_admin] Hapus SP** (`delete_sp_dual`, ⚠️ **belum live** — RPC dijalankan user manual, hanya saat **DRAFT**) — hapus permanen dual-table: `sp_orders` (+`sp_order_items` via FK CASCADE) **dan** `sp_items`, di-kunci komposit → nomor bisa dipakai ulang. Guard `is_super_admin()` + DRAFT strict di RPC. Di Danger Zone. **operations kehilangan akses hapus** (dulu `['super_admin','operations']` tanpa gate status) → diberi "Batalkan SP" sebagai gantinya.
+
+### Dashboard Storbit — surface read-only (LIVE 18 Agu 2026)
+
+`StorbitDashboardPage.jsx`, route `storbit-dashboard`. **Nol agregasi di client:** seluruh angka dari `get_storbit_dashboard_stats`, seluruh daftar dari `get_storbit_sp_drilldown`/`get_storbit_stock_drilldown` (skema & signature: `03_DATA_MODEL.md §5`).
+
+**⚠️ REDEFINISI KONSEP `expired_date` (dikonfirmasi ulang 18 Agu 2026) — pegang ini, bukan pemahaman lama.** `expired_date` = **tenggat SP harus DIKIRIM**; lewat tanggal itu Storbit berpotensi kena **PINALTI** dari customer. **BUKAN** soal validitas harga. Konsekuensi ke rumus:
+
+- **`expired` / `mendekati_expired` = risiko yang MASIH BERJALAN** → hanya SP yang **belum dikirim** (status `pending_open`: DRAFT/CONFIRMED/MENUNGGU_STOK/PICKING/PACKED). Rumus versi pertama memakai pengecualian `NOT IN ('LUNAS','CANCELLED')`, sehingga SP yang dikirim **tepat waktu** ikut terhitung "expired" begitu kalender lewat tenggat lamanya — angkanya membengkak sendiri seiring waktu tanpa ada pelanggaran apa pun.
+- **`pernah_risiko_pinalti` = pelanggaran yang SUDAH TERJADI** → ada `delivery_notes` yang **berangkat** setelah tenggat. Empat keputusan yang masing-masing punya alasan: **(a)** join lewat komposit `(customer_id, sp_no)`, BUKAN `delivery_notes.sp_order_id` — kolom itu di-backfill sekali 6 Jul 2026 lalu tak pernah diisi lagi (`generate_delivery_from_picking` tak menyertakannya di INSERT), jadi **semua surat jalan baru ber-`sp_order_id` NULL**; **(b)** `dn.status <> 'cancelled'` WAJIB — `cancel_delivery` tidak mengosongkan `dispatched_at`, jadi tanpa filter ini pengiriman yang dibatalkan terhitung telat selamanya; **(c)** `(dispatched_at AT TIME ZONE 'Asia/Jakarta')::date` — cast polos memakai TimeZone sesi (UTC di PostgREST), dan Jakarta UTC+7, jadi dispatch dini hari jatuh ke tanggal sebelumnya → under-count sistematis untuk semua dispatch sebelum 07:00 WIB; **(d)** semantiknya **EXISTS/ANY, bukan ALL** — eksposur pinalti bersifat per-pengiriman: 3 dari 4 tepat waktu dan satu telat 5 hari tetap bisa ditagih.
+
+**⛔ ATURAN TAMPILAN YANG MENGIKAT — `pernah_risiko_pinalti` TIDAK BOLEH dirender sendirian.** Wajib berpasangan dengan penyebut `dispatch_data_tersedia` ("N dari M SP yang punya data pengiriman"). Sebabnya cakupan data pengiriman baru **16,2% (69 dari 425 SP, diukur 18 Agu 2026)**: 435 SP hasil import Excel tak pernah melewati alur picking → surat jalan, dan `BTB_TERBIT` (±84% data) tercapai lewat keberadaan `sp_btb` **tanpa perlu** `delivery_notes` sama sekali. Angka pinalti yang kecil **BUKAN berarti aman** — datanya yang belum ada.
+
+**Kartu BTB_TERBIT ditambahkan SUSULAN**, tidak ada di desain awal — ketahuan dari smoke test: **390 dari 463 SP (±84%)** ada di status ini (barang sudah diterima customer, invoice belum terbit). Tanpa kartu itu, mayoritas mutlak data Storbit tak terwakili kartu mana pun: `BTB_TERBIT` tak masuk `pending_open`, tak masuk `shipped` (peringkatnya di ATAS `SAMPAI` di `sp_recompute_status`), dan belum masuk `finance`.
+
+**Kartu KPI sengaja BERIRISAN** (`shipped` ∩ `delivered_belum_btb` di status `SAMPAI`) — persentase "% dari total SP" karenanya tidak berjumlah 100%. Yang mutually exclusive dan menjumlah **persis** `total_sp` adalah **donut 6 slice** (`DONUT_STATUS_SLICES`, `src/lib/spStatusConstants.js`).
+
+**Sinkronisasi manual yang WAJIB dijaga — daftar status hidup di TIGA tempat yang tak bisa saling mengimpor:** `spStatusConstants.js` (`STATUS_GROUPS`), FILTER di migrasi `20260818000002`, dan `CASE p_category` di `20260818000003`. Ubah satu = ubah ketiganya. Pelajaran TD-168: `AGING_LIMITS` (FE) vs `AGING_RULES` (Edge Function) drift berbulan-bulan tanpa ada yang sadar.
+
+**Batas cakupan UI hari ini (fakta, bukan rencana):** RPC melayani **9 kategori** drill-down, UI baru bisa memicu **8** — `terkirim_penuh` hidup cuma sebagai slice donut (tak ada kartu yang men-set `spCat`), dan kartu `pernah_risiko_pinalti` belum clickable. Kotak "Cari nomor SP" masih `disabled` (kosmetik v1). Filter "Tipe SP" menyaring `sp_orders.price_category` yang **NULL untuk seluruh SP existing** → memilih tipe apa pun hari ini menghasilkan nol baris, sampai ada SP baru yang diinput dengan tipe.
+
+**Filter Customer di-scope ke SOA — solusi sementara yang disadari (TD-202).** Dropdown menyaring `accounts.company_id === SOA` di sisi FE; `listCustomers()` sengaja tak diubah karena hasilnya dioper ke 6 halaman lain. Tanpa filter itu super_admin melihat customer MSI/JCI padahal seluruh angka halaman dipin ke SOA → memilih salah satunya menghasilkan nol baris tanpa penjelasan apa pun. **Keterbatasannya:** yang disaring adalah entitas **pemilik record account**, BUKAN "customer yang benar-benar punya SP di SOA" — customer yang dilayani Storbit tapi record-nya terdaftar di bawah MSI/JCI **tidak akan muncul**. ⛳ **Kalau ada laporan "customer X hilang dari filter Dashboard Storbit", periksa `accounts.company_id` milik customer itu LEBIH DULU — jangan investigasi ulang dari nol.** Cara presisi = turunkan daftar dari SP yang benar-benar ada (`storbit_sp_customers()` sudah melakukan persis itu), ditunda karena RPC itu ter-GRANT ke `anon` + hardcode UUID SOA di body-nya.
+
+**Catatan penting:** dashboard ini **tidak mengubah mesin status sama sekali** — ia murni pembaca. Nol RPC transisi baru, nol perubahan RLS/role.
 
 **Catatan transisi & yang USANG:**
 - Live sekarang **DRAFT s/d LUNAS — rantai 12 tahap LENGKAP**. **[8 Agu 2026] INVOICED/SUBMITTED (FASE 4)** live, dikonfirmasi snapshot refresh `8117127`. **[17 Agu 2026] LUNAS (FASE 5) live** (`record_payment` + cabang `v_paid` di puncak CASE `sp_recompute_status`), dikonfirmasi snapshot refresh `35cb1d3` — ~~"tetap 📋 planned, belum dibangun sama sekali"~~ **USANG**.
