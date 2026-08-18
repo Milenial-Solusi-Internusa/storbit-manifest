@@ -1164,3 +1164,42 @@ export async function getStorbitDashboardStats(customerId = null, priceCategory 
   });
   return { data, error };
 }
+
+// Drill-down — daftar baris di balik tiap kartu. SENGAJA lewat RPC untuk
+// SEMUA kategori, termasuk yang sebenarnya bisa dilayani PostgREST: empat
+// kategori (delivered_belum_btb, expired, mendekati_expired,
+// pernah_risiko_pinalti) memang mustahil dinyatakan lewat PostgREST, dan
+// menjalankan sisanya lewat jalur berbeda berarti dua bentuk baris + dua
+// tempat filter scope yang harus dijaga sinkron. Satu jalur = angka kartu dan
+// isi tabel dijamin lahir dari CTE + WHERE yang sama (migrasi 20260818000003).
+// Kategori tak dikenal mengembalikan nol baris, bukan seluruh tabel.
+/**
+ * Baris SP untuk satu kategori kartu Shipping Manifest.
+ * @param {string} category - salah satu kunci di STATUS_GROUPS + terkirim_penuh /
+ *                            expired / mendekati_expired / pernah_risiko_pinalti
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getStorbitSpDrilldown(category, { customerId = null, priceCategory = null, companyId = null, limit = 200 } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_sp_drilldown', {
+    p_category:       category,
+    p_customer_id:    customerId    || null,
+    p_price_category: priceCategory || null,
+    p_company_id:     companyId     || null,
+    p_limit:          limit,
+  });
+  return { data: data || [], error };
+}
+
+/**
+ * Baris produk untuk satu kategori kartu Warehouse.
+ * @param {string} category - 'danger_stock' | 'zero_stock' | 'rop_belum_diisi'
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getStorbitStockDrilldown(category, { companyId = null, limit = 200 } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_stock_drilldown', {
+    p_category:   category,
+    p_company_id: companyId || null,
+    p_limit:      limit,
+  });
+  return { data: data || [], error };
+}

@@ -2,8 +2,9 @@
 -- Migration: 20260818000002_storbit_dashboard_stats_rpc
 -- Phase:     Dashboard Storbit (Shipping Manifest + Warehouse) — RPC agregasi
 --            read-only, satu panggilan untuk seluruh angka kartu KPI:
---            Shipping Manifest 9 kartu + 2 penyebut (total_sp,
---            dispatch_data_tersedia); Warehouse 3 kartu + 1 penyebut.
+--            Shipping Manifest 10 kartu/slice + 3 penyebut (total_sp,
+--            dispatch_data_tersedia, dispatch_eligible); Warehouse 3 kartu +
+--            1 penyebut. Pendamping drill-down: 20260818000003.
 -- Depends:   20260818000001 (products.reorder_point + sp_orders.price_category)
 --            HARUS sudah live — fungsi ini membaca kedua kolom itu dan akan
 --            gagal compile kalau belum ada.
@@ -203,6 +204,14 @@ manifest AS (
     -- Kebalikan kartu di atas: BTB sudah terbit, invoice belum. ±84% data
     -- Storbit ada di sini (lihat CATATAN DESAIN).
     COUNT(*) FILTER (WHERE status = 'BTB_TERBIT')                                               AS btb_terbit,
+    -- Slice donut yang HILANG sebelum revisi 18 Agu 2026. TERKIRIM_PENUH tak
+    -- terwakili kunci mana pun (pending_open+shipped+btb_terbit+finance+
+    -- cancelled = 12 dari 13 status), dan delivered_belum_btb BUKAN
+    -- penggantinya — isinya SAMPAI *atau* TERKIRIM_PENUH yang belum ber-BTB,
+    -- jadi beririsan dgn shipped. Tanpa field ini donut tak bisa dipartisi
+    -- bersih; menurunkannya lewat pengurangan dari total_sp rapuh (status baru
+    -- akan diam-diam terserap ke slice ini dan salah label).
+    COUNT(*) FILTER (WHERE status = 'TERKIRIM_PENUH')                                           AS terkirim_penuh,
     -- expired & mendekati_expired: HANYA SP yang belum dikirim (pending_open).
     -- SP yang sudah dikirim tak bisa "kedaluwarsa" secara konsep — tenggatnya
     -- soal kapan dikirim, dan itu sudah terjadi.
@@ -221,6 +230,14 @@ manifest AS (
                        AND status <> 'CANCELLED'
                        AND status IN ('DIKIRIM','SAMPAI','BTB_TERBIT','TERKIRIM_PENUH',
                                       'INVOICED','SUBMITTED','LUNAS'))                          AS dispatch_data_tersedia,
+    -- PENYEBUT KEDUA kartu pinalti ("N dari M SP yang sudah lewat tahap kirim").
+    -- Daftar statusnya SENGAJA identik dgn dispatch_data_tersedia di atas — itu
+    -- sebabnya dihitung di sini, bukan dijumlahkan di FE: rumus FE yang wajar
+    -- (shipped + delivered_belum_btb + btb_terbit + finance) MENGHITUNG GANDA
+    -- karena delivered_belum_btb beririsan dgn shipped di status SAMPAI.
+    COUNT(*) FILTER (WHERE status <> 'CANCELLED'
+                       AND status IN ('DIKIRIM','SAMPAI','BTB_TERBIT','TERKIRIM_PENUH',
+                                      'INVOICED','SUBMITTED','LUNAS'))                          AS dispatch_eligible,
     COUNT(*) FILTER (WHERE status IN ('INVOICED','SUBMITTED','LUNAS'))                          AS finance,
     COUNT(*) FILTER (WHERE status = 'CANCELLED')                                                AS cancelled,
     COUNT(*)                                                                                    AS total_sp
@@ -252,11 +269,13 @@ SELECT jsonb_build_object(
     'shipped',             (SELECT shipped             FROM manifest),
     'delivered_belum_btb', (SELECT delivered_belum_btb FROM manifest),
     'btb_terbit',          (SELECT btb_terbit          FROM manifest),
+    'terkirim_penuh',      (SELECT terkirim_penuh      FROM manifest),
     'expired',             (SELECT expired             FROM manifest),
     'mendekati_expired',   (SELECT mendekati_expired   FROM manifest),
     -- Pasangan wajib — jangan tampilkan salah satu saja di UI.
     'pernah_risiko_pinalti',  (SELECT pernah_risiko_pinalti  FROM manifest),
     'dispatch_data_tersedia', (SELECT dispatch_data_tersedia FROM manifest),
+    'dispatch_eligible',      (SELECT dispatch_eligible      FROM manifest),
     'finance',             (SELECT finance             FROM manifest),
     'cancelled',           (SELECT cancelled           FROM manifest),
     'total_sp',            (SELECT total_sp            FROM manifest)
@@ -325,6 +344,15 @@ CREATE INDEX IF NOT EXISTS idx_sp_orders_company_status
 --      AND p.is_service=false AND p.is_active=true
 --      AND COALESCE((SELECT SUM(ss.available) FROM public.stock_summary ss
 --                     WHERE ss.product_id=p.id AND ss.company_id=p.company_id),0) <= 0;
+--
+--   -- g0. ASSERTION PARTISI DONUT — 6 slice harus menjumlah PERSIS total_sp.
+--   --     Kalau selisihnya bukan 0, ada status yang luput dari partisi.
+--   WITH m AS (SELECT public.get_storbit_dashboard_stats(
+--                NULL, NULL, 'd2e5e565-5f67-4954-b8d9-5979a2a0c697') -> 'manifest' AS j)
+--   SELECT (j->>'total_sp')::int
+--        - ((j->>'pending_open')::int + (j->>'shipped')::int + (j->>'terkirim_penuh')::int
+--         + (j->>'btb_terbit')::int + (j->>'finance')::int + (j->>'cancelled')::int) AS selisih_harus_0
+--   FROM m;
 --
 --   -- g. rop_belum_diisi harus = total_produk tepat setelah 20260818000001
 --   --    (reorder_point belum diisi siapa pun).
