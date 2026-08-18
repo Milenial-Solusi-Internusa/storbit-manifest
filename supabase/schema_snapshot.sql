@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict g70TAo91bblRKw5i1ktbEtA6z9uCrQ4rahpiiqT1HBuNjE7AKEzXqvCBhIF9MPc
+\restrict OGsyhkmxjzpXTbJG8wkHsi4wccxiaI5Zucer0jz1dE0Okrd2pgbhdHhOIU8UL35
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -839,6 +839,7 @@ manifest AS (
     COUNT(*) FILTER (WHERE status IN ('DIKIRIM','SAMPAI'))                                     AS shipped,
     COUNT(*) FILTER (WHERE status IN ('SAMPAI','TERKIRIM_PENUH') AND NOT has_btb)               AS delivered_belum_btb,
     COUNT(*) FILTER (WHERE status = 'BTB_TERBIT')                                               AS btb_terbit,
+    COUNT(*) FILTER (WHERE status = 'TERKIRIM_PENUH')                                           AS terkirim_penuh,
     COUNT(*) FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
                        AND expired_date < CURRENT_DATE)                                         AS expired,
     COUNT(*) FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
@@ -850,6 +851,9 @@ manifest AS (
                        AND status <> 'CANCELLED'
                        AND status IN ('DIKIRIM','SAMPAI','BTB_TERBIT','TERKIRIM_PENUH',
                                       'INVOICED','SUBMITTED','LUNAS'))                          AS dispatch_data_tersedia,
+    COUNT(*) FILTER (WHERE status <> 'CANCELLED'
+                       AND status IN ('DIKIRIM','SAMPAI','BTB_TERBIT','TERKIRIM_PENUH',
+                                      'INVOICED','SUBMITTED','LUNAS'))                          AS dispatch_eligible,
     COUNT(*) FILTER (WHERE status IN ('INVOICED','SUBMITTED','LUNAS'))                          AS finance,
     COUNT(*) FILTER (WHERE status = 'CANCELLED')                                                AS cancelled,
     COUNT(*)                                                                                    AS total_sp
@@ -881,10 +885,12 @@ SELECT jsonb_build_object(
     'shipped',             (SELECT shipped             FROM manifest),
     'delivered_belum_btb', (SELECT delivered_belum_btb FROM manifest),
     'btb_terbit',          (SELECT btb_terbit          FROM manifest),
+    'terkirim_penuh',      (SELECT terkirim_penuh      FROM manifest),
     'expired',             (SELECT expired             FROM manifest),
     'mendekati_expired',   (SELECT mendekati_expired   FROM manifest),
     'pernah_risiko_pinalti',  (SELECT pernah_risiko_pinalti  FROM manifest),
     'dispatch_data_tersedia', (SELECT dispatch_data_tersedia FROM manifest),
+    'dispatch_eligible',      (SELECT dispatch_eligible      FROM manifest),
     'finance',             (SELECT finance             FROM manifest),
     'cancelled',           (SELECT cancelled           FROM manifest),
     'total_sp',            (SELECT total_sp            FROM manifest)
@@ -897,6 +903,115 @@ SELECT jsonb_build_object(
   ),
   'generated_at', now()
 );
+$$;
+
+
+--
+-- Name: get_storbit_sp_drilldown(text, uuid, text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_storbit_sp_drilldown(p_category text, p_customer_id uuid DEFAULT NULL::uuid, p_price_category text DEFAULT NULL::text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200) RETURNS TABLE(sp_no text, customer_name text, dc_nama text, sp_date date, status text, expired_date date)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+WITH scope AS (
+  SELECT COALESCE(p_company_id, public.get_user_company_id()) AS cid
+),
+sp AS (
+  SELECT
+    o.id, o.status, o.customer_id, o.sp_no, o.sp_date, o.dc_id,
+    (SELECT MIN(si.expired_date)
+       FROM public.sp_items si
+      WHERE si.customer_id = o.customer_id
+        AND si.sp_no       = o.sp_no
+        AND si.expired_date IS NOT NULL) AS expired_date,
+    EXISTS (SELECT 1 FROM public.sp_btb b
+             WHERE b.sp_order_id = o.id AND b.deleted_at IS NULL) AS has_btb
+  FROM public.sp_orders o, scope
+  WHERE o.deleted_at IS NULL
+    AND o.company_id = scope.cid
+    AND (p_customer_id    IS NULL OR o.customer_id    = p_customer_id)
+    AND (p_price_category IS NULL OR o.price_category = p_price_category)
+),
+sp_flag AS (
+  SELECT s.*,
+    EXISTS (
+      SELECT 1 FROM public.delivery_notes dn
+       WHERE dn.customer_id = s.customer_id
+         AND dn.sp_no       = s.sp_no
+         AND dn.status <> 'cancelled'
+         AND dn.dispatched_at IS NOT NULL
+         AND s.expired_date IS NOT NULL
+         AND (dn.dispatched_at AT TIME ZONE 'Asia/Jakarta')::date > s.expired_date
+    ) AS late_dispatch
+  FROM sp s
+)
+SELECT
+  f.sp_no,
+  a.name    AS customer_name,
+  dm.nama   AS dc_nama,
+  f.sp_date,
+  f.status,
+  f.expired_date
+FROM sp_flag f
+LEFT JOIN public.accounts  a  ON a.id  = f.customer_id
+LEFT JOIN public.dc_master dm ON dm.id = f.dc_id
+WHERE CASE p_category
+  WHEN 'pending_open'          THEN f.status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
+  WHEN 'shipped'               THEN f.status IN ('DIKIRIM','SAMPAI')
+  WHEN 'delivered_belum_btb'   THEN f.status IN ('SAMPAI','TERKIRIM_PENUH') AND NOT f.has_btb
+  WHEN 'btb_terbit'            THEN f.status = 'BTB_TERBIT'
+  WHEN 'terkirim_penuh'        THEN f.status = 'TERKIRIM_PENUH'
+  WHEN 'expired'               THEN f.status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
+                                    AND f.expired_date < CURRENT_DATE
+  WHEN 'mendekati_expired'     THEN f.status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
+                                    AND f.expired_date >= CURRENT_DATE
+                                    AND date_trunc('month', f.expired_date) = date_trunc('month', CURRENT_DATE)
+  WHEN 'pernah_risiko_pinalti' THEN f.late_dispatch AND f.status <> 'CANCELLED'
+  WHEN 'finance'               THEN f.status IN ('INVOICED','SUBMITTED','LUNAS')
+  WHEN 'cancelled'             THEN f.status = 'CANCELLED'
+  ELSE false
+END
+ORDER BY f.sp_date DESC NULLS LAST, f.sp_no
+LIMIT GREATEST(COALESCE(p_limit, 200), 1);
+$$;
+
+
+--
+-- Name: get_storbit_stock_drilldown(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_storbit_stock_drilldown(p_category text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200) RETURNS TABLE(sku text, product_name text, available numeric, reorder_point numeric)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+WITH scope AS (
+  SELECT COALESCE(p_company_id, public.get_user_company_id()) AS cid
+),
+stock AS (
+  SELECT
+    p.code::text AS sku,
+    p.name::text AS product_name,
+    p.reorder_point,
+    COALESCE((SELECT SUM(ss.available) FROM public.stock_summary ss
+               WHERE ss.product_id = p.id
+                 AND ss.company_id = p.company_id), 0) AS available
+  FROM public.products p, scope
+  WHERE p.deleted_at IS NULL
+    AND p.company_id = scope.cid
+    AND p.is_service = false
+    AND p.is_active  = true
+)
+SELECT s.sku, s.product_name, s.available, s.reorder_point
+FROM stock s
+WHERE CASE p_category
+  WHEN 'danger_stock'    THEN s.reorder_point IS NOT NULL AND s.available < s.reorder_point
+  WHEN 'zero_stock'      THEN s.available <= 0
+  WHEN 'rop_belum_diisi' THEN s.reorder_point IS NULL
+  ELSE false
+END
+ORDER BY s.available ASC, s.product_name
+LIMIT GREATEST(COALESCE(p_limit, 200), 1);
 $$;
 
 
@@ -16873,6 +16988,22 @@ GRANT ALL ON FUNCTION public.get_storbit_dashboard_stats(p_customer_id uuid, p_p
 
 
 --
+-- Name: FUNCTION get_storbit_sp_drilldown(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.get_storbit_sp_drilldown(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.get_storbit_sp_drilldown(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer) TO authenticated;
+
+
+--
+-- Name: FUNCTION get_storbit_stock_drilldown(p_category text, p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.get_storbit_stock_drilldown(p_category text, p_company_id uuid, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.get_storbit_stock_drilldown(p_category text, p_company_id uuid, p_limit integer) TO authenticated;
+
+
+--
 -- Name: FUNCTION get_table_columns(p_table text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -18520,5 +18651,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict g70TAo91bblRKw5i1ktbEtA6z9uCrQ4rahpiiqT1HBuNjE7AKEzXqvCBhIF9MPc
+\unrestrict OGsyhkmxjzpXTbJG8wkHsi4wccxiaI5Zucer0jz1dE0Okrd2pgbhdHhOIU8UL35
 

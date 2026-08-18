@@ -66,9 +66,17 @@ export const STATUS_GROUPS = {
   shipped:             ['DIKIRIM', 'SAMPAI'],
   delivered_belum_btb: ['SAMPAI', 'TERKIRIM_PENUH'],
   btb_terbit:          ['BTB_TERBIT'],
+  terkirim_penuh:      ['TERKIRIM_PENUH'],
   finance:             ['INVOICED', 'SUBMITTED', 'LUNAS'],
   cancelled:           ['CANCELLED'],
 };
+
+// PERGESERAN PERAN (18 Agu 2026): sejak drill-down dilayani RPC
+// get_storbit_sp_drilldown (migrasi 20260818000003), array di atas TIDAK LAGI
+// dipakai memfilter query FE — filternya hidup di SQL. Yang dipertahankan:
+// (a) acuan tertulis kategori mana mencakup status apa, (b) kunci kanonik yang
+// dipakai payload RPC, label, dan argumen p_category. Peringatan sinkronisasi
+// di atas karena itu berlaku untuk DUA migrasi sekaligus (stats + drilldown).
 
 // CATATAN EXPIRY (revisi 18 Agu 2026) — `STATUS_EXCLUDED_FROM_EXPIRY` DIHAPUS.
 //
@@ -101,6 +109,25 @@ export const STATUS_GROUPS = {
 export const PENALTY_METRIC_PAIR = ['pernah_risiko_pinalti', 'dispatch_data_tersedia'];
 
 /**
+ * Palet donut "Distribusi Status SP" — 6 slice yang MUTUALLY EXCLUSIVE dan
+ * menjumlah persis `total_sp` (berbeda dari kartu KPI yang sengaja beririsan:
+ * `shipped` ∩ `delivered_belum_btb` di status SAMPAI).
+ *
+ * Urutan array = urutan slice searah jarum jam dan urutan legenda, mengikuti
+ * perjalanan SP dari pra-kirim sampai selesai. `terkirim_penuh` dipisah dari
+ * `btb_terbit` (revisi 18 Agu 2026) — sebelumnya status itu tak terwakili
+ * kunci payload mana pun, jadi donutnya tak bisa dipartisi bersih.
+ */
+export const DONUT_STATUS_SLICES = [
+  { key: 'pending_open',   label: 'Pra-Kirim',      color: '#AEC2EE' },
+  { key: 'shipped',        label: 'Dikirim',        color: '#9ED9CB' },
+  { key: 'terkirim_penuh', label: 'Terkirim Penuh', color: '#CFC3EA' },
+  { key: 'btb_terbit',     label: 'BTB Terbit',     color: '#B7A0E3' },
+  { key: 'finance',        label: 'Finance',        color: '#F0CE8E' },
+  { key: 'cancelled',      label: 'Dibatalkan',     color: '#EFAEAE' },
+];
+
+/**
  * Label kartu (Bahasa Indonesia) — dipisah dari array status supaya penamaan
  * UI bisa berubah tanpa menyentuh logika filter.
  */
@@ -109,6 +136,7 @@ export const STATUS_GROUP_LABELS = {
   shipped:             'Dikirim',
   delivered_belum_btb: 'Sampai · BTB Belum Terbit',
   btb_terbit:          'BTB Terbit · Belum Invoice',
+  terkirim_penuh:      'Terkirim Penuh',
   expired:             'Lewat Tenggat Kirim',
   mendekati_expired:   'Mendekati Tenggat Kirim',
   pernah_risiko_pinalti: 'Pernah Kirim Telat · Risiko Pinalti',

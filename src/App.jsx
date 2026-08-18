@@ -79,6 +79,7 @@ const LeadPoolApprovalPage = lazy(() => import('./modules/crm/LeadPoolApprovalPa
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const BulkEditPricePage    = lazy(() => import('./modules/admin/pages/BulkEditPricePage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
+const StorbitDashboardPage   = lazy(() => import('./modules/logistics/StorbitDashboardPage'));
 const InventoryDashboardPage = lazy(() => import('./modules/inventory/pages/InventoryDashboardPage'));
 const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
 const PenerimaanBarangPage   = lazy(() => import('./modules/inventory/pages/PenerimaanBarangPage'));
@@ -610,6 +611,7 @@ const ERP_MENU_GROUPS = [
     label: 'Logistics',
     items: [
       { section: 'Storbit — Trading' },
+      { id: 'storbit-dashboard', label: 'Dashboard Storbit', icon: LayoutDashboard },
       {
         id: 'manifest', label: 'Sales Order / SP', icon: Receipt,
         children: [
@@ -1007,6 +1009,7 @@ const NEXUS_NAV = [
       {
         id: 'nav-sp', label: 'Daftar Pesanan (Storbit)', icon: ClipboardList, tone: 'violet',
         children: [
+          { id: 'storbit-dashboard', label: 'Dashboard Storbit', icon: LayoutDashboard },
           { id: 'manifest', label: 'SP Manifest',    icon: LayoutList },
           { id: 'input',    label: 'Input SP',       icon: Plus },
           { id: 'picking',  label: 'Picking List',   icon: ClipboardList },
@@ -1258,6 +1261,13 @@ const MENU_KEY_MAP = {
   'crm-customers':       'crm_customers',
   'customer-detail':     'crm_customers',
   // Logistics
+  // Dashboard Storbit SENGAJA memakai ulang menu key 'logistics_sp' (bukan key
+  // baru): hasMenuPermission default-deny, jadi key baru butuh seeding katalog
+  // module_menus/menu_actions/role_menu_permissions dulu — tanpa itu halamannya
+  // tak terlihat siapa pun kecuali super_admin. Datanya sumber yang sama dgn SP
+  // Manifest, jadi batas aksesnya memang tepat sama. Pola dua route id berbagi
+  // satu menu key sudah dipakai 'customer-detail' -> 'crm_customers' di bawah.
+  'storbit-dashboard':   'logistics_sp',
   'manifest':            'logistics_sp',
   'input':               'logistics_input',
   'picking':             'logistics_picking',
@@ -3097,7 +3107,7 @@ export default function StorbitManifest() {
           )}
           {/* Catch-all for sub-menu items not yet assigned to a page */}
           {activeModule && !PLANNED_MODULES[activeMenu] && activeMenu &&
-           !['dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf','briefing-harian','meeting-mingguan','admin-hub'].includes(activeMenu) &&
+           !['dashboard','storbit-dashboard','manifest','input','picking','surat-jalan','shipment','finance','outstanding','customers','ar','users','admin','schema-manager','products','product-detail','bulk-edit-price','bnf-org-roles','inventory','reporting-sales','riwayat-visit','indomarco-dashboard','reporting-mom','prf','proc-inquiry-fwd-msi','crm-sales-order','proc-sales-order','proc-vendor-list','bnf','briefing-harian','meeting-mingguan','admin-hub'].includes(activeMenu) &&
            !activeMenu?.startsWith('assets') && !activeMenu?.startsWith('hrga') &&
            !activeMenu?.startsWith('crm-') && !activeMenu?.startsWith('quotation-') &&
            !activeMenu?.startsWith('inventory-') && !activeMenu?.startsWith('customer-') &&
@@ -3378,6 +3388,19 @@ export default function StorbitManifest() {
                 </div>
               }>
                 <HrgaShell activePage={activeMenu} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+
+          {/* ── Storbit: Dashboard ─────────────────────────────────────────── */}
+          {activeMenu === 'storbit-dashboard' && (
+            <ErrorBoundary title="Dashboard Storbit temporarily unavailable">
+              <Suspense fallback={
+                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
+                  Loading...
+                </div>
+              }>
+                <StorbitDashboardPage customers={customers} showToast={showToast} />
               </Suspense>
             </ErrorBoundary>
           )}
