@@ -561,7 +561,7 @@ export default function ProductsPage({ onSelectProduct }) {
         </div>
       ) : view === 'grid' ? (
         <div style={P.grid}>
-          {filtered.map(p => <ProductCard key={p.sku || p.id} p={p} onAction={onAction} onSelect={onSelectProduct}/>)}
+          {filtered.map(p => <ProductCard key={p.id || p.sku} p={p} onAction={onAction} onSelect={onSelectProduct}/>)}
         </div>
       ) : (
         <div style={P.tableCard}>
@@ -581,7 +581,7 @@ export default function ProductsPage({ onSelectProduct }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(p => <TableRow key={p.sku || p.id} p={p} onAction={onAction} onSelect={onSelectProduct}/>)}
+                {filtered.map(p => <TableRow key={p.id || p.sku} p={p} onAction={onAction} onSelect={onSelectProduct}/>)}
               </tbody>
             </table>
           </div>

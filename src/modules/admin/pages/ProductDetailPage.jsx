@@ -130,6 +130,16 @@ function formatIdDate(val) {
 }
 
 /* ── style helpers ────────────────────────────────────────────────────────── */
+// Kolom grid body modal (dipakai ServiceLayout / PhysicalLayout / EditLayout).
+// minmax(0, 1fr), BUKAN 1fr polos: track `1fr` punya min-width:auto implisit,
+// jadi ia MENOLAK menyusut di bawah min-content isinya. Tabel Riwayat Harga
+// (6 kolom white-space:nowrap) karena itu memelarkan track kiri ke ~899px dan
+// mendorong seluruh grid jadi ~1182px di dalam modal yang cuma selebar 872px —
+// terukur di DevTools: .pdm-box clientWidth 872 vs scrollWidth 1214.
+// minmax(0, …) menimpa minimum itu, dan tabelnya balik memakai
+// overflowX:'auto' miliknya sendiri (baris ~337) seperti yang memang dirancang.
+const DETAIL_GRID_COLS = 'minmax(0, 1fr) 268px';
+
 const card = (extra) => ({
   background: '#fff', border: '1px solid #ECEDF1', borderRadius: 12,
   boxShadow: '0 1px 3px rgba(20,40,70,.06)', ...extra,
@@ -255,7 +265,7 @@ function ServiceLayout({ product, cat, co }) {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 268px', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: DETAIL_GRID_COLS, gap: 16, alignItems: 'start' }}>
       {/* main */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {/* Rate Card */}
@@ -401,7 +411,7 @@ function PhysicalLayout({ product, cat, co, priceHistory = [], historyLoading = 
     : null;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 268px', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: DETAIL_GRID_COLS, gap: 16, alignItems: 'start' }}>
 
       {/* ── main column ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -566,7 +576,7 @@ function EditForm({ product, editForm, setEditForm }) {
   const lbl = { fontSize: 11, fontWeight: 600, color: '#9AA0AC', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 4 };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 268px', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: DETAIL_GRID_COLS, gap: 16, alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
         <NavCard icon="layers" title="Informasi Produk">
@@ -926,6 +936,15 @@ export default function ProductDetailModal({ isOpen, onClose, selectedProduct, o
             maxWidth: 'calc(100vw - 48px)',
             maxHeight: 'calc(100vh - 64px)',
             overflowY: 'auto',
+            // Eksplisit: per spek CSS, overflow-x:visible IKUT terkomputasi jadi
+            // 'auto' begitu overflow-y bukan visible — jadi box ini diam-diam
+            // sudah jadi scroll container horizontal (terukur: clientWidth 872
+            // vs scrollWidth 1214, dan scrollLeft nyangkut di 31 sejak modal
+            // dibuka, yang membuat header sticky ikut bergeser & badge entitas
+            // tampak terpotong). Dikunci 'hidden' sebagai jaring pengaman.
+            // Aman thd data: satu-satunya konten yang memang bisa lebih lebar
+            // dari box (tabel Riwayat Harga) punya scroller sendiri.
+            overflowX: 'hidden',
             background: '#fff',
             borderRadius: 20,
             boxShadow: '0 24px 64px rgba(10,20,40,0.28)',
