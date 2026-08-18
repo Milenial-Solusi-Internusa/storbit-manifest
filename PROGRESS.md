@@ -77,6 +77,40 @@
 
 **11. Catatan disiplin migrasi — layak ditiru.** Ketiga file migrasi ditulis **SEBELUM** dijalankan (kebalikan pola retroaktif `20260817000001`), lalu headernya **dikoreksi jadi `Status: LIVE`** setelah dieksekusi, dan snapshot di-refresh. Dua-duanya beres — tak ada utang `pg_dump` maupun migrasi tak-terekam dari sesi ini.
 
+### [sore, hari yang sama] Fix RLS multi-company — `sp_orders_read` + `products_read` jadi varian jamak
+
+**Pemicu.** Dashboard Storbit yang baru dibangun pagi harinya **kosong total** (semua kartu 0) untuk **Elvira Nurhuda** (role Finance, non-super_admin, role aktif di MSI **dan** SOA, home company ≠ SOA) — padahal RPC-nya sudah dipin `SOA_COMPANY_ID` eksplisit. Pin SOA itu ternyata **benar tapi tidak cukup**: ia memperbaiki *parameter*, sementara penghalang sebenarnya ada di **RLS**, dan tak ada nilai `p_company_id` apa pun yang bisa menembusnya.
+
+**Akar masalah.** `sp_orders_read` dan `products_read` memakai `get_user_company_id()` (home company dari `profiles`), bukan varian jamak `get_user_company_ids()` (dari `user_roles` ber-`is_active`). Klasik TD-180.
+
+**Empat gejala, satu akar** — semuanya ditemukan lewat pengujian sebagai Elvira, dan tiga di antaranya **belum pernah dilaporkan siapa pun** karena tak ada yang error:
+1. **Dashboard Storbit** — seluruh kartu 0. Senyap karena CTE agregat atas nol baris tetap mengembalikan satu baris berisi nol → `error` NULL → nol toast.
+2. **SP Manifest** — SEMUA baris berlabel "Draft" + tombol Konfirmasi muncul di semuanya, padahal cuma ada ±4 SP DRAFT. Sebabnya list dibaca dari `sp_items` (RLS `USING(true)` → 463 baris tetap tampil) sementara badge status dibaca dari `sp_orders` (nol baris) lalu jatuh ke fallback `g.orderStatus || 'DRAFT'` (`SalesOrderPage.jsx:97`).
+3. **Stok Barang** — kuantitas benar tapi SKU & nama produk "–" di semua baris; embed PostgREST `products(...)` yang diblokir RLS **resolve jadi NULL, bukan error** (`StokBarangPage.jsx:302`).
+4. **Invoice PDF** — embed `sp_orders(...)` NULL → dokumen kehilangan nomor SP & identitas customer (`db.js:1027`).
+
+**Pola yang layak dihafal:** RLS menolak = **nol baris / embed NULL, BUKAN error**. Layar tampak normal, isinya salah. Tiga dari empat gejala di atas lolos tanpa terdeteksi karena ini.
+
+**Fix.** Migrasi `20260818000004_rls_multi_company_read.sql` — dua `ALTER POLICY`. Bentuknya **MENAMBAH, bukan mengganti**: klausa lama dipertahankan, varian jamak ditambahkan sebagai `OR`. Alasannya `profiles.company_id` dan `user_roles` tidak dijamin beririsan, jadi mengganti murni bisa mencabut akses user yang home company-nya tak punya baris `user_roles` aktif. `ALTER POLICY` dipilih (bukan DROP+CREATE) supaya hanya klausa `USING` tersentuh — klausa `deleted_at` di `products_read` terjaga persis. **Policy tulis tidak disentuh** (tetap tunggal + role gate; baca lebih luas daripada tulis, disengaja).
+
+**Blast radius diaudit LEBIH DULU, bukan sesudah.** Dari 5 konsumen langsung + 2 embed `products`, hanya `ProductsPage` yang berubah perilaku — sisanya memfilter company sendiri, akses per-PK, atau digate super_admin. `sp_orders` 4 konsumen, semuanya akses via PK atau komposit `(customer_id, sp_no)` yang unik global. ⚠️ **Urutan pengerjaan ternyata krusial:** fix key React `p.id || p.sku` di `ProductsPage` (dikerjakan pagi harinya untuk alasan lain) **harus** mendahului perubahan RLS ini — tanpa itu user multi-company akan kena bug key duplikat CC-EXP/CC-IMP. Kebetulan urutannya sudah benar.
+
+**Verifikasi.** Simulasi impersonasi Elvira di SQL Editor (`set_config('request.jwt.claims', …)` + `SET LOCAL ROLE authenticated`, dibungkus `ROLLBACK`) dijalankan **sebelum dan sesudah** — kedua `count` 0 → >0. **Plus konfirmasi visual di browser: Dashboard Storbit terisi, SP Manifest badge benar** (klaim Den, di-relay).
+
+⛔ **TD-180 tetap OPEN** — yang ditutup hanya dua policy yang menghalangi. `payment_terms_read` + ~170 policy lain masih varian tunggal.
+
+### [sore] Temuan follow-up prioritas TINGGI — `set_sp_status` tanpa otorisasi (**TD-203**)
+
+Ditemukan saat menelusuri kenapa tombol "Konfirmasi" muncul untuk role Finance. Diverifikasi langsung dari `schema_snapshot.sql`, bukan dari ingatan:
+
+- `set_sp_status` adalah **`SECURITY DEFINER`** dan **NOL pengecekan otorisasi** di body-nya — grep `is_super_admin`/`is_manager_or_above`/`has_role`/`is_admin` = **0 hit**. Satu-satunya validasi adalah nilai statusnya.
+- **`GRANT ALL … TO authenticated`**, tanpa `REVOKE` apa pun.
+- `SECURITY DEFINER` **membypass RLS**, jadi `sp_orders_insert`/`sp_orders_update` yang role-gated **tidak pernah dievaluasi** di jalur ini. Dan fungsi ini adalah **satu-satunya** jalur yang bisa menggerakkan `sp_orders.status` (fix TD-175 mencabut `GRANT UPDATE(status)` dari PostgREST) — pintu yang tersisa justru yang tanpa penjaga.
+
+⚠️ **Ini mengoreksi asumsi kerja yang sempat dipakai hari ini**, bahwa tombol Konfirmasi untuk role Finance sekadar gap UX karena "backend tetap menolak". Bukti di atas menunjukkan **backend tidak menolak**. Tombolnya sendiri memang buta role (`SalesOrderPage.jsx:167-175` merender hanya berdasarkan `status === 'DRAFT'`, nol pengecekan role di seluruh file), tapi itu **pemicu** dari lubang di DB, bukan masalah kosmetik yang berdiri sendiri.
+
+**Belum diuji end-to-end** — sengaja tidak dicoba di produksi. Cara aman memastikan: satu user non-manager klik Konfirmasi pada SATU SP uji, lalu cek apakah `sp_items.sp_status` berubah. **Prioritas #17** di `08_TECH_DEBT.md`, di atas TD-200/201/202: fixnya murah (satu blok guard, pola `submit_invoice` sudah ada) dan tak menunggu keputusan desain apa pun.
+
 ## 2026-08-17
 
 ### Storbit SP FASE 5 — pembayaran (LUNAS) + jurnal AR minimal + TTF, redesign visual Detail SP, gate anti double-entry `ar_btbs` (dikerjakan 16-17 Agu 2026)
