@@ -23,12 +23,34 @@ import {
   AlertOctagon, Clock, AlertTriangle, PackageX, Boxes, ChevronRight,
   Search, RotateCcw, ShieldAlert,
 } from 'lucide-react';
-import { useAuth } from '../../contexts/useAuth';
 import {
   getStorbitDashboardStats, getStorbitSpDrilldown, getStorbitStockDrilldown,
 } from '../../lib/db';
 import { STATUS_GROUP_LABELS, DONUT_STATUS_SLICES } from '../../lib/spStatusConstants';
 import './salesOrderDetail.module.css';   // @font-face 'Storbit Display' / 'Storbit Text'
+
+// Entitas SOA — HARDCODE DISENGAJA, bukan kelupaan.
+//
+// Versi pertama halaman ini memakai `activeCompanyId` dari AuthContext
+// (= profiles.company_id user). Hasilnya SELURUH kartu menampilkan 0 walau RPC
+// terbukti benar lewat SQL Editor: filter `o.company_id = scope.cid` di RPC tak
+// match satu baris pun karena home company pemanggil bukan SOA. Gagalnya SENYAP
+// — CTE agregat tetap mengembalikan satu baris berisi nol, jadi `error` null dan
+// tak ada toast/banner yang muncul.
+//
+// Storbit hanya hidup di entitas SOA, dan SELURUH surface Storbit lain sudah
+// pin UUID ini secara eksplisit: InputSPPage.jsx:28, SalesOrderDetailPage.jsx:36,
+// PickingListDetailPage.jsx:26, DeliveryNoteDetailPage.jsx:80, db.js:634, plus
+// RPC dispatch_delivery / generate_delivery_from_picking / create_invoice yang
+// hardcode di body-nya. Jadi ini MENGIKUTI pola yang sudah ada, bukan
+// penyimpangan baru.
+//
+// ⚠️ Tetap tech debt yang diketahui — TD-178 (hardcode UUID SOA). Saat TD-178
+// dibereskan menyeluruh, halaman ini ikut pindah ke `activeCompanyId` +
+// CompanySwitcher, DAN perlu empty-state yang menjelaskan kalau entitas aktif
+// bukan SOA ("tidak ada data Storbit untuk entitas ini") — tanpa itu, bug senyap
+// yang sama akan kembali.
+const SOA_COMPANY_ID = 'd2e5e565-5f67-4954-b8d9-5979a2a0c697';
 
 /* ---------- tokens (verbatim dari mockup) ---------- */
 const C = {
@@ -146,14 +168,49 @@ function KpiCard({ item, active, onClick, warn, totalForPct }) {
   );
 }
 
+// Sel identifier (No SP / SKU) — afordansi klik yang bisa dijangkau keyboard.
+// Underline baru muncul saat hover supaya tabel tetap tenang saat diam; klik di
+// sel ini stopPropagation agar tidak menembak handler baris dua kali.
+function IdCell({ children, onActivate }) {
+  const [hover, setHover] = useState(false);
+  if (!onActivate) return <>{children}</>;
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(e) => { e.stopPropagation(); onActivate(); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onActivate(); }
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setHover(true)}
+      onBlur={() => setHover(false)}
+      style={{ cursor: 'pointer', textDecoration: hover ? 'underline' : 'none', outline: 'none' }}
+    >
+      {children}
+    </span>
+  );
+}
+
 // kind 'product' SENGAJA 4 kolom (tanpa DC): products bukan entitas per-DC dan
 // satu produk bisa punya stok di beberapa gudang — kolom itu cuma akan berisi
 // tebakan. Menyimpang sadar dari 5 kolom mockup (keputusan 18 Agu 2026).
-function DrillTable({ title, rows, kind, loading }) {
+function DrillTable({ title, rows, kind, loading, onRowClick }) {
   const cols = kind === 'product'
     ? ['SKU', 'Produk', 'Tersedia', 'ROP']
     : ['No SP', 'Customer', 'DC', 'Tanggal', 'Status'];
   const td = { padding: '10px 16px', borderBottom: `1px solid ${C.divider}` };
+  // Pola baris clickable ditiru verbatim dari SalesOrderPage.jsx:644-648 —
+  // cursor pointer + swap background on hover, tanpa warna baru (C.bg sudah ada
+  // di palet mockup). Sel identifier (No SP / SKU) dibungkus span ber-handler
+  // sendiri: stopPropagation + keyboard Enter/Space, sama spt :657-658 di sana.
+  const rowProps = (row) => (onRowClick ? {
+    onClick: () => onRowClick(row),
+    style: { background: C.card, transition: 'background .1s', cursor: 'pointer' },
+    onMouseEnter: (e) => { e.currentTarget.style.background = C.bg; },
+    onMouseLeave: (e) => { e.currentTarget.style.background = C.card; },
+  } : {});
   return (
     <div style={{ background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4, overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.divider}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
@@ -175,8 +232,10 @@ function DrillTable({ title, rows, kind, loading }) {
             <tbody>
               {kind === 'product'
                 ? rows.map((r, i) => (
-                    <tr key={`${r.sku}-${i}`}>
-                      <td style={{ ...mono, fontSize: 12, ...td }}>{r.sku || '—'}</td>
+                    <tr key={r.product_id || `${r.sku}-${i}`} {...rowProps(r)}>
+                      <td style={{ ...mono, fontSize: 12, ...td, color: C.purpleDeep }}>
+                        <IdCell onActivate={onRowClick ? () => onRowClick(r) : null}>{r.sku || '—'}</IdCell>
+                      </td>
                       <td style={{ ...body, fontSize: 13, ...td }}>{r.product_name || '—'}</td>
                       <td style={{ ...mono, fontSize: 12.5, ...td, textAlign: 'right' }}>{nf(r.available)}</td>
                       <td style={{ ...body, fontSize: 12.5, ...td, color: r.reorder_point == null ? C.orange : C.ink }}>
@@ -185,8 +244,10 @@ function DrillTable({ title, rows, kind, loading }) {
                     </tr>
                   ))
                 : rows.map((r, i) => (
-                    <tr key={`${r.sp_no}-${i}`}>
-                      <td style={{ ...mono, fontSize: 12.5, ...td, color: C.purpleDeep }}>{r.sp_no}</td>
+                    <tr key={`${r.customer_id || ''}|${r.sp_no}-${i}`} {...rowProps(r)}>
+                      <td style={{ ...mono, fontSize: 12.5, ...td, color: C.purpleDeep }}>
+                        <IdCell onActivate={onRowClick ? () => onRowClick(r) : null}>{r.sp_no}</IdCell>
+                      </td>
                       <td style={{ ...body, fontSize: 13, ...td }}>{r.customer_name || '—'}</td>
                       <td style={{ ...body, fontSize: 12.5, ...td, color: C.muted }}>{r.dc_nama || '—'}</td>
                       <td style={{ ...mono, fontSize: 12, ...td }}>{fmtDate(r.sp_date)}</td>
@@ -297,9 +358,7 @@ function Select({ label, options, value, onChange }) {
 }
 
 /* ---------- halaman ---------- */
-export default function StorbitDashboardPage({ customers = [], showToast }) {
-  const { activeCompanyId } = useAuth();
-
+export default function StorbitDashboardPage({ customers = [], showToast, onSelectSP, onSelectProduct }) {
   const [customerId, setCustomerId] = useState('');
   const [spType, setSpType]         = useState('');
 
@@ -326,7 +385,7 @@ export default function StorbitDashboardPage({ customers = [], showToast }) {
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: err } = await getStorbitDashboardStats(customerId || null, spType || null, activeCompanyId || null);
+      const { data, error: err } = await getStorbitDashboardStats(customerId || null, spType || null, SOA_COMPANY_ID);
       if (!alive) return;
       if (err) {
         setStats(null);
@@ -337,7 +396,7 @@ export default function StorbitDashboardPage({ customers = [], showToast }) {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [customerId, spType, activeCompanyId, notifyError]);
+  }, [customerId, spType, notifyError]);
 
   // ── Drill-down SP — ikut kategori aktif + filter yang sama ────────────────
   useEffect(() => {
@@ -347,7 +406,7 @@ export default function StorbitDashboardPage({ customers = [], showToast }) {
       const { data, error: err } = await getStorbitSpDrilldown(spCat, {
         customerId: customerId || null,
         priceCategory: spType || null,
-        companyId: activeCompanyId || null,
+        companyId: SOA_COMPANY_ID,
       });
       if (!alive) return;
       if (err) {
@@ -359,14 +418,14 @@ export default function StorbitDashboardPage({ customers = [], showToast }) {
       setSpRowsLoad(false);
     })();
     return () => { alive = false; };
-  }, [spCat, customerId, spType, activeCompanyId, notifyError]);
+  }, [spCat, customerId, spType, notifyError]);
 
-  // ── Drill-down produk — hanya ikut entitas aktif (filter SP tak berlaku) ──
+  // ── Drill-down produk — filter customer/tipe SP tak berlaku di sini ───────
   useEffect(() => {
     let alive = true;
     (async () => {
       setWhRowsLoad(true);
-      const { data, error: err } = await getStorbitStockDrilldown(whCat, { companyId: activeCompanyId || null });
+      const { data, error: err } = await getStorbitStockDrilldown(whCat, { companyId: SOA_COMPANY_ID });
       if (!alive) return;
       if (err) {
         setWhRows([]);
@@ -377,7 +436,7 @@ export default function StorbitDashboardPage({ customers = [], showToast }) {
       setWhRowsLoad(false);
     })();
     return () => { alive = false; };
-  }, [whCat, activeCompanyId, notifyError]);
+  }, [whCat, notifyError]);
 
   // useMemo (bukan ekspresi polos): keduanya jadi dependency useMemo di bawah,
   // dan `|| {}` menghasilkan objek baru tiap render -> memo tak pernah kena.
@@ -527,6 +586,7 @@ export default function StorbitDashboardPage({ customers = [], showToast }) {
           rows={spRows}
           kind="sp"
           loading={spRowsLoading}
+          onRowClick={onSelectSP}
         />
       </div>
 
@@ -566,6 +626,7 @@ export default function StorbitDashboardPage({ customers = [], showToast }) {
         rows={whRows}
         kind="product"
         loading={whRowsLoading}
+        onRowClick={onSelectProduct}
       />
     </div>
   );
