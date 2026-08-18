@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict WqrzSUGNPnSVjGf3ui2xZuKcpnaYErjpn6OwvteJ1FLO9x9HQbr7427UbkOyRRk
+\restrict 24SlwjOuksafkAapPgto1sbOAFL7LIEBGvJyvTMECAold4urzfGHlFmniaGtncs
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -15875,7 +15875,7 @@ CREATE POLICY products_insert ON public.products FOR INSERT TO authenticated WIT
 -- Name: products products_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY products_read ON public.products FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin()))));
+CREATE POLICY products_read ON public.products FOR SELECT USING ((public.is_super_admin() OR (((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))) AND ((deleted_at IS NULL) OR public.is_super_admin()))));
 
 
 --
@@ -16544,7 +16544,7 @@ CREATE POLICY sp_orders_insert ON public.sp_orders FOR INSERT WITH CHECK ((publi
 -- Name: sp_orders sp_orders_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sp_orders_read ON public.sp_orders FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+CREATE POLICY sp_orders_read ON public.sp_orders FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
@@ -18653,5 +18653,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict WqrzSUGNPnSVjGf3ui2xZuKcpnaYErjpn6OwvteJ1FLO9x9HQbr7427UbkOyRRk
+\unrestrict 24SlwjOuksafkAapPgto1sbOAFL7LIEBGvJyvTMECAold4urzfGHlFmniaGtncs
 
