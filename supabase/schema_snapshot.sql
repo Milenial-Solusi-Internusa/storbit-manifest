@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict IqLNP4Q1aEcpX2eKu0mOZrLfEayGaHy8TMn0LRpcHNbh2L4IU7RbElfNA3OmZ9D
+\restrict gKiPXSLlCjGEfOU1ZyM8tEuIfyYlEGKCcyd5niwXBfX14h1NbXInMPHyfygb8Lm
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -52,6 +52,10 @@ BEGIN
   SELECT status, warehouse_id, picking_no INTO v_status, v_wh, v_no FROM picking_lists WHERE id=p_picking_list_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Picking tidak ditemukan'; END IF;
   IF v_status <> 'done' THEN RAISE EXCEPTION 'Material hanya bisa dicatat saat picking selesai (status=%)', v_status; END IF;
+  IF NOT (is_super_admin() OR (v_company IN (SELECT get_user_company_ids())
+          AND (is_manager_or_above() OR has_role('operations')))) THEN
+    RAISE EXCEPTION 'Tidak berhak mencatat material packing';
+  END IF;
   IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id=p_picking_list_id AND status <> 'cancelled') THEN
     RAISE EXCEPTION 'Surat jalan sudah dibuat — material tak bisa ditambah lagi'; END IF;
   v_wh := COALESCE(v_wh, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
@@ -71,6 +75,28 @@ END; $$;
 
 
 ALTER FUNCTION public.add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer) OWNER TO postgres;
+
+--
+-- Name: ar_ttfs_set_company(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.ar_ttfs_set_company() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.company_id IS NULL THEN
+    NEW.company_id := COALESCE(
+      (SELECT i.company_id FROM sp_invoices i WHERE i.id = NEW.invoice_id),
+      (SELECT o.company_id FROM sp_orders   o WHERE o.id = NEW.sp_order_id),
+      (SELECT a.company_id FROM accounts    a WHERE a.id = NEW.customer_id)
+    );
+  END IF;
+  RETURN NEW;
+END; $$;
+
+
+ALTER FUNCTION public.ar_ttfs_set_company() OWNER TO postgres;
 
 --
 -- Name: attach_price_contract_info(uuid, text, date, date); Type: FUNCTION; Schema: public; Owner: postgres
@@ -513,10 +539,15 @@ CREATE FUNCTION public.delete_picking_material(p_material_id uuid) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-DECLARE v_pick uuid; v_uid uuid := auth.uid();
+DECLARE v_pick uuid; v_uid uuid := auth.uid(); v_company uuid;
 BEGIN
   SELECT picking_list_id INTO v_pick FROM picking_list_materials WHERE id=p_material_id;
   IF v_pick IS NULL THEN RAISE EXCEPTION 'Material tidak ditemukan'; END IF;
+  SELECT company_id INTO v_company FROM picking_lists WHERE id = v_pick;
+  IF NOT (is_super_admin() OR (v_company IN (SELECT get_user_company_ids())
+          AND (is_manager_or_above() OR has_role('operations')))) THEN
+    RAISE EXCEPTION 'Tidak berhak menghapus material packing';
+  END IF;
   IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id=v_pick AND status <> 'cancelled') THEN
     RAISE EXCEPTION 'Tak bisa hapus material: surat jalan sudah dibuat'; END IF;
   INSERT INTO stock_ledger
@@ -696,6 +727,10 @@ BEGIN
     FROM picking_lists WHERE id = p_picking_list_id;
   IF v_sp_no IS NULL THEN RAISE EXCEPTION 'Picking list tidak ditemukan'; END IF;
   IF v_pick_status <> 'done' THEN RAISE EXCEPTION 'Picking list belum selesai (status=%)', v_pick_status; END IF;
+  IF NOT (is_super_admin() OR (v_company_id IN (SELECT get_user_company_ids())
+          AND (is_manager_or_above() OR has_role('operations')))) THEN
+    RAISE EXCEPTION 'Tidak berhak membuat surat jalan untuk picking ini';
+  END IF;
   IF EXISTS (SELECT 1 FROM delivery_notes WHERE picking_list_id = p_picking_list_id AND status <> 'cancelled') THEN
     RAISE EXCEPTION 'Surat jalan untuk picking ini sudah ada'; END IF;
   SELECT count(*) INTO v_item_count FROM picking_list_items
@@ -744,17 +779,12 @@ DECLARE
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed') THEN
     RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no; END IF;
-  -- (1) Picking masih AKTIF (pending/in_progress) -> blokir. Perilaku lama.
+  IF NOT (is_super_admin() OR (v_company_id IN (SELECT get_user_company_ids())
+          AND (is_manager_or_above() OR has_role('operations')))) THEN
+    RAISE EXCEPTION 'Tidak berhak membuat picking list untuk SP ini';
+  END IF;
   IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND status IN ('pending','in_progress')) THEN
     RAISE EXCEPTION 'Picking list untuk SP % sudah ada', p_sp_no; END IF;
-  -- (2) Picking DONE yang reservasi stoknya BELUM dilepas -> blokir.
-  --     Reservasi picking hanya dilepas di dua tempat, keduanya satu arah:
-  --     cancel_picking (picking -> cancelled) dan dispatch_delivery (SJ berangkat).
-  --     Dipakai `dispatched_at IS NOT NULL`, BUKAN status IN ('in_transit','delivered'),
-  --     karena yang ditanya di sini "PERNAH berangkat" bukan "sedang berangkat":
-  --     cancel_delivery membalik shipped_qty + mengembalikan stok tapi TIDAK
-  --     me-reserve ulang picking-nya, dan tidak pernah me-reset dispatched_at.
-  --     Pola yang sama sudah dipakai get_storbit_dashboard_stats (pernah_risiko_pinalti).
   IF EXISTS (
     SELECT 1 FROM picking_lists pl
     WHERE pl.sp_no = p_sp_no AND pl.customer_id = p_customer_id
@@ -1456,6 +1486,84 @@ ALTER FUNCTION public.has_role(role_code text) OWNER TO postgres;
 
 COMMENT ON FUNCTION public.has_role(role_code text) IS 'True if the current user holds the specified role code in any active user_roles assignment. Does not fall back to legacy roles.';
 
+
+--
+-- Name: hrga_submit_approval(uuid, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.hrga_submit_approval(p_request_id uuid, p_action text, p_comment text DEFAULT NULL::text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_uid      uuid := auth.uid();
+  v_status   text; v_level int; v_total int;
+  v_company  uuid; v_type uuid;
+  v_cfg_role text; v_cfg_user uuid;
+  v_action   text; v_new_status text;
+BEGIN
+  IF p_action NOT IN ('approve', 'reject') THEN
+    RAISE EXCEPTION 'Aksi tidak valid: % (hanya approve/reject).', p_action;
+  END IF;
+  v_action := CASE p_action WHEN 'approve' THEN 'approved' ELSE 'rejected' END;
+
+  SELECT status, current_level, total_levels, company_id, request_type_id
+    INTO v_status, v_level, v_total, v_company, v_type
+    FROM hrga_requests
+   WHERE id = p_request_id AND deleted_at IS NULL;
+  IF v_status IS NULL THEN
+    RAISE EXCEPTION 'Request tidak ditemukan.';
+  END IF;
+  IF v_status NOT IN ('submitted', 'under_review') THEN
+    RAISE EXCEPTION 'Request sudah tidak bisa di-approve/reject (status=%).', v_status;
+  END IF;
+
+  -- Lookup ini melayani DUA hal sekaligus: sumber otorisasi DAN sumber
+  -- approver_role yang NOT NULL di hrga_request_approvals.
+  SELECT approver_role, approver_user_id
+    INTO v_cfg_role, v_cfg_user
+    FROM hrga_approval_configs
+   WHERE request_type_id = v_type
+     AND level           = v_level
+     AND company_id      = v_company
+     AND is_active       = true
+   LIMIT 1;
+
+  IF v_cfg_role IS NULL THEN
+    RAISE EXCEPTION 'Belum ada konfigurasi approver untuk tipe request ini di level %.', v_level;
+  END IF;
+
+  IF NOT (is_super_admin()
+          OR has_role(v_cfg_role)
+          OR (v_cfg_user IS NOT NULL AND v_cfg_user = v_uid)) THEN
+    RAISE EXCEPTION 'Anda bukan approver untuk request ini di level %.', v_level;
+  END IF;
+
+  INSERT INTO hrga_request_approvals
+    (request_id, level, approver_id, approver_role, action, comment, actioned_at)
+  VALUES
+    (p_request_id, v_level, v_uid, v_cfg_role, v_action,
+     NULLIF(btrim(COALESCE(p_comment, '')), ''), now());
+
+  IF v_action = 'rejected' THEN
+    v_new_status := 'rejected';
+  ELSIF v_level >= v_total THEN
+    v_new_status := 'approved';
+  ELSE
+    v_new_status := 'under_review';
+  END IF;
+
+  UPDATE hrga_requests SET
+    status        = v_new_status,
+    updated_by    = v_uid,
+    approved_at   = CASE WHEN v_new_status = 'approved'     THEN now()      ELSE approved_at   END,
+    rejected_at   = CASE WHEN v_new_status = 'rejected'     THEN now()      ELSE rejected_at   END,
+    current_level = CASE WHEN v_new_status = 'under_review' THEN v_level + 1 ELSE current_level END
+  WHERE id = p_request_id;
+END; $$;
+
+
+ALTER FUNCTION public.hrga_submit_approval(p_request_id uuid, p_action text, p_comment text) OWNER TO postgres;
 
 --
 -- Name: increment_document_sequence(uuid, text, text, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
@@ -2728,12 +2836,16 @@ CREATE FUNCTION public.sp_delete_btb(p_btb_id uuid) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-DECLARE v_cust uuid; v_sp text;
+DECLARE v_cust uuid; v_sp text; v_company uuid;
 BEGIN
-  SELECT b.customer_id, o.sp_no INTO v_cust, v_sp
+  SELECT b.customer_id, o.sp_no, o.company_id INTO v_cust, v_sp, v_company
     FROM sp_btb b JOIN sp_orders o ON o.id = b.sp_order_id
    WHERE b.id = p_btb_id AND b.deleted_at IS NULL;
   IF v_sp IS NULL THEN RAISE EXCEPTION 'BTB tidak ditemukan atau sudah dihapus.'; END IF;
+  IF NOT (is_super_admin() OR (v_company IN (SELECT get_user_company_ids())
+          AND (is_manager_or_above() OR has_role('operations')))) THEN
+    RAISE EXCEPTION 'Tidak berhak menghapus BTB ini';
+  END IF;
   UPDATE sp_btb SET deleted_at = now() WHERE id = p_btb_id;
   PERFORM sp_recompute_status(v_cust, v_sp);
 END; $$;
@@ -2760,6 +2872,10 @@ BEGIN
    WHERE customer_id = p_customer_id AND sp_no = p_sp_no AND deleted_at IS NULL;
   IF v_sp_order_id IS NULL THEN
     RAISE EXCEPTION 'SP % untuk customer ini tidak ditemukan.', p_sp_no; END IF;
+  IF NOT (is_super_admin() OR (v_company IN (SELECT get_user_company_ids())
+          AND (is_manager_or_above() OR has_role('operations')))) THEN
+    RAISE EXCEPTION 'Tidak berhak menerbitkan BTB untuk SP ini';
+  END IF;
   IF p_delivery_note_id IS NOT NULL AND NOT EXISTS (
        SELECT 1 FROM delivery_notes
         WHERE id = p_delivery_note_id AND customer_id = p_customer_id AND sp_no = p_sp_no) THEN
@@ -3030,9 +3146,15 @@ CREATE FUNCTION public.update_sp_item_dual(p_id uuid, p_item jsonb) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-DECLARE v_rec sp_items%ROWTYPE;
+DECLARE v_rec sp_items%ROWTYPE; v_company uuid;
 BEGIN
   v_rec := jsonb_populate_record(null::sp_items, p_item);
+  SELECT si.company_id INTO v_company FROM sp_items si WHERE si.id = p_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Item SP tidak ditemukan.'; END IF;
+  IF NOT (is_super_admin() OR (v_company IN (SELECT get_user_company_ids())
+          AND (is_manager_or_above() OR has_role('operations')))) THEN
+    RAISE EXCEPTION 'Tidak berhak mengubah item SP ini';
+  END IF;
 
   UPDATE sp_items SET
     sp_date = v_rec.sp_date, sp_no = v_rec.sp_no, customer_id = v_rec.customer_id,
@@ -3512,7 +3634,8 @@ CREATE TABLE public.ar_ttfs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     sp_order_id uuid,
     invoice_id uuid,
-    diterima_oleh text
+    diterima_oleh text,
+    company_id uuid
 );
 
 
@@ -3537,6 +3660,13 @@ COMMENT ON COLUMN public.ar_ttfs.tgl_pembayaran IS 'Payment receipt date. NULL =
 --
 
 COMMENT ON COLUMN public.ar_ttfs.diterima_oleh IS 'Nama orang di pihak customer yang menerima faktur. Teks bebas — orang di luar sistem Nexus, sengaja BUKAN FK ke profiles.';
+
+
+--
+-- Name: COLUMN ar_ttfs.company_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.ar_ttfs.company_id IS 'Entitas pemilik TTF. Diisi otomatis trigger trg_ar_ttfs_set_company dari invoice -> sp_order -> customer. SENGAJA nullable: baris warisan yang ketiga jalurnya kosong tak boleh menggagalkan migrasi — lihat query yatim di STEP 3.';
 
 
 --
@@ -9353,6 +9483,13 @@ CREATE INDEX idx_ar_btbs_ttf_id ON public.ar_btbs USING btree (ttf_id, "position
 
 
 --
+-- Name: idx_ar_ttfs_company_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_ar_ttfs_company_id ON public.ar_ttfs USING btree (company_id);
+
+
+--
 -- Name: idx_ar_ttfs_customer_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -10697,6 +10834,13 @@ CREATE TRIGGER trg_approval_rules_updated_at BEFORE UPDATE ON public.approval_ru
 
 
 --
+-- Name: ar_ttfs trg_ar_ttfs_set_company; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER trg_ar_ttfs_set_company BEFORE INSERT ON public.ar_ttfs FOR EACH ROW EXECUTE FUNCTION public.ar_ttfs_set_company();
+
+
+--
 -- Name: ar_ttfs trg_ar_ttfs_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -11266,6 +11410,14 @@ ALTER TABLE ONLY public.approval_workflows
 
 ALTER TABLE ONLY public.ar_btbs
     ADD CONSTRAINT ar_btbs_ttf_id_fkey FOREIGN KEY (ttf_id) REFERENCES public.ar_ttfs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ar_ttfs ar_ttfs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.ar_ttfs
+    ADD CONSTRAINT ar_ttfs_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
 
 
 --
@@ -14124,21 +14276,27 @@ ALTER TABLE public.ar_btbs ENABLE ROW LEVEL SECURITY;
 -- Name: ar_btbs ar_btbs_delete; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY ar_btbs_delete ON public.ar_btbs FOR DELETE TO authenticated USING (true);
+CREATE POLICY ar_btbs_delete ON public.ar_btbs FOR DELETE TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.ar_ttfs t
+  WHERE ((t.id = ar_btbs.ttf_id) AND (t.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))))));
 
 
 --
 -- Name: ar_btbs ar_btbs_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY ar_btbs_insert ON public.ar_btbs FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY ar_btbs_insert ON public.ar_btbs FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.ar_ttfs t
+  WHERE ((t.id = ar_btbs.ttf_id) AND (t.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))))));
 
 
 --
 -- Name: ar_btbs ar_btbs_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY ar_btbs_read ON public.ar_btbs FOR SELECT TO authenticated USING (true);
+CREATE POLICY ar_btbs_read ON public.ar_btbs FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.ar_ttfs t
+  WHERE ((t.id = ar_btbs.ttf_id) AND (t.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))))));
 
 
 --
@@ -14151,28 +14309,28 @@ ALTER TABLE public.ar_ttfs ENABLE ROW LEVEL SECURITY;
 -- Name: ar_ttfs ar_ttfs_delete; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY ar_ttfs_delete ON public.ar_ttfs FOR DELETE TO authenticated USING (true);
+CREATE POLICY ar_ttfs_delete ON public.ar_ttfs FOR DELETE TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))));
 
 
 --
 -- Name: ar_ttfs ar_ttfs_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY ar_ttfs_insert ON public.ar_ttfs FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY ar_ttfs_insert ON public.ar_ttfs FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))));
 
 
 --
 -- Name: ar_ttfs ar_ttfs_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY ar_ttfs_read ON public.ar_ttfs FOR SELECT TO authenticated USING (true);
+CREATE POLICY ar_ttfs_read ON public.ar_ttfs FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))));
 
 
 --
 -- Name: ar_ttfs ar_ttfs_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY ar_ttfs_update ON public.ar_ttfs FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY ar_ttfs_update ON public.ar_ttfs FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))));
 
 
 --
@@ -15472,6 +15630,13 @@ CREATE POLICY hrga_request_types_update ON public.hrga_request_types FOR UPDATE 
 ALTER TABLE public.hrga_requests ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: hrga_requests hrga_requests_cancel_own; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY hrga_requests_cancel_own ON public.hrga_requests FOR UPDATE TO authenticated USING (((requester_id = auth.uid()) AND ((status)::text = 'submitted'::text))) WITH CHECK (((requester_id = auth.uid()) AND ((status)::text = 'cancelled'::text)));
+
+
+--
 -- Name: hrga_requests hrga_requests_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
@@ -15493,13 +15658,6 @@ CREATE POLICY hrga_requests_update_draft ON public.hrga_requests FOR UPDATE TO a
 
 
 --
--- Name: hrga_requests hrga_requests_update_status; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY hrga_requests_update_status ON public.hrga_requests FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND (public.is_super_admin() OR public.is_admin_or_above() OR public.has_role('hrga'::text) OR public.has_role('it'::text) OR public.has_role('finance'::text) OR ((requester_id = auth.uid()) AND ((status)::text = 'submitted'::text))))) WITH CHECK ((company_id = public.get_user_company_id()));
-
-
---
 -- Name: inquiries; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -15509,14 +15667,14 @@ ALTER TABLE public.inquiries ENABLE ROW LEVEL SECURITY;
 -- Name: inquiries inquiries_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY inquiries_insert ON public.inquiries FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
+CREATE POLICY inquiries_insert ON public.inquiries FOR INSERT WITH CHECK ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)));
 
 
 --
 -- Name: inquiries inquiries_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()) OR (public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
+CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (created_by = auth.uid()) OR (public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.inquiry_id = inquiries.id) AND (p.company_id = inquiries.company_id) AND (p.deleted_at IS NULL)))))))));
 
@@ -15525,7 +15683,7 @@ CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((public.is_su
 -- Name: inquiries inquiries_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY inquiries_update ON public.inquiries FOR UPDATE TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
+CREATE POLICY inquiries_update ON public.inquiries FOR UPDATE USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
@@ -16189,66 +16347,66 @@ ALTER TABLE public.prf_cost_items ENABLE ROW LEVEL SECURITY;
 -- Name: prf_cost_items prf_cost_items_delete; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_cost_items_delete ON public.prf_cost_items FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
+CREATE POLICY prf_cost_items_delete ON public.prf_cost_items FOR DELETE USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
 -- Name: prf_cost_items prf_cost_items_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_cost_items_insert ON public.prf_cost_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
+CREATE POLICY prf_cost_items_insert ON public.prf_cost_items FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
 -- Name: prf_cost_items prf_cost_items_select; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_cost_items_select ON public.prf_cost_items FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+CREATE POLICY prf_cost_items_select ON public.prf_cost_items FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.company_id = public.get_user_company_id()) AND ((p.created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above())))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND ((p.created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above())))))));
 
 
 --
 -- Name: prf_cost_items prf_cost_items_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_cost_items_update ON public.prf_cost_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
+CREATE POLICY prf_cost_items_update ON public.prf_cost_items FOR UPDATE USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid())))))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid())))))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
 -- Name: prf prf_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_insert ON public.prf FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND (public.has_role('sales'::text) OR public.has_role('gm_bd'::text)))));
+CREATE POLICY prf_insert ON public.prf FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (created_by = auth.uid()) AND (public.has_role('sales'::text) OR public.has_role('gm_bd'::text)))));
 
 
 --
 -- Name: prf prf_select; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_select ON public.prf FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND ((created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above()))));
+CREATE POLICY prf_select ON public.prf FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND ((created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above()))));
 
 
 --
 -- Name: prf prf_update_draft; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_update_draft ON public.prf FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND ((status)::text = 'DRAFT'::text)))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()))));
+CREATE POLICY prf_update_draft ON public.prf FOR UPDATE USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (created_by = auth.uid()) AND ((status)::text = 'DRAFT'::text)))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (created_by = auth.uid()))));
 
 
 --
 -- Name: prf prf_update_status; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_update_status ON public.prf FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND ((status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((acknowledged_by IS NULL) OR (acknowledged_by = auth.uid()))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text))));
+CREATE POLICY prf_update_status ON public.prf FOR UPDATE USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((acknowledged_by IS NULL) OR (acknowledged_by = auth.uid()))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text))));
 
 
 --
@@ -16268,7 +16426,7 @@ CREATE POLICY prf_vendor_offers_delete ON public.prf_vendor_offers FOR DELETE TO
 -- Name: prf_vendor_offers prf_vendor_offers_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_vendor_offers_insert ON public.prf_vendor_offers FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND (created_by = auth.uid()) AND (EXISTS ( SELECT 1
+CREATE POLICY prf_vendor_offers_insert ON public.prf_vendor_offers FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND (created_by = auth.uid()) AND (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid())))))));
 
@@ -16277,7 +16435,7 @@ CREATE POLICY prf_vendor_offers_insert ON public.prf_vendor_offers FOR INSERT TO
 -- Name: prf_vendor_offers prf_vendor_offers_select; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_vendor_offers_select ON public.prf_vendor_offers FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.has_role('procurement'::text) OR public.is_manager_or_above() OR (EXISTS ( SELECT 1
+CREATE POLICY prf_vendor_offers_select ON public.prf_vendor_offers FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('procurement'::text) OR public.is_manager_or_above() OR (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.created_by = auth.uid()))))))));
 
@@ -16286,9 +16444,9 @@ CREATE POLICY prf_vendor_offers_select ON public.prf_vendor_offers FOR SELECT TO
 -- Name: prf_vendor_offers prf_vendor_offers_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prf_vendor_offers_update ON public.prf_vendor_offers FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
+CREATE POLICY prf_vendor_offers_update ON public.prf_vendor_offers FOR UPDATE USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid()))))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
+  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid()))))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid())))))));
 
@@ -16370,21 +16528,21 @@ CREATE POLICY profiles_update ON public.profiles FOR UPDATE TO authenticated USI
 -- Name: accounts prospects_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prospects_insert ON public.accounts FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
+CREATE POLICY prospects_insert ON public.accounts FOR INSERT WITH CHECK ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)));
 
 
 --
 -- Name: accounts prospects_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()) OR (public.has_role('operations'::text) AND ((account_status)::text = 'customer'::text)) OR public.has_role('procurement'::text)))));
+CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()) OR (public.has_role('operations'::text) AND ((account_status)::text = 'customer'::text)) OR public.has_role('procurement'::text)))));
 
 
 --
 -- Name: accounts prospects_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY prospects_update ON public.accounts FOR UPDATE USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
+CREATE POLICY prospects_update ON public.accounts FOR UPDATE USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
@@ -17242,21 +17400,21 @@ CREATE POLICY vendors_delete ON public.vendors FOR DELETE TO authenticated USING
 -- Name: vendors vendors_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY vendors_insert ON public.vendors FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('procurement'::text)))));
+CREATE POLICY vendors_insert ON public.vendors FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.has_role('procurement'::text)))));
 
 
 --
 -- Name: vendors vendors_select; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY vendors_select ON public.vendors FOR SELECT TO authenticated USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+CREATE POLICY vendors_select ON public.vendors FOR SELECT USING ((public.is_super_admin() OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
 -- Name: vendors vendors_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY vendors_update ON public.vendors FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL) AND (public.is_manager_or_above() OR public.has_role('procurement'::text))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('procurement'::text)))));
+CREATE POLICY vendors_update ON public.vendors FOR UPDATE USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (deleted_at IS NULL) AND (public.is_manager_or_above() OR public.has_role('procurement'::text))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.has_role('procurement'::text)))));
 
 
 --
@@ -17474,6 +17632,14 @@ GRANT ALL ON FUNCTION public.get_table_columns(p_table text) TO anon;
 --
 
 GRANT ALL ON FUNCTION public.get_user_company_ids() TO authenticated;
+
+
+--
+-- Name: FUNCTION hrga_submit_approval(p_request_id uuid, p_action text, p_comment text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.hrga_submit_approval(p_request_id uuid, p_action text, p_comment text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.hrga_submit_approval(p_request_id uuid, p_action text, p_comment text) TO authenticated;
 
 
 --
@@ -19107,5 +19273,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict IqLNP4Q1aEcpX2eKu0mOZrLfEayGaHy8TMn0LRpcHNbh2L4IU7RbElfNA3OmZ9D
+\unrestrict gKiPXSLlCjGEfOU1ZyM8tEuIfyYlEGKCcyd5niwXBfX14h1NbXInMPHyfygb8Lm
 
