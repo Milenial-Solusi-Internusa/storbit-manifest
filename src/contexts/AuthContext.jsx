@@ -14,9 +14,12 @@ const ERP_ROLE_PRIORITY = [
 ];
 
 // activeCompanyId-aware: only roles held IN the active company are eligible.
-// Today every user's roles all share one company_id (their home company), so
-// this filter is a no-op vs the old unfiltered version — see AuthContext's
-// activeCompanyId comment for why.
+// This filter is LOAD-BEARING — do not simplify it away. Genuinely
+// multi-company users exist (e.g. Finance staff holding roles in both MSI and
+// SOA), and CompanySwitcher.jsx flips activeCompanyId at runtime, so the same
+// user resolves to a different primary role per active company. An older
+// comment here claimed this was a no-op because every user's roles shared one
+// company_id; that stopped being true once multi-company assignments landed.
 function pickPrimaryErpRole(userRoles, activeCompanyId) {
   const scoped = (userRoles || []).filter(r => r.company_id === activeCompanyId);
   if (!scoped.length) return null;
@@ -67,15 +70,15 @@ export function AuthProvider({ children }) {
   const [erpRoles,         setErpRoles]         = useState([]);
   const [loading,          setLoading]          = useState(true);
   const [authError,        setAuthError]        = useState(null);
-  const [userPermissions,  setUserPermissions]  = useState([]); // role_permissions rows for primary ERP role
   const [menuPermissions,  setMenuPermissions]  = useState([]); // user_menu_permissions rows for this user
   const [roleMenuPermissions, setRoleMenuPermissions] = useState([]); // role_menu_permissions rows for all active roles (role-level default)
   const [permissionsLoading, setPermissionsLoading] = useState(true); // true while per-user menu permissions are loading
   const [isBnfAuthorized, setIsBnfAuthorized] = useState(false); // is_bnf_authorized() RPC result — gates the 'bnf' menu item (see App.jsx canSeeMenuItem)
   const [bnfAuthLoading,  setBnfAuthLoading]  = useState(true);  // true while is_bnf_authorized() is loading — same defer-until-loaded discipline as permissionsLoading
   // null = no override, "active company" follows profile.company_id (home).
-  // Not set by any UI yet (multi-entity switcher is a separate phase) — exposed
-  // as activeCompanyId/setActiveCompanyId in `value` below for that future work.
+  // Set by CompanySwitcher.jsx (topbar entity switcher) — exposed as
+  // activeCompanyId/setActiveCompanyId in `value` below. Cleared on logout and
+  // on user change so an override can't leak across sessions (see below).
   const [activeCompanyIdOverride, setActiveCompanyId] = useState(null);
 
   // Tracks the last authenticated user id. Distinguishes a genuine user change
@@ -231,17 +234,6 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut();
   };
 
-  // ── Fetch permissions for the primary ERP role ─────────────────────────────
-  const fetchPermissionsForRoleId = useCallback(async (roleId) => {
-    if (!roleId) { setUserPermissions([]); return; }
-    const { data } = await supabase
-      .from('role_permissions')
-      .select('id, is_cross_entity, permissions(id, module, action)')
-      .eq('role_id', roleId)
-      .limit(1000);
-    setUserPermissions(data || []);
-  }, []);
-
   // Manual refresh (kalau ada admin update profile dari panel lain)
   const refreshProfile = async () => {
     if (!session?.user) return;
@@ -250,26 +242,11 @@ export function AuthProvider({ children }) {
     setErpRoles(roles || []);
   };
 
-  const refreshPermissions = useCallback(() => {
-    const primary = pickPrimaryErpRole(erpRoles, activeCompanyId);
-    fetchPermissionsForRoleId(primary?.role_id);
-  }, [erpRoles, activeCompanyId, fetchPermissionsForRoleId]);
-
   // Primary ERP role code, sourced solely from user_roles (legacy profiles.role
   // fallback removed — that column is being deprecated). Scoped to the active
   // company — see pickPrimaryErpRole.
   const primaryErpRole = pickPrimaryErpRole(erpRoles, activeCompanyId);
   const erpRoleCode    = primaryErpRole?.roles?.code || null;
-
-  // hasPermission — returns true if user has the given module+action in their role_permissions.
-  // super_admin always returns true.
-  const hasPermission = useCallback((module, action) => {
-    if (erpRoleCode === 'super_admin') return true;
-    return userPermissions.some(p =>
-      p.permissions?.module === module &&
-      p.permissions?.action === action
-    );
-  }, [userPermissions, erpRoleCode]);
 
   // ── Fetch per-user + role-level menu permissions ────────────────────────────
   // 3-tier resolution (see hasMenuPermission below): user_menu_permissions row
@@ -377,16 +354,6 @@ export function AuthProvider({ children }) {
     return roleMenuPermissions.some(p => matchesMenuAction(p, menuKey, action));
   }, [menuPermissions, roleMenuPermissions, erpRoleCode]);
 
-  // isCrossEntity — returns true if the role has cross-entity access for this module.
-  // super_admin always returns true.
-  const isCrossEntity = useCallback((module) => {
-    if (erpRoleCode === 'super_admin') return true;
-    return userPermissions.some(p =>
-      p.permissions?.module === module &&
-      p.is_cross_entity === true
-    );
-  }, [userPermissions, erpRoleCode]);
-
   const value = {
     session,
     profile,
@@ -400,17 +367,12 @@ export function AuthProvider({ children }) {
     // role: backward-compat alias for erpRole — used throughout App.jsx
     role: erpRoleCode,
     user: session?.user || null,
-    // activeCompanyId: home company by default, or an explicit override once a
-    // future multi-entity switcher calls setActiveCompanyId (not called by any
-    // UI yet). myCompanyIds: distinct companies where the user holds a role.
+    // activeCompanyId: home company by default, or the explicit override set by
+    // CompanySwitcher.jsx. myCompanyIds: distinct companies where the user
+    // holds an active role — the switcher's option list.
     activeCompanyId,
     setActiveCompanyId,
     myCompanyIds,
-    // Permission helpers
-    userPermissions,
-    hasPermission,
-    isCrossEntity,
-    refreshPermissions,
     // Per-user + role-level menu permission helpers
     menuPermissions,
     roleMenuPermissions,
