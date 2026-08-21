@@ -17,6 +17,7 @@ import { useProducts } from '../../hooks/useProducts';
 import ConfirmModal from '../../components/ConfirmModal';
 import ProductPicker from '../../components/ProductPicker';
 import DeliveryNotePDF from './DeliveryNotePDF';
+import { useAuth } from '../../contexts/useAuth';
 
 const C = {
   navy: '#1B4D8A', ink: '#212A37', mute: '#7E8899', faint: '#A6AEBD',
@@ -70,6 +71,15 @@ const inputStyle = { width: '100%', height: 38, padding: '0 12px', borderRadius:
 const lblStyle = { fontSize: 11, fontWeight: 700, color: C.mute, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 5, display: 'block' };
 
 export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToast, onGoToPicking }) {
+  const { erpRoles } = useAuth();
+  // CERMIN guard server RPC surat jalan (migrasi 20260821000004:
+  // generate_delivery_from_picking) + dispatch_delivery/cancel_delivery.
+  // Halaman ini sebelumnya NOL referensi peran — siapa pun yang bisa membukanya
+  // dapat memberangkatkan/membatalkan SJ (yang memindahkan stok & shipped_qty).
+  // Dibaca dari erpRoles (SELURUH role aktif), bukan role primer.
+  const canWarehouseOps = (erpRoles || [])
+    .map(r => r.roles?.code)
+    .some(c => ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor', 'operations'].includes(c));
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -108,6 +118,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
   const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
   const handleSaveArmada = useCallback(async () => {
+    if (!canWarehouseOps) return;
     setBusy(true);
     const patch = {
       driver_name: form.driver_name?.trim() || null,
@@ -123,18 +134,20 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
     if (error) { showToast?.(error.message || 'Gagal menyimpan info armada', 'error'); return; }
     showToast?.('Info armada disimpan ✓');
     load();
-  }, [form, deliveryNoteId, showToast, load]);
+  }, [form, deliveryNoteId, showToast, load, canWarehouseOps]);
 
   const handleStatus = useCallback(async (next) => {
+    if (!canWarehouseOps) return;
     setBusy(true);
     const { error } = await setDeliveryStatus(deliveryNoteId, next);
     setBusy(false);
     if (error) { showToast?.(error.message || 'Gagal memperbarui status', 'error'); return; }
     showToast?.(next === 'in_transit' ? 'Surat jalan diberangkatkan.' : 'Surat jalan ditandai terkirim.');
     load();
-  }, [deliveryNoteId, showToast, load]);
+  }, [deliveryNoteId, showToast, load, canWarehouseOps]);
 
   const handleCancel = useCallback(async () => {
+    if (!canWarehouseOps) return;
     setConfirmCancelOpen(false);
     setBusy(true);
     const { error } = await cancelDelivery(deliveryNoteId);
@@ -142,22 +155,25 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
     if (error) { showToast?.(error.message || 'Gagal membatalkan surat jalan', 'error'); return; }
     showToast?.('Surat jalan dibatalkan.');
     load();
-  }, [deliveryNoteId, showToast, load]);
+  }, [deliveryNoteId, showToast, load, canWarehouseOps]);
 
   // --- Item edits (Opsi C) — hanya saat draft ---
   const handleItemQty = useCallback(async (itemId, qty) => {
+    if (!canWarehouseOps) return;
     setDetail(prev => prev && ({ ...prev, items: prev.items.map(x => x.id === itemId ? { ...x, qty } : x) }));
     const { error } = await updateDeliveryItemQty(itemId, qty);
     if (error) { showToast?.(error.message || 'Gagal memperbarui qty', 'error'); load(); }
-  }, [showToast, load]);
+  }, [showToast, load, canWarehouseOps]);
 
   const handleDeleteItem = useCallback(async (itemId) => {
+    if (!canWarehouseOps) return;
     const { error } = await deleteDeliveryItem(itemId);
     if (error) { showToast?.(error.message || 'Gagal menghapus item', 'error'); return; }
     setDetail(prev => prev && ({ ...prev, items: prev.items.filter(x => x.id !== itemId) }));
-  }, [showToast]);
+  }, [showToast, canWarehouseOps]);
 
   const handleAddItem = useCallback(async () => {
+    if (!canWarehouseOps) return;
     if (!newItem.product_name.trim()) { showToast?.('Pilih atau isi produk dulu', 'error'); return; }
     const { data, error } = await addDeliveryItem(deliveryNoteId, {
       product_id: newItem.product_id,
@@ -169,7 +185,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
     setDetail(prev => prev && ({ ...prev, items: [...prev.items, data] }));
     setNewItem({ product_id: null, product_name: '', sku: '', qty: '' });
     showToast?.('Item ditambahkan ✓');
-  }, [newItem, deliveryNoteId, showToast]);
+  }, [newItem, deliveryNoteId, showToast, canWarehouseOps]);
 
   const handlePrint = useCallback(async () => {
     if (!detail) return;
@@ -251,7 +267,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
                   style={{ ...inputStyle, height: 'auto', padding: '10px 12px', resize: 'vertical' }} placeholder="Alamat pengiriman customer" />
               </div>
               <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={handleSaveArmada} disabled={busy}
+                <button onClick={handleSaveArmada} disabled={busy || !canWarehouseOps}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.card, border: `1px solid ${C.navy}55`, color: C.navy, fontWeight: 700, fontSize: 13, padding: '9px 16px', borderRadius: 10, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1 }}>
                   <Save size={14} /> Simpan Info Armada
                 </button>
@@ -291,7 +307,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
                 </td>
                 {editable && (
                   <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                    <button onClick={() => handleDeleteItem(it.id)} title="Hapus item"
+                    <button disabled={!canWarehouseOps} onClick={() => handleDeleteItem(it.id)} title="Hapus item"
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.roseI, padding: 4, display: 'inline-flex' }}>
                       <Trash2 size={16} />
                     </button>
@@ -319,7 +335,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
                     style={{ width: 90, height: 34, textAlign: 'right', padding: '0 8px', borderRadius: 8, border: `1px solid ${C.line}`, fontSize: 13, color: C.ink, outline: 'none', boxSizing: 'border-box' }} />
                 </td>
                 <td style={{ padding: '10px 16px', textAlign: 'right', verticalAlign: 'top' }}>
-                  <button onClick={handleAddItem} title="Tambah item"
+                  <button disabled={!canWarehouseOps} onClick={handleAddItem} title="Tambah item"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: C.navy, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                     <Plus size={14} /> Tambah
                   </button>
@@ -338,20 +354,20 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
         </button>
 
         {status === 'draft' && (
-          <button onClick={() => handleStatus('in_transit')} disabled={busy || !canDispatch}
+          <button onClick={() => handleStatus('in_transit')} disabled={busy || !canDispatch || !canWarehouseOps}
             title={!canDispatch ? 'Isi & simpan nama driver + no. kendaraan dulu' : ''}
             style={{ background: C.navy, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: (busy || !canDispatch) ? 'not-allowed' : 'pointer', opacity: (busy || !canDispatch) ? 0.5 : 1 }}>
             {busy ? 'Memproses…' : 'Berangkatkan'}
           </button>
         )}
         {status === 'in_transit' && (
-          <button onClick={() => handleStatus('delivered')} disabled={busy}
+          <button onClick={() => handleStatus('delivered')} disabled={busy || !canWarehouseOps}
             style={{ background: C.greenI, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
             {busy ? 'Memproses…' : 'Tandai Terkirim'}
           </button>
         )}
         {(status === 'draft' || status === 'in_transit') && (
-          <button onClick={() => setConfirmCancelOpen(true)} disabled={busy}
+          <button onClick={() => setConfirmCancelOpen(true)} disabled={busy || !canWarehouseOps}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.card, border: `1px solid ${C.roseI}55`, color: C.roseI, fontWeight: 700, fontSize: 13, padding: '10px 18px', borderRadius: 11, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1 }}>
             <Ban size={15} /> Batalkan
           </button>

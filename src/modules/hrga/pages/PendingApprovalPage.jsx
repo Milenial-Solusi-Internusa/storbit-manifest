@@ -10,7 +10,6 @@ import {
   daysUntil, fmtDate, fmtRupiah, HRGA_TABLE_CSS,
 } from '../HrgaShared';
 import { usePendingApprovals, submitApproval, HRGA_PAGE_SIZE } from '../../../hooks/useHrgaRequests';
-import { useAuth } from '../../../contexts/useAuth';
 import { useDebounce } from '../../../hooks/useDebounce';
 
 export default function PendingApprovalPage({ onOpenDetail }) {
@@ -22,7 +21,6 @@ export default function PendingApprovalPage({ onOpenDetail }) {
   const [confirmAction, setConfirmAction] = useState(null);
 
   const search = useDebounce(rawSearch, 300);
-  const { profile } = useAuth();
 
   const { data, total, loading, error, refresh } = usePendingApprovals({ page, search });
 
@@ -53,14 +51,13 @@ export default function PendingApprovalPage({ onOpenDetail }) {
       requestId: confirmId,
       action:    confirmAction,
       comment,
-      profile,
     });
     setActing(null);
     setConfirmId(null);
     setConfirmAction(null);
     setComment('');
     if (!err) refresh();
-  }, [confirmId, confirmAction, comment, profile, refresh]);
+  }, [confirmId, confirmAction, comment, refresh]);
 
   return (
     <div style={{ fontFamily:"'Inter', system-ui, sans-serif", color:D.ink }}>

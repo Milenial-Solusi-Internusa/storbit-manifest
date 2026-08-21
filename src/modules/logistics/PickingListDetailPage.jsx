@@ -23,6 +23,7 @@ import {
   addPickingMaterial, deletePickingMaterial, getStockForProducts,
 } from '../../lib/db';
 import useProducts from '../../hooks/useProducts';
+import { useAuth } from '../../contexts/useAuth';
 import ProductPicker from '../../components/ProductPicker';
 import ConfirmModal from '../../components/ConfirmModal';
 import PickingListPDF from './PickingListPDF';
@@ -110,6 +111,7 @@ function fmtDateTime(iso) {
 }
 
 export default function PickingListDetailPage({ pickingListId, onBack, showToast, onCreateDelivery, onGoToSp }) {
+  const { erpRoles } = useAuth();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -166,6 +168,18 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   // menolak status 'done'. Lihat 08_TECH_DEBT.md TD-206.
   const allItemsZero = items.length > 0 && items.every(it => (Number(it.qty_picked) || 0) === 0);
   const locked = status === 'done' || status === 'cancelled';
+  // CERMIN guard server RPC picking (migrasi 20260821000004):
+  //   is_super_admin() OR (company ∈ get_user_company_ids()
+  //                        AND (is_manager_or_above() OR has_role('operations')))
+  // Halaman ini sebelumnya NOL referensi peran — siapa pun yang bisa membukanya
+  // dapat memulai/menyelesaikan/membatalkan picking (yang mereservasi &
+  // melepas stok). Dibaca dari erpRoles (SELURUH role aktif), bukan role primer.
+  const canWarehouseOps = (erpRoles || [])
+    .map(r => r.roles?.code)
+    .some(c => ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor', 'operations'].includes(c));
+  // Input qty ikut mati kalau tak berhak — tanpa ini tombolnya hilang tapi
+  // kolom qty masih bisa diketik lalu ditolak server.
+  const readOnly = locked || !canWarehouseOps;
 
   // Material Packing hanya dicatat saat picking sudah 'done'; bisa diedit selama
   // Surat Jalan belum dibuat (has_delivery=false), read-only setelahnya.
@@ -176,7 +190,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   // Pola tulisnya sama persis dengan togglePicked lama: await dulu, error →
   // toast + return, sukses → perbarui state lokal tanpa refetch.
   const handleQtyCommit = useCallback(async (it, raw) => {
-    if (locked) return;
+    if (locked || !canWarehouseOps) return;
     const req = Math.max(0, Math.floor(Number(it.qty_requested) || 0));
     const qty = Math.min(Math.max(0, Math.floor(Number(raw) || 0)), req);
     setQtyDraft(prev => {
@@ -196,9 +210,10 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
         ? { ...x, status: derivePickingItemStatus(qty, req), qty_picked: qty }
         : x),
     }));
-  }, [locked, showToast]);
+  }, [locked, canWarehouseOps, showToast]);
 
   const handleStart = useCallback(async () => {
+    if (!canWarehouseOps) return;
     setBusy(true);
     const { error } = await startPicking(pickingListId);
     if (error) {
@@ -230,16 +245,17 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
       showToast?.('Pengambilan dimulai.');
     }
     load();
-  }, [pickingListId, showToast, load, items]);
+  }, [pickingListId, showToast, load, items, canWarehouseOps]);
 
   const handleComplete = useCallback(async () => {
+    if (!canWarehouseOps) return;
     setBusy(true);
     const { error } = await completePicking(pickingListId);
     setBusy(false);
     if (error) { showToast?.(error.message || 'Gagal menyelesaikan picking', 'error'); return; }
     showToast?.('Picking list selesai.');
     load();
-  }, [pickingListId, showToast, load]);
+  }, [pickingListId, showToast, load, canWarehouseOps]);
 
   // Gate penyelesaian, tiga cabang:
   //   semua item 0     → TOLAK (jalan buntu, lihat allItemsZero di atas)
@@ -260,6 +276,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   }, [handleComplete]);
 
   const handleCancel = useCallback(async () => {
+    if (!canWarehouseOps) return;
     setConfirmCancelOpen(false);
     setBusy(true);
     const { error } = await cancelPicking(pickingListId);
@@ -267,7 +284,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
     if (error) { showToast?.(error.message || 'Gagal membatalkan picking list', 'error'); return; }
     showToast?.('Picking list dibatalkan.');
     load();
-  }, [pickingListId, showToast, load]);
+  }, [pickingListId, showToast, load, canWarehouseOps]);
 
   const handlePrint = useCallback(async () => {
     if (!detail) return;
@@ -300,6 +317,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   const matQtyNum = Number(newMat.qty) || 0;
 
   const handleAddMaterial = useCallback(async () => {
+    if (!canWarehouseOps) return;
     if (busy) return;
     if (!newMat.productId) { showToast?.('Pilih material dulu.', 'error'); return; }
     if (matQtyNum <= 0) { showToast?.('Qty harus lebih dari 0.', 'error'); return; }
@@ -311,9 +329,10 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
     setNewMat({ productId: null, text: '', sku: '', qty: '' });
     setStockTick((t) => t + 1);
     load();
-  }, [busy, newMat, matQtyNum, pickingListId, showToast, load]);
+  }, [busy, newMat, matQtyNum, pickingListId, showToast, load, canWarehouseOps]);
 
   const handleDeleteMaterial = useCallback(async (materialId) => {
+    if (!canWarehouseOps) return;
     if (busy) return;
     setBusy(true);
     const { error } = await deletePickingMaterial(materialId);
@@ -322,7 +341,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
     showToast?.('Material dihapus.');
     setStockTick((t) => t + 1);
     load();
-  }, [busy, showToast, load]);
+  }, [busy, showToast, load, canWarehouseOps]);
 
   if (loading) {
     return (
@@ -439,17 +458,18 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
                       min={0}
                       max={it.qty_requested}
                       step={1}
-                      disabled={locked}
+                      disabled={readOnly}
                       value={qtyDraft[it.id] ?? String(it.qty_picked ?? 0)}
                       onChange={(e) => setQtyDraft(prev => ({ ...prev, [it.id]: e.target.value }))}
                       onBlur={(e) => handleQtyCommit(it, e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                      title={locked ? 'Picking sudah selesai' : `Maksimal ${it.qty_requested}`}
+                      title={!canWarehouseOps ? 'Hanya Operations / Manager ke atas yang boleh mengambil'
+                        : locked ? 'Picking sudah selesai' : `Maksimal ${it.qty_requested}`}
                       style={{
                         width: 84, padding: '7px 10px', borderRadius: 9,
-                        border: `1px solid ${C.line}`, background: locked ? C.bg : C.card,
+                        border: `1px solid ${C.line}`, background: readOnly ? C.bg : C.card,
                         color: C.ink, fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-                        cursor: locked ? 'not-allowed' : 'text',
+                        cursor: readOnly ? 'not-allowed' : 'text',
                       }}
                     />
                   </td>
@@ -573,7 +593,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
           <Printer size={15} /> Cetak Picking List
         </button>
 
-        {status === 'pending' && (
+        {status === 'pending' && canWarehouseOps && (
           <button
             onClick={handleStart}
             disabled={busy}
@@ -586,7 +606,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
         {/* Selalu aktif selama in_progress (partial picking). Kalau masih ada
             item pending/short, handleCompleteClick membuka dialog konfirmasi
             dulu; kalau semua sudah lengkap, langsung proses (perilaku lama). */}
-        {status === 'in_progress' && (
+        {status === 'in_progress' && canWarehouseOps && (
           <button
             onClick={handleCompleteClick}
             disabled={busy}
