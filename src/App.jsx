@@ -619,8 +619,14 @@ const ERP_MENU_GROUPS = [
           { id: 'input',    label: 'Input SP',    icon: Plus },
         ],
       },
-      { id: 'picking', label: 'Picking List', icon: ClipboardList, role: ['super_admin','admin','ceo','gm','manager','operations'] },
-      { id: 'surat-jalan', label: 'Surat Jalan', icon: Truck, role: ['super_admin','admin','ceo','gm','manager','operations'] },
+      // Picking List & Surat Jalan digate `hasMenuPermission` lewat MENU_KEY_MAP
+      // ('logistics_picking' / 'logistics_surat_jalan') sejak 9 Agu 2026. Properti
+      // `role: [...]` yang dulu ada di sini SUDAH DIHAPUS karena tak pernah
+      // dievaluasi: canSeeMenuItem memeriksa MENU_KEY_MAP lebih dulu dan langsung
+      // return, persis kasus 'admin-settings'. Jangan dikembalikan — menambah
+      // `role` di sini tidak akan berpengaruh apa pun.
+      { id: 'picking', label: 'Picking List', icon: ClipboardList },
+      { id: 'surat-jalan', label: 'Surat Jalan', icon: Truck },
       {
         id: 'trading', label: 'General Trading', icon: ShoppingCart,
         children: [
@@ -1337,7 +1343,7 @@ const MENU_KEY_MAP = {
 // canSeeMenuItem — priority: public → hasMenuPermission (per-user) → item.role
 // array → DEFAULT-DENY.
 // Item tanpa gate apa pun (tanpa public/menuKey/role) disembunyikan.
-const canSeeMenuItem = (item, role, hasPermission, hasMenuPermission, isBnfAuthorized) => {
+const canSeeMenuItem = (item, role, hasMenuPermission, isBnfAuthorized) => {
   if (item.section) return true;
   // BNF (2026-08-11) + Meeting Mingguan (2026-08-12): public:true alone is
   // not enough for these two items — checked before the generic public:true
@@ -1439,9 +1445,9 @@ function navHasGate(item) {
   return !!(item && (item.public === true || MENU_KEY_MAP[item.id] || item.module || item.role));
 }
 // tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
-function navChildGate(c, role, hasPermission, hasMenuPermission, isBnfAuthorized) {
+function navChildGate(c, role, hasMenuPermission, isBnfAuthorized) {
   if (c.children) {
-    const subs = c.children.map(gc => navChildGate(gc, role, hasPermission, hasMenuPermission, isBnfAuthorized));
+    const subs = c.children.map(gc => navChildGate(gc, role, hasMenuPermission, isBnfAuthorized));
     if (subs.some(s => s === true)) return true;
     if (subs.every(s => s === null)) return null;
     return false;
@@ -1449,17 +1455,17 @@ function navChildGate(c, role, hasPermission, hasMenuPermission, isBnfAuthorized
   const real = findMenuItemById(c.id);
   if (!real) return null;              // not in ERP_MENU_GROUPS (e.g. 'users')
   if (!navHasGate(real)) return null;  // gateless → inherit parent module
-  return canSeeMenuItem(real, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+  return canSeeMenuItem(real, role, hasMenuPermission, isBnfAuthorized);
 }
-function navModuleVisible(m, role, hasPermission, hasMenuPermission, isBnfAuthorized) {
+function navModuleVisible(m, role, hasMenuPermission, isBnfAuthorized) {
   if (m.soon) return true;             // roadmap skeleton — shown, disabled
   if (m.target) {                      // direct-navigate leaf (Beranda / Users & Access)
     if (m.role) return m.role.includes(role);
     const real = findMenuItemById(m.target);
     if (!real || !navHasGate(real)) return true;
-    return canSeeMenuItem(real, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+    return canSeeMenuItem(real, role, hasMenuPermission, isBnfAuthorized);
   }
-  const gates = (m.children || []).map(c => navChildGate(c, role, hasPermission, hasMenuPermission, isBnfAuthorized));
+  const gates = (m.children || []).map(c => navChildGate(c, role, hasMenuPermission, isBnfAuthorized));
   if (gates.some(g => g === true)) return true;                   // a visible gated child
   if (gates.length && gates.every(g => g === null)) return true;  // fully gateless → show
   return false;                                                   // gated children, none visible → hide
@@ -1471,17 +1477,17 @@ function navModuleContaining(id) {
 // Content-level gate (F4): mirror the sidebar so a page can't be rendered by a
 // role that can't see its menu. Gateless child → inherit its NEXUS_NAV module's
 // visibility (NOT default-deny → Asset sub-pages stay reachable when the module is).
-function isMenuAccessible(id, role, hasPermission, hasMenuPermission, isBnfAuthorized) {
+function isMenuAccessible(id, role, hasMenuPermission, isBnfAuthorized) {
   if (!id) return true;
   const item = findMenuItemById(id);
-  if (item && navHasGate(item)) return canSeeMenuItem(item, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+  if (item && navHasGate(item)) return canSeeMenuItem(item, role, hasMenuPermission, isBnfAuthorized);
   const mod = navModuleContaining(id);
-  if (mod) return navModuleVisible(mod, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+  if (mod) return navModuleVisible(mod, role, hasMenuPermission, isBnfAuthorized);
   return true; // unknown/synthetic → allow (caller keeps its SYNTHETIC/prefix allow-list)
 }
 
 function NexusSidebar({
-  activeMenu, onNavigate, role, hasPermission, hasMenuPermission, isBnfAuthorized,
+  activeMenu, onNavigate, role, hasMenuPermission, isBnfAuthorized,
   profile, currentRoleLabel,
   asDrawer = false, isOpen = false, onClose,
 }) {
@@ -1493,8 +1499,8 @@ function NexusSidebar({
   // Asset sub-page: they carry no gate, only the module `assets` does).
   // childGate → true (visible) / false (explicitly denied) / null (gateless → inherit).
   // Gating now lives in module-level nav* helpers (F4), shared with canAccessActiveMenu.
-  const childVisible = (c) => navChildGate(c, role, hasPermission, hasMenuPermission, isBnfAuthorized) !== false;
-  const moduleVisible = (m) => navModuleVisible(m, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+  const childVisible = (c) => navChildGate(c, role, hasMenuPermission, isBnfAuthorized) !== false;
+  const moduleVisible = (m) => navModuleVisible(m, role, hasMenuPermission, isBnfAuthorized);
 
   const activeModId = (() => {
     for (const g of NEXUS_NAV) for (const m of g.items) if (moduleContainsMenu(m, activeMenu)) return m.id;
@@ -1559,7 +1565,7 @@ function NexusSidebar({
       const tabIds = (c.children || []).map(gc => gc.id);
       const firstTab = tabIds.find(id => {
         const it = findMenuItemById(id);
-        return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+        return it && canSeeMenuItem(it, role, hasMenuPermission, isBnfAuthorized);
       });
       const tabbedActive = tabIds.includes(activeMenu);
       return (
@@ -1819,7 +1825,7 @@ export default function StorbitManifest() {
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
-  const { role: authRole, erpRoles, profile, signOut, hasPermission, isCrossEntity, hasMenuPermission, userPermissions, menuPermissions, permissionsLoading, isBnfAuthorized, bnfAuthLoading } = useAuth();
+  const { role: authRole, erpRoles, profile, signOut, hasMenuPermission, permissionsLoading, isBnfAuthorized, bnfAuthLoading } = useAuth();
   const role = authRole || 'management';
 
   // canRenderPage — centralized route-guard (defense-in-depth). Reuses the same
@@ -1846,8 +1852,8 @@ export default function StorbitManifest() {
       console.warn(`[RBAC] canRenderPage: menu id "${menuId}" tidak ditemukan di ERP_MENU_GROUPS — akses DITOLAK (fail-closed). Cek apakah id ini terhapus/berganti nama saat restrukturisasi menu.`);
       return false;
     }
-    return canSeeMenuItem(item, role, hasPermission, hasMenuPermission, isBnfAuthorized);
-  }, [role, hasPermission, hasMenuPermission, isBnfAuthorized]);
+    return canSeeMenuItem(item, role, hasMenuPermission, isBnfAuthorized);
+  }, [role, hasMenuPermission, isBnfAuthorized]);
 
   // Defense-in-depth for Admin Settings (hub + all admin-settings-* sub-pages):
   // explicit role gate — super_admin OR admin only.
@@ -2139,13 +2145,19 @@ export default function StorbitManifest() {
     // gated menu would be wrongly redirected during the brief post-login fetch
     // window (e.g. refreshing while on a gated page). This only times the
     // redirect; it does not gate rendering.
-    const permsLoaded =
-      role === 'super_admin' ||
-      userPermissions.length > 0 || menuPermissions.length > 0;
+    //
+    // permissionsLoading is the authoritative "menu permissions have settled"
+    // signal (the same one canAccessActiveMenu uses further down this file). The
+    // previous test — "userPermissions or menuPermissions is non-empty" — never
+    // became true for a user whose access comes purely from role_menu_permissions
+    // (hasMenuPermission tier 3): userPermissions was already dead, and
+    // menuPermissions only ever holds per-user overrides. That left this guard
+    // permanently disabled for exactly the users the role-default system targets.
+    //
     // bnfAuthLoading: also wait for is_bnf_authorized() before validating, or
     // a restored activeMenu === 'bnf' would be wrongly bounced away for an
     // authorized user during the brief post-login RPC window.
-    if (!permsLoaded || bnfAuthLoading) return;
+    if (permissionsLoading || bnfAuthLoading) return;
 
     // Synthetic / detail pages are navigated to programmatically (not from the
     // sidebar) and are always valid — skip them.
@@ -2169,18 +2181,18 @@ export default function StorbitManifest() {
     // and this guard bounced the user to the first visible menu (the public
     // Command Center dashboard). Reusing isMenuAccessible keeps the sidebar, the
     // content gate, and this redirect perfectly in sync (opsi A).
-    if (isMenuAccessible(activeMenu, role, hasPermission, hasMenuPermission, isBnfAuthorized)) return;
+    if (isMenuAccessible(activeMenu, role, hasMenuPermission, isBnfAuthorized)) return;
 
     // Not accessible → land on the first visible top-level menu (or home).
     const visFlat = ERP_MENU_GROUPS
       .flatMap(g => g.items)
-      .filter(it => !it.section && canSeeMenuItem(it, role, hasPermission, hasMenuPermission, isBnfAuthorized));
+      .filter(it => !it.section && canSeeMenuItem(it, role, hasMenuPermission, isBnfAuthorized));
     if (visFlat.length === 0) return;
     // Intentional, self-terminating redirect: after switching to a valid menu the
     // guard passes on the next run, so this does not loop.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveMenu(visFlat[0]?.id || 'home');
-  }, [profile, role, hasPermission, hasMenuPermission, userPermissions, menuPermissions, activeMenu, isBnfAuthorized, bnfAuthLoading]);
+  }, [profile, role, hasMenuPermission, permissionsLoading, activeMenu, isBnfAuthorized, bnfAuthLoading]);
 
   // Close profile dropdown on Escape
   useEffect(() => {
@@ -2231,15 +2243,19 @@ export default function StorbitManifest() {
   //    starts running (triggered by urlMenuReady flipping true).
   useEffect(() => {
     if (urlMenuReady) return;
-    const permsLoaded = role === 'super_admin' || userPermissions.length > 0 || menuPermissions.length > 0;
-    if (!permsLoaded) return;
+    // Same authoritative signal as the FIX B guard above. bnfAuthLoading is
+    // included here too because canRenderPage('bnf' / 'meeting-mingguan')
+    // resolves through isBnfAuthorized — running before that RPC settles would
+    // reject a legitimate ?menu=bnf deep-link and then latch that rejection
+    // permanently via setUrlMenuReady(true) below.
+    if (permissionsLoading || bnfAuthLoading) return;
     const hasUrlParam = new URLSearchParams(window.location.search).has('menu');
     if (hasUrlParam && urlMenu !== activeMenu && canRenderPage(urlMenu)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveMenu(urlMenu);
     }
     setUrlMenuReady(true);
-  }, [role, userPermissions, menuPermissions, urlMenuReady, urlMenu, activeMenu, canRenderPage]);
+  }, [permissionsLoading, bnfAuthLoading, urlMenuReady, urlMenu, activeMenu, canRenderPage]);
 
   // 2) Keep the URL mirroring activeMenu (write side) — gated on (1) having
   //    resolved so it never fires with a not-yet-adopted activeMenu and
@@ -2654,7 +2670,7 @@ export default function StorbitManifest() {
   }
 
   const visibleMenuGroups = ERP_MENU_GROUPS
-    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role, hasPermission, hasMenuPermission, isBnfAuthorized)) }))
+    .map(group => ({ ...group, items: group.items.filter(item => canSeeMenuItem(item, role, hasMenuPermission, isBnfAuthorized)) }))
     .filter(group => group.items.some(i => !i.section));
   const visibleMenus = visibleMenuGroups.flatMap(group => group.items.filter(i => !i.section));
   // eslint-disable-next-line no-unused-vars
@@ -2677,7 +2693,7 @@ export default function StorbitManifest() {
     // F4: per-item gate mirroring the sidebar (gateless child inherits its
     // module's visibility) — replaces the coarse "parent visible → all children
     // accessible" (collectMenuIds) that let ungranted child pages render.
-    return isMenuAccessible(activeMenu, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+    return isMenuAccessible(activeMenu, role, hasMenuPermission, isBnfAuthorized);
   })();
 
   return (
@@ -2737,7 +2753,6 @@ export default function StorbitManifest() {
           activeMenu={activeMenu}
           onNavigate={navigateTo}
           role={role}
-          hasPermission={hasPermission}
           hasMenuPermission={hasMenuPermission}
           isBnfAuthorized={isBnfAuthorized}
           profile={profile}
@@ -2763,7 +2778,6 @@ export default function StorbitManifest() {
             activeMenu={activeMenu}
             onNavigate={navigateTo}
             role={role}
-            hasPermission={hasPermission}
             hasMenuPermission={hasMenuPermission}
             isBnfAuthorized={isBnfAuthorized}
             profile={profile}
@@ -3558,7 +3572,7 @@ export default function StorbitManifest() {
                 <MenuTabBar
                   tabs={ACCOUNT_TABS.filter(t => {
                     const it = findMenuItemById(t.id);
-                    return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+                    return it && canSeeMenuItem(it, role, hasMenuPermission, isBnfAuthorized);
                   })}
                   active={activeMenu}
                   onSelect={navigateTo}
@@ -3734,7 +3748,7 @@ export default function StorbitManifest() {
               <MenuTabBar
                 tabs={ACTIVITY_TABS.filter(t => {
                   const it = findMenuItemById(t.id);
-                  return it && canSeeMenuItem(it, role, hasPermission, hasMenuPermission, isBnfAuthorized);
+                  return it && canSeeMenuItem(it, role, hasMenuPermission, isBnfAuthorized);
                 })}
                 active={activeMenu}
                 onSelect={navigateTo}

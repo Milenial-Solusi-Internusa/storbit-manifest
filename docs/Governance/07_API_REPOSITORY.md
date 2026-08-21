@@ -30,7 +30,7 @@
 | `get_user_company_id` | `()` → uuid | Company user dari profiles. | STABLE SECURITY DEFINER. Null di SQL Editor. |
 | `is_admin_or_above` | `()` → bool | super_admin + admin saja. | ⚠️ tak kenal manager/ceo (TD-01). |
 | `is_manager_or_above` | `()` → bool | super_admin/admin/ceo/gm/manager/sales_head. | — |
-| `has_permission` | `(module_code text, action_code text)` → bool | Cek role_permissions. | ⚠️ flagged broken/unseeded (TD-02). |
+| `has_permission` | `(module_code text, action_code text)` → bool | Cek role_permissions. | ⚠️ flagged broken/unseeded (TD-02). **[20 Agu 2026]** Bukan cuma "unseeded" — **0 pemakaian RLS, 0 pemakaian FE**, dan sejak sesi ini tabel `role_permissions` yang jadi sumbernya juga **nol pembaca** di jalur aplikasi. Jangan dipakai untuk gating baru. |
 | `has_role` | `(role_code text)` → bool | Cek role di user_roles. | — |
 | `get_user_role_code` | `()` → text | Role code user. | — |
 | `get_table_columns` | `(p_table text)` | Introspeksi kolom (Schema Manager, `useCustomFields`). | — |
