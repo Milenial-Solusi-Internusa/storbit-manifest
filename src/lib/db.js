@@ -448,14 +448,26 @@ export async function getPickingListDetail(pickingListId) {
   };
 }
 
-// Toggle a single picking_list_items row picked/unpicked. When picked, qty_picked
-// snaps to qty_requested; when unpicked, back to 0.
-export async function setPickingItemPicked(itemId, picked, qtyRequested) {
+// Set qty_picked satu baris picking_list_items (partial picking). Status
+// DITURUNKAN dari angkanya, tidak pernah dikirim terpisah, supaya qty dan status
+// mustahil melenceng: 0 -> 'pending' · 0 < n < requested -> 'short' ·
+// n = requested -> 'picked'. Nilai 'short' inilah satu-satunya penulis enum
+// picking_list_items_status_check yang sebelumnya nol pemakai.
+// qty di-clamp ke 0..qtyRequested + dibulatkan; input non-numerik jadi 0.
+export function derivePickingItemStatus(qtyPicked, qtyRequested) {
+  if (qtyPicked <= 0) return 'pending';
+  if (qtyPicked >= qtyRequested) return 'picked';
+  return 'short';
+}
+
+export async function setPickingItemPicked(itemId, qtyPicked, qtyRequested) {
+  const req = Math.max(0, Math.floor(Number(qtyRequested) || 0));
+  const qty = Math.min(Math.max(0, Math.floor(Number(qtyPicked) || 0)), req);
   const { data, error } = await supabase
     .from('picking_list_items')
     .update({
-      status: picked ? 'picked' : 'pending',
-      qty_picked: picked ? qtyRequested : 0,
+      status: derivePickingItemStatus(qty, req),
+      qty_picked: qty,
     })
     .eq('id', itemId)
     .select('*')

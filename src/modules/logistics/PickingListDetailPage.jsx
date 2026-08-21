@@ -4,8 +4,11 @@
 //
 // Status flow (picking_lists.status): pending → in_progress → done.
 //   - "Mulai Pengambilan" (pending → in_progress, sets started_at)
-//   - toggle item picked/unpicked (picking_list_items.status + qty_picked)
-//   - once every item picked → "Selesaikan" (in_progress → done, sets completed_at)
+//   - input qty_picked per item (0..qty_requested); status diturunkan otomatis
+//     (0 → pending, sebagian → short, penuh → picked) — partial picking.
+//   - "Selesaikan Picking" selalu aktif saat in_progress; kalau masih ada item
+//     pending/short, lewat dialog konfirmasi dulu. Kalau SEMUA item masih 0,
+//     ditolak dengan toast (jalan buntu — lihat allItemsZero / TD-206).
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { pdf } from '@react-pdf/renderer';
@@ -15,7 +18,8 @@ import {
   Boxes, Plus, Trash2,
 } from 'lucide-react';
 import {
-  getPickingListDetail, setPickingItemPicked, startPicking, completePicking, cancelPicking,
+  getPickingListDetail, setPickingItemPicked, derivePickingItemStatus,
+  startPicking, completePicking, cancelPicking,
   addPickingMaterial, deletePickingMaterial, getStockForProducts,
 } from '../../lib/db';
 import useProducts from '../../hooks/useProducts';
@@ -36,12 +40,37 @@ const C = {
   rose: '#F9EBF2', roseI: '#B25E94',
 };
 
+// Status per BARIS ITEM (picking_list_items.status) — namespace BERBEDA dari
+// STATUS_MAP di bawah yang untuk picking_lists.status. Dipisah supaya 'short'
+// (baru terpakai sejak partial picking) tidak tertukar label dengan
+// 'in_progress' milik header. Token warna memakai C.* yang sudah ada.
+const ITEM_STATUS_MAP = {
+  pending: { label: 'Belum Diambil', bg: C.slate, fg: C.slateI, icon: Circle },
+  short:   { label: 'Sebagian',      bg: C.amber, fg: C.amberI, icon: AlertTriangle },
+  picked:  { label: 'Lengkap',       bg: C.green, fg: C.greenI, icon: CheckCircle2 },
+};
+
 const STATUS_MAP = {
   pending:     { label: 'Menunggu',       bg: C.slate, fg: C.slateI, icon: Circle },
   in_progress: { label: 'Sedang Diambil',  bg: C.amber, fg: C.amberI, icon: Package },
   done:        { label: 'Selesai',         bg: C.green, fg: C.greenI, icon: CheckCircle2 },
   cancelled:   { label: 'Dibatalkan',      bg: C.rose,  fg: C.roseI,  icon: AlertTriangle },
 };
+
+function ItemStatusBadge({ status }) {
+  const s = ITEM_STATUS_MAP[status] || ITEM_STATUS_MAP.pending;
+  const Icon = s.icon;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      background: s.bg, color: s.fg, fontWeight: 700, fontSize: 11.5,
+      padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+    }}>
+      <Icon size={12} strokeWidth={2.5} />
+      {s.label}
+    </span>
+  );
+}
 
 function StatusBadge({ status }) {
   const s = STATUS_MAP[status] || STATUS_MAP.pending;
@@ -85,6 +114,11 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
+  // Nilai input qty yang SEDANG diketik, per item id. Hanya berisi baris yang
+  // sedang disentuh user; sisanya jatuh balik ke qty_picked dari server, jadi
+  // tak ada draft basi setelah load() ulang.
+  const [qtyDraft, setQtyDraft] = useState({});
 
   // Material Packing (Fase 3.x) — kardus/lakban/dll (inventory_class='Inventory').
   // Katalog di-pin ke Storbit/SOA (halaman ini selalu SOA), apapun home user.
@@ -113,10 +147,24 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   useEffect(() => { load(); }, [load]);
 
   const status = detail?.status;
-  const items = detail?.items || [];
+  // useMemo supaya identitasnya stabil antar-render: handleStart menutup atas
+  // `items` untuk prefill, dan tanpa ini dep array-nya berubah tiap render.
+  const items = useMemo(() => detail?.items || [], [detail]);
   const pickedCount = items.filter(it => it.status === 'picked').length;
-  const allPicked = items.length > 0 && pickedCount === items.length;
   const shortCount = items.filter(it => (it.qty_short || 0) > 0).length;   // ter-reserve sebagian (stok kurang)
+  // DUA konsep "kurang" yang beda, jangan tertukar: shortCount di atas = stok
+  // gudang tak cukup saat picking dibuat (qty_short, dihitung server). Dua di
+  // bawah = hasil pengambilan nyata (picking_list_items.status).
+  const pendingItemCount = items.filter(it => it.status === 'pending').length;
+  const shortPickedCount = items.filter(it => it.status === 'short').length;
+  const hasIncompleteItems = pendingItemCount > 0 || shortPickedCount > 0;
+  // Semua baris masih 0 (mis. SP berstok nol: prefill qty_requested - qty_short
+  // menghasilkan 0 di setiap baris). Menyelesaikan picking dalam keadaan ini
+  // menciptakan jalan buntu: generate_delivery_from_picking menolak picking yang
+  // nol item ter-pick, jadi dispatched_at tak pernah terisi, guard
+  // generate_picking_from_sp memblokir picking baru selamanya, dan cancel_picking
+  // menolak status 'done'. Lihat 08_TECH_DEBT.md TD-206.
+  const allItemsZero = items.length > 0 && items.every(it => (Number(it.qty_picked) || 0) === 0);
   const locked = status === 'done' || status === 'cancelled';
 
   // Material Packing hanya dicatat saat picking sudah 'done'; bisa diedit selama
@@ -124,29 +172,65 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   const materials = detail?.materials || [];
   const matEditable = status === 'done' && !detail?.has_delivery;
 
-  const togglePicked = useCallback(async (it) => {
-    if (busy || locked) return;
-    const next = it.status !== 'picked';
+  // Commit qty_picked satu baris. Dipanggil onBlur (BUKAN tiap keystroke).
+  // Pola tulisnya sama persis dengan togglePicked lama: await dulu, error →
+  // toast + return, sukses → perbarui state lokal tanpa refetch.
+  const handleQtyCommit = useCallback(async (it, raw) => {
+    if (locked) return;
+    const req = Math.max(0, Math.floor(Number(it.qty_requested) || 0));
+    const qty = Math.min(Math.max(0, Math.floor(Number(raw) || 0)), req);
+    setQtyDraft(prev => {
+      if (!(it.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[it.id];
+      return next;
+    });
+    if (qty === (Number(it.qty_picked) || 0)) return;   // tak berubah → jangan tulis
     setBusy(true);
-    const { error } = await setPickingItemPicked(it.id, next, it.qty_requested);
+    const { error } = await setPickingItemPicked(it.id, qty, req);
     setBusy(false);
     if (error) { showToast?.(error.message || 'Gagal memperbarui item', 'error'); return; }
     setDetail(prev => prev && ({
       ...prev,
       items: prev.items.map(x => x.id === it.id
-        ? { ...x, status: next ? 'picked' : 'pending', qty_picked: next ? x.qty_requested : 0 }
+        ? { ...x, status: derivePickingItemStatus(qty, req), qty_picked: qty }
         : x),
     }));
-  }, [busy, locked, showToast]);
+  }, [locked, showToast]);
 
   const handleStart = useCallback(async () => {
     setBusy(true);
     const { error } = await startPicking(pickingListId);
+    if (error) {
+      setBusy(false);
+      showToast?.(error.message || 'Gagal memulai pengambilan', 'error');
+      return;
+    }
+    // Prefill qty_picked = qty_requested − qty_short (jumlah yang realistis bisa
+    // diambil dari stok yang ter-reserve). Ditulis DI SINI — aksi user eksplisit
+    // "Mulai Pengambilan" — bukan di useEffect on-mount, supaya tidak ada tulis
+    // data tanpa aksi user. load() di bawah menyegarkan seluruh baris, jadi tak
+    // perlu optimistic update di sini.
+    const prefill = items
+      .filter(it => (Number(it.qty_picked) || 0) === 0)
+      .map(it => {
+        const req = Math.max(0, Math.floor(Number(it.qty_requested) || 0));
+        const qty = Math.max(0, req - Math.max(0, Math.floor(Number(it.qty_short) || 0)));
+        return { id: it.id, qty, req };
+      })
+      .filter(x => x.qty > 0);
+    const failed = prefill.length
+      ? (await Promise.all(prefill.map(x => setPickingItemPicked(x.id, x.qty, x.req))))
+          .filter(r => r.error).length
+      : 0;
     setBusy(false);
-    if (error) { showToast?.(error.message || 'Gagal memulai pengambilan', 'error'); return; }
-    showToast?.('Pengambilan dimulai.');
+    if (failed > 0) {
+      showToast?.(`Pengambilan dimulai, tapi ${failed} item gagal diisi otomatis — isi manual.`, 'error');
+    } else {
+      showToast?.('Pengambilan dimulai.');
+    }
     load();
-  }, [pickingListId, showToast, load]);
+  }, [pickingListId, showToast, load, items]);
 
   const handleComplete = useCallback(async () => {
     setBusy(true);
@@ -156,6 +240,24 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
     showToast?.('Picking list selesai.');
     load();
   }, [pickingListId, showToast, load]);
+
+  // Gate penyelesaian, tiga cabang:
+  //   semua item 0     → TOLAK (jalan buntu, lihat allItemsZero di atas)
+  //   ada pending/short → konfirmasi dulu, baru complete_picking
+  //   semua lengkap     → langsung proses (perilaku lama)
+  const handleCompleteClick = useCallback(() => {
+    if (allItemsZero) {
+      showToast?.('Semua item masih 0, picking ini tidak bisa diselesaikan. Batalkan picking ini kalau stok memang tidak tersedia.', 'error');
+      return;
+    }
+    if (hasIncompleteItems) { setConfirmCompleteOpen(true); return; }
+    handleComplete();
+  }, [allItemsZero, hasIncompleteItems, handleComplete, showToast]);
+
+  const handleConfirmComplete = useCallback(() => {
+    setConfirmCompleteOpen(false);
+    handleComplete();
+  }, [handleComplete]);
 
   const handleCancel = useCallback(async () => {
     setConfirmCancelOpen(false);
@@ -307,26 +409,15 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#FAFBFC' }}>
-              {['', 'Produk', 'SKU', 'Lokasi', 'Qty Diminta', 'Qty Diambil', 'Status'].map(h => (
+              {['Produk', 'SKU', 'Lokasi', 'Qty Diminta', 'Qty Diambil', 'Status'].map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 10.5, fontWeight: 700, color: C.mute, textTransform: 'uppercase', letterSpacing: 0.4 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {items.map(it => {
-              const picked = it.status === 'picked';
               return (
                 <tr key={it.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                  <td style={{ padding: '14px 16px', width: 36 }}>
-                    <button
-                      onClick={() => togglePicked(it)}
-                      disabled={busy || locked}
-                      title={locked ? 'Picking sudah selesai' : (picked ? 'Batalkan' : 'Tandai sudah diambil')}
-                      style={{ background: 'none', border: 'none', cursor: (busy || locked) ? 'not-allowed' : 'pointer', padding: 0, display: 'flex', opacity: locked ? 0.6 : 1 }}
-                    >
-                      {picked ? <CheckCircle2 size={20} color={C.greenI} /> : <Circle size={20} color={C.faint} />}
-                    </button>
-                  </td>
                   <td style={{ padding: '14px 16px', fontSize: 13, color: C.ink, fontWeight: 500 }}>
                     {it.product_name || '—'}
                     {(it.qty_short || 0) > 0 && (
@@ -342,13 +433,32 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
                     </span>
                   </td>
                   <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600, color: C.ink }}>{it.qty_requested}</td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600, color: picked ? C.greenI : C.faint }}>{it.qty_picked}</td>
-                  <td style={{ padding: '14px 16px' }}><StatusBadge status={picked ? 'done' : 'pending'} /></td>
+                  <td style={{ padding: '14px 16px' }}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={it.qty_requested}
+                      step={1}
+                      disabled={locked}
+                      value={qtyDraft[it.id] ?? String(it.qty_picked ?? 0)}
+                      onChange={(e) => setQtyDraft(prev => ({ ...prev, [it.id]: e.target.value }))}
+                      onBlur={(e) => handleQtyCommit(it, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                      title={locked ? 'Picking sudah selesai' : `Maksimal ${it.qty_requested}`}
+                      style={{
+                        width: 84, padding: '7px 10px', borderRadius: 9,
+                        border: `1px solid ${C.line}`, background: locked ? C.bg : C.card,
+                        color: C.ink, fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+                        cursor: locked ? 'not-allowed' : 'text',
+                      }}
+                    />
+                  </td>
+                  <td style={{ padding: '14px 16px' }}><ItemStatusBadge status={it.status} /></td>
                 </tr>
               );
             })}
             {items.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: '32px 16px', textAlign: 'center', color: C.mute, fontSize: 13 }}>Tidak ada item.</td></tr>
+              <tr><td colSpan={6} style={{ padding: '32px 16px', textAlign: 'center', color: C.mute, fontSize: 13 }}>Tidak ada item.</td></tr>
             )}
           </tbody>
         </table>
@@ -473,15 +583,12 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
           </button>
         )}
 
-        {status === 'in_progress' && !allPicked && (
-          <button disabled style={{ background: C.slate, color: C.slateI, fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: 'not-allowed' }}>
-            Centang semua item untuk selesai
-          </button>
-        )}
-
-        {status === 'in_progress' && allPicked && (
+        {/* Selalu aktif selama in_progress (partial picking). Kalau masih ada
+            item pending/short, handleCompleteClick membuka dialog konfirmasi
+            dulu; kalau semua sudah lengkap, langsung proses (perilaku lama). */}
+        {status === 'in_progress' && (
           <button
-            onClick={handleComplete}
+            onClick={handleCompleteClick}
             disabled={busy}
             style={{ background: C.greenI, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}
           >
@@ -539,6 +646,17 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
           Picking list ini dibatalkan. SP <b style={{ fontFamily: 'IBM Plex Mono, monospace', color: C.ink }}>{detail.sp_no}</b> bisa di-generate ulang picking list baru bila diperlukan.
         </p>
       )}
+
+      <ConfirmModal
+        open={confirmCompleteOpen}
+        title="Selesaikan Picking Belum Lengkap"
+        message={`${pendingItemCount} item belum diambil sama sekali dan ${shortPickedCount} item diambil sebagian. Picking akan ditandai selesai dengan qty apa adanya, dan Surat Jalan hanya membawa item yang qty-nya lebih dari 0. Sisa outstanding tetap bisa dibuatkan picking baru setelah Surat Jalan ini diberangkatkan.`}
+        confirmLabel="Lanjutkan"
+        cancelLabel="Batal"
+        variant="warning"
+        onConfirm={handleConfirmComplete}
+        onCancel={() => setConfirmCompleteOpen(false)}
+      />
 
       <ConfirmModal
         open={confirmCancelOpen}
