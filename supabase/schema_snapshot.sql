@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 24SlwjOuksafkAapPgto1sbOAFL7LIEBGvJyvTMECAold4urzfGHlFmniaGtncs
+\restrict 9E45RbrPhuCkTdq2Beuqq1ZTlK8xQK6cN1aN4xU5h0Q5aIx5qOWUNjem9RDyxV5
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -710,8 +710,28 @@ DECLARE
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed') THEN
     RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no; END IF;
-  IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND status <> 'cancelled') THEN
+  -- (1) Picking masih AKTIF (pending/in_progress) -> blokir. Perilaku lama.
+  IF EXISTS (SELECT 1 FROM picking_lists WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND status IN ('pending','in_progress')) THEN
     RAISE EXCEPTION 'Picking list untuk SP % sudah ada', p_sp_no; END IF;
+  -- (2) Picking DONE yang reservasi stoknya BELUM dilepas -> blokir.
+  --     Reservasi picking hanya dilepas di dua tempat, keduanya satu arah:
+  --     cancel_picking (picking -> cancelled) dan dispatch_delivery (SJ berangkat).
+  --     Dipakai `dispatched_at IS NOT NULL`, BUKAN status IN ('in_transit','delivered'),
+  --     karena yang ditanya di sini "PERNAH berangkat" bukan "sedang berangkat":
+  --     cancel_delivery membalik shipped_qty + mengembalikan stok tapi TIDAK
+  --     me-reserve ulang picking-nya, dan tidak pernah me-reset dispatched_at.
+  --     Pola yang sama sudah dipakai get_storbit_dashboard_stats (pernah_risiko_pinalti).
+  IF EXISTS (
+    SELECT 1 FROM picking_lists pl
+    WHERE pl.sp_no = p_sp_no AND pl.customer_id = p_customer_id
+      AND pl.status = 'done'
+      AND NOT EXISTS (
+        SELECT 1 FROM delivery_notes dn
+        WHERE dn.picking_list_id = pl.id
+          AND dn.dispatched_at IS NOT NULL
+      )
+  ) THEN
+    RAISE EXCEPTION 'Picking list SP % sudah selesai tapi surat jalannya belum diberangkatkan - berangkatkan dulu sebelum membuat picking baru', p_sp_no; END IF;
   SELECT count(*) INTO v_outstanding FROM sp_items
     WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed' AND (qty - shipped_qty) > 0;
   IF v_outstanding = 0 THEN RAISE EXCEPTION 'SP % tidak punya item outstanding', p_sp_no; END IF;
@@ -18653,5 +18673,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 24SlwjOuksafkAapPgto1sbOAFL7LIEBGvJyvTMECAold4urzfGHlFmniaGtncs
+\unrestrict 9E45RbrPhuCkTdq2Beuqq1ZTlK8xQK6cN1aN4xU5h0Q5aIx5qOWUNjem9RDyxV5
 
