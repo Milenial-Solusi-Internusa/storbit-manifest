@@ -15,6 +15,7 @@ import {
 } from '../HrgaShared';
 import { useHrgaRequestDetail, submitApproval } from '../../../hooks/useHrgaRequests';
 import { useAuth } from '../../../contexts/useAuth';
+import useMyApproverScope, { approverKey, HRGA_PENDING_STATUSES } from '../../../hooks/useMyApproverScope';
 
 // Approval timeline node
 function ApprovalNode({ node, isLast }) {
@@ -102,6 +103,7 @@ function FeedItem({ item }) {
 export default function HrgaDetailPage({ requestId, onBack }) {
   const { data: req, loading, error, refresh } = useHrgaRequestDetail(requestId);
   const { profile } = useAuth();
+  const { approverKeys, approverScopeLoading } = useMyApproverScope();
   const [comment, setComment] = useState('');
   const [acting,  setActing]  = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
@@ -109,18 +111,18 @@ export default function HrgaDetailPage({ requestId, onBack }) {
   const handleApprove = useCallback(async () => {
     if (confirmAction !== 'approved') { setConfirmAction('approved'); return; }
     setActing('approved');
-    const { error: err } = await submitApproval({ requestId, action:'approved', comment, profile });
+    const { error: err } = await submitApproval({ requestId, action:'approved', comment });
     setActing(null); setConfirmAction(null); setComment('');
     if (!err) refresh();
-  }, [confirmAction, requestId, comment, profile, refresh]);
+  }, [confirmAction, requestId, comment, refresh]);
 
   const handleReject = useCallback(async () => {
     if (confirmAction !== 'rejected') { setConfirmAction('rejected'); return; }
     setActing('rejected');
-    const { error: err } = await submitApproval({ requestId, action:'rejected', comment, profile });
+    const { error: err } = await submitApproval({ requestId, action:'rejected', comment });
     setActing(null); setConfirmAction(null); setComment('');
     if (!err) refresh();
-  }, [confirmAction, requestId, comment, profile, refresh]);
+  }, [confirmAction, requestId, comment, refresh]);
 
   if (loading) {
     return <div style={{ padding:'3rem', textAlign:'center', color:D.inkFaint, fontSize:13 }}>Memuat detail…</div>;
@@ -132,8 +134,15 @@ export default function HrgaDetailPage({ requestId, onBack }) {
 
   const days        = daysUntil(req.requested_date);
   const dueSoon     = days !== null && days >= 0 && days < 3;
-  const isPending   = req.status === 'submitted' || req.status === 'in_progress';
-  const canApprove  = isPending && profile?.id;
+  const isPending   = HRGA_PENDING_STATUSES.includes(req.status);
+  // Dulu `isPending && profile?.id` — nol pengecekan peran, sehingga SIAPA PUN
+  // yang bisa membuka halaman ini melihat tombol Approve/Reject. Kini
+  // dicerminkan ke guard server (RPC hrga_submit_approval): user harus approver
+  // yang ditunjuk untuk (request_type_id, current_level) request INI.
+  const canApprove  = isPending
+    && !!profile?.id
+    && !approverScopeLoading
+    && approverKeys.has(approverKey(req.request_type_id, req.current_level));
   const categoryCode = req.hrga_request_types?.category_code;
   const typeName     = req.hrga_request_types?.type_name;
 

@@ -13,6 +13,7 @@ import {
   Home, Contact, FileCheck, CreditCard, LifeBuoy, ShieldCheck, TrendingUp, Sunrise, Presentation,
 } from 'lucide-react';
 import { useAuth } from './contexts/useAuth';
+import useMyApproverScope, { approverKey, HRGA_PENDING_STATUSES } from './hooks/useMyApproverScope';
 import { supabase } from './lib/supabase';
 import { generatePickingFromSp, generateDeliveryFromPicking, listSpOrderStatuses } from './lib/db';
 import { useCustomers } from './hooks/useCustomers';
@@ -1825,7 +1826,7 @@ export default function StorbitManifest() {
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
-  const { role: authRole, erpRoles, profile, signOut, hasMenuPermission, permissionsLoading, isBnfAuthorized, bnfAuthLoading } = useAuth();
+  const { role: authRole, erpRoles: authErpRoles, profile, signOut, hasMenuPermission, permissionsLoading, isBnfAuthorized, bnfAuthLoading } = useAuth();
   const role = authRole || 'management';
 
   // canRenderPage — centralized route-guard (defense-in-depth). Reuses the same
@@ -1885,6 +1886,17 @@ export default function StorbitManifest() {
   // (hrga_request_approvals is an audit trail; pending is derived from
   //  hrga_requests.current_level × hrga_approval_configs role mapping.)
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const { approverKeys, approverScopeLoading } = useMyApproverScope();
+  // Gate AR/TTF — CERMIN policy RLS ar_ttfs/ar_btbs (migrasi
+  // 20260821000005): super_admin OR ceo OR finance_controller OR finance.
+  // SENGAJA bukan can(role,'finance'): peta PERMISSIONS meloloskan admin & gm
+  // juga, dan sejak migrasi itu RLS menolak mereka — tombolnya harus ikut
+  // hilang, bukan menyisakan aksi yang pasti gagal di server.
+  // Dibaca dari erpRoles (SELURUH role aktif), bukan prop `role`, karena
+  // pickPrimaryErpRole menaruh finance_controller DI BAWAH manager.
+  const canManageTtf = (authErpRoles || [])
+    .map(r => r.roles?.code)
+    .some(c => ['super_admin', 'ceo', 'finance_controller', 'finance'].includes(c));
   // Kode entitas (MSI/JCI/SOA) untuk pesan tolak duplikat nama akun di
   // handleSaveCustomer. Pola sama dgn InquiryFormPage:286 — fetch sekali.
   const [entityCode, setEntityCode] = useState('');
@@ -1896,11 +1908,14 @@ export default function StorbitManifest() {
   // Skip redundant setState from the 60s polls (avoid root re-render / flicker).
   const pendingCountRef = useRef(null);
   const lastNotifJsonRef = useRef('');
-  const myRoleCodesKey = (erpRoles || []).map(r => r.roles?.code).filter(Boolean).sort().join(',');
+  // Scope approver kini datang dari useMyApproverScope — SATU sumber yang juga
+  // dipakai halaman Pending Approval (usePendingApprovals) dan gate tombol di
+  // HrgaDetailPage. Sebelumnya blok ini punya salinan logikanya sendiri,
+  // sementara halaman inbox tak memfilter sama sekali, sehingga badge dan
+  // halaman bisa menampilkan angka berbeda untuk user yang sama.
   useEffect(() => {
-    if (!profile?.id) return;
+    if (!profile?.id || approverScopeLoading) return undefined;
     let cancelled = false;
-    const myRoles = myRoleCodesKey ? myRoleCodesKey.split(',') : [];
     const isSuper = authRole === 'super_admin';
 
     // Only re-render when the count actually changes.
@@ -1909,26 +1924,16 @@ export default function StorbitManifest() {
       if (n !== pendingCountRef.current) { pendingCountRef.current = n; setPendingApprovalCount(n); }
     };
     const fetchPending = async () => {
-      if (!myRoles.length) { applyPending(0); return; }
+      if (approverKeys.size === 0) { applyPending(0); return; }
       try {
-        // Levels (per request type) this user is the approver for.
-        let cfgQ = supabase.from('hrga_approval_configs')
-          .select('request_type_id, level, approver_role').in('approver_role', myRoles);
-        if (!isSuper) cfgQ = cfgQ.eq('company_id', profile.company_id);
-        const { data: cfgs, error: cfgErr } = await cfgQ;
-        if (cfgErr) throw cfgErr;
-        if (!cfgs?.length) { applyPending(0); return; }
-        const approveSet = new Set(cfgs.map(c => `${c.request_type_id}|${c.level}`));
-
-        // In-progress requests awaiting approval (lightweight: ids only).
         let reqQ = supabase.from('hrga_requests')
           .select('request_type_id, current_level')
-          .in('status', ['submitted', 'in_progress']).is('deleted_at', null).limit(1000);
+          .in('status', HRGA_PENDING_STATUSES).is('deleted_at', null).limit(1000);
         if (!isSuper) reqQ = reqQ.eq('company_id', profile.company_id);
         const { data: reqs, error: reqErr } = await reqQ;
         if (reqErr) throw reqErr;
 
-        const n = (reqs || []).filter(r => approveSet.has(`${r.request_type_id}|${r.current_level}`)).length;
+        const n = (reqs || []).filter(r => approverKeys.has(approverKey(r.request_type_id, r.current_level))).length;
         applyPending(n);
       } catch (e) {
         console.debug('[pendingApproval] count failed:', e?.message || e);
@@ -1939,7 +1944,7 @@ export default function StorbitManifest() {
     fetchPending();
     const iv = setInterval(fetchPending, 60000);
     return () => { cancelled = true; clearInterval(iv); };
-  }, [profile?.id, profile?.company_id, authRole, myRoleCodesKey]);
+  }, [profile?.id, profile?.company_id, authRole, approverKeys, approverScopeLoading]);
 
   // Navigate to a specific menu item, auto-detecting which module group it belongs to.
   // This keeps activeModule in sync when navigating from topbar buttons / deep links.
@@ -3296,7 +3301,7 @@ export default function StorbitManifest() {
               search={arSearch} setSearch={setArSearch}
               onAdd={() => setShowAddAR(true)}
               onView={(ttf) => setViewingAR(ttf)}
-              role={role}
+              canManageTtf={canManageTtf}
             />
           )}
           {/* Legacy activeMenu ids — Fase 1 Tahap B pensiunkan AdminShell +
@@ -4030,7 +4035,7 @@ export default function StorbitManifest() {
           onClose={() => setViewingAR(null)}
           onEdit={() => { setEditingAR(viewingAR); setViewingAR(null); }}
           onDelete={() => handleDeleteAR(viewingAR.id)}
-          role={role}
+          canManageTtf={canManageTtf}
         />
       )}
       {(editingAR || showAddAR) && (
@@ -4878,7 +4883,7 @@ function CustomerModal({ initial, existingCustomers, dcList, onClose, onSave, co
 // ============================
 // AR Tracker Page
 // ============================
-function ARTrackerPage({ arData, customers, filterCustomer, setFilterCustomer, filterStatus, setFilterStatus, search, setSearch, onAdd, onView, role }) {
+function ARTrackerPage({ arData, customers, filterCustomer, setFilterCustomer, filterStatus, setFilterStatus, search, setSearch, onAdd, onView, canManageTtf }) {
   const enriched = arData.map(t => ({ ...t, ...calcAR(t) }));
 
   const filtered = enriched.filter(t => {
@@ -4928,7 +4933,7 @@ function ARTrackerPage({ arData, customers, filterCustomer, setFilterCustomer, f
           <h2 className="font-display text-3xl font-semibold tracking-tight">AR Tracker</h2>
           <p className="text-sm mt-1.5" style={{ color: PASTEL.inkSoft }}>{enriched.length} TTF · {filtered.length} after filter · monitoring outstanding receivables</p>
         </div>
-        {can(role, 'finance') && (
+        {canManageTtf && (
           <button onClick={onAdd} className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold" style={{ background: PASTEL.ink, color: PASTEL.cream }}>
             <Plus size={14}/> Add TTF
           </button>
@@ -5099,7 +5104,7 @@ function ARStatusBadge({ status, overdue }) {
 // ============================
 // AR Side Panel
 // ============================
-function ARSidePanel({ ttf, onClose, onEdit, onDelete, role }) {
+function ARSidePanel({ ttf, onClose, onEdit, onDelete, canManageTtf }) {
   const calc = calcAR(ttf);
 
   return (
@@ -5208,7 +5213,7 @@ function ARSidePanel({ ttf, onClose, onEdit, onDelete, role }) {
             </div>
           )}
 
-          {can(role, 'finance') && (
+          {canManageTtf && (
             <div className="flex items-center gap-2 pt-4 border-t" style={{ borderColor: PASTEL.line }}>
               <button onClick={onEdit} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
                 <Edit3 size={14} className="inline mr-2"/> Edit TTF
@@ -5230,7 +5235,7 @@ function ARSidePanel({ ttf, onClose, onEdit, onDelete, role }) {
 function ARModal({ initial, customers, onClose, onSave }) {
   const [data, setData] = useState(() => initial || {
     noTTF: '', tanggalTTF: '', tanggalMenerima: '',
-    noINV: '', noSP: '', customer: '',
+    noINV: '', noSP: '', customer: '', customerId: '',
     tglPembayaran: '', notes: '',
     btbs: [{ id: `tmp-${Date.now()}`, noBTB: '', dppPPN: 0, pph: 0, payment: 0 }]
   });
@@ -5263,7 +5268,7 @@ function ARModal({ initial, customers, onClose, onSave }) {
 
   const submit = () => {
     if (!data.noTTF.trim()) { alert('No. TTF wajib diisi'); return; }
-    if (!data.customer) { alert('Customer wajib dipilih'); return; }
+    if (!data.customerId) { alert('Customer wajib dipilih'); return; }
     // Validasi BTB di-skip saat terkunci — baris BTB tak bisa diisi dari sini,
     // jadi menegakkannya akan mengunci penyimpanan field header juga.
     if (!btbLocked && (data.btbs.length === 0 || data.btbs.every(b => !b.noBTB.trim()))) {
@@ -5287,11 +5292,18 @@ function ARModal({ initial, customers, onClose, onSave }) {
             <Input label="No. SP" value={data.noSP} onChange={v=>update('noSP', v)} placeholder="1881279"/>
             <div>
               <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Customer *</label>
-              <select value={data.customer} onChange={e => update('customer', e.target.value)}
+              <select value={data.customerId || ''} onChange={e => {
+                  // Simpan ID (dipakai ttfToDb -> ar_ttfs.customer_id, satu-satunya
+                  // jalur company_id untuk TTF non-invoice) DAN nama (dipakai
+                  // tampilan daftar AR). Sebelumnya dropdown ini hanya menyimpan
+                  // nama, sehingga customer_id SELALU null untuk TTF baru.
+                  const picked = activeCustomers.find(c => c.id === e.target.value);
+                  setData(d => ({ ...d, customerId: picked?.id || '', customer: picked?.name || '' }));
+                }}
                 className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
                 style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
                 <option value="">— Pilih customer —</option>
-                {activeCustomers.map(c => <option key={c.id} value={c.name}>{c.code} · {c.name}</option>)}
+                {activeCustomers.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
               </select>
             </div>
           </div>

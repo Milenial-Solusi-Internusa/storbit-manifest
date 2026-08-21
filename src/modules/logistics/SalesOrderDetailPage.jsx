@@ -893,6 +893,12 @@ export default function SalesOrderDetailPage({
     ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'].includes(c));
   const canRecordPayment = isFinanceCtl || isSuperAdmin;
   const canMarkTtf       = isManagerAbove || isFinanceCtl || isSuperAdmin;
+  // CERMIN guard server pada RPC gudang/SP (migrasi 20260821000003/4/6):
+  //   is_super_admin() OR (company ∈ get_user_company_ids()
+  //                        AND (is_manager_or_above() OR has_role('operations')))
+  // Sisi company sudah ditegakkan server; FE hanya mencerminkan sisi PERAN,
+  // supaya tombol tidak menawarkan aksi yang pasti ditolak RPC.
+  const canWarehouseOps = isSuperAdmin || isManagerAbove || roleCodes.includes('operations');
 
   const [payments,    setPayments]    = useState([]);
   const [ttf,         setTtf]         = useState(null);
@@ -974,7 +980,7 @@ export default function SalesOrderDetailPage({
   };
 
   const handleAddBtb = async () => {
-    if (!btbInput.trim()) return;
+    if (!btbInput.trim() || !canWarehouseOps) return;
     const cust = group?.customerId;
     if (!cust) { showToast?.('Customer SP tidak diketahui', 'error'); return; }
     setBtbSaving(true);
@@ -987,6 +993,7 @@ export default function SalesOrderDetailPage({
   };
 
   const handleDeleteBtb = async (id) => {
+    if (!canWarehouseOps) return;
     const { error } = await deleteSpBtbNew(id);
     if (error) { showToast?.('Gagal hapus BTB: ' + error.message, 'error'); return; }
     await refreshBtbAndStatus();
@@ -1224,7 +1231,8 @@ export default function SalesOrderDetailPage({
     return HEADLINE_META[spOrder?.status] || HEADLINE_META.DRAFT;
   })();
   // Aksi gudang (Generate Picking + indikator stok) hanya di tahap awal, belum picking.
-  const canGeneratePicking = spOrder?.status === 'CONFIRMED' || spOrder?.status === 'MENUNGGU_STOK';
+  const canGeneratePicking = canWarehouseOps
+    && (spOrder?.status === 'CONFIRMED' || spOrder?.status === 'MENUNGGU_STOK');
 
   if (!spNo) return null;
 
@@ -1343,12 +1351,16 @@ export default function SalesOrderDetailPage({
                 <ClipboardList size={14}/> {genBusy ? 'Membuat…' : 'Generate Picking List'}
               </button>
             )}
+            {/* Edit item SP — cermin guard RPC update_sp_item_dual
+                (migrasi 20260821000006). */}
+            {canWarehouseOps && (
             <button
               onClick={() => items[0] && setEditingItem(items[0])}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.ink, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: 'pointer', fontFamily: FONT_DISPLAY }}
             >
               <Pencil size={14}/> Edit
             </button>
+            )}
             {['super_admin', 'operations', 'manager', 'gm'].includes(role) && spOrder?.status === 'DRAFT' && (
               <button
                 onClick={() => setShowCancelSP(true)}
@@ -1777,6 +1789,7 @@ export default function SalesOrderDetailPage({
                         {b.remarks && (
                           <span style={{ fontSize: 12, color: C.inkFaint, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.remarks}</span>
                         )}
+                        {canWarehouseOps && (
                         <button
                           onClick={() => handleDeleteBtb(b.id)}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.danger, padding: 0, display: 'flex', alignItems: 'center', lineHeight: 1, flexShrink: 0 }}
@@ -1784,6 +1797,7 @@ export default function SalesOrderDetailPage({
                         >
                           <X size={13}/>
                         </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1791,7 +1805,14 @@ export default function SalesOrderDetailPage({
                 {btbs.length === 0 && (
                   <p style={{ fontSize: 13, color: C.inkFaint, marginBottom: 14 }}>Belum ada nomor BTB untuk SP ini.</p>
                 )}
-                {/* Add BTB input */}
+                {/* Add BTB input — hanya untuk manager-ke-atas / operations,
+                    cermin guard RPC sp_issue_btb (migrasi 20260821000003). */}
+                {!canWarehouseOps && (
+                  <p style={{ fontSize: 12, color: C.inkFaint }}>
+                    Penerbitan BTB dibatasi untuk Operations / Manager ke atas.
+                  </p>
+                )}
+                {canWarehouseOps && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
@@ -1817,6 +1838,7 @@ export default function SalesOrderDetailPage({
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             </div>
 
@@ -1863,6 +1885,7 @@ export default function SalesOrderDetailPage({
                             DIPERTAHANKAN — aksi nyata yang sudah ada; membuangnya
                             demi kemiripan = menghilangkan fungsi, bukan restyle. */}
                         <div style={{ ...cell, display: 'flex', gap: 4 }}>
+                          {canWarehouseOps && (
                           <button
                             onClick={() => setEditingItem(item)}
                             aria-label="Edit baris"
@@ -1871,6 +1894,7 @@ export default function SalesOrderDetailPage({
                           >
                             <Pencil size={14}/>
                           </button>
+                          )}
                           <button
                             onClick={() => handleDeleteItem(item.id)}
                             aria-label="Hapus baris"

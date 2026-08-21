@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import useMyApproverScope, { approverKey, HRGA_PENDING_STATUSES } from './useMyApproverScope';
 
 export const HRGA_PAGE_SIZE = 20;
 
@@ -375,6 +376,11 @@ export function useHrgaRequestDetail(requestId) {
           'id, document_no, subject, description, status, current_level, total_levels, ' +
           'amount, currency_code, requested_date, submitted_at, approved_at, ' +
           'rejected_at, completed_at, created_at, requester_id, ' +
+          // request_type_id + company_id WAJIB ada: dipakai query
+          // hrga_approval_configs di bawah (header.request_type_id /
+          // header.company_id) dan gate approver di HrgaDetailPage. Sebelumnya
+          // keduanya tak ikut di-select sehingga bernilai undefined.
+          'request_type_id, company_id, ' +
           'hrga_request_types(type_code, type_name, category_code, category_name, approval_levels)'
         )
         .eq('id', requestId)
@@ -574,7 +580,7 @@ export function useHrgaStats() {
       .then(({ data: rows }) => {
         if (cancelled || !rows) return;
         const total    = rows.length;
-        const pending  = rows.filter(r => r.status === 'submitted' || r.status === 'in_progress').length;
+        const pending  = rows.filter(r => HRGA_PENDING_STATUSES.includes(r.status)).length;
         const approved = rows.filter(r => r.status === 'approved' || r.status === 'completed').length;
         const rejected = rows.filter(r => r.status === 'rejected').length;
         setStats({ total, pending, approved, rejected });
@@ -591,7 +597,16 @@ export function useHrgaStats() {
 // ─────────────────────────────────────────────────────────────
 // usePendingApprovals
 // Paginated list of requests currently awaiting approval
-// (status = submitted or in_progress), scoped by company RLS.
+// (status = submitted / under_review) yang user ini MEMANG approver-nya.
+//
+// Filter scope dipakai dengan cara yang SAMA PERSIS dengan badge topbar
+// (App.jsx) — keduanya memakai useMyApproverScope, lalu mencocokkan pasangan
+// request_type_id|current_level. Sebelumnya halaman ini tak memfilter sama
+// sekali, sehingga hrga/it/finance/manager melihat SELURUH request perusahaan
+// dan angkanya berbeda dari badge.
+//
+// Pagination dipindah ke klien (tanpa .range) supaya angkanya identik badge:
+// filter level tak bisa diekspresikan sebagai satu predikat server.
 // Used by the Pending Approval page — approvers see requests
 // in their queue.
 // ─────────────────────────────────────────────────────────────
@@ -602,24 +617,33 @@ export function usePendingApprovals({ page = 1, search = '' } = {}) {
   const [error, setError]     = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const { approverKeys, approverScopeLoading } = useMyApproverScope();
+
   useEffect(() => {
+    if (approverScopeLoading) return undefined;
     let cancelled = false;
 
-    const from = (page - 1) * HRGA_PAGE_SIZE;
-    const to   = from + HRGA_PAGE_SIZE - 1;
+    const typeIds = [...new Set([...approverKeys].map((k) => k.split('|')[0]))];
+    // User bukan approver untuk tipe request mana pun — kosongkan tanpa query.
+    // Pola early-reset yang sama dipakai useMyApproverScope / AuthContext.
+    if (typeIds.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setData([]); setTotal(0); setError(null); setLoading(false);
+      return undefined;
+    }
 
     let query = supabase
       .from('hrga_requests')
       .select(
         'id, document_no, subject, status, current_level, total_levels, ' +
-        'amount, requested_date, submitted_at, requester_id, ' +
-        'hrga_request_types(type_code, type_name, category_code, category_name)',
-        { count: 'exact' }
+        'amount, requested_date, submitted_at, requester_id, request_type_id, ' +
+        'hrga_request_types(type_code, type_name, category_code, category_name)'
       )
       .is('deleted_at', null)
-      .in('status', ['submitted', 'in_progress'])
+      .in('status', HRGA_PENDING_STATUSES)
+      .in('request_type_id', typeIds)
       .order('requested_date', { ascending: true })
-      .range(from, to);
+      .limit(1000);
 
     if (search.trim()) {
       query = query.or(
@@ -627,12 +651,17 @@ export function usePendingApprovals({ page = 1, search = '' } = {}) {
       );
     }
 
-    query.then(({ data: rows, count, error: err }) => {
+    query.then(({ data: rows, error: err }) => {
       if (cancelled) return;
       if (err) { setError(err); setLoading(false); return; }
 
-      const list = rows || [];
-      setTotal(count ?? 0);
+      // Saringan level: satu tipe request bisa punya beberapa level, dan user
+      // belum tentu approver untuk semuanya.
+      const matched = (rows || []).filter((r) =>
+        approverKeys.has(approverKey(r.request_type_id, r.current_level)));
+      const from = (page - 1) * HRGA_PAGE_SIZE;
+      const list = matched.slice(from, from + HRGA_PAGE_SIZE);
+      setTotal(matched.length);
       if (list.length === 0) { setData([]); setError(null); setLoading(false); return; }
 
       const uniqueIds = [...new Set(list.map(r => r.requester_id).filter(Boolean))];
@@ -647,7 +676,7 @@ export function usePendingApprovals({ page = 1, search = '' } = {}) {
     });
 
     return () => { cancelled = true; };
-  }, [page, search, refreshKey]);
+  }, [page, search, refreshKey, approverKeys, approverScopeLoading]);
 
   const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
   return { data, total, loading, error, refresh };
@@ -658,58 +687,20 @@ export function usePendingApprovals({ page = 1, search = '' } = {}) {
 // Inserts an approval record and updates the request status.
 // action: 'approved' | 'rejected'
 // ─────────────────────────────────────────────────────────────
-export async function submitApproval({ requestId, action, comment, profile }) {
-  if (!requestId || !profile?.id) return { error: { message: 'Parameter tidak valid.' } };
-
-  // Fetch current request state
-  const { data: req, error: reqErr } = await supabase
-    .from('hrga_requests')
-    .select('id, status, current_level, total_levels, company_id, request_type_id')
-    .eq('id', requestId)
-    .single();
-
-  if (reqErr) return { error: reqErr };
-  if (!['submitted','in_progress'].includes(req.status)) {
-    return { error: { message: 'Request sudah tidak bisa di-approve/reject.' } };
-  }
-
-  // Insert approval record
-  const { error: approvalErr } = await supabase
-    .from('hrga_request_approvals')
-    .insert({
-      request_id:    requestId,
-      level:         req.current_level,
-      approver_id:   profile.id,
-      approver_role: null, // role enriched by trigger if needed
-      action,
-      comment:       comment || null,
-      actioned_at:   new Date().toISOString(),
-    });
-
-  if (approvalErr) return { error: approvalErr };
-
-  // Determine new status
-  let newStatus;
-  if (action === 'rejected') {
-    newStatus = 'rejected';
-  } else if (req.current_level >= req.total_levels) {
-    newStatus = 'approved';
-  } else {
-    newStatus = 'in_progress';
-  }
-
-  const updatePayload = {
-    status:     newStatus,
-    updated_by: profile.id,
-    ...(newStatus === 'approved' ? { approved_at: new Date().toISOString() } : {}),
-    ...(newStatus === 'rejected' ? { rejected_at: new Date().toISOString() } : {}),
-    ...(newStatus === 'in_progress' ? { current_level: req.current_level + 1 } : {}),
-  };
-
-  const { error: updateErr } = await supabase
-    .from('hrga_requests')
-    .update(updatePayload)
-    .eq('id', requestId);
-
-  return { error: updateErr || null };
+export async function submitApproval({ requestId, action, comment }) {
+  if (!requestId) return { error: { message: 'Parameter tidak valid.' } };
+  // Seluruh alur (validasi approver, insert audit trail, transisi status)
+  // pindah ke RPC hrga_submit_approval — SECURITY DEFINER dengan guard
+  // approver di server. FE tak lagi menulis hrga_request_approvals /
+  // hrga_requests secara langsung; RLS hrga_requests pun sudah dipersempit
+  // ke "requester membatalkan pengajuannya sendiri" saja.
+  //
+  // p_action sengaja 'approve'/'reject' (bukan 'approved'/'rejected') — RPC
+  // yang memetakannya ke nilai CHECK constraint saat INSERT.
+  const { error } = await supabase.rpc('hrga_submit_approval', {
+    p_request_id: requestId,
+    p_action:     action === 'rejected' || action === 'reject' ? 'reject' : 'approve',
+    p_comment:    comment || null,
+  });
+  return { error: error || null };
 }
