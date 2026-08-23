@@ -31,6 +31,133 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-08-21
+
+### Storbit — partial picking dibuka (1 fungsi DB + 2 file FE)
+
+**Ringkas.** Picking list Storbit selama ini **all-or-nothing**: `generate_picking_from_sp` mengambil SELURUH outstanding dan guard idempotensinya (`status <> 'cancelled'`) mengunci **satu picking per SP secara PERMANEN**; di UI tombol "Selesaikan Picking" hanya muncul kalau semua item ter-toggle penuh. Kolom `picking_list_items.qty_picked`/`qty_short` dan nilai enum `'short'` **sudah ada di DB sejak lahir tapi nol pemakai**. Sesi ini membukanya jadi partial. Tiga file: `supabase/migrations/20260821000001_partial-picking-guard.sql` (BARU), `src/lib/db.js`, `src/modules/logistics/PickingListDetailPage.jsx`.
+
+⚠️ **STATUS SQL: BELUM DIJALANKAN.** File migrasinya ditulis **SEBELUM** eksekusi (disiplin yang benar — kebalikan pola retroaktif `20260817000001`), jadi hari ini `schema_snapshot.sql` **akurat** dan memuat guard LAMA. Sampai Den menjalankannya, perilaku produksi masih yang lama.
+
+**1. Guard idempotensi `generate_picking_from_sp` — 1 blok jadi 2.**
+
+Body fungsinya diambil **terprogram** dari `schema_snapshot.sql` (bukan diketik ulang). Diverifikasi doc-keeper via `diff` terhadap `:701-753`: satu-satunya perbedaan adalah blok guard + header `CREATE FUNCTION` → `CREATE OR REPLACE FUNCTION`. Sisanya **byte-identik** (numbering, CTE `src`/`av`/`ins_items`, insert `stock_ledger` `'reserved'`, `PERFORM sp_recompute_status`).
+
+- **(1)** picking `status IN ('pending','in_progress')` tetap memblokir — pesan error dipertahankan **VERBATIM** (`'Picking list untuk SP % sudah ada'`).
+- **(2)** picking `status = 'done'` memblokir **hanya selama** `NOT EXISTS (delivery_notes dn WHERE dn.picking_list_id = pl.id AND dn.dispatched_at IS NOT NULL)` — pesan error baru.
+
+**Kenapa `dispatched_at IS NOT NULL`, BUKAN `status IN ('in_transit','delivered')` — keputusan desain, alasannya yang penting.** Yang dijaga guard ini adalah **dobel-reservasi stok**. Reservasi picking hanya dilepas di dua tempat, keduanya satu arah: `cancel_picking` dan `dispatch_delivery`. Titik kritisnya kasus **SJ berangkat lalu dibatalkan**: `cancel_delivery` membalik `shipped_qty` + mengembalikan stok (`inbound`) tapi **tidak pernah me-reserve ulang** picking-nya, dan **tidak me-reset `dispatched_at`**. Dengan versi status, SP yang SJ-nya dibatalkan setelah berangkat akan **terkunci permanen** padahal stoknya sudah bebas dan outstanding sudah kembali penuh — generate picking baru justru tindakan yang benar. Guard ini menanyakan **"PERNAH berangkat"**, bukan "sedang berangkat".
+
+Ini **bukan konvensi baru**: `get_storbit_dashboard_stats` sudah memakai `dn.dispatched_at IS NOT NULL` untuk pertanyaan sejenis (`pernah_risiko_pinalti`), sementara `sp_recompute_status` memang benar memakai status karena ia menjawab "apakah SP ini SEKARANG terkirim". Dicatat permanen sbg **`03_DATA_MODEL.md` gotcha #17** supaya tak "diseragamkan" orang lain kemudian.
+
+**Verifikasi doc-keeper (grep langsung, bukan relay):** `dispatched_at` muncul **7×** di `schema_snapshot.sql` — **1 penulis** (`dispatch_delivery`, `:573`), **5 pembaca** di RPC dashboard (`:823`/`:825`/`:832`/`:943`/`:945`), 1 definisi kolom (`:5025`); **nol tempat me-reset**, dan **nol penulis di `src/`**. Klaim "satu arah" terbukti.
+
+**2. `db.js` — `setPickingItemPicked` ganti kontrak + helper baru `derivePickingItemStatus`.**
+
+Signature `(itemId, picked: boolean, qtyRequested)` → `(itemId, qtyPicked: number, qtyRequested)`. Status **selalu diturunkan dari angkanya**, tak pernah dikirim terpisah, supaya qty dan status **mustahil melenceng**: `0` → `pending` · `0 < n < requested` → `short` · `n = requested` → `picked`. qty di-clamp `0..qtyRequested` + `Math.floor`; input non-numerik → 0.
+
+**Ini penulis pertama nilai enum `'short'`** di `picking_list_items_status_check` (`schema_snapshot.sql:5965`) yang sejak lahir nol pemakai — diverifikasi: grep `'short'` di `src/` sebelum sesi ini nol hit fungsional (sisanya format tanggal `month: 'short'`), dan nol tempat di schema yang menulisnya.
+
+**3. `PickingListDetailPage.jsx` — toggle jadi input qty.**
+
+- Kolom toggle (`CheckCircle2`/`Circle`) **dihapus**; "Qty Diambil" jadi `<input type="number" min=0 max=qty_requested>`. Tabel item **7 kolom → 6** (`colSpan` empty-state ikut 7→6). Commit ke server **onBlur** (+ Enter memicu blur), **bukan tiap keystroke**. Draft ketikan disimpan di state `qtyDraft` per item id lalu dihapus saat commit, sehingga selalu jatuh balik ke nilai server — tak ada draft basi setelah `load()`.
+- **Pola tulis dipertahankan persis** seperti `togglePicked` lama: await dulu → error = toast + return → sukses = perbarui state lokal tanpa refetch.
+- **Prefill (keputusan Den, "Opsi B"):** saat "Mulai Pengambilan" diklik, seluruh item ber-`qty_picked=0` diisi otomatis **`qty_requested − qty_short`** lewat `Promise.all`. Ditulis di `handleStart` — **aksi user eksplisit** — SENGAJA bukan di `useEffect` on-mount (menghindari tulis data tanpa aksi user + larangan setState-in-effect `AGENTS.md` §"Task Type: UI / Frontend Change" — *"Do not add `useEffect` that calls `setState` directly inside it unnecessarily"*). Gagal sebagian → toast menyebut jumlahnya dan menyuruh isi manual.
+- **Badge status per item baru** (`ITEM_STATUS_MAP` + `ItemStatusBadge`, menyalin bentuk `STATUS_MAP`/`StatusBadge` yang sudah ada, token warna `C.*` yang sudah ada — nol warna baru, nol emoji): `pending` → "Belum Diambil" (slate) · `short` → "Sebagian" (amber) · `picked` → "Lengkap" (green). **Namespace sengaja dipisah** dari `STATUS_MAP` milik `picking_lists.status`, supaya `'short'` tak tertukar label dengan `'in_progress'`.
+- **Tombol "Selesaikan Picking" tidak lagi bersyarat.** Cabang `!allPicked` (tombol disabled "Centang semua item untuk selesai") dihapus; variabel `allPicked` ikut hilang. Klik → kalau ada item `pending`/`short`, buka `ConfirmModal` kedua (`variant="warning"`, komponen yang **sudah** dipakai di file ini untuk Batalkan) yang menyebut jumlah masing-masing; kalau semua `picked`, langsung proses (**perilaku lama utuh**). **[ditambahkan kemudian, hari yang sama — Task 5]** cabangnya kini **TIGA**: kalau **seluruh** baris masih 0 (`allItemsZero`), klik ditolak lebih dulu dengan toast dan tak pernah sampai ke dialog maupun `complete_picking` — lihat koreksi di bawah. Tombolnya sendiri **tetap tak bersyarat** (selalu aktif selama `in_progress`); yang menolak adalah handler-nya, bukan gating tombol.
+- **DUA konsep "kurang" sengaja dipisah + diberi komentar** supaya tak tertukar: `shortCount` lama = **stok gudang tak cukup saat picking dibuat** (`qty_short`, dihitung server, dipakai chip "N item stok kurang" + badge "Kurang N") vs `shortPickedCount` baru = **hasil pengambilan nyata** (`status='short'`).
+- `items` dibungkus `useMemo` (satu baris) karena `handleStart` kini menutup atasnya untuk prefill — tanpa itu lint `react-hooks/exhaustive-deps` naik +1 warning.
+
+**4. Yang TIDAK berubah (penting supaya tidak salah dicatat).**
+
+`complete_picking` (memang sejak awal **nol pemeriksaan qty** — hanya cek status, `:304`) · `generate_delivery_from_picking` (sejak awal sudah memakai `qty_picked` sbg qty SJ dan hanya butuh ≥1 baris ber-qty>0, `:670`/`:671`/`:688-690` — **rantai SJ memang sudah partial-capable sebelum sesi ini**) · `dispatch_delivery`/`cancel_delivery` · `cancel_picking` · seluruh RLS/GRANT · skema tabel. **Nol perubahan struktur DB** — hanya body 1 fungsi, dan itu pun belum dijalankan.
+
+**Konsekuensi yang DISENGAJA, dicatat atas permintaan eksplisit Den → `08_TECH_DEBT.md` TD-206 (MEDIUM, baru).** Picking `done` yang SJ-nya tak pernah dibuat jadi **jalan buntu**: guard baru memblokir picking berikutnya sampai SJ dibuat DAN diberangkatkan, sementara `cancel_picking` menolak status `done` (`:232`) → tak ada jalan keluar lewat UI. **Bukan bug** — memblokir memang benar karena reservasi stoknya nyata masih tertahan. Keputusan escape hatch masih terbuka (`09_ROADMAP.md` §Keputusan Terbuka #31).
+
+⚠️ **Tambahan doc-keeper atas laporan sesi (temuan dari pembacaan kode, REACHABLE bukan teoretis):** sub-kasus paling keras TD-206 adalah picking yang selesai dengan **SELURUH item `qty_picked=0`** — di situ SJ-nya **bahkan tak bisa dibuat** (`generate_delivery_from_picking` menolak `'Tak ada item ter-pick untuk dikirim'`, `:671`), jadi buntunya total. Jalurnya nyata: SP yang stoknya nol tetap boleh generate picking (`generate_picking_from_sp` tak pernah mensyaratkan stok tersedia, `qty_short` terisi penuh) → prefill menghasilkan 0 untuk semua baris → "Selesaikan Picking" yang kini tak bersyarat melepasnya ke `done`.
+
+✅ **KOREKSI atas paragraf di atas (Task 5, dikerjakan hari yang sama setelah laporan ini ditulis — FE-only, 1 file, nol sentuhan DB):** langkah terakhir rantai itu **sudah tidak mungkin lagi untuk data baru**. `PickingListDetailPage.jsx` kini menolak "Selesaikan Picking" selama seluruh baris masih 0 — turunan `allItemsZero` (`:167`) dibaca `handleCompleteClick` (`:248-255`), yang memunculkan toast `'Semua item masih 0, picking ini tidak bisa diselesaikan. Batalkan picking ini kalau stok memang tidak tersedia.'` lalu `return`; dialog konfirmasi tak dibuka dan `complete_picking` tak dipanggil. Toast-nya sengaja **mengarahkan ke tombol "Batalkan Picking List"**, dan itu memang jalan keluar yang sah: `cancel_picking` menerima `pending`/`in_progress`, melepas reservasi, menyetel `had_cancelled_picking` — dan picking ber-status `cancelled` tak diblokir guard mana pun (blok (2) baru hanya memeriksa `status = 'done'`; guard LAMA pun mengecualikan `cancelled`). ⚠️ **Yang TIDAK berubah, jangan salah baca:** ini **mencegah kasus baru saja** — baris `done` nol-pick yang sudah terlanjur ada di DB tetap butuh **SQL manual**, dan kasus umum TD-206 (picking `done` ber-item ter-pick >0 yang SJ-nya tak pernah dibuat) **tak tersentuh sama sekali**. **TD-206 tetap OPEN**; opsi "longgarkan `cancel_picking`" sengaja **di-skip untuk sekarang** dan **belum gugur**. Prefill 0 untuk SP berstok nol **dikonfirmasi Den sebagai perilaku yang BENAR**, bukan defect — yang ditutup adalah konsekuensi hilirnya, bukan prefill-nya. Verifikasi Task 5 (angka dari Den, di-relay): `npm run build` clean **2616 modules, 1.67s** — **delta 0**; `npm run lint` **170 (148 errors, 22 warnings)** — **delta 0**; `npx eslint` terisolasi 2 file → **0 finding**. **NOL tes runtime** (sesi itu pun tanpa kredensial).
+
+**Verifikasi (dijalankan doc-keeper sendiri, bukan relay).** `npm run build` **clean, 2616 modules**. `npm run lint` **170 problems (148 errors, 22 warnings)** = **net-zero** terhadap baseline sesi 20 Agu (170/148/22). `npx eslint` terisolasi ke `src/lib/db.js` + `src/modules/logistics/PickingListDetailPage.jsx` → **0 finding**. Isi migrasi diverifikasi byte-per-byte terhadap snapshot via `diff` (lihat poin 1).
+
+⚠️ **NOL tes runtime/browser** — sesi ini tak punya kredensial login. **Checklist tes manual yang paling perlu dicoba Den** — ⚠️ **tidak semuanya menunggu SQL dijalankan; baca catatan "URUTAN UJI" di bawah daftar SEBELUM mulai:**
+1. Picking normal (semua item penuh) → "Selesaikan Picking" **tanpa** dialog → perilaku lama tak berubah.
+2. Picking parsial → dialog konfirmasi menyebut jumlah pending/sebagian yang benar → SJ hanya membawa item ber-qty>0 → dispatch → SP mendarat di **DIKIRIM** (bukan TERKIRIM_PENUH).
+3. **Generate picking KEDUA setelah SJ pertama diberangkatkan** → harus LOLOS, `qty_requested`-nya = sisa outstanding (bukan qty penuh).
+4. Generate picking kedua **sebelum** SJ diberangkatkan → harus DITOLAK dgn pesan baru.
+5. Prefill "Mulai Pengambilan" pada SP ber-`qty_short` > 0 → angka terisi `qty_requested − qty_short`, bukan penuh.
+6. Input qty di luar rentang (negatif, > requested, huruf) → ter-clamp, tak ada baris rusak.
+7. **⚠️ `cancel_delivery` LALU regenerate — skenario yang jadi ALASAN memilih `dispatched_at`, dan BELUM PERNAH dijalankan siapa pun.** *(Ditulis eksplisit atas permintaan Den — sengaja TIDAK dianggap sudah tersirat dari poin 3/4.)* Rantainya: picking selesai → Surat Jalan dibuat → **diberangkatkan** (`dispatched_at` terisi) → **SJ dibatalkan** lewat `cancel_delivery` → verifikasi `shipped_qty` **kembali turun** dan stok **kembali masuk** → lalu **generate picking BARU untuk SP itu harus BERHASIL**. Kenapa harus berhasil: guard blok (2) membaca **`dispatched_at IS NOT NULL`** — kolom yang `cancel_delivery` **tidak pernah reset** — bukan `status`. Kalau versi `status` yang dipakai, SP ini justru **terkunci permanen** padahal stoknya sudah bebas dan outstanding sudah kembali penuh. Inilah satu-satunya poin yang menguji keputusan desain gotcha #17 secara langsung.
+8. **Task 5 — SP berstok nol, rantai penuh (satu skenario, jangan dipotong di tengah).** Generate picking untuk SP yang **stoknya nol** → **"Mulai Pengambilan"** → seluruh baris ter-prefill **0** dan badge tiap item **"Belum Diambil"** (ini BENAR, bukan bug — `qty_requested − qty_short` = 0) → klik **"Selesaikan Picking"** → harus **DITOLAK** dgn toast `'Semua item masih 0, picking ini tidak bisa diselesaikan. Batalkan picking ini kalau stok memang tidak tersedia.'`; **dialog konfirmasi TIDAK muncul** dan status **TIDAK** jadi `done` → klik **"Batalkan Picking List"** → picking jadi `cancelled` + reservasi dilepas → **generate picking baru untuk SP yang sama BERHASIL** (guard blok (2) hanya memeriksa picking ber-status `done`, jadi yang `cancelled` tak menghalangi).
+
+⚠️ **URUTAN UJI — baca ini SEBELUM mulai, supaya tidak menguji dalam urutan yang salah.** Migrasi `20260821000001_partial-picking-guard.sql` **masih belum dijalankan**, jadi poin di atas terbagi dua:
+- **Baru bisa diuji SETELAH migrasi dijalankan: poin 3, 4, dan 7.** Ketiganya menguji guard BARU. Dengan guard LAMA (`status <> 'cancelled'`, yang masih terpasang hari ini) poin 3 dan 7 akan **GAGAL dan itu bukan bug** — picking pertama ber-status `done` memblokir apa pun; poin 4 akan tertolak juga tapi dengan **pesan LAMA**, bukan pesan baru yang mau diverifikasi.
+- **Sudah bisa diuji SEKARANG, tanpa menunggu migrasi: poin 1, 2, 5, 6, dan 8.** Semuanya murni FE atau memakai fungsi DB yang tak diubah. Khusus **poin 8**, langkah terakhirnya (regenerate setelah `cancel_picking`) lolos di **kedua** versi guard — guard lama pun mengecualikan `cancelled` — jadi hasilnya sah dibaca kapan pun.
+- ⚠️ **Jebakan urutan:** menjalankan poin 2 lebih dulu (picking parsial → selesai) akan meninggalkan picking ber-status `done` pada SP uji itu, sehingga SP tersebut **tak bisa lagi dipakai** untuk poin 3/7 sampai SJ-nya benar-benar diberangkatkan. Siapkan SP uji terpisah, atau kerjakan berurutan 1 → 2 → 3 → 7 pada SP yang sama secara sadar.
+
+**Langkah manual yang masih menggantung:** jalankan `supabase/migrations/20260821000001_partial-picking-guard.sql` → koreksi header filenya dari `⚠️ BELUM DIJALANKAN` jadi `Status: LIVE` (preseden 18 Agu 2026) → **refresh `schema_snapshot.sql` via `pg_dump`**.
+
+## 2026-08-20
+
+### Penghapusan fisik sistem permission mati + fix bug sinyal `permsLoaded` (FE-only, 2 file)
+
+**Ringkas.** Empat task dalam satu sesi, **FE-only, NOL perubahan DB/RLS/migration**. Dua file: `src/contexts/AuthContext.jsx` (429→391 baris) dan `src/App.jsx` (5407→5421 baris) — **+61/−85 kumulatif**. Satu di antaranya adalah **perbaikan bug nyata**, bukan cleanup.
+
+**1. Sistem permission mati DIHAPUS — bukan lagi "pensiun tapi vestigial".**
+
+Sejak 7 Agu 2026 sistem `hasPermission()`/`role_permissions` dinyatakan "pensiun dari kode", tapi strukturnya **sengaja dibiarkan** (`08_TECH_DEBT.md` TD-06 waktu itu menulis "BUKAN dihapus total", dan `04_ROLE_PERMISSION_MATRIX.md` §5 menulis "struktur JS dibiarkan ada (vestigial)"). Kalimat-kalimat itu **tidak berlaku lagi**.
+
+Dihapus dari `AuthContext.jsx`: state `userPermissions`/`setUserPermissions` · `fetchPermissionsForRoleId` (**satu-satunya pembaca tabel `role_permissions` di jalur auth**) · `refreshPermissions` · `hasPermission(module, action)` · `isCrossEntity(module)` · 4 entri di objek `value` yang di-export.
+
+Dihapus dari `App.jsx`: parameter `hasPermission` dari **5 fungsi** — `canSeeMenuItem`, `navChildGate`, `navModuleVisible`, `isMenuAccessible`, dan props `NexusSidebar` — berikut **23 call site** + dep array; **2 prop JSX** `hasPermission={hasPermission}` (sidebar desktop + drawer mobile); serta `hasPermission`/`isCrossEntity`/`userPermissions`/`menuPermissions` dari destructure `useAuth()`. Tanda tangan kelima fungsi kini seragam `(item, role, hasMenuPermission, isBnfAuthorized)`.
+
+**Verifikasi grep `src/` (dijalankan doc-keeper sendiri, bukan relay):** `isCrossEntity` = 0 hit · `refreshPermissions` = 0 hit · `fetchPermissionsForRoleId` = 0 hit · `hasPermission` di luar `hasMenuPermission` = **1 hit**, komentar historis di file ORPHAN `AdminShell.jsx:129` · `userPermissions` = **2 hit**, dua baris komentar penjelas baru di `App.jsx:2151-2153`. **Nol hit fungsional.** Keduanya sengaja tidak disentuh.
+
+⚠️ **Jangan dibaca sebagai "permission FE sudah beres."** Sistem KETIGA `can()`/`PERMISSIONS` (`App.jsx`) masih hidup dan menggerbang 10 titik Finance/Master Customer — `08_TECH_DEBT.md` **TD-182**, tak tersentuh sesi ini. Yang berubah hari ini: klaim "satu axis FE untuk menu-gating" kini benar secara **struktural**, bukan cuma perilaku.
+
+**2. Fix bug sinyal `permsLoaded` — INI PERBAIKAN BUG, bukan cleanup.**
+
+Dua efek di `App.jsx` memakai ekspresi lokal:
+
+    permsLoaded = role === 'super_admin' || userPermissions.length > 0 || menuPermissions.length > 0
+
+Ekspresi ini **tidak pernah bernilai true** untuk user yang aksesnya bersumber **murni dari `role_menu_permissions`** (tier 3 `hasMenuPermission`): `userPermissions` sudah mati, dan `menuPermissions` **hanya memuat override per-user** (`user_menu_permissions`) — sedangkan akses tier-3 datang dari array ketiga yang tak pernah ikut diperiksa. Akibatnya dua guard mati total untuk kelompok user itu:
+
+- **Efek "FIX B"** (validasi `activeMenu` hasil restore dari `localStorage`) → redirect guard tak pernah jalan.
+- **Efek adopsi deep-link `?menu=`** → `urlMenuReady` tak pernah true, sehingga deep-link tak diadopsi **DAN** efek penulis URL (mirror `activeMenu` → URL) ikut mati.
+
+Keduanya diganti `if (permissionsLoading || bnfAuthLoading) return;` — sinyal yang memang **sudah dipakai benar** oleh `canAccessActiveMenu` di file yang sama (`App.jsx:3066`).
+
+Dua catatan teknis yang layak diingat:
+- **Dep array baru bersandar pada identitas `hasMenuPermission`** (`useCallback` ber-dep `[menuPermissions, roleMenuPermissions, erpRoleCode]`). Ini **justru lebih benar dari sebelumnya** — dep array lama tak pernah menangkap perubahan `roleMenuPermissions` sama sekali.
+- **`bnfAuthLoading` sengaja DITAMBAHKAN ke titik kedua** (dulu tak ada di situ). `canRenderPage('bnf'/'meeting-mingguan')` resolve lewat `isBnfAuthorized`; berjalan sebelum RPC `is_bnf_authorized()` settle berarti **menolak deep-link `?menu=bnf` yang sah, lalu mengunci penolakan itu permanen** via `setUrlMenuReady(true)` di baris berikutnya.
+
+⚠️ **Ini prasyarat sebelum Fase B3 (seeding `role_menu_permissions`).** Tanpa fix ini, seeding B3 justru akan **mematahkan** URL-sync & redirect guard — makin banyak user mendapat akses lewat role default, makin banyak yang kena. Dicatat juga di `09_ROADMAP.md` item 4a.
+
+**3. Dua array `role:[]` mati dihapus (`picking` + `surat-jalan`).**
+
+Properti `role: ['super_admin','admin','ceo','gm','manager','operations']` dihapus dari kedua item menu. Keduanya **ada di `MENU_KEY_MAP`** (`logistics_picking`/`logistics_surat_jalan`), dan `canSeeMenuItem` memeriksa `MENU_KEY_MAP` **lebih dulu lalu langsung `return`** — jadi `item.role` di kedua item ini tak pernah tercapai. Pola identik dengan kasus `admin-settings` yang sudah terdokumentasi di `App.jsx:1857-1871`.
+
+Ini **sisa kerja 9 Agu 2026** ("Picking List & Surat Jalan masuk sistem `hasMenuPermission`, lepas dari `role[]` hardcode") — array lamanya waktu itu tidak ikut dihapus. **NOL perubahan perilaku user-facing.** Diganti komentar peringatan agar array itu tidak dikembalikan orang lain.
+
+Diverifikasi doc-keeper: dari **18** item ber-`role:[]` sebelum perubahan, **hanya 2 ini** yang tumpang tindih `MENU_KEY_MAP`; 16 sisanya bersih dan tidak disentuh.
+
+**4. Tiga komentar salah di `AuthContext.jsx` dikoreksi (murni teks, nol logic).**
+- Komentar `pickPrimaryErpRole` yang menyebut filter company sebagai "a no-op" → dikoreksi jadi **LOAD-BEARING, jangan disederhanakan**. Alasannya: user genuinely multi-company nyata ada, dan `CompanySwitcher.jsx` mengganti `activeCompanyId` saat runtime — user yang sama bisa resolve ke primary role berbeda per active company.
+- Komentar state `activeCompanyIdOverride` "Not set by any UI yet" → dikoreksi; di-set `CompanySwitcher.jsx:77` (TD-92 sudah RESOLVED sejak 9 Agu 2026).
+- Komentar di objek `value` "future multi-entity switcher … not called by any UI yet" → dikoreksi.
+
+**Verifikasi (dijalankan doc-keeper sendiri).** `npm run build` **clean, 2616 modules**. `npm run lint` **170 problems (148 errors, 22 warnings)** — **NET-NEGATIF −1 error** terhadap baseline 171/149/22, bukan sekadar net-zero. Error yang hilang diidentifikasi presisi lewat perbandingan `git stash` oleh sesi eksekusi: `App.jsx:1822:70 'isCrossEntity' is assigned a value but never used (no-unused-vars)` — pre-existing, hilang karena destructure-nya ikut dihapus.
+
+⚠️ **NOL tes runtime/browser** — sesi ini tak punya kredensial login. Yang paling perlu dicoba manual: **jalur deep-link `?menu=` dan restore `nexus_last_menu` untuk user non-super_admin yang aksesnya datang dari role default**, karena persis kelompok itulah yang guard-nya baru dihidupkan.
+
+**Temuan sampingan — dilaporkan, TIDAK disentuh** (semua jadi/ikut tech debt):
+1. **`RolesPage.jsx` masih MENULIS ke `role_permissions`** (`:135` select, `:201` delete, `:208` insert, `:231` update) padahal file itu **ORPHAN** — nol `import`/`lazy()` dari `AdminHub.jsx` maupun `App.jsx` (diverifikasi grep; `RoleDefaultsPage.jsx:36-38` bahkan sudah menyebutnya *"retired page, kept only as legacy reference"*). Setelah sesi ini ia jadi **editor untuk tabel yang nol pembaca**. → **TD-204** (MEDIUM, baru), kerabat TD-181/TD-41.
+2. **`AdminShell.jsx:129`** menyebut `hasPermission` di komentar historis — file orphan, sengaja tidak disentuh. → dicatat sebagai poin (c) di **TD-181**.
+3. **`roleMenuPermissions` di-export dari `value` AuthContext tanpa konsumen di luar AuthContext.** → **TD-205** (LOW, baru). ⚠️ **Koreksi doc-keeper atas laporan sesi:** `menuPermissions` (baris bersebelahan, `:377`) **ikut kehilangan konsumen terakhirnya pada sesi yang sama** — ia dicabut dari destructure `useAuth()` bersama yang lain, jadi keduanya kini senasib, bukan hanya `roleMenuPermissions`.
+
+**Catatan tambahan doc-keeper (bukan bagian dari 4 task, tidak diperbaiki).** `navHasGate` (`App.jsx:1445`) masih memeriksa `item.module` sebagai salah satu penanda "item ini ber-gate", padahal **nol item menu yang punya properti `module:`** (`grep "module: '" src/App.jsx` = 0 hit). Selalu falsy, inert. Komentar di `App.jsx:1866` juga masih merujuk cabang `item.module` di dalam `canSeeMenuItem` yang sudah dihapus 7 Agu 2026, dengan nomor baris lama (`:1265`/`:1268`) yang sudah bergeser. Keduanya kosmetik.
+
 ## 2026-08-18
 
 ### Dashboard Storbit — Shipping Manifest + Warehouse (2 kolom baru + 3 RPC) + 2 bug fix incidental halaman Produk
