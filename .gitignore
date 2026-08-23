@@ -45,3 +45,7 @@ backup_full_*.sql
 
 # Supabase CLI local artifacts
 supabase/.temp/
+
+# File kerja sementara setup staging, bukan bagian migration resmi
+master_data_seed.sql
+branches_seed.csv
