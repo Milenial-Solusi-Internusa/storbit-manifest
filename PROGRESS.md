@@ -31,13 +31,77 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-08-24
+
+### CRM — tiga query lepas dari filter `roles.company_id` yang mati sejak globalisasi roles (FE-only, 3 file)
+
+**Ringkas.** Migrasi `20260821000003_globalize_roles.sql` (dijalankan manual 21 Agu 2026) meng-globalkan **14 kode role**: baris survivor di-set `roles.company_id = NULL` (`:87`), duplikat per-company **di-soft-delete** (`:84`), dan `user_roles.role_id` **di-repoint ke survivor** (`:49`). Tiga query di modul CRM masih memfilter `roles.company_id = <uuid>` di **LANGKAH 1** (cari role id) — sejak 21 Agu ketiganya selalu mengembalikan **nol baris** lalu `return` diam-diam: nol error, nol toast, nol `console.error`. **Gagal senyap total.** Sesi ini mencabut filter itu. Tiga file, **3 baris fungsional + 1 blok komentar**, **NOL perubahan DB/RLS/migration/`schema_snapshot.sql`** — task ini memang tak butuh sentuhan DB.
+
+**Bukti dari data live** (dibaca dari `master_data_seed.sql`, blok `COPY public.roles`): kode `sales` punya **3 baris** — 1 hidup ber-`company_id=NULL`, 2 soft-deleted (JCI `42569e7c…`, SOA `d2e5e565…`); `gm_bd` dan `manager` masing-masing **1 baris hidup** ber-`company_id=NULL`. ⚠️ Kode **`supervisor` TIDAK PUNYA BARIS SAMA SEKALI** di tabel `roles` (0 baris, sebelum maupun sesudah migrasi) — **kondisi pre-existing, bukan akibat migrasi**, tapi artinya dua daftar yang menyebutnya (`fetchAssignees`, `notifyManagers`) memang tak pernah bisa me-resolve kode itu.
+
+**Kenapa gejalanya muncul untuk sales MAUPUN super_admin — dan kenapa itu BUKAN isu RLS.** Dua jalur berbeda, satu gejala:
+- **User biasa:** baris survivor `company_id=NULL` tak match `.eq('company_id', uuid)`; baris duplikat ditahan RLS (`roles_read` menuntut `deleted_at IS NULL`) → `roleRows=[]` → **berhenti di langkah 1**.
+- **Super_admin:** `roles_read` punya `OR is_super_admin()` **top-level** → baris soft-deleted TERBACA. Kalau home company-nya JCI/SOA, `roleIds` terisi id yang sudah mati, tapi `user_roles.role_id` sudah di-repoint ke survivor → `urs=[]` → **berhenti di langkah 2**. Kalau home company-nya MSI, berhenti di langkah 1 persis seperti user biasa.
+
+⚠️ **Konsekuensi praktis untuk diagnosis di masa depan: menguji pakai akun super_admin TIDAK menyelamatkan** — gejalanya sama, cuma titik berhentinya beda. Dicatat permanen sbg **`03_DATA_MODEL.md` gotcha #18**.
+
+**File yang diubah.**
+
+**1. `src/modules/crm/salesRoster.js:33` — `fetchOperationalRoster(companyId)`**
+- Sebelum: `.from('roles').select('id').eq('company_id', companyId).in('code', OPERATIONAL_ROSTER_ROLES);`
+- Sesudah: `.from('roles').select('id').in('code', OPERATIONAL_ROSTER_ROLES).is('deleted_at', null);`
+- **Blok komentar header (`:12-18`) dikoreksi** — versi lama menyatakan mekanisme company-scoping ada di `roles` (*"row role gm_bd hanya ada di MSI"*). Versi baru menjelaskan scoping ada di **`user_roles.company_id` (langkah 2)**, dan bahwa **efek lamanya tetap berlaku** (gm_bd cuma muncul untuk user MSI) lewat mekanisme berbeda. **Koreksi fakta pada fungsi yang sama, bukan refactor.**
+- Memperbaiki **5 call site**: `CRMDashboardPage.jsx:2198` (dropdown Salesperson form Tambah Kunjungan) · `CRMDashboardPage.jsx:841` (filter sales tab Activity Report) · `ActivitiesPage.jsx:590` (dropdown assignee form Aktivitas) · `ActivitiesPage.jsx:602` (dropdown assignee panel detail) · `ActivityLogPage.jsx:109` (filter sales Log Aktivitas).
+
+**2. `src/modules/crm/DealPanels.jsx:140` — `fetchAssignees(companyId)`**
+- Sebelum: `.eq('company_id', companyId).in('code', ['sales','manager','supervisor','gm_bd']);` → Sesudah: `.in('code', […]).is('deleted_at', null);`
+- Struktur query dikonfirmasi **identik** dengan `salesRoster.js`; yang beda hanya daftar kode role (lebih luas, **inline array — sengaja tidak disatukan ke konstanta bersama**, ada komentar eksplisit yang melarangnya di `:135-136`).
+- ⚠️ **Koreksi doc-keeper atas laporan sesi:** fungsi ini punya **DUA konsumen**, bukan satu — `DealDetailPage.jsx:440` **dan** `CustomerDetailPage.jsx:1026`. Jadi total permukaan UI yang pulih hari ini **8**, bukan 6.
+
+**3. `src/modules/crm/LeadPoolPage.jsx:150` — `notifyManagers()`**
+- Sebelum: `.eq('company_id', profile.company_id).in('code', ['manager','supervisor']);` → Sesudah: `.in('code', […]).is('deleted_at', null);`
+- **Paling berdampak bisnis:** request tarik prospect dari Lead Pool memberi **toast sukses ke sales** dan requestnya **tetap muncul di halaman Approval Lead Pool** (halaman itu menyaring `pull_status='pending'`, independen dari notifikasi) — tapi **notifikasi ke manager TIDAK PERNAH terkirim** sejak 21 Agu. Sales mengira sudah diteruskan.
+
+**Keputusan desain yang perlu dicatat permanen.**
+- ⚠️ **Filter `company_id` di LANGKAH 2 (`user_roles`) SENGAJA DIPERTAHANKAN di ketiga file — JANGAN dihapus.** `user_roles.company_id` masih `NOT NULL` dan tak pernah di-null-kan migrasi mana pun (dicek seluruh `supabase/migrations/`). **Di situlah company-scoping sekarang ditegakkan.**
+- Query `profiles` (langkah 3) **tidak disentuh**.
+- **`.is('deleted_at', null)` ditambahkan** supaya super_admin — yang menembus RLS lewat `OR is_super_admin()` di `roles_read` — tidak menarik baris role duplikat yang sudah soft-deleted.
+- **Mencabut filter `company_id` dari `roles` TIDAK membuka kebocoran lintas entitas**, karena (a) scoping tetap di langkah 2, dan (b) tak ada lagi baris `roles` **hidup** ber-`company_id` terisi untuk kode-kode ini.
+
+**Sengaja TIDAK disentuh.**
+- **`StrategicHandoverModal.jsx:75`** — bug **identik**, tapi komponennya **yatim**: diverifikasi doc-keeper via `grep` (3 hit `StrategicHandoverModal` di seluruh `src/`, **seluruhnya di file itu sendiri**, plus 1 komentar `PipelineKanbanPage.jsx:633` — *"StrategicHandoverModal TIDAK dihapus, hanya tidak lagi dipanggil dari sini"*). **Atas instruksi eksplisit Den: jangan diperbaiki, jangan dihapus juga.**
+- Isu `profile.company_id` vs `activeCompanyId` → **TD-208** (baru).
+- Nol perubahan DB/RLS/migration/`schema_snapshot.sql`.
+
+**Verifikasi (dijalankan doc-keeper sendiri untuk lint/build; angka cocok dengan laporan sesi).** `npm run build` **clean, 2617 modules**. `npm run lint` whole-repo **170 problems (148 errors, 22 warnings) = NET-ZERO** terhadap baseline 21 Agu (170/148/22). `npx eslint` terisolasi ke 3 file yang diubah → **3 finding, seluruhnya `react-hooks/set-state-in-effect` pre-existing; nol finding baru**.
+
+⚠️ **NOL TES RUNTIME/BROWSER.** Build clean **BUKAN** jaminan dropdown terisi. **Checklist tes manual (7 poin, diserahkan ke Den):** (1) form Tambah Kunjungan → dropdown Salesperson terisi; (2) tab Activity Report → filter sales terisi; (3) form Aktivitas → dropdown assignee terisi; (4) panel detail Aktivitas → dropdown assignee terisi; (5) Log Aktivitas → filter sales terisi; (6) dropdown assignee deal terisi — **uji di DUA halaman**, `DealDetailPage` **dan** `CustomerDetailPage`; (7) Lead Pool: sales request tarik → manager **BENAR-BENAR menerima notifikasi** (periksa barisnya mendarat di `notifications`, **bukan** cuma toast sukses di layar sales). ⚠️ Untuk poin 1-6, uji dengan akun **non-super_admin** — super_admin berhenti di titik yang berbeda, jadi lolos/gagalnya tak mewakili kasus umum.
+
+---
+
+**⚠️ TEMUAN DOC-KEEPER — DI LUAR LAPORAN SESI, tiga hal yang ditemukan saat memverifikasi cakupan perbaikan di atas. Dua di antaranya BUKAN sekadar catatan.**
+
+**(1) Akar masalah yang sama masih terbuka di 7 titik lain → `08_TECH_DEBT.md` TD-209 (HIGH, baru).** Grep seluruh `src/` (kedua gaya kutip `'`/`"`) menemukan query yang masih memfilter `company_id` pada tabel yang **sudah diglobalkan**. Selain `roles` (migrasi `…000003`), migrasi kembarannya `20260821000002_globalize_org_structure.sql` juga meng-globalkan **`departments`** (`:59`/`:86`), **`positions`** (`:111`/`:119`), dan **`branches`** (`:133`) — jadi kelas bug-nya lebih luas dari roles saja:
+- `src/hooks/useUserAccess.js:269` (`fetchRolesForCompany`), `:233` (branches), `:245` (departments), `:257` (positions) — **dampak terbesar**: keempatnya memasok dropdown di `UserAccessPage.jsx:154` **dan** `UserEditPage.jsx:215`. Kalau dropdown Role kosong, **tak ada role yang bisa di-assign ke user lewat UI**.
+- `src/hooks/useHrgaRequests.js:303` — notifikasi ke role approver level-1 saat submit request HRGA (blok `try/catch` *non-critical* → gagal senyap).
+- `src/modules/bnf/BNFListPage.jsx:192` — penerima **email eskalasi CEO** (jalur non-direktur). Satu-satunya titik yang **meninggalkan jejak**: `console.warn('[bnf] no CEO found for company …')`.
+- `src/modules/reporting/MOMFormPage.jsx:220` — notifikasi `mom_approval_needed` ke CEO saat MOM disubmit.
+- `src/modules/crm/CRMReportPage.jsx:161-162` (`fetchReportSales`) — **di dalam CRM tapi tak ikut diperbaiki hari ini**; filternya **bersyarat** (`if (!isSuper) …`), jadi **super_admin masih jalan sementara semua role lain dapat roster KOSONG** di Sales Report. Ketimpangan itu bikin bug-nya mudah salah didiagnosis sbg "masalah hak akses".
+- Belum ditelusuri dampaknya: `useDepartments.js:82`, `usePositions.js:89`, `AssetDetailITPage.jsx:599`.
+
+⚠️ **Status TD-209 adalah deduksi dari KODE + data, BUKAN hasil tes runtime** — mekanismenya identik dengan yang sudah terbukti bergejala, tapi tiap titik tetap perlu dibuka sekali di browser. **Yang paling murah dicek duluan: buka halaman User Access, lihat apakah dropdown Role/Departemen/Posisi/Cabang terisi.**
+
+**(2) Dokumentasi yang bertentangan dengan kondisi repo — dikoreksi hari ini.** Entri `PROGRESS.md` 2026-08-21 (dan salinannya di `CLAUDE.md`/`03_DATA_MODEL.md`/`05_WORKFLOW_MAP.md`/`09_ROADMAP.md`/`00_DEV_JOURNEY.md`) menyatakan migrasi `20260821000001_partial-picking-guard.sql` **belum dijalankan**. Itu **sudah tidak benar**: header file migrasinya berbunyi `Status: LIVE. Dijalankan manual di SQL Editor oleh Den pada 21 Agustus 2026`, dan `schema_snapshot.sql:795` sudah memuat guard **baru** (`AND dn.dispatched_at IS NOT NULL`). Penyebabnya bisa direkonstruksi dari repo: draft dokumentasinya ditulis **sebelum** SQL dijalankan lalu di-commit **setelahnya**. Seluruh titik di atas sudah diberi penanda koreksi (kalimat aslinya **dipertahankan** sbg rekaman kondisi saat ditulis). **Ini kemunculan kedua dari pelajaran yang sudah tercatat di `03_DATA_MODEL.md` gotcha #10 (kasus TD-199, 18 Agu 2026): _klaim status DB yang bertanggal wajib berasal dari pengecekan yang dijalankan saat kalimat itu ditulis._**
+
+**(3) Dua unit kerja 21 Agu 2026 belum punya entri `PROGRESS.md` sama sekali** (di luar cakupan sesi ini — **flag saja, jangan dianggap sudah dicatat**): **(a)** globalisasi struktur organisasi + roles (2 migrasi, `20260821000002`/`…000003`, termasuk merge GA+HR jadi HCGA, perbaikan anomali profil, backfill `job_title`) — konsekuensi FE-nya baru ketahuan hari ini lewat bug di atas; **(b)** "Gelombang 1.5" (HRGA approval, BTB, picking, TTF, edit item SP; migrasi `20260821000004`–`…000009`). Keduanya cuma ada sebagai pesan commit + file migrasi.
+
 ## 2026-08-21
 
 ### Storbit — partial picking dibuka (1 fungsi DB + 2 file FE)
 
 **Ringkas.** Picking list Storbit selama ini **all-or-nothing**: `generate_picking_from_sp` mengambil SELURUH outstanding dan guard idempotensinya (`status <> 'cancelled'`) mengunci **satu picking per SP secara PERMANEN**; di UI tombol "Selesaikan Picking" hanya muncul kalau semua item ter-toggle penuh. Kolom `picking_list_items.qty_picked`/`qty_short` dan nilai enum `'short'` **sudah ada di DB sejak lahir tapi nol pemakai**. Sesi ini membukanya jadi partial. Tiga file: `supabase/migrations/20260821000001_partial-picking-guard.sql` (BARU), `src/lib/db.js`, `src/modules/logistics/PickingListDetailPage.jsx`.
 
-⚠️ **STATUS SQL: BELUM DIJALANKAN.** File migrasinya ditulis **SEBELUM** eksekusi (disiplin yang benar — kebalikan pola retroaktif `20260817000001`), jadi hari ini `schema_snapshot.sql` **akurat** dan memuat guard LAMA. Sampai Den menjalankannya, perilaku produksi masih yang lama.
+⚠️ **STATUS SQL: BELUM DIJALANKAN.** File migrasinya ditulis **SEBELUM** eksekusi (disiplin yang benar — kebalikan pola retroaktif `20260817000001`), jadi hari ini `schema_snapshot.sql` **akurat** dan memuat guard LAMA. Sampai Den menjalankannya, perilaku produksi masih yang lama. **[KOREKSI 24 Agu 2026, doc-keeper: migrasi ini SUDAH DIJALANKAN — header filenya kini `Status: LIVE. Dijalankan manual di SQL Editor oleh Den pada 21 Agustus 2026` dan `schema_snapshot.sql:795` sudah memuat guard BARU. Kalimat aslinya dipertahankan apa adanya sebagai rekaman kondisi saat ditulis.]**
 
 **1. Guard idempotensi `generate_picking_from_sp` — 1 blok jadi 2.**
 
@@ -95,7 +159,7 @@ Signature `(itemId, picked: boolean, qtyRequested)` → `(itemId, qtyPicked: num
 - **Sudah bisa diuji SEKARANG, tanpa menunggu migrasi: poin 1, 2, 5, 6, dan 8.** Semuanya murni FE atau memakai fungsi DB yang tak diubah. Khusus **poin 8**, langkah terakhirnya (regenerate setelah `cancel_picking`) lolos di **kedua** versi guard — guard lama pun mengecualikan `cancelled` — jadi hasilnya sah dibaca kapan pun.
 - ⚠️ **Jebakan urutan:** menjalankan poin 2 lebih dulu (picking parsial → selesai) akan meninggalkan picking ber-status `done` pada SP uji itu, sehingga SP tersebut **tak bisa lagi dipakai** untuk poin 3/7 sampai SJ-nya benar-benar diberangkatkan. Siapkan SP uji terpisah, atau kerjakan berurutan 1 → 2 → 3 → 7 pada SP yang sama secara sadar.
 
-**Langkah manual yang masih menggantung:** jalankan `supabase/migrations/20260821000001_partial-picking-guard.sql` → koreksi header filenya dari `⚠️ BELUM DIJALANKAN` jadi `Status: LIVE` (preseden 18 Agu 2026) → **refresh `schema_snapshot.sql` via `pg_dump`**.
+**Langkah manual yang masih menggantung:** jalankan `supabase/migrations/20260821000001_partial-picking-guard.sql` → koreksi header filenya dari `⚠️ BELUM DIJALANKAN` jadi `Status: LIVE` (preseden 18 Agu 2026) → **refresh `schema_snapshot.sql` via `pg_dump`**. **[KOREKSI 24 Agu 2026, doc-keeper: KETIGA langkah ini SUDAH LUNAS — migrasi dijalankan, header sudah `Status: LIVE`, snapshot sudah di-refresh (guard baru terbaca di `schema_snapshot.sql:795`). Nol utang manual tersisa dari entri ini; yang MASIH berlaku hanyalah checklist tes manual 8 poin di atas, termasuk poin 3/4/7 yang tadinya menunggu migrasi — sekarang sudah bisa dijalankan semua.]**
 
 ## 2026-08-20
 
