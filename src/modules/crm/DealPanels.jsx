@@ -137,7 +137,7 @@ export function useIsMobile(bp = 760) {
 // ditukar dgn helper itu, nanti manager & supervisor hilang dari dropdown ini.
 export async function fetchAssignees(companyId) {
   const { data: roleRows } = await supabase
-    .from('roles').select('id').eq('company_id', companyId).in('code', ['sales', 'manager', 'supervisor', 'gm_bd']);
+    .from('roles').select('id').in('code', ['sales', 'manager', 'supervisor', 'gm_bd']).is('deleted_at', null);
   const roleIds = (roleRows || []).map((r) => r.id);
   if (!roleIds.length) return [];
   const { data: urs } = await supabase

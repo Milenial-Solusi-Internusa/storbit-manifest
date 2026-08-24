@@ -9,9 +9,13 @@
 //      • LAPORAN     = performa sales siapa yang dihitung → BD TIDAK dihitung (keputusan bisnis)
 //    Menyatukan keduanya = diam-diam memasukkan BD ke angka Sales Report. Sengaja dipisah.
 //
-// Resolusi via RBAC (`roles.code`), tak pernah hardcode role_id. SELALU company-scoped:
-// row role `gm_bd` hanya ada di MSI → gm_bd cuma muncul untuk user MSI (memang begitu;
-// jangan dilonggarkan).
+// Resolusi via RBAC (`roles.code`), tak pernah hardcode role_id. SELALU company-scoped,
+// TAPI scoping-nya ada di `user_roles.company_id` (langkah 2), BUKAN di `roles` (langkah 1):
+// sejak migrasi 20260821000003_globalize_roles.sql, row `roles` untuk kode global berpindah ke
+// `company_id = NULL`, jadi memfilter `roles.company_id` justru mengembalikan NOL baris.
+// Efek lamanya tetap berlaku: `gm_bd` cuma muncul untuk user MSI — karena hanya user MSI yang
+// punya row `user_roles` gm_bd, bukan lagi karena row `roles`-nya milik MSI. Jangan dilonggarkan:
+// filter company_id di langkah 2 WAJIB tetap ada.
 //
 // File ini menggantikan 4 salinan identik `fetchSalesProfiles` yang sebelumnya di-copy-paste
 // di CRMDashboardPage / ActivitiesPage / SalesCallsPage / ActivityLogPage.
@@ -26,7 +30,7 @@ export const OPERATIONAL_ROSTER_ROLES = ['sales', 'gm_bd'];
    (active profiles only). */
 export async function fetchOperationalRoster(companyId) {
   const { data: roleRows } = await supabase
-    .from('roles').select('id').eq('company_id', companyId).in('code', OPERATIONAL_ROSTER_ROLES);
+    .from('roles').select('id').in('code', OPERATIONAL_ROSTER_ROLES).is('deleted_at', null);
   const roleIds = (roleRows || []).map(r => r.id);
   if (!roleIds.length) return [];
   const { data: urs } = await supabase

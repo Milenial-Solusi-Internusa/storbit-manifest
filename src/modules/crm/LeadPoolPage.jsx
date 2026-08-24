@@ -147,7 +147,7 @@ export default function LeadPoolPage({ showToast }) {
   // Notify manager/supervisor (via user_roles — profiles.role dormant). Best-effort.
   const notifyManagers = useCallback(async (account, justification) => {
     try {
-      const { data: roleRows } = await supabase.from('roles').select('id').eq('company_id', profile.company_id).in('code', ['manager', 'supervisor']);
+      const { data: roleRows } = await supabase.from('roles').select('id').in('code', ['manager', 'supervisor']).is('deleted_at', null);
       const roleIds = (roleRows || []).map(r => r.id);
       if (!roleIds.length) return;
       const { data: urs } = await supabase.from('user_roles').select('user_id').eq('company_id', profile.company_id).in('role_id', roleIds).eq('is_active', true).is('revoked_at', null);
