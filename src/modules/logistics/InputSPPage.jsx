@@ -91,7 +91,6 @@ const freshItem = () => ({
   priceCategory: '',      // '' | 'default' | 'semester' | 'tahunan' | 'project' (state only; belum disimpan — TASK 2)
   shippingPrice: 0,
   expDate: '',
-  expired_date: '',
 });
 
 // Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
@@ -254,7 +253,13 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
       qty:           Number(item.qty) || 1,
       unitPrice:     Number(item.unitPrice) || 0,
       shippingPrice: Number(item.shippingPrice) || 0,
-      expired_date:  item.expired_date || expiredDate,
+      // Field per-item sudah DIHAPUS (batch 2, 25 Agu 2026) — `expiredDate`
+      // (level header, wajib lewat headerOk) kini SATU-SATUNYA sumber tenggat,
+      // jadi semua item se-SP dijamin lahir dengan nilai yang sama.
+      // ⚠️ JANGAN dihapus: baris inilah yang mengisi sp_items.expired_date saat
+      // create — kolom yang dibaca badge Overdue, kolom Expired SP Manifest,
+      // dan kedua RPC dashboard Storbit.
+      expired_date:  expiredDate,
       expDate:       item.expDate || '',
       dc:            dc || '',
       notes:         notes || '',
@@ -787,7 +792,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
         </div>
 
         {/* Row 2: Kategori Harga | Unit Price | Ongkos Kirim | Exp Date | Deadline */}
-        <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '0 12px' }}>
+        <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 12px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {fieldLabel('Kategori Harga', true)}
             <select
@@ -841,13 +846,6 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove }) {
             {inp({
               type: 'date', value: item.expDate,
               onChange: e => onChange(item.id, 'expDate', e.target.value),
-            })}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {fieldLabel('Expired Date')}
-            {inp({
-              type: 'date', value: item.expired_date,
-              onChange: e => onChange(item.id, 'expired_date', e.target.value),
             })}
           </div>
         </div>

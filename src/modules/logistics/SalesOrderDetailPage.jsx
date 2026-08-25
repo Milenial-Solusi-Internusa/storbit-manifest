@@ -280,7 +280,7 @@ function ModalGrid({ cols, children }) {
   );
 }
 
-function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
+function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, onSave }) {
   // Katalog produk (dropdown-only) di-pin ke Storbit/SOA.
   const { products } = useProducts({ companyId: SOA_COMPANY_ID });
   const [draft, setDraft] = useState({
@@ -291,7 +291,14 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
     qty:          item.qty         ?? 0,
     shippedQty:   item.shippedQty  ?? 0,
     expDate:      item.expDate     || '',
-    expired_date: item.expired_date || '',
+    // KOSMETIK — bukan lagi garis pertahanan. Sejak migrasi 20260825000001,
+    // update_sp_item_dual TIDAK LAGI memuat expired_date di daftar UPDATE-nya,
+    // jadi apa pun yang dikirim payload untuk kolom itu DIABAIKAN DB: proteksi
+    // sebenarnya kini ada di level RPC, bukan di baris ini. Dipertahankan agar
+    // bentuk draft tetap utuh (spToDb tak berubah) dan nilainya mengikuti
+    // header supaya draft tak pernah kosong. ⚠️ Kalau suatu saat expired_date
+    // DIKEMBALIKAN ke daftar UPDATE RPC itu, baris ini jadi load-bearing lagi.
+    expired_date: spExpiredDate || item.expired_date || '',
     shippingDate:           item.shippingDate          || '',
     slaDays:                item.slaDays               ?? '',
     estimatedDeliveryDate:  item.estimatedDeliveryDate || '',
@@ -428,12 +435,14 @@ function EditItemModal({ item, spDate, spNo, customer, onClose, onSave }) {
 
           {/* Tanggal */}
           <ModalSect>Tanggal</ModalSect>
-          <ModalGrid cols={3}>
+          {/* "Expired Date" per-item DIHAPUS (batch 2, 25 Agu 2026): tenggat SP
+              adalah atribut level HEADER — diedit di kartu "SP Date & Expired"
+              lewat RPC set_sp_expired_date, bukan per baris item.
+              "Exp Date" (exp_date) SENGAJA DIPERTAHANKAN — kolom mati dengan
+              isu terpisah, dijadwalkan drop di M13. Jangan ikut dibuang di sini. */}
+          <ModalGrid cols={2}>
             <ModalField label="Exp Date">
               <ModalInp type="date" value={draft.expDate} onChange={e => set('expDate', e.target.value)}/>
-            </ModalField>
-            <ModalField label="Expired Date" req>
-              <ModalInp type="date" value={draft.expired_date} onChange={e => set('expired_date', e.target.value)}/>
             </ModalField>
             <ModalField label="Shipping Date">
               <ModalInp type="date" value={draft.shippingDate} onChange={e => set('shippingDate', e.target.value)}/>
@@ -1386,16 +1395,12 @@ export default function SalesOrderDetailPage({
                 <ClipboardList size={14}/> {genBusy ? 'Membuat…' : 'Generate Picking List'}
               </button>
             )}
-            {/* Edit item SP — cermin guard RPC update_sp_item_dual
-                (migrasi 20260821000006). */}
-            {canWarehouseOps && (
-            <button
-              onClick={() => items[0] && setEditingItem(items[0])}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9.2px 16.56px', borderRadius: RADIUS.md, border: `1px solid ${C.line}`, background: 'transparent', color: C.ink, fontSize: 14, fontWeight: 600, lineHeight: 1.2, cursor: 'pointer', fontFamily: FONT_DISPLAY }}
-            >
-              <Pencil size={14}/> Edit
-            </button>
-            )}
+            {/* Tombol "Edit" header DIHAPUS (batch 2, 25 Agu 2026) — menutup U-9.
+                Labelnya generik "Edit" di header bar SP tapi fungsinya cuma
+                membuka items[0]: benar kebetulan pada SP satu-item, menyesatkan
+                pada SP multi-item. Entry point per-item yang BENAR sudah ada di
+                tab Items (pensil per baris, kolom Aksi), dan aksi level-SP kini
+                punya pintunya sendiri (edit tenggat di kartu "SP Date & Expired"). */}
             {['super_admin', 'operations', 'manager', 'gm'].includes(role) && spOrder?.status === 'DRAFT' && (
               <button
                 onClick={() => setShowCancelSP(true)}
@@ -2144,6 +2149,7 @@ export default function SalesOrderDetailPage({
       {editingItem && (
         <EditItemModal
           item={editingItem}
+          spExpiredDate={spExpiredDate}
           spDate={spDate}
           spNo={spNo}
           customer={customer}
