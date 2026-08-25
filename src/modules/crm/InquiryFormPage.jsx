@@ -13,6 +13,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import { getTodayWIB } from '../../lib/dateUtils';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import AccountPicker from '../../components/AccountPicker';
 
@@ -49,7 +50,6 @@ const SERVICES = [
   { id: 'trucking', Icon: Truck, label: 'Trucking' },
 ];
 const MSDS_OPTS = ['Ya', 'Tidak', 'Belum Tahu'];
-const todayISO = () => new Date().toISOString().slice(0, 10);
 
 // Kelompok lifecycle account_status. Dropdown inquiry harus bisa memilih akun
 // pra-customer (lead/mql/sql/prospect) supaya trigger gerbang Fase 2 hidup.
@@ -340,7 +340,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 0', background: '#F8FAFC', border: '1px solid ' + C.border, borderRadius: 10, padding: '16px 20px', marginBottom: 20 }}>
               <div style={S.infoChip}><User size={16} color={C.navy} /><span><span style={S.infoChipK}>Sales</span><span style={S.infoChipV}>{profile?.full_name || user?.email || '—'}</span></span></div>
               <div style={S.infoDiv} />
-              <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Tanggal Inquiry</span><span style={S.infoChipV}>{todayISO().split('-').reverse().join('/')}</span></span></div>
+              <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Tanggal Inquiry</span><span style={S.infoChipV}>{getTodayWIB().split('-').reverse().join('/')}</span></span></div>
               <div style={S.infoDiv} />
               <div style={S.infoChip}><Hash size={16} color={C.navy} /><span><span style={S.infoChipK}>No. Inquiry</span><span style={{ ...S.infoChipV, fontFamily: "'IBM Plex Mono',monospace" }}>INQ/MSI/{new Date().getFullYear()}/—</span></span></div>
             </div>

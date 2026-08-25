@@ -10,6 +10,7 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { useProducts } from '../../hooks/useProducts';
 import { PPN_RATE, PPN_RATE_FREIGHT_FORWARDING } from '../../lib/taxConstants';
+import { getTodayWIB } from '../../lib/dateUtils';
 
 // Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
 const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
@@ -35,7 +36,6 @@ const C = {
 const VAT_RATE    = PPN_RATE_FREIGHT_FORWARDING; // 1.1%
 const DEFAULT_USD = 16000;
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
-const today = () => new Date().toISOString().slice(0, 10);
 
 // ─── Pricing authority matrix (BD-06, SOP Pak Adam slide 12) ────────────────
 // Returns { tone: 'green'|'orange'|'red', text } based on discount % and user role.
@@ -389,7 +389,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
     exchange_rates:   {},
     usd_rate:         DEFAULT_USD,
     vat_rate:         VAT_RATE,
-    quote_date:       today(),
+    quote_date:       getTodayWIB(),
     // New header fields — state-only (no columns in `quotations` yet, NOT saved to DB).
     attention_to:     '',
     pickup_address:   '',
@@ -498,7 +498,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       exchange_rates:   quotation.exchange_rates    || {},
       usd_rate:         quotation.usd_rate          || DEFAULT_USD,
       vat_rate:         quotation.vat_rate          ?? VAT_RATE,
-      quote_date:       quotation.quote_date || quotation.created_at?.slice(0, 10) || today(),
+      quote_date:       quotation.quote_date || quotation.created_at?.slice(0, 10) || getTodayWIB(),
       // New header fields — populated from DB on edit.
       attention_to:     quotation.attention_to     || '',
       pickup_address:   quotation.pickup_address   || '',
@@ -576,7 +576,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       exchange_rates:   src.exchange_rates    || {},
       usd_rate:         src.usd_rate          || DEFAULT_USD,
       vat_rate:         src.vat_rate          ?? VAT_RATE,
-      quote_date:       today(),
+      quote_date:       getTodayWIB(),
       attention_to:     src.attention_to      || '',
       pickup_address:   src.pickup_address    || '',
       delivery_address: src.delivery_address  || '',
@@ -1121,7 +1121,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
               </Field>
 
               <Field label="Valid Until">
-                <input type="date" value={header.valid_until} onChange={setH('valid_until')} style={inpStyle()} min={today()} />
+                <input type="date" value={header.valid_until} onChange={setH('valid_until')} style={inpStyle()} min={getTodayWIB()} />
               </Field>
 
               <Field label="Pricing Selesai">

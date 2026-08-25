@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, ChevronRight, FileText, Download } from 'lucide-react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
+import { getTodayWIB } from '../../lib/dateUtils';
 import { useAuth } from '../../contexts/useAuth';
 import InquiryPDF from './InquiryPDF';
 
@@ -431,7 +432,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
                     <PDFDownloadLink
                       document={<InquiryPDF inquiry={inq} prospectName={inq.prospect?.name || inq.customer?.name || '—'} salesName={inq.created_by_profile?.full_name || '—'} />}
-                      fileName={`Inquiry-${inq.inquiry_no?.replace(/\//g, '-') || 'unknown'}-${new Date().toISOString().slice(0, 10)}.pdf`}
+                      fileName={`Inquiry-${inq.inquiry_no?.replace(/\//g, '-') || 'unknown'}-${getTodayWIB()}.pdf`}
                       style={{ textDecoration: 'none' }}
                     >
                       {({ loading }) => (

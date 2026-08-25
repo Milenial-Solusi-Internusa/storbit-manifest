@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { getTodayWIB } from '../../../lib/dateUtils';
 
 /* ── brand tokens ──────────────────────────────────────────────────────────── */
 const NAVY   = '#1B4D8A';
@@ -52,10 +53,6 @@ const RECEIPT_TYPES = ['Purchase Order', 'Restock Produksi', 'Transfer Masuk', '
 const nf = (n) => Number(n || 0).toLocaleString('id-ID');
 let _rid = 100;
 const newRow = () => ({ key: ++_rid, product_id: '', qty: '', catatan: '' });
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /* ── style tokens ──────────────────────────────────────────────────────────── */
 const PB = {
@@ -290,7 +287,7 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
   /* ── form state ── */
   const [form, setForm] = useState({
     ref:      '',
-    date:     todayIso(),
+    date:     getTodayWIB(),
     warehouse_id: '',
     tipe:     '',
     vendor_id:'',
