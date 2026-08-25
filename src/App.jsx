@@ -26,6 +26,7 @@ import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
 import CompanySwitcher from './components/CompanySwitcher';
 import { calcItem } from './lib/spCalc';
+import { getTodayWIB } from './lib/dateUtils';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 // Fase 1 unifikasi Master Data + Admin Settings — entry point permanen.
 // AdminShell.jsx & AdminSettingsHub.jsx (dan kesembilan sub-halamannya)
@@ -2654,7 +2655,7 @@ export default function StorbitManifest() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `storbit-manifest-${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `storbit-manifest-${getTodayWIB()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('CSV berhasil diexport ⬇');

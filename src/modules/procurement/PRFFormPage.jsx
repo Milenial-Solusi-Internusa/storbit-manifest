@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import { getTodayWIB } from '../../lib/dateUtils';
 import InquiryPicker from '../../components/InquiryPicker';
 import { COMMODITIES, ADD_ONS } from './prfShared';
 
@@ -67,7 +68,6 @@ const INLAND_FLEETS = [
   'Truk Gandeng', 'Lowbed Trailer',
 ];
 const PROJECT_FREIGHTS = ["20' OT", "40' OT", "20' FR", "40' FR", 'RORO', 'Breakbulk'];
-const todayISO = () => new Date().toISOString().slice(0, 10);
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const toRoman = (m) => ROMAN[m] || String(m);
 
@@ -640,7 +640,7 @@ export default function PRFFormPage({ onBack, showToast, prefillInquiryId, editP
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 0', background: '#F8FAFC', border: '1px solid ' + C.border, borderRadius: 10, padding: '16px 20px', marginBottom: 20 }}>
               <div style={S.infoChip}><User size={16} color={C.navy} /><span><span style={S.infoChipK}>Sales</span><span style={S.infoChipV}>{profile?.full_name || user?.email || '—'}</span></span></div>
               <div style={S.infoDiv} />
-              <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Tanggal PRF</span><span style={S.infoChipV}>{todayISO().split('-').reverse().join('/')}</span></span></div>
+              <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Tanggal PRF</span><span style={S.infoChipV}>{getTodayWIB().split('-').reverse().join('/')}</span></span></div>
               <div style={S.infoDiv} />
               <div style={S.infoChip}><Hash size={16} color={C.navy} /><span><span style={S.infoChipK}>No. PRF</span><span style={{ ...S.infoChipV, fontFamily: "'IBM Plex Mono',monospace" }}>{isEdit ? (editRow?.prf_no || '—') : badgePreview}</span></span></div>
             </div>

@@ -14,6 +14,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../../lib/supabase";
 import { ACTION_TYPES, ENTITY_TYPES } from "../../../lib/auditLogger";
+import { getTodayWIB } from "../../../lib/dateUtils";
 import {
   Icon, PageHeader, KitSelect, OutlineBtn, Card, useToast, KitStyles,
 } from "./kit";
@@ -165,7 +166,7 @@ export default function AuditLogPage({ onHome }) {
     const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "audit-log-" + new Date().toISOString().slice(0, 10) + ".csv";
+    a.href = url; a.download = "audit-log-" + getTodayWIB() + ".csv";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1500);
     fireToast(filtered.length + " baris diekspor ke CSV", "download");

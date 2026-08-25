@@ -24,6 +24,7 @@ import {
 import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { calcItem } from '../../lib/spCalc';
+import { getTodayWIB } from '../../lib/dateUtils';
 import { PPN_RATE } from '../../lib/taxConstants';
 import ProductPicker from '../../components/ProductPicker';
 import { useProducts } from '../../hooks/useProducts';
@@ -139,8 +140,6 @@ const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTar
 // Pilih seluruh isi saat focus → ketikan menimpa nilai default (0), tak ter-append.
 const selectOnFocus = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.select(); };
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
-// yyyy-mm-dd hari ini untuk default <input type="date"> (pola InputSPPage.jsx)
-const todayStr = () => new Date().toISOString().slice(0, 10);
 // Tabel Baris Pesanan pakai 2 desimal, mengikuti rp()/qtyFmt di mockup.
 const DEC2 = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
 const num2 = (n) => (Number(n) || 0).toLocaleString('id-ID', DEC2);
@@ -919,7 +918,7 @@ export default function SalesOrderDetailPage({
   const [ttf,         setTtf]         = useState(null);
   const [paySaving,   setPaySaving]   = useState(false);
   const [ttfSaving,   setTtfSaving]   = useState(false);
-  const [payForm,     setPayForm]     = useState({ amount: '', paymentDate: todayStr(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
+  const [payForm,     setPayForm]     = useState({ amount: '', paymentDate: getTodayWIB(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
   const [pphTouched,  setPphTouched]  = useState(false);
   const [ttfForm,     setTtfForm]     = useState({ receivedBy: '', ttfNo: '', notes: '' });
   const [ttfEditing,  setTtfEditing]  = useState(false);
@@ -1073,7 +1072,7 @@ export default function SalesOrderDetailPage({
       const { data } = await getPaymentHistory(invoice.id);
       setPayments(data || []);
     }
-    setPayForm({ amount: '', paymentDate: todayStr(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
+    setPayForm({ amount: '', paymentDate: getTodayWIB(), reference: '', pph: '', buktiUrl: '', buktiNo: '' });
     setPphTouched(false);
     setPaySaving(false);
     showToast?.('Pembayaran dicatat', 'success');

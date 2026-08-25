@@ -9,6 +9,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { Search, ChevronRight, X, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { getTodayWIB } from '../../lib/dateUtils';
 import { useAuth } from '../../contexts/useAuth';
 import VisitHistoryPDF from './VisitHistoryPDF';
 
@@ -274,7 +275,7 @@ export default function RiwayatVisitPage({ showToast }) {
       } else if (filterFrom) periodSlug = `Sejak-${monthYear(filterFrom)}`;
       else periodSlug = `Sampai-${monthYear(filterTo)}`;
       const salesSlug = filterSales !== 'all' ? sanitize(filterSales) : 'Semua-Sales';
-      const genDate = new Date().toISOString().slice(0, 10);
+      const genDate = getTodayWIB();
       a.download = `Riwayat-Visit_${periodSlug}_${salesSlug}_${genDate}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);

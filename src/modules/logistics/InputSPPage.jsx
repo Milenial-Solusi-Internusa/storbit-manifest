@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { bulkInsertSpItems, createSpOrderDual, setSpOrderPriceCategory } from '../../lib/db';
+import { getTodayWIB } from '../../lib/dateUtils';
 import { useProducts } from '../../hooks/useProducts';
 import ProductPicker from '../../components/ProductPicker';
 import DcPicker from '../../components/DcPicker';
@@ -59,7 +60,6 @@ const C = {
 };
 
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
-const today = () => new Date().toISOString().slice(0, 10);
 
 // Kategori harga produk → kolom di master products (Fase 0). Hanya yang non-null yang ditawarkan.
 const CAT_DEFS = [
@@ -160,7 +160,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
   const { products } = useProducts({ companyId: SOA_COMPANY_ID });
 
   // SP header
-  const [spDate,     setSpDate]     = useState(today());
+  const [spDate,     setSpDate]     = useState(getTodayWIB());
   const [spNo,       setSpNo]       = useState('');   // nomor SP asli dari customer (manual, wajib)
   const [customerId, setCustomerId] = useState('');
   const [dc,         setDc]         = useState('');   // nama DC — dipakai submit legacy (TIDAK diubah)
@@ -460,7 +460,7 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
                   })}
                 </Field>
                 <Field label="Expired Date" req>
-                  {inp({ type: 'date', value: expiredDate, min: today(), onChange: e => setExpiredDate(e.target.value) })}
+                  {inp({ type: 'date', value: expiredDate, min: getTodayWIB(), onChange: e => setExpiredDate(e.target.value) })}
                 </Field>
                 <Field label="Tipe SP">
                   {sel({
