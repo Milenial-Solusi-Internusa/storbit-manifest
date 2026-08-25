@@ -359,6 +359,24 @@ export async function setSpStatus(spNo, status, reason = null, customerId) {
   return { data, error }; // data = jumlah baris ter-update
 }
 
+// Set tenggat kirim SP (expired_date) di level HEADER. Backed by RPC
+// set_sp_expired_date (SECURITY DEFINER, migrasi 20260825000002): satu
+// transaksi menulis sp_orders.expired_date DAN semua baris sp_items.expired_date
+// se-SP.
+// SENGAJA RPC, bukan dua .update() dari sini: RLS kedua tabel beda ketat —
+// sp_items_update = USING(true) (lolos siapa pun) sementara sp_orders_update
+// role-gated, jadi dua panggilan terpisah bisa SUKSES SEPARUH (item berubah,
+// header tidak) → persis divergensi header-vs-item yang sedang dihilangkan.
+// Guard otorisasi + freeze status CANCELLED ada di dalam RPC.
+export async function setSpExpiredDate(customerId, spNo, expiredDate) {
+  const { error } = await supabase.rpc('set_sp_expired_date', {
+    p_customer_id:  customerId,
+    p_sp_no:        spNo,        // identitas komposit (customer_id, sp_no)
+    p_expired_date: expiredDate || null,
+  });
+  return { error };
+}
+
 // Set the SP document link (Fase 0.3) across all line items sharing sp_no.
 // external_url is per-SP conceptually; sp_items is line-level → update all rows.
 export async function setSpExternalUrl(spNo, url) {
@@ -499,7 +517,7 @@ export async function completePicking(pickingListId) {
 export async function getSpOrderStatus(customerId, spNo) {
   const { data, error } = await supabase
     .from('sp_orders')
-    .select('id, status, had_cancelled_picking')
+    .select('id, status, had_cancelled_picking, expired_date')
     .eq('customer_id', customerId)
     .eq('sp_no', spNo)
     .is('deleted_at', null)

@@ -3195,6 +3195,7 @@ export default function StorbitManifest() {
                     showToast(`SP ${spNo} dihapus`);
                   }}
                   onGeneratePicking={handleGeneratePicking}
+                  onRefresh={refreshSp}
                   showToast={showToast}
                   role={role}
                 />

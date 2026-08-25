@@ -21,7 +21,7 @@ import {
   Check, X, History, Download,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2, Eye, EyeOff,
 } from 'lucide-react';
-import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { calcItem } from '../../lib/spCalc';
 import { PPN_RATE } from '../../lib/taxConstants';
@@ -817,6 +817,7 @@ export default function SalesOrderDetailPage({
   onDeleteItem,
   onDeleteSP,
   onGeneratePicking,
+  onRefresh,
   showToast,
   role,
 }) {
@@ -829,6 +830,11 @@ export default function SalesOrderDetailPage({
   const [docUrl,       setDocUrl]       = useState(items[0]?.externalUrl || '');
   const [docEditing,   setDocEditing]   = useState(false);
   const [docSaving,    setDocSaving]    = useState(false);
+  // Tenggat SP (expired_date) — edit in-place di kartu "SP Date & Expired".
+  // expired_date adalah atribut level HEADER (sp_orders), bukan per item.
+  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [deadlineDraft,   setDeadlineDraft]   = useState('');
+  const [deadlineSaving,  setDeadlineSaving]  = useState(false);
   // Fase 1 — stok tersedia (company-level) untuk cek sebelum Generate Picking.
   const [stockMap,     setStockMap]     = useState({});
   const productIdsKey = useMemo(
@@ -977,6 +983,28 @@ export default function SalesOrderDetailPage({
     const cust = group?.customerId;
     if (spOrder?.id) { const { data } = await listSpBtbNew(spOrder.id); setBtbs(data || []); }
     if (cust) { const { data } = await getSpOrderStatus(cust, spNo); setSpOrder(data || null); }
+  };
+
+  // ── Ubah tenggat SP (expired_date) — level HEADER ─────────────────────────
+  // Satu RPC menulis sp_orders.expired_date DAN semua baris sp_items.expired_date
+  // se-SP dalam satu transaksi (lihat setSpExpiredDate di db.js — sengaja bukan
+  // dua .update() terpisah). Otorisasi + freeze status CANCELLED ditegakkan di
+  // dalam RPC; gate UI di kartu hanya cermin dari itu.
+  // DUA refetch sesudahnya karena dua konsumen berbeda: `spOrder` memasok kartu
+  // di halaman ini, `onRefresh` memasok `rows` App.jsx yang jadi sumber badge
+  // Overdue + kolom Expired di SP Manifest.
+  const handleSaveDeadline = async () => {
+    const cust = group?.customerId;
+    if (!cust || !deadlineDraft || deadlineSaving) return;
+    setDeadlineSaving(true);
+    const { error } = await setSpExpiredDate(cust, spNo, deadlineDraft);
+    setDeadlineSaving(false);
+    if (error) { showToast?.('Gagal ubah tenggat: ' + (error.message || 'unknown error'), 'error'); return; }
+    setEditingDeadline(false);
+    const { data } = await getSpOrderStatus(cust, spNo);
+    setSpOrder(data || null);
+    await onRefresh?.();
+    showToast?.('Tenggat SP diperbarui.');
   };
 
   const handleAddBtb = async () => {
@@ -1172,7 +1200,14 @@ export default function SalesOrderDetailPage({
   const showTtfBlock = canMarkTtf && ['issued', 'submitted', 'partial', 'paid'].includes(invStatus);
 
   // ── Deadline display ───────────────────────────────────────────────────
-  const firstDeadline = items.find(i => i.expired_date)?.expired_date || null;
+  // Tenggat = atribut HEADER (sp_orders.expired_date, migrasi 20260825000002).
+  // Header dibaca LEBIH DULU; fallback items.find() HANYA untuk SP lama yang
+  // belum punya baris sp_orders — itu jaring pengaman, bukan sumber kebenaran
+  // (hasilnya bergantung urutan fetch, jadi non-deterministik kalau nilai antar
+  // item pernah berbeda). Nama `firstDeadline` DIPERTAHANKAN: dipakai di
+  // beberapa titik lain di file ini.
+  const spExpiredDate = spOrder?.expired_date || items.find(i => i.expired_date)?.expired_date || null;
+  const firstDeadline = spExpiredDate;
   const days = daysUntil(firstDeadline);
   const deadlineSub = days == null ? '—' : days < 0 ? `${Math.abs(days)} hari lalu · overdue` : days === 0 ? 'Hari ini · urgent' : `${days} hari lagi · on track`;
 
@@ -1430,8 +1465,56 @@ export default function SalesOrderDetailPage({
                 <div>{fmtDate(spDate)}</div>
                 <div style={{ color: C.inkSoft }}>Expired Date</div>
                 <div>
-                  <span style={{ color: days != null && days < 2 ? C.warn : C.ink }}>{fmtDate(firstDeadline)}</span>
-                  <div style={{ color: C.inkSoft, fontSize: 11 }}>{deadlineSub}</div>
+                  {editingDeadline ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {/* TANPA atribut `min` — DISENGAJA. Tenggat harus bisa
+                          dikoreksi MUNDUR ke masa lalu untuk audit pinalti
+                          historis; sejalan dgn freeze RPC yang cuma mengunci
+                          CANCELLED (SP LUNAS tetap boleh dikoreksi). */}
+                      <input
+                        type="date"
+                        value={deadlineDraft}
+                        disabled={deadlineSaving}
+                        onChange={e => setDeadlineDraft(e.target.value)}
+                        style={{ height: 30, padding: '0 8px', borderRadius: RADIUS.sm, border: `1px solid ${C.line}`, background: C.surface, fontSize: 12.5, color: C.ink, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                      />
+                      <button
+                        onClick={handleSaveDeadline}
+                        disabled={deadlineSaving || !deadlineDraft}
+                        style={{ height: 30, padding: '0 10px', borderRadius: RADIUS.sm, border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent, fontSize: 12, fontWeight: 700, cursor: (deadlineSaving || !deadlineDraft) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (deadlineSaving || !deadlineDraft) ? 0.6 : 1 }}
+                      >
+                        {deadlineSaving ? 'Menyimpan…' : 'Simpan'}
+                      </button>
+                      <button
+                        onClick={() => setEditingDeadline(false)}
+                        disabled={deadlineSaving}
+                        style={{ height: 30, padding: '0 10px', borderRadius: RADIUS.sm, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 12, fontWeight: 600, cursor: deadlineSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: days != null && days < 2 ? C.warn : C.ink }}>{fmtDate(firstDeadline)}</span>
+                        {/* Gate = cermin guard RPC set_sp_expired_date: HANYA
+                            CANCELLED yang mengunci. SP LUNAS SENGAJA masih bisa
+                            dikoreksi (audit pinalti historis) — jangan tambahkan
+                            LUNAS ke sini tanpa mengubah RPC-nya juga. */}
+                        {canWarehouseOps && spOrder?.status !== 'CANCELLED' && (
+                          <button
+                            onClick={() => { setDeadlineDraft(firstDeadline || ''); setEditingDeadline(true); }}
+                            aria-label="Ubah tenggat SP"
+                            title="Ubah tenggat SP"
+                            style={{ width: 22, height: 22, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.sm, color: C.accent, cursor: 'pointer' }}
+                          >
+                            <Pencil size={12}/>
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ color: C.inkSoft, fontSize: 11 }}>{deadlineSub}</div>
+                    </>
+                  )}
                 </div>
                 <div style={{ color: C.inkSoft }}>Finance Progress</div>
                 <div>{finOverallPct}%</div>
