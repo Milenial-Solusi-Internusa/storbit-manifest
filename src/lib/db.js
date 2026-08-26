@@ -448,6 +448,51 @@ export async function getPickingListDetail(pickingListId) {
   };
 }
 
+// Dokumen fulfillment satu SP: picking list(s) + surat jalan(s), untuk tab
+// Shipment & Dokumen di Detail SP.
+//
+// KUNCI KOMPOSIT (customer_id, sp_no) — SENGAJA BUKAN sp_order_id, walau kolom
+// itu sudah di-backfill 100% oleh migrasi 20260826000001. Alasannya TIMING,
+// bukan kebersihan data: di SalesOrderDetailPage, customerId + spNo datang dari
+// props (tersedia sejak render pertama), sementara spOrder.id baru ada setelah
+// fetch async getSpOrderStatus selesai. Memakai sp_order_id berarti tab tak
+// bisa memuat apa pun sampai fetch itu tuntas.
+// ⚠️ customer_id WAJIB ikut difilter: sp_no adalah teks bebas dari customer dan
+// bisa kembar antar customer — itu sebabnya sp_orders punya
+// UNIQUE (customer_id, sp_no). Memfilter sp_no saja = mencampur SP milik
+// customer lain.
+//
+// BTB & Invoice SENGAJA TIDAK di sini — keduanya sudah di-fetch komponen lewat
+// listSpBtbNew(spOrderId) / getSpInvoice(spOrderId) dan sudah ada di state.
+export async function getSpFulfillmentDocs(customerId, spNo) {
+  if (!customerId || !spNo) return { data: { pickings: [], deliveries: [] }, error: null };
+  const [pRes, dRes] = await Promise.all([
+    supabase
+      .from('picking_lists')
+      .select('id, picking_no, status, created_at, completed_at, cancelled_at, warehouses(name, code)')
+      .eq('customer_id', customerId)
+      .eq('sp_no', spNo)
+      .order('created_at', { ascending: true })
+      .limit(1000),
+    supabase
+      .from('delivery_notes')
+      .select('id, do_no, status, picking_list_id, ship_date, driver_name, vehicle_no, total_koli, dispatched_at, delivered_at, cancelled_at, delivery_note_items(qty)')
+      .eq('customer_id', customerId)
+      .eq('sp_no', spNo)
+      .order('created_at', { ascending: true })
+      .limit(1000),
+  ]);
+  if (pRes.error) return { data: null, error: pRes.error };
+  if (dRes.error) return { data: null, error: dRes.error };
+  // Qty per surat jalan dijumlahkan di klien dari baris embed — nol RPC baru,
+  // nol view baru. Baris SJ selalu sedikit (1-3 per SP), jadi murah.
+  const deliveries = (dRes.data || []).map(d => ({
+    ...d,
+    total_qty: (d.delivery_note_items || []).reduce((sum, i) => sum + (Number(i.qty) || 0), 0),
+  }));
+  return { data: { pickings: pRes.data || [], deliveries }, error: null };
+}
+
 // Set qty_picked satu baris picking_list_items (partial picking). Status
 // DITURUNKAN dari angkanya, tidak pernah dikirim terpisah, supaya qty dan status
 // mustahil melenceng: 0 -> 'pending' · 0 < n < requested -> 'short' ·
