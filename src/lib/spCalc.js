@@ -41,6 +41,44 @@ export function calcItem(item) {
 }
 
 /**
+ * Status pengiriman satu baris SP yang SADAR konfirmasi surat jalan.
+ *
+ * SENGAJA TERPISAH dari calcItem() — bukan duplikasi yang kelupaan digabung.
+ * calcItem() dipakai di seluruh aplikasi (App.jsx groupBySP, ekspor CSV, kartu
+ * total) dan hanya boleh bergantung pada baris sp_items itu sendiri; ia murni
+ * sinkron, tanpa I/O. Fungsi ini butuh data SATU FETCH LEBIH JAUH (surat jalan
+ * mana yang sudah dikonfirmasi DC), jadi menaruhnya di calcItem() akan memaksa
+ * SETIAP pemakai calcItem ikut mengambil data itu — atau diam-diam menerima
+ * `breakdown` undefined dan kembali berbohong.
+ *
+ * KENAPA PERLU: sp_items.shipped_qty naik saat surat jalan BERANGKAT
+ * (dispatch_delivery), bukan saat tim DC customer mengonfirmasi barang SAMPAI
+ * (mark_delivery_delivered). Baris dengan shipped_qty penuh karena itu bisa
+ * berarti dua hal yang sangat berbeda, dan sebelum ini keduanya sama-sama
+ * tampil "Shipped". Ini padanan per-item dari state MENUNGGU_KONFIRMASI_DC di
+ * level header SP (migrasi 20260826000002).
+ *
+ * Kosakata nilai baliknya MENGIKUTI calcItem() ('Open'/'Partial'/'Closed')
+ * ditambah SATU nilai baru, supaya itemStatusMeta() cukup ditambah satu cabang
+ * dan pemetaan label lama tak perlu ditulis ulang.
+ *
+ * @param {Object} item - baris SP (camelCase: qty, shippedQty)
+ * @param {{qtyDelivered?:number, qtyInTransit?:number}} [breakdown] - satu entri
+ *        dari getSpItemDeliveryBreakdown (db.js). Boleh undefined: SP hasil
+ *        import lama tak punya surat jalan sama sekali, dan itu BUKAN keadaan
+ *        error — tanpa SJ 'in_transit' baris qty-penuh memang 'Closed'.
+ * @returns {'Open'|'Partial'|'AwaitingDC'|'Closed'}
+ */
+export function deriveItemShipStatus(item, breakdown) {
+  const qty        = Number(item?.qty)        || 0;
+  const shippedQty = Number(item?.shippedQty) || 0;
+  if (shippedQty <= 0)  return 'Open';
+  if (shippedQty < qty) return 'Partial';
+  const qtyInTransit = Number(breakdown?.qtyInTransit) || 0;
+  return qtyInTransit > 0 ? 'AwaitingDC' : 'Closed';
+}
+
+/**
  * Group a flat array of SP item rows by SP number.
  * Returns one summary object per SP — suitable for list/card views.
  * Note: App.jsx uses a richer internal groupBySP with items[], financePct, etc.
