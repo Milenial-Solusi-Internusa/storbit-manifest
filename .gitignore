@@ -49,3 +49,7 @@ supabase/.temp/
 # File kerja sementara setup staging, bukan bagian migration resmi
 master_data_seed.sql
 branches_seed.csv
+accounts_soa_seed.csv
+dc_master_soa_seed.csv
+products_soa_seed.csv
+menu_catalog_seed.sql
