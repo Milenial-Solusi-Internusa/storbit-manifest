@@ -79,15 +79,16 @@ Confirmed stack:
 
 Live modules:
 
-- Auth + RLS, Master Data (admin)
-- CRM — Pipeline, Inquiry, Quotation, Dashboard, Master Customer, Lead Pool, Sales Calls
-- Logistics — Sales Order / SP (list + detail)
-- Inventory — Stok Barang, Penerimaan Barang
+- Auth + RLS, Master Data (admin), Admin Hub, User Access + Role Defaults, Org Chart
+- CRM — Pipeline, Inquiry, Quotation, PRF + Penawaran Vendor, Dashboard, Master Customer, Lead Pool, Activities, Chatter
+- Logistics / Storbit — Sales Order / SP (list + detail), Picking List, Surat Jalan, BTB, Invoice + Payment + TTF, Dashboard Storbit
+- Inventory — Stok Barang, Penerimaan Barang, Lokasi Rak
 - Asset Management, HRGA Request, App Launcher
+- BNF (Bad News First), Briefing Harian, Meeting Mingguan
 
 Ongoing tech debt:
 
-- `src/App.jsx` is large (5,274 lines) with many inline components — decompose incrementally, never in one big change.
+- `src/App.jsx` is large (5,435 lines) with many inline components — decompose incrementally, never in one big change.
 - `PASTEL` design tokens duplicated across many files — pending a single `src/lib/tokens.js`.
 
 Do not perform a big-bang rewrite.
@@ -701,7 +702,7 @@ Output:
 ## Current Phase
 
 Current branch: `main` (production).
-Current phase: **Phase 2.5A — Customers → accounts migration (single master customer)** ✅ Complete.
+Current phase: **MVP Storbit end-to-end — rantai SP → Picking → Surat Jalan → BTB → Invoice → Payment lengkap** (mesin status SP 12 tahap sampai LUNAS).
 
 > **`CLAUDE.md` is the authoritative source** for the full phase history, sub-phase
 > details, and decision log. The summary below covers major milestones only — defer to
@@ -717,6 +718,12 @@ Current phase: **Phase 2.5A — Customers → accounts migration (single master 
 | 2.3A–I | User Access EFs · full-page edit · avatar · auth lifecycle hardening · drop legacy `profiles.role` (code) | ✅ Complete |
 | 2.4A | CRM Lead Pool (506 imported leads) | ✅ Complete |
 | 2.5A | Customers → accounts (single master, 5 FK repointed) | ✅ Complete |
+| 2.9S–V | Struktur Organisasi (org chart interaktif) | ✅ Complete |
+| Storbit F0–F5 | Skema SP baru (`sp_orders`/`sp_order_items`) · Picking List · Packing & Surat Jalan · cek stok + reservasi · Invoice · Payment/TTF + jurnal AR | ✅ Complete |
+| — | BNF (Bad News First) · Briefing Harian · Meeting Mingguan | ✅ Complete |
+| — | Dashboard Storbit (Shipping Manifest + Warehouse) | ✅ Complete |
+| — | Multi-entity plumbing (`activeCompanyId` + CompanySwitcher) · AdminHub · `role_menu_permissions` | ✅ Complete |
+| — | Globalisasi `roles`/`departments`/`positions`/`branches` (company-scope pindah ke `user_roles`) | ✅ Complete |
 
 Pending / next:
 - **Tahap 4** — drop physical `profiles.role` column + `user_role_legacy` enum (needs approval; verify all super_admins exist in `user_roles` first).

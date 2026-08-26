@@ -3197,6 +3197,8 @@ export default function StorbitManifest() {
                   }}
                   onGeneratePicking={handleGeneratePicking}
                   onRefresh={refreshSp}
+                  onOpenPicking={(pid) => { setSelectedSpId(null); setActiveMenu('picking'); setSelectedPickingId(pid); }}
+                  onOpenDelivery={(did) => { setSelectedSpId(null); setActiveMenu('surat-jalan'); setSelectedDeliveryId(did); }}
                   showToast={showToast}
                   role={role}
                 />

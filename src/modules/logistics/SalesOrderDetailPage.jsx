@@ -21,7 +21,7 @@ import {
   Check, X, History, Download,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2, Eye, EyeOff,
 } from 'lucide-react';
-import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, getSpFulfillmentDocs, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { calcItem } from '../../lib/spCalc';
 import { getTodayWIB } from '../../lib/dateUtils';
@@ -222,6 +222,36 @@ const HEADLINE_META = {
   SUBMITTED:      { label: 'Submitted',      ...TAG_PALE    },   // milestone tercapai
   LUNAS:          { label: 'Lunas',          ...TAG_PALE    },   // analog 'Selesai'
   CANCELLED:      { label: 'Dibatalkan',     ...TAG_NEUTRAL },   // cabang `else` mockup — lihat catatan ambigu di laporan
+};
+
+// Status Surat Jalan (delivery_notes) -> badge timeline tab Shipment.
+// LABEL disamakan verbatim dengan DeliveryNotePage.jsx:23-26 supaya user membaca
+// istilah yang sama di daftar SJ, detail SJ, dan di sini.
+// WARNA mengikuti 3 varian TAG halaman ini, BUKAN palet amber/green/rose halaman
+// daftar — halaman ini sudah punya vokabular warnanya sendiri (lihat catatan di
+// TAG_ATTN). draft & cancelled sama-sama netral, persis perlakuan
+// DRAFT/CANCELLED di HEADLINE_META; labelnya yang membedakan.
+const DN_STATUS_META = {
+  draft:      { label: 'Draft',            ...TAG_NEUTRAL },
+  in_transit: { label: 'Dalam Pengiriman', ...TAG_OUTLINE },
+  delivered:  { label: 'Terkirim',         ...TAG_PALE    },
+  cancelled:  { label: 'Dibatalkan',       ...TAG_NEUTRAL },
+};
+
+// Qty SJ draft/cancelled TIDAK dihitung sebagai terkirim (keputusan Den, 26 Agu
+// 2026). Bukan kosmetik: `draft` belum menaikkan sp_items.shipped_qty sama
+// sekali (baru terjadi di dispatch_delivery), dan `cancelled` sudah dibalik lagi
+// oleh cancel_delivery. Angkanya tetap DITAMPILKAN supaya isi SJ terlihat, tapi
+// diberi penanda agar tak dibaca sebagai barang yang sudah sampai customer.
+const DN_QTY_NOTE = { draft: 'belum dihitung', cancelled: 'dibatalkan' };
+
+// Status Picking List -> badge di card "Dokumen Terkait" (tab Dokumen).
+// Label verbatim dari PickingListPage.jsx:28-31, warna dari palet halaman ini.
+const PICK_STATUS_META = {
+  pending:     { label: 'Menunggu',       ...TAG_NEUTRAL },
+  in_progress: { label: 'Sedang Diambil', ...TAG_OUTLINE },
+  done:        { label: 'Selesai',        ...TAG_PALE    },
+  cancelled:   { label: 'Dibatalkan',     ...TAG_NEUTRAL },
 };
 
 // ─── Finance status stages config ─────────────────────────────────────────
@@ -740,6 +770,44 @@ function EmptyState({ icon: Icon, title, sub }) {
   );
 }
 
+// Satu baris dokumen di card "Dokumen Terkait" (tab Dokumen).
+// `onOpen` OPSIONAL dan sengaja begitu: BTB & Invoice belum punya halaman detail
+// sendiri (keduanya dirender inline di halaman ini), jadi barisnya memang tidak
+// bisa diklik — bukan kelalaian. Baris tanpa onOpen tampil non-interaktif penuh:
+// nol cursor pointer, nol role/tabIndex, nol handler keyboard.
+function DocRow({ icon: Icon, no, badge, meta, onOpen }) {
+  const clickable = typeof onOpen === 'function';
+  return (
+    <div
+      onClick={clickable ? onOpen : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } } : undefined}
+      title={clickable ? 'Buka detail dokumen' : undefined}
+      style={{
+        display: 'flex', alignItems: 'center', gap: SP.s2, flexWrap: 'wrap',
+        border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md,
+        padding: `${SP.s2}px ${SP.s3}px`, background: C.surface,
+        cursor: clickable ? 'pointer' : 'default',
+      }}
+    >
+      <Icon size={14} style={{ color: clickable ? C.accent : C.inkFaint, flexShrink: 0 }}/>
+      <b style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, color: C.ink }}>{no}</b>
+      {badge && <Badge bg={badge.bg} color={badge.color} bd={badge.bd}>{badge.label}</Badge>}
+      {meta && <span style={{ fontSize: 12, color: C.inkSoft }}>{meta}</span>}
+    </div>
+  );
+}
+
+function DocGroup({ title, children }) {
+  return (
+    <div style={{ marginBottom: SP.s3 }}>
+      <div style={{ ...kickerStyle, marginBottom: SP.s1 }}>{title}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s1 }}>{children}</div>
+    </div>
+  );
+}
+
 // ─── Preview dokumen SP (on-screen, bukan PDF) ───────────────────────────────
 // Presentasi murni — semua angka dioper dari pemanggil (grandTotal memakai
 // perhitungan calcItem yang sama dengan Financial Summary, bukan hitung sendiri,
@@ -826,6 +894,8 @@ export default function SalesOrderDetailPage({
   onDeleteSP,
   onGeneratePicking,
   onRefresh,
+  onOpenPicking,      // (pickingListId)  -> buka PickingListDetailPage
+  onOpenDelivery,     // (deliveryNoteId) -> buka DeliveryNoteDetailPage
   showToast,
   role,
 }) {
@@ -856,6 +926,9 @@ export default function SalesOrderDetailPage({
   const [btbRemarks,   setBtbRemarks]   = useState('');
   const [btbSaving,    setBtbSaving]    = useState(false);
   const [spOrder,      setSpOrder]      = useState(null);  // Fase 1: headline sp_orders (status + flag)
+  // Dokumen fulfillment SP (picking list + surat jalan) — tab Shipment & Dokumen.
+  const [fulfillDocs,    setFulfillDocs]    = useState({ pickings: [], deliveries: [] });
+  const [fulfillLoading, setFulfillLoading] = useState(true);
 
   // FASE 3 — baca BTB dari sp_btb (tabel benar) via sp_order_id (dari spOrder.id).
   useEffect(() => {
@@ -956,6 +1029,22 @@ export default function SalesOrderDetailPage({
     if (!spNo || !cust) return undefined;
     let cancelled = false;
     getSpOrderStatus(cust, spNo).then(({ data }) => { if (!cancelled) setSpOrder(data || null); });
+    return () => { cancelled = true; };
+  }, [spNo, group?.customerId]);
+
+  // Dokumen fulfillment (picking list + surat jalan) — kunci KOMPOSIT
+  // (customer_id, sp_no), bukan spOrder.id: keduanya sudah tersedia dari props
+  // sejak render pertama, sementara spOrder.id baru ada setelah fetch di atas
+  // selesai. Lihat catatan di getSpFulfillmentDocs (db.js).
+  useEffect(() => {
+    const cust = group?.customerId;
+    if (!spNo || !cust) return undefined;
+    let cancelled = false;
+    getSpFulfillmentDocs(cust, spNo).then(({ data }) => {
+      if (cancelled) return;
+      setFulfillDocs(data || { pickings: [], deliveries: [] });
+      setFulfillLoading(false);
+    });
     return () => { cancelled = true; };
   }, [spNo, group?.customerId]);
 
@@ -2010,20 +2099,142 @@ export default function SalesOrderDetailPage({
                   {shippedQty > 0 ? `${shippedQty.toLocaleString('id-ID')} dari ${totalQty.toLocaleString('id-ID')} qty terkirim` : 'Belum ada pengiriman tercatat'}
                 </div>
               </div>
-              <button
-                onClick={() => showToast('Form tambah shipment akan tersedia setelah migrasi tabel shipment', 'success')}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 14px', border: `1px solid ${C.accent}`, borderRadius: 9, background: 'transparent', color: C.accent, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                + Tambah Shipment
-              </button>
+              {/* Tombol "+ Tambah Shipment" DIHAPUS (26 Agu 2026). Surat Jalan
+                  TIDAK dibuat ad-hoc dari sini: ia lahir dari Picking List lewat
+                  RPC generate_delivery_from_picking, yang juga melepas reservasi
+                  stok dan memakai qty_picked. Membuat SJ langsung dari Detail SP
+                  akan melewati kedua hal itu. */}
             </div>
-            <EmptyState icon={Truck} title="Belum ada shipment" sub="Data pengiriman akan muncul di sini setelah tabel shipment dimigrasi ke database."/>
+            {fulfillLoading ? (
+              <div style={{ fontSize: 12.5, color: C.inkFaint, padding: '8px 0' }}>Memuat riwayat pengiriman…</div>
+            ) : fulfillDocs.deliveries.length === 0 ? (
+              <EmptyState
+                icon={Truck}
+                title="Belum ada Surat Jalan untuk SP ini"
+                sub="Surat Jalan lahir dari Picking List — buat Picking List dulu, selesaikan pengambilannya, lalu terbitkan Surat Jalan dari halaman Picking. Tidak dibuat langsung dari tab ini."
+              />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
+                {fulfillDocs.deliveries.map(d => {
+                  const meta = DN_STATUS_META[d.status] || DN_STATUS_META.draft;
+                  const qtyNote = DN_QTY_NOTE[d.status] || null;
+                  return (
+                    <div
+                      key={d.id}
+                      onClick={() => onOpenDelivery?.(d.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDelivery?.(d.id); } }}
+                      title="Buka detail Surat Jalan"
+                      style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3, cursor: 'pointer', background: C.surface }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: SP.s2, flexWrap: 'wrap', marginBottom: SP.s2 }}>
+                        <Truck size={14} style={{ color: C.accent, flexShrink: 0 }}/>
+                        <b style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: C.ink }}>{d.do_no}</b>
+                        <Badge {...meta}>{meta.label}</Badge>
+                      </div>
+                      <div className="nx-grid-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: `${SP.s2}px ${SP.s3}px`, fontSize: 12.5 }}>
+                        {[
+                          { k: 'Berangkat', v: fmtDate(d.dispatched_at || d.ship_date) },
+                          { k: 'Sampai',    v: fmtDate(d.delivered_at) },
+                          { k: 'Driver',    v: d.driver_name || '—' },
+                          { k: 'Kendaraan', v: d.vehicle_no || '—' },
+                          { k: 'Koli',      v: d.total_koli != null ? d.total_koli.toLocaleString('id-ID') : '—' },
+                          {
+                            k: 'Qty',
+                            // Angka tetap tampil; penanda memberitahu bahwa qty ini
+                            // BELUM/TIDAK terhitung sebagai barang terkirim.
+                            v: qtyNote
+                              ? `${d.total_qty.toLocaleString('id-ID')} (${qtyNote})`
+                              : d.total_qty.toLocaleString('id-ID'),
+                            muted: !!qtyNote,
+                          },
+                        ].map(c => (
+                          <div key={c.k}>
+                            <div style={{ fontSize: 11, color: C.inkSoft }}>{c.k}</div>
+                            <div style={{ fontWeight: 600, color: c.muted ? C.inkSoft : C.ink }}>{c.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
         {/* ── DOKUMEN panel ── */}
         {tab === 'dokumen' && (
           <div style={{ padding: `${SP.s4}px 0 0` }}>
+            {/* ── Dokumen Terkait — card BARU (26 Agu 2026). Ditaruh DI ATAS card
+                   "Link Dokumen SP" yang sudah ada; card itu TIDAK disentuh. ── */}
+            <div style={{ border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface2, padding: 20, marginBottom: SP.s4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <FileText size={16} style={{ color: C.accent }}/>
+                <b style={{ ...cardTitleStyle, fontWeight: 600 }}>Dokumen Terkait</b>
+              </div>
+              <p style={{ fontSize: 12.5, color: C.inkSoft, margin: '0 0 14px' }}>
+                Dokumen yang lahir dari SP {spNo}. Picking List dan Surat Jalan bisa diklik untuk membuka detailnya; BTB dan Invoice ditampilkan di halaman ini juga (tab Overview).
+              </p>
+              {fulfillLoading ? (
+                <div style={{ fontSize: 12.5, color: C.inkFaint }}>Memuat dokumen…</div>
+              ) : (fulfillDocs.pickings.length === 0 && fulfillDocs.deliveries.length === 0 && btbs.length === 0 && !invoice) ? (
+                <EmptyState
+                  icon={FileText}
+                  title="Belum ada dokumen terkait"
+                  sub="Picking List, Surat Jalan, BTB, dan Invoice akan muncul di sini begitu diterbitkan untuk SP ini."
+                />
+              ) : (
+                <>
+                  {fulfillDocs.pickings.length > 0 && (
+                    <DocGroup title="Picking List">
+                      {fulfillDocs.pickings.map(pk => (
+                        <DocRow
+                          key={pk.id}
+                          icon={ClipboardList}
+                          no={pk.picking_no}
+                          badge={PICK_STATUS_META[pk.status] || PICK_STATUS_META.pending}
+                          meta={pk.warehouses?.name || null}
+                          onOpen={onOpenPicking ? () => onOpenPicking(pk.id) : undefined}
+                        />
+                      ))}
+                    </DocGroup>
+                  )}
+                  {fulfillDocs.deliveries.length > 0 && (
+                    <DocGroup title="Surat Jalan">
+                      {fulfillDocs.deliveries.map(d => (
+                        <DocRow
+                          key={d.id}
+                          icon={Truck}
+                          no={d.do_no}
+                          badge={DN_STATUS_META[d.status] || DN_STATUS_META.draft}
+                          meta={fmtDate(d.dispatched_at || d.ship_date)}
+                          onOpen={onOpenDelivery ? () => onOpenDelivery(d.id) : undefined}
+                        />
+                      ))}
+                    </DocGroup>
+                  )}
+                  {btbs.length > 0 && (
+                    <DocGroup title="BTB">
+                      {btbs.map(b => (
+                        <DocRow key={b.id} icon={Package} no={b.btb_no} meta={fmtDate(b.btb_date)}/>
+                      ))}
+                    </DocGroup>
+                  )}
+                  {invoice && (
+                    <DocGroup title="Invoice">
+                      <DocRow
+                        icon={Receipt}
+                        no={invoice.invoice_no || '(belum bernomor)'}
+                        meta={fmtDate(invoice.invoice_date)}
+                      />
+                    </DocGroup>
+                  )}
+                </>
+              )}
+            </div>
+
             <div style={{ border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface2, padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <Link2 size={16} style={{ color: C.accent }}/>

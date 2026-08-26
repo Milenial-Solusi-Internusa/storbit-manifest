@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict gKiPXSLlCjGEfOU1ZyM8tEuIfyYlEGKCcyd5niwXBfX14h1NbXInMPHyfygb8Lm
+\restrict qAHnQzaBCUpE8YrIVRDSk0oYOhTaWLaaD3huXhQwlYeBIlKingMDafMEzCOIflG
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -722,8 +722,10 @@ DECLARE
   v_sp_no text; v_pick_status text;
   v_customer uuid; v_cust_name text; v_addr text;
   v_item_count int;
+  v_sp_order_id uuid;
 BEGIN
-  SELECT sp_no, status, customer_id INTO v_sp_no, v_pick_status, v_customer
+  SELECT sp_no, status, customer_id, sp_order_id
+    INTO v_sp_no, v_pick_status, v_customer, v_sp_order_id
     FROM picking_lists WHERE id = p_picking_list_id;
   IF v_sp_no IS NULL THEN RAISE EXCEPTION 'Picking list tidak ditemukan'; END IF;
   IF v_pick_status <> 'done' THEN RAISE EXCEPTION 'Picking list belum selesai (status=%)', v_pick_status; END IF;
@@ -742,13 +744,18 @@ BEGIN
   END IF;
   SELECT a.name, a.address INTO v_cust_name, v_addr FROM accounts a WHERE a.id = v_customer;
 
+  IF v_sp_order_id IS NULL AND v_customer IS NOT NULL THEN
+    SELECT id INTO v_sp_order_id FROM sp_orders
+     WHERE customer_id = v_customer AND sp_no = v_sp_no AND deleted_at IS NULL;
+  END IF;
+
   SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
   v_seq := increment_document_sequence(v_company_id, 'SJ', 'WH', v_year, 0);
   v_no  := 'SJ/' || COALESCE(v_entity,'SOA') || '/WH/' || v_year || '/' || lpad(v_seq::text, 4, '0');
 
   INSERT INTO delivery_notes
-    (company_id, do_no, sp_no, picking_list_id, customer_id, customer_name, destination_address, status, created_by)
-  VALUES (v_company_id, v_no, v_sp_no, p_picking_list_id, v_customer, v_cust_name, v_addr, 'draft', v_uid)
+    (company_id, do_no, sp_no, picking_list_id, customer_id, customer_name, destination_address, status, created_by, sp_order_id)
+  VALUES (v_company_id, v_no, v_sp_no, p_picking_list_id, v_customer, v_cust_name, v_addr, 'draft', v_uid, v_sp_order_id)
   RETURNING id INTO v_dn_id;
 
   INSERT INTO delivery_note_items (delivery_note_id, picking_list_item_id, product_id, product_name, sku, qty)
@@ -776,6 +783,7 @@ DECLARE
   v_wh uuid := COALESCE(p_warehouse_id, '303c3d4c-570e-40a1-b738-6b0ed1cb5078');
   v_entity text; v_year int := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Jakarta'))::int;
   v_seq int; v_no text; v_pl_id uuid; v_uid uuid := auth.uid(); v_outstanding int;
+  v_sp_order_id uuid;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM sp_items WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed') THEN
     RAISE EXCEPTION 'SP % tidak ditemukan atau belum confirmed', p_sp_no; END IF;
@@ -799,11 +807,15 @@ BEGIN
   SELECT count(*) INTO v_outstanding FROM sp_items
     WHERE sp_no=p_sp_no AND customer_id=p_customer_id AND sp_status='confirmed' AND (qty - shipped_qty) > 0;
   IF v_outstanding = 0 THEN RAISE EXCEPTION 'SP % tidak punya item outstanding', p_sp_no; END IF;
+
+  SELECT id INTO v_sp_order_id FROM sp_orders
+   WHERE customer_id = p_customer_id AND sp_no = p_sp_no AND deleted_at IS NULL;
+
   SELECT code INTO v_entity FROM companies WHERE id = v_company_id;
   v_seq := increment_document_sequence(v_company_id,'PICK','WH',v_year,0);
   v_no  := 'PICK/'||COALESCE(v_entity,'SOA')||'/WH/'||v_year||'/'||lpad(v_seq::text,4,'0');
-  INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by, customer_id)
-  VALUES (v_company_id, v_no, p_sp_no, v_wh, 'pending', v_uid, p_customer_id)
+  INSERT INTO picking_lists (company_id, picking_no, sp_no, warehouse_id, status, created_by, customer_id, sp_order_id)
+  VALUES (v_company_id, v_no, p_sp_no, v_wh, 'pending', v_uid, p_customer_id, v_sp_order_id)
   RETURNING id INTO v_pl_id;
   WITH src AS (
     SELECT si.id AS sp_item_id, si.product_id, si.product_name, si.sku,
@@ -2762,6 +2774,48 @@ $$;
 ALTER FUNCTION public.set_prospect_on_inquiry() OWNER TO postgres;
 
 --
+-- Name: set_sp_expired_date(uuid, text, date); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_sp_order_id uuid; v_company uuid; v_status text;
+BEGIN
+  IF p_expired_date IS NULL THEN
+    RAISE EXCEPTION 'Tanggal expired wajib diisi.';
+  END IF;
+  SELECT id, company_id, status
+    INTO v_sp_order_id, v_company, v_status
+    FROM sp_orders
+   WHERE customer_id = p_customer_id
+     AND sp_no       = p_sp_no
+     AND deleted_at IS NULL;
+  IF v_sp_order_id IS NULL THEN
+    RAISE EXCEPTION 'SP % untuk customer ini tidak ditemukan.', p_sp_no;
+  END IF;
+  IF NOT (is_super_admin() OR (v_company IN (SELECT get_user_company_ids())
+          AND (is_manager_or_above() OR has_role('operations')))) THEN
+    RAISE EXCEPTION 'Tidak berhak mengubah tenggat SP ini';
+  END IF;
+  IF v_status = 'CANCELLED' THEN
+    RAISE EXCEPTION 'SP sudah dibatalkan — tenggat tidak bisa diubah.';
+  END IF;
+  UPDATE sp_orders
+     SET expired_date = p_expired_date, updated_at = now()
+   WHERE id = v_sp_order_id;
+  UPDATE sp_items
+     SET expired_date = p_expired_date, updated_at = now()
+   WHERE customer_id = p_customer_id
+     AND sp_no       = p_sp_no;
+END; $$;
+
+
+ALTER FUNCTION public.set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date) OWNER TO postgres;
+
+--
 -- Name: set_sp_status(text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -3149,18 +3203,32 @@ CREATE FUNCTION public.update_sp_item_dual(p_id uuid, p_item jsonb) RETURNS void
 DECLARE v_rec sp_items%ROWTYPE; v_company uuid;
 BEGIN
   v_rec := jsonb_populate_record(null::sp_items, p_item);
-  SELECT si.company_id INTO v_company FROM sp_items si WHERE si.id = p_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Item SP tidak ditemukan.'; END IF;
+  -- FIX 25 Agu 2026 (1/2): company diambil dari sp_orders (header), BUKAN
+  -- sp_items.company_id yang tidak pernah ada. Pola = sp_issue_btb.
+  SELECT o.company_id INTO v_company
+    FROM sp_items si
+    JOIN sp_orders o
+      ON o.customer_id = si.customer_id
+     AND o.sp_no       = si.sp_no
+     AND o.deleted_at IS NULL
+   WHERE si.id = p_id;
+  IF v_company IS NULL THEN
+    RAISE EXCEPTION 'Item SP tidak ditemukan, atau SP induknya belum ada di sp_orders.';
+  END IF;
   IF NOT (is_super_admin() OR (v_company IN (SELECT get_user_company_ids())
           AND (is_manager_or_above() OR has_role('operations')))) THEN
     RAISE EXCEPTION 'Tidak berhak mengubah item SP ini';
   END IF;
-
+  -- FIX 25 Agu 2026 (2/2): expired_date TIDAK ADA di daftar SET ini — sengaja.
+  -- Tenggat SP adalah atribut HEADER; satu-satunya penulis sahnya adalah
+  -- set_sp_expired_date(). JANGAN dikembalikan ke sini: itu membuka lagi
+  -- jalur senyap yang bisa menggeser/meng-NULL-kan tenggat dari tiga modal
+  -- item. exp_date DIPERTAHANKAN (isu terpisah, milik M13).
   UPDATE sp_items SET
     sp_date = v_rec.sp_date, sp_no = v_rec.sp_no, customer_id = v_rec.customer_id,
     product_id = v_rec.product_id, product_name = v_rec.product_name, sku = v_rec.sku,
     qty = v_rec.qty, shipped_qty = v_rec.shipped_qty,
-    exp_date = v_rec.exp_date, expired_date = v_rec.expired_date, dc = v_rec.dc,
+    exp_date = v_rec.exp_date, dc = v_rec.dc,
     shipping_date = v_rec.shipping_date, sla_days = v_rec.sla_days,
     estimated_delivery_date = v_rec.estimated_delivery_date, arrival_date = v_rec.arrival_date,
     unit_price = v_rec.unit_price, shipping_price = v_rec.shipping_price,
@@ -3168,7 +3236,6 @@ BEGIN
     submit_date = v_rec.submit_date, email_status = v_rec.email_status, notes = v_rec.notes,
     updated_at = now()
   WHERE id = p_id;
-
   UPDATE sp_order_items SET
     qty = v_rec.qty,
     sla_days = v_rec.sla_days,
@@ -9903,6 +9970,13 @@ CREATE INDEX idx_delivery_notes_sp_no ON public.delivery_notes USING btree (sp_n
 
 
 --
+-- Name: idx_delivery_notes_sp_order; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_delivery_notes_sp_order ON public.delivery_notes USING btree (sp_order_id) WHERE (sp_order_id IS NOT NULL);
+
+
+--
 -- Name: idx_delivery_notes_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -10278,6 +10352,13 @@ CREATE INDEX idx_picking_list_items_pl ON public.picking_list_items USING btree 
 --
 
 CREATE INDEX idx_picking_lists_sp_no ON public.picking_lists USING btree (sp_no);
+
+
+--
+-- Name: idx_picking_lists_sp_order; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_picking_lists_sp_order ON public.picking_lists USING btree (sp_order_id) WHERE (sp_order_id IS NOT NULL);
 
 
 --
@@ -17731,6 +17812,14 @@ GRANT ALL ON FUNCTION public.set_product_category_prices(p_product_id uuid, p_se
 
 
 --
+-- Name: FUNCTION set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date) TO authenticated;
+
+
+--
 -- Name: FUNCTION set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -19273,5 +19362,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict gKiPXSLlCjGEfOU1ZyM8tEuIfyYlEGKCcyd5niwXBfX14h1NbXInMPHyfygb8Lm
+\unrestrict qAHnQzaBCUpE8YrIVRDSk0oYOhTaWLaaD3huXhQwlYeBIlKingMDafMEzCOIflG
 
