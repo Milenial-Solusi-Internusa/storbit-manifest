@@ -35,7 +35,7 @@
 
 ### Environment staging lahir + 3 migrasi Storbit (semua LIVE staging→produksi) + tab Shipment/Dokumen Detail SP
 
-> **Sifat: 3 migrasi DB + FE Storbit + housekeeping dokumentasi.** Seluruh SQL dijalankan manual di SQL Editor, diverifikasi di staging lebih dulu, baru produksi. ⚠️ **`schema_snapshot.sql` BELUM di-refresh** sejak ketiganya.
+> **Sifat: 3 migrasi DB + FE Storbit + housekeeping dokumentasi.** Seluruh SQL dijalankan manual di SQL Editor, diverifikasi di staging lebih dulu, baru produksi. ✅ **`schema_snapshot.sql` sudah di-refresh** (commit `0629e0f`) dan terverifikasi mencerminkan ketiganya.
 
 **1. Environment staging (`nexus-staging`) — belum pernah tercatat.** Project Supabase terpisah, ref `oovmlhilhqzejnawqkvt`, region **ap-northeast-2**. ⚠️ Koneksi **wajib lewat Session pooler** — direct connection gagal karena host IPv6-only. Env var Vercel **Preview** otomatis menunjuk ke staging. **Provisioning user butuh DUA langkah independen:** `user_roles` (akses company) **dan** `user_menu_permissions` (visibilitas menu) — isi salah satu saja menghasilkan user yang bisa login tapi layarnya kosong, atau sebaliknya. Role di-scope **ketat per company** lewat `pickPrimaryErpRole`: `super_admin` di satu company **tidak** otomatis berlaku di company lain.
 
