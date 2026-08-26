@@ -1362,9 +1362,36 @@ export default function SalesOrderDetailPage({
     if (!group) return null;
     return HEADLINE_META[spOrder?.status] || HEADLINE_META.DRAFT;
   })();
-  // Aksi gudang (Generate Picking + indikator stok) hanya di tahap awal, belum picking.
+  // Aksi gudang (Generate Picking + indikator stok). Keempat status di bawah
+  // punya SATU kesamaan: masih MUNGKIN ada item outstanding (qty > shipped_qty)
+  // dan tak ada picking yang sedang berjalan.
+  //   CONFIRMED / MENUNGGU_STOK -> belum pernah dibuatkan picking sama sekali.
+  //   DIKIRIM / SAMPAI          -> pengiriman PARSIAL: sebagian qty sudah
+  //     berangkat (DIKIRIM) atau sudah dikonfirmasi sampai oleh DC (SAMPAI),
+  //     sisanya masih outstanding dan justru BUTUH picking lanjutan.
+  //
+  // Daftar ini dulu cuma CONFIRMED + MENUNGGU_STOK, dengan komentar "hanya di
+  // tahap awal, belum picking" — asumsi dari masa sebelum alur partial shipment
+  // ada, dan tak pernah ditinjau ulang sesudahnya. Akibatnya SP parsial yang SJ
+  // pertamanya sudah berangkat/sampai TIDAK BISA dilanjutkan dari UI sama
+  // sekali: tombol ini SATU-SATUNYA pintu ke generate_picking_from_sp.
+  //
+  // PICKING / PACKED / MENUNGGU_KONFIRMASI_DC / TERKIRIM_PENUH SENGAJA di luar
+  // daftar — tapi FE TIDAK menduplikasi larangannya, karena RPC-nya sendiri yang
+  // menolak, dan pesan errornya jauh lebih berguna daripada tombol yang diam-diam
+  // hilang:
+  //   PICKING -> masih ada picking 'pending'/'in_progress'
+  //   PACKED  -> ada picking 'done' yang surat jalannya belum dispatched
+  //   MENUNGGU_KONFIRMASI_DC / TERKIRIM_PENUH -> outstanding qty sudah 0
+  // Whitelist ini soal "jangan tampilkan tombol yang PASTI gagal", BUKAN gerbang
+  // otorisasi. Gerbang sebenarnya ada di generate_picking_from_sp — 5 guard (item
+  // confirmed, role, picking aktif, SJ belum dispatch, outstanding > 0) — dan RPC
+  // itu memang TIDAK PERNAH membaca sp_orders.status.
+  //
+  // ⚠️ MENAMBAH STATUS SP BARU? TINJAU ULANG DAFTAR INI. Status baru tidak masuk
+  // otomatis, dan gejalanya senyap: tombolnya cuma tidak muncul, tanpa error.
   const canGeneratePicking = canWarehouseOps
-    && (spOrder?.status === 'CONFIRMED' || spOrder?.status === 'MENUNGGU_STOK');
+    && ['CONFIRMED', 'MENUNGGU_STOK', 'DIKIRIM', 'SAMPAI'].includes(spOrder?.status);
 
   if (!spNo) return null;
 
