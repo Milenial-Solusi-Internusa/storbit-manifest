@@ -21,9 +21,9 @@ import {
   Check, X, History, Download,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2, Eye, EyeOff,
 } from 'lucide-react';
-import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, getSpFulfillmentDocs, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, getSpFulfillmentDocs, getSpItemDeliveryBreakdown, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
-import { calcItem } from '../../lib/spCalc';
+import { calcItem, deriveItemShipStatus } from '../../lib/spCalc';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { PPN_RATE } from '../../lib/taxConstants';
 import ProductPicker from '../../components/ProductPicker';
@@ -129,9 +129,10 @@ const TAG_PALE    = { bg: C.accentSoft, color: C.accentDeep, bd: C.accentBd };
 const TAG_OUTLINE = { bg: 'transparent', color: C.accent,    bd: C.accent   };
 const TAG_NEUTRAL = { bg: C.neutralBg,   color: C.neutral,   bd: C.neutralBd };
 // Varian ke-4, PENGECUALIAN sempit: hanya untuk kondisi yang menuntut perhatian
-// (stok kurang, invoice belum diterbitkan). Sumber desain memang punya 4 warna
-// semantik, oranye terpisah dari status siklus hidup biasa. Badge status lain
-// TETAP tiga varian di atas — ini bukan pembatalan keputusan itu.
+// (stok kurang, invoice belum diterbitkan, menunggu konfirmasi DC). Sumber
+// desain memang punya 4 warna semantik, oranye terpisah dari status siklus
+// hidup biasa. Badge status lain TETAP tiga varian di atas — ini bukan
+// pembatalan keputusan itu.
 const TAG_ATTN    = { bg: C.attnBg,      color: C.attn,      bd: C.attnBd   };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -184,8 +185,15 @@ function custColor(name) {
   return PALETTE[h];
 }
 
+// Nilai `status` di sini datang dari deriveItemShipStatus (spCalc.js), BUKAN
+// lagi dari calcItem — bedanya cuma satu nilai tambahan, 'AwaitingDC'.
 function itemStatusMeta(status) {
   if (status === 'Closed')  return { ...TAG_PALE,    label: 'Shipped' };   // terkirim penuh → selesai
+  // Qty berangkat penuh tapi SJ-nya masih 'in_transit' — menunggu konfirmasi tim
+  // DC customer. ATTN, bukan PALE: keadaan ini menuntut perhatian dan BELUM
+  // selesai; memberinya PALE akan mengulang kebohongan yang justru dihapus
+  // state MENUNGGU_KONFIRMASI_DC. Selaras badge header di HEADLINE_META.
+  if (status === 'AwaitingDC') return { ...TAG_ATTN, label: 'Menunggu Konfirmasi' };
   if (status === 'Partial') return { ...TAG_OUTLINE, label: 'Parsial' };   // sebagian dikirim → berjalan
   return                           { ...TAG_NEUTRAL, label: 'Open'    };   // belum mulai
 }
@@ -206,7 +214,7 @@ function Badge({ bg, color, bd, children }) {
   );
 }
 
-// FASE 2E — status headline SP (sp_orders 12 tahap) → badge Detail SP. Warna kalem,
+// FASE 2E — status headline SP (sp_orders 13 tahap) → badge Detail SP. Warna kalem,
 // semua badge tint + teks senada (tanpa blok solid, tanpa dark green). Selaras STATUS_META di SalesOrderPage.
 const HEADLINE_META = {
   DRAFT:          { label: 'Draft',          ...TAG_NEUTRAL },   // belum mulai
@@ -216,6 +224,9 @@ const HEADLINE_META = {
   PACKED:         { label: 'Dikemas',        ...TAG_OUTLINE },   // berjalan
   DIKIRIM:        { label: 'Dikirim',        ...TAG_OUTLINE },   // analog 'Proses'/'Sebagian Dikirim'
   SAMPAI:         { label: 'Sampai',         ...TAG_PALE    },   // analog 'Terkirim'
+  // Qty berangkat penuh tapi SJ masih 'in_transit' — ATTN, bukan PALE: belum
+  // selesai dan menunggu aksi tim DC customer (migrasi 20260826000002).
+  MENUNGGU_KONFIRMASI_DC: { label: 'Menunggu Konfirmasi DC', ...TAG_ATTN },
   BTB_TERBIT:     { label: 'BTB Terbit',     ...TAG_PALE    },   // milestone tercapai
   TERKIRIM_PENUH: { label: 'Terkirim Penuh', ...TAG_PALE    },   // analog 'Terkirim'
   INVOICED:       { label: 'Invoiced',       ...TAG_PALE    },   // milestone tercapai
@@ -929,6 +940,12 @@ export default function SalesOrderDetailPage({
   // Dokumen fulfillment SP (picking list + surat jalan) — tab Shipment & Dokumen.
   const [fulfillDocs,    setFulfillDocs]    = useState({ pickings: [], deliveries: [] });
   const [fulfillLoading, setFulfillLoading] = useState(true);
+  // Rincian qty per baris sp_items menurut status SJ-nya — tab Items.
+  // Peta { [sp_item_id]: { qtyDelivered, qtyInTransit } }; {} = belum termuat
+  // ATAU memang tak ada SJ. Keduanya sengaja tak dibedakan: deriveItemShipStatus
+  // menganggap tanpa-SJ sebagai 'Closed', yang persis perilaku sebelum fitur ini
+  // ada — jadi tab Items tidak pernah kosong/flicker sambil menunggu fetch.
+  const [itemShipMap,    setItemShipMap]    = useState({});
 
   // FASE 3 — baca BTB dari sp_btb (tabel benar) via sp_order_id (dari spOrder.id).
   useEffect(() => {
@@ -1044,6 +1061,20 @@ export default function SalesOrderDetailPage({
       if (cancelled) return;
       setFulfillDocs(data || { pickings: [], deliveries: [] });
       setFulfillLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [spNo, group?.customerId]);
+
+  // Rincian qty terkirim per baris item — kunci komposit yang SAMA dengan effect
+  // di atas, dan karena itu deps-nya juga sama. Sengaja fetch terpisah, bukan
+  // digabung ke getSpFulfillmentDocs: yang ini beragregasi per sp_item_id dan
+  // hanya dipakai tab Items, sementara dokumen fulfillment dipakai dua tab lain.
+  useEffect(() => {
+    const cust = group?.customerId;
+    if (!spNo || !cust) return undefined;
+    let cancelled = false;
+    getSpItemDeliveryBreakdown(cust, spNo).then(({ data }) => {
+      if (!cancelled) setItemShipMap(data || {});
     });
     return () => { cancelled = true; };
   }, [spNo, group?.customerId]);
@@ -2034,7 +2065,7 @@ export default function SalesOrderDetailPage({
                     <div key={h} style={{ ...thStyle, textAlign: align, borderBottom: `1px solid ${C.line}` }}>{h}</div>
                   ))}
                   {items.map(item => {
-                    const sm   = itemStatusMeta(item.status);
+                    const sm   = itemStatusMeta(deriveItemShipStatus(item, itemShipMap[item.id]));
                     const { subtotal: itemSubtotal } = calcItem(item);
                     const prod = products.find(p => p.id === item.productId);
                     const cell = { padding: SP.s2, borderBottom: `1px solid ${C.lineSoft}` };

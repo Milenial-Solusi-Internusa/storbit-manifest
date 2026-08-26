@@ -511,6 +511,53 @@ export async function getSpFulfillmentDocs(customerId, spNo) {
   return { data: { pickings: pRes.data || [], deliveries }, error: null };
 }
 
+// Rincian qty terkirim PER BARIS sp_items, dipecah menurut status surat jalannya.
+// Dipakai tab Items di Detail SP untuk membedakan "sudah sampai" dari "masih di
+// jalan" — sp_items.shipped_qty saja TIDAK bisa membedakannya: kolom itu naik
+// saat dispatch_delivery (SJ berangkat), bukan saat mark_delivery_delivered
+// (DC konfirmasi sampai). Tanpa pemecahan ini, baris yang qty-nya penuh tapi
+// SJ-nya masih di jalan tampil "Shipped" — persis kebohongan yang diperbaiki
+// state MENUNGGU_KONFIRMASI_DC di level header SP (migrasi 20260826000002).
+//
+// KUNCI KOMPOSIT (customer_id, sp_no) lewat embed delivery_notes — alasan sama
+// persis dengan getSpFulfillmentDocs di atas (timing props vs fetch async, dan
+// sp_no bisa kembar antar customer). Keduanya sengaja pakai kunci yang sama.
+//
+// JALUR JOIN: delivery_note_items.picking_list_item_id -> picking_list_items
+// .sp_item_id. SENGAJA BUKAN delivery_note_items.sp_order_item_id — kolom itu
+// menunjuk sp_order_items (skema SP baru), sedangkan tab Items dirender dari
+// sp_items (skema lama) dan kunci peta ini harus cocok dengan item.id di sana.
+//
+// SJ 'draft' & 'cancelled' DIABAIKAN, konsisten dengan sp_recompute_status:
+// draft belum menaikkan shipped_qty sama sekali, dan cancel_delivery sudah
+// membalikkannya. Menghitung keduanya = dobel/hantu.
+export async function getSpItemDeliveryBreakdown(customerId, spNo) {
+  if (!customerId || !spNo) return { data: {}, error: null };
+  const { data, error } = await supabase
+    .from('delivery_note_items')
+    .select('qty, picking_list_items!inner(sp_item_id), delivery_notes!inner(status)')
+    .eq('delivery_notes.customer_id', customerId)
+    .eq('delivery_notes.sp_no', spNo)
+    .in('delivery_notes.status', ['in_transit', 'delivered'])
+    .limit(1000);
+  if (error) return { data: null, error };
+  // Agregasi di klien: baris SJ per SP selalu sedikit (1-3 SJ x beberapa item),
+  // jadi tak perlu RPC/view baru — pola sama seperti total_qty di atas.
+  const map = {};
+  (data || []).forEach((r) => {
+    // sp_item_id NULLABLE (FK-nya ON DELETE SET NULL), jadi !inner di atas hanya
+    // menjamin baris picking-nya ada — bukan bahwa ia masih menunjuk sp_items.
+    // Baris yatim begitu tak bisa diatribusikan ke item mana pun; dilewati.
+    const spItemId = r.picking_list_items?.sp_item_id;
+    if (!spItemId) return;
+    if (!map[spItemId]) map[spItemId] = { qtyDelivered: 0, qtyInTransit: 0 };
+    const qty = Number(r.qty) || 0;
+    if (r.delivery_notes?.status === 'delivered') map[spItemId].qtyDelivered += qty;
+    else map[spItemId].qtyInTransit += qty;
+  });
+  return { data: map, error: null };
+}
+
 // Set qty_picked satu baris picking_list_items (partial picking). Status
 // DITURUNKAN dari angkanya, tidak pernah dikirim terpisah, supaya qty dan status
 // mustahil melenceng: 0 -> 'pending' · 0 < n < requested -> 'short' ·

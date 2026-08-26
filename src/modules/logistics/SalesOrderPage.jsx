@@ -77,6 +77,10 @@ const STATUS_META = {
   PACKED:         { label: 'Dikemas',        t: C.indigoT,  bg: C.indigoBg },
   DIKIRIM:        { label: 'Dikirim',        t: C.orange,   bg: '#FEF2EC'  },
   SAMPAI:         { label: 'Sampai',         t: C.orange,   bg: '#FEF2EC'  },
+  // Qty sudah berangkat penuh, tapi surat jalan masih 'in_transit' — tim DC
+  // customer belum konfirmasi. Amber (bukan orange) karena ini keadaan yang
+  // MENUNGGU aksi pihak lain, senada MENUNGGU_STOK & BTB_TERBIT.
+  MENUNGGU_KONFIRMASI_DC: { label: 'Menunggu Konfirmasi DC', t: C.amberT, bg: C.amberBg },
   BTB_TERBIT:     { label: 'BTB Terbit',     t: C.amberT,   bg: C.amberBg  },
   TERKIRIM_PENUH: { label: 'Terkirim Penuh', t: '#FFFFFF',  bg: C.navy     },
   INVOICED:       { label: 'Invoiced',       t: C.orange,   bg: '#FEF2EC'  },
@@ -84,13 +88,15 @@ const STATUS_META = {
   LUNAS:          { label: 'Lunas',          t: '#FFFFFF',  bg: C.navy     },
   CANCELLED:      { label: 'Dibatalkan',     t: C.redT,     bg: C.redBg    },
 };
-// FASE 2E LANGKAH 2 — urutan 12 tahap (untuk filter dropdown) + grup tab.
+// FASE 2E LANGKAH 2 — urutan 13 tahap (untuk filter dropdown) + grup tab.
+// Urutan WAJIB mirror SP_STATUS_ORDER (src/lib/spStatusConstants.js).
 const STATUS_ORDER = ['DRAFT', 'CONFIRMED', 'MENUNGGU_STOK', 'PICKING', 'PACKED',
-  'DIKIRIM', 'SAMPAI', 'BTB_TERBIT', 'TERKIRIM_PENUH', 'INVOICED', 'SUBMITTED', 'LUNAS', 'CANCELLED'];
+  'DIKIRIM', 'SAMPAI', 'MENUNGGU_KONFIRMASI_DC', 'BTB_TERBIT', 'TERKIRIM_PENUH',
+  'INVOICED', 'SUBMITTED', 'LUNAS', 'CANCELLED'];
 const TAB_GROUPS = {
   pending:   ['DRAFT'],
   gudang:    ['CONFIRMED', 'MENUNGGU_STOK', 'PICKING', 'PACKED'],
-  kirim:     ['DIKIRIM', 'SAMPAI', 'BTB_TERBIT', 'TERKIRIM_PENUH', 'INVOICED', 'SUBMITTED', 'LUNAS'],
+  kirim:     ['DIKIRIM', 'SAMPAI', 'MENUNGGU_KONFIRMASI_DC', 'BTB_TERBIT', 'TERKIRIM_PENUH', 'INVOICED', 'SUBMITTED', 'LUNAS'],
   cancelled: ['CANCELLED'],
 };
 // status headline SP (fallback DRAFT bila belum ada baris sp_orders).
@@ -360,7 +366,7 @@ export default function SalesOrderPage({
     cancelled: augmented.filter(g => TAB_GROUPS.cancelled.includes(osOf(g))).length,
   }), [augmented]);
 
-  // Status filter options — 12 tahap yang benar-benar ada di data (urut STATUS_ORDER)
+  // Status filter options — 13 tahap yang benar-benar ada di data (urut STATUS_ORDER)
   const statusOptions = useMemo(() => {
     const present = new Set(augmented.map(g => osOf(g)));
     return STATUS_ORDER.filter(s => present.has(s));

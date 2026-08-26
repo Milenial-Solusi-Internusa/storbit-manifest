@@ -18,19 +18,31 @@
 // Preseden nyata bahwa ini bukan paranoia: `btb_terbit` sendiri baru ketahuan
 // hilang lewat smoke test, bukan lewat review desain.
 //
+// ⚠️ VERSI LIVE kedua RPC itu kini datang dari migrasi yang LEBIH BARU:
+// `20260826000002_sp_status_menunggu_konfirmasi_dc.sql` (STEP 3 & 4) menimpa
+// keduanya lewat CREATE OR REPLACE. Saat menyamakan array di bawah, baca
+// migrasi TERBARU itu — 20260818000002 sudah bukan potret yang berjalan.
+//
 // BUKAN pengganti TAB_GROUPS di SalesOrderPage.jsx — itu pengelompokan LAIN
 // untuk keperluan lain (tab list SP: pending/gudang/kirim/cancelled, di mana
 // `pending` cuma DRAFT). Sengaja dibiarkan terpisah; menyatukannya akan
 // memaksa salah satu layar memakai pengelompokan yang bukan miliknya.
 
 /**
- * 12 tahap mesin status SP + CANCELLED, urut sesuai peringkat
+ * 13 tahap mesin status SP + CANCELLED, urut sesuai peringkat
  * `sp_recompute_status` (dari paling awal ke paling akhir).
  * Dipakai sebagai acuan urutan; bukan filter.
+ *
+ * MENUNGGU_KONFIRMASI_DC (tahap ke-8, ditambahkan 26 Agu 2026) duduk PERSIS di
+ * antara SAMPAI dan BTB_TERBIT: qty sudah berangkat penuh, tapi masih ada surat
+ * jalan 'in_transit' — tim DC customer belum mengonfirmasi barang sampai.
+ * Sebelum ini SP melompat langsung ke TERKIRIM_PENUH begitu qty penuh, sehingga
+ * konfirmasi DC tak pernah terlihat di layar. Lihat migrasi
+ * `20260826000002_sp_status_menunggu_konfirmasi_dc.sql`.
  */
 export const SP_STATUS_ORDER = [
   'DRAFT', 'CONFIRMED', 'MENUNGGU_STOK', 'PICKING', 'PACKED',
-  'DIKIRIM', 'SAMPAI', 'BTB_TERBIT', 'TERKIRIM_PENUH',
+  'DIKIRIM', 'SAMPAI', 'MENUNGGU_KONFIRMASI_DC', 'BTB_TERBIT', 'TERKIRIM_PENUH',
   'INVOICED', 'SUBMITTED', 'LUNAS', 'CANCELLED',
 ];
 
@@ -63,7 +75,7 @@ export const SP_STATUS_ORDER = [
  */
 export const STATUS_GROUPS = {
   pending_open:        ['DRAFT', 'CONFIRMED', 'MENUNGGU_STOK', 'PICKING', 'PACKED'],
-  shipped:             ['DIKIRIM', 'SAMPAI'],
+  shipped:             ['DIKIRIM', 'SAMPAI', 'MENUNGGU_KONFIRMASI_DC'],
   delivered_belum_btb: ['SAMPAI', 'TERKIRIM_PENUH'],
   btb_terbit:          ['BTB_TERBIT'],
   terkirim_penuh:      ['TERKIRIM_PENUH'],
@@ -117,6 +129,14 @@ export const PENALTY_METRIC_PAIR = ['pernah_risiko_pinalti', 'dispatch_data_ters
  * perjalanan SP dari pra-kirim sampai selesai. `terkirim_penuh` dipisah dari
  * `btb_terbit` (revisi 18 Agu 2026) — sebelumnya status itu tak terwakili
  * kunci payload mana pun, jadi donutnya tak bisa dipartisi bersih.
+ *
+ * DIVERIFIKASI ULANG 26 Agu 2026 setelah MENUNGGU_KONFIRMASI_DC lahir: state
+ * baru itu TIDAK butuh slice sendiri karena sudah ikut terhitung di `shipped`
+ * (lihat STATUS_GROUPS di atas — dan FILTER-nya di STEP 3 migrasi
+ * 20260826000002 memang sudah memuatnya). Partisinya tetap utuh: gabungan
+ * pending_open + shipped + terkirim_penuh + btb_terbit + finance + cancelled
+ * menutup ke-14 nilai `sp_orders_status_check` tanpa tumpang tindih, jadi
+ * jumlah 6 slice tetap persis `total_sp`.
  */
 export const DONUT_STATUS_SLICES = [
   { key: 'pending_open',   label: 'Pra-Kirim',      color: '#AEC2EE' },
