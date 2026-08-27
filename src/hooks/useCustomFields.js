@@ -16,7 +16,7 @@ export const STANDARD_COLUMNS = {
     // legacy app aliases used in the modal
     'defaultDC', 'picName', 'picEmail',
   ],
-  // `prospects` table renamed → `accounts` (Batch 1). account_status segments
+  // `prospects` table renamed → `accounts` (Batch 1). lifecycle_stage segments
   // prospect / customer / lost / free_agent within one table.
   accounts: [
     'id', 'company_id', 'name', 'legal_name', 'customer_type', 'tax_id',
@@ -30,7 +30,7 @@ export const STANDARD_COLUMNS = {
     'bant_current_vendor', 'bant_payment', 'bant_decision_maker', 'bant_score',
     'bant_budget', 'bant_authority', 'bant_need', 'bant_timeline',
     // accounts model columns (rename batch)
-    'account_status', 'owner_company_id', 'tier', 'code', 'nomor_kontrak',
+    'lifecycle_stage', 'owner_company_id', 'tier', 'code', 'nomor_kontrak',
     'default_dc', 'last_activity_at', 'became_customer_at',
     // aging pipeline + lead pool (system columns)
     'stage_changed_at', 'is_in_lead_pool', 'lead_pool_reason', 'lead_pool_at',

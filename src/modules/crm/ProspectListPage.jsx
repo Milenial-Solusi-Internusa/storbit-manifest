@@ -125,7 +125,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
         `, { count: 'exact' })
         // Semua akun pra-customer supaya lead/mql/sql tetap tampil di daftar pasca-backfill.
         // TODO: hapus 'lead_pool' setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
-        .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool'])
+        .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool'])
         .is('deleted_at', null);
 
       // Role-aware scope (see flags above)

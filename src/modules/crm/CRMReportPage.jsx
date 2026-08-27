@@ -194,9 +194,9 @@ async function fetchWindow({ start, end }) {
       .gte("scheduled_for", ymd(start)).lte("scheduled_for", ymd(end))
       .limit(1000),
     supabase.from("accounts")
-      .select("id, assigned_to, account_status, created_at")
+      .select("id, assigned_to, lifecycle_stage, created_at")
       .is("deleted_at", null)
-      .in("account_status", PROSPECT_STATUS)
+      .in("lifecycle_stage", PROSPECT_STATUS)
       .gte("created_at", startISO).lte("created_at", endISO)
       .limit(1000),
     supabase.from("quotations")

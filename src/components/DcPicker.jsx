@@ -6,7 +6,7 @@
 // same "KODE · Nama" label the native <select> it replaces used to show (falls
 // back to `nama` alone when `kode` is null), single-selects. AccountPicker.jsx
 // itself is untouched — this is a new sibling, not a reuse (shape mismatch: no
-// account_status, has kode).
+// lifecycle_stage, has kode).
 //
 // Deliberate divergence from AccountPicker: AccountPicker hides its dropdown
 // until 1+ chars are typed. DcPicker shows the full list on focus even with

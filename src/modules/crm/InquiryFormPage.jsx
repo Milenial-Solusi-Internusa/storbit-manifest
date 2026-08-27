@@ -51,7 +51,7 @@ const SERVICES = [
 ];
 const MSDS_OPTS = ['Ya', 'Tidak', 'Belum Tahu'];
 
-// Kelompok lifecycle account_status. Dropdown inquiry harus bisa memilih akun
+// Kelompok lifecycle lifecycle_stage. Dropdown inquiry harus bisa memilih akun
 // pra-customer (lead/mql/sql/prospect) supaya trigger gerbang Fase 2 hidup.
 // TODO: hapus 'lead_pool' setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
 const PRA_CUSTOMER_STATUS = ['lead', 'mql', 'sql', 'prospect', 'lead_pool'];
@@ -178,9 +178,9 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     if (!profile?.company_id) return;
     // Akun yang sedang parkir di Lead Pool tak boleh dipilih untuk dokumen baru —
     // harus ditarik dulu lewat approval. is_in_lead_pool=false di semua picker.
-    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', PRA_CUSTOMER_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name, lifecycle_stage').eq('company_id', profile.company_id).in('lifecycle_stage', PRA_CUSTOMER_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setProspects(data || []));
-    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', CUSTOMER_SIDE_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name, lifecycle_stage').eq('company_id', profile.company_id).in('lifecycle_stage', CUSTOMER_SIDE_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
 
@@ -222,9 +222,9 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         // Make sure the linked account appears in its dropdown (it may be inactive
         // or in the other status bucket) so the name renders instead of blank.
         if (linkedId) {
-          const { data: acc } = await supabase.from('accounts').select('id, name, account_status').eq('id', linkedId).maybeSingle();
+          const { data: acc } = await supabase.from('accounts').select('id, name, lifecycle_stage').eq('id', linkedId).maybeSingle();
           if (cancelled || !acc) return;
-          const opt = { id: acc.id, name: acc.name, account_status: acc.account_status };
+          const opt = { id: acc.id, name: acc.name, lifecycle_stage: acc.lifecycle_stage };
           if (data.customer_id) { setCustomers(prev => prev.some(c => c.id === acc.id) ? prev : [opt, ...prev]); setCustomerText(acc.name); }
           else { setProspects(prev => prev.some(p => p.id === acc.id) ? prev : [opt, ...prev]); setProspectText(acc.name); }
         }

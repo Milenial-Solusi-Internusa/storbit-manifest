@@ -219,13 +219,13 @@ async function getCurrentUserCompanyId() {
 
 export async function listCustomers() {
   // Migrated to `accounts` (Phase 2.5A). Storbit SP/AR only picks rows that are
-  // already customers — filter by account_status. accounts has every customers
-  // column plus extras (account_status, owner_company_id, …) which customerFromDb
+  // already customers — filter by lifecycle_stage. accounts has every customers
+  // column plus extras (lifecycle_stage, owner_company_id, …) which customerFromDb
   // passes through harmlessly as custom fields.
   const { data, error } = await supabase
     .from('accounts')
     .select('*, contacts(id, name, email, phone, is_primary, deleted_at)')
-    .eq('account_status', 'customer')
+    .eq('lifecycle_stage', 'customer')
     .is('deleted_at', null)
     .order('name');
   return { data: (data || []).map(customerFromDb), error };
@@ -235,7 +235,7 @@ export async function upsertCustomer(c) {
   const payload = customerToDb(c);
 
   if (c.id) {
-    // UPDATE — customerToDb() does not include company_id/account_status, so the
+    // UPDATE — customerToDb() does not include company_id/lifecycle_stage, so the
     // existing row values are preserved. Migrated to `accounts` (Phase 2.5A).
     const { data, error } = await supabase
       .from('accounts')
@@ -261,9 +261,9 @@ export async function upsertCustomer(c) {
   }
 
   // Storbit can create a customer directly into `accounts`. Such a row is born
-  // a customer (not a prospect): stamp account_status, owner entity, and the
+  // a customer (not a prospect): stamp lifecycle_stage, owner entity, and the
   // became_customer_at timestamp.
-  payload.account_status = 'customer';
+  payload.lifecycle_stage = 'customer';
   payload.owner_company_id = payload.company_id;
   payload.became_customer_at = new Date().toISOString();
 
@@ -278,7 +278,7 @@ export async function upsertCustomer(c) {
 export async function deleteCustomer(id) {
   // Soft delete on `accounts` (Phase 2.5A): set deleted_at to exclude the row
   // from all future reads. `active` is not set here — accounts uses
-  // account_status, not the legacy `active` flag.
+  // lifecycle_stage, not the legacy `active` flag.
   const { error } = await supabase
     .from('accounts')
     .update({ deleted_at: new Date().toISOString() })

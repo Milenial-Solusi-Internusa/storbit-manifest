@@ -468,7 +468,7 @@ export default function PipelineKanbanPage({ showToast, setActiveMenu, setShowPr
         .select('id, name, legal_name, customer_type, phone, email, city, address, source, pipeline_stage, lost_reason, won_reason, estimated_closing_date, estimated_value, payment_terms_id, notes, assigned_to, created_at, stage_changed_at, is_in_lead_pool, bant_commodity, bant_origin, bant_destination, bant_frequency, bant_current_vendor, bant_payment, bant_decision_maker, bant_score, bant_budget, bant_authority, bant_need, bant_timeline, assigned_profile:profiles!prospects_assigned_to_fkey(full_name), contacts(id, name, email, phone, is_primary, deleted_at)')
         // Semua akun pra-customer (bukan hanya prospect) supaya lead/mql/sql tak hilang dari Kanban pasca-backfill.
         // TODO: hapus 'lead_pool' setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
-        .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool'])
+        .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool'])
         .eq('is_in_lead_pool', false)
         .is('deleted_at', null);
 

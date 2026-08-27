@@ -3,7 +3,7 @@
 // Mirrors BranchesPage.jsx's list+AdminFormModal CRUD pattern. No archive/
 // delete — is_active toggle (inside the edit form) is the only deactivation
 // mechanism asked for. Customer picker reuses AccountPicker as-is (same
-// {id, name, account_status} shape it was built for).
+// {id, name, lifecycle_stage} shape it was built for).
 //
 // Read by src/modules/logistics/InputSPPage.jsx's DC dropdown
 // (.eq('is_active', true).is('deleted_at', null)) — untouched by this file,
@@ -172,7 +172,7 @@ export default function DcMasterPage({ onHome }) {
   useEffect(() => {
     supabase
       .from('accounts')
-      .select('id, name, account_status')
+      .select('id, name, lifecycle_stage')
       .is('deleted_at', null)
       .order('name')
       .limit(1000)

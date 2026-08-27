@@ -459,7 +459,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   }, [w]);
 
   // Prop `customers` datang dari useCustomers() di App.jsx, yang memanggil
-  // listCustomers() — fungsi itu mengambil SELURUH accounts ber-account_status
+  // listCustomers() — fungsi itu mengambil SELURUH accounts ber-lifecycle_stage
   // 'customer' TANPA filter company (nol parameter, cuma andalkan RLS), dan
   // dioper ke 6 halaman lain. Jadi ia SENGAJA tidak diubah; penyaringannya
   // dilakukan di sini saja supaya nol efek samping ke konsumen lain.

@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
       .from('accounts')
       .update({
         // Parkir adalah kondisi terpisah, BUKAN tahap lifecycle. EF hanya
-        // menyalakan penanda parkir; account_status (lifecycle asli akun)
+        // menyalakan penanda parkir; lifecycle_stage (lifecycle asli akun)
         // TIDAK BOLEH diubah di sini. Lihat AUDIT_CRM_FLOW.md.
         is_in_lead_pool: true,
         lead_pool_at: now.toISOString(),

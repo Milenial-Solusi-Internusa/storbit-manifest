@@ -97,7 +97,7 @@ const TIER_CFG = {
   C: { bg: '#F1E1D2', fg: '#9A5B2C' },
 };
 const STATUS_CFG = {
-  // accounts.account_status segments (lifecycle akun)
+  // accounts.lifecycle_stage segments (lifecycle akun)
   lead:       { bg: '#EFEAF6', fg: '#6A3D9A', dot: '#7A4E8C', label: 'Lead'       },
   mql:        { bg: '#E6EEF9', fg: '#2A5B8C', dot: '#2A5B8C', label: 'MQL'        },
   sql:        { bg: '#E1ECF7', fg: '#1B4D8A', dot: '#1B4D8A', label: 'SQL'        },
@@ -190,7 +190,7 @@ const txt = (x) => (x == null || x === '') ? '—' : x;
 const initials = (s) => ((s || '?').replace(/^PT\s+|^CV\s+/i, '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) || '?';
 const picInitials = (s) => (s || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
 const colorFor = (s) => PIC_COLORS[[...(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % PIC_COLORS.length];
-const statusOf = (c) => c.account_status || c.status || 'customer';
+const statusOf = (c) => c.lifecycle_stage || c.status || 'customer';
 
 // ─── Style tokens (ported from design) ──────────────────────────────────────────
 const S = {

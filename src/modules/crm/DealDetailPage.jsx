@@ -626,7 +626,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // ── Tandai INQUIRY menang secara manual. RPC mark_inquiry_won menegakkan izin
   // sebenarnya (creator inquiry atau super_admin) + guard idempotency (sudah WON
   // → ditolak) — gate `canMarkWon` di atas murni UX, bukan pengganti validasi RPC.
-  // Trigger set_customer_on_inquiry_won yang sudah ada mengurus accounts.account_status
+  // Trigger set_customer_on_inquiry_won yang sudah ada mengurus accounts.lifecycle_stage
   // + became_customer_at otomatis; RPC itu sendiri yang sekalian set
   // accounts.pipeline_stage='WON'. Pesan error ditampilkan apa adanya dari RPC.
   async function markInquiryWon() {

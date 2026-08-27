@@ -122,7 +122,7 @@ export default function LeadPoolApprovalPage({ showToast }) {
       pull_status: 'approved',
       pull_approved_by: profile.id,
       pull_approved_at: nowIso,
-      // Keluar parkir = matikan penanda parkir saja. account_status (lifecycle
+      // Keluar parkir = matikan penanda parkir saja. lifecycle_stage (lifecycle
       // asli akun) TIDAK diubah — akun kembali ke lifecycle-nya, bukan naik
       // pangkat gratis jadi prospect. Lihat AUDIT_CRM_FLOW.md.
       is_in_lead_pool: false,

@@ -23,7 +23,7 @@ const C = {
   navyBg:   '#EEF3FB',
 };
 
-// Tipe akun DIPERMANIS untuk badge dropdown — bukan account_status mentah.
+// Tipe akun DIPERMANIS untuk badge dropdown — bukan lifecycle_stage mentah.
 const ACCOUNT_TYPE_LABEL = { customer: 'Customer', prospect: 'Prospect' };
 
 export default function InquiryPicker({

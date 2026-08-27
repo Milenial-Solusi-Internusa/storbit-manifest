@@ -206,7 +206,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   // sama — RLS accounts membatasi sales ke akunnya sendiri, sehingga cek dari
   // klien biasa akan buta dan menjanjikan "aman" untuk nama yang justru ditolak
   // index. Cakupannya juga seluruh lifecycle (bukan cuma pra-customer), meniru
-  // uq_accounts_norm_name_per_entitas yang tak peduli account_status.
+  // uq_accounts_norm_name_per_entitas yang tak peduli lifecycle_stage.
   // Ini WARNING, bukan gerbang — hard-block-nya di DB.
   const checkDuplicateName = async (val) => {
     if (!val.trim() || isEdit || !profile?.company_id) { setNameWarning(''); return; }
@@ -279,7 +279,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         ({ error } = await supabase.from('accounts').update(payload).eq('id', prospect.id));
       } else {
         // Akun baru lahir sebagai 'lead' — inquiry adalah gerbang menuju 'prospect' (dinaikkan trigger DB Fase 2).
-        payload.created_by = profile.id; payload.account_status = 'lead';
+        payload.created_by = profile.id; payload.lifecycle_stage = 'lead';
         payload.owner_company_id = profile.company_id; payload.last_activity_at = new Date().toISOString();
         ({ error } = await supabase.from('accounts').insert(payload));
       }

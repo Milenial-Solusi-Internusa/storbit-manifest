@@ -1879,7 +1879,7 @@ function CRMDashboardPage() {
           .from('accounts')
           .select('id, pipeline_stage, name, created_at, source, assigned_to, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
-          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .is('deleted_at', null)
           .limit(1000)),
 
@@ -1901,7 +1901,7 @@ function CRMDashboardPage() {
           .from('accounts')
           .select('created_at')
           .eq('company_id', cid)
-          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .is('deleted_at', null)
           .gte('created_at', startLastMonth.toISOString())
           .lt('created_at', startThisMonth.toISOString())
@@ -1912,7 +1912,7 @@ function CRMDashboardPage() {
           .from('accounts')
           .select('assigned_to, pipeline_stage, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
-          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .is('deleted_at', null)
           .not('assigned_to', 'is', null)
           .limit(1000)),
@@ -1947,22 +1947,22 @@ function CRMDashboardPage() {
           .gte('created_at', startThisMonth.toISOString())
           .limit(1000)),
 
-        // Won deals that already auto-converted to customer (account_status='customer'
+        // Won deals that already auto-converted to customer (lifecycle_stage='customer'
         // + pipeline_stage='WON' + became_customer_at set). These leave the prospect
         // query, so without this they vanish from WON count / win rate / sales perf.
         // Same company + role scope as the prospect queries.
         ownProspects(supabase
           .from('accounts')
-          .select('id, pipeline_stage, assigned_to, created_at, account_status, became_customer_at, profiles!prospects_assigned_to_fkey(full_name)')
+          .select('id, pipeline_stage, assigned_to, created_at, lifecycle_stage, became_customer_at, profiles!prospects_assigned_to_fkey(full_name)')
           .eq('company_id', cid)
-          .eq('account_status', 'customer')
+          .eq('lifecycle_stage', 'customer')
           .eq('pipeline_stage', 'WON')
           .not('became_customer_at', 'is', null)
           .is('deleted_at', null)
           .limit(1000)),
 
         // "Prospect Aktif" KPI — kriteria SAMA dengan header PipelineKanbanPage
-        // (account_status pra-customer + is_in_lead_pool=false + stage bukan
+        // (lifecycle_stage pra-customer + is_in_lead_pool=false + stage bukan
         // WON/LOST, NULL disertakan seperti Pipeline `null → 'NEW'`). Server
         // count(head) → TIDAK kena batas 1000 baris (beda dari prospectsRes.length).
         // WON/LOST huruf BESAR (DB uppercase; Pipeline lowercase-mapping di JS).
@@ -1974,7 +1974,7 @@ function CRMDashboardPage() {
           .from('accounts')
           .select('id', { count: 'exact', head: true })
           .eq('company_id', cid)
-          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .eq('is_in_lead_pool', false)
           .or('pipeline_stage.is.null,pipeline_stage.not.in.(WON,LOST)')
           .is('deleted_at', null)),
@@ -2197,7 +2197,7 @@ function CRMDashboardPage() {
     Promise.all([
       fetchOperationalRoster(profile.company_id),
       // Akun parkir Lead Pool tak boleh dipilih untuk visit baru — is_in_lead_pool=false.
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
     ]).then(([sales, prospRes]) => {
       setSalesProfiles(sales);
       // Suntik akun yang SUDAH tertaut ke visit yang diedit (walau parkir) supaya relasi lama tak hilang.

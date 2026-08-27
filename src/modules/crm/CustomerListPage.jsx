@@ -39,7 +39,7 @@ const D = {
 // ─── Constants (form) ───────────────────────────────────────────────────────────
 const CUSTOMER_TYPES = ['PT', 'CV', 'Mr.', 'Mrs.', 'Ms.', 'Other'];
 const TIERS = ['A', 'B', 'C'];
-// Filter-bar options — must match accounts.account_status values
+// Filter-bar options — must match accounts.lifecycle_stage values
 const STATUS_FILTERS = [
   { value: 'customer',   label: 'Customer'   },
   { value: 'free_agent', label: 'Free Agent' },
@@ -77,7 +77,7 @@ const TIER_CFG = {
   C: { label: 'Tier C', bg: '#F1E1D2', fg: '#9A5B2C', dot: '#B0703C' },
 };
 const STATUS_CFG = {
-  // accounts.account_status segments (lifecycle akun)
+  // accounts.lifecycle_stage segments (lifecycle akun)
   lead:       { label: 'Lead',       bg: '#EFEAF6', fg: '#6A3D9A', dot: '#7A4E8C' },
   mql:        { label: 'MQL',        bg: '#E6EEF9', fg: '#2A5B8C', dot: '#2A5B8C' },
   sql:        { label: 'SQL',        bg: '#E1ECF7', fg: '#1B4D8A', dot: '#1B4D8A' },
@@ -103,8 +103,8 @@ const fmtDate = (iso) => {
 const initials = (s) =>
   ((s || '?').replace(/^PT\s+|^CV\s+/i, '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) || '?';
 const colorFor = (s) => PIC_COLORS[[...(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % PIC_COLORS.length];
-// accounts model: status comes from account_status (legacy customers.status fallback)
-const statusOf = (c) => c.account_status || c.status || 'customer';
+// accounts model: status comes from lifecycle_stage (legacy customers.status fallback)
+const statusOf = (c) => c.lifecycle_stage || c.status || 'customer';
 // Kontak primary dari embed `contacts` (row.contacts = array, LEFT JOIN — akun
 // tanpa kontak dapat array kosong, bukan hilang dari hasil). Dipilih client-side
 // (bukan filter server-side pada embed) supaya tak bergantung pada perilaku
@@ -172,7 +172,7 @@ function StatusBadge({ status }) {
   return <span style={{ ...P.badge, background: s.bg, color: s.fg }}><span style={{ ...P.bdot, background: s.dot }} />{s.label}</span>;
 }
 // Penanda parkir Lead Pool = badge TERPISAH dari lifecycle, sumbernya
-// is_in_lead_pool (bukan account_status). Lihat AUDIT_CRM_FLOW.md.
+// is_in_lead_pool (bukan lifecycle_stage). Lihat AUDIT_CRM_FLOW.md.
 function LeadPoolBadge() {
   return <span style={{ ...P.badge, background: '#F0EBE0', color: '#7A6A45' }}><span style={{ ...P.bdot, background: '#B0703C' }} />Lead Pool</span>;
 }
@@ -354,7 +354,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         notes:            form.notes           || null,
         is_odoo_customer: !!form.is_odoo_customer,
         updated_by:       profile.id,
-        // Lifecycle (account_status/became_customer_at) hanya naik lewat trigger DB,
+        // Lifecycle (lifecycle_stage/became_customer_at) hanya naik lewat trigger DB,
         // TIDAK PERNAH lewat form edit — jadi UPDATE tak menulisnya. `code` juga tak
         // ditulis di UPDATE: kode diterbitkan trigger generate_customer_code, dan field
         // editable-nya adalah pintu masuk kode duplikat. Keduanya ditulis di INSERT saja.
@@ -370,7 +370,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         payload.owner_company_id   = profile.company_id;
         payload.created_by         = profile.id;
         payload.code               = form.code || null;
-        payload.account_status     = 'customer';
+        payload.lifecycle_stage     = 'customer';
         payload.became_customer_at = new Date().toISOString();
         ({ error } = await supabase.from('accounts').insert(payload));
       }
@@ -579,7 +579,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
-    // Merged Master Customer view = accounts WHERE account_status IN (customer, free_agent);
+    // Merged Master Customer view = accounts WHERE lifecycle_stage IN (customer, free_agent);
     // the Status filter narrows client-side. Legacy entityFilter prop (dormant) still
     // locks to a single status when set.
     const statusValues = entityFilter === 'FREE_AGENT' ? ['free_agent']
@@ -595,7 +595,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
           payment_term:payment_terms!prospects_payment_terms_id_fkey(name),
           contacts(id, name, email, phone, is_primary, deleted_at)
         `)
-        .in('account_status', statusValues)
+        .in('lifecycle_stage', statusValues)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);
@@ -608,7 +608,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
       const { data, error: fbErr } = await supabase
         .from('accounts')
         .select('*, contacts(id, name, email, phone, is_primary, deleted_at)')
-        .in('account_status', statusValues)
+        .in('lifecycle_stage', statusValues)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);

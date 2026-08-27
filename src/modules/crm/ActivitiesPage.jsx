@@ -586,7 +586,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     if (!profile?.company_id) return;
     const [aRes, sales] = await Promise.all([
       // Akun parkir Lead Pool tak boleh dipilih untuk aktivitas baru — is_in_lead_pool=false.
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       fetchOperationalRoster(profile.company_id),
     ]);
     let list = aRes.data || [];
