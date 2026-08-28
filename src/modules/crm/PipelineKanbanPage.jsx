@@ -249,11 +249,6 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
         <h1 style={{ margin: 0, fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 700, color: INK }}>
           Pipeline
         </h1>
-        <p style={{ margin: `${SP.s2}px 0 0`, fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT }}>
-          Satu kartu = satu inquiry. Status mengikuti dokumennya dan hanya bergerak lewat
-          PRF, Quotation, Sales Order, atau tombol di Detail Deal — papan ini tidak bisa
-          menggeser status.
-        </p>
       </header>
 
       <ListView
