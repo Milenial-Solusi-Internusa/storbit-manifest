@@ -44,15 +44,27 @@ import {
 } from './v3/tokens';
 
 /* ─── Lajur ────────────────────────────────────────────────────────────────
-   id = nilai inquiries.status apa adanya. Tone diserahkan ke STAGE_TONE
-   (v3/tokens.js) lewat `tone: id` — nol tabel warna kedua di file ini. */
+   id = nilai inquiries.status apa adanya. Tone lajur — badge di kartu dan rel
+   tertutup — TETAP diserahkan ke STAGE_TONE (v3/tokens.js) lewat `tone: id`.
+
+   `step` = palet SATU segmen bar chevron papan, dan sengaja tinggal DI SINI,
+   bukan di tokens.js. Pastel gradasi ini kekhususan papan Pipeline (pengecualian
+   brand yang disetujui khusus untuk stepper), bukan sumbu warna v3 yang empat
+   tone itu; menaruhnya di tokens.js sama dengan menawarkannya ke seluruh modul
+   v3 sebagai kosakata resmi — justru yang tidak diinginkan. ListView hanya
+   membacanya saat `groupedBoard` menyala, dan tanpa `step` ia jatuh balik ke
+   STAGE_TONE, jadi primitifnya tetap tak mengenal kosakata papan ini. */
 const OPEN_LANES = [
-  { id: 'OPEN',        label: 'Open' },
-  { id: 'IN_REVIEW',   label: 'In Review' },
-  { id: 'QUOTED',      label: 'Quoted' },
+  { id: 'OPEN',        label: 'Open',
+    step: { bg: 'linear-gradient(135deg, #DCD2F7, #B9A3EA)', fg: '#4C3D73', sub: 'rgba(76,61,115,0.65)' } },
+  { id: 'IN_REVIEW',   label: 'In Review',
+    step: { bg: 'linear-gradient(135deg, #C6A6E4, #E4AECB)', fg: '#5C3653', sub: 'rgba(92,54,83,0.65)' } },
+  { id: 'QUOTED',      label: 'Quoted',
+    step: { bg: 'linear-gradient(135deg, #F0B7CB, #F5C79A)', fg: '#7A4A38', sub: 'rgba(122,74,56,0.65)' } },
   // NEGOTIATION sampai batch ini nol penulis di seluruh repo; jalur tulisnya
   // lahir bersamaan di TASK 4 (tombol "Mulai Negosiasi", gate QUOTED).
-  { id: 'NEGOTIATION', label: 'Negotiation' },
+  { id: 'NEGOTIATION', label: 'Negotiation',
+    step: { bg: 'linear-gradient(135deg, #F6CE9C, #F6E08C)', fg: '#7A5A22', sub: 'rgba(122,90,34,0.65)' } },
 ];
 const CLOSED_LANES = [
   { id: 'WON',       label: 'Won' },
@@ -246,6 +258,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
 
       <ListView
         mode="lanes"
+        groupedBoard
         lanes={lanes}
         renderCard={(inq) => <DealCard inq={inq} onOpen={onSelectInquiry} />}
         search={search}
