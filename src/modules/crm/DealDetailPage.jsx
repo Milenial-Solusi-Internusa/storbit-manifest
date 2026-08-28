@@ -18,7 +18,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, Hash, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
-  CheckCircle2,
+  CheckCircle2, Handshake, Ban,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -30,12 +30,21 @@ import {
 import { bantQualifyGate } from './bant';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
-import WinLossModal from './WinLossModal';
+import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
 import InquiryChatter from './InquiryChatter';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
 const LOSABLE_INQUIRY_STATUS = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
+
+// B3 — "Batalkan" memakai gate yang SAMA PERSIS dengan "Tandai Kalah": keduanya
+// jalur penutupan manual, jadi tak ada alasan salah satunya lebih longgar.
+const CANCELLABLE_INQUIRY_STATUS = LOSABLE_INQUIRY_STATUS;
+
+// B3 — "Mulai Negosiasi" HANYA dari QUOTED (keputusan Den, ditegaskan ulang saat
+// approval plan): negosiasi cuma masuk akal kalau sudah ada penawaran yang bisa
+// dinegosiasikan. JANGAN diperlonggar ke IN_REVIEW.
+const NEGOTIABLE_INQUIRY_STATUS = ['QUOTED'];
 
 // Batch 3C — gate tombol "Pakai/Ganti Penawaran Ini" (RPC prf_select_offer
 // menegakkan izin sebenarnya). Mirrors DB is_manager_or_above() — sama persis
@@ -295,9 +304,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Konfirmasi lunak gate BANT (skor 5–7 → QUALIFIED) — pola pending-action yang sama
   // dengan stageGate di PipelineKanbanPage.
   const [stageGate, setStageGate] = useState({ open: false, message: '', onYes: null });
-  // Tandai inquiry KALAH (Task 4) — memakai ulang WinLossModal mode='lost'.
+  // Tandai inquiry KALAH (Task 4, di-upgrade B3) — alasan kini dari MASTER
+  // loss_reasons, bukan teks bebas WinLossModal.
   const [lossOpen, setLossOpen] = useState(false);
   const [lossSaving, setLossSaving] = useState(false);
+  const [lossReasons, setLossReasons] = useState([]);
+  // B3 — Batalkan deal (alasan teks bebas) + Mulai Negosiasi (tanpa form).
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelSaving, setCancelSaving] = useState(false);
+  const [negoOpen, setNegoOpen] = useState(false);
+  const [negoSaving, setNegoSaving] = useState(false);
   // Tandai inquiry MENANG (jalur manual baru) — ConfirmModal polos (bukan
   // WinLossModal, nol form alasan diminta), RPC mark_inquiry_won yang
   // menegakkan izin sebenarnya.
@@ -499,6 +515,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const isInquiryCreator = !!(inquiry?.created_by && profile?.id && inquiry.created_by === profile.id);
   const canMarkWon = (isInquiryCreator || erpRole === 'super_admin')
     && String(inquiry?.status || 'OPEN').toUpperCase() !== 'WON';
+  // B3 — gate dua aksi baru. Penegak izin sebenarnya tetap RLS inquiries_update;
+  // ini murni lapis UI (fail-closed: status tak dikenal -> tombol tak dirender).
+  const canCancel = CANCELLABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
+  const canNegotiate = NEGOTIABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
 
   // Update accounts row (used by both Edit modal & Pindah Stage). Returns boolean.
   // Single shared write path (saveDealUpdate) so the audit trail matches
@@ -603,9 +623,21 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     if (!inquiry?.id) return;
     const prevStatus = inquiry.status || 'OPEN';
     setLossSaving(true);
+    // B3: menulis loss_reason_id (master), BUKAN lost_reason (teks bebas).
+    // Kolom lama sengaja dibiarkan kosong ke depannya — sudah disupersedi
+    // (lihat COMMENT kolomnya di migrasi 20260828000002); drop-nya menyusul
+    // di batch pembersihan terpisah.
+    // closed_at/closed_by TIDAK dikirim dari sini: trigger
+    // trg_z_stamp_inquiry_closure yang menstempelnya, dan COALESCE di sana
+    // membuat nilai kiriman FE menang bila suatu saat memang perlu dikirim.
     const { error } = await supabase
       .from('inquiries')
-      .update({ status: 'LOST', lost_reason: values.lost_reason })
+      .update({
+        status: 'LOST',
+        loss_reason_id:   values.loss_reason_id,
+        competitor_name:  values.competitor_name,
+        competitor_price: values.competitor_price,
+      })
       .eq('id', inquiry.id);
     setLossSaving(false);
     if (error) { showToast?.('Gagal menandai kalah: ' + error.message, 'error'); return; }
@@ -616,10 +648,88 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       entityType: ENTITY_TYPES.INQUIRY,
       entityId: inquiry.id,
       entityLabel: inquiry.inquiry_no,
-      notes: `${prevStatus} → LOST · alasan: ${values.lost_reason}`,
+      notes: `${prevStatus} → LOST · alasan: ${lossReasons.find(r => r.id === values.loss_reason_id)?.name || values.loss_reason_id}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setLossOpen(false);
     showToast?.('Inquiry ditandai KALAH.', 'success');
+    refetch();
+  }
+
+  // ── B3: master alasan kalah. loss_reasons GLOBAL (company_id selalu NULL) —
+  // ⚠️ JANGAN tambahkan .eq('company_id', ...) di sini: gotcha #18, filter itu
+  // akan mengembalikan NOL BARIS tanpa error dan dropdown-nya kosong senyap.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from('loss_reasons')
+      .select('id, code, name, sort_order')
+      .in('applies_to', ['deal', 'both'])
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .order('sort_order', { ascending: true })
+      .limit(1000)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('[deal] fetch loss_reasons failed:', error.message); setLossReasons([]); return; }
+        setLossReasons(data || []);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── B3: Batalkan deal. Alasan teks bebas (bukan master) — ini catatan
+  // operasional sekali pakai, bukan taksonomi yang di-GROUP BY seperti alasan
+  // kalah. closed_at/closed_by distempel trigger, sama seperti jalur LOST.
+  async function markInquiryCancel(values) {
+    if (!inquiry?.id) return;
+    const prevStatus = inquiry.status || 'OPEN';
+    setCancelSaving(true);
+    const { error } = await supabase
+      .from('inquiries')
+      .update({ status: 'CANCELLED', cancel_reason: values.cancel_reason })
+      .eq('id', inquiry.id);
+    setCancelSaving(false);
+    if (error) { showToast?.('Gagal membatalkan deal: ' + error.message, 'error'); return; }
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_INQUIRY,
+      entityType: ENTITY_TYPES.INQUIRY,
+      entityId: inquiry.id,
+      entityLabel: inquiry.inquiry_no,
+      notes: `${prevStatus} → CANCELLED · alasan: ${values.cancel_reason}`,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    setCancelOpen(false);
+    showToast?.('Deal dibatalkan.', 'success');
+    refetch();
+  }
+
+  // ── B3: Mulai Negosiasi (QUOTED → NEGOTIATION). Ini SATU-SATUNYA jalur tulis
+  // NEGOTIATION di seluruh sistem — sebelum batch ini status itu ada di CHECK
+  // constraint tapi nol penulis, jadi lajurnya mustahil terisi. Bukan status
+  // terminal: closed_at/closed_by TIDAK ikut terstempel (trigger penutupan
+  // hanya menyala untuk WON/LOST/CANCELLED).
+  async function startNegotiation() {
+    if (!inquiry?.id) return;
+    const prevStatus = inquiry.status || 'OPEN';
+    setNegoSaving(true);
+    const { data, error } = await supabase
+      .from('inquiries')
+      .update({ status: 'NEGOTIATION' })
+      .eq('id', inquiry.id)
+      .select('id');
+    setNegoSaving(false);
+    if (error) { showToast?.('Gagal memulai negosiasi: ' + error.message, 'error'); return; }
+    // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
+    if (!data || data.length === 0) {
+      showToast?.('Gagal memulai negosiasi: tidak ada izin mengubah inquiry ini.', 'error');
+      return;
+    }
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_INQUIRY,
+      entityType: ENTITY_TYPES.INQUIRY,
+      entityId: inquiry.id,
+      entityLabel: inquiry.inquiry_no,
+      notes: `${prevStatus} → NEGOTIATION`,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    setNegoOpen(false);
+    showToast?.('Deal masuk tahap negosiasi.', 'success');
     refetch();
   }
 
@@ -738,7 +848,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <Card
         title="Detail Inquiry"
         icon={<FileText size={17} />}
-        right={(onEditInquiry || canMarkLost || canMarkWon) ? (
+        right={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {onEditInquiry && (
               <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -751,9 +861,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 <CheckCircle2 size={14} />{wonSaving ? 'Memproses…' : 'Tandai sebagai WON'}
               </button>
             )}
+            {canNegotiate && (
+              <button onClick={() => setNegoOpen(true)} disabled={negoSaving}
+                style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.orange, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: negoSaving ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: negoSaving ? 0.6 : 1 }}>
+                <Handshake size={14} />{negoSaving ? 'Memproses…' : 'Mulai Negosiasi'}
+              </button>
+            )}
             {canMarkLost && (
               <button onClick={() => setLossOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.redBd}`, background: '#fff', color: C.red, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <XCircle size={14} />Tandai Kalah
+              </button>
+            )}
+            {canCancel && (
+              <button onClick={() => setCancelOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Ban size={14} />Batalkan
               </button>
             )}
           </div>
@@ -908,15 +1029,40 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         onCancel={() => setOfferSwitchConfirm({ open: false, prf: null, offer: null })}
       />
 
-      {/* Tandai inquiry KALAH — kategori alasan memakai kosakata WinLossModal apa adanya */}
-      <WinLossModal
+      {/* Tandai inquiry KALAH — alasan dari MASTER loss_reasons (B3). Field
+          pesaing muncul & wajib hanya untuk kode PRICE/COMPETITOR; aturan itu
+          tinggal di DealCloseModals (COMPETITOR_REQUIRED_CODES), bukan di sini. */}
+      <LostReasonModal
         key={`lost-${inquiry.id}-${lossOpen}`}
         open={lossOpen}
-        mode="lost"
-        prospectName={inquiry.inquiry_no}
+        inquiryNo={inquiry.inquiry_no}
+        reasons={lossReasons}
         saving={lossSaving}
         onSave={markInquiryLost}
         onCancel={() => setLossOpen(false)}
+      />
+
+      {/* Batalkan deal — alasan teks bebas (B3). */}
+      <CancelReasonModal
+        key={`cancel-${inquiry.id}-${cancelOpen}`}
+        open={cancelOpen}
+        inquiryNo={inquiry.inquiry_no}
+        saving={cancelSaving}
+        onSave={markInquiryCancel}
+        onCancel={() => setCancelOpen(false)}
+      />
+
+      {/* Mulai Negosiasi — konfirmasi polos, nol form. Ditutup SEGERA saat
+          konfirmasi supaya tombol "Ya" tak bisa diklik dobel (pola sama wonOpen). */}
+      <ConfirmModal
+        open={negoOpen}
+        variant="info"
+        title="Mulai Negosiasi"
+        message="Pindahkan deal ini ke tahap NEGOTIATION? Penawaran sudah terkirim dan sedang dinegosiasikan dengan customer."
+        confirmLabel="Ya, Mulai Negosiasi"
+        cancelLabel="Batal"
+        onConfirm={() => { setNegoOpen(false); startNegotiation(); }}
+        onCancel={() => setNegoOpen(false)}
       />
 
       {/* Tandai inquiry MENANG — konfirmasi polos (nol form alasan), RPC yang

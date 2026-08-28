@@ -3557,12 +3557,13 @@ export default function StorbitManifest() {
           {activeMenu === 'crm-pipeline' && (
             <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                {/* B3: papan kini per-INQUIRY dan read-only. Prop lama yang
+                    melayani papan berbasis akun (setShowProspectForm /
+                    setEditingProspect / onSelectAccount / setActiveMenu) sudah
+                    tak dipakai — kartu membuka Detail Deal, bukan Detail Akun. */}
                 <PipelineKanbanPage
                   showToast={showToast}
-                  setActiveMenu={setActiveMenu}
-                  setShowProspectForm={setShowProspectForm}
-                  setEditingProspect={setEditingProspect}
-                  onSelectAccount={navigateToCustomerDetail}
+                  onSelectInquiry={(inq) => { setCrmDealInquiry({ id: inq.id }); setActiveMenu('crm-inquiry'); }}
                 />
               </Suspense>
             </ErrorBoundary>
