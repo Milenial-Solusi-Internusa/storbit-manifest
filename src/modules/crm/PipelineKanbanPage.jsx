@@ -107,8 +107,18 @@ const BOARD_SELECT = `
   created_at, closed_at, owner_id,
   prospect:accounts!inquiries_prospect_id_fkey(name),
   customer:accounts!inquiries_customer_id_fkey(name),
-  owner:profiles!inquiries_owner_id_fkey(id, full_name)
+  owner:profiles!owner_id(id, full_name)
 `;
+/* ⚠️ Hint embed di atas memakai NAMA KOLOM (`!owner_id`), bukan nama constraint.
+   Hint-nya WAJIB ada — `inquiries` punya DUA foreign key ke `profiles`
+   (`created_by` dan `owner_id`), jadi embed tanpa hint akan ambigu.
+   Nama kolom dipilih ketimbang nama constraint karena ia tak bisa meleset:
+   `owner_id` terbaca dari definisi tabel, sementara nama constraint bergantung
+   pada bagaimana kolomnya dibuat (migrasi vs Table Editor) dan tak terlihat
+   dari kode. Pola constraint-name yang dipakai file CRM lain (mis.
+   `profiles!inquiries_created_by_fkey` di InquiryListPage) tetap sah — ini
+   bukan koreksi terhadapnya, hanya bentuk yang lebih tahan untuk kolom yang
+   baru lahir di batch ini. */
 
 /* ─── Kartu ────────────────────────────────────────────────────────────── */
 function DealCard({ inq, onOpen }) {
