@@ -33,13 +33,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Funnel, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import ListView from './v3/ListView';
 import { Badge, OutlineBtn } from './v3/kit';
 import {
-  INK, INK_SOFT, FAINT, LINE, SURFACE, FONT_HEAD, FONT_BODY, FONT_MONO,
+  NAVY, INK, INK_SOFT, FAINT, LINE, SURFACE, FONT_HEAD, FONT_BODY, FONT_MONO,
   SP, RADIUS,
 } from './v3/tokens';
 
@@ -104,9 +104,10 @@ const shiftMonth = (key, delta) => {
    memoisasi fetchBoard (react-hooks/preserve-manual-memoization). */
 const BOARD_SELECT = `
   id, inquiry_no, status, service_type, route, estimated_value,
-  created_at, closed_at,
+  created_at, closed_at, owner_id,
   prospect:accounts!inquiries_prospect_id_fkey(name),
-  customer:accounts!inquiries_customer_id_fkey(name)
+  customer:accounts!inquiries_customer_id_fkey(name),
+  owner:profiles!inquiries_owner_id_fkey(id, full_name)
 `;
 
 /* ─── Kartu ────────────────────────────────────────────────────────────── */
@@ -150,6 +151,195 @@ function DealCard({ inq, onOpen }) {
   );
 }
 
+/* ─── Filter papan ─────────────────────────────────────────────────────────
+   EMPAT dimensi, seluruhnya ber-AND, dan menumpang di `filtered()` yang sama
+   dengan kotak pencarian — jadi jumlah di kolom, segmen chevron, dan rel
+   tertutup ikut menyesuaikan sendiri tanpa satu baris pun berubah di ListView.
+
+   ⚠️ "Channel Asal" SENGAJA BELUM ADA di sini. Master `channel_types` sudah
+   lahir (migrasi 20260827000001) tapi `inquiries` belum punya kolom penghubung
+   ke sana — tak ada `channel_type_id` di tabel mana pun, dan tabel masternya
+   nol pembaca di seluruh repo. Menambalnya lewat `accounts.source` sempat
+   dipertimbangkan lalu DITOLAK (keputusan Den): granularitasnya per-AKUN, bukan
+   per-inquiry, jadi ia akan menjawab pertanyaan yang berbeda dari yang ditanya.
+   Filter kelima menunggu `inquiries.channel_type_id` di batch DB terpisah. */
+const EMPTY_FILTERS = { ownerId: '', services: [], valMin: '', valMax: '', ageDays: 0 };
+
+/* Preset umur di tahap sekarang — hari; 0 = mati. */
+const AGE_PRESETS = [
+  { days: 7,  label: '> 7 hari'  },
+  { days: 14, label: '> 14 hari' },
+  { days: 30, label: '> 30 hari' },
+];
+
+/* Preset rentang nilai; string kosong = sisi itu tanpa batas. */
+const VALUE_PRESETS = [
+  { label: '< 50 jt',      min: '',           max: '50000000'   },
+  { label: '50–250 jt',    min: '50000000',   max: '250000000'  },
+  { label: '250 jt–1 M',   min: '250000000',  max: '1000000000' },
+  { label: '> 1 M',        min: '1000000000', max: ''           },
+];
+
+/* Berapa DIMENSI yang aktif — bukan berapa nilai yang dipilih. Dua layanan
+   tercentang tetap satu dimensi, supaya angka di badge terbaca sebagai
+   "berapa saringan yang menempel", bukan angka yang melonjak sendiri. */
+const countActive = (f) =>
+  (f.ownerId ? 1 : 0) +
+  (f.services.length ? 1 : 0) +
+  (f.valMin !== '' || f.valMax !== '' ? 1 : 0) +
+  (f.ageDays > 0 ? 1 : 0);
+
+/* ─── Panel filter ─────────────────────────────────────────────────────────
+   SATU panel gabungan, bukan empat dropdown lepas di toolbar: kontrol yang
+   berdiri sendiri-sendiri membuat toolbar ramai dan menyembunyikan fakta bahwa
+   keempatnya ber-AND. Gaya pil mengikuti saved-view di FilterBar (ListView). */
+function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onReset, onClose }) {
+  const set = (patch) => onChange({ ...flt, ...patch });
+  const toggleService = (v) => set({
+    services: flt.services.includes(v)
+      ? flt.services.filter((s) => s !== v)
+      : [...flt.services, v],
+  });
+
+  const secTitle = {
+    fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
+    textTransform: 'uppercase', color: INK_SOFT, marginBottom: SP.s2,
+  };
+  const field = {
+    width: '100%', padding: '7px 10px', borderRadius: RADIUS.sm,
+    border: `1px solid ${LINE}`, background: SURFACE,
+    fontFamily: FONT_BODY, fontSize: 13, color: INK, outline: 'none',
+  };
+  const chip = (on) => ({
+    padding: '5px 11px', borderRadius: RADIUS.pill, cursor: 'pointer',
+    border: `1px solid ${on ? NAVY : LINE}`,
+    background: on ? NAVY : 'transparent',
+    color: on ? '#FFFFFF' : INK_SOFT,
+    fontFamily: FONT_HEAD, fontSize: 12, fontWeight: on ? 700 : 600,
+  });
+  const row = { display: 'flex', gap: SP.s1, flexWrap: 'wrap' };
+
+  const valueOn = (p) => flt.valMin === p.min && flt.valMax === p.max;
+
+  return (
+    <div style={{
+      position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30,
+      width: 330, padding: SP.s4, borderRadius: RADIUS.lg,
+      border: `1px solid ${LINE}`, background: SURFACE,
+      boxShadow: '0 10px 30px rgba(22,36,58,0.12)',
+      display: 'flex', flexDirection: 'column', gap: SP.s4,
+    }}>
+      {/* 1 — Pemilik Deal */}
+      <div>
+        <div style={secTitle}>Pemilik Deal</div>
+        <select
+          value={flt.ownerId} onChange={(e) => set({ ownerId: e.target.value })}
+          style={field}
+        >
+          <option value="">Semua pemilik</option>
+          {ownerOpts.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+      </div>
+
+      {/* 2 — Jenis Layanan */}
+      <div>
+        <div style={secTitle}>Jenis Layanan</div>
+        <div style={row}>
+          {serviceOpts.length === 0
+            ? <span style={{ fontFamily: FONT_BODY, fontSize: 12, color: FAINT }}>Tidak ada data</span>
+            : serviceOpts.map((s) => (
+              <button
+                key={s.value} type="button"
+                onClick={() => toggleService(s.value)}
+                style={chip(flt.services.includes(s.value))}
+              >
+                {s.label}
+              </button>
+            ))}
+        </div>
+      </div>
+
+      {/* 3 — Rentang Nilai Deal */}
+      <div>
+        <div style={secTitle}>Rentang Nilai Deal</div>
+        <div style={{ ...row, marginBottom: SP.s2 }}>
+          {VALUE_PRESETS.map((p) => (
+            <button
+              key={p.label} type="button"
+              onClick={() => set(valueOn(p)
+                ? { valMin: '', valMax: '' }
+                : { valMin: p.min, valMax: p.max })}
+              style={chip(valueOn(p))}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: SP.s2 }}>
+          <input
+            type="number" min="0" inputMode="numeric" placeholder="Minimum"
+            value={flt.valMin} onChange={(e) => set({ valMin: e.target.value })}
+            style={field}
+          />
+          <span style={{ color: FAINT }}>–</span>
+          <input
+            type="number" min="0" inputMode="numeric" placeholder="Maksimum"
+            value={flt.valMax} onChange={(e) => set({ valMax: e.target.value })}
+            style={field}
+          />
+        </div>
+      </div>
+
+      {/* 4 — Umur di Tahap Sekarang */}
+      <div>
+        <div style={secTitle}>Umur di Tahap Sekarang</div>
+        <div style={row}>
+          {AGE_PRESETS.map((p) => (
+            <button
+              key={p.days} type="button"
+              onClick={() => set({ ageDays: flt.ageDays === p.days ? 0 : p.days })}
+              style={chip(flt.ageDays === p.days)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {/* Selama riwayat belum tiba, saringan umur BELUM diterapkan — papan
+            tampil apa adanya, bukan dikosongkan. Papan kosong sesaat akan
+            terbaca sebagai "tidak ada hasil", padahal cuma datanya belum ada. */}
+        {ageLoading && (
+          <div style={{ marginTop: SP.s2, fontFamily: FONT_BODY, fontSize: 11.5, color: FAINT }}>
+            Memuat umur tahap… saringan ini belum diterapkan.
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: SP.s2, borderTop: `1px solid ${LINE}`, paddingTop: SP.s3 }}>
+        <button
+          type="button" onClick={onReset}
+          style={{
+            flex: 1, padding: '8px 12px', borderRadius: RADIUS.md, cursor: 'pointer',
+            border: `1px solid ${LINE}`, background: 'transparent', color: INK_SOFT,
+            fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600,
+          }}
+        >
+          Reset semua
+        </button>
+        <button
+          type="button" onClick={onClose}
+          style={{
+            flex: 1, padding: '8px 12px', borderRadius: RADIUS.md, cursor: 'pointer',
+            border: `1px solid ${NAVY}`, background: NAVY, color: '#FFFFFF',
+            fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 700,
+          }}
+        >
+          Tutup
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
   const { profile, erpRole } = useAuth();
 
@@ -163,6 +353,13 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState('');
   const [month,      setMonth]      = useState(() => monthKey(new Date()));
+  const [flt,        setFlt]        = useState(EMPTY_FILTERS);
+  const [panelOpen,  setPanelOpen]  = useState(false);
+
+  // Peta inquiry_id -> saat masuk status sekarang. `null` = belum pernah
+  // diambil (filter umur belum pernah dinyalakan).
+  const [stageSince,   setStageSince]   = useState(null);
+  const [stageLoading, setStageLoading] = useState(false);
 
   const fetchBoard = useCallback(async () => {
     if (!profile) return;
@@ -215,15 +412,91 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchBoard(); }, [fetchBoard]);
 
+  const ageOn = flt.ageDays > 0;
+
+  const boardIds = useMemo(
+    () => [...openRows, ...closedRows].map((r) => r.id),
+    [openRows, closedRows],
+  );
+
+  /* Riwayat umur diambil MALAS — hanya ketika filter Umur benar-benar menyala.
+     Papan default tetap dua query seperti sebelumnya, nol biaya tambahan.
+     Identitas fungsi ini ikut `boardIds`, jadi pindah bulan otomatis memicu
+     pengambilan ulang selama filternya masih menyala. */
+  const fetchStageSince = useCallback(async () => {
+    if (!boardIds.length) { setStageSince({}); return; }
+    setStageLoading(true);
+    const { data, error } = await supabase
+      .from('inquiry_status_history')
+      .select('inquiry_id, changed_at')
+      .in('inquiry_id', boardIds)
+      .order('changed_at', { ascending: false })
+      .limit(1000);
+
+    if (error) {
+      showToast?.('Gagal memuat umur tahap: ' + error.message, 'error');
+      setStageSince({});
+    } else {
+      const rows = data || [];
+      // Sudah diurut menurun, jadi baris PERTAMA tiap inquiry = transisi
+      // terakhirnya = saat ia masuk ke status yang sekarang.
+      // ⚠️ `duration_seconds` SENGAJA tidak dipakai: isinya lama di status
+      // SEBELUMNYA, bukan umur di tahap sekarang.
+      const map = {};
+      for (const r of rows) if (!(r.inquiry_id in map)) map[r.inquiry_id] = r.changed_at;
+      setStageSince(map);
+      // Jangan diam-diam memotong: kalau cap 1000 kena, inquiry yang transisi
+      // terakhirnya paling tua justru yang hilang — persis yang dicari filter
+      // ini — dan hasilnya akan terlihat sah padahal kurang.
+      if (rows.length === 1000) {
+        showToast?.('Riwayat umur terpotong di 1000 baris — hasil filter umur bisa kurang lengkap.', 'error');
+      }
+    }
+    setStageLoading(false);
+  }, [boardIds, showToast]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (ageOn) fetchStageSince(); }, [ageOn, fetchStageSince]);
+
+  const stageReady = ageOn && stageSince !== null && !stageLoading;
+
   const filtered = useCallback((rows) => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
-      (r.inquiry_no || '').toLowerCase().includes(q) ||
-      (r.customer?.name || '').toLowerCase().includes(q) ||
-      (r.prospect?.name || '').toLowerCase().includes(q) ||
-      (r.route || '').toLowerCase().includes(q));
-  }, [search]);
+    const { ownerId, services, valMin, valMax, ageDays } = flt;
+    const min = valMin === '' ? null : Number(valMin);
+    const max = valMax === '' ? null : Number(valMax);
+    // Saringan umur baru menggigit setelah riwayatnya tiba (lihat catatan di
+    // FilterPanel) — sampai itu terjadi, papan tampil apa adanya.
+    const ageCut = ageDays > 0 && stageReady ? Date.now() - ageDays * 86400000 : null;
+
+    return rows.filter((r) => {
+      if (q && !(
+        (r.inquiry_no || '').toLowerCase().includes(q) ||
+        (r.customer?.name || '').toLowerCase().includes(q) ||
+        (r.prospect?.name || '').toLowerCase().includes(q) ||
+        (r.route || '').toLowerCase().includes(q))) return false;
+
+      if (ownerId && r.owner_id !== ownerId) return false;
+      if (services.length && !services.includes(r.service_type)) return false;
+
+      if (min !== null || max !== null) {
+        const val = (r.estimated_value === null || r.estimated_value === undefined)
+          ? null : Number(r.estimated_value);
+        // Nilai kosong bukan nol: inquiry tanpa taksiran nilai TIDAK bisa
+        // dinilai masuk rentang mana pun, jadi ia keluar dari hasil.
+        if (val === null) return false;
+        if (min !== null && val < min) return false;
+        if (max !== null && val > max) return false;
+      }
+
+      if (ageCut !== null) {
+        const since = stageSince?.[r.id];
+        // Tanpa baris riwayat, umurnya tak diketahui — bukan "0 hari".
+        if (!since || new Date(since).getTime() > ageCut) return false;
+      }
+      return true;
+    });
+  }, [search, flt, stageReady, stageSince]);
 
   const lanes = useMemo(() => {
     const open = filtered(openRows);
@@ -239,6 +512,29 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
       })),
     ];
   }, [openRows, closedRows, filtered]);
+
+  /* Opsi dropdown diturunkan dari DATA PAPAN, bukan dari daftar tetap: yang
+     ditawarkan filter selalu yang benar-benar ada di papan, jadi tak mungkin
+     memilih pemilik/layanan yang pasti menghasilkan nol kartu. */
+  const ownerOpts = useMemo(() => {
+    const map = new Map();
+    for (const r of [...openRows, ...closedRows]) {
+      if (r.owner_id && !map.has(r.owner_id)) {
+        map.set(r.owner_id, r.owner?.full_name || '(tanpa nama)');
+      }
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'id'));
+  }, [openRows, closedRows]);
+
+  const serviceOpts = useMemo(() => {
+    const seen = new Set();
+    for (const r of [...openRows, ...closedRows]) if (r.service_type) seen.add(r.service_type);
+    return [...seen].sort().map((v) => ({ value: v, label: SERVICE_LABEL[v] || v }));
+  }, [openRows, closedRows]);
+
+  const activeCount = countActive(flt);
 
   const totalOpen = openRows.length;
   const totalClosed = closedRows.length;
@@ -258,6 +554,40 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
         renderCard={(inq) => <DealCard inq={inq} onOpen={onSelectInquiry} />}
         search={search}
         onSearch={setSearch}
+        filters={
+          <div style={{ position: 'relative' }}>
+            <OutlineBtn onClick={() => setPanelOpen((v) => !v)} icon={<Funnel size={14} />}>
+              Filter
+              {activeCount > 0 && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  minWidth: 17, height: 17, padding: '0 5px', borderRadius: RADIUS.pill,
+                  background: NAVY, color: '#FFFFFF',
+                  fontFamily: FONT_HEAD, fontSize: 10.5, fontWeight: 700,
+                }}>
+                  {activeCount}
+                </span>
+              )}
+            </OutlineBtn>
+            {panelOpen && (
+              <>
+                {/* Backdrop transparan — klik di luar menutup panel, tanpa
+                    listener dokumen beserta pembersihannya. */}
+                <div
+                  onClick={() => setPanelOpen(false)}
+                  style={{ position: 'fixed', inset: 0, zIndex: 20 }}
+                />
+                <FilterPanel
+                  flt={flt} onChange={setFlt}
+                  ownerOpts={ownerOpts} serviceOpts={serviceOpts}
+                  ageLoading={ageOn && !stageReady}
+                  onReset={() => setFlt(EMPTY_FILTERS)}
+                  onClose={() => setPanelOpen(false)}
+                />
+              </>
+            )}
+          </div>
+        }
         savedViews={[
           { id: 'aktif',    label: 'Deal Berjalan', count: totalOpen },
           { id: 'tertutup', label: `Ditutup ${monthLabel(month)}`, count: totalClosed },
