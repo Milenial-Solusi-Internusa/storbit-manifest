@@ -106,19 +106,18 @@ const BOARD_SELECT = `
   id, inquiry_no, status, service_type, route, estimated_value,
   created_at, closed_at, owner_id,
   prospect:accounts!inquiries_prospect_id_fkey(name),
-  customer:accounts!inquiries_customer_id_fkey(name),
-  owner:profiles!owner_id(id, full_name)
+  customer:accounts!inquiries_customer_id_fkey(name)
 `;
-/* ⚠️ Hint embed di atas memakai NAMA KOLOM (`!owner_id`), bukan nama constraint.
-   Hint-nya WAJIB ada — `inquiries` punya DUA foreign key ke `profiles`
-   (`created_by` dan `owner_id`), jadi embed tanpa hint akan ambigu.
-   Nama kolom dipilih ketimbang nama constraint karena ia tak bisa meleset:
-   `owner_id` terbaca dari definisi tabel, sementara nama constraint bergantung
-   pada bagaimana kolomnya dibuat (migrasi vs Table Editor) dan tak terlihat
-   dari kode. Pola constraint-name yang dipakai file CRM lain (mis.
-   `profiles!inquiries_created_by_fkey` di InquiryListPage) tetap sah — ini
-   bukan koreksi terhadapnya, hanya bentuk yang lebih tahan untuk kolom yang
-   baru lahir di batch ini. */
+/* ⚠️ Nama pemilik SENGAJA tidak di-embed dari `profiles` di sini.
+   Embed bentuk apa pun — hint nama constraint (`!inquiries_owner_id_fkey`)
+   maupun hint nama kolom (`!owner_id`) — sama-sama menuntut PostgREST mengenali
+   foreign key inquiries.owner_id -> profiles.id di schema cache-nya, dan persis
+   di situ ia gagal: FK-nya terkonfirmasi ADA di database, `NOTIFY pgrst,
+   'reload schema'` sudah dijalankan, errornya tetap bertahan. Jadi jalur embed
+   ditinggalkan sama sekali, bukan diperbaiki bentuknya untuk ketiga kalinya.
+   `owner_id` tetap diambil sebagai kolom biasa — nol ketergantungan pada FK —
+   dan namanya diambil SEKALI per pemuatan papan lewat query terpisah ke
+   `profiles`; lihat query ketiga di fetchBoard. */
 
 /* ─── Kartu ────────────────────────────────────────────────────────────── */
 function DealCard({ inq, onOpen }) {
@@ -366,6 +365,10 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
   const [flt,        setFlt]        = useState(EMPTY_FILTERS);
   const [panelOpen,  setPanelOpen]  = useState(false);
 
+  // Peta owner_id -> full_name. Diisi query ketiga di fetchBoard; nama pemilik
+  // tidak lagi menempel di baris inquiry-nya.
+  const [ownerNames, setOwnerNames] = useState({});
+
   // Peta inquiry_id -> saat masuk status sekarang. `null` = belum pernah
   // diambil (filter umur belum pernah dinyalakan).
   const [stageSince,   setStageSince]   = useState(null);
@@ -416,6 +419,42 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
     } else {
       setClosedRows(closedRes.data || []);
     }
+
+    /* Query KETIGA — nama pemilik, pengganti embed yang dilepas.
+       SATU query per pemuatan papan, bukan satu per kartu: seluruh owner_id
+       dikumpulkan lebih dulu, di-dedup lewat Set, lalu diambil sekali jalan
+       dengan .in(). Jumlah query tidak tumbuh mengikuti jumlah kartu — nol
+       N+1. Id diambil dari HASIL query (openRes/closedRes), bukan dari state,
+       karena setOpenRows/setClosedRows belum tentu sudah terbaca di sini. */
+    const ownerIds = [...new Set(
+      [...(openRes.data || []), ...(closedRes.data || [])]
+        .map((r) => r.owner_id)
+        .filter(Boolean),
+    )];
+
+    if (!ownerIds.length) {
+      setOwnerNames({});
+    } else {
+      // ⚠️ TANPA filter `active`: yang dicari nama pemilik kartu yang ADA di
+      // papan. Menyaring user nonaktif hanya akan membuat namanya hilang dan
+      // dropdown menampilkan "(tanpa nama)", padahal deal-nya nyata.
+      // `profiles` juga tidak punya deleted_at — kolomnya `active`.
+      const { data: profs, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', ownerIds)
+        .limit(1000);
+
+      if (profErr) {
+        showToast?.('Gagal memuat nama pemilik deal: ' + profErr.message, 'error');
+        setOwnerNames({});
+      } else {
+        const map = {};
+        for (const p of profs || []) map[p.id] = p.full_name;
+        setOwnerNames(map);
+      }
+    }
+
     setLoading(false);
   }, [profile, month, isAllEntities, isSalesOnly, showToast]);
 
@@ -527,16 +566,15 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
      ditawarkan filter selalu yang benar-benar ada di papan, jadi tak mungkin
      memilih pemilik/layanan yang pasti menghasilkan nol kartu. */
   const ownerOpts = useMemo(() => {
-    const map = new Map();
-    for (const r of [...openRows, ...closedRows]) {
-      if (r.owner_id && !map.has(r.owner_id)) {
-        map.set(r.owner_id, r.owner?.full_name || '(tanpa nama)');
-      }
-    }
-    return [...map.entries()]
-      .map(([id, name]) => ({ id, name }))
+    const ids = new Set();
+    for (const r of [...openRows, ...closedRows]) if (r.owner_id) ids.add(r.owner_id);
+    return [...ids]
+      // Nama datang dari peta hasil query ketiga, bukan dari baris inquiry.
+      // Fallback tetap teks, bukan UUID: id mentah di dropdown tak berarti
+      // apa-apa bagi pembacanya.
+      .map((id) => ({ id, name: ownerNames[id] || '(tanpa nama)' }))
       .sort((a, b) => a.name.localeCompare(b.name, 'id'));
-  }, [openRows, closedRows]);
+  }, [openRows, closedRows, ownerNames]);
 
   const serviceOpts = useMemo(() => {
     const seen = new Set();
