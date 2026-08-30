@@ -382,10 +382,19 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
     // Scope di-inline (bukan useCallback terpisah): builder PostgREST itu
     // mutable, jadi useCallback bersarang yang mengembalikan query termutasi
     // tak bisa dipertahankan memoisasinya oleh React Compiler.
+    /* "Deal saya" untuk sales = `owner_id`, BUKAN `created_by`. Kepemilikan deal
+       bisa dipindahtangankan selama deal masih terbuka, jadi papan kerja harus
+       mengikuti pemilik saat ini — begitu sebuah deal dioper, ia muncul di papan
+       pemilik barunya dan lenyap dari papan pemilik lama. Memakai `created_by`
+       membuat papan menempel selamanya pada pembuat pertama.
+       `created_by` sendiri TIDAK dihapus dari sistem: ia tetap field historis
+       yang ditampilkan sebagai "Dibuat Oleh" di Detail Deal, hanya berhenti jadi
+       dasar keputusan akses. Cermin RLS `inquiries_read` sesudah migrasi
+       20260830000003. */
     const applyScope = (q) => {
       let query = q;
       if (!isAllEntities && profile?.company_id) query = query.eq('company_id', profile.company_id);
-      if (isSalesOnly && profile?.id)            query = query.eq('created_by', profile.id);
+      if (isSalesOnly && profile?.id)            query = query.eq('owner_id', profile.id);
       return query;
     };
 

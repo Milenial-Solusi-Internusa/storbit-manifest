@@ -1670,11 +1670,16 @@ function CRMDashboardPage() {
          - accounts  : tetap `assigned_to OR created_by` (perilaku lama yang
                        DIPERTAHANKAN — untuk sebuah AKUN, "punya saya" memang
                        wajar mencakup yang di-assign ke saya maupun yang saya
-                       buat).
-         - inquiries : mengikuti Pipeline (`created_by`) + `owner_id`, pemilik
-                       resmi deal sejak Batch Persiapan. */
+                       buat). Di luar scope batch ini.
+         - inquiries : `owner_id` SAJA, sama persis dengan applyScope di
+                       PipelineKanbanPage. `created_by` sengaja DILEPAS dari
+                       sini: kepemilikan deal bisa dioper, dan selama created_by
+                       ikut di-OR, deal yang sudah dioper akan tetap menempel di
+                       Dashboard pembuat lamanya — bertentangan dengan papan
+                       Pipeline yang sudah pindah. Cermin RLS `inquiries_read`
+                       sesudah migrasi 20260830000003. */
       const ownAccounts  = (q) => (isSalesOnly ? q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`) : q);
-      const ownInquiries = (q) => (isSalesOnly ? q.or(`owner_id.eq.${uid},created_by.eq.${uid}`) : q);
+      const ownInquiries = (q) => (isSalesOnly ? q.eq('owner_id', uid) : q);
       const ownBySales   = (q) => (isSalesOnly ? q.eq('assigned_to', uid) : q);
       const ownByCreator = (q) => (isSalesOnly ? q.eq('created_by', uid) : q);
 
