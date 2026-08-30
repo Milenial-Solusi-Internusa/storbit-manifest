@@ -92,6 +92,14 @@ const INQ_STAGE_LABELS = {
 // adalah batch tersendiri dan sengaja TIDAK dikerjakan di sini.
 const INQ_STAGE_COLOR = { WON: '#1F8B4D', LOST: '#C0392B', CANCELLED: '#9AA0AC' };
 
+/* Bobot probabilitas menang per tahap — ASUMSI BISNIS, bukan angka terukur.
+   Sengaja konstanta di file ini dan BUKAN tabel master: ini perkiraan yang
+   melayani satu widget, dan menaruhnya di master data akan membuatnya tampak
+   seperti kebijakan resmi yang punya proses persetujuan — padahal tidak.
+   Bobotnya ditampilkan apa adanya di UI supaya pembaca tahu angka akhirnya
+   turunan dari asumsi ini, bukan hasil pengukuran. */
+const STAGE_WIN_WEIGHT = { OPEN: 0.10, IN_REVIEW: 0.25, QUOTED: 0.50, NEGOTIATION: 0.75 };
+
 // Fallback funnel — dipakai PipelineByStage saat data belum tiba.
 const STAGES = INQ_STAGE_ORDER.map((id) => ({
   id, name: INQ_STAGE_LABELS[id], count: 0, value: 0,
@@ -834,6 +842,138 @@ function LossReasonBreakdown({ data = [], total = 0 }) {
             Total LOST periode ini <b style={{ color: "#16243A" }}>{total}</b> — harus sama dengan batang LOST di Pipeline by Stage.
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- nilai pipeline berbobot ---------- */
+function WeightedPipelineValue({ data }) {
+  const raw      = data?.raw      ?? 0;
+  const weighted = data?.weighted ?? 0;
+  const counted  = data?.counted  ?? 0;
+  const missing  = data?.missing  ?? 0;
+  const total    = data?.total    ?? 0;
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="wallet" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Nilai Pipeline Berbobot</div>
+          <div style={D.cardSub}>Deal terbuka saat ini — tidak mengikuti filter periode</div>
+        </div>
+      </div>
+      <div style={{ padding: "16px 16px 14px" }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "#9AA0AC" }}>
+          Perkiraan berbobot
+        </div>
+        <div style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 26, color: NAVY, letterSpacing: -0.5, marginTop: 2 }}>
+          {rpShort(weighted)}
+        </div>
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #ECEDF1", display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontSize: 11.5, color: "#7A828E" }}>Nilai penuh (tanpa bobot)</span>
+          <span style={{ ...D.num, fontWeight: 700, fontSize: 14, color: "#16243A" }}>{rpShort(raw)}</span>
+        </div>
+
+        {/* Bobotnya disebutkan terang-terangan: angka besar di atas adalah
+            turunan asumsi, dan pembaca berhak tahu asumsi mana. */}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #ECEDF1" }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "#9AA0AC", marginBottom: 6 }}>
+            Bobot yang dipakai — asumsi, bukan angka terukur
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {INQ_OPEN_STATUSES.map((st) => (
+              <span key={st} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 20, background: "#F4F5F7", fontSize: 11, color: "#48505C", fontWeight: 600 }}>
+                {INQ_STAGE_LABELS[st]}
+                <b style={{ ...D.legVal, fontSize: 11.5 }}>{Math.round(STAGE_WIN_WEIGHT[st] * 100)}%</b>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Deal bernilai kosong TIDAK didiamkan — tanpa baris ini, Rp 0 akan
+            terbaca sebagai "pipeline memang kosong". */}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #ECEDF1", fontSize: 11, color: missing > 0 ? "#C0392B" : "#9AA0AC", lineHeight: 1.55 }}>
+          {missing > 0
+            ? <><b>{missing} dari {total} deal</b> terbuka belum punya nilai dan tidak ikut dihitung — angka di atas hanya mewakili <b>{counted} deal</b>.</>
+            : <>Seluruh <b>{total} deal</b> terbuka punya nilai.</>}
+        </div>
+        {missing > 0 && (
+          <div style={{ marginTop: 6, fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+            Nilai deal belum punya jalur input di form inquiry, jadi kolomnya memang belum terisi —
+            ini soal data, bukan hitungan.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- beban pipeline aktif per sales ---------- */
+function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
+  const [hover, setHover] = useState(-1);
+  const anyMissing = rows.some((r) => r.missing > 0);
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="users" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Beban Pipeline Aktif</div>
+          {/* Sengaja tegas membedakan diri dari Sales Performance: yang itu
+              tentang deal yang SUDAH ditutup di periode, yang ini tentang beban
+              yang MASIH dipegang hari ini. Dua sumbu waktu berbeda. */}
+          <div style={D.cardSub}>Deal terbuka yang dipegang saat ini — bukan performa deal tertutup</div>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
+          Tidak ada deal terbuka
+        </div>
+      ) : (
+        <>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
+              <thead>
+                <tr>
+                  <th style={D.th}>Salesperson</th>
+                  <th style={{ ...D.th, textAlign: "center", width: 76 }}>Deal Aktif</th>
+                  <th style={{ ...D.th, textAlign: "right" }}>Nilai Pipeline</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.id} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
+                    style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
+                    <td style={D.td}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ ...D.avatar, background: r.noOwner ? "#C7CBD4" : avatarColor(r.name) }}>
+                          {r.noOwner ? "—" : initials(r.name)}
+                        </span>
+                        <span style={{ fontWeight: 600, color: r.noOwner ? "#7A828E" : "#16243A" }}>{r.name}</span>
+                      </div>
+                    </td>
+                    <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{r.deals}</span></td>
+                    <td style={{ ...D.td, textAlign: "right" }}>
+                      <span style={D.num}>{rpShort(r.value)}</span>
+                      {/* Gap per baris disebut, supaya total per sales tak
+                          terbaca lengkap padahal sebagian dealnya tak bernilai. */}
+                      {r.missing > 0 && (
+                        <div style={{ fontSize: 10, color: "#C0392B", marginTop: 2 }}>
+                          {r.missing} deal tanpa nilai
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+            Total <b>{totalDeals} deal</b> terbuka — sama dengan jumlah keempat batang terbuka di
+            Pipeline by Stage.
+            {anyMissing && <> Nilai pipeline hanya menjumlahkan deal yang sudah punya nilai; jumlah deal tetap dihitung utuh.</>}
+          </div>
+        </>
       )}
     </div>
   );
@@ -2084,7 +2224,7 @@ function CRMDashboardPage() {
         // activityFeed.js — beda dari embed `profiles` yang dulu gagal.
         ownInquiries(byCompany(supabase
           .from('inquiries')
-          .select(`id, status, inquiry_no, owner_id, company_id,
+          .select(`id, status, inquiry_no, owner_id, company_id, estimated_value,
                    prospect:accounts!inquiries_prospect_id_fkey(name),
                    customer:accounts!inquiries_customer_id_fkey(name)`))
           .in('status', INQ_OPEN_STATUSES)
@@ -2344,6 +2484,60 @@ function CRMDashboardPage() {
           pct: base > 0 ? Math.round(((reached[to] || 0) / base) * 100) : null,
         };
       });
+
+      /* ── Nilai pipeline berbobot + beban pipeline per sales ──────────────
+         Keduanya snapshot deal TERBUKA hari ini (openInq), tanpa filter periode,
+         dan keduanya diturunkan dari array yang sama dengan Pipeline by Stage —
+         jadi jumlah dealnya rekonsiliasi secara konstruksi.
+
+         ⚠️ `inquiries.estimated_value` BELUM PUNYA JALUR TULIS mana pun. Kolomnya
+         lahir 22 Jul 2026 sebagai "aditif murni: nol pembaca, nol baris
+         tersentuh" (migrasi 20260722000007), tanpa backfill dari
+         accounts.estimated_value, dan penulis FE yang dijanjikan menyusul tak
+         pernah dibuat — ketiga penulis `estimated_value` di repo ini semuanya
+         menyasar `accounts`, bukan `inquiries`. Akibatnya hari ini hampir semua
+         deal jatuh ke hitungan "dikecualikan".
+         Itu DITAMPILKAN, bukan didiamkan (keputusan Den): Rp 0 dengan jumlah
+         pengecualian yang mencolok adalah laporan jujur tentang lubang datanya,
+         bukan kesalahan hitung. Begitu jalur tulisnya ada, kedua widget hidup
+         sendiri tanpa perubahan kode. */
+      let pipelineRaw = 0, pipelineWeighted = 0, valueMissing = 0;
+      const loadByOwner = {};
+      for (const r of openInq) {
+        const st  = String(r.status || '').toUpperCase();
+        const key = r.owner_id || '__no_owner__';
+        if (!loadByOwner[key]) loadByOwner[key] = { deals: 0, value: 0, missing: 0 };
+        // Jumlah deal dihitung SELALU, termasuk yang nilainya kosong — beban
+        // kerja seorang sales tidak berkurang hanya karena nilainya belum diisi.
+        loadByOwner[key].deals++;
+
+        const raw = (r.estimated_value === null || r.estimated_value === undefined)
+          ? null : Number(r.estimated_value);
+        if (raw === null || !Number.isFinite(raw)) {
+          valueMissing++;
+          loadByOwner[key].missing++;
+          continue;
+        }
+        pipelineRaw      += raw;
+        pipelineWeighted += raw * (STAGE_WIN_WEIGHT[st] ?? 0);
+        loadByOwner[key].value += raw;
+      }
+      const pipelineValue = {
+        raw:      pipelineRaw,
+        weighted: Math.round(pipelineWeighted),
+        counted:  openInq.length - valueMissing,
+        missing:  valueMissing,
+        total:    openInq.length,
+      };
+      const loadRows = Object.entries(loadByOwner)
+        .map(([id, s]) => ({
+          id,
+          name:    id === '__no_owner__' ? 'Tanpa Pemilik' : (ownerNames[id] || '(tanpa nama)'),
+          noOwner: id === '__no_owner__',
+          deals: s.deals, value: s.value, missing: s.missing,
+        }))
+        // "Tanpa Pemilik" selalu di dasar — keranjang sisa, bukan salesperson.
+        .sort((a, b) => (a.noOwner - b.noOwner) || (b.deals - a.deals) || (b.value - a.value));
 
       /* ── Aging per tahap + daftar deal stale ─────────────────────────────
          Umur = sekarang − saat masuk status ini (stageSince). MEDIAN, bukan
@@ -2624,6 +2818,7 @@ function CRMDashboardPage() {
         stagesData, recentActivity, trendData, leadSourceData, salesPerfData,
         lifecycleFunnel, lifecycleExits, lossReasonData, conversionData, mqlData,
         agingRows, ageUnknown, staleRows, staleTotal, staleCap: STALE_CAP,
+        pipelineValue, loadRows,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
         curLabel: P.curLabel, prevLabel: P.prevLabel,
         bucketNoun: period === 'This Month' ? 'minggu' : 'bulan',
@@ -3016,6 +3211,16 @@ function CRMDashboardPage() {
             <LossReasonBreakdown
               data={dashData?.lossReasonData || []}
               total={dashData?.lostCount || 0}
+            />
+          </div>
+
+          {/* row 3d — nilai pipeline (sempit) + beban per sales (lebar).
+              Keduanya snapshot deal terbuka hari ini, jadi berpasangan. */}
+          <div className="nx-grid-2" style={{ ...D.tablesRow, gridTemplateColumns: "minmax(0,1fr) minmax(0,1.6fr)" }}>
+            <WeightedPipelineValue data={dashData?.pipelineValue} />
+            <ActivePipelineLoad
+              rows={dashData?.loadRows || []}
+              totalDeals={dashData?.pipelineValue?.total || 0}
             />
           </div>
 
