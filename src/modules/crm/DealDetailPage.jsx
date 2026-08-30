@@ -533,14 +533,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
          keempat yang bisa melenceng sendiri. Begitu WON/LOST/CANCELLED,
          kepemilikan terkunci demi integritas Sales Performance & Win Rate
          historis (keputusan Den 30 Agu 2026).
-     (2) Pembuat inquiry, manager-ke-atas, atau super_admin — cermin RLS
-         `inquiries_update` (company + (is_manager_or_above() OR created_by =
-         auth.uid()) OR is_super_admin()), pola yang sudah dipakai di file ini
-         untuk `canSelectOffer`. Ini lapis UI; penegak sebenarnya tetap RLS,
-         plus trigger DB yang mengunci owner_id sesudah status closed. */
+     (2) Manager-ke-atas SAJA (keputusan Den 30 Agu 2026: mengoper deal adalah
+         aksi manager-ke-atas). Sengaja BUKAN pemilik-atau-manager, walau USING
+         policy `inquiries_update` meloloskan pemilik: WITH CHECK policy yang
+         sama juga berbasis owner_id, jadi begitu seorang sales pemilik mencoba
+         mengoper deal keluar, baris hasilnya tak lagi lolos WITH CHECK miliknya
+         sendiri dan tulisannya ditolak. Menampilkan tombolnya untuk sales cuma
+         akan menghasilkan tombol yang gagal saat diklik.
+         Ini lapis UI; penegak sebenarnya tetap RLS, plus trigger DB
+         `trg_z_lock_inquiry_owner` yang mengunci owner_id sesudah status closed. */
   const canReassignOwner =
     LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
-    && (isInquiryCreator || MANAGER_OR_ABOVE.includes(erpRole));
+    && MANAGER_OR_ABOVE.includes(erpRole);
   const ownerName = profMap[inquiry?.owner_id] || null;
 
   // Update accounts row (used by both Edit modal & Pindah Stage). Returns boolean.
