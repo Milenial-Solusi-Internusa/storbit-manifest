@@ -18,7 +18,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, Hash, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
-  CheckCircle2, Handshake, Ban,
+  CheckCircle2, Handshake, Ban, UserCog,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -31,6 +31,7 @@ import { bantQualifyGate } from './bant';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
+import { fetchOperationalRoster } from './salesRoster';
 import InquiryChatter from './InquiryChatter';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
@@ -314,6 +315,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [cancelSaving, setCancelSaving] = useState(false);
   const [negoOpen, setNegoOpen] = useState(false);
   const [negoSaving, setNegoSaving] = useState(false);
+  // Ganti pemilik deal (owner_id). Panel inline, bukan modal: aksi ini tak punya
+  // form alasan seperti Tandai Kalah/Batalkan — cuma satu dropdown.
+  const [ownerOpen,   setOwnerOpen]   = useState(false);
+  const [ownerDraft,  setOwnerDraft]  = useState('');
+  const [ownerSaving, setOwnerSaving] = useState(false);
+  const [salesOpts,   setSalesOpts]   = useState([]);
   // Tandai inquiry MENANG (jalur manual baru) — ConfirmModal polos (bukan
   // WinLossModal, nol form alasan diminta), RPC mark_inquiry_won yang
   // menegakkan izin sebenarnya.
@@ -335,7 +342,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, status, notes, prospect_id, created_by, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
+        .select('id, inquiry_no, service_type, route, estimated_volume, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -416,8 +423,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         acts = data || [];
       }
 
-      // resolve profile names (assigned_profile, assigned_to, created_by)
-      const pIds = [...new Set([acc?.assigned_profile, acc?.assigned_to, inq.created_by].filter(Boolean))];
+      // resolve profile names (assigned_profile, assigned_to, created_by, owner_id)
+      const pIds = [...new Set([acc?.assigned_profile, acc?.assigned_to, inq.created_by, inq.owner_id].filter(Boolean))];
       const pMap = {};
       if (pIds.length) {
         const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', pIds).limit(1000);
@@ -519,6 +526,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // ini murni lapis UI (fail-closed: status tak dikenal -> tombol tak dirender).
   const canCancel = CANCELLABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
   const canNegotiate = NEGOTIABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
+
+  /* Ganti pemilik deal — DUA syarat.
+     (1) Status masih di Pipeline. Sengaja memakai ulang LOSABLE_INQUIRY_STATUS:
+         "masih terbuka" harus punya SATU definisi di file ini, bukan daftar
+         keempat yang bisa melenceng sendiri. Begitu WON/LOST/CANCELLED,
+         kepemilikan terkunci demi integritas Sales Performance & Win Rate
+         historis (keputusan Den 30 Agu 2026).
+     (2) Pembuat inquiry, manager-ke-atas, atau super_admin — cermin RLS
+         `inquiries_update` (company + (is_manager_or_above() OR created_by =
+         auth.uid()) OR is_super_admin()), pola yang sudah dipakai di file ini
+         untuk `canSelectOffer`. Ini lapis UI; penegak sebenarnya tetap RLS,
+         plus trigger DB yang mengunci owner_id sesudah status closed. */
+  const canReassignOwner =
+    LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
+    && (isInquiryCreator || MANAGER_OR_ABOVE.includes(erpRole));
+  const ownerName = profMap[inquiry?.owner_id] || null;
 
   // Update accounts row (used by both Edit modal & Pindah Stage). Returns boolean.
   // Single shared write path (saveDealUpdate) so the audit trail matches
@@ -675,6 +698,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return () => { cancelled = true; };
   }, []);
 
+  // Roster sales untuk dropdown "Ganti Pemilik" — helper bersama `./salesRoster`
+  // (sales + gm_bd, resolusi lewat RBAC roles.code, scoped user_roles.company_id).
+  // Sengaja TIDAK bikin query profiles sendiri: sumber daftar sales sudah satu
+  // pintu di helper itu, dan menyalinnya di sini akan jadi daftar kedua yang
+  // pasti melenceng.
+  useEffect(() => {
+    if (!profile?.company_id) return;
+    let cancelled = false;
+    fetchOperationalRoster(profile.company_id).then((s) => { if (!cancelled) setSalesOpts(s); });
+    return () => { cancelled = true; };
+  }, [profile?.company_id]);
+
   // ── B3: Batalkan deal. Alasan teks bebas (bukan master) — ini catatan
   // operasional sekali pakai, bukan taksonomi yang di-GROUP BY seperti alasan
   // kalah. closed_at/closed_by distempel trigger, sama seperti jalur LOST.
@@ -730,6 +765,39 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setNegoOpen(false);
     showToast?.('Deal masuk tahap negosiasi.', 'success');
+    refetch();
+  }
+
+  // ── Ganti pemilik deal (owner_id). Hanya selama status masih di Pipeline;
+  // sesudah closed, trigger DB `trg_z_lock_inquiry_owner` menolak perubahan
+  // dengan exception — gate di sini murni lapis UI, bukan penggantinya.
+  async function reassignOwner() {
+    if (!inquiry?.id || !ownerDraft) return;
+    if (ownerDraft === inquiry.owner_id) { setOwnerOpen(false); return; }
+    const prevName = ownerName || '(kosong)';
+    const nextName = salesOpts.find((s) => s.id === ownerDraft)?.full_name || ownerDraft;
+    setOwnerSaving(true);
+    const { data, error } = await supabase
+      .from('inquiries')
+      .update({ owner_id: ownerDraft })
+      .eq('id', inquiry.id)
+      .select('id');
+    setOwnerSaving(false);
+    if (error) { showToast?.('Gagal mengganti pemilik: ' + error.message, 'error'); return; }
+    // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
+    if (!data || data.length === 0) {
+      showToast?.('Gagal mengganti pemilik: tidak ada izin mengubah inquiry ini.', 'error');
+      return;
+    }
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_INQUIRY,
+      entityType: ENTITY_TYPES.INQUIRY,
+      entityId: inquiry.id,
+      entityLabel: inquiry.inquiry_no,
+      notes: `Pemilik deal: ${prevName} → ${nextName}`,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    setOwnerOpen(false);
+    showToast?.('Pemilik deal diperbarui.', 'success');
     refetch();
   }
 
@@ -848,11 +916,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <Card
         title="Detail Inquiry"
         icon={<FileText size={17} />}
-        right={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate) ? (
+        right={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {onEditInquiry && (
               <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Pencil size={14} />Edit Inquiry
+              </button>
+            )}
+            {canReassignOwner && (
+              <button
+                onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
+                style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: ownerOpen ? C.navySoft : '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <UserCog size={14} />Ganti Pemilik
               </button>
             )}
             {canMarkWon && (
@@ -880,6 +955,44 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           </div>
         ) : null}
       >
+        {/* Panel ganti pemilik — inline, muncul tepat di bawah tombolnya. Aksi
+            ini cuma satu dropdown, jadi modal penuh (pola Tandai Kalah/Batalkan)
+            terlalu berat untuknya. */}
+        {canReassignOwner && ownerOpen && (
+          <div style={{ marginBottom: 16, padding: 14, borderRadius: 11, border: `1px solid ${C.border}`, background: C.navySoft }}>
+            <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
+              Ganti Pemilik Deal
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select
+                value={ownerDraft}
+                onChange={(e) => setOwnerDraft(e.target.value)}
+                style={{ flex: '1 1 220px', height: 34, padding: '0 10px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', fontFamily: BODY, fontSize: 13, color: C.text }}
+              >
+                <option value="">— pilih sales —</option>
+                {salesOpts.map((s) => (
+                  <option key={s.id} value={s.id}>{s.full_name}</option>
+                ))}
+              </select>
+              <button
+                onClick={reassignOwner}
+                disabled={ownerSaving || !ownerDraft}
+                style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`, background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: (ownerSaving || !ownerDraft) ? 'not-allowed' : 'pointer', opacity: (ownerSaving || !ownerDraft) ? 0.6 : 1 }}>
+                {ownerSaving ? 'Menyimpan…' : 'Simpan'}
+              </button>
+              <button
+                onClick={() => setOwnerOpen(false)}
+                style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                Batal
+              </button>
+            </div>
+            <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
+              Kepemilikan terkunci permanen begitu deal berstatus WON, LOST, atau CANCELLED —
+              demi menjaga angka Sales Performance dan Win Rate historis tetap utuh.
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           <span style={{ padding: '4px 11px', borderRadius: 99, background: C.orangeSoft, color: C.orange, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
             {SERVICE_LABEL[inquiry.service_type] || inquiry.service_type || '—'}
@@ -916,6 +1029,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <InfoRow label="Deadline Quote" value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''} />
           <InfoRow label="Route" value={inquiry.route} />
           <InfoRow label="Dibuat Oleh" value={createdByName} />
+          {/* Pemilik deal ≠ pembuat: owner_id bisa dipindahtangankan selama deal
+              masih terbuka, created_by tidak pernah berubah. Keduanya ditampilkan
+              supaya perpindahan kepemilikan tetap terbaca jejaknya. */}
+          <InfoRow label="Pemilik Deal" value={ownerName} />
           <InfoRow label="Tanggal Dibuat" value={fmtDate(inquiry.created_at)} />
           <InfoRow label="Notes" value={inquiry.notes} full />
         </div>

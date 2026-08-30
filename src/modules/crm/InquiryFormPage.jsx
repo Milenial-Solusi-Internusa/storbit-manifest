@@ -292,7 +292,14 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       const companyCode = companyRow.data?.code || 'MSI';
       const inquiry_no = await generateInquiryNo(profile.company_id, companyCode);
 
-      const payload = { inquiry_no, company_id: profile.company_id, status: 'OPEN', created_by: profile.id, ...fields };
+      // `owner_id` = pembuat inquiry (keputusan Den 30 Agu 2026). Kolomnya lahir
+      // di Batch Persiapan dengan backfill dari created_by, tapi sampai batch ini
+      // NOL jalur tulis mengisinya — akibatnya setiap inquiry baru sejak 27 Agu
+      // ber-owner_id NULL, dan Sales Performance + filter Pemilik Deal di Pipeline
+      // tak punya apa pun untuk dikelompokkan. Nilainya sengaja sama dengan
+      // created_by di sini, TAPI dua kolom ini bukan sinonim: created_by permanen,
+      // owner_id bisa dipindahtangankan selama deal masih terbuka (Detail Deal).
+      const payload = { inquiry_no, company_id: profile.company_id, status: 'OPEN', created_by: profile.id, owner_id: profile.id, ...fields };
       const { error } = await supabase.from('inquiries').insert(payload);
       if (error) throw error;
       logAudit(supabase, {
