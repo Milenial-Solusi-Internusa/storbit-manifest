@@ -32,11 +32,17 @@ const C = {
 // <select> di Section Pipeline.
 const STAGE_DOT = { NEW: '#94A3B8', CONTACTED: '#3B82F6', QUALIFIED: '#0D9488', PROPOSAL: '#F59E0B', NEGOTIATION: '#E85A1E', WON: '#16A34A', LOST: '#DC2626', NURTURE: '#94A3B8' };
 const CUSTOMER_TYPES = ['freight', 'customs', 'trading', 'mixed'];
-const SOURCES = ['sales_visit', 'cold_call', 'referral', 'existing_network', 'exhibition', 'instagram', 'linkedin', 'tiktok', 'website', 'walk_in', 'other'];
+// `whatsapp` disisipkan di antara tiktok dan website supaya seluruh channel
+// digital tetap berdampingan (instagram · linkedin · tiktok · whatsapp ·
+// website). Urutan relatif opsi lama TIDAK berubah.
+// ⚠️ Nilai di sini terikat CHECK constraint `prospects_source_check` pada tabel
+// `accounts` — menambah opsi di FE saja akan ditolak DB. Pelebaran constraint-nya
+// ada di migrasi 20260830000004.
+const SOURCES = ['sales_visit', 'cold_call', 'referral', 'existing_network', 'exhibition', 'instagram', 'linkedin', 'tiktok', 'whatsapp', 'website', 'walk_in', 'other'];
 const SOURCE_LABELS = {
   sales_visit: 'Sales Visit', cold_call: 'Cold Call', referral: 'Referral',
   existing_network: 'Existing Network', exhibition: 'Exhibition / Pameran', instagram: 'Instagram',
-  linkedin: 'LinkedIn', tiktok: 'TikTok', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
+  linkedin: 'LinkedIn', tiktok: 'TikTok', whatsapp: 'WhatsApp', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
 };
 const BANT_ICON = { bant_budget: DollarSign, bant_authority: Users, bant_need: Target, bant_timeline: Clock };
 

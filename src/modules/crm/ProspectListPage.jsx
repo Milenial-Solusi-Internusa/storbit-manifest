@@ -37,11 +37,33 @@ const STAGE_META = {
   NURTURE:     { label: 'Nurture',     bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
 };
 
+/* Daftar ini menyetir DUA hal: dropdown filter Source dan SourceBadge di kolom
+   tabel. Isinya kini disamakan PERSIS dengan nilai yang sah menurut CHECK
+   constraint `prospects_source_check`, dan urutannya sama dengan dropdown di
+   ProspectFormPage.
+
+   Sebelumnya daftar ini berisi empat entri yang tak pernah cocok dengan
+   kenyataan: `digital_marketing` dan `event` BUKAN nilai yang sah (constraint
+   menolaknya, jadi memfilternya selalu nol hasil), sementara delapan nilai yang
+   sah — cold_call, existing_network, exhibition, instagram, linkedin, tiktok,
+   website, walk_in — tak bisa difilter sama sekali dan badge-nya jatuh ke
+   fallback teks mentah (`SOURCE_LABELS[source] || source`).
+
+   ⚠️ Kalau nilai source bertambah lagi, ubah DI SINI dan di ProspectFormPage
+   berbarengan — dua daftar ini memang belum disatukan. */
 const SOURCE_LABELS = {
-  digital_marketing: 'Digital Marketing',
-  sales_visit:       'Sales Visit',
-  referral:          'Referral',
-  event:             'Event',
+  sales_visit:      'Sales Visit',
+  cold_call:        'Cold Call',
+  referral:         'Referral',
+  existing_network: 'Existing Network',
+  exhibition:       'Exhibition / Pameran',
+  instagram:        'Instagram',
+  linkedin:         'LinkedIn',
+  tiktok:           'TikTok',
+  whatsapp:         'WhatsApp',
+  website:          'Website',
+  walk_in:          'Walk-in',
+  other:            'Lainnya',
 };
 
 const PAGE_SIZE = 20;
