@@ -666,8 +666,10 @@ function SalesPerformance({ data = [] }) {
                   style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
                   <td style={D.td}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ ...D.avatar, background: avatarColor(s.name) }}>{initials(s.name)}</span>
-                      <span style={{ fontWeight: 600, color: "#16243A" }}>{s.name}</span>
+                      <span style={{ ...D.avatar, background: s.noOwner ? "#C7CBD4" : avatarColor(s.name) }}>
+                        {s.noOwner ? "—" : initials(s.name)}
+                      </span>
+                      <span style={{ fontWeight: 600, color: s.noOwner ? "#7A828E" : "#16243A" }}>{s.name}</span>
                     </div>
                   </td>
                   <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.won}</span></td>
@@ -688,6 +690,16 @@ function SalesPerformance({ data = [] }) {
             })}
           </tbody>
         </table>
+        {/* Keterangan muncul HANYA saat barisnya ada — supaya angka tabel ini
+            selalu bisa dicocokkan dengan kartu Win Rate tanpa user menebak ke
+            mana perginya selisihnya. */}
+        {data.some((s) => s.noOwner) && (
+          <div style={{ padding: "10px 16px 14px", fontSize: 11.5, color: "#7A828E", lineHeight: 1.5 }}>
+            <b>Tanpa Pemilik</b> = deal yang <code>owner_id</code>-nya belum terisi, jadi belum bisa
+            diatribusikan ke salesperson mana pun. Barisnya tetap dihitung agar total di sini
+            cocok dengan kartu Win Rate dan grafik Pipeline by Stage.
+          </div>
+        )}
         </div>
       )}
     </div>
@@ -1891,11 +1903,23 @@ function CRMDashboardPage() {
         bulanLalu: inBucket(prevRows, b.prevStart, b.prevEnd),
       }));
 
-      // ── Sales performance — per PEMILIK DEAL (inquiries.owner_id) ───────
+      /* ── Sales performance — per PEMILIK DEAL (inquiries.owner_id) ───────
+         ⚠️ Deal ber-`owner_id` NULL DIKUMPULKAN ke baris "Tanpa Pemilik", bukan
+         dibuang. Sebelumnya baris NULL di-`return` diam-diam, sehingga widget
+         ini bisa berkata "belum ada deal yang ditutup" untuk periode yang sama
+         di mana kartu Win Rate menghitung deal itu — persis kelas kegagalan
+         senyap yang dibereskan di batch sebelumnya, lahir kembali dalam bentuk
+         baru.
+         NULL-nya sendiri bukan anomali data langka: `owner_id` lahir di Batch
+         Persiapan dengan backfill dari `created_by`, tapi TIDAK ADA satu pun
+         jalur tulis yang mengisinya sejak itu (insert InquiryFormPage tak
+         memuat kolom ini), jadi setiap inquiry BARU pasti NULL sampai jalur
+         tulisnya dibuat. Sampai saat itu, baris ini yang menahan angkanya tetap
+         rekonsiliasi dengan Win Rate dan Pipeline by Stage. */
+      const NO_OWNER = '__no_owner__';
       const perOwner = {};
       closedInq.forEach((r) => {
-        const id = r.owner_id;
-        if (!id) return;
+        const id = r.owner_id || NO_OWNER;
         if (!perOwner[id]) perOwner[id] = { won: 0, lost: 0, value: 0 };
         if (r.status === 'WON') {
           perOwner[id].won++;
@@ -1908,14 +1932,17 @@ function CRMDashboardPage() {
         .map(([id, s]) => {
           const dec = s.won + s.lost;
           return {
-            name:     ownerNames[id] || '(tanpa nama)',
-            won:      s.won,
-            lost:     s.lost,
-            value:    s.value,
-            convRate: dec > 0 ? Math.round((s.won / dec) * 100) : 0,
+            name:      id === NO_OWNER ? 'Tanpa Pemilik' : (ownerNames[id] || '(tanpa nama)'),
+            noOwner:   id === NO_OWNER,
+            won:       s.won,
+            lost:      s.lost,
+            value:     s.value,
+            convRate:  dec > 0 ? Math.round((s.won / dec) * 100) : 0,
           };
         })
-        .sort((a, b) => b.won - a.won || b.value - a.value);
+        // "Tanpa Pemilik" selalu di dasar tabel — ia keranjang sisa, bukan
+        // salesperson yang sedang diperingkat.
+        .sort((a, b) => (a.noOwner - b.noOwner) || (b.won - a.won) || (b.value - a.value));
 
       // ── Recent activity (feed terpadu) ──────────────────────────────────
       const feedEvents = await feedPromise;
