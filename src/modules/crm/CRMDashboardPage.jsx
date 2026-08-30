@@ -97,6 +97,23 @@ const STAGES = INQ_STAGE_ORDER.map((id) => ({
   id, name: INQ_STAGE_LABELS[id], count: 0, value: 0,
 }));
 
+/* ─── Sumbu LIFECYCLE akun ─────────────────────────────────────────────────
+   Sumbu KEDUA, sepenuhnya terpisah dari inquiries.status di atas: yang satu
+   perjalanan AKUN, yang satu perjalanan DEAL. Lima tahap progresif mengikuti
+   COMMENT kolom accounts.lifecycle_stage (migrasi 20260827000002).
+
+   `free_agent` dan `lost` SENGAJA di luar urutan funnel: keduanya exit yang
+   bisa terjadi dari tahap mana pun, bukan kelanjutan perjalanan. Memaksanya
+   masuk urutan akan membuat corongnya berbohong soal arah. Tapi keduanya
+   TETAP dihitung dan ditampilkan terpisah — menyembunyikannya sama dengan
+   membuang akun dari pandangan tanpa jejak. */
+const LIFECYCLE_FUNNEL = ['lead', 'mql', 'prospect', 'sql', 'customer'];
+const LIFECYCLE_EXITS  = ['free_agent', 'lost'];
+const LIFECYCLE_LABELS = {
+  lead: 'Lead', mql: 'MQL', prospect: 'Prospect', sql: 'SQL', customer: 'Customer',
+  free_agent: 'Free Agent', lost: 'Lost',
+};
+
 /* ─── Rentang periode ──────────────────────────────────────────────────────
    Satu sumber untuk SELURUH widget tim. Bucket trend adaptif supaya bentuk
    grafiknya tetap masuk akal di ketiga periode: bulan = 4 minggu, kuartal =
@@ -613,6 +630,92 @@ function LeadSourceDonut({ data = [] }) {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- baris funnel (dipakai dua widget baru) ---------- */
+// Gaya bar mengikuti D.miniTrack yang sudah dipakai legenda donut Lead Source —
+// bukan Recharts, karena kedua widget ini cuma butuh daftar berbanding, bukan
+// grafik dengan sumbu.
+function FunnelRow({ label, count, max, muted = false }) {
+  return (
+    <div style={{ marginBottom: 9 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <span style={{ flex: 1, minWidth: 0, color: muted ? "#7A828E" : "#48505C", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {label}
+        </span>
+        <span style={D.legVal}>{count}</span>
+      </div>
+      <div style={D.miniTrack}>
+        <span style={{ display: "block", height: "100%", borderRadius: 4, background: muted ? "#C7CBD4" : NAVY, width: (max > 0 ? (count / max) * 100 : 0) + "%" }} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------- funnel lifecycle akun ---------- */
+function LifecycleFunnel({ funnel = [], exits = [] }) {
+  const max        = funnel.reduce((a, s) => Math.max(a, s.count), 0);
+  const totalFun   = funnel.reduce((a, s) => a + s.count, 0);
+  const totalExit  = exits.reduce((a, s) => a + s.count, 0);
+  const isEmpty    = totalFun === 0 && totalExit === 0;
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="users" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Funnel Lifecycle Akun</div>
+          <div style={D.cardSub}>Distribusi akun saat ini — tidak mengikuti filter periode</div>
+        </div>
+      </div>
+      {isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada akun</div>
+      ) : (
+        <div style={{ padding: "14px 16px 16px" }}>
+          {funnel.map((s) => <FunnelRow key={s.id} label={s.name} count={s.count} max={max} />)}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid #ECEDF1", paddingTop: 12, marginTop: 3 }}>
+            {exits.map((e) => (
+              <span key={e.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, background: "#F4F5F7", fontSize: 11.5, color: "#7A828E", fontWeight: 600 }}>
+                {e.name}<span style={D.legVal}>{e.count}</span>
+              </span>
+            ))}
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9AA0AC" }}>
+              Total akun <b style={{ color: "#16243A" }}>{totalFun + totalExit}</b>
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- breakdown alasan kalah ---------- */
+function LossReasonBreakdown({ data = [], total = 0 }) {
+  const max = data.reduce((a, s) => Math.max(a, s.count), 0);
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="ban" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Alasan Kalah</div>
+          <div style={D.cardSub}>Deal LOST yang ditutup di periode aktif</div>
+        </div>
+      </div>
+      {data.length === 0 ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Tidak ada deal kalah di periode ini</div>
+      ) : (
+        <div style={{ padding: "14px 16px 16px" }}>
+          {/* Baris "Tanpa Alasan" diredupkan tapi TIDAK disembunyikan: totalnya
+              harus tetap sama dengan jumlah LOST di Pipeline by Stage. */}
+          {data.map((s) => (
+            <FunnelRow key={s.id} label={s.name} count={s.count} max={max} muted={s.unknown} />
+          ))}
+          <div style={{ borderTop: "1px solid #ECEDF1", paddingTop: 12, marginTop: 3, fontSize: 11.5, color: "#9AA0AC" }}>
+            Total LOST periode ini <b style={{ color: "#16243A" }}>{total}</b> — harus sama dengan batang LOST di Pipeline by Stage.
           </div>
         </div>
       )}
@@ -1747,7 +1850,7 @@ function CRMDashboardPage() {
         //     hitungan CANCELLED, dan Sales Performance.
         ownInquiries(byCompany(supabase
           .from('inquiries')
-          .select('id, status, closed_at, owner_id, estimated_value'))
+          .select('id, status, closed_at, owner_id, estimated_value, loss_reason_id'))
           .in('status', INQ_CLOSED_STATUSES)
           .is('deleted_at', null)
           .gte('closed_at', P.start.toISOString())
@@ -1813,6 +1916,27 @@ function CRMDashboardPage() {
           .eq('to_stage', 'sql')
           .gte('changed_at', startThisMonth.toISOString())
           .lt('changed_at', startNextMonth.toISOString()),
+
+        // [11] Distribusi lifecycle akun — SNAPSHOT keadaan sekarang, sengaja
+        //      TANPA filter periode: pertanyaannya "sekarang akun-akun itu ada
+        //      di tahap mana", bukan "berapa yang masuk tahap X bulan ini".
+        //      Menyaringnya per periode akan mengubah maknanya jadi cohort dan
+        //      membuat corongnya menyusut tiap ganti bulan tanpa alasan.
+        ownAccounts(byCompany(supabase
+          .from('accounts')
+          .select('lifecycle_stage'))
+          .is('deleted_at', null)
+          .limit(1000)),
+
+        // [12] Master alasan kalah — untuk memberi NAMA pada loss_reason_id.
+        //      ⚠️ TANPA filter company_id: `loss_reasons` GLOBAL (company_id
+        //      selalu NULL), memfilternya mengembalikan NOL BARIS tanpa error
+        //      (gotcha #18) dan seluruh breakdown akan jatuh ke "Tanpa Alasan".
+        supabase
+          .from('loss_reasons')
+          .select('id, name')
+          .is('deleted_at', null)
+          .limit(1000),
       ]);
 
       /* Pemeriksaan error MENYELURUH. Sebelumnya hanya hasil [0] yang diperiksa
@@ -1837,6 +1961,8 @@ function CRMDashboardPage() {
         ['visit minggu ini', res[8]],
         ['quotation bulan ini', res[9]],
         ['SQL baru bulan ini', res[10]],
+        ['funnel lifecycle akun', res[11]],
+        ['master alasan kalah', res[12]],
       ].filter(([, r]) => r?.error).map(([label]) => label);
 
       const accountsRows        = res[0].data  || [];
@@ -1850,6 +1976,13 @@ function CRMDashboardPage() {
       const visitsThisWeek      = (res[8].data || []).length;
       const quotationsThisMonth = (res[9].data || []).length;
       const sqlThisMonth        = res[10].count ?? 0;
+      const lifecycleRows       = res[11].data || [];
+      const lossReasonRows      = res[12].data || [];
+
+      // Cap 1000 baris pada distribusi lifecycle: kalau kena, corongnya
+      // memang terpotong — dikabarkan lewat banner, bukan ditampilkan
+      // seolah-olah itu seluruh populasi akun.
+      if (lifecycleRows.length === 1000) failed.push('funnel lifecycle akun (terpotong di 1000 baris)');
 
       /* Nama pemilik deal lewat query TERPISAH, bukan embed FK — pola yang
          sudah dipakai di file ini (feed aktivitas & kalender). Satu query untuk
@@ -1886,6 +2019,52 @@ function CRMDashboardPage() {
       const cancelledCount = closedInq.filter((r) => r.status === 'CANCELLED').length;
       const decided        = wonCount + lostCount;
       const winRate        = decided > 0 ? Math.round((wonCount / decided) * 100) : 0;
+
+      /* ── Funnel lifecycle akun ───────────────────────────────────────────
+         Snapshot distribusi akun, bukan cohort periode (lihat query [11]). */
+      const lcCounts = {};
+      lifecycleRows.forEach((a) => {
+        const s = a.lifecycle_stage || '(kosong)';
+        lcCounts[s] = (lcCounts[s] || 0) + 1;
+      });
+      const lifecycleFunnel = LIFECYCLE_FUNNEL.map((id) => ({
+        id, name: LIFECYCLE_LABELS[id], count: lcCounts[id] || 0,
+      }));
+      // Nilai di luar 5 tahap funnel + 2 exit yang dikenal (termasuk NULL)
+      // dikumpulkan ke keranjang "Lainnya" — supaya "Total akun" di kartu itu
+      // benar-benar sama dengan jumlah baris yang terbaca, bukan cuma yang
+      // kebetulan cocok dengan daftar yang kita kenal.
+      const knownLc = new Set([...LIFECYCLE_FUNNEL, ...LIFECYCLE_EXITS]);
+      const lcOther = Object.entries(lcCounts)
+        .filter(([k]) => !knownLc.has(k))
+        .reduce((a, [, v]) => a + v, 0);
+      const lifecycleExits = [
+        ...LIFECYCLE_EXITS.map((id) => ({ id, name: LIFECYCLE_LABELS[id], count: lcCounts[id] || 0 })),
+        ...(lcOther > 0 ? [{ id: '__other__', name: 'Lainnya', count: lcOther }] : []),
+      ];
+
+      /* ── Breakdown alasan kalah ──────────────────────────────────────────
+         Diturunkan dari array `closedInq` yang SAMA dengan Pipeline by Stage
+         dan Win Rate — jadi totalnya rekonsiliasi secara konstruksi, bukan
+         karena kebetulan dua query menghasilkan angka yang mirip.
+         `loss_reason_id` NULL → "Tanpa Alasan", bukan dibuang: LOST lama
+         (sebelum B3) dan jalur penutupan non-modal tidak mengisi kolom itu. */
+      const lossNameById = {};
+      lossReasonRows.forEach((r) => { lossNameById[r.id] = r.name; });
+      const lossCounts = {};
+      closedInq.filter((r) => r.status === 'LOST').forEach((r) => {
+        const k = r.loss_reason_id || '__none__';
+        lossCounts[k] = (lossCounts[k] || 0) + 1;
+      });
+      const lossReasonData = Object.entries(lossCounts)
+        .map(([id, count]) => ({
+          id,
+          name: id === '__none__' ? 'Tanpa Alasan' : (lossNameById[id] || '(alasan tak dikenal)'),
+          count,
+          unknown: id === '__none__',
+        }))
+        // "Tanpa Alasan" selalu paling bawah — ia keranjang sisa, bukan alasan.
+        .sort((a, b) => (a.unknown - b.unknown) || (b.count - a.count));
 
       // ── Lead source (periode aktif) ─────────────────────────────────────
       const sourceCounts = {};
@@ -1965,6 +2144,7 @@ function CRMDashboardPage() {
         activeProspects, totalInquiries, totalQuotations,
         winRate, wonCount, lostCount, cancelledCount, decided,
         stagesData, recentActivity, trendData, leadSourceData, salesPerfData,
+        lifecycleFunnel, lifecycleExits, lossReasonData,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
         curLabel: P.curLabel, prevLabel: P.prevLabel,
         bucketNoun: period === 'This Month' ? 'minggu' : 'bulan',
@@ -2340,6 +2520,20 @@ function CRMDashboardPage() {
           <div className="nx-grid-2" style={D.chartsRow}>
             <PipelineByStage stages={dashData?.stagesData} />
             <LeadSourceDonut data={dashData?.leadSourceData || []} />
+          </div>
+
+          {/* row 3b — dua funnel baru. Lifecycle akun (sumbu AKUN) sengaja
+              bersebelahan dengan Alasan Kalah (sumbu DEAL) supaya perbedaan
+              kedua sumbu itu terbaca langsung, bukan tercampur jadi satu. */}
+          <div className="nx-grid-2" style={D.tablesRow}>
+            <LifecycleFunnel
+              funnel={dashData?.lifecycleFunnel || []}
+              exits={dashData?.lifecycleExits || []}
+            />
+            <LossReasonBreakdown
+              data={dashData?.lossReasonData || []}
+              total={dashData?.lostCount || 0}
+            />
           </div>
 
           {/* row 4 — tabel (team view only — hidden for sales/operations).
