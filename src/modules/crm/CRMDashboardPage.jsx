@@ -715,6 +715,100 @@ function LifecycleFunnel({ funnel = [], exits = [] }) {
   );
 }
 
+/* ---------- pie konversi MQL → SQL ---------- */
+// Tooltip sendiri, BUKAN PieTip: PieTip membaca field `count` dan mencetak
+// satuan "lead" — dua-duanya salah di sini (slice-nya pakai `value`, dan
+// satuannya akun MQL, bukan lead).
+function MqlTip({ active, payload, total }) {
+  if (!active || !payload || !payload.length) return null;
+  const d = payload[0].payload;
+  const pct = total > 0 ? Math.round((d.value / total) * 100) : 0;
+  return (
+    <div style={D.tip}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flex: "0 0 8px" }} />
+        <span style={D.tipTitle}>{d.name}</span>
+      </div>
+      <div style={D.tipRow}><b style={{ color: "#fff", fontWeight: 700 }}>{d.value}</b> akun · {pct}%</div>
+    </div>
+  );
+}
+
+function MqlToSqlPie({ data }) {
+  const converted = data?.converted ?? 0;
+  const pending   = data?.pending   ?? 0;
+  const lost      = data?.lost      ?? 0;
+  const pct       = data?.pct ?? null;
+  const slices = [
+    { name: 'Sudah jadi SQL', value: converted, color: NAVY },
+    { name: 'Belum',          value: pending,   color: '#C7CBD4' },
+  ];
+  const isEmpty = converted + pending + lost === 0;
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="pie" size={17} /></div>
+        <div>
+          <div style={D.cardTitle}>Konversi MQL ke SQL</div>
+          <div style={D.cardSub}>Akun yang pernah tercatat MQL</div>
+        </div>
+      </div>
+      {isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
+          Belum ada akun yang tercatat mencapai MQL
+        </div>
+      ) : (
+        <div style={{ padding: "14px 16px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ position: "relative", flex: "0 0 auto" }}>
+              <PieChart width={132} height={132}>
+                <Pie data={slices} dataKey="value" nameKey="name" cx={66} cy={66}
+                  innerRadius={40} outerRadius={62} paddingAngle={1.5} stroke="none"
+                  startAngle={90} endAngle={-270} isAnimationActive={false}>
+                  {slices.map((s) => <Cell key={s.name} fill={s.color} />)}
+                </Pie>
+                <Tooltip content={<MqlTip total={converted + pending} />} />
+              </PieChart>
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                <div style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 19, color: "#16243A" }}>
+                  {pct === null ? '—' : pct + '%'}
+                </div>
+                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".05em", color: "#9AA0AC" }}>JADI SQL</div>
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 130 }}>
+              {slices.map((s) => (
+                <div key={s.name} style={D.legRow}>
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
+                  <span style={D.legName}>{s.name}</span>
+                  <span style={D.legVal}>{s.value}</span>
+                </div>
+              ))}
+              {/* `lost` DI LUAR pie: akun mati bukan "belum konversi" — satu masih
+                  mungkin jadi SQL, satu tidak akan pernah. Mencampurnya akan
+                  membuat penyebutnya menghukum konversi untuk sesuatu yang sudah
+                  selesai. Tetap ditampilkan supaya tak hilang dari pandangan. */}
+              {lost > 0 && (
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #ECEDF1" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: 20, background: "#F4F5F7", fontSize: 11, color: "#7A828E", fontWeight: 600 }}>
+                    Lost (di luar hitungan)<span style={D.legVal}>{lost}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+            Kohort dari riwayat lifecycle, bukan dari tahap sekarang — akun bisa melompati MQL.
+            Akun yang melewati MQL sebelum 27 Agu 2026 belum punya jejaknya, jadi kohort ini
+            masih under-report untuk data lama.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- breakdown alasan kalah ---------- */
 function LossReasonBreakdown({ data = [], total = 0 }) {
   const max = data.reduce((a, s) => Math.max(a, s.count), 0);
@@ -1944,9 +2038,12 @@ function CRMDashboardPage() {
         //      di tahap mana", bukan "berapa yang masuk tahap X bulan ini".
         //      Menyaringnya per periode akan mengubah maknanya jadi cohort dan
         //      membuat corongnya menyusut tiap ganti bulan tanpa alasan.
+        // `id` ikut diambil karena widget Konversi MQL→SQL butuh memetakan
+        // kohort riwayat ke tahap akun SEKARANG. Nol dampak ke funnel lifecycle
+        // yang hanya membaca lifecycle_stage.
         ownAccounts(byCompany(supabase
           .from('accounts')
-          .select('lifecycle_stage'))
+          .select('id, lifecycle_stage'))
           .is('deleted_at', null)
           .limit(1000)),
 
@@ -2098,6 +2195,59 @@ function CRMDashboardPage() {
         };
       });
 
+      /* ── Konversi MQL → SQL ──────────────────────────────────────────────
+         Kohort HARUS dari riwayat, TIDAK boleh disimpulkan dari lifecycle_stage
+         sekarang — sudah diverifikasi bahwa akun BISA melompati mql:
+           • set_prospect_on_inquiry menaikkan lead → prospect begitu inquiry
+             pertamanya dibuat (WHERE lifecycle_stage IN ('lead','mql')), jadi
+             sebuah lead bisa jadi prospect tanpa pernah menyentuh mql;
+           • set_customer_on_inquiry_won menaikkan tahap APA PUN → customer.
+         Artinya akun ber-tahap prospect/sql/customer belum tentu pernah MQL,
+         dan menghitung kohort dari tahap sekarang akan melebih-lebihkannya.
+
+         ⚠️ KETERBATASAN CAKUPAN (sama kelasnya dengan konversi status inquiry):
+         backfill 27 Agu 2026 hanya menulis SATU baris per akun (tahap saat itu,
+         from_stage NULL), bukan riwayat penuh. Akun yang melewati mql SEBELUM
+         tanggal itu lalu sudah bergerak lagi tidak punya jejak mql sama sekali,
+         jadi kohort ini UNDER-REPORT untuk data lama dan makin lengkap seiring
+         waktu. Ditulis apa adanya di UI, bukan disembunyikan. */
+      const lcById = {};
+      lifecycleRows.forEach((a) => { if (a.id) lcById[a.id] = a.lifecycle_stage; });
+      const accIds = Object.keys(lcById);
+      let mqlSql = 0, mqlPending = 0, mqlLost = 0;
+      if (accIds.length) {
+        const { data: mqlRows, error: mqlErr } = await supabase
+          .from('account_lifecycle_history')
+          .select('account_id')
+          .eq('to_stage', 'mql')
+          .in('account_id', accIds)
+          .limit(1000);
+        if (mqlErr) {
+          failed.push('konversi MQL ke SQL');
+        } else {
+          const rows = mqlRows || [];
+          if (rows.length === 1000) failed.push('konversi MQL ke SQL (kohort terpotong di 1000 baris)');
+          const cohort = new Set(rows.map((r) => r.account_id));
+          // Klasifikasi EKSHAUSTIF — tiap anggota kohort masuk salah satu dari
+          // tiga ember, tak ada yang jatuh diam-diam ke luar hitungan.
+          for (const id of cohort) {
+            const st = lcById[id];
+            if (st === 'lost') mqlLost++;
+            else if (st === 'sql' || st === 'customer') mqlSql++;
+            else mqlPending++;
+          }
+        }
+      }
+      const mqlBase = mqlSql + mqlPending;
+      const mqlData = {
+        converted: mqlSql,
+        pending:   mqlPending,
+        lost:      mqlLost,
+        // Basis nol → null, BUKAN 0%. Nol persen mengklaim "tak satu pun lolos";
+        // yang sebenarnya terjadi adalah belum ada yang bisa diukur.
+        pct: mqlBase > 0 ? Math.round((mqlSql / mqlBase) * 100) : null,
+      };
+
       /* ── Funnel lifecycle akun ───────────────────────────────────────────
          Snapshot distribusi akun, bukan cohort periode (lihat query [11]). */
       const lcCounts = {};
@@ -2222,7 +2372,7 @@ function CRMDashboardPage() {
         activeProspects, totalInquiries, totalQuotations,
         winRate, wonCount, lostCount, cancelledCount, decided,
         stagesData, recentActivity, trendData, leadSourceData, salesPerfData,
-        lifecycleFunnel, lifecycleExits, lossReasonData, conversionData,
+        lifecycleFunnel, lifecycleExits, lossReasonData, conversionData, mqlData,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
         curLabel: P.curLabel, prevLabel: P.prevLabel,
         bucketNoun: period === 'This Month' ? 'minggu' : 'bulan',
@@ -2603,11 +2753,15 @@ function CRMDashboardPage() {
           {/* row 3b — dua funnel baru. Lifecycle akun (sumbu AKUN) sengaja
               bersebelahan dengan Alasan Kalah (sumbu DEAL) supaya perbedaan
               kedua sumbu itu terbaca langsung, bukan tercampur jadi satu. */}
-          <div className="nx-grid-2" style={D.tablesRow}>
+          <div className="nx-grid-3" style={{ ...D.tablesRow, gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
             <LifecycleFunnel
               funnel={dashData?.lifecycleFunnel || []}
               exits={dashData?.lifecycleExits || []}
             />
+            {/* Pie MQL→SQL duduk tepat di samping funnel lifecycle: keduanya
+                sumbu AKUN dan membaca kohort yang sama, jadi angkanya saling
+                menjelaskan. */}
+            <MqlToSqlPie data={dashData?.mqlData} />
             <LossReasonBreakdown
               data={dashData?.lossReasonData || []}
               total={dashData?.lostCount || 0}
