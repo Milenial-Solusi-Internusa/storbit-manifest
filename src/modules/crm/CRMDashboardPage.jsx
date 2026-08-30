@@ -839,6 +839,129 @@ function LossReasonBreakdown({ data = [], total = 0 }) {
   );
 }
 
+/* ---------- aging per tahap ---------- */
+function AgingPerStage({ rows = [], unknown = 0 }) {
+  const isEmpty = rows.every((r) => r.count === 0);
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="clock" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Aging Per Tahap</div>
+          <div style={D.cardSub}>Median hari di tahap saat ini — tidak mengikuti filter periode</div>
+        </div>
+      </div>
+      {isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada deal terbuka</div>
+      ) : (
+        <>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={D.th}>Tahap</th>
+                <th style={{ ...D.th, textAlign: "center", width: 62 }}>Deal</th>
+                <th style={{ ...D.th, textAlign: "center", width: 86 }}>Median</th>
+                <th style={{ ...D.th, textAlign: "center", width: 78 }}>Ambang</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const over = r.median !== null && r.threshold !== null && r.median > r.threshold;
+                return (
+                  <tr key={r.id}>
+                    <td style={D.td}><span style={{ fontWeight: 600, color: "#16243A" }}>{r.name}</span></td>
+                    <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{r.count}</span></td>
+                    <td style={{ ...D.td, textAlign: "center" }}>
+                      {/* Median null = tak ada deal yang umurnya bisa diukur.
+                          "—", bukan 0 — nol hari mengklaim deal baru masuk. */}
+                      <span style={{ ...D.num, fontWeight: 700, color: over ? "#C0392B" : "#16243A" }}>
+                        {r.median === null ? '—' : `${r.median} hr`}
+                      </span>
+                    </td>
+                    <td style={{ ...D.td, textAlign: "center", color: "#9AA0AC" }}>
+                      <span style={D.num}>{r.threshold === null ? '—' : `${r.threshold} hr`}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+            Ambang dari master SLA. <b>IN_REVIEW tanpa ambang</b> — kebijakannya bersumbu moda
+            transport yang tidak ada di inquiry, jadi tak diarang-arang. Ambang hari kerja
+            diperlakukan sebagai hari kalender (belum ada kalender kerja).
+            {unknown > 0 && <> · <b>{unknown} deal</b> belum punya riwayat status, umurnya tak terhitung.</>}
+            <br />Deal yang bergerak sebelum 28 Agu 2026 umurnya dihitung dari edit terakhir, bukan
+            perubahan status — angkanya bisa lebih muda dari kenyataan.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- daftar deal stale ---------- */
+function StaleDeals({ rows = [], total = 0, cap = 30 }) {
+  const [hover, setHover] = useState(-1);
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="alert" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Deal Stale</div>
+          <div style={D.cardSub}>Melewati ambang SLA di tahapnya — paling parah di atas</div>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
+          Tidak ada deal yang melewati ambang
+        </div>
+      ) : (
+        <>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
+              <thead>
+                <tr>
+                  <th style={D.th}>Inquiry</th>
+                  <th style={D.th}>Akun</th>
+                  <th style={D.th}>Tahap</th>
+                  <th style={D.th}>Pemilik</th>
+                  <th style={{ ...D.th, textAlign: "center", width: 70 }}>Umur</th>
+                  <th style={{ ...D.th, textAlign: "center", width: 84 }}>Lewat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.id} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
+                    style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
+                    <td style={{ ...D.td, ...D.num, whiteSpace: "nowrap" }}>{r.inquiryNo}</td>
+                    <td style={D.td}><span style={{ fontWeight: 600, color: "#16243A" }}>{r.account}</span></td>
+                    <td style={{ ...D.td, color: "#7A828E" }}>{r.statusLabel}</td>
+                    <td style={{ ...D.td, color: r.noOwner ? "#9AA0AC" : "#48505C" }}>{r.owner}</td>
+                    <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{r.days} hr</span></td>
+                    <td style={{ ...D.td, textAlign: "center" }}>
+                      <span style={{ ...D.num, fontWeight: 700, color: "#C0392B" }}>+{r.over} hr</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+            {/* Pemotongan disebutkan, tidak diam-diam. */}
+            {total > cap
+              ? <>Menampilkan <b>{cap}</b> dari <b>{total}</b> deal stale — sisanya dipotong, urut dari yang paling parah.</>
+              : <>Total <b>{total}</b> deal stale.</>}
+            {' '}IN_REVIEW tidak ikut dinilai (tak punya ambang yang bisa dipakai).
+            Deal yang bergerak sebelum 28 Agu 2026 umurnya dihitung dari edit terakhir, jadi
+            sebagian deal mandek bisa belum muncul di sini.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ---------- sales performance table ---------- */
 function salesStatus(convRate) {
   if (convRate >= 30) return "Exceeding";
@@ -1955,9 +2078,15 @@ function CRMDashboardPage() {
 
         // [3] Inquiry lajur TERBUKA — tanpa batas periode, persis seperti papan
         //     Pipeline: deal terbuka tak punya tanggal tutup untuk disaring.
+        // Kolom tambahan (inquiry_no, owner_id, company_id, nama akun) dipakai
+        // widget Aging Per Tahap & Daftar Deal Stale. Embed dua FK akun ini
+        // pola yang sudah terbukti jalan di PipelineKanbanPage dan
+        // activityFeed.js — beda dari embed `profiles` yang dulu gagal.
         ownInquiries(byCompany(supabase
           .from('inquiries')
-          .select('id, status'))
+          .select(`id, status, inquiry_no, owner_id, company_id,
+                   prospect:accounts!inquiries_prospect_id_fkey(name),
+                   customer:accounts!inquiries_customer_id_fkey(name)`))
           .in('status', INQ_OPEN_STATUSES)
           .is('deleted_at', null)
           .limit(1000)),
@@ -2056,6 +2185,17 @@ function CRMDashboardPage() {
           .select('id, name')
           .is('deleted_at', null)
           .limit(1000),
+
+        // [13] Ambang aging dari master SLA. PER-ENTITAS, jadi ikut byCompany:
+        //      super_admin lintas entitas dapat semuanya dan dipetakan
+        //      per (company_id, status); role lain terkunci ke entitasnya.
+        byCompany(supabase
+          .from('sla_policies')
+          .select('company_id, code, target_status, threshold, time_unit'))
+          .eq('policy_type', 'deal_aging')
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .limit(1000),
       ]);
 
       /* Pemeriksaan error MENYELURUH. Sebelumnya hanya hasil [0] yang diperiksa
@@ -2082,6 +2222,7 @@ function CRMDashboardPage() {
         ['SQL baru bulan ini', res[10]],
         ['funnel lifecycle akun', res[11]],
         ['master alasan kalah', res[12]],
+        ['ambang SLA aging', res[13]],
       ].filter(([, r]) => r?.error).map(([label]) => label);
 
       const accountsRows        = res[0].data  || [];
@@ -2097,6 +2238,7 @@ function CRMDashboardPage() {
       const sqlThisMonth        = res[10].count ?? 0;
       const lifecycleRows       = res[11].data || [];
       const lossReasonRows      = res[12].data || [];
+      const slaRows             = res[13].data || [];
 
       // Cap 1000 baris pada distribusi lifecycle: kalau kena, corongnya
       // memang terpotong — dikabarkan lewat banner, bukan ditampilkan
@@ -2107,7 +2249,9 @@ function CRMDashboardPage() {
          sudah dipakai di file ini (feed aktivitas & kalender). Satu query untuk
          seluruh papan: id dikumpulkan lebih dulu lalu di-dedup, jadi jumlah
          query tidak tumbuh mengikuti jumlah deal (nol N+1). */
-      const ownerIds   = [...new Set(closedInq.map((r) => r.owner_id).filter(Boolean))];
+      // openInq ikut: daftar Deal Stale menampilkan pemilik deal yang MASIH
+      // terbuka, jadi namanya harus ikut teresolusi di sini.
+      const ownerIds   = [...new Set([...closedInq, ...openInq].map((r) => r.owner_id).filter(Boolean))];
       const ownerNames = {};
       if (ownerIds.length) {
         const { data: profs, error: profErr } = await supabase
@@ -2156,24 +2300,30 @@ function CRMDashboardPage() {
          terhadap deal LOST/CANCELLED, yang persis kebocoran yang dicari. */
       const cohortIds = [...openInq, ...closedInq].map((r) => r.id);
       const reached = {};
+      // Peta inquiry_id -> kapan ia masuk status yang SEKARANG. Diturunkan dari
+      // query riwayat yang sama (diurut menurun, jadi baris pertama tiap inquiry
+      // = transisi terakhirnya) — dipakai widget Aging Per Tahap & Deal Stale.
+      const stageSince = {};
       if (cohortIds.length) {
         const { data: hist, error: histErr } = await supabase
           .from('inquiry_status_history')
-          .select('inquiry_id, to_status')
+          .select('inquiry_id, to_status, changed_at')
           .in('inquiry_id', cohortIds)
+          .order('changed_at', { ascending: false })
           .limit(1000);
         if (histErr) {
-          failed.push('konversi antar-tahap');
+          failed.push('konversi antar-tahap & umur di tahap');
         } else {
           const rows = hist || [];
           // Cap 1000: riwayat tumbuh per TRANSISI, bukan per inquiry, jadi cap
           // ini lebih cepat kena daripada query lain. Dikabarkan, tidak dipotong
           // diam-diam jadi persentase yang terlihat sah.
-          if (rows.length === 1000) failed.push('konversi antar-tahap (riwayat terpotong di 1000 baris)');
+          if (rows.length === 1000) failed.push('riwayat status terpotong di 1000 baris (konversi & umur)');
           const seen = {};
           for (const r of rows) {
             const s = String(r.to_status || '').toUpperCase();
             (seen[s] || (seen[s] = new Set())).add(r.inquiry_id);
+            if (!(r.inquiry_id in stageSince)) stageSince[r.inquiry_id] = r.changed_at;
           }
           for (const s of INQ_STAGE_ORDER) reached[s] = seen[s] ? seen[s].size : 0;
         }
@@ -2194,6 +2344,106 @@ function CRMDashboardPage() {
           pct: base > 0 ? Math.round(((reached[to] || 0) / base) * 100) : null,
         };
       });
+
+      /* ── Aging per tahap + daftar deal stale ─────────────────────────────
+         Umur = sekarang − saat masuk status ini (stageSince). MEDIAN, bukan
+         rata-rata: distribusi umur deal condong ke kanan, jadi beberapa deal
+         yang nyangkut ekstrem lama akan menarik rata-rata sampai ia tak
+         mewakili deal tipikal mana pun.
+
+         ⚠️ KETERBATASAN — ARAHNYA BERBAHAYA, beda dari widget sebelumnya.
+         Backfill 28 Agu 2026 mengisi changed_at dengan
+         COALESCE(updated_at, created_at, now()). Untuk deal yang status
+         terakhirnya berubah SEBELUM tanggal itu, "masuk status ini" sebenarnya
+         = waktu edit TERAKHIR apa pun — ganti catatan, rute, nilai. Efeknya
+         umur ter-UNDER-STATE: deal yang benar-benar mandek berbulan-bulan tapi
+         baru disunting kemarin tampak berumur sehari dan LOLOS dari daftar
+         stale. Ini false negative yang menyamar, bukan sekadar data hilang —
+         justru deal yang paling perlu ditemukan yang paling mungkin luput.
+         Transisi setelah 28 Agu akurat. Ditulis apa adanya di UI kedua widget. */
+      const DAY_MS = 86400000;
+      const nowMs  = now.getTime();
+      const median = (arr) => {
+        if (!arr.length) return null;
+        const s = [...arr].sort((a, b) => a - b);
+        const m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+      };
+
+      /* Ambang dari master `sla_policies` (policy_type='deal_aging'), diambil
+         MINIMUM per (entitas, status). QUOTED punya DUA baris — 14 hari
+         flag_stale dan 30 hari propose_cancel — dan yang dipakai adalah ambang
+         PERTAMA yang terlewati, 14 (keputusan Den): `flag_stale` memang aksi
+         yang menandai stale, sementara 30 hari itu tahap eskalasi berikutnya,
+         bukan definisi stale.
+
+         `business_day` diperlakukan sebagai hari kalender — repo ini tak punya
+         tabel kalender kerja/hari libur, jadi menghitung hari kerja sungguhan
+         mustahil; aproksimasinya disebutkan di UI. `business_hour` SENGAJA
+         ditolak: satu-satunya pemakainya ambang IN_REVIEW, yang memang
+         dikecualikan di bawah. */
+      const thrByKey = {};
+      slaRows.forEach((p) => {
+        if (!['day', 'business_day'].includes(p.time_unit)) return;
+        const v = Number(p.threshold);
+        if (!Number.isFinite(v) || v <= 0) return;
+        const key = `${p.company_id}|${String(p.target_status || '').toUpperCase()}`;
+        if (thrByKey[key] === undefined || v < thrByKey[key]) thrByKey[key] = v;
+      });
+
+      /* IN_REVIEW SENGAJA TANPA AMBANG (keputusan Den): keenam baris
+         AGING_IN_REVIEW_* bersumbu `transport_mode` dan hanya ada untuk MSI,
+         sementara `inquiries` tak punya kolom moda sama sekali — moda hidup di
+         PRF dengan taksonomi berbeda dari service_type. Mengarang ambangnya
+         akan menghasilkan angka buatan yang menyamar sebagai kebijakan. Median
+         IN_REVIEW tetap ditampilkan (median tak butuh ambang); yang absen hanya
+         pembanding dan keikutsertaannya di daftar stale. */
+      const agingRows = [];
+      const staleAll  = [];
+      let ageUnknown  = 0;
+      for (const st of INQ_OPEN_STATUSES) {
+        const inStage = openInq.filter((r) => String(r.status || '').toUpperCase() === st);
+        const ages = [];
+        for (const r of inStage) {
+          const since = stageSince[r.id];
+          // Tanpa baris riwayat, umurnya TAK DIKETAHUI — bukan nol. Dihitung
+          // terpisah dan dilaporkan, tidak dibuang diam-diam.
+          if (!since) { ageUnknown++; continue; }
+          const days = Math.floor((nowMs - new Date(since).getTime()) / DAY_MS);
+          ages.push(days);
+          const thr = thrByKey[`${r.company_id}|${st}`];
+          if (thr !== undefined && days > thr) {
+            staleAll.push({
+              id: r.id,
+              inquiryNo: r.inquiry_no || '—',
+              account:   r.customer?.name || r.prospect?.name || '—',
+              statusLabel: INQ_STAGE_LABELS[st],
+              owner:     r.owner_id ? (ownerNames[r.owner_id] || '(tanpa nama)') : 'Tanpa Pemilik',
+              noOwner:   !r.owner_id,
+              days,
+              over:      days - thr,
+            });
+          }
+        }
+        // Pembanding hanya ditampilkan kalau ambangnya TUNGGAL untuk seluruh
+        // deal di tahap itu. Untuk super_admin lintas entitas, ambang bisa
+        // berbeda antar-entitas — menampilkan salah satunya sebagai "ambang"
+        // akan salah untuk sebagian barisnya.
+        const thrSet = new Set(
+          inStage.map((r) => thrByKey[`${r.company_id}|${st}`]).filter((v) => v !== undefined),
+        );
+        agingRows.push({
+          id: st,
+          name: INQ_STAGE_LABELS[st],
+          count: inStage.length,
+          median: median(ages),
+          threshold: thrSet.size === 1 ? [...thrSet][0] : null,
+        });
+      }
+      staleAll.sort((a, b) => (b.over - a.over) || (b.days - a.days));
+      const STALE_CAP  = 30;
+      const staleRows  = staleAll.slice(0, STALE_CAP);
+      const staleTotal = staleAll.length;
 
       /* ── Konversi MQL → SQL ──────────────────────────────────────────────
          Kohort HARUS dari riwayat, TIDAK boleh disimpulkan dari lifecycle_stage
@@ -2373,6 +2623,7 @@ function CRMDashboardPage() {
         winRate, wonCount, lostCount, cancelledCount, decided,
         stagesData, recentActivity, trendData, leadSourceData, salesPerfData,
         lifecycleFunnel, lifecycleExits, lossReasonData, conversionData, mqlData,
+        agingRows, ageUnknown, staleRows, staleTotal, staleCap: STALE_CAP,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
         curLabel: P.curLabel, prevLabel: P.prevLabel,
         bucketNoun: period === 'This Month' ? 'minggu' : 'bulan',
@@ -2765,6 +3016,21 @@ function CRMDashboardPage() {
             <LossReasonBreakdown
               data={dashData?.lossReasonData || []}
               total={dashData?.lostCount || 0}
+            />
+          </div>
+
+          {/* row 3c — aging (sempit) + daftar deal stale (lebar). Keduanya
+              snapshot kondisi hari ini dan saling menjelaskan: median yang
+              melewati ambang seharusnya punya baris-barisnya di tabel sebelah. */}
+          <div className="nx-grid-2" style={{ ...D.tablesRow, gridTemplateColumns: "minmax(0,1fr) minmax(0,1.9fr)" }}>
+            <AgingPerStage
+              rows={dashData?.agingRows || []}
+              unknown={dashData?.ageUnknown || 0}
+            />
+            <StaleDeals
+              rows={dashData?.staleRows || []}
+              total={dashData?.staleTotal || 0}
+              cap={dashData?.staleCap || 30}
             />
           </div>
 
