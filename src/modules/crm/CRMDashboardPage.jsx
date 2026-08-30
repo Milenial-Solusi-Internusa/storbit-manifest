@@ -510,7 +510,7 @@ function BarTip({ active, payload }) {
   );
 }
 
-function PipelineByStage({ stages = STAGES }) {
+function PipelineByStage({ stages = STAGES, conversion = [] }) {
   const [barRef, barW] = useWidth();
   const totalVal   = stages.reduce((a, s) => a + (s.value || 0), 0);
   return (
@@ -550,6 +550,28 @@ function PipelineByStage({ stages = STAGES }) {
         {totalVal > 0 && (
           <div style={{ ...D.barFoot, margin: "2px 8px 0", padding: "13px 0 14px", justifyContent: "flex-end" }}>
             <span style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: NAVY, letterSpacing: -0.3 }}>{rpShort(totalVal)}</span>
+          </div>
+        )}
+        {/* Konversi antar-tahap — "pernah mencapai", dari riwayat transisi.
+            LOST/CANCELLED tidak masuk rantai: keduanya exit dari tahap mana pun,
+            bukan tahap berikutnya. */}
+        {conversion.length > 0 && (
+          <div style={{ borderTop: "1px solid #ECEDF1", margin: "2px 8px 0", padding: "11px 0 13px" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "#9AA0AC", marginBottom: 7 }}>
+              Konversi antar-tahap
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {conversion.map((c) => (
+                <span key={c.to} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 20, background: "#F4F5F7", fontSize: 11, color: "#48505C", fontWeight: 600 }}>
+                  {c.fromLabel} → {c.toLabel}
+                  <b style={{ ...D.legVal, fontSize: 11.5 }}>{c.pct === null ? "—" : c.pct + "%"}</b>
+                </span>
+              ))}
+            </div>
+            <div style={{ marginTop: 7, fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+              Dari riwayat transisi. Deal yang bergerak sebelum 28 Agu 2026 belum punya riwayat
+              penuh, jadi angkanya masih under-report untuk data lama.
+            </div>
           </div>
         )}
       </div>
@@ -2020,6 +2042,62 @@ function CRMDashboardPage() {
       const decided        = wonCount + lostCount;
       const winRate        = decided > 0 ? Math.round((wonCount / decided) * 100) : 0;
 
+      /* ── Konversi antar-tahap (dari riwayat transisi) ────────────────────
+         Kohortnya = PERSIS deal yang ditampilkan widget ini (openInq +
+         closedInq), jadi dasar persentasenya selalu bisa direkonsiliasi dengan
+         batang di sebelahnya. "Pernah mencapai X" = ada baris riwayat dengan
+         to_status = X — jadi deal yang mati di tengah tetap terhitung pernah
+         melewati tahap-tahap sebelumnya. Itulah yang membuat angka ini menjawab
+         "bocor di tahap mana", bukan sekadar "sekarang ada berapa".
+
+         ⚠️ BATASAN YANG DISADARI (keputusan Den 30 Agu 2026): backfill
+         28 Agu 2026 hanya menulis SATU baris per inquiry (status saat itu),
+         bukan riwayat penuh. Deal yang sudah melewati beberapa tahap SEBELUM
+         tanggal itu tampak melompat langsung ke status akhirnya, jadi angka ini
+         UNDER-REPORT untuk data lama dan makin akurat seiring waktu. Alternatif
+         satu-satunya — menyimpulkan dari urutan status sekarang — justru buta
+         terhadap deal LOST/CANCELLED, yang persis kebocoran yang dicari. */
+      const cohortIds = [...openInq, ...closedInq].map((r) => r.id);
+      const reached = {};
+      if (cohortIds.length) {
+        const { data: hist, error: histErr } = await supabase
+          .from('inquiry_status_history')
+          .select('inquiry_id, to_status')
+          .in('inquiry_id', cohortIds)
+          .limit(1000);
+        if (histErr) {
+          failed.push('konversi antar-tahap');
+        } else {
+          const rows = hist || [];
+          // Cap 1000: riwayat tumbuh per TRANSISI, bukan per inquiry, jadi cap
+          // ini lebih cepat kena daripada query lain. Dikabarkan, tidak dipotong
+          // diam-diam jadi persentase yang terlihat sah.
+          if (rows.length === 1000) failed.push('konversi antar-tahap (riwayat terpotong di 1000 baris)');
+          const seen = {};
+          for (const r of rows) {
+            const s = String(r.to_status || '').toUpperCase();
+            (seen[s] || (seen[s] = new Set())).add(r.inquiry_id);
+          }
+          for (const s of INQ_STAGE_ORDER) reached[s] = seen[s] ? seen[s].size : 0;
+        }
+      }
+      /* Rantai konversi menyusuri lajur terbuka + WON saja. LOST/CANCELLED
+         SENGAJA di luar rantai: keduanya exit yang bisa terjadi dari tahap mana
+         pun, jadi menempatkannya sebagai "tahap berikutnya" akan menyesatkan. */
+      const CONV_CHAIN = [...INQ_OPEN_STATUSES, 'WON'];
+      const conversionData = CONV_CHAIN.slice(1).map((to, i) => {
+        const from = CONV_CHAIN[i];
+        const base = reached[from] || 0;
+        return {
+          to,
+          fromLabel: INQ_STAGE_LABELS[from],
+          toLabel:   INQ_STAGE_LABELS[to],
+          // base 0 → null, BUKAN 0%. Nol persen mengklaim "semua gagal lolos";
+          // yang sebenarnya terjadi adalah tak ada yang bisa diukur.
+          pct: base > 0 ? Math.round(((reached[to] || 0) / base) * 100) : null,
+        };
+      });
+
       /* ── Funnel lifecycle akun ───────────────────────────────────────────
          Snapshot distribusi akun, bukan cohort periode (lihat query [11]). */
       const lcCounts = {};
@@ -2144,7 +2222,7 @@ function CRMDashboardPage() {
         activeProspects, totalInquiries, totalQuotations,
         winRate, wonCount, lostCount, cancelledCount, decided,
         stagesData, recentActivity, trendData, leadSourceData, salesPerfData,
-        lifecycleFunnel, lifecycleExits, lossReasonData,
+        lifecycleFunnel, lifecycleExits, lossReasonData, conversionData,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
         curLabel: P.curLabel, prevLabel: P.prevLabel,
         bucketNoun: period === 'This Month' ? 'minggu' : 'bulan',
@@ -2518,7 +2596,7 @@ function CRMDashboardPage() {
 
           {/* row 3 — charts */}
           <div className="nx-grid-2" style={D.chartsRow}>
-            <PipelineByStage stages={dashData?.stagesData} />
+            <PipelineByStage stages={dashData?.stagesData} conversion={dashData?.conversionData || []} />
             <LeadSourceDonut data={dashData?.leadSourceData || []} />
           </div>
 
