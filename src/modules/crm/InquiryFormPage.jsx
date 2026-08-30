@@ -155,7 +155,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
 
   const [form, setForm] = useState({
     prospect_id: '', customer_id: '', service_type: 'freight_forwarding',
-    route: '', estimated_volume: '', notes: '',
+    route: '', estimated_volume: '', estimated_value: '', notes: '',
     // new RFQ fields
     deadline_quote: '', pol: '', pod: '', incoterms: [], container_types: [],
     goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
@@ -200,6 +200,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
           service_type: data.service_type || 'freight_forwarding',
           route: data.route || '',
           estimated_volume: data.estimated_volume || '',
+          estimated_value: data.estimated_value != null ? String(data.estimated_value) : '',
           notes: data.notes || '',
           deadline_quote: data.deadline_quote || '',
           pol: data.pol || '',
@@ -257,6 +258,13 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         service_type: form.service_type,
         route: form.route || null,
         estimated_volume: form.estimated_volume || null,
+        // Kosong → NULL, BUKAN 0. `inquiries.estimated_value` sengaja nullable
+        // tanpa default (migrasi 20260722000007) supaya "belum diisi" bisa
+        // dibedakan dari "nol"; menulis 0 akan mencemari total nilai pipeline di
+        // Dashboard dan menghapus perbedaan itu selamanya. Ini juga sebabnya
+        // pola di sini mengikuti weight_kg/volume_cbm, BUKAN modal Edit Deal
+        // yang menulis ke accounts.estimated_value (kolom itu DEFAULT 0).
+        estimated_value: form.estimated_value !== '' ? Number(form.estimated_value) : null,
         notes: form.notes || null,
         deadline_quote: form.deadline_quote || null,
         pol: form.pol || null,
@@ -406,6 +414,26 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                     </select><Chevron />
                   </div>
                   {errors.service_type && <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors.service_type}</span>}
+                </Field>
+                {/* Nilai estimasi deal — OPSIONAL, sesuai blueprint yang tidak
+                    mewajibkannya untuk status OPEN. Prefix "Rp" mengikuti pola
+                    modal Edit Deal; input mono + setNum mengikuti Berat/Volume
+                    di bawah. Dikosongkan = NULL, bukan 0. */}
+                <Field label="Nilai Estimasi Deal">
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>Rp</span>
+                    <input
+                      value={form.estimated_value}
+                      onChange={setNum('estimated_value')}
+                      style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingLeft: 38 }}
+                      placeholder="0"
+                    />
+                  </div>
+                  <span style={{ fontSize: 11.5, color: C.muted, marginTop: 5, display: 'block' }}>
+                    {form.estimated_value !== ''
+                      ? `Rp ${Number(form.estimated_value).toLocaleString('id-ID')}`
+                      : 'Opsional — boleh dikosongkan dan diisi belakangan di Detail Deal.'}
+                  </span>
                 </Field>
               </div>
             </div>

@@ -18,7 +18,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, Hash, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
-  CheckCircle2, Handshake, Ban, UserCog,
+  CheckCircle2, Handshake, Ban, UserCog, Wallet,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -321,6 +321,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [ownerDraft,  setOwnerDraft]  = useState('');
   const [ownerSaving, setOwnerSaving] = useState(false);
   const [salesOpts,   setSalesOpts]   = useState([]);
+  // Nilai estimasi deal — panel inline dengan pola yang sama seperti Ganti
+  // Pemilik. Draft disimpan sebagai STRING supaya kosong ('') bisa dibedakan
+  // dari nol; konversinya baru terjadi saat commit.
+  const [valueOpen,   setValueOpen]   = useState(false);
+  const [valueDraft,  setValueDraft]  = useState('');
+  const [valueSaving, setValueSaving] = useState(false);
   // Tandai inquiry MENANG (jalur manual baru) — ConfirmModal polos (bukan
   // WinLossModal, nol form alasan diminta), RPC mark_inquiry_won yang
   // menegakkan izin sebenarnya.
@@ -342,7 +348,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     (async () => {
       const { data: inq, error: e1 } = await supabase
         .from('inquiries')
-        .select('id, inquiry_no, service_type, route, estimated_volume, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
+        .select('id, inquiry_no, service_type, route, estimated_volume, estimated_value, status, notes, prospect_id, created_by, owner_id, created_at, deadline_quote, pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, cargo_types, un_number, imo_class, has_msds, additional_services')
         .eq('id', inquiryId).is('deleted_at', null).maybeSingle();
       if (cancelled) return;
       if (e1 || !inq) { setNotFound(true); setLoading(false); return; }
@@ -546,6 +552,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
     && MANAGER_OR_ABOVE.includes(erpRole);
   const ownerName = profMap[inquiry?.owner_id] || null;
+
+  /* Ubah nilai estimasi deal — status yang sama dengan gate reassign
+     (LOSABLE_INQUIRY_STATUS di-reuse, bukan daftar kelima), TAPI izinnya lebih
+     longgar: PEMILIK deal atau manager-ke-atas, bukan manager-only.
+     Alasannya sengaja beda dari "Ganti Pemilik": ini angka estimasi kerja yang
+     memang paling tahu orang yang menggarapnya, bukan perpindahan kepemilikan.
+     Cermin RLS `inquiries_update` sesudah migrasi 20260830000003
+     (is_manager_or_above() OR owner_id = auth.uid()), jadi tombol yang tampil
+     memang tombol yang tulisannya akan diterima DB.
+     ⚠️ TIDAK ada penguncian pasca-closed di DB untuk field ini (keputusan Den):
+     nilai resmi deal yang menang datang dari sales_order_items, sumber kebenaran
+     yang berbeda — jadi mengunci kolom estimasi ini tak menjawab kebutuhan nyata.
+     Gate di sini murni UI. */
+  const isInquiryOwner = !!(inquiry?.owner_id && profile?.id && inquiry.owner_id === profile.id);
+  const canEditValue =
+    LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
+    && (isInquiryOwner || MANAGER_OR_ABOVE.includes(erpRole));
 
   // Update accounts row (used by both Edit modal & Pindah Stage). Returns boolean.
   // Single shared write path (saveDealUpdate) so the audit trail matches
@@ -805,6 +828,47 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
+  // ── Simpan nilai estimasi deal. Pola tulis SAMA dengan reassignOwner /
+  // startNegotiation: .select('id') + guard baris nol, supaya penyaringan RLS
+  // tak lolos sebagai sukses palsu (TD-161).
+  async function saveEstimatedValue() {
+    if (!inquiry?.id) return;
+    // Kosong → NULL, BUKAN 0 — `inquiries.estimated_value` sengaja nullable
+    // tanpa default supaya "belum diisi" bisa dibedakan dari "nol" (migrasi
+    // 20260722000007). Menulis 0 akan membuat deal tanpa taksiran ikut
+    // dihitung sebagai deal bernilai nol di total pipeline Dashboard.
+    const next = valueDraft === '' ? null : Number(valueDraft);
+    if (next !== null && !Number.isFinite(next)) {
+      showToast?.('Nilai tidak valid.', 'error');
+      return;
+    }
+    const prev = inquiry.estimated_value == null ? null : Number(inquiry.estimated_value);
+    if (next === prev) { setValueOpen(false); return; }
+
+    setValueSaving(true);
+    const { data, error } = await supabase
+      .from('inquiries')
+      .update({ estimated_value: next })
+      .eq('id', inquiry.id)
+      .select('id');
+    setValueSaving(false);
+    if (error) { showToast?.('Gagal menyimpan nilai: ' + error.message, 'error'); return; }
+    if (!data || data.length === 0) {
+      showToast?.('Gagal menyimpan nilai: tidak ada izin mengubah inquiry ini.', 'error');
+      return;
+    }
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_INQUIRY,
+      entityType: ENTITY_TYPES.INQUIRY,
+      entityId: inquiry.id,
+      entityLabel: inquiry.inquiry_no,
+      notes: `Nilai estimasi: ${prev === null ? '(kosong)' : fmtRp(prev)} → ${next === null ? '(kosong)' : fmtRp(next)}`,
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    setValueOpen(false);
+    showToast?.('Nilai estimasi diperbarui.', 'success');
+    refetch();
+  }
+
   // ── Tandai INQUIRY menang secara manual. RPC mark_inquiry_won menegakkan izin
   // sebenarnya (creator inquiry atau super_admin) + guard idempotency (sudah WON
   // → ditolak) — gate `canMarkWon` di atas murni UX, bukan pengganti validasi RPC.
@@ -920,11 +984,21 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <Card
         title="Detail Inquiry"
         icon={<FileText size={17} />}
-        right={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner) ? (
+        right={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner || canEditValue) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {onEditInquiry && (
               <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Pencil size={14} />Edit Inquiry
+              </button>
+            )}
+            {canEditValue && (
+              <button
+                onClick={() => {
+                  setValueDraft(inquiry.estimated_value == null ? '' : String(inquiry.estimated_value));
+                  setValueOpen((v) => !v);
+                }}
+                style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: valueOpen ? C.navySoft : '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Wallet size={14} />{inquiry.estimated_value == null ? 'Isi Nilai' : 'Ubah Nilai'}
               </button>
             )}
             {canReassignOwner && (
@@ -959,6 +1033,42 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           </div>
         ) : null}
       >
+        {/* Panel nilai estimasi — bentuknya sengaja kembar dengan panel Ganti
+            Pemilik di bawahnya: satu dropdown/input, tombol Simpan + Batal. */}
+        {canEditValue && valueOpen && (
+          <div style={{ marginBottom: 16, padding: 14, borderRadius: 11, border: `1px solid ${C.border}`, background: C.navySoft }}>
+            <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
+              Nilai Estimasi Deal
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ position: 'relative', flex: '1 1 220px' }}>
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.textMute }}>Rp</span>
+                <input
+                  value={valueDraft}
+                  onChange={(e) => setValueDraft(e.target.value.replace(/[^\d.]/g, ''))}
+                  placeholder="0"
+                  style={{ width: '100%', height: 34, padding: '0 10px 0 36px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, color: C.text }}
+                />
+              </div>
+              <button
+                onClick={saveEstimatedValue}
+                disabled={valueSaving}
+                style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`, background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: valueSaving ? 'not-allowed' : 'pointer', opacity: valueSaving ? 0.6 : 1 }}>
+                {valueSaving ? 'Menyimpan…' : 'Simpan'}
+              </button>
+              <button
+                onClick={() => setValueOpen(false)}
+                style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                Batal
+              </button>
+            </div>
+            <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
+              {valueDraft !== '' ? <b>{fmtRp(Number(valueDraft))}</b> : 'Dikosongkan = belum ada taksiran (bukan nol).'}
+              {' '}Angka ini memberi isi widget nilai pipeline di Dashboard.
+            </div>
+          </div>
+        )}
+
         {/* Panel ganti pemilik — inline, muncul tepat di bawah tombolnya. Aksi
             ini cuma satu dropdown, jadi modal penuh (pola Tandai Kalah/Batalkan)
             terlalu berat untuknya. */}
@@ -1037,6 +1147,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               masih terbuka, created_by tidak pernah berubah. Keduanya ditampilkan
               supaya perpindahan kepemilikan tetap terbaca jejaknya. */}
           <InfoRow label="Pemilik Deal" value={ownerName} />
+          {/* Kosong ditampilkan sebagai "—" oleh InfoRow, bukan Rp 0 — deal
+              tanpa taksiran beda dari deal bernilai nol. */}
+          <InfoRow
+            label="Nilai Estimasi"
+            value={inquiry.estimated_value == null ? '' : fmtRp(Number(inquiry.estimated_value))}
+          />
           <InfoRow label="Tanggal Dibuat" value={fmtDate(inquiry.created_at)} />
           <InfoRow label="Notes" value={inquiry.notes} full />
         </div>
