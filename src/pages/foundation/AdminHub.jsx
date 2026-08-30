@@ -37,6 +37,7 @@ const StatusCatalogPage  = lazy(() => import("../../modules/admin/pages/StatusCa
 const TaxesPage          = lazy(() => import("../../modules/admin/pages/TaxesPage"));
 const PaymentTermsPage   = lazy(() => import("../../modules/admin/pages/PaymentTermsPage"));
 const DcMasterPage       = lazy(() => import("../../modules/admin/pages/DcMasterPage"));
+const SalesTargetsPage   = lazy(() => import("../../modules/admin/pages/SalesTargetsPage"));
 
 /* ---------- lazy imports — 9 eks-AdminSettingsHub (./admin-settings/*) ---------- */
 const EntitySettingsPage     = lazy(() => import("./admin-settings/EntitySettingsPage"));
@@ -83,6 +84,17 @@ const HUB_GROUPS = [
       { id: "document-settings", icon: "hash",      name: "Document Settings", desc: "Skema penomoran & template dokumen." },
       { id: "status-catalog",    icon: "layers",    name: "Status Catalog",    desc: "Katalog status lintas modul." },
       { id: "dc-master",         icon: "globe2",    name: "DC Master",         desc: "Master data distribution center." },
+    ],
+  },
+  {
+    // Grup BARU. Sales Targets tidak pas di grup mana pun yang ada: ia bukan
+    // struktur organisasi, bukan konfigurasi dokumen, dan bukan referensi
+    // finance seperti pajak/termin. Grup ini juga tempat yang wajar untuk
+    // master data CRM lain yang sampai sekarang belum punya UI admin sama
+    // sekali (loss_reasons, channel_types, sla_policies).
+    title: "Commercial",
+    cards: [
+      { id: "sales-targets", icon: "scale", name: "Sales Targets", desc: "Target penjualan per salesperson per bulan." },
     ],
   },
   {
@@ -231,6 +243,10 @@ export default function AdminHub({ onExit, initialSection }) {
     "taxes":                { view: gMaster,   open: gMaster },
     "payment-terms":        { view: gMaster,   open: gMaster },
     "dc-master":             { view: gMaster,   open: gMaster },
+    // Menumpang gate master data yang sudah ada — TIDAK memakai menu key baru,
+    // jadi nol seeding role_menu_permissions. Penegak sebenarnya tetap RLS
+    // sales_targets (baca: manager+ atau pemilik target; tulis: manager+).
+    "sales-targets":         { view: gMaster,   open: gMaster },
     "entity-settings":      { view: gSettings, open: gSettings },
     "document-settings":    { view: gSettings, open: gSettings },
     "finance-defaults":     { view: gSettings, open: gSettings },
@@ -265,6 +281,7 @@ export default function AdminHub({ onExit, initialSection }) {
       case "taxes":                return <TaxesPage onHome={backToLanding} />;
       case "payment-terms":       return <PaymentTermsPage onHome={backToLanding} />;
       case "dc-master":            return <DcMasterPage onHome={backToLanding} />;
+      case "sales-targets":       return <SalesTargetsPage onHome={backToLanding} />;
       case "entity-settings":     return <EntitySettingsPage onHome={backToLanding} />;
       case "document-settings":   return <DocumentSettingsPage onHome={backToLanding} />;
       case "finance-defaults":    return <FinanceDefaultsPage onHome={backToLanding} />;
