@@ -289,7 +289,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   const handlePrint = useCallback(async () => {
     if (!detail) return;
     try {
-      const blob = await pdf(<PickingListPDF pl={detail} generatedAt={new Date().toISOString()} />).toBlob();
+      const blob = await pdf(<PickingListPDF pl={detail} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

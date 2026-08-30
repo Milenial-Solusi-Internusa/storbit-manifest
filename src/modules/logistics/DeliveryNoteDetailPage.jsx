@@ -190,7 +190,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
   const handlePrint = useCallback(async () => {
     if (!detail) return;
     try {
-      const blob = await pdf(<DeliveryNotePDF dn={detail} generatedAt={new Date().toISOString()} />).toBlob();
+      const blob = await pdf(<DeliveryNotePDF dn={detail} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
