@@ -1032,6 +1032,57 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
   );
 }
 
+/* ---------- sel pencapaian target ----------
+   Satu sel, dua baris (Nilai + Deal). SENGAJA tidak dirata-ratakan jadi satu
+   angka: dua persentase yang penyebutnya berbeda, kalau digabung, menghasilkan
+   angka yang tak mewakili keadaan mana pun — sales dengan 120% nilai dan 40%
+   deal akan tampil 80% dan terbaca stabil.
+
+   Empat keadaan yang gampang tertukar dan sengaja dibedakan:
+     • tak ada baris target sama sekali   → "—" tunggal (BUKAN 0%)
+     • ada target, metriknya belum diisi  → baris itu "—"
+     • ada target, hasilnya nol           → 0%, angka sungguhan
+     • ada target nilai, hasil tak terukur → "—" + penanda (lihat komentar
+       valueUnmeasured di fetchDash)
+
+   Persentasenya sengaja TIDAK diberi warna: kolom Status di sebelahnya sudah
+   memegang penilaian visual, dan dua sumbu warna yang bisa bertentangan
+   (mis. 120% target tapi win rate "At Risk") justru membingungkan. */
+function AttainmentCell({ att }) {
+  if (!att) return <span style={{ ...D.num, color: "#9AA0AC" }}>—</span>;
+
+  const row = (label, pct) => (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+      <span style={{ fontSize: 10, color: "#9AA0AC", fontWeight: 600, width: 32 }}>{label}</span>
+      <span style={{ ...D.num, fontWeight: 700, fontSize: 12.5, color: pct === null ? "#9AA0AC" : "#16243A" }}>
+        {pct === null ? "—" : `${pct}%`}
+      </span>
+    </div>
+  );
+
+  // Penanda cakupan hanya relevan untuk periode multi-bulan. Angka di atasnya
+  // OPTIMIS saat cakupannya belum penuh — penyebutnya lebih kecil dari target
+  // sebenarnya, jadi bisa turun belakangan tanpa kinerja berubah.
+  const partial = att.expectedMonths > 1 && att.monthsCovered < att.expectedMonths;
+
+  return (
+    <div style={{ display: "inline-flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
+      {row("Nilai", att.valuePct)}
+      {row("Deal", att.dealsPct)}
+      {att.valueUnmeasured && (
+        <div style={{ fontSize: 9.5, color: "#C0392B", lineHeight: 1.35, maxWidth: 104 }}>
+          nilai deal belum diisi
+        </div>
+      )}
+      {partial && (
+        <div style={{ fontSize: 9.5, color: "#9AA0AC", lineHeight: 1.35 }}>
+          {att.monthsCovered}/{att.expectedMonths} bln
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- sales performance table ---------- */
 function salesStatus(convRate) {
   if (convRate >= 30) return "Exceeding";
@@ -1066,6 +1117,7 @@ function SalesPerformance({ data = [] }) {
               <th style={{ ...D.th, textAlign: "center" }}>Deal WON</th>
               <th style={{ ...D.th, textAlign: "right" }}>Nilai WON</th>
               <th style={{ ...D.th, textAlign: "center" }}>Win %</th>
+              <th style={{ ...D.th, textAlign: "center", width: 108 }}>% Target</th>
               <th style={{ ...D.th, textAlign: "right" }}>Status</th>
             </tr>
           </thead>
@@ -1093,6 +1145,12 @@ function SalesPerformance({ data = [] }) {
                         <span style={{ display: "block", height: "100%", width: (maxConv > 0 ? (s.convRate / maxConv) * 100 : 0) + "%", background: b.fg, borderRadius: 4 }} />
                       </div>
                     </div>
+                  </td>
+                  {/* ── % Target ── satu kolom, dua baris. TIDAK dirata-ratakan:
+                      dua persentase berpenyebut berbeda kalau dijadikan satu
+                      angka akan mewakili keadaan yang tak pernah terjadi. */}
+                  <td style={{ ...D.td, textAlign: "center" }}>
+                    <AttainmentCell att={s.att} />
                   </td>
                   <td style={{ ...D.td, textAlign: "right" }}>
                     <span style={{ ...D.badge, background: b.bg, color: b.fg }}>{status}</span>
@@ -2110,6 +2168,18 @@ function CRMDashboardPage() {
       const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const startNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
+      /* Bulan-bulan yang dicakup periode aktif — dipakai query target sales.
+         `sales_targets` tersimpan per (tahun, bulan), jadi untuk kuartal/tahun
+         target yang relevan adalah PENJUMLAHAN beberapa baris bulanan, bukan
+         satu baris. Ketiga mode selalu di dalam satu tahun kalender, jadi cukup
+         satu `period_year` + daftar bulan. */
+      const targetYear = now.getFullYear();
+      const targetMonths = period === 'This Year'
+        ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        : period === 'This Quarter'
+          ? [0, 1, 2].map((i) => Math.floor(now.getMonth() / 3) * 3 + i + 1)
+          : [now.getMonth() + 1];
+
       const feedPromise = fetchActivityFeed({ companyId: cid, uid, isAllEntities, isSalesOnly });
 
       const res = await Promise.all([
@@ -2266,6 +2336,22 @@ function CRMDashboardPage() {
           .eq('is_active', true)
           .is('deleted_at', null)
           .limit(1000),
+
+        /* [14] Target sales untuk periode aktif.
+           Filter (tahun, bulan) bisa sesederhana ini karena KETIGA mode periode
+           selalu berada di dalam satu tahun kalender — This Month/Quarter/Year
+           semuanya dibatasi Jan–Des tahun berjalan, jadi tak perlu penanganan
+           rentang lintas tahun.
+           RLS `sales_targets_read` sudah pas apa adanya: manager+ dapat seluruh
+           entitasnya, sales hanya barisnya sendiri. */
+        byCompany(supabase
+          .from('sales_targets')
+          .select('user_id, period_year, period_month, target_value, target_deals'))
+          .eq('period_year', targetYear)
+          .in('period_month', targetMonths)
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .limit(1000),
       ]);
 
       /* Pemeriksaan error MENYELURUH. Sebelumnya hanya hasil [0] yang diperiksa
@@ -2293,6 +2379,7 @@ function CRMDashboardPage() {
         ['funnel lifecycle akun', res[11]],
         ['master alasan kalah', res[12]],
         ['ambang SLA aging', res[13]],
+        ['target sales', res[14]],
       ].filter(([, r]) => r?.error).map(([label]) => label);
 
       const accountsRows        = res[0].data  || [];
@@ -2309,6 +2396,7 @@ function CRMDashboardPage() {
       const lifecycleRows       = res[11].data || [];
       const lossReasonRows      = res[12].data || [];
       const slaRows             = res[13].data || [];
+      const targetRows          = res[14].data || [];
 
       // Cap 1000 baris pada distribusi lifecycle: kalau kena, corongnya
       // memang terpotong — dikabarkan lewat banner, bukan ditampilkan
@@ -2704,16 +2792,69 @@ function CRMDashboardPage() {
           perOwner[id].lost++;
         }
       });
+      /* ── Target per sales ────────────────────────────────────────────────
+         Dijumlahkan dari baris-baris BULANAN dalam periode aktif, dan dihitung
+         TERPISAH per metrik: satu bulan boleh menetapkan hanya salah satunya
+         (CHECK di DB cuma menuntut minimal satu terisi), jadi cakupan bulan
+         untuk `value` bisa berbeda dari `deals`. */
+      const expectedMonths = targetMonths.length;
+      const targetByUser = {};
+      targetRows.forEach((t) => {
+        if (!t.user_id) return;
+        if (!targetByUser[t.user_id]) {
+          targetByUser[t.user_id] = { value: 0, deals: 0, hasValue: false, hasDeals: false, months: new Set() };
+        }
+        const acc = targetByUser[t.user_id];
+        acc.months.add(t.period_month);
+        if (t.target_value !== null && t.target_value !== undefined) {
+          acc.value += Number(t.target_value) || 0;
+          acc.hasValue = true;
+        }
+        if (t.target_deals !== null && t.target_deals !== undefined) {
+          acc.deals += Number(t.target_deals) || 0;
+          acc.hasDeals = true;
+        }
+      });
+
+      /* Pencapaian per sales. Mengembalikan null kalau tak ada baris target
+         sama sekali — pemanggilnya menampilkan "—", BUKAN 0%: "belum ada
+         target" dan "target tak tercapai" adalah dua pernyataan berbeda. */
+      const attainmentFor = (ownerId, won, wonValue) => {
+        const t = ownerId === NO_OWNER ? null : targetByUser[ownerId];
+        if (!t) return null;
+
+        /* WON > 0 tapi total nilainya 0 → nilai deal-nya memang belum pernah
+           diisi (inquiries.estimated_value baru punya jalur tulis 30 Agu 2026,
+           deal lama masih NULL). Ini BUKAN 0%: nol persen mengklaim "tak
+           menghasilkan apa-apa", padahal yang terjadi adalah hasilnya tak
+           terukur — dua hal yang sangat berbeda bagi orang yang dinilai.
+           Keputusan Den, menyimpang sadar dari aturan "aktual 0 → 0%". */
+        const valueUnmeasured = t.hasValue && won > 0 && wonValue === 0;
+
+        return {
+          // Target 0 → null, bukan pembagian nol.
+          valuePct: (t.hasValue && t.value > 0 && !valueUnmeasured)
+            ? Math.round((wonValue / t.value) * 100) : null,
+          valueUnmeasured,
+          dealsPct: (t.hasDeals && t.deals > 0)
+            ? Math.round((won / t.deals) * 100) : null,
+          monthsCovered: t.months.size,
+          expectedMonths,
+        };
+      };
+
       const salesPerfData = Object.entries(perOwner)
         .map(([id, s]) => {
           const dec = s.won + s.lost;
           return {
+            ownerId:   id,
             name:      id === NO_OWNER ? 'Tanpa Pemilik' : (ownerNames[id] || '(tanpa nama)'),
             noOwner:   id === NO_OWNER,
             won:       s.won,
             lost:      s.lost,
             value:     s.value,
             convRate:  dec > 0 ? Math.round((s.won / dec) * 100) : 0,
+            att:       attainmentFor(id, s.won, s.value),
           };
         })
         // "Tanpa Pemilik" selalu di dasar tabel — ia keranjang sisa, bukan
