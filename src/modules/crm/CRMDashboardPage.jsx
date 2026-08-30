@@ -4,7 +4,6 @@ import { supabase } from '../../lib/supabase';
 import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
 import { fetchActivityFeed } from './activityFeed';
-import { STAGES as SHARED_STAGES, STAGE_IDS } from './DealPanels';
 
 /* =========================================================================
    CRMDashboardPage — Nexus by MSI · CRM Sales Dashboard (freight forwarding)
@@ -75,18 +74,92 @@ const KPIS = [
   { label: "Win Rate",             icon: "target",  value: "—", unit: "%",        accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
 ];
 
-// Fallback funnel (dipakai PipelineByStage saat data belum ada) — diturunkan dari
-// DealPanels.STAGES, sumber tunggal daftar stage. Tetap 7 nilai: ini konsumen RENDER.
-// Peta warna ditulis lokal (bukan STAGE_COLORS di bawah) karena const itu baru
-// diinisialisasi jauh setelah baris ini — merujuknya = TDZ error saat modul dievaluasi.
-const STAGE_FALLBACK_COLOR = { won: "#1F8B4D", lost: "#C0392B" };
-const STAGES = SHARED_STAGES.map((s) => ({
-  id: s.key.toLowerCase(),
-  name: s.label,
-  count: 0,
-  value: 0,
-  color: STAGE_FALLBACK_COLOR[s.key.toLowerCase()] || NAVY,
+/* ─── Sumbu deal = inquiries.status ────────────────────────────────────────
+   Sejak Batch Pipeline (B3), tahap deal dibaca dari `inquiries.status` — BUKAN
+   lagi `accounts.pipeline_stage` (kolom lama, dijadwalkan drop). Urutan lajur
+   SENGAJA identik dengan PipelineKanbanPage supaya angka di dashboard dan di
+   papan Pipeline selalu bisa direkonsiliasi; kalau salah satu berubah, ubah
+   dua-duanya. */
+const INQ_OPEN_STATUSES   = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
+const INQ_CLOSED_STATUSES = ['WON', 'LOST', 'CANCELLED'];
+const INQ_STAGE_ORDER     = [...INQ_OPEN_STATUSES, ...INQ_CLOSED_STATUSES];
+const INQ_STAGE_LABELS = {
+  OPEN: 'Open', IN_REVIEW: 'In Review', QUOTED: 'Quoted', NEGOTIATION: 'Negotiation',
+  WON: 'Won', LOST: 'Lost', CANCELLED: 'Cancelled',
+};
+// Warna bar dipertahankan apa adanya dari versi sebelumnya (won hijau / lost
+// merah); CANCELLED lajur baru → abu netral. Penyelarasan visual ke kit v3
+// adalah batch tersendiri dan sengaja TIDAK dikerjakan di sini.
+const INQ_STAGE_COLOR = { WON: '#1F8B4D', LOST: '#C0392B', CANCELLED: '#9AA0AC' };
+
+// Fallback funnel — dipakai PipelineByStage saat data belum tiba.
+const STAGES = INQ_STAGE_ORDER.map((id) => ({
+  id, name: INQ_STAGE_LABELS[id], count: 0, value: 0,
 }));
+
+/* ─── Rentang periode ──────────────────────────────────────────────────────
+   Satu sumber untuk SELURUH widget tim. Bucket trend adaptif supaya bentuk
+   grafiknya tetap masuk akal di ketiga periode: bulan = 4 minggu, kuartal =
+   3 bulan, tahun = 12 bulan. `prev*` = periode setara sebelumnya, dipakai
+   sebagai garis pembanding.
+   ⚠️ KPI personal sales (Call/Visit Minggu Ini, Quotation Bulan Ini) SENGAJA
+   TIDAK memakai rentang ini — lihat catatan di fetchDash. */
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+function periodRange(period, now) {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+
+  if (period === 'This Year') {
+    const start = new Date(y, 0, 1);
+    return {
+      start, end: new Date(y + 1, 0, 1),
+      prevStart: new Date(y - 1, 0, 1), prevEnd: start,
+      curLabel: 'Tahun Ini', prevLabel: 'Tahun Lalu',
+      buckets: Array.from({ length: 12 }, (_, i) => ({
+        name: MONTH_SHORT[i],
+        start: new Date(y, i, 1),     end: new Date(y, i + 1, 1),
+        prevStart: new Date(y - 1, i, 1), prevEnd: new Date(y - 1, i + 1, 1),
+      })),
+    };
+  }
+
+  if (period === 'This Quarter') {
+    const q = Math.floor(m / 3) * 3;
+    const start = new Date(y, q, 1);
+    return {
+      start, end: new Date(y, q + 3, 1),
+      prevStart: new Date(y, q - 3, 1), prevEnd: start,
+      curLabel: 'Kuartal Ini', prevLabel: 'Kuartal Lalu',
+      buckets: Array.from({ length: 3 }, (_, i) => {
+        const bs = new Date(y, q + i, 1);
+        return {
+          name: MONTH_SHORT[bs.getMonth()],
+          start: bs, end: new Date(y, q + i + 1, 1),
+          prevStart: new Date(y, q - 3 + i, 1), prevEnd: new Date(y, q - 3 + i + 1, 1),
+        };
+      }),
+    };
+  }
+
+  // Default "This Month" — 4 minggu, pembanding bulan lalu (perilaku lama).
+  // Minggu ke-4 sengaja memanjang sampai akhir bulan: versi lama memotong di
+  // tanggal 28, jadi tanggal 29-31 hilang dari grafik tanpa jejak.
+  const start = new Date(y, m, 1);
+  const end   = new Date(y, m + 1, 1);
+  const pStart = new Date(y, m - 1, 1);
+  return {
+    start, end, prevStart: pStart, prevEnd: start,
+    curLabel: 'Bulan Ini', prevLabel: 'Bulan Lalu',
+    buckets: [1, 2, 3, 4].map((w) => ({
+      name: `Minggu ${w}`,
+      start: new Date(y, m, (w - 1) * 7 + 1),
+      end:   w === 4 ? end : new Date(y, m, w * 7 + 1),
+      prevStart: new Date(y, m - 1, (w - 1) * 7 + 1),
+      prevEnd:   w === 4 ? start : new Date(y, m - 1, w * 7 + 1),
+    })),
+  };
+}
 
 const STATUS_BADGE = {
   "Exceeding": { bg: "#DEF0E4", fg: "#1F8B4D" },
@@ -94,13 +167,6 @@ const STATUS_BADGE = {
   "Need Push": { bg: "#FBEFD3", fg: "#9A6B12" },
   "At Risk":   { bg: "#F7E1DE", fg: "#C0392B" },
 };
-
-const LEADS_BY_SOURCE = [
-  { source: "Referral",          leads: "—", conv: "—", response: "—" },
-  { source: "Existing Network",  leads: "—", conv: "—", response: "—" },
-  { source: "Digital Marketing", leads: "—", conv: "—", response: "—" },
-  { source: "Cold Call",         leads: "—", conv: "—", response: "—" },
-];
 
 const ACTIVITY = [];
 
@@ -326,7 +392,7 @@ function KpiCard({ data }) {
 }
 
 /* ---------- pipeline prospect trend (recharts area — count per week) ---------- */
-function AreaTip({ active, payload, label }) {
+function AreaTip({ active, payload, label, curLabel = 'Bulan Ini', prevLabel = 'Bulan Lalu' }) {
   if (!active || !payload || !payload.length) return null;
   const get = (k) => { const p = payload.find((x) => x.dataKey === k); return p ? p.value : 0; };
   return (
@@ -335,18 +401,18 @@ function AreaTip({ active, payload, label }) {
       <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 8, height: 8, borderRadius: 2, background: "#8B5CF6", flex: "0 0 8px" }} />
-          Bulan Ini · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanIni")} prospect</b>
+          {curLabel} · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanIni")} prospect</b>
         </div>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 8, height: 8, borderRadius: 2, background: "#CBD5E1", flex: "0 0 8px" }} />
-          Bulan Lalu · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanLalu")} prospect</b>
+          {prevLabel} · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanLalu")} prospect</b>
         </div>
       </div>
     </div>
   );
 }
 
-function PipelineTrend({ data = [] }) {
+function PipelineTrend({ data = [], curLabel = 'Bulan Ini', prevLabel = 'Bulan Lalu', bucketNoun = 'minggu' }) {
   const [areaRef, areaW] = useWidth();
   const isEmpty = data.length === 0;
   return (
@@ -355,7 +421,7 @@ function PipelineTrend({ data = [] }) {
         <div style={D.cardIco}><Icon name="trendup" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Prospect Trend</div>
-          <div style={D.cardSub}>Jumlah prospect baru per minggu — bulan ini vs bulan lalu</div>
+          <div style={D.cardSub}>{`Jumlah prospect baru per ${bucketNoun} — ${curLabel.toLowerCase()} vs ${prevLabel.toLowerCase()}`}</div>
         </div>
       </div>
       <div style={{ padding: "16px 16px 4px" }}>
@@ -387,7 +453,7 @@ function PipelineTrend({ data = [] }) {
                 tick={{ fontSize: 11.5, fill: "#7A828E", fontWeight: 600 }} />
               <YAxis axisLine={false} tickLine={false} width={30} allowDecimals={false}
                 tick={{ fontSize: 11, fill: "#9AA0AC" }} />
-              <Tooltip content={<AreaTip />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
+              <Tooltip content={<AreaTip curLabel={curLabel} prevLabel={prevLabel} />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
               <Area type="monotone" dataKey="bulanLalu" stroke="#CBD5E1" strokeWidth={2} strokeDasharray="6 5"
                 fill="url(#areaLalu)" dot={{ r: 3, fill: "#CBD5E1", strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
               <Area type="monotone" dataKey="bulanIni" stroke="url(#lineGradIni)" strokeWidth={2.5}
@@ -399,11 +465,11 @@ function PipelineTrend({ data = [] }) {
         <div style={{ display: "flex", justifyContent: "center", gap: 24, padding: "8px 0 14px" }}>
           <span style={D.legItem}>
             <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#8B5CF6", flex: "0 0 11px" }} />
-            Bulan Ini
+            {curLabel}
           </span>
           <span style={D.legItem}>
             <span style={{ width: 14, height: 0, borderTop: "2.5px dashed #CBD5E1", flex: "0 0 14px" }} />
-            Bulan Lalu
+            {prevLabel}
           </span>
         </div>
       </div>
@@ -415,7 +481,7 @@ function PipelineTrend({ data = [] }) {
 function BarTip({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
   const d = payload[0].payload;
-  const color = d.id === "won" ? "#1F8B4D" : d.id === "lost" ? "#C0392B" : NAVY;
+  const color = INQ_STAGE_COLOR[d.id] || NAVY;
   return (
     <div style={D.tip}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
@@ -436,7 +502,7 @@ function PipelineByStage({ stages = STAGES }) {
         <div style={D.cardIco}><Icon name="bars" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Pipeline by Stage</div>
-          <div style={D.cardSub}>Jumlah deal per tahap pipeline</div>
+          <div style={D.cardSub}>Jumlah inquiry per status — sumbu sama dengan papan Pipeline</div>
         </div>
       </div>
       <div style={{ padding: "14px 14px 4px" }}>
@@ -457,7 +523,7 @@ function PipelineByStage({ stages = STAGES }) {
             <Tooltip content={<BarTip />} cursor={{ fill: "rgba(20,70,130,.05)" }} />
             <Bar dataKey="count" radius={[0, 7, 7, 0]} barSize={22} isAnimationActive={false}>
               {stages.map((s) => (
-                <Cell key={s.id} fill={s.id === "won" ? "#1F8B4D" : s.id === "lost" ? "#C0392B" : "url(#navyBar)"} />
+                <Cell key={s.id} fill={INQ_STAGE_COLOR[s.id] || "url(#navyBar)"} />
               ))}
               <LabelList dataKey="count" position="right" fill="#16243A" fontSize={11} fontWeight={700} />
             </Bar>
@@ -498,6 +564,10 @@ function LeadSourceDonut({ data = [] }) {
     color: SOURCE_PALETTE[i % SOURCE_PALETTE.length],
   }));
   const total = normalised.reduce((a, s) => a + s.count, 0);
+  // Skala bar volume — warisan satu-satunya kolom bermakna dari tabel "New
+  // Leads by Source" yang dilebur ke sini (kolom conv/response tabel itu
+  // permanen kosong, jadi ikut dilepas bersama tabelnya).
+  const maxCount = normalised.reduce((a, s) => Math.max(a, s.count), 0);
   const isEmpty = normalised.length === 0;
   return (
     <div className="om-card" style={D.card}>
@@ -528,11 +598,19 @@ function LeadSourceDonut({ data = [] }) {
           </div>
           <div style={D.legend}>
             {normalised.map((s) => (
-              <div key={s.name} style={D.legRow}>
-                <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
-                <span style={D.legName}>{s.name}</span>
-                <span style={D.legVal}>{s.count}</span>
-                <span style={D.legPct}>{total > 0 ? Math.round((s.count / total) * 100) : 0}%</span>
+              <div key={s.name}>
+                <div style={D.legRow}>
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
+                  <span style={D.legName}>{s.name}</span>
+                  <span style={D.legVal}>{s.count}</span>
+                  <span style={D.legPct}>{total > 0 ? Math.round((s.count / total) * 100) : 0}%</span>
+                </div>
+                <div style={{ ...D.miniTrack, marginTop: 3, marginBottom: 7 }}>
+                  <span style={{
+                    display: "block", height: "100%", borderRadius: 4, background: s.color,
+                    width: (maxCount > 0 ? (s.count / maxCount) * 100 : 0) + "%",
+                  }} />
+                </div>
               </div>
             ))}
           </div>
@@ -560,12 +638,12 @@ function SalesPerformance({ data = [] }) {
         <div style={D.cardIco}><Icon name="award" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Sales Performance</div>
-          <div style={D.cardSub}>Performa tim sales berdasarkan prospect</div>
+          <div style={D.cardSub}>Deal WON per sales — dari inquiry yang ditutup di periode aktif</div>
         </div>
       </div>
       {isEmpty ? (
         <div style={{ padding: "32px 16px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
-          Belum ada data — assign salesperson ke prospects dulu
+          Belum ada deal yang ditutup di periode ini
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
@@ -573,9 +651,9 @@ function SalesPerformance({ data = [] }) {
           <thead>
             <tr>
               <th style={D.th}>Salesperson</th>
-              <th style={{ ...D.th, textAlign: "center" }}>Prospek</th>
-              <th style={{ ...D.th, textAlign: "center" }}>Won</th>
-              <th style={{ ...D.th, textAlign: "center" }}>Conv %</th>
+              <th style={{ ...D.th, textAlign: "center" }}>Deal WON</th>
+              <th style={{ ...D.th, textAlign: "right" }}>Nilai WON</th>
+              <th style={{ ...D.th, textAlign: "center" }}>Win %</th>
               <th style={{ ...D.th, textAlign: "right" }}>Status</th>
             </tr>
           </thead>
@@ -592,8 +670,8 @@ function SalesPerformance({ data = [] }) {
                       <span style={{ fontWeight: 600, color: "#16243A" }}>{s.name}</span>
                     </div>
                   </td>
-                  <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.prospek}</span></td>
                   <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.won}</span></td>
+                  <td style={{ ...D.td, textAlign: "right" }}><span style={D.num}>{rpShort(s.value)}</span></td>
                   <td style={{ ...D.td, textAlign: "center" }}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
                       <span style={{ ...D.num, fontWeight: 700, color: "#16243A" }}>{s.convRate}%</span>
@@ -612,56 +690,6 @@ function SalesPerformance({ data = [] }) {
         </table>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ---------- new leads by source table (static reference data) ---------- */
-function LeadsBySource({ sourceData = [] }) {
-  const [hover, setHover] = useState(-1);
-  // Build from real lead source data if available
-  const rows = sourceData.length > 0
-    ? sourceData.slice(0, 8).map(d => ({ source: d.source || d.name || '—', leads: d.count, conv: '—', response: '—' }))
-    : LEADS_BY_SOURCE;
-  const maxLeads = rows.reduce((a, r) => Math.max(a, typeof r.leads === 'number' ? r.leads : 0), 1);
-  return (
-    <div className="om-card" style={D.card}>
-      <div style={D.cardHead}>
-        <div style={D.cardIco}><Icon name="inbox" size={18} /></div>
-        <div>
-          <div style={D.cardTitle}>New Leads by Source</div>
-          <div style={D.cardSub}>Lead baru per kanal</div>
-        </div>
-      </div>
-      <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 360 }}>
-        <thead>
-          <tr>
-            <th style={D.th}>Source</th>
-            <th style={{ ...D.th, textAlign: "center", width: 96 }}>New Leads</th>
-            <th style={{ ...D.th, width: 150 }}>Volume</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((l, i) => (
-            <tr key={l.source + i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
-              style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
-              <td style={D.td}><span style={{ fontWeight: 600, color: "#16243A" }}>{l.source}</span></td>
-              <td style={{ ...D.td, textAlign: "center" }}>
-                {typeof l.leads === 'number' ? <span style={D.countPill}>{l.leads}</span> : <span style={{ color: "#9AA0AC" }}>—</span>}
-              </td>
-              <td style={D.td}>
-                {typeof l.leads === 'number' ? (
-                  <div style={{ ...D.miniTrack, marginTop: 0 }}>
-                    <span style={{ display: "block", height: "100%", width: (l.leads / maxLeads) * 100 + "%", borderRadius: 4, background: NAVY }} />
-                  </div>
-                ) : <span style={{ color: "#9AA0AC", fontSize: 12 }}>—</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
     </div>
   );
 }
@@ -740,249 +768,6 @@ function DashTab({ tab, active, onSelect }) {
 }
 function DashTabs({ active, onSelect }) {
   return <div style={D.tabBar}>{DASH_TABS.map((t) => <DashTab key={t.id} tab={t} active={active === t.id} onSelect={onSelect} />)}</div>;
-}
-
-/* =========================================================================
-   ActivityReportTab — daily activity report (Aktivitas tab)
-   Sales: own today-summary + date-filtered detail.
-   Manager+: per-sales today-summary + sales/date filters + detail.
-   ========================================================================= */
-const ART_TYPE_META = {
-  call:        { label: 'Call',        bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
-  visit:       { label: 'Visit',       bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
-  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#1B4D8A', bd: '#BAD2E6' },
-  prospecting: { label: 'Prospecting', bg: '#FBE6DA', color: '#C8521B', bd: '#F0C3A8' },
-  followup:    { label: 'Follow-up',   bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
-};
-const ART_STATUS_META = {
-  todo:      { label: 'To Do',      bg: 'transparent', color: '#5E6553', bd: '#DDD3BE' },
-  done:      { label: 'Selesai',    bg: '#E4F0E5',     color: '#2E7D4F', bd: '#BFDDC4' },
-  cancelled: { label: 'Dibatalkan', bg: 'transparent', color: '#B23227', bd: '#E6BBB2' },
-};
-const ART_TYPES = ['call', 'visit', 'meeting', 'prospecting', 'followup'];
-function ArtBadge({ meta }) {
-  if (!meta) return <span style={{ color: '#D1D5DB' }}>—</span>;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700, letterSpacing: '.3px', border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color }}>
-      {meta.label}
-    </span>
-  );
-}
-function artTodayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function artFmtDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso + (String(iso).length === 10 ? 'T00:00:00' : ''));
-  if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-function artBounds(filterDate, customFrom, customTo) {
-  const d = new Date();
-  const f = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
-  if (filterDate === 'today') return { start: artTodayStr(), end: artTodayStr() };
-  if (filterDate === 'this_week') {
-    const dow = (d.getDay() + 6) % 7;
-    const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow);
-    const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
-    return { start: f(monday), end: f(sunday) };
-  }
-  if (filterDate === 'this_month') {
-    return { start: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`, end: f(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
-  }
-  return { start: customFrom || '0000-01-01', end: customTo || '9999-12-31' };
-}
-
-function ActivityReportTab({ profile, isSalesOnly, showToast }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filterDate, setFilterDate] = useState('today');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
-  const [filterSales, setFilterSales] = useState('all');
-  const [salesOpts, setSalesOpts] = useState([]);
-
-  useEffect(() => {
-    if (!profile?.company_id) return;
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      let q = supabase
-        .from('activities')
-        .select('id, type, status, scheduled_for, activity_time, outcome, notes, account_id, assigned_to, prospect_name, account:accounts!activities_account_id_fkey(name)')
-        .eq('company_id', profile.company_id)
-        .is('deleted_at', null);
-      if (isSalesOnly) q = q.eq('assigned_to', profile.id);
-      const { data, error } = await q.order('scheduled_for', { ascending: false }).limit(1000);
-      if (cancelled) return;
-      if (error) { showToast?.('Gagal memuat aktivitas: ' + error.message, 'error'); setRows([]); setLoading(false); return; }
-      const list = data || [];
-      const ids = [...new Set(list.map(a => a.assigned_to).filter(Boolean))];
-      const nm = {};
-      if (ids.length) {
-        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
-        (profs || []).forEach(p => { nm[p.id] = p.full_name; });
-      }
-      setRows(list.map(a => ({
-        ...a,
-        salesperson_name: a.assigned_to ? (nm[a.assigned_to] || null) : null,
-        account_name: a.account?.name || a.prospect_name || '—',
-      })));
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [profile?.company_id, profile?.id, isSalesOnly, showToast]);
-
-  // Manager+ sales dropdown (RBAC sales-only, company-scoped).
-  useEffect(() => {
-    if (isSalesOnly || !profile?.company_id) return;
-    let cancelled = false;
-    fetchOperationalRoster(profile.company_id).then(s => { if (!cancelled) setSalesOpts(s); });
-    return () => { cancelled = true; };
-  }, [isSalesOnly, profile?.company_id]);
-
-  const today = artTodayStr();
-  const todayRows = rows.filter(r => r.scheduled_for === today);
-
-  // Sales summary (today).
-  const salesSummary = {
-    todo: todayRows.filter(r => r.status === 'todo').length,
-    done: todayRows.filter(r => r.status === 'done').length,
-    donePerType: ART_TYPES.reduce((acc, t) => { acc[t] = todayRows.filter(r => r.status === 'done' && r.type === t).length; return acc; }, {}),
-  };
-
-  // Manager per-sales summary (today).
-  const perSales = (() => {
-    const map = {};
-    todayRows.forEach(r => {
-      const key = r.assigned_to || '—';
-      if (!map[key]) map[key] = { name: r.salesperson_name || 'Belum di-assign', todo: 0, done: 0, call: 0, visit: 0, meeting: 0, prospecting: 0, followup: 0 };
-      if (r.status === 'todo') map[key].todo++;
-      if (r.status === 'done') map[key].done++;
-      if (ART_TYPES.includes(r.type)) map[key][r.type]++;
-    });
-    return Object.values(map).sort((a, b) => (b.done + b.todo) - (a.done + a.todo));
-  })();
-
-  // Detail (date-filtered + sales filter for manager).
-  const { start, end } = artBounds(filterDate, customFrom, customTo);
-  let detail = rows.filter(r => r.scheduled_for >= start && r.scheduled_for <= end);
-  if (!isSalesOnly && filterSales !== 'all') detail = detail.filter(r => r.assigned_to === filterSales);
-
-  const card = { background: '#fff', border: '1px solid #ECE3D4', borderRadius: 14, padding: 18, boxShadow: '0 1px 6px rgba(35,41,30,.05)' };
-  const selStyle = { height: 34, borderRadius: 8, border: '1px solid #E2D9C7', background: '#fff', padding: '0 10px', fontSize: 13, color: '#23291E', outline: 'none', fontFamily: 'inherit', cursor: 'pointer' };
-  const th = { padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: '#857A68', whiteSpace: 'nowrap' };
-  const td = { padding: '10px 14px', fontSize: 13, color: '#4A5360', whiteSpace: 'nowrap' };
-  const mono = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5 };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 4 }}>
-      {/* ── Summary (today) ── */}
-      {isSalesOnly ? (
-        <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 14 }}>Ringkasan Hari Ini</div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-            <div style={{ flex: '1 1 140px', background: '#FBF8F2', border: '1px solid #ECE3D4', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#857A68', textTransform: 'uppercase', marginBottom: 6 }}>To Do</div>
-              <div style={{ ...mono, fontSize: 24, fontWeight: 800, color: ORANGE }}>{salesSummary.todo}</div>
-            </div>
-            <div style={{ flex: '1 1 140px', background: '#FBF8F2', border: '1px solid #ECE3D4', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#857A68', textTransform: 'uppercase', marginBottom: 6 }}>Selesai</div>
-              <div style={{ ...mono, fontSize: 24, fontWeight: 800, color: '#2E7D4F' }}>{salesSummary.done}</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {ART_TYPES.map(t => (
-              <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4A5360' }}>
-                <ArtBadge meta={ART_TYPE_META[t]} /><span style={{ ...mono, fontWeight: 700, color: '#16243A' }}>{salesSummary.donePerType[t]}</span>
-              </span>
-            ))}
-            <span style={{ fontSize: 11, color: '#A29684', alignSelf: 'center' }}>(selesai per tipe)</span>
-          </div>
-        </div>
-      ) : (
-        <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 12 }}>Ringkasan Per Sales — Hari Ini</div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ borderBottom: '1px solid #ECE3D4' }}>
-                {['Sales', 'Todo', 'Done', 'Call', 'Visit', 'Meeting', 'Prospecting', 'Followup'].map(h => <th key={h} style={th}>{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {perSales.length === 0 ? (
-                  <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: '24px', color: '#A29684' }}>Belum ada aktivitas hari ini</td></tr>
-                ) : perSales.map((s, i) => (
-                  <tr key={i} style={{ borderBottom: i < perSales.length - 1 ? '1px solid #F3ECDF' : 'none' }}>
-                    <td style={{ ...td, fontWeight: 600, color: '#23291E' }}>{s.name}</td>
-                    <td style={{ ...td, ...mono }}>{s.todo}</td>
-                    <td style={{ ...td, ...mono, color: '#2E7D4F', fontWeight: 700 }}>{s.done}</td>
-                    <td style={{ ...td, ...mono }}>{s.call}</td>
-                    <td style={{ ...td, ...mono }}>{s.visit}</td>
-                    <td style={{ ...td, ...mono }}>{s.meeting}</td>
-                    <td style={{ ...td, ...mono }}>{s.prospecting}</td>
-                    <td style={{ ...td, ...mono }}>{s.followup}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── Filters ── */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        {!isSalesOnly && (
-          <select value={filterSales} onChange={e => setFilterSales(e.target.value)} style={selStyle}>
-            <option value="all">Semua Sales</option>
-            {salesOpts.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
-        )}
-        <select value={filterDate} onChange={e => setFilterDate(e.target.value)} style={selStyle}>
-          <option value="today">Hari Ini</option>
-          <option value="this_week">Minggu Ini</option>
-          <option value="this_month">Bulan Ini</option>
-          <option value="custom">Custom</option>
-        </select>
-        {filterDate === 'custom' && (
-          <>
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={selStyle} />
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={selStyle} />
-          </>
-        )}
-      </div>
-
-      {/* ── Detail table ── */}
-      <div style={card}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr style={{ borderBottom: '1px solid #ECE3D4' }}>
-              {(isSalesOnly
-                ? ['Tanggal', 'Tipe', 'Status', 'Customer / Prospek', 'Catatan / Outcome']
-                : ['Tanggal', 'Tipe', 'Status', 'Sales', 'Customer / Prospek', 'Catatan / Outcome']
-              ).map(h => <th key={h} style={th}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={isSalesOnly ? 5 : 6} style={{ ...td, textAlign: 'center', padding: '32px', color: '#A29684' }}>Memuat data…</td></tr>
-              ) : detail.length === 0 ? (
-                <tr><td colSpan={isSalesOnly ? 5 : 6} style={{ ...td, textAlign: 'center', padding: '32px', color: '#A29684' }}>Tidak ada aktivitas pada rentang ini</td></tr>
-              ) : detail.map((r, i) => (
-                <tr key={r.id} style={{ borderBottom: i < detail.length - 1 ? '1px solid #F3ECDF' : 'none' }}>
-                  <td style={{ ...td, ...mono, color: '#23291E' }}>{artFmtDate(r.scheduled_for)}{r.activity_time ? ` · ${String(r.activity_time).slice(0, 5)}` : ''}</td>
-                  <td style={td}><ArtBadge meta={ART_TYPE_META[r.type]} /></td>
-                  <td style={td}><ArtBadge meta={ART_STATUS_META[r.status]} /></td>
-                  {!isSalesOnly && <td style={td}>{r.salesperson_name || '—'}</td>}
-                  <td style={{ ...td, fontWeight: 600, color: '#23291E' }}>{r.account_name}</td>
-                  <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.outcome || r.notes || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /* ---------- visit status badge ---------- */
@@ -1734,12 +1519,9 @@ function fmtTimeAgo(iso) {
   return `${Math.floor(diff / 86400)} hari lalu`;
 }
 
-/* ── stage order for pipeline chart ─────────────────────────────────────── */
-// Urutan batang funnel — tetap 7 nilai (konsumen RENDER), diturunkan dari sumber
-// tunggal DealPanels.STAGES supaya tidak jadi daftar stage kedua.
-const STAGE_ORDER  = STAGE_IDS;
-const STAGE_COLORS = { won: '#1F8B4D', lost: '#C0392B' };
-const STAGE_LABELS = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', negotiation: 'Negotiation', won: 'Won', lost: 'Lost' };
+/* Urutan/label/warna funnel kini hidup di INQ_STAGE_* (dekat puncak file),
+   turunan langsung dari inquiries.status. Trio STAGE_ORDER/STAGE_COLORS/
+   STAGE_LABELS lama ikut dilepas bersama sumbu accounts.pipeline_stage. */
 
 /* ========================================================================= */
 /* ---------- S2: "Aktivitas Saya" personal target tracker (sales view) ---------- */
@@ -1768,8 +1550,14 @@ function ActivityItem({ label, value, target, sublabel }) {
 function ActivitySaya({ data }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 12 }}>
+      {/* Blok ini SENGAJA tidak mengikuti selector periode: metrik kadens
+          dengan target per-minggu/per-bulan. Penanda di bawah supaya tidak
+          terbaca ikut berubah saat periode diganti. */}
+      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 2 }}>
         Aktivitas Saya — Minggu Ini &amp; Bulan Ini
+      </div>
+      <div style={{ fontSize: 11.5, color: '#9AA0AC', marginBottom: 12 }}>
+        Selalu minggu &amp; bulan berjalan — tidak mengikuti filter periode di atas.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
         <ActivityItem label="Call Minggu Ini"     value={data.callsThisWeek}        target={60} />
@@ -1788,6 +1576,9 @@ function CRMDashboardPage() {
   const canCancel = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'sales', 'operations'].includes(erpRole);
   // S2 — sales/operations see a personal dashboard; everyone else sees team-wide.
   const isSalesOnly = ['sales', 'operations'].includes(erpRole);
+  // Cakupan entitas — definisi SAMA dengan PipelineKanbanPage supaya super_admin
+  // tidak melihat dua cakupan berbeda di dua halaman modul yang sama.
+  const isAllEntities = ['super_admin'].includes(erpRole);
   const [period, setPeriod] = useState("This Month");
   const [tab, setTab]       = useState("summary");
   const [toast, setToast]   = useState({ msg: "", icon: "check", show: false });
@@ -1798,6 +1589,10 @@ function CRMDashboardPage() {
   const [dashData,    setDashData]    = useState(null);
   const [dashLoading, setDashLoading] = useState(true);
   const [dashError,   setDashError]   = useState(null);
+  // Daftar bagian data sekunder yang gagal dimuat. Kegagalan sekunder tidak
+  // mengosongkan halaman, tapi WAJIB terlihat — angka nol yang lahir dari fetch
+  // gagal tak bisa dibedakan dari nol yang memang benar.
+  const [partialFail, setPartialFail] = useState([]);
 
   // ── add visit modal state ────────────────────────────────────────────────
   const [addVisitOpen,     setAddVisitOpen]     = useState(false);
@@ -1828,12 +1623,12 @@ function CRMDashboardPage() {
   // useCallback with an empty dependency array — same fix as App.jsx's
   // showToast (2026-08-05, BNF Fase G 403 incident): this closes over only
   // setToast (useState setter, stable) and toastTimer (useRef object, stable
-  // — mutating .current doesn't require it in deps). Without this, every
-  // CRMDashboardPage render handed ActivityReportTab a new showToast prop,
-  // which sits in that component's own fetch-effect dependency array (see
-  // ActivityReportTab below) — a failed fetch calling showToast would set
-  // state here, re-render, hand down a new identity, and refire the effect,
-  // same render/refetch loop as the BNF incident.
+  // — mutating .current doesn't require it in deps). Dipertahankan meski
+  // konsumen aslinya (ActivityReportTab) sudah dihapus: identitas stabil ini
+  // syarat aman bagi komponen anak mana pun yang menaruh showToast di
+  // dependency array fetch-effect-nya — kalau identitasnya berubah tiap render,
+  // fetch gagal → showToast → set state → render → refire, loop yang sama
+  // dengan insiden BNF Fase G.
   const showToast = useCallback((msg, icon) => {
     setToast({ msg, icon: icon || "info", show: true });
     clearTimeout(toastTimer.current);
@@ -1845,258 +1640,302 @@ function CRMDashboardPage() {
     if (!profile?.company_id) return;
     setDashLoading(true);
     setDashError(null);
+    setPartialFail([]);
     try {
       const cid = profile.company_id;
+      const uid = profile.id;
+      const now = new Date();
+      const P   = periodRange(period, now);
 
-      const now            = new Date();
+      /* Scope ENTITAS — diselaraskan dengan applyScope PipelineKanbanPage:
+         super_admin lintas entitas (tanpa filter company_id), sisanya terkunci
+         ke entitasnya. Sebelumnya dashboard SELALU mengunci company_id, jadi
+         super_admin melihat cakupan lebih sempit di sini dibanding di papan
+         Pipeline — dua angka berbeda untuk pertanyaan yang sama. */
+      const byCompany = (q) => (isAllEntities ? q : q.eq('company_id', cid));
+
+      /* Scope KEPEMILIKAN, sengaja dua macam:
+         - accounts  : tetap `assigned_to OR created_by` (perilaku lama yang
+                       DIPERTAHANKAN — untuk sebuah AKUN, "punya saya" memang
+                       wajar mencakup yang di-assign ke saya maupun yang saya
+                       buat).
+         - inquiries : mengikuti Pipeline (`created_by`) + `owner_id`, pemilik
+                       resmi deal sejak Batch Persiapan. */
+      const ownAccounts  = (q) => (isSalesOnly ? q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`) : q);
+      const ownInquiries = (q) => (isSalesOnly ? q.or(`owner_id.eq.${uid},created_by.eq.${uid}`) : q);
+      const ownBySales   = (q) => (isSalesOnly ? q.eq('assigned_to', uid) : q);
+      const ownByCreator = (q) => (isSalesOnly ? q.eq('created_by', uid) : q);
+
+      /* KPI personal sales memakai minggu/bulan berjalan dan SENGAJA TIDAK ikut
+         `period` (keputusan Den): ini metrik KADENS dengan target per-minggu/
+         per-bulan, jadi merentangkannya ke kuartal/tahun membuat label DAN
+         target sama-sama bohong. Tanggal LOKAL (bukan toISOString) supaya WIB
+         sebelum 07:00 tak menggeser tanggal mundur sehari — `scheduled_for`
+         itu DATE lokal. */
+      const dow            = (now.getDay() + 6) % 7;          // 0 = Senin … 6 = Minggu
+      const mondayDate     = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+      const pad            = (n) => String(n).padStart(2, '0');
+      const localDate      = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const startOfWeek    = localDate(mondayDate);
+      const todayStr       = localDate(now);
       const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const endLastMonth   = new Date(startThisMonth.getTime() - 1);
+      const startNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-      // S2 — current ISO week (Monday start) + today, for personal activity KPIs.
-      // Use LOCAL date parts (not toISOString/UTC) so WIB pre-07:00 doesn't shift
-      // the date back a day and exclude today's calls (scheduled_for is a local DATE).
-      const dow         = (now.getDay() + 6) % 7;          // 0 = Monday … 6 = Sunday
-      const mondayDate  = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
-      const pad         = (n) => String(n).padStart(2, '0');
-      const localDate   = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-      const startOfWeek = localDate(mondayDate);
-      const todayStr    = localDate(now);
-      const uid         = profile.id;
+      const feedPromise = fetchActivityFeed({ companyId: cid, uid, isAllEntities, isSalesOnly });
 
-      // S2 — sales/operations only see their own data
-      const ownProspects = (q) => isSalesOnly ? q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`) : q;
-      const ownBySales   = (q) => isSalesOnly ? q.eq('assigned_to', uid) : q;  // activities use assigned_to
-      const ownByCreator = (q) => isSalesOnly ? q.eq('created_by', uid) : q;
-
-      // Unified Recent Activity feed (prospect/inquiry/quotation/activity). Dashboard
-      // widget is always single-entity (isAllEntities:false) — consistent with fetchDash.
-      const feedPromise = fetchActivityFeed({ companyId: cid, uid, isAllEntities: false, isSalesOnly });
-
-      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes, activeProspectsRes] = await Promise.all([
-        // Full prospects for this company — all fields needed for multiple computations
-        ownProspects(supabase
+      const res = await Promise.all([
+        // [0] accounts periode aktif — sumber Lead Source + Prospect Trend
+        ownAccounts(byCompany(supabase
           .from('accounts')
-          .select('id, pipeline_stage, name, created_at, source, assigned_to, profiles!prospects_assigned_to_fkey(full_name)')
-          .eq('company_id', cid)
+          .select('id, created_at, source'))
           .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
           .is('deleted_at', null)
+          .gte('created_at', P.start.toISOString())
+          .lt('created_at', P.end.toISOString())
           .limit(1000)),
 
-        // Inquiry count
-        supabase
+        // [1] accounts periode SEBELUMNYA — garis pembanding trend
+        ownAccounts(byCompany(supabase
+          .from('accounts')
+          .select('created_at'))
+          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .is('deleted_at', null)
+          .gte('created_at', P.prevStart.toISOString())
+          .lt('created_at', P.prevEnd.toISOString())
+          .limit(1000)),
+
+        // [2] "Prospect Aktif" — server count, TANPA batas periode: ini keadaan
+        //     saat ini, bukan kejadian dalam rentang waktu. Filter lama
+        //     `pipeline_stage NOT IN (WON,LOST)` DILEPAS — whitelist
+        //     lifecycle_stage di bawah sudah mengecualikan customer/lost/
+        //     free_agent, jadi filter itu mubazir sekaligus jadi referensi
+        //     terakhir ke kolom yang dijadwalkan drop.
+        ownAccounts(byCompany(supabase
+          .from('accounts')
+          .select('id', { count: 'exact', head: true }))
+          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .eq('is_in_lead_pool', false)
+          .is('deleted_at', null)),
+
+        // [3] Inquiry lajur TERBUKA — tanpa batas periode, persis seperti papan
+        //     Pipeline: deal terbuka tak punya tanggal tutup untuk disaring.
+        ownInquiries(byCompany(supabase
           .from('inquiries')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', cid)
-          .is('deleted_at', null),
+          .select('id, status'))
+          .in('status', INQ_OPEN_STATUSES)
+          .is('deleted_at', null)
+          .limit(1000)),
 
-        // Quotation count
-        supabase
+        // [4] Inquiry lajur TERTUTUP di periode aktif — sumber Win Rate,
+        //     hitungan CANCELLED, dan Sales Performance.
+        ownInquiries(byCompany(supabase
+          .from('inquiries')
+          .select('id, status, closed_at, owner_id, estimated_value'))
+          .in('status', INQ_CLOSED_STATUSES)
+          .is('deleted_at', null)
+          .gte('closed_at', P.start.toISOString())
+          .lt('closed_at', P.end.toISOString())
+          .limit(1000)),
+
+        // [5] Total Inquiry periode aktif
+        ownInquiries(byCompany(supabase
+          .from('inquiries')
+          .select('id', { count: 'exact', head: true }))
+          .is('deleted_at', null)
+          .gte('created_at', P.start.toISOString())
+          .lt('created_at', P.end.toISOString())),
+
+        // [6] Total Quotation periode aktif — `deleted_at` disamakan dengan
+        //     query inquiries; tanpa ini quotation yang sudah dibuang ikut
+        //     terhitung.
+        ownByCreator(byCompany(supabase
           .from('quotations')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', cid),
-
-        // Last month prospects — for trend comparison
-        ownProspects(supabase
-          .from('accounts')
-          .select('created_at')
-          .eq('company_id', cid)
-          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .select('id', { count: 'exact', head: true }))
           .is('deleted_at', null)
-          .gte('created_at', startLastMonth.toISOString())
-          .lt('created_at', startThisMonth.toISOString())
-          .limit(1000)),
+          .gte('created_at', P.start.toISOString())
+          .lt('created_at', P.end.toISOString())),
 
-        // Sales performance — assigned prospects with pipeline stage
-        ownProspects(supabase
-          .from('accounts')
-          .select('assigned_to, pipeline_stage, profiles!prospects_assigned_to_fkey(full_name)')
-          .eq('company_id', cid)
-          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
-          .is('deleted_at', null)
-          .not('assigned_to', 'is', null)
-          .limit(1000)),
-
-        // S2 Query A — calls this week (personal KPI) — activities type='call'
-        ownBySales(supabase
+        // [7] KPI personal — call minggu ini
+        ownBySales(byCompany(supabase
           .from('activities')
-          .select('id, scheduled_for, assigned_to')
-          .eq('company_id', cid)
+          .select('id, scheduled_for, assigned_to'))
           .eq('type', 'call')
           .is('deleted_at', null)
           .gte('scheduled_for', startOfWeek)
           .lte('scheduled_for', todayStr)
           .limit(1000)),
 
-        // S2 Query B — visits this week (personal KPI) — activities type='visit'
-        ownBySales(supabase
+        // [8] KPI personal — visit minggu ini
+        ownBySales(byCompany(supabase
           .from('activities')
-          .select('id, scheduled_for, assigned_to')
-          .eq('company_id', cid)
+          .select('id, scheduled_for, assigned_to'))
           .eq('type', 'visit')
           .is('deleted_at', null)
           .gte('scheduled_for', startOfWeek)
           .lte('scheduled_for', todayStr)
           .limit(1000)),
 
-        // S2 Query C — quotations this month (personal KPI)
-        ownByCreator(supabase
+        // [9] KPI personal — quotation bulan ini
+        ownByCreator(byCompany(supabase
           .from('quotations')
-          .select('id, created_at, created_by')
-          .eq('company_id', cid)
-          .gte('created_at', startThisMonth.toISOString())
-          .limit(1000)),
-
-        // Won deals that already auto-converted to customer (lifecycle_stage='customer'
-        // + pipeline_stage='WON' + became_customer_at set). These leave the prospect
-        // query, so without this they vanish from WON count / win rate / sales perf.
-        // Same company + role scope as the prospect queries.
-        ownProspects(supabase
-          .from('accounts')
-          .select('id, pipeline_stage, assigned_to, created_at, lifecycle_stage, became_customer_at, profiles!prospects_assigned_to_fkey(full_name)')
-          .eq('company_id', cid)
-          .eq('lifecycle_stage', 'customer')
-          .eq('pipeline_stage', 'WON')
-          .not('became_customer_at', 'is', null)
+          .select('id, created_at, created_by'))
           .is('deleted_at', null)
+          .gte('created_at', startThisMonth.toISOString())
+          .lt('created_at', startNextMonth.toISOString())
           .limit(1000)),
 
-        // "Prospect Aktif" KPI — kriteria SAMA dengan header PipelineKanbanPage
-        // (lifecycle_stage pra-customer + is_in_lead_pool=false + stage bukan
-        // WON/LOST, NULL disertakan seperti Pipeline `null → 'NEW'`). Server
-        // count(head) → TIDAK kena batas 1000 baris (beda dari prospectsRes.length).
-        // WON/LOST huruf BESAR (DB uppercase; Pipeline lowercase-mapping di JS).
-        // `.or(...is.null...)` supaya baris pipeline_stage NULL tak silent-drop
-        // (NOT IN polos mengecualikan NULL). Di-wrap ownProspects() → company-scoped
-        // untuk non-sales (identity) & owner-scoped untuk sales, jadi angka ini juga
-        // dipakai sebagai basis penyebut Win Rate (TD-102) yang scope-aware.
-        ownProspects(supabase
-          .from('accounts')
+        // [10] "SQL Baru Bulan Ini" — dari riwayat lifecycle, BUKAN lagi tebakan
+        //      dari pipeline_stage. Ini menjawab "berapa yang BARU jadi SQL
+        //      bulan ini", bukan "berapa yang kebetulan sekarang di tahap
+        //      lanjut". Tanpa filter company_id: tabelnya tak punya kolom itu —
+        //      scoping datang dari RLS `alh_read` yang mendelegasikan ke RLS
+        //      `accounts` (entitas + kepemilikan sekaligus).
+        supabase
+          .from('account_lifecycle_history')
           .select('id', { count: 'exact', head: true })
-          .eq('company_id', cid)
-          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
-          .eq('is_in_lead_pool', false)
-          .or('pipeline_stage.is.null,pipeline_stage.not.in.(WON,LOST)')
-          .is('deleted_at', null)),
+          .eq('to_stage', 'sql')
+          .gte('changed_at', startThisMonth.toISOString())
+          .lt('changed_at', startNextMonth.toISOString()),
       ]);
 
-      if (prospectsRes.error) throw prospectsRes.error;
+      /* Pemeriksaan error MENYELURUH. Sebelumnya hanya hasil [0] yang diperiksa
+         dan sembilan sisanya jatuh diam-diam ke `?? 0` / `|| []` — kegagalan
+         fetch tampil sebagai angka yang kelihatan sah. Yang esensial tetap
+         melempar; sisanya dikumpulkan dan dilaporkan lewat banner. */
+      const ESSENTIAL = [
+        ['prospect', res[0]],
+        ['prospect aktif', res[2]],
+        ['pipeline terbuka', res[3]],
+        ['deal tertutup', res[4]],
+      ];
+      for (const [label, r] of ESSENTIAL) {
+        if (r?.error) throw new Error(`${label} — ${r.error.message}`);
+      }
 
-      const prospects       = prospectsRes.data || [];
-      const totalProspects  = prospects.length; // row-pull count (capped 1000, incl Lead Pool). TD-102: TIDAK lagi dipakai Win Rate/subtitle (diganti activeProspects); kini yatim — kandidat hapus di batch lanjutan.
-      // Kartu "Prospect Aktif" — server count, kriteria = header Pipeline (lihat query di atas).
-      const activeProspects = activeProspectsRes.count ?? 0;
+      const failed = [
+        ['tren periode sebelumnya', res[1]],
+        ['total inquiry', res[5]],
+        ['total quotation', res[6]],
+        ['call minggu ini', res[7]],
+        ['visit minggu ini', res[8]],
+        ['quotation bulan ini', res[9]],
+        ['SQL baru bulan ini', res[10]],
+      ].filter(([, r]) => r?.error).map(([label]) => label);
 
-      // Won deals = active prospects still at stage WON (rare) + customers that
-      // auto-converted from a WON deal. Win rate is over all deals that ever
-      // entered the pipeline: active prospects + those converted WON customers.
-      const wonCustomers    = wonCustomersRes.data || [];
-      const wonProspects    = prospects.filter(p => (p.pipeline_stage || '').toUpperCase() === 'WON').length;
-      const wonCount        = wonProspects + wonCustomers.length;
-      const totalDeals      = activeProspects + wonCustomers.length; // TD-102: server-count (uncapped, is_in_lead_pool=false, scope-aware) — bukan lagi totalProspects capped-1000
-      const winRate         = totalDeals > 0 ? Math.round((wonCount / totalDeals) * 100) : 0;
-      const totalInquiries  = inquiriesRes.count  ?? 0;
-      const totalQuotations = quotationsRes.count ?? 0;
-      const lastMonthProspects = lastMonthRes.data || [];
+      const accountsRows        = res[0].data  || [];
+      const prevRows            = res[1].data  || [];
+      const activeProspects     = res[2].count ?? 0;
+      const openInq             = res[3].data  || [];
+      const closedInq           = res[4].data  || [];
+      const totalInquiries      = res[5].count ?? 0;
+      const totalQuotations     = res[6].count ?? 0;
+      const callsThisWeek       = (res[7].data || []).length;
+      const visitsThisWeek      = (res[8].data || []).length;
+      const quotationsThisMonth = (res[9].data || []).length;
+      const sqlThisMonth        = res[10].count ?? 0;
 
-      // ── Stage breakdown ─────────────────────────────────────────────────
-      const stageCounts = {};
-      prospects.forEach(p => {
-        const s = (p.pipeline_stage || 'new').toLowerCase();
-        stageCounts[s] = (stageCounts[s] || 0) + 1;
-      });
-      const stagesData = STAGE_ORDER.map(id => ({
-        id,
-        name:  STAGE_LABELS[id] || id,
-        count: stageCounts[id] || 0,
-        value: 0,
-        color: STAGE_COLORS[id] || NAVY,
+      /* Nama pemilik deal lewat query TERPISAH, bukan embed FK — pola yang
+         sudah dipakai di file ini (feed aktivitas & kalender). Satu query untuk
+         seluruh papan: id dikumpulkan lebih dulu lalu di-dedup, jadi jumlah
+         query tidak tumbuh mengikuti jumlah deal (nol N+1). */
+      const ownerIds   = [...new Set(closedInq.map((r) => r.owner_id).filter(Boolean))];
+      const ownerNames = {};
+      if (ownerIds.length) {
+        const { data: profs, error: profErr } = await supabase
+          .from('profiles').select('id, full_name').in('id', ownerIds).limit(1000);
+        if (profErr) failed.push('nama pemilik deal');
+        else (profs || []).forEach((p) => { ownerNames[p.id] = p.full_name; });
+      }
+
+      // ── Pipeline by Stage — sumbu inquiries.status ───────────────────────
+      const statusCounts = {};
+      for (const r of [...openInq, ...closedInq]) {
+        const s = String(r.status || '').toUpperCase();
+        statusCounts[s] = (statusCounts[s] || 0) + 1;
+      }
+      const stagesData = INQ_STAGE_ORDER.map((id) => ({
+        id, name: INQ_STAGE_LABELS[id], count: statusCounts[id] || 0, value: 0,
       }));
 
-      // ── Lead source distribution ─────────────────────────────────────────
+      /* ── Win Rate ────────────────────────────────────────────────────────
+         WON / (WON + LOST) atas deal yang DITUTUP di periode aktif.
+         CANCELLED sengaja di luar pembilang MAUPUN penyebut: deal yang
+         dibatalkan bukan kompetisi yang kita kalah, jadi memasukkannya ke
+         penyebut menghukum win rate untuk sesuatu yang tak pernah
+         diperebutkan. Angkanya tetap dibawa keluar dan ditampilkan di sebelah
+         kartu — dikeluarkan dari rumus, bukan disembunyikan. */
+      const wonCount       = closedInq.filter((r) => r.status === 'WON').length;
+      const lostCount      = closedInq.filter((r) => r.status === 'LOST').length;
+      const cancelledCount = closedInq.filter((r) => r.status === 'CANCELLED').length;
+      const decided        = wonCount + lostCount;
+      const winRate        = decided > 0 ? Math.round((wonCount / decided) * 100) : 0;
+
+      // ── Lead source (periode aktif) ─────────────────────────────────────
       const sourceCounts = {};
-      prospects.forEach(p => {
-        const s = p.source || 'Lainnya';
+      accountsRows.forEach((a) => {
+        const s = a.source || 'Lainnya';
         sourceCounts[s] = (sourceCounts[s] || 0) + 1;
       });
       const leadSourceData = Object.entries(sourceCounts)
         .map(([source, count]) => ({ source, count }))
         .sort((a, b) => b.count - a.count);
 
-      // ── Pipeline trend — prospect count per week (bulan ini vs bulan lalu) ─
-      const trendData = [1, 2, 3, 4].map(week => {
-        const weekStart = new Date(startThisMonth);
-        weekStart.setDate((week - 1) * 7 + 1);
-        const weekEnd = new Date(startThisMonth);
-        weekEnd.setDate(week * 7);
+      // ── Trend — bucket adaptif + pembanding periode setara ──────────────
+      const inBucket = (rows, from, to) => rows.filter((r) => {
+        const d = new Date(r.created_at);
+        return d >= from && d < to;
+      }).length;
+      const trendData = P.buckets.map((b) => ({
+        name:      b.name,
+        bulanIni:  inBucket(accountsRows, b.start, b.end),
+        bulanLalu: inBucket(prevRows, b.prevStart, b.prevEnd),
+      }));
 
-        const thisCount = prospects.filter(p => {
-          const d = new Date(p.created_at);
-          return d >= weekStart && d <= weekEnd;
-        }).length;
-
-        const lmStart = new Date(weekStart); lmStart.setMonth(lmStart.getMonth() - 1);
-        const lmEnd   = new Date(weekEnd);   lmEnd.setMonth(lmEnd.getMonth() - 1);
-        const lastCount = lastMonthProspects.filter(p => {
-          const d = new Date(p.created_at);
-          return d >= lmStart && d <= lmEnd;
-        }).length;
-
-        return { name: `Minggu ${week}`, bulanIni: thisCount, bulanLalu: lastCount };
-      });
-
-      // ── Sales performance ─────────────────────────────────────────────────
-      // prospek = active prospects assigned to the sales; won = active WON
-      // prospects + converted WON customers assigned to them. convRate uses the
-      // same "all deals" denominator as the global win rate (prospek + wonCust).
-      const salesMap = {};
-      (salesPerfRes.data || []).forEach(p => {
-        const id   = p.assigned_to;
-        const name = p.profiles?.full_name || 'Unknown';
-        if (!salesMap[id]) salesMap[id] = { name, prospek: 0, won: 0, wonCust: 0 };
-        salesMap[id].prospek++;
-        if ((p.pipeline_stage || '').toLowerCase() === 'won') salesMap[id].won++;
-      });
-      wonCustomers.forEach(c => {
-        const id = c.assigned_to;
+      // ── Sales performance — per PEMILIK DEAL (inquiries.owner_id) ───────
+      const perOwner = {};
+      closedInq.forEach((r) => {
+        const id = r.owner_id;
         if (!id) return;
-        const name = c.profiles?.full_name || 'Unknown';
-        if (!salesMap[id]) salesMap[id] = { name, prospek: 0, won: 0, wonCust: 0 };
-        salesMap[id].won++;
-        salesMap[id].wonCust++;
+        if (!perOwner[id]) perOwner[id] = { won: 0, lost: 0, value: 0 };
+        if (r.status === 'WON') {
+          perOwner[id].won++;
+          perOwner[id].value += Number(r.estimated_value) || 0;
+        } else if (r.status === 'LOST') {
+          perOwner[id].lost++;
+        }
       });
-      const salesPerfData = Object.values(salesMap)
-        .map(s => {
-          const deals = s.prospek + s.wonCust; // all deals that entered the pipeline
-          return { name: s.name, prospek: s.prospek, won: s.won, convRate: deals > 0 ? Math.round((s.won / deals) * 100) : 0 };
+      const salesPerfData = Object.entries(perOwner)
+        .map(([id, s]) => {
+          const dec = s.won + s.lost;
+          return {
+            name:     ownerNames[id] || '(tanpa nama)',
+            won:      s.won,
+            lost:     s.lost,
+            value:    s.value,
+            convRate: dec > 0 ? Math.round((s.won / dec) * 100) : 0,
+          };
         })
-        .sort((a, b) => b.prospek - a.prospek);
+        .sort((a, b) => b.won - a.won || b.value - a.value);
 
-      // ── Recent activity (unified feed: prospect/inquiry/quotation/activity) ──
+      // ── Recent activity (feed terpadu) ──────────────────────────────────
       const feedEvents = await feedPromise;
-      const recentActivity = feedEvents.slice(0, 7).map(ev => ({
-        type: ev.type,                 // prospect | inquiry | quotation | activity → ACT_META
+      const recentActivity = feedEvents.slice(0, 7).map((ev) => ({
+        type: ev.type,
         text: ev.title,
         co:   ev.subtitle,
         time: fmtTimeAgo(ev.timestamp),
         user: ev.user_name || '—',
       }));
 
-      // ── S2 personal activity KPIs ───────────────────────────────────────────
-      const callsThisWeek       = (callsWeekRes.data  || []).length;
-      const visitsThisWeek      = (visitsWeekRes.data || []).length;
-      const quotationsThisMonth = (quotMonthRes.data  || []).length;
-      const SQL_STAGES = new Set(['QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'WON']);
-      const sqlThisMonth = prospects.filter(p => {
-        const created = new Date(p.created_at);
-        return created >= startThisMonth && SQL_STAGES.has((p.pipeline_stage || '').toUpperCase());
-      }).length;
+      if (failed.length) setPartialFail(failed);
 
       setDashData({
-        totalProspects, activeProspects, totalDeals, totalInquiries, totalQuotations, winRate,
-        stagesData, recentActivity,
-        trendData, leadSourceData, salesPerfData,
+        activeProspects, totalInquiries, totalQuotations,
+        winRate, wonCount, lostCount, cancelledCount, decided,
+        stagesData, recentActivity, trendData, leadSourceData, salesPerfData,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
+        curLabel: P.curLabel, prevLabel: P.prevLabel,
+        bucketNoun: period === 'This Month' ? 'minggu' : 'bulan',
       });
     } catch (err) {
       console.error('[CRMDashboardPage] fetch error:', err);
@@ -2104,7 +1943,7 @@ function CRMDashboardPage() {
     } finally {
       setDashLoading(false);
     }
-  }, [profile?.company_id, profile?.id, isSalesOnly]);
+  }, [profile?.company_id, profile?.id, isSalesOnly, isAllEntities, period]);
 
   useEffect(() => { fetchDash(); }, [fetchDash]);
 
@@ -2289,7 +2128,10 @@ function CRMDashboardPage() {
     { label: "Prospect Aktif", icon: "users",       value: String(dashData.activeProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
     { label: "Total Inquiry",   icon: "filetext",    value: String(dashData.totalInquiries), unit: "inquiry",   accent: ORANGE,    accentBg: "#FBE6DA", trend: null },
     { label: "Total Quotation", icon: "receipt",     value: String(dashData.totalQuotations),unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
-    { label: "Win Rate",        icon: "checkcircle", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
+    // CANCELLED tidak masuk rumus Win Rate, tapi ikut ditampilkan di subtitle —
+    // dikeluarkan dari hitungan, bukan disembunyikan dari pembaca.
+    { label: "Win Rate",        icon: "checkcircle", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
+      subtitle: `${dashData.wonCount} won / ${dashData.decided} deal diputus · ${dashData.cancelledCount} cancelled (di luar hitungan)` },
   ] : KPIS;
 
   // ── S2 — personal KPI cards (sales/operations view) ──────────────────────
@@ -2302,7 +2144,7 @@ function CRMDashboardPage() {
     { label: "Quotation Bulan Ini", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
       subtitle: `${dashData.quotationsThisMonth} / 20 target bulan ini`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
     { label: "Win Rate Personal",   icon: "checkcircle", value: String(dashData.winRate),             unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
-      subtitle: `dari ${dashData.totalDeals} prospect aktif` },
+      subtitle: `${dashData.wonCount} won / ${dashData.decided} deal diputus · ${dashData.cancelledCount} cancelled` },
   ] : KPIS;
 
   const kpiCards = isSalesOnly ? kpisSales : kpisReal;
@@ -2358,6 +2200,19 @@ function CRMDashboardPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: 13, marginBottom: 16 }}>
             <Icon name="alert" size={15} />
             {dashError}
+          </div>
+        )}
+
+        {/* Kegagalan SEBAGIAN — halaman tetap tampil, tapi bagian yang gagal
+            disebut namanya. Tanpa ini, fetch yang gagal berubah jadi angka nol
+            yang tak bisa dibedakan dari nol yang memang benar. */}
+        {!dashError && partialFail.length > 0 && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E", fontSize: 13, marginBottom: 16 }}>
+            <Icon name="alert" size={15} />
+            <span>
+              Sebagian data gagal dimuat — angka berikut belum tentu benar:{' '}
+              <b>{partialFail.join(', ')}</b>. Coba muat ulang halaman.
+            </span>
           </div>
         )}
 
@@ -2428,8 +2283,6 @@ function CRMDashboardPage() {
               }}
             />
           </>
-        ) : tab === "activity" ? (
-          <ActivityReportTab profile={profile} isSalesOnly={isSalesOnly} showToast={showToast} />
         ) : (
           <React.Fragment>
           {/* row 1 — KPI */}
@@ -2444,7 +2297,11 @@ function CRMDashboardPage() {
 
           {/* row 2 — pipeline trend */}
           <div style={{ marginBottom: 16 }}>
-            <PipelineTrend data={dashData?.trendData || []} />
+            <PipelineTrend
+              data={dashData?.trendData || []}
+              curLabel={dashData?.curLabel} prevLabel={dashData?.prevLabel}
+              bucketNoun={dashData?.bucketNoun}
+            />
           </div>
 
           {/* row 3 — charts */}
@@ -2453,11 +2310,12 @@ function CRMDashboardPage() {
             <LeadSourceDonut data={dashData?.leadSourceData || []} />
           </div>
 
-          {/* row 4 — tables (team view only — hidden for sales/operations) */}
+          {/* row 4 — tabel (team view only — hidden for sales/operations).
+              Dulu dua kolom; "New Leads by Source" dilebur ke donut Lead Source
+              karena sumber datanya sama persis. */}
           {!isSalesOnly && (
-            <div className="nx-grid-2" style={D.tablesRow}>
+            <div style={{ marginBottom: 16 }}>
               <SalesPerformance data={dashData?.salesPerfData || []} />
-              <LeadsBySource sourceData={dashData?.leadSourceData || []} />
             </div>
           )}
 
