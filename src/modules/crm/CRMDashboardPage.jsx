@@ -394,8 +394,6 @@ const D = {
    tak pernah muncul — markupnya tetap disiapkan supaya begitu jalur datanya
    ada, tile langsung memakainya tanpa ubah komponen. */
 function KpiCard({ data }) {
-  const hasTrend = !!data.trend;
-  const up = hasTrend && data.trend.dir === "up";
   return (
     <div className="kpi">
       <div className="kpi-top">
@@ -404,18 +402,12 @@ function KpiCard({ data }) {
           <Icon name={data.icon} size={27} color="rgba(255,255,255,.85)" strokeWidth={2} />
         </span>
       </div>
-      {/* satuan dipertahankan (mis. "%" di Win Rate bukan hiasan) tapi ikut
-          masuk grup yang di-center, bukan menempel rata kiri sendirian */}
-      <div className="kpi-value-group">
-        <span className="kpi-value" style={{ whiteSpace: "nowrap" }}>{data.value}</span>
-        {data.unit && <span className="kpi-unit">{data.unit}</span>}
-      </div>
+      <div className="kpi-value">{data.value}</div>
+      {/* Slot foot selalu dirender walau kedua isinya kosong: itu yang menjaga
+          posisi Y angka besar identik di keempat tile. Satuan dipertahankan
+          (mis. "%" di Win Rate bukan hiasan), kini di pojok kiri bawah. */}
       <div className="kpi-foot">
-        {hasTrend ? (
-          <span className={up ? "trend up" : "trend down"}>
-            {up ? "▲" : "▼"} {data.trend.val}
-          </span>
-        ) : <span />}
+        <span className="kpi-unit">{data.unit || ""}</span>
         <span className="kpi-hint">{data.trend?.note || data.subtitle || ""}</span>
       </div>
       {data.progress && (
@@ -3147,10 +3139,24 @@ function CRMDashboardPage() {
            komponen lain, dan JANGAN "dibetulkan" balik ke palet standar.
            Ditulis sebagai CSS (bukan objek D inline) karena butuh ::before /
            ::after yang tak bisa diekspresikan lewat style inline. */
+        .kpi-grid{container-type:inline-size;}
         .kpi{
           position:relative; border-radius:14px; padding:32px 22px 30px;
           overflow:hidden; border:1px solid rgba(255,255,255,.10);
           display:flex; flex-direction:column;
+          /* Rasio 1.6:1 sebagai BATAS BAWAH, bukan kunci mati.
+             JANGAN pakai "aspect-ratio" di sini. aspect-ratio membuat tinggi
+             intrinsik kotak dihitung DARI rasio itu sendiri, sehingga
+             min-height:max-content ikut bernilai width/1.6 dan tak menahan
+             apa pun — terukur: tinggi bertahan 142,5px padahal isinya butuh
+             168px, dan foot menonjol 28px di bawah tepi kartu @1024.
+             Gantinya tinggi minimum diturunkan dari LEBAR TILE lewat container
+             query pada .kpi-grid: lebar tile = (lebar grid - total gap) /
+             jumlah kolom, lalu dibagi 1.6. Pembaginya mengikuti jumlah kolom
+             di tiap breakpoint .nx-grid-kpi (4 → 2 → 1 kolom, gap 16px).
+             Karena ini min-height murni, kotak bebas tumbuh saat kontennya
+             lebih tinggi (layar sempit) → nol clipping. */
+          min-height:calc((100cqw - 48px) / 6.4);
           box-shadow:0 14px 30px rgba(10,20,38,.30), 0 2px 8px rgba(10,20,38,.16);
           background:linear-gradient(135deg,#5C6070 0%,#5C6070 50%,#EE9A7E 50%,#EE9A7E 100%);
         }
@@ -3173,41 +3179,62 @@ function CRMDashboardPage() {
           background:radial-gradient(circle at 34% 22%,#B4E0F2 0%,#7FBBDA 55%,#5A9CC3 100%);
           pointer-events:none;
         }
-        /* scrim gelap di pita bawah — bikin trend chip & hint konsisten
-           terbaca di semua tile, tak peduli dia di atas slate/peach/blob */
-        /* Alpha akhir dinaikkan .5 → .62. Dengan .5, teks hint di pita bawah
-           duduk di atas bagian terang blob dan kontrasnya cuma ±2,7:1 — di
-           bawah ambang WCAG AA 4,5:1 untuk teks 11,5px. */
+        /* Scrim gelap di pita bawah — supaya unit & hint konsisten terbaca di
+           atas slate/peach/blob.
+           Dua hal yang WAJIB dipertahankan kalau blok ini disentuh:
+           (1) z-index:1, BUKAN 0. Scrim (::before) dan blob (::after) sama-sama
+               pseudo-element .kpi; kalau z-index-nya sama, urutan cat mengikuti
+               urutan tree dan ::after SELALU sesudah ::before — blob menutup
+               scrim sepenuhnya dan pita gelapnya tak pernah terlihat sama
+               sekali. Isi kartu juga z-index:1 tapi berada sesudah ::before di
+               tree, jadi teks tetap di atas scrim.
+           (2) Stop-nya px dari DASAR (to top), bukan persen dari tinggi. Isi
+               kartu semuanya px tetap (padding 30, foot ±31), sedangkan tinggi
+               kartu berubah-ubah ikut lebar kolom; scrim berbasis persen
+               membuat pita gelap bergeser relatif terhadap teks, dan baris
+               pertama hint 2-baris jatuh di zona terang (terukur 3,14:1, gagal
+               AA). Dengan px, pita gelap selalu menutup foot berapa pun tinggi
+               kartunya. 68px menutup foot + padding bawah, 128px titik fade
+               habis. */
         .kpi::before{
-          content:""; position:absolute; z-index:0; inset:0; pointer-events:none;
-          background:linear-gradient(to bottom,rgba(10,16,26,0) 30%,rgba(10,16,26,.72) 82%,rgba(10,16,26,.72) 100%);
+          content:""; position:absolute; z-index:1; inset:0; pointer-events:none;
+          background:linear-gradient(to top,
+            rgba(10,16,26,.82) 0, rgba(10,16,26,.82) 68px, rgba(10,16,26,0) 128px);
         }
         .kpi-top{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:8px;}
         .kpi-icon{flex-shrink:0;opacity:.85;}
         .kpi-label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.7);}
-        /* value + unit = SATU grup yang di-center. Sebelumnya hanya .kpi-value
-           yang text-align:center, sehingga angka + unit jadi satu baris rata
-           kiri — bukan angka yang berdiri simetris di tengah kartu. */
-        .kpi-value-group{
-          position:relative;z-index:1;
-          display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:38px;
-        }
+        /* Angka besar berdiri SENDIRI di tengah sisa ruang antara kpi-top dan
+           kpi-foot; kotak inilah yang menyerap seluruh sisa tinggi, bukan
+           margin manual — jadi angkanya tetap di tengah berapa pun tinggi
+           kartunya. Unit pindah ke pojok kiri bawah (lihat .kpi-foot).
+           "flex:1 1 auto", BUKAN "flex:1": keduanya sama-sama menyerap sisa
+           ruang, tapi "flex:1" berarti flex-basis:0 sehingga tinggi baris 46px
+           tak ikut terhitung saat browser menentukan tinggi minimum kartu, dan
+           kartu jadi terpotong di layar sempit. flex-shrink tetap 1, tapi
+           min-height:auto bawaan flex item mencegahnya menyusut di bawah
+           tinggi kontennya sendiri. */
         .kpi-value{
+          position:relative;z-index:1;flex:1 1 auto;white-space:nowrap;
+          display:flex;align-items:center;justify-content:center;margin:0;
           font-family:'Oswald',sans-serif;font-weight:700;font-size:46px;line-height:1;
-          color:#fff;letter-spacing:.02em;margin-top:0;
+          color:#fff;letter-spacing:.02em;
           text-shadow:0 2px 10px rgba(8,14,24,.35);
         }
         .kpi-unit{font-size:14px;font-weight:600;color:rgba(255,255,255,.72);}
-        /* Hint bisa 2 baris (mis. Win Rate: "N won / N deals decided · …").
-           "align-items:flex-start" + "flex-shrink:0" pada chip menjaga chip
-           tetap sejajar baris PERTAMA hint dan tak ikut mengecil saat hint
-           melebar; hint rata kanan supaya kedua barisnya lurus ke tepi kartu. */
-        .kpi-foot{position:relative;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-top:auto;padding-top:32px;}
-        .kpi-foot .trend{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700;background:rgba(8,14,24,.4);flex-shrink:0;}
-        .kpi-foot .trend.up{color:#8CFFC0;}
-        .kpi-foot .trend.down{color:#FFA98F;}
-        /* .6 → .9: bagian dari menaikkan kontras hint ke atas AA 4,5:1 */
+        /* Slot foot menempel dasar kartu dengan sendirinya karena .kpi-value
+           di atasnya flex:1 — tak perlu margin-top:auto maupun margin tetap.
+           Unit di pojok kiri, hint di pojok kanan; slot tetap dirender walau
+           kedua isinya kosong supaya tinggi Y-nya sama di keempat tile.
+           align-items:flex-end menjaga unit sejajar baris TERAKHIR hint saat
+           hint jadi 2 baris. */
+        .kpi-foot{position:relative;z-index:1;display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-top:0;}
         .kpi-hint{font-size:11.5px;line-height:1.35;color:rgba(255,255,255,.9);text-align:right;min-width:0;}
+        /* .nx-grid-kpi turun ke 2 kolom di bawah 1024px dan 1 kolom di bawah
+           640px (src/index.css); pembagi min-height ikut berubah supaya rasio
+           1.6:1 tetap jadi batas bawah yang benar di kedua mode itu. */
+        @media (max-width:1023.98px){ .kpi{min-height:calc((100cqw - 16px) / 3.2);} }
+        @media (max-width:639.98px){ .kpi{min-height:calc(100cqw / 1.6);} }
       `}</style>
       <div style={D.wrap}>
         {/* header */}
@@ -3325,7 +3352,7 @@ function CRMDashboardPage() {
           <React.Fragment>
           {/* row 1 — KPI */}
           {dashLoading ? <SkeletonRow /> : (
-            <div className="nx-grid-kpi" style={D.kpiRow}>
+            <div className="nx-grid-kpi kpi-grid" style={D.kpiRow}>
               {kpiCards.map((k) => <KpiCard key={k.label} data={k} />)}
             </div>
           )}
