@@ -47,12 +47,17 @@ const ICONS = {
   plus:        '<path d="M5 12h14"/><path d="M12 5v14"/>',
   x:           '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   mappin:      '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  // Ikon KPI hero — dari spek desain yang di-approve. Hanya Win Rate yang
+  // metriknya benar-benar cocok dengan tile Dashboard; tiga ikon spek lain
+  // (New SQL / Pipeline Value / Quota Attainment) SENGAJA tidak dipasang
+  // karena metriknya tidak ada di Dashboard ini (keputusan Den).
+  kpiWinRate:  '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.4"/><circle cx="12" cy="12" r="1" fill="rgba(255,255,255,.85)" stroke="none"/>',
 };
 
-function Icon({ name, size = 18, color, style }) {
+function Icon({ name, size = 18, color, style, strokeWidth = 1.7 }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color || "currentColor"}
-      strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
       style={{ display: "block", flex: "0 0 auto", ...style }}
       dangerouslySetInnerHTML={{ __html: ICONS[name] || ICONS.info }} />
   );
@@ -348,7 +353,7 @@ const D = {
   donutCenter: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
   donutTotal: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 26, color: "#16243A", letterSpacing: -0.6, lineHeight: 1 },
   donutTotalLbl: { fontSize: 10.5, color: "#9AA0AC", fontWeight: 600, marginTop: 3, letterSpacing: 0.3 },
-  legend: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 },
+  legend: { flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 1 },
   legRow: { display: "flex", alignItems: "center", gap: 7, padding: "3px 0", fontSize: 11 },
   legName: { color: "#48505C", fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   legVal: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 700, color: "#16243A", fontVariantNumeric: "tabular-nums" },
@@ -381,30 +386,40 @@ const D = {
 };
 
 /* ---------- KPI card ---------- */
+/* KPI hero card — styling di kelas `.kpi` pada blok <style> di bawah (butuh
+   ::before/::after). Geometri ke-4 tile SENGAJA identik; yang berbeda hanya
+   isinya. Data TIDAK diubah: label/value/unit/subtitle/progress tetap dibaca
+   dari array kpisReal/kpisSales apa adanya, cuma dirender ulang untuk latar
+   gelap. `trend` hari ini selalu null di kedua array, jadi chip ▲/▼ praktis
+   tak pernah muncul — markupnya tetap disiapkan supaya begitu jalur datanya
+   ada, tile langsung memakainya tanpa ubah komponen. */
 function KpiCard({ data }) {
-  const [h, setH] = useState(false);
   const hasTrend = !!data.trend;
-  const up   = hasTrend && data.trend.dir === "up";
-  const good = hasTrend && data.trend.good;
-  const tone = good ? { fg: "#1F8B4D", bg: "#DEF0E4" } : { fg: "#C0392B", bg: "#F7E1DE" };
+  const up = hasTrend && data.trend.dir === "up";
   return (
-    <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} style={{ ...D.kpiCard, ...(h ? D.kpiCardHover : null) }}>
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "linear-gradient(90deg, " + data.accent + ", " + data.accent + "55)" }} />
-      <div style={D.kpiTop}>
-        <div style={{ ...D.kpiIco, background: data.accentBg, color: data.accent }}><Icon name={data.icon} size={20} /></div>
-        {hasTrend && (
-          <span style={{ ...D.kpiTrend, color: tone.fg, background: tone.bg }}>
-            <Icon name={up ? "arrowup" : "arrowdown"} size={12} color={tone.fg} />{data.trend.val}
-          </span>
-        )}
+    <div className="kpi">
+      <div className="kpi-top">
+        <div className="kpi-label">{data.label}</div>
+        <span className="kpi-icon">
+          <Icon name={data.icon} size={27} color="rgba(255,255,255,.85)" strokeWidth={2} />
+        </span>
       </div>
-      <div style={D.kpiLabel}>{data.label}</div>
-      <div style={D.kpiValue}><span style={{ whiteSpace: "nowrap" }}>{data.value}</span><span style={D.kpiUnit}>{data.unit}</span></div>
-      {hasTrend && <div style={D.kpiNote}>{data.trend.note}</div>}
-      {!hasTrend && data.subtitle && <div style={{ ...D.kpiNote, color: "#6B7280" }}>{data.subtitle}</div>}
-      {!hasTrend && !data.subtitle && <div style={{ ...D.kpiNote, color: "#BCC0C8" }}>Realtime</div>}
+      {/* satuan dipertahankan (mis. "%" di Win Rate bukan hiasan) tapi ikut
+          masuk grup yang di-center, bukan menempel rata kiri sendirian */}
+      <div className="kpi-value-group">
+        <span className="kpi-value" style={{ whiteSpace: "nowrap" }}>{data.value}</span>
+        {data.unit && <span className="kpi-unit">{data.unit}</span>}
+      </div>
+      <div className="kpi-foot">
+        {hasTrend ? (
+          <span className={up ? "trend up" : "trend down"}>
+            {up ? "▲" : "▼"} {data.trend.val}
+          </span>
+        ) : <span />}
+        <span className="kpi-hint">{data.trend?.note || data.subtitle || ""}</span>
+      </div>
       {data.progress && (
-        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, background: "#EEF0F3" }}>
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, background: "rgba(8,14,24,.35)", zIndex: 1 }}>
           <div style={{ height: "100%", width: `${data.progress.pct}%`, background: data.progress.color, transition: "width .3s" }} />
         </div>
       )}
@@ -781,7 +796,7 @@ function MqlToSqlPie({ data }) {
                 <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".05em", color: "#9AA0AC" }}>REACHED SQL</div>
               </div>
             </div>
-            <div style={{ flex: 1, minWidth: 130 }}>
+            <div style={{ flex: 1, minWidth: 190 }}>
               {slices.map((s) => (
                 <div key={s.name} style={D.legRow}>
                   <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
@@ -3083,7 +3098,7 @@ function CRMDashboardPage() {
     { label: "Total Quotation", icon: "receipt",     value: String(dashData.totalQuotations),unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
     // CANCELLED tidak masuk rumus Win Rate, tapi ikut ditampilkan di subtitle —
     // dikeluarkan dari hitungan, bukan disembunyikan dari pembaca.
-    { label: "Win Rate",        icon: "checkcircle", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
+    { label: "Win Rate",        icon: "kpiWinRate", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
       subtitle: `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled (not counted)` },
   ] : KPIS;
 
@@ -3096,7 +3111,7 @@ function CRMDashboardPage() {
       subtitle: `${dashData.visitsThisWeek} / 5 target this week`,        progress: { pct: Math.min(dashData.visitsThisWeek / 5 * 100, 100),       color: progColor(dashData.visitsThisWeek, 5, 3) } },
     { label: "Quotations This Month", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
       subtitle: `${dashData.quotationsThisMonth} / 20 target this month`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
-    { label: "Win Rate Personal",   icon: "checkcircle", value: String(dashData.winRate),             unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
+    { label: "Win Rate Personal",   icon: "kpiWinRate", value: String(dashData.winRate),             unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
       subtitle: `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled` },
   ] : KPIS;
 
@@ -3123,6 +3138,76 @@ function CRMDashboardPage() {
         .bar-in{animation:chartFade .7s ease-out both;}
         .donut-in{animation:popIn .7s cubic-bezier(.34,1.2,.5,1) both;}
         @media (prefers-reduced-motion: reduce){.bar-in,.donut-in{animation:none;}}
+
+        /* ── KPI hero card ────────────────────────────────────────────────
+           EXCEPTION PALET YANG DISETUJUI, scoped HANYA ke 4 tile KPI ini.
+           #5C6070 / #EE9A7E / #B4E0F2 / #7FBBDA / #5A9CC3 ADA DI LUAR palet
+           resmi (navy #144682 / orange #E85A1E / cream #F6EFE3) — hasil
+           eksplorasi Claude Design yang sudah di-approve. JANGAN dipakai di
+           komponen lain, dan JANGAN "dibetulkan" balik ke palet standar.
+           Ditulis sebagai CSS (bukan objek D inline) karena butuh ::before /
+           ::after yang tak bisa diekspresikan lewat style inline. */
+        .kpi{
+          position:relative; border-radius:14px; padding:32px 22px 30px;
+          overflow:hidden; border:1px solid rgba(255,255,255,.10);
+          display:flex; flex-direction:column;
+          box-shadow:0 14px 30px rgba(10,20,38,.30), 0 2px 8px rgba(10,20,38,.16);
+          background:linear-gradient(135deg,#5C6070 0%,#5C6070 50%,#EE9A7E 50%,#EE9A7E 100%);
+        }
+        /* Blob biru. Lebar tile FLUID (grid repeat(4,minmax(0,1fr)) → ±218px
+           @1280 sampai ±386px @1920, dan 2/1 kolom di bawah 1024px), jadi
+           diameter px tetap hanya proporsional benar di satu lebar layar.
+           Nilai di bawah menerjemahkan rumus proporsi desain apa adanya:
+             diameter        = 1.585 × lebar_tile   → width:158.5%
+             left            = (w − d)/2            → left:-29.25%
+             puncak dari atas= 0.36 × tinggi_tile   → top:36%
+           "aspect-ratio:1/1" mengunci lingkaran sempurna, jadi persen di sini
+           TIDAK bisa membuatnya lonjong — itu sebabnya % aman dipakai walau
+           spek awal melarangnya. "top" dipakai, bukan "bottom", karena persen
+           pada bottom mengacu ke TINGGI sementara diameter mengacu ke LEBAR;
+           menaruh puncak lingkaran lewat "top" membuat keduanya tak tercampur. */
+        .kpi::after{
+          content:""; position:absolute; z-index:0;
+          width:158.5%; aspect-ratio:1/1; left:-29.25%; top:36%;
+          border-radius:50%;
+          background:radial-gradient(circle at 34% 22%,#B4E0F2 0%,#7FBBDA 55%,#5A9CC3 100%);
+          pointer-events:none;
+        }
+        /* scrim gelap di pita bawah — bikin trend chip & hint konsisten
+           terbaca di semua tile, tak peduli dia di atas slate/peach/blob */
+        /* Alpha akhir dinaikkan .5 → .62. Dengan .5, teks hint di pita bawah
+           duduk di atas bagian terang blob dan kontrasnya cuma ±2,7:1 — di
+           bawah ambang WCAG AA 4,5:1 untuk teks 11,5px. */
+        .kpi::before{
+          content:""; position:absolute; z-index:0; inset:0; pointer-events:none;
+          background:linear-gradient(to bottom,rgba(10,16,26,0) 30%,rgba(10,16,26,.72) 82%,rgba(10,16,26,.72) 100%);
+        }
+        .kpi-top{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+        .kpi-icon{flex-shrink:0;opacity:.85;}
+        .kpi-label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.7);}
+        /* value + unit = SATU grup yang di-center. Sebelumnya hanya .kpi-value
+           yang text-align:center, sehingga angka + unit jadi satu baris rata
+           kiri — bukan angka yang berdiri simetris di tengah kartu. */
+        .kpi-value-group{
+          position:relative;z-index:1;
+          display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:38px;
+        }
+        .kpi-value{
+          font-family:'Oswald',sans-serif;font-weight:700;font-size:46px;line-height:1;
+          color:#fff;letter-spacing:.02em;margin-top:0;
+          text-shadow:0 2px 10px rgba(8,14,24,.35);
+        }
+        .kpi-unit{font-size:14px;font-weight:600;color:rgba(255,255,255,.72);}
+        /* Hint bisa 2 baris (mis. Win Rate: "N won / N deals decided · …").
+           "align-items:flex-start" + "flex-shrink:0" pada chip menjaga chip
+           tetap sejajar baris PERTAMA hint dan tak ikut mengecil saat hint
+           melebar; hint rata kanan supaya kedua barisnya lurus ke tepi kartu. */
+        .kpi-foot{position:relative;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-top:auto;padding-top:32px;}
+        .kpi-foot .trend{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700;background:rgba(8,14,24,.4);flex-shrink:0;}
+        .kpi-foot .trend.up{color:#8CFFC0;}
+        .kpi-foot .trend.down{color:#FFA98F;}
+        /* .6 → .9: bagian dari menaikkan kontras hint ke atas AA 4,5:1 */
+        .kpi-hint{font-size:11.5px;line-height:1.35;color:rgba(255,255,255,.9);text-align:right;min-width:0;}
       `}</style>
       <div style={D.wrap}>
         {/* header */}
