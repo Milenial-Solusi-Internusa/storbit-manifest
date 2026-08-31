@@ -3133,7 +3133,7 @@ function CRMDashboardPage() {
 
         /* ── KPI hero card ────────────────────────────────────────────────
            EXCEPTION PALET YANG DISETUJUI, scoped HANYA ke 4 tile KPI ini.
-           #5C6070 / #EE9A7E / #B4E0F2 / #7FBBDA / #5A9CC3 ADA DI LUAR palet
+           #5C6070 / #EEAA8D / #B4E0F2 / #7FBBDA / #5A9CC3 ADA DI LUAR palet
            resmi (navy #144682 / orange #E85A1E / cream #F6EFE3) — hasil
            eksplorasi Claude Design yang sudah di-approve. JANGAN dipakai di
            komponen lain, dan JANGAN "dibetulkan" balik ke palet standar.
@@ -3141,8 +3141,25 @@ function CRMDashboardPage() {
            ::after yang tak bisa diekspresikan lewat style inline. */
         .kpi-grid{container-type:inline-size;}
         .kpi{
-          position:relative; border-radius:14px; padding:32px 22px 30px;
-          overflow:hidden; border:1px solid rgba(255,255,255,.10);
+          position:relative; border-radius:14px;
+          /* Padding 33/23/31 = 32/22/30 lama + 1px, kompensasi border yang
+             dicabut. Geometri luar & posisi isi kartu TETAP SAMA PERSIS
+             (dulu border 1px + padding 32 = 33px dari tepi; sekarang padding
+             33 langsung).
+             Border 1px rgba(255,255,255,.10) DICABUT, bukan sekadar diwarnai
+             ulang: background kartu memakai background-clip:border-box
+             (bawaan) sehingga gradien 135deg-nya terlukis sampai border box,
+             sementara ::before/::after hanya menutup PADDING box karena
+             overflow:hidden meng-clip anak ke padding box. Akibatnya cincin
+             1px di seluruh keliling kartu memperlihatkan gradien mentah yang
+             tak tersentuh scrim — di paruh kanan-bawah warnanya peach, dan
+             terbaca sebagai garis oranye menyembul di luar kartu (paling
+             kentara di lengkung sudut kanan-bawah). background-clip:padding-box
+             menghilangkan oranyenya tapi menggantinya dengan cincin putih
+             (border jadi 10% putih di atas latar halaman), jadi border-nya
+             dilepas saja. */
+          padding:33px 23px 31px;
+          overflow:hidden;
           display:flex; flex-direction:column;
           /* Rasio 1.6:1 sebagai BATAS BAWAH, bukan kunci mati.
              JANGAN pakai "aspect-ratio" di sini. aspect-ratio membuat tinggi
@@ -3158,7 +3175,7 @@ function CRMDashboardPage() {
              lebih tinggi (layar sempit) → nol clipping. */
           min-height:calc((100cqw - 48px) / 6.4);
           box-shadow:0 14px 30px rgba(10,20,38,.30), 0 2px 8px rgba(10,20,38,.16);
-          background:linear-gradient(135deg,#5C6070 0%,#5C6070 50%,#EE9A7E 50%,#EE9A7E 100%);
+          background:linear-gradient(135deg,#5C6070 0%,#5C6070 50%,#EEAA8D 50%,#EEAA8D 100%);
         }
         /* Blob biru. Lebar tile FLUID (grid repeat(4,minmax(0,1fr)) → ±218px
            @1280 sampai ±386px @1920, dan 2/1 kolom di bawah 1024px), jadi
@@ -3194,12 +3211,24 @@ function CRMDashboardPage() {
                membuat pita gelap bergeser relatif terhadap teks, dan baris
                pertama hint 2-baris jatuh di zona terang (terukur 3,14:1, gagal
                AA). Dengan px, pita gelap selalu menutup foot berapa pun tinggi
-               kartunya. 68px menutup foot + padding bawah, 128px titik fade
-               habis. */
+               kartunya. 68px menutup foot + padding bawah, 104px titik fade
+               habis.
+           (3) Panjang fade (104px) yang mengatur seberapa gelap blob biru
+               terlihat, BUKAN alpha puncaknya. Titik blob acuan ada 96px dari
+               dasar kartu, di tengah zona fade. Dengan fade 128px alpha di
+               situ 0,44 dan blob terbaca (86,119,137) — jauh lebih gelap
+               daripada kartu referensi (99,177,203). Memendekkan fade ke
+               104px menurunkan alpha di titik itu jadi 0,18 → (121,166,188),
+               TANPA menyentuh alpha di area foot sama sekali, jadi kontras
+               tak berubah. Menurunkan alpha puncak justru pilihan buruk:
+               terukur, .62 hanya memperbaiki warna dari jarak 29 ke 29 tapi
+               menjatuhkan kontras unit ke 4,43:1 (gagal AA), dan .52 ke
+               3,49:1. Jadi kalau blob perlu lebih terang lagi, geser angka
+               104 ini — JANGAN alpha .82-nya. */
         .kpi::before{
           content:""; position:absolute; z-index:1; inset:0; pointer-events:none;
           background:linear-gradient(to top,
-            rgba(10,16,26,.82) 0, rgba(10,16,26,.82) 68px, rgba(10,16,26,0) 128px);
+            rgba(10,16,26,.82) 0, rgba(10,16,26,.82) 68px, rgba(10,16,26,0) 104px);
         }
         .kpi-top{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:8px;}
         .kpi-icon{flex-shrink:0;opacity:.85;}
