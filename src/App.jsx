@@ -488,7 +488,7 @@ const CRM_MENU_ITEMS = [
       { id: 'crm-lead-pool',          label: 'Lead Pool',          icon: Archive, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
     ],
   },
-  { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
+  { id: 'crm-inquiry',    label: 'Deal',              icon: FileText  },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList, role: ['sales','gm_bd','manager','ceo','admin','super_admin'] },
   // Rate List dipindah keluar dari grup CRM (batch restrukturisasi menu CRM #1) —

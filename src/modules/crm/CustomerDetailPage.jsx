@@ -498,7 +498,7 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry, onViewQuotation, onCrea
           <InquiryDetailBlock inq={inq} />
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, marginBottom: 10 }}>Quotation</div>
           {n === 0 ? (
-            <div style={{ fontSize: 12.5, color: INK_FAINT }}>Inquiry ini belum punya quotation.</div>
+            <div style={{ fontSize: 12.5, color: INK_FAINT }}>Deal ini belum punya quotation.</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -1156,7 +1156,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       if (error) throw error;
       setCustomer(c => ({ ...c, notes: notesDraft || null }));
       setEditNotes(false);
-      showToast?.('Notes diperbarui ✨');
+      showToast?.('Notes diperbarui');
     } catch (err) {
       showToast?.('Gagal menyimpan notes: ' + err.message, 'error');
     } finally {
@@ -1524,8 +1524,8 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       {tab === 'riwayat' && (
         <div style={S.card}>
           <div style={S.cardHead}>
-            <h3 style={S.cardHeadTitle}>Riwayat Inquiry &amp; Quotation</h3>
-            <span style={S.cardHeadSub}>{histInquiries.length} inquiry · {histQuotes.length} quotation</span>
+            <h3 style={S.cardHeadTitle}>Riwayat Deal &amp; Quotation</h3>
+            <span style={S.cardHeadSub}>{histInquiries.length} deal · {histQuotes.length} quotation</span>
           </div>
           {histLoading ? (
             <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
@@ -1758,7 +1758,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={S.banner}>
               <Icon name="alert" size={16} color="#B45309" strokeWidth={2} style={{ marginTop: 1 }} />
-              <span>Skor sementara (heuristik) — dihitung dari sinyal yang tersedia: visit, BANT, pipeline & kelengkapan profil. Parameter SOP penuh (Volume Trend, Payment Behavior, NPS, Complaint) menunggu data transaksi & survey. <b>TODO: auto-calculate.</b></span>
+              <span>Skor sementara (heuristik) — dihitung dari sinyal yang tersedia: visit, BANT, pipeline & kelengkapan profil. Parameter SOP penuh (Volume Trend, Payment Behavior, NPS, Complaint) menunggu data transaksi & survey.</span>
             </div>
             <div style={S.card}>
               <div style={S.healthTop}>

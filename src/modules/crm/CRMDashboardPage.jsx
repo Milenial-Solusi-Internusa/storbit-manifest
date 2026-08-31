@@ -12,7 +12,7 @@ import { fetchActivityFeed } from './activityFeed';
    ========================================================================= */
 
 /* ---------- brand tokens ---------- */
-const NAVY = "#1B4D8A";
+const NAVY = "#144682";
 const ORANGE = "#E85A1E";
 
 /* ---------- icons (inline lucide paths) ---------- */
@@ -205,7 +205,7 @@ const SOURCE_PALETTE = [
 ];
 
 /* ---------- avatar helper ---------- */
-const AV_COLORS = ["#1B4D8A", "#1E5894", "#1F8B4D", "#6E4B8C", "#C8521B", "#1F6B6B"];
+const AV_COLORS = ["#144682", "#1E5894", "#1F8B4D", "#6E4B8C", "#C8521B", "#1F6B6B"];
 function initials(name) { return (name || '?').split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 function avatarColor(name) { let h = 0; for (let i = 0; i < (name||'').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return AV_COLORS[h % AV_COLORS.length]; }
 
@@ -285,10 +285,14 @@ const D = {
 
   /* card */
   card: { background: "#fff", border: "1px solid #ECEDF1", borderRadius: 14, boxShadow: "0 1px 2px rgba(20,40,70,.04), 0 4px 14px rgba(20,40,70,.03)", overflow: "hidden" },
-  cardHead: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: NAVY, borderTopLeftRadius: 14, borderTopRightRadius: 14 },
-  cardIco: { width: 34, height: 34, borderRadius: 9, background: "rgba(255,255,255,.16)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 34px" },
-  cardTitle: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: "#fff", letterSpacing: -0.2 },
-  cardSub: { fontSize: 11.5, color: "rgba(255,255,255,.7)", marginTop: 1 },
+  /* Header kartu — gaya light-gray mengikuti pola Card di v3/kit.jsx (bar abu
+     muda + garis bawah + judul tinta gelap), menggantikan bar navy solid
+     berjudul putih. Nilai warnanya mencerminkan v3/tokens.js: SURFACE_2
+     #F7F8FA, LINE_SOFT #EFE9DD, INK #16243A, MUTED #6B7280, NAVY_SOFT #EAF0F8. */
+  cardHead: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "#F7F8FA", borderBottom: "1px solid #EFE9DD", borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+  cardIco: { width: 34, height: 34, borderRadius: 9, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 34px" },
+  cardTitle: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 700, fontSize: 13.5, color: "#16243A", letterSpacing: -0.2 },
+  cardSub: { fontSize: 11.5, color: "#6B7280", marginTop: 1 },
 
   /* tab navigation (below page header) */
   tabBar: { display: "flex", gap: 4, borderBottom: "1px solid #ECEDF1", marginBottom: 22 },
@@ -529,7 +533,7 @@ function PipelineByStage({ stages = STAGES, conversion = [] }) {
             <defs>
               <linearGradient id="navyBar" x1="0" y1="0" x2="1" y2="0">
                 <stop offset="0%" stopColor="#2A6FA8" />
-                <stop offset="100%" stopColor="#1B4D8A" />
+                <stop offset="100%" stopColor="#144682" />
               </linearGradient>
             </defs>
             <CartesianGrid horizontal={false} stroke="#F1F2F5" />
@@ -1101,7 +1105,7 @@ function SalesPerformance({ data = [] }) {
         <div style={D.cardIco}><Icon name="award" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Sales Performance</div>
-          <div style={D.cardSub}>Deal WON per sales — dari inquiry yang ditutup di periode aktif</div>
+          <div style={D.cardSub}>Deal WON per sales — dari deal yang ditutup di periode aktif</div>
         </div>
       </div>
       {isEmpty ? (
@@ -1387,9 +1391,9 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
 
         {/* Stage context hint */}
         <div style={{ background: st.bg, border: `1px solid ${st.dot}30`, borderRadius: 10, padding: '10px 14px', marginBottom: 20, fontSize: 12.5, color: st.fg, fontWeight: 600 }}>
-          {status === 'scheduled' && '📅 Isi agenda kunjungan yang akan dilakukan.'}
-          {status === 'completed' && '✅ Meeting selesai — isi hasil dan tindak lanjut.'}
-          {status === 'cancelled' && '❌ Kunjungan dibatalkan — isi alasan pembatalan.'}
+          {status === 'scheduled' && 'Isi agenda kunjungan yang akan dilakukan.'}
+          {status === 'completed' && 'Meeting selesai — isi hasil dan tindak lanjut.'}
+          {status === 'cancelled' && 'Kunjungan dibatalkan — isi alasan pembatalan.'}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1654,7 +1658,7 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
           <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 9, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Tutup
           </button>
-          <button onClick={onEdit} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#1B4D8A', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={onEdit} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#144682', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Edit
           </button>
         </div>
@@ -1746,9 +1750,11 @@ function DashCalendar({
             <div style={D.cardSub}>{subLabel}</div>
           </div>
         </div>
+        {/* Ikut header kartu yang kini abu muda: putih-transparan di atas navy
+            solid dulu terbaca, di latar terang jadi tak kelihatan. */}
         <button
           onClick={onAddVisit}
-          style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", borderRadius: 8, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "#EAF0F8", border: "1px solid #C3D3E8", color: NAVY, borderRadius: 8, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
           <Icon name="plus" size={14} />
           Tambah Visit
         </button>
@@ -1961,7 +1967,7 @@ function DashCalendar({
                     {/* Date badge */}
                     <div style={{ textAlign: 'center', minWidth: 40 }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' }}>{dayName}</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: '#1B4D8A', fontFamily: "'IBM Plex Mono',monospace", lineHeight: 1.1 }}>{dayNum}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#144682', fontFamily: "'IBM Plex Mono',monospace", lineHeight: 1.1 }}>{dayNum}</div>
                     </div>
                     {/* Divider */}
                     <div style={{ width: 1, height: 36, background: '#E5E7EB' }} />

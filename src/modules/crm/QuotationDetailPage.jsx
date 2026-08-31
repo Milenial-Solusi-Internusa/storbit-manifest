@@ -70,10 +70,10 @@ function SlaCard({ quot }) {
     const elapsed = Date.now() - pricingMs;
     if (elapsed > targetMs) {
       return card('#F6E0DB', '#E6BBB2', '#B23227',
-        `⚠️ SLA Terlewat! Target ${targetH} jam, sudah ${fmtDur(elapsed)} sejak pricing selesai`);
+        `SLA Terlewat! Target ${targetH} jam, sudah ${fmtDur(elapsed)} sejak pricing selesai`);
     }
     return card('#F8ECCF', '#E6CE94', '#9A6B0E',
-      `⏱ Pricing selesai ${fmtDateTime(pricing)}. Belum dikirim ke customer.`,
+      `Pricing selesai ${fmtDateTime(pricing)}. Belum dikirim ke customer.`,
       `Sudah ${fmtDur(elapsed)} sejak pricing selesai (target ${targetH} jam)`);
   }
 
@@ -283,7 +283,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
       if (!data || data.length === 0) throw new Error('Gagal mengirim: tidak ada baris ter-update (cek izin akses).');
       setQuot(q => q ? { ...q, status: 'SENT', quote_sent_at: nowIso } : q);
       setConfirmSend(false);
-      showToast?.('Quotation dikirim ke customer ✨');
+      showToast?.('Quotation dikirim ke customer');
     } catch (err) {
       showToast?.('Gagal mengirim: ' + err.message, 'error');
     } finally {
@@ -304,7 +304,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
       a.download = `${quot?.quotation_no || 'quotation'}_rev${quot?.revision ?? 1}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast?.('PDF berhasil diunduh ⬇');
+      showToast?.('PDF berhasil diunduh');
     } catch (err) {
       showToast?.('Gagal generate PDF: ' + err.message, 'error');
     } finally {

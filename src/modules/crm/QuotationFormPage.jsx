@@ -965,7 +965,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           entityId: quotation.id,
           entityLabel: quotation.quotation_no,
         }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-        showToast?.(submitNow ? 'Quotation di-submit ✨' : 'Quotation berhasil diupdate ✨');
+        showToast?.(submitNow ? 'Quotation di-submit' : 'Quotation berhasil diupdate');
       } else {
         // ── CREATE new quotation (insert; verify a row came back) ───────
         const { data: companyRow } = await supabase
@@ -1030,7 +1030,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           entityId: quot.id,
           entityLabel: quotation_no,
         }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-        showToast?.(submitNow ? 'Quotation berhasil di-submit ✨' : 'Draft quotation tersimpan ✨');
+        showToast?.(submitNow ? 'Quotation berhasil di-submit' : 'Draft quotation tersimpan');
       }
 
       onBack();

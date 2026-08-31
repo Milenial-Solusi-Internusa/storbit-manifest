@@ -110,6 +110,30 @@ export const closedFrom = (stage, labelMap = {}) =>
   (stage ? { stage, label: labelMap[stage] || stage } : null);
 export const isClosedStage = (stage) => CLOSED_STAGES.includes(stage);
 
+/* =========================================================================
+   STATUS_LABEL — SATU-SATUNYA sumber teks status deal (inquiries.status).
+
+   Tinggal di sini, bukan di salah satu halaman, karena dua layar memakainya
+   dan dulu keduanya punya salinan sendiri yang melenceng: badge di Deal List
+   menulis 'Open'/'In Review' sementara chip filternya menulis 'Baru'/'Menunggu
+   Harga' — satu status tampil dua nama di layar yang sama.
+
+   Dipakai: InquiryListPage (badge tabel, badge modal, chip filter) dan
+   PipelineKanbanPage (header lajur papan). Tambah/ubah teks CUKUP di sini.
+
+   ⚠️ Ini teks murni. Warnanya TIDAK di sini — badge Deal List punya paletnya
+   sendiri (STATUS_META), papan Pipeline punya STAGE_TONE + palet `step`-nya.
+   ========================================================================= */
+export const STATUS_LABEL = {
+  OPEN:        'Open',
+  IN_REVIEW:   'In Review',
+  QUOTED:      'Quoted',
+  NEGOTIATION: 'Negotiation',
+  WON:         'Won',
+  LOST:        'Lost',
+  CANCELLED:   'Cancelled',
+};
+
 /* ---------- urutan kanonik dua sumbu (dipakai halaman pemanggil) ---------- */
 export const LIFECYCLE_ORDER = ['lead', 'mql', 'prospect', 'sql', 'customer'];
 export const DEAL_STATUS_ORDER = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION', 'WON'];

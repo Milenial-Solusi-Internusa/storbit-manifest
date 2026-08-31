@@ -108,7 +108,7 @@ function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, assignedPro
     <div style={{ padding: '4px 0 8px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textMute }}><ChevronLeft size={18} /></button>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Inquiry List</button>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Deal List</button>
         <ChevronRight size={14} color={C.textFaint} />
         <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, fontWeight: 600 }}>Detail Deal</span>
       </div>
@@ -701,7 +701,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       notes: `${prevStatus} → LOST · alasan: ${lossReasons.find(r => r.id === values.loss_reason_id)?.name || values.loss_reason_id}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setLossOpen(false);
-    showToast?.('Inquiry ditandai KALAH.', 'success');
+    showToast?.('Deal ditandai KALAH.', 'success');
     refetch();
   }
 
@@ -881,7 +881,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     const { error } = await supabase.rpc('mark_inquiry_won', { p_inquiry_id: inquiry.id });
     setWonSaving(false);
     if (error) { showToast?.(error.message, 'error'); return; }
-    showToast?.('Inquiry ditandai WON. Akun terkait sudah jadi customer.', 'success');
+    showToast?.('Deal ditandai WON. Akun terkait sudah jadi customer.', 'success');
     refetch();
   }
 
@@ -937,7 +937,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return (
       <div style={{ margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textMute, fontFamily: BODY }}>
         <AlertCircle size={30} color={C.red} />
-        <div style={{ fontFamily: HEAD, fontSize: 16, fontWeight: 700, color: C.text }}>Inquiry tidak ditemukan</div>
+        <div style={{ fontFamily: HEAD, fontSize: 16, fontWeight: 700, color: C.text }}>Deal tidak ditemukan</div>
         <button onClick={onBack} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}><ChevronLeft size={15} />Kembali</button>
       </div>
     );
@@ -982,7 +982,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           referensi Odoo, field utama tak boleh hilang saat pindah tab). Tab bar 3 tab
           (Aktivitas/Quotation/PRF) ada DI BAWAH kartu ini, bukan di atasnya. */}
       <Card
-        title="Detail Inquiry"
+        title="Detail Deal"
         icon={<FileText size={17} />}
         right={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner || canEditValue) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

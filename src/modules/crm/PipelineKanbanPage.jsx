@@ -40,7 +40,7 @@ import ListView from './v3/ListView';
 import { Badge, OutlineBtn } from './v3/kit';
 import {
   NAVY, INK, INK_SOFT, FAINT, LINE, SURFACE, FONT_HEAD, FONT_BODY, FONT_MONO,
-  SP, RADIUS,
+  SP, RADIUS, STATUS_LABEL,
 } from './v3/tokens';
 
 /* ─── Lajur ────────────────────────────────────────────────────────────────
@@ -55,15 +55,15 @@ import {
    membacanya saat `groupedBoard` menyala, dan tanpa `step` ia jatuh balik ke
    STAGE_TONE, jadi primitifnya tetap tak mengenal kosakata papan ini. */
 const OPEN_LANES = [
-  { id: 'OPEN',        label: 'Open',
+  { id: 'OPEN',        label: STATUS_LABEL.OPEN,
     step: { bg: 'linear-gradient(135deg, #DCD2F7, #B9A3EA)', fg: '#4C3D73', sub: 'rgba(76,61,115,0.65)' } },
-  { id: 'IN_REVIEW',   label: 'In Review',
+  { id: 'IN_REVIEW',   label: STATUS_LABEL.IN_REVIEW,
     step: { bg: 'linear-gradient(135deg, #C6A6E4, #E4AECB)', fg: '#5C3653', sub: 'rgba(92,54,83,0.65)' } },
-  { id: 'QUOTED',      label: 'Quoted',
+  { id: 'QUOTED',      label: STATUS_LABEL.QUOTED,
     step: { bg: 'linear-gradient(135deg, #F0B7CB, #F5C79A)', fg: '#7A4A38', sub: 'rgba(122,74,56,0.65)' } },
   // NEGOTIATION sampai batch ini nol penulis di seluruh repo; jalur tulisnya
   // lahir bersamaan di TASK 4 (tombol "Mulai Negosiasi", gate QUOTED).
-  { id: 'NEGOTIATION', label: 'Negotiation',
+  { id: 'NEGOTIATION', label: STATUS_LABEL.NEGOTIATION,
     step: { bg: 'linear-gradient(135deg, #F6CE9C, #F6E08C)', fg: '#7A5A22', sub: 'rgba(122,90,34,0.65)' } },
 ];
 const CLOSED_LANES = [

@@ -81,7 +81,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
     const { error } = await supabase.from('top_requests').insert(payload);
     setSaving(false);
     if (error) { showToast?.('Gagal submit TOP Request: ' + error.message, 'error'); return; }
-    showToast?.('TOP Request diajukan ✨', 'success');
+    showToast?.('TOP Request diajukan', 'success');
     onClose();
   };
 

@@ -291,7 +291,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         logAudit(supabase, {
           action: ACTION_TYPES.UPDATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: inquiryId, entityLabel: editNo,
         }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-        showToast?.('Inquiry berhasil diupdate ✨');
+        showToast?.('Inquiry berhasil diupdate');
         onBack();
         return;
       }
@@ -313,7 +313,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       logAudit(supabase, {
         action: ACTION_TYPES.CREATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: null, entityLabel: inquiry_no,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.('Inquiry berhasil dibuat ✨');
+      showToast?.('Inquiry berhasil dibuat');
       onBack();
     } catch (err) {
       showToast?.('Gagal menyimpan: ' + err.message, 'error');

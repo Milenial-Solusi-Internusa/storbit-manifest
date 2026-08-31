@@ -375,7 +375,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         ({ error } = await supabase.from('accounts').insert(payload));
       }
       if (error) throw error;
-      showToast?.(initial?.id ? 'Customer diperbarui ✨' : 'Customer ditambahkan ✨');
+      showToast?.(initial?.id ? 'Customer diperbarui' : 'Customer ditambahkan');
       onSaved();
     } catch (err) {
       // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut
@@ -684,7 +684,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
         </div>
         <div style={P.actions}>
           <button type="button" className="cl-outline" style={P.outlineBtn}
-            onClick={() => { exportCsv(filtered, `customers_${entityFilter || 'all'}.csv`); showToast?.('Daftar customer di-export ✨'); }}>
+            onClick={() => { exportCsv(filtered, `customers_${entityFilter || 'all'}.csv`); showToast?.('Daftar customer di-export'); }}>
             <Ico name="download" size={16} />Export
           </button>
           <button type="button" className="cl-primary" style={P.primaryBtn} onClick={openAdd}>

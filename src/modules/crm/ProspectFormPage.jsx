@@ -294,7 +294,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         action: isEdit ? ACTION_TYPES.UPDATE_PROSPECT : ACTION_TYPES.CREATE_PROSPECT,
         entityType: ENTITY_TYPES.PROSPECT, entityId: isEdit ? prospect.id : null, entityLabel: form.name,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.(isEdit ? 'Prospect berhasil diupdate ✨' : 'Akun baru berhasil ditambahkan');
+      showToast?.(isEdit ? 'Prospect berhasil diupdate' : 'Akun baru berhasil ditambahkan');
       onBack();
     } catch (err) {
       // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut

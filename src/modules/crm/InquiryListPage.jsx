@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useAuth } from '../../contexts/useAuth';
 import InquiryPDF from './InquiryPDF';
+import { STATUS_LABEL } from './v3/tokens';
 
 const C = {
   bg:        '#F6EFE3',
@@ -37,15 +38,24 @@ const STAGE_META = {
   NEGOTIATION: { label: 'Negotiation', bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd  },
   WON:         { label: 'Won',         bg: C.okBg,      color: C.ok,      bd: C.okBd      },
   LOST:        { label: 'Lost',        bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
+  // Jaring pengaman. NURTURE ada di accounts.pipeline_stage (5 akun per 31 Agu
+  // 2026) tapi belum satu pun punya inquiry — begitu ada, tanpa entri ini kolom
+  // Stage-nya diam-diam jatuh ke '—' tanpa error. Ungu dipakai karena satu-
+  // satunya tone di palet C yang belum terpakai di peta ini, sekaligus membaca
+  // sebagai "di luar jalur funnel" — dan NURTURE memang bukan tahap progresif.
+  NURTURE:     { label: 'Nurture',     bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
 };
 
+// Warna badge status. Teksnya dirujuk dari STATUS_LABEL (v3/tokens.js) yang
+// dipakai bareng papan Pipeline — jangan tulis ulang teksnya di sini, itu yang
+// dulu bikin dua peta melenceng.
 const STATUS_META = {
-  OPEN:       { label: 'Open',       bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
-  IN_REVIEW:  { label: 'In Review',  bg: C.warnBg,    color: C.warn,    bd: C.warnBd    },
-  QUOTED:     { label: 'Quoted',     bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
-  WON:        { label: 'Won',        bg: C.okBg,      color: C.ok,      bd: C.okBd      },
-  LOST:       { label: 'Lost',       bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
-  CANCELLED:  { label: 'Cancelled',  bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
+  OPEN:       { label: STATUS_LABEL.OPEN,      bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  IN_REVIEW:  { label: STATUS_LABEL.IN_REVIEW, bg: C.warnBg,    color: C.warn,    bd: C.warnBd    },
+  QUOTED:     { label: STATUS_LABEL.QUOTED,    bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
+  WON:        { label: STATUS_LABEL.WON,       bg: C.okBg,      color: C.ok,      bd: C.okBd      },
+  LOST:       { label: STATUS_LABEL.LOST,      bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
+  CANCELLED:  { label: STATUS_LABEL.CANCELLED, bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
 };
 
 const SERVICE_TYPE_LABELS = {
@@ -54,20 +64,6 @@ const SERVICE_TYPE_LABELS = {
   trading:            'General Trading',
 };
 
-// Label ramah khusus chip filter status. STATUS_META.label sengaja TIDAK dipakai
-// di sini (nilainya 'Open' dst) — badge tabel & modal detail tetap memakainya.
-// Peta memuat semua nilai CHECK inquiries_status supaya kalau status lain mulai
-// terisi, chipnya otomatis muncul dgn label benar (yang dirender tetap hanya yang
-// punya data — lihat render). Warna chip di-reuse dari STATUS_META (bukan peta ke-2).
-const STATUS_CHIP_LABEL = {
-  OPEN:        'Baru',
-  QUOTED:      'Quoted',
-  IN_REVIEW:   'Menunggu harga',
-  NEGOTIATION: 'Negotiation',
-  WON:         'Won',
-  LOST:        'Lost',
-  CANCELLED:   'Cancelled',
-};
 // Urutan kanonik chip (progresi status). Status di luar daftar → jatuh ke akhir.
 const STATUS_ORDER = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION', 'WON', 'LOST', 'CANCELLED'];
 // Warna fallback utk status yg belum punya entri STATUS_META (mis. NEGOTIATION).
@@ -324,7 +320,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
             <FileText size={20} color={C.accent} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Inquiry List</h1>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Deal List</h1>
             <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>{total} inquiry terdaftar</p>
           </div>
         </div>
@@ -381,7 +377,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           .map(k => (
             <StatusChip
               key={k}
-              label={STATUS_CHIP_LABEL[k] || k}
+              label={STATUS_LABEL[k] || k}
               count={statusCounts[k]}
               meta={STATUS_META[k] || CHIP_FALLBACK}
               active={filterStatus === k}
