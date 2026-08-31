@@ -402,12 +402,17 @@ function KpiCard({ data }) {
           <Icon name={data.icon} size={27} color="rgba(255,255,255,.85)" strokeWidth={2} />
         </span>
       </div>
-      <div className="kpi-value">{data.value}</div>
-      {/* Slot foot selalu dirender walau kedua isinya kosong: itu yang menjaga
-          posisi Y angka besar identik di keempat tile. Satuan dipertahankan
-          (mis. "%" di Win Rate bukan hiasan), kini di pojok kiri bawah. */}
+      {/* Value + unit = SATU grup, di-center bareng ("100" + "%" dibaca
+          sebagai "100%"). Unit sengaja TIDAK lagi jadi penghuni kpi-foot. */}
+      <div className="kpi-value-group">
+        <span className="kpi-value">{data.value}</span>
+        {data.unit && <span className="kpi-unit">{data.unit}</span>}
+      </div>
+      {/* Slot foot selalu dirender walau hint-nya kosong; min-height 1 baris
+          di CSS yang menjaga tingginya tetap ada, sebab sejak unit pindah ke
+          atas slot ini bisa benar-benar kosong (3 dari 4 tile tampilan admin
+          memang tak punya subtitle). */}
       <div className="kpi-foot">
-        <span className="kpi-unit">{data.unit || ""}</span>
         <span className="kpi-hint">{data.trend?.note || data.subtitle || ""}</span>
       </div>
       {data.progress && (
@@ -3213,22 +3218,27 @@ function CRMDashboardPage() {
                AA). Dengan px, pita gelap selalu menutup foot berapa pun tinggi
                kartunya. 68px menutup foot + padding bawah, 104px titik fade
                habis.
-           (3) Panjang fade (104px) yang mengatur seberapa gelap blob biru
-               terlihat, BUKAN alpha puncaknya. Titik blob acuan ada 96px dari
-               dasar kartu, di tengah zona fade. Dengan fade 128px alpha di
-               situ 0,44 dan blob terbaca (86,119,137) — jauh lebih gelap
-               daripada kartu referensi (99,177,203). Memendekkan fade ke
-               104px menurunkan alpha di titik itu jadi 0,18 → (121,166,188),
-               TANPA menyentuh alpha di area foot sama sekali, jadi kontras
-               tak berubah. Menurunkan alpha puncak justru pilihan buruk:
-               terukur, .62 hanya memperbaiki warna dari jarak 29 ke 29 tapi
-               menjatuhkan kontras unit ke 4,43:1 (gagal AA), dan .52 ke
-               3,49:1. Jadi kalau blob perlu lebih terang lagi, geser angka
-               104 ini — JANGAN alpha .82-nya. */
+           (3) Scrim ini HANYA pengaman baris hint, bukan latar seluruh kartu.
+               62px menutup foot (padding bawah 31 + hint sampai 2 baris),
+               80px titik fade habis — cukup menaungi deretan teks bawah lalu
+               berhenti, tidak menyapu sampai ke angka.
+           (4) Alpha .60, bukan .82. Terukur pada bentuk ini hint masih
+               5,54:1 (lolos AA 4,5:1) di seluruh breakpoint; .45 menjatuhkannya
+               ke 3,67:1 dan itu batas bawahnya.
+           (5) Grup value+unit SENGAJA berada di luar jangkauan scrim. Karena
+               grup itu menyerap sisa tinggi kartu, makin lebar layar makin
+               tinggi ia naik ke bagian blob paling terang: unit terukur
+               1,4:1 di 1920+ bahkan dengan scrim tebal .82/68/104 yang lama,
+               jadi memaksanya lolos AA menuntut scrim menutupi ±45-60%
+               tinggi kartu — persis pita besar yang dibuang di sini.
+               KEPUTUSAN SADAR (Den): unit diterima sekelas kontras dengan
+               angka besar yang ia tempeli (angka itu sendiri 1,55-1,72:1 dan
+               memang sudah begitu sejak awal), dan dibantu text-shadow yang
+               sama. JANGAN "diperbaiki" dengan menebalkan scrim lagi. */
         .kpi::before{
           content:""; position:absolute; z-index:1; inset:0; pointer-events:none;
           background:linear-gradient(to top,
-            rgba(10,16,26,.82) 0, rgba(10,16,26,.82) 68px, rgba(10,16,26,0) 104px);
+            rgba(10,16,26,.60) 0, rgba(10,16,26,.60) 62px, rgba(10,16,26,0) 80px);
         }
         .kpi-top{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:8px;}
         .kpi-icon{flex-shrink:0;opacity:.85;}
@@ -3243,22 +3253,48 @@ function CRMDashboardPage() {
            kartu jadi terpotong di layar sempit. flex-shrink tetap 1, tapi
            min-height:auto bawaan flex item mencegahnya menyusut di bawah
            tinggi kontennya sendiri. */
+        /* Grup value+unit menyerap seluruh sisa tinggi (lihat catatan
+           flex:1 1 auto di atas) dan meletakkan isinya di tengah kotak itu.
+           Dipakai GRID, bukan flex: butuh align-items:baseline supaya "%"
+           duduk di garis dasar angka, SEKALIGUS align-content:center supaya
+           barisnya di tengah vertikal. Pada flex satu-baris align-content
+           tak berlaku, dan mengaktifkan flex-wrap agar berlaku justru bikin
+           unit terlempar ke baris kedua di kolom sempit. */
+        .kpi-value-group{
+          position:relative;z-index:1;flex:1 1 auto;margin:0;
+          display:grid;grid-auto-flow:column;gap:6px;
+          justify-content:center;align-content:center;align-items:baseline;
+        }
         .kpi-value{
-          position:relative;z-index:1;flex:1 1 auto;white-space:nowrap;
-          display:flex;align-items:center;justify-content:center;margin:0;
+          white-space:nowrap;
           font-family:'Oswald',sans-serif;font-weight:700;font-size:46px;line-height:1;
           color:#fff;letter-spacing:.02em;
           text-shadow:0 2px 10px rgba(8,14,24,.35);
         }
-        .kpi-unit{font-size:14px;font-weight:600;color:rgba(255,255,255,.72);}
-        /* Slot foot menempel dasar kartu dengan sendirinya karena .kpi-value
-           di atasnya flex:1 — tak perlu margin-top:auto maupun margin tetap.
-           Unit di pojok kiri, hint di pojok kanan; slot tetap dirender walau
-           kedua isinya kosong supaya tinggi Y-nya sama di keempat tile.
-           align-items:flex-end menjaga unit sejajar baris TERAKHIR hint saat
-           hint jadi 2 baris. */
-        .kpi-foot{position:relative;z-index:1;display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-top:0;}
-        .kpi-hint{font-size:11.5px;line-height:1.35;color:rgba(255,255,255,.9);text-align:right;min-width:0;}
+        .kpi-unit{font-size:14px;font-weight:600;color:rgba(255,255,255,.72);white-space:nowrap;
+          /* shadow sama persis dengan .kpi-value: unit dibaca sebagai satu
+             kesatuan dengan angka, jadi bantuan keterbacaannya pun sama. */
+          text-shadow:0 2px 10px rgba(8,14,24,.35);}
+        /* Slot foot menempel dasar kartu dengan sendirinya karena grup
+           value+unit di atasnya flex:1 1 auto — tak perlu margin-top:auto
+           maupun margin tetap.
+           min-height WAJIB: sejak unit pindah ke grup value, slot ini
+           benar-benar kosong di 3 dari 4 tile tampilan admin, dan tanpa
+           min-height tingginya runtuh ke nol sehingga grup value ikut melar
+           dan posisi Y-nya beda antar-tile.
+           Nilainya 2.7em = TEPAT DUA baris hint (2 × 1.35em), bukan satu:
+           subtitle Win Rate membungkus jadi 2 baris di lebar desktop, jadi
+           satu baris saja membuat tile itu tetap meleset 15,5px dari tiga
+           tile lain. Dengan 2 baris, keempat tile punya tinggi foot yang sama
+           tanpa ada teks yang dipotong. Sisa: di 1024 subtitle itu jadi 3
+           baris DAN label panjang ikut membungkus, sehingga identitas Y di
+           lebar itu memang tak tercapai — pilihan sadar, daripada memotong
+           teks. */
+        .kpi-foot{
+          position:relative;z-index:1;margin-top:0;
+          font-size:11.5px;line-height:1.35;min-height:2.7em;
+        }
+        .kpi-hint{display:block;font-size:11.5px;line-height:1.35;color:rgba(255,255,255,.9);text-align:center;}
         /* .nx-grid-kpi turun ke 2 kolom di bawah 1024px dan 1 kolom di bawah
            640px (src/index.css); pembagi min-height ikut berubah supaya rasio
            1.6:1 tetap jadi batas bawah yang benar di kedua mode itu. */
