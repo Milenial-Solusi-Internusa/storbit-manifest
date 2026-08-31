@@ -186,15 +186,15 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   const handleDelete = useCallback(() => {
     if (!prospect?.id) return;
-    showConfirm('Delete Prospect', `Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`, async () => {
+    showConfirm('Delete Prospect', `Delete prospect "${prospect.name}"? This action cannot be undone.`, async () => {
       closeConfirm();
       try {
         const { error } = await supabase.from('accounts').update({ deleted_at: new Date().toISOString() }).eq('id', prospect.id);
         if (error) throw error;
-        showToast?.('Prospect berhasil dihapus.', 'success');
+        showToast?.('Prospect deleted.', 'success');
         onBack?.();
       } catch (err) {
-        showToast?.('Gagal hapus prospect: ' + err.message, 'error');
+        showToast?.('Failed to delete prospect: ' + err.message, 'error');
       }
     });
   }, [prospect?.id, prospect?.name, showToast, onBack]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -220,7 +220,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       p_name: val.trim(), p_company_id: profile.company_id,
     });
     if (error || !data?.length) { setNameWarning(''); return; }
-    setNameWarning(`Mirip dengan: ${data.map(d => d.name).join(', ')} — yakin ini akun baru?`);
+    setNameWarning(`Similar to: ${data.map(d => d.name).join(', ')}. Are you sure this is a new account?`);
   };
 
   const handleStageChange = (e) => {
@@ -294,7 +294,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         action: isEdit ? ACTION_TYPES.UPDATE_PROSPECT : ACTION_TYPES.CREATE_PROSPECT,
         entityType: ENTITY_TYPES.PROSPECT, entityId: isEdit ? prospect.id : null, entityLabel: form.name,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.(isEdit ? 'Prospect berhasil diupdate' : 'Akun baru berhasil ditambahkan');
+      showToast?.(isEdit ? 'Prospect updated' : 'New account added');
       onBack();
     } catch (err) {
       // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut
@@ -304,10 +304,10 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       const isDupName = err?.code === '23505'
         && /uq_accounts_norm_name_per_entitas/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
       if (isDupName) {
-        setErrors(e => ({ ...e, name: 'Nama sudah dipakai' }));
-        showToast?.(`Akun dengan nama ini sudah ada di ${entityCode || 'entitas'} ini.`, 'error');
+        setErrors(e => ({ ...e, name: 'Name already in use' }));
+        showToast?.(`An account with this name already exists in ${entityCode || 'this entity'}.`, 'error');
       } else {
-        showToast?.('Gagal menyimpan: ' + (err?.message || 'terjadi kesalahan'), 'error');
+        showToast?.('Failed to save: ' + (err?.message || 'terjadi kesalahan'), 'error');
       }
     } finally {
       setSaving(false);
@@ -330,7 +330,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         <div style={S.headerCard}>
           <div style={{ minWidth: 0 }}>
             <h1 style={S.hTitle}>{isEdit ? 'Edit Prospect' : 'Add Prospect'}</h1>
-            <div style={S.hSub}>{isEdit ? prospect.name : 'Lengkapi data akun baru untuk masuk ke pipeline CRM.'}</div>
+            <div style={S.hSub}>{isEdit ? prospect.name : 'Complete the new account details to enter the CRM pipeline.'}</div>
           </div>
           <div style={{ display: 'flex', gap: 10, flex: '0 0 auto' }}>
             <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Cancel</button>
@@ -345,12 +345,12 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           <div style={S.secBar}>
             <div style={S.secNum}>01</div>
             <div><div style={S.secTitle}>Informasi Perusahaan</div></div>
-            <div style={S.secSub}>Identitas legal &amp; kontak calon customer</div>
+            <div style={S.secSub}>Legal identity &amp; prospective customer contact</div>
           </div>
           <div style={S.secBody}>
             <div style={{ display: 'grid', gap: 18 }}>
               {/* Row 1 — prefix + name combined */}
-              <Field label="Nama Perusahaan" required>
+              <Field label="Company Name" required>
                 <PrefixNameField
                   prefix={form.company_prefix} onPrefix={set('company_prefix')}
                   name={form.name} onName={set('name')} onNameBlur={checkDuplicateName}
@@ -362,7 +362,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
               {/* Row 2 */}
               <div style={grid3}>
-                <Field label="Legal Name"><input value={form.legal_name} onChange={set('legal_name')} style={S.input} placeholder="Nama badan hukum…" /></Field>
+                <Field label="Legal Name"><input value={form.legal_name} onChange={set('legal_name')} style={S.input} placeholder="Legal entity name…" /></Field>
                 <Field label="Customer Type">
                   <div style={selWrap}>
                     <select value={form.customer_type} onChange={set('customer_type')} style={selInput}>
@@ -382,7 +382,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
               {/* Row 3 — PIC. Read-only sejak batch "kunci pic_*" 26 Jul 2026 —
                   kelola kontak di tab Kontak (Detail Account). Field dipertahankan
                   (bukan dihapus) supaya nilai lama tetap terlihat. */}
-              <div style={{ fontSize: 12, color: C.muted, marginBottom: -4 }}>Kelola kontak di tab Kontak.</div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: -4 }}>Manage contacts in the Contacts tab.</div>
               <div style={grid3}>
                 <Field label="PIC Name"><input value={form.pic_name} disabled style={{ ...S.input, background: C.pageBg, cursor: 'not-allowed' }} /></Field>
                 <Field label="PIC Phone"><input value={form.pic_phone} disabled style={{ ...S.input, background: C.pageBg, cursor: 'not-allowed' }} /></Field>
@@ -444,7 +444,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                         </select><SelectChevron />
                       </div>
                       {!isEdit && !isSalesCreator && !form.assigned_to && (
-                        <div style={{ marginTop: 6, fontSize: 12, color: C.orange, fontWeight: 500 }}>Prospect belum di-assign ke sales.</div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: C.orange, fontWeight: 500 }}>Prospect is not assigned to a salesperson yet.</div>
                       )}
                     </>
                   )}
@@ -452,7 +452,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                 <Field label="Payment Terms">
                   <div style={selWrap}>
                     <select value={form.payment_terms_id} onChange={set('payment_terms_id')} style={selInput}>
-                      <option value="">— Pilih payment terms —</option>
+                      <option value="">— Select Payment Terms —</option>
                       {paymentTerms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select><SelectChevron />
                   </div>
@@ -468,7 +468,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           <div style={S.secBar}>
             <div style={S.secNum}>03</div>
             <div><div style={S.secTitle}>BANT Qualification</div></div>
-            <div style={S.secSub}>Skor ≥ 8/12 untuk lanjut ke tahap Qualified</div>
+            <div style={S.secSub}>Score ≥ 8/12 to move on to Qualified</div>
           </div>
           <div style={S.secBody}>
             <div style={{ marginBottom: 22 }}><BantScoreBar score={form.bant_score} /></div>
@@ -485,14 +485,14 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           <div style={S.secBar}>
             <div style={S.secNum}>04</div>
             <div><div style={S.secTitle}>Informasi Tambahan</div></div>
-            <div style={S.secSub}>Detail kargo &amp; kontak komersial prospect</div>
+            <div style={S.secSub}>Cargo details &amp; commercial contact for the prospect</div>
           </div>
           <div style={S.secBody}>
             <div style={{ display: 'grid', gap: 18 }}>
               <div style={grid3}>
-                <Field label="Komoditi"><input value={form.bant_commodity} onChange={set('bant_commodity')} style={S.input} placeholder="Jenis komoditi / barang…" /></Field>
+                <Field label="Komoditi"><input value={form.bant_commodity} onChange={set('bant_commodity')} style={S.input} placeholder="Commodity / goods type…" /></Field>
                 <Field label="Origin (POL)"><input value={form.bant_origin} onChange={set('bant_origin')} style={S.input} placeholder="Kota / port asal…" /></Field>
-                <Field label="Destination (POD)"><input value={form.bant_destination} onChange={set('bant_destination')} style={S.input} placeholder="Kota / port tujuan…" /></Field>
+                <Field label="Destination (POD)"><input value={form.bant_destination} onChange={set('bant_destination')} style={S.input} placeholder="Destination city / port…" /></Field>
               </div>
               <div style={grid3}>
                 <Field label="Frekuensi">
@@ -501,8 +501,8 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                     {BANT_FREQUENCY_OPTIONS.filter(Boolean).map(o => <option key={o} value={o} />)}
                   </datalist>
                 </Field>
-                <Field label="Vendor Saat Ini"><input value={form.bant_current_vendor} onChange={set('bant_current_vendor')} style={S.input} placeholder="Forwarder / vendor incumbent…" /></Field>
-                <Field label="Decision Maker"><input value={form.bant_decision_maker} onChange={set('bant_decision_maker')} style={S.input} placeholder="Nama / jabatan pengambil keputusan…" /></Field>
+                <Field label="Current Vendor"><input value={form.bant_current_vendor} onChange={set('bant_current_vendor')} style={S.input} placeholder="Forwarder / vendor incumbent…" /></Field>
+                <Field label="Decision Maker"><input value={form.bant_decision_maker} onChange={set('bant_decision_maker')} style={S.input} placeholder="Decision maker name / title…" /></Field>
               </div>
             </div>
           </div>
@@ -566,7 +566,7 @@ function PrefixNameField({ prefix, onPrefix, name, onName, onNameBlur, error }) 
         </select>
         <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}><ChevronDown size={15} color={C.navy} /></span>
       </div>
-      <input value={name} placeholder="Nama perusahaan…" onChange={onName} onBlur={onNameBlur ? (e) => onNameBlur(e.target.value) : undefined} onFocus={() => setF(true)}
+      <input value={name} placeholder="Company name…" onChange={onName} onBlur={onNameBlur ? (e) => onNameBlur(e.target.value) : undefined} onFocus={() => setF(true)}
         style={{ flex: 1, height: 44, border: 'none', outline: 'none', padding: '0 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, minWidth: 0 }} />
     </div>
   );

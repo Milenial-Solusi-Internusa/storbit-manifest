@@ -68,7 +68,7 @@ function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelect
           <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: FAINT }} />
           <input
             value={search || ''} onChange={(e) => onSearch?.(e.target.value)}
-            placeholder="Cari…"
+            placeholder="Search…"
             style={{
               width: '100%', padding: '8px 12px 8px 32px', borderRadius: RADIUS.md,
               border: `1px solid ${LINE}`, background: SURFACE,
@@ -162,7 +162,7 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
   if (collapsed) {
     return (
       <button
-        type="button" onClick={onToggle} title={`Buka lajur ${lane.label}`}
+        type="button" onClick={onToggle} title={`Open the ${lane.label} lane`}
         style={{
           flex: '0 0 48px', minHeight: 220, cursor: 'pointer',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: SP.s3,
@@ -185,7 +185,7 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
   const body = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
       {count === 0
-        ? <div style={{ padding: SP.s3, fontFamily: FONT_BODY, fontSize: 12, color: FAINT, textAlign: 'center' }}>Kosong</div>
+        ? <div style={{ padding: SP.s3, fontFamily: FONT_BODY, fontSize: 12, color: FAINT, textAlign: 'center' }}>Empty</div>
         : lane.items.map((it) => <div key={it.id}>{renderCard?.(it)}</div>)}
     </div>
   );
@@ -251,7 +251,7 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
 export default function ListView({
   mode = 'table', columns = [], rows = [], lanes = [], renderCard,
   search, onSearch, filters, savedViews, activeView, onSelectView, right,
-  emptyTitle = 'Tidak ada data', emptySub, groupedBoard = false,
+  emptyTitle = 'No data', emptySub, groupedBoard = false,
 }) {
   // Lajur `closed` menciut secara default; user boleh membukanya per sesi.
   const [expanded, setExpanded] = useState({});

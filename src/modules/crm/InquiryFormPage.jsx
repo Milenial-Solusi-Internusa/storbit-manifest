@@ -35,9 +35,9 @@ const INCOTERMS = ['EXW', 'FOB', 'CFR/CNF', 'CIF', 'DDU/DAP', 'DDP'];
 const CONTAINERS = ["FCL 20'", "FCL 40'", "FCL 40'HC", 'LCL'];
 const IMO_CLASSES = ['Class 1 — Explosives', 'Class 2 — Gases', 'Class 3 — Flammable Liquids', 'Class 4 — Flammable Solids', 'Class 5 — Oxidizers', 'Class 6 — Toxic', 'Class 7 — Radioactive', 'Class 8 — Corrosives', 'Class 9 — Miscellaneous'];
 const CARGO_TYPES = [
-  { id: 'normal', Icon: Package, label: 'Normal Cargo', desc: 'Kargo umum tanpa penanganan khusus' },
+  { id: 'normal', Icon: Package, label: 'Normal Cargo', desc: 'General cargo, no special handling' },
   { id: 'dg', Icon: AlertTriangle, label: 'Dangerous Goods (DG) / Hazmat', desc: 'Bahan berbahaya & beracun' },
-  { id: 'liquid', Icon: Droplets, label: 'Barang Cair (Liquid)', desc: 'Cairan, flexitank atau drum' },
+  { id: 'liquid', Icon: Droplets, label: 'Liquid Cargo', desc: 'Liquids, flexitank or drums' },
   { id: 'reefer', Icon: Thermometer, label: 'Perlu Suhu Khusus (Reefer)', desc: 'Rantai dingin / temperature-controlled' },
   { id: 'oversize', Icon: Maximize2, label: 'Oversize / Overweight', desc: 'Out-of-gauge / break bulk' },
   { id: 'permit', Icon: FileCheck, label: 'Izin Khusus (BPOM, Kementan, dll)', desc: 'Memerlukan izin instansi terkait' },
@@ -49,7 +49,7 @@ const SERVICES = [
   { id: 'insurance', Icon: Umbrella, label: 'Cargo Insurance' },
   { id: 'trucking', Icon: Truck, label: 'Trucking' },
 ];
-const MSDS_OPTS = ['Ya', 'Tidak', 'Belum Tahu'];
+const MSDS_OPTS = ['Ya', 'Tidak', 'Not Sure Yet'];
 
 // Kelompok lifecycle lifecycle_stage. Dropdown inquiry harus bisa memilih akun
 // pra-customer (lead/mql/sql/prospect) supaya trigger gerbang Fase 2 hidup.
@@ -144,7 +144,7 @@ async function generateInquiryNo(companyId, companyCode) {
   const { data, error } = await supabase.rpc('increment_document_sequence', {
     p_company_id: companyId, p_document_type: 'INQ', p_department_code: 'CRM', p_year: year, p_month: 0,
   });
-  if (error) throw new Error('Gagal generate nomor dokumen, coba lagi.');
+  if (error) throw new Error('Failed to generate the document number, please try again.');
   return `INQ/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
 }
 
@@ -239,8 +239,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
 
   const validate = () => {
     const e = {};
-    if (sourceType === 'prospect' && !form.prospect_id) e.source = 'Pilih prospect';
-    if (sourceType === 'customer' && !form.customer_id) e.source = 'Pilih customer';
+    if (sourceType === 'prospect' && !form.prospect_id) e.source = 'Select prospect';
+    if (sourceType === 'customer' && !form.customer_id) e.source = 'Select customer';
     if (!form.service_type) e.service_type = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -291,7 +291,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         logAudit(supabase, {
           action: ACTION_TYPES.UPDATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: inquiryId, entityLabel: editNo,
         }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-        showToast?.('Inquiry berhasil diupdate');
+        showToast?.('Inquiry updated');
         onBack();
         return;
       }
@@ -313,10 +313,10 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       logAudit(supabase, {
         action: ACTION_TYPES.CREATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: null, entityLabel: inquiry_no,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.('Inquiry berhasil dibuat');
+      showToast?.('Inquiry created');
       onBack();
     } catch (err) {
-      showToast?.('Gagal menyimpan: ' + err.message, 'error');
+      showToast?.('Failed to save: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -331,8 +331,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         <div style={S.headerCard}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0 }}>
-              <h1 style={S.hTitle}>{isEdit ? 'Edit Inquiry' : 'Buat Inquiry Baru'}</h1>
-              <div style={S.hSub}>Form Permintaan Penawaran (RFQ)</div>
+              <h1 style={S.hTitle}>{isEdit ? 'Edit Inquiry' : 'New Inquiry'}</h1>
+              <div style={S.hSub}>Request for Quotation (RFQ) Form</div>
             </div>
             <span style={S.inqBadge}>{isEdit ? (editNo || '—') : `INQ/MSI/${new Date().getFullYear()}/—`}</span>
           </div>
@@ -348,14 +348,14 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         <section style={S.card}>
           <div style={S.secBar}>
             <div style={S.secNum}>01</div><div style={S.secTitle}>Informasi Dasar</div>
-            <div style={S.secSub}>Sales, customer &amp; tenggat penawaran</div>
+            <div style={S.secSub}>Sales, customer &amp; quotation deadline</div>
           </div>
           <div style={S.secBody}>
             {/* auto-filled info row */}
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 0', background: '#F8FAFC', border: '1px solid ' + C.border, borderRadius: 10, padding: '16px 20px', marginBottom: 20 }}>
               <div style={S.infoChip}><User size={16} color={C.navy} /><span><span style={S.infoChipK}>Sales</span><span style={S.infoChipV}>{profile?.full_name || user?.email || '—'}</span></span></div>
               <div style={S.infoDiv} />
-              <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Tanggal Inquiry</span><span style={S.infoChipV}>{getTodayWIB().split('-').reverse().join('/')}</span></span></div>
+              <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Inquiry Date</span><span style={S.infoChipV}>{getTodayWIB().split('-').reverse().join('/')}</span></span></div>
               <div style={S.infoDiv} />
               <div style={S.infoChip}><Hash size={16} color={C.navy} /><span><span style={S.infoChipK}>No. Inquiry</span><span style={{ ...S.infoChipV, fontFamily: "'IBM Plex Mono',monospace" }}>INQ/MSI/{new Date().getFullYear()}/—</span></span></div>
             </div>
@@ -381,7 +381,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                       accounts={prospects}
                       statusLabel={lifecycleLabel}
                       inputStyle={S.input}
-                      placeholder="Cari prospect…"
+                      placeholder="Search prospects…"
                       onChangeText={(v) => { setProspectText(v); setForm(f => ({ ...f, prospect_id: '' })); }}
                       onPick={(a) => { setProspectText(a.name); setForm(f => ({ ...f, prospect_id: a.id })); }}
                     />
@@ -391,13 +391,13 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                       accounts={customers}
                       statusLabel={lifecycleLabel}
                       inputStyle={S.input}
-                      placeholder="Cari customer…"
+                      placeholder="Search customers…"
                       onChangeText={(v) => { setCustomerText(v); setForm(f => ({ ...f, customer_id: '' })); }}
                       onPick={(a) => { setCustomerText(a.name); setForm(f => ({ ...f, customer_id: a.id })); }}
                     />
                   )}
                   {sourceType === 'prospect' && prospects.length === 0 && (
-                    <span style={{ fontSize: 12, color: C.sub, marginTop: 5, display: 'block' }}>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</span>
+                    <span style={{ fontSize: 12, color: C.sub, marginTop: 5, display: 'block' }}>All accounts are currently in the Lead Pool. Claim one from the Lead Pool first to use it.</span>
                   )}
                   {errors.source && <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors.source}</span>}
                 </Field>
@@ -419,7 +419,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                     mewajibkannya untuk status OPEN. Prefix "Rp" mengikuti pola
                     modal Edit Deal; input mono + setNum mengikuti Berat/Volume
                     di bawah. Dikosongkan = NULL, bukan 0. */}
-                <Field label="Nilai Estimasi Deal">
+                <Field label="Deal Estimated Value">
                   <div style={{ position: 'relative' }}>
                     <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>Rp</span>
                     <input
@@ -432,7 +432,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   <span style={{ fontSize: 11.5, color: C.muted, marginTop: 5, display: 'block' }}>
                     {form.estimated_value !== ''
                       ? `Rp ${Number(form.estimated_value).toLocaleString('id-ID')}`
-                      : 'Opsional — boleh dikosongkan dan diisi belakangan di Detail Deal.'}
+                      : 'Optional. Can be left empty and filled in later on the Deal Detail page.'}
                   </span>
                 </Field>
               </div>
@@ -444,19 +444,19 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         <section style={S.card}>
           <div style={S.secBar}>
             <div style={S.secNum}>02</div><div style={S.secTitle}>Detail Shipment &amp; Kargo</div>
-            <div style={S.secSub}>Rute, incoterm, kontainer &amp; spesifikasi barang</div>
+            <div style={S.secSub}>Route, incoterm, container &amp; cargo specification</div>
           </div>
           <div style={S.secBody}>
             <div style={{ display: 'grid', gap: 20 }}>
               <div style={grid2}>
                 <div style={{ minWidth: 0 }}>
                   <div style={S.miniLabel}>Origin</div>
-                  <div style={S.label}><Anchor size={13} color={C.navy} /> POL — Port of Loading</div>
+                  <div style={S.label}><Anchor size={13} color={C.navy} /> POL: Port of Loading</div>
                   <input value={form.pol} onChange={set('pol')} style={S.input} placeholder="cth: Tanjung Priok - IDJKT" />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ ...S.miniLabel, color: C.orange }}>Destination</div>
-                  <div style={S.label}><MapPin size={13} color={C.orange} /> POD — Port of Discharge</div>
+                  <div style={S.label}><MapPin size={13} color={C.orange} /> POD: Port of Discharge</div>
                   <input value={form.pod} onChange={set('pod')} style={S.input} placeholder="cth: Singapore - SGSIN" />
                 </div>
               </div>
@@ -464,11 +464,11 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               <div style={grid2}>
                 <div style={{ minWidth: 0 }}>
                   <div style={S.label}><Anchor size={13} color={C.navy} /> Pickup Address</div>
-                  <textarea value={form.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Alamat penjemputan barang…" />
+                  <textarea value={form.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Cargo pickup address…" />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={S.label}><MapPin size={13} color={C.orange} /> Delivery Address</div>
-                  <textarea value={form.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Alamat pengiriman barang…" />
+                  <textarea value={form.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Cargo delivery address…" />
                 </div>
               </div>
 
@@ -487,12 +487,12 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               </div>
 
               <div style={grid2}>
-                <Field label="Nama Barang (EN)"><input value={form.goods_name} onChange={set('goods_name')} style={S.input} placeholder="e.g. Industrial Machinery" /></Field>
+                <Field label="Item Name (EN)"><input value={form.goods_name} onChange={set('goods_name')} style={S.input} placeholder="e.g. Industrial Machinery" /></Field>
                 <Field label="HS Code"><input value={form.hs_code} onChange={set('hs_code')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace" }} placeholder="0000.00.00" /></Field>
               </div>
 
               <div style={grid2}>
-                <Field label="Berat Total">
+                <Field label="Total Weight">
                   <div style={{ position: 'relative' }}>
                     <input value={form.weight_kg} onChange={setNum('weight_kg')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingRight: 56 }} placeholder="0" />
                     <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>KG</span>
@@ -522,7 +522,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         <section style={S.card}>
           <div style={S.secBar}>
             <div style={S.secNum}>03</div><div style={S.secTitle}>Checklist Kargo Khusus</div>
-            <div style={S.secSub}>Tandai karakteristik kargo untuk penanganan tepat</div>
+            <div style={S.secSub}>Flag cargo characteristics for correct handling</div>
           </div>
           <div style={S.secBody}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.orange, marginBottom: 14 }}>Kategori Kargo</div>
@@ -541,13 +541,13 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   <Field label="IMO Class">
                     <div style={{ position: 'relative' }}>
                       <select value={form.imo_class} onChange={set('imo_class')} style={selInput}>
-                        <option value="">— Pilih IMO Class —</option>
+                        <option value="">— Select IMO Class —</option>
                         {IMO_CLASSES.map(o => <option key={o} value={o}>{o}</option>)}
                       </select><Chevron />
                     </div>
                   </Field>
                 </div>
-                <div style={S.label}>Sudah Ada MSDS?</div>
+                <div style={S.label}>MSDS Available?</div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   {MSDS_OPTS.map(o => <RadioPill key={o} value={o} current={form.has_msds} onClick={() => set('has_msds')({ target: { value: o } })}>{o}</RadioPill>)}
                 </div>
@@ -559,8 +559,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         {/* SECTION 04 — Layanan Tambahan */}
         <section style={S.card}>
           <div style={S.secBar}>
-            <div style={S.secNum}>04</div><div style={S.secTitle}>Layanan Tambahan</div>
-            <div style={S.secSub}>Pilih layanan yang dibutuhkan (opsional)</div>
+            <div style={S.secNum}>04</div><div style={S.secTitle}>Additional Services</div>
+            <div style={S.secSub}>Select the services needed (optional)</div>
           </div>
           <div style={S.secBody}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
@@ -572,12 +572,12 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         {/* SECTION 05 — Notes */}
         <section style={S.card}>
           <div style={S.secBar}>
-            <div style={S.secNum}>05</div><div style={S.secTitle}>Catatan Tambahan</div>
-            <div style={S.secSub}>Instruksi khusus untuk tim operasional</div>
+            <div style={S.secNum}>05</div><div style={S.secTitle}>Additional Notes</div>
+            <div style={S.secSub}>Special instructions for the operations team</div>
           </div>
           <div style={S.secBody}>
             <textarea value={form.notes} onChange={set('notes')} rows={5} style={S.textarea}
-              placeholder="Tambahkan catatan khusus, instruksi, atau informasi tambahan yang perlu diketahui tim operasional…" />
+              placeholder="Add any special notes, instructions, or extra information the operations team should know…" />
           </div>
         </section>
 

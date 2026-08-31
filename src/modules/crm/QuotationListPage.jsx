@@ -131,7 +131,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
       setQuotations(data || []);
       setTotal(count || 0);
     } catch (err) {
-      showToast?.('Gagal memuat quotation: ' + err.message, 'error');
+      showToast?.('Failed to load quotation: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -182,7 +182,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Cari nomor quotation…"
+            placeholder="Search quotation number…"
             style={{
               width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`,
               background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13,

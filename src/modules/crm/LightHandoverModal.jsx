@@ -19,11 +19,11 @@ const TIPE_CUSTOMER = ['Direct Customer', 'Forwarder Channel', 'Hybrid'];
 const STREAM_SERVICE = ['Sea FCL', 'Sea LCL', 'Air', 'Customs JCI', 'Trucking', 'WH', 'Project', 'Storbit'];
 const SPECIAL_HANDLING = ['DG', 'Oversize', 'Time-critical', 'Customs complexity'];
 const OPS_CHECKLIST = [
-  'Customer Master di ERP sudah lengkap',
-  'Payment terms terdokumentasi dan disetujui Finance',
-  'Service type & lane terkonfirmasi feasibility ke OPS',
-  'Customer expectation terhadap transit time realistis',
-  'Documentation requirement dari customer ter-record',
+  'Customer Master in the ERP is complete',
+  'Payment terms documented and approved by Finance',
+  'Service type & lane feasibility confirmed with OPS',
+  'Customer expectations on transit time are realistic',
+  'Customer documentation requirements recorded',
 ];
 
 const lblStyle = { fontSize: 11, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 5, display: 'block' };
@@ -99,21 +99,21 @@ export default function LightHandoverModal({ account, onCancel, onSubmit }) {
 
         <div style={{ padding: 22, overflowY: 'auto' }}>
           <Section title="A — Data Customer">
-            <F label="Nama Perusahaan"><input value={account?.name || ''} readOnly style={{ ...inpStyle, background: C.surface2, color: C.inkSoft }} /></F>
+            <F label="Company Name"><input value={account?.name || ''} readOnly style={{ ...inpStyle, background: C.surface2, color: C.inkSoft }} /></F>
             <F label="NPWP"><input value={f.npwp} onChange={set('npwp')} style={inpStyle} /></F>
-            <F label="Alamat Lengkap" full><textarea rows={2} value={f.alamat} onChange={set('alamat')} style={taStyle} /></F>
-            <F label="PIC Operasional (nama · jabatan · HP · email)" full><input value={f.pic_operasional} onChange={set('pic_operasional')} style={inpStyle} /></F>
-            <F label="PIC Finance/Billing (nama · HP · email)" full><input value={f.pic_finance} onChange={set('pic_finance')} style={inpStyle} /></F>
-            <F label="Tipe Customer"><select value={f.tipe_customer} onChange={set('tipe_customer')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TIPE_CUSTOMER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Full Address" full><textarea rows={2} value={f.alamat} onChange={set('alamat')} style={taStyle} /></F>
+            <F label="Operations PIC (name · title · phone · email)" full><input value={f.pic_operasional} onChange={set('pic_operasional')} style={inpStyle} /></F>
+            <F label="Finance/Billing PIC (name · phone · email)" full><input value={f.pic_finance} onChange={set('pic_finance')} style={inpStyle} /></F>
+            <F label="Customer Type"><select value={f.tipe_customer} onChange={set('tipe_customer')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TIPE_CUSTOMER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
           </Section>
 
           <Section title="B — Deal Summary">
             <F label="Stream Service"><select value={f.stream_service} onChange={set('stream_service')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{STREAM_SERVICE.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
-            <F label="Estimasi Volume 12 Bulan"><input value={f.estimasi_volume} onChange={set('estimasi_volume')} style={inpStyle} /></F>
+            <F label="12-Month Volume Estimate"><input value={f.estimasi_volume} onChange={set('estimasi_volume')} style={inpStyle} /></F>
             <F label="Payment Terms"><select value={f.payment_terms} onChange={set('payment_terms')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{paymentTerms.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></F>
-            <F label="Credit Limit (Rp, jika TOP)"><input type="number" min="0" value={f.credit_limit} onChange={set('credit_limit')} style={inpStyle} /></F>
-            <F label="Validity Quote/Kontrak"><input type="date" value={f.validity_quote} onChange={set('validity_quote')} style={inpStyle} /></F>
-            <F label="Customer Master Setup"><select value={f.customer_master_setup} onChange={set('customer_master_setup')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option><option value="SELESAI">SELESAI</option><option value="PENDING">PENDING</option></select></F>
+            <F label="Credit Limit (Rp, if TOP)"><input type="number" min="0" value={f.credit_limit} onChange={set('credit_limit')} style={inpStyle} /></F>
+            <F label="Quote/Contract Validity"><input type="date" value={f.validity_quote} onChange={set('validity_quote')} style={inpStyle} /></F>
+            <F label="Customer Master Setup"><select value={f.customer_master_setup} onChange={set('customer_master_setup')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option><option value="SELESAI">Done</option><option value="PENDING">Pending</option></select></F>
             <F label="Special Handling" full>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 {SPECIAL_HANDLING.map(o => (

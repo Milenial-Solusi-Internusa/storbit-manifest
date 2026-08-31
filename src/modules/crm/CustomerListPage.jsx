@@ -320,7 +320,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       p_name: nameVal.trim(), p_company_id: profile.company_id,
     });
     if (error || !data?.length) { setDupWarning(''); return; }
-    setDupWarning(`Mirip dengan: ${data.map(d => d.name).join(', ')} — yakin ini akun baru?`);
+    setDupWarning(`Similar to: ${data.map(d => d.name).join(', ')}. Are you sure this is a new account?`);
   };
 
   const validate = () => {
@@ -375,7 +375,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         ({ error } = await supabase.from('accounts').insert(payload));
       }
       if (error) throw error;
-      showToast?.(initial?.id ? 'Customer diperbarui' : 'Customer ditambahkan');
+      showToast?.(initial?.id ? 'Customer updated' : 'Customer added');
       onSaved();
     } catch (err) {
       // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut
@@ -386,10 +386,10 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       const isDupName = err?.code === '23505'
         && /uq_accounts_norm_name_per_entitas/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
       if (isDupName) {
-        setErrors(e => ({ ...e, name: 'Nama sudah dipakai' }));
-        showToast?.(`Akun dengan nama ini sudah ada di ${entityCode || 'entitas'} ini.`, 'error');
+        setErrors(e => ({ ...e, name: 'Name already in use' }));
+        showToast?.(`An account with this name already exists in ${entityCode || 'this entity'}.`, 'error');
       } else {
-        showToast?.('Gagal menyimpan: ' + (err?.message || 'terjadi kesalahan'), 'error');
+        showToast?.('Failed to save: ' + (err?.message || 'terjadi kesalahan'), 'error');
       }
     } finally {
       setSaving(false);
@@ -405,7 +405,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: D.inkFaint, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>MASTER CUSTOMER</div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: D.ink, fontFamily: "'Montserrat', sans-serif" }}>
-              {initial?.id ? 'Edit Customer' : 'Tambah Customer Baru'}
+              {initial?.id ? 'Edit Customer' : 'New Customer'}
             </h2>
           </div>
           <button onClick={onClose} style={{ background: D.surface2, border: `1px solid ${D.line}`, borderRadius: 7, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -418,7 +418,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
           {/* Identitas */}
           <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 5, borderBottom: `1px solid ${D.lineSoft}` }}>Identitas</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
-            <FG label="Nama Perusahaan" req full>
+            <FG label="Company Name" req full>
               <input value={form.name} onChange={set('name')} onBlur={e => checkDuplicate(e.target.value)}
                 placeholder="PT. ..." style={{ ...INP_STYLE, borderColor: errors.name ? D.danger : D.line }} />
               {errors.name && <span style={{ fontSize: 11.5, color: D.danger, marginTop: 3 }}>{errors.name}</span>}
@@ -430,7 +430,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               )}
             </FG>
             <FG label="Legal Name">
-              <input value={form.legal_name} onChange={set('legal_name')} placeholder="Nama legal sesuai akta" style={INP_STYLE} />
+              <input value={form.legal_name} onChange={set('legal_name')} placeholder="Legal name as per the deed" style={INP_STYLE} />
             </FG>
             <FG label="Customer Type">
               <select value={form.customer_type} onChange={set('customer_type')} style={SEL_STYLE}>
@@ -467,7 +467,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               Detail Account). Field dipertahankan (bukan dihapus) supaya nilai
               lama tetap terlihat, bukan diam-diam hilang dari tampilan. */}
           <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 5, borderBottom: `1px solid ${D.lineSoft}` }}>PIC</div>
-          <div style={{ fontSize: 12, color: D.inkFaint, marginBottom: 12, marginTop: -6 }}>Kelola kontak di tab Kontak.</div>
+          <div style={{ fontSize: 12, color: D.inkFaint, marginBottom: 12, marginTop: -6 }}>Manage contacts in the Contacts tab.</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
             <FG label="PIC Name"><input value={form.pic_name} disabled style={{ ...INP_STYLE, background: D.surface2, cursor: 'not-allowed' }} /></FG>
             <FG label="PIC Phone"><input value={form.pic_phone} disabled style={{ ...INP_STYLE, background: D.surface2, cursor: 'not-allowed' }} /></FG>
@@ -479,7 +479,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
             <FG label="Tier">
               <select value={form.tier} onChange={set('tier')} style={SEL_STYLE}>
-                <option value="">— Pilih tier —</option>
+                <option value="">— Select Tier —</option>
                 {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </FG>
@@ -515,13 +515,13 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
 
           {/* Notes */}
           <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 5, borderBottom: `1px solid ${D.lineSoft}` }}>Notes</div>
-          <textarea value={form.notes} onChange={set('notes')} rows={3} placeholder="Catatan tambahan..." style={{ ...INP_STYLE, height: 'auto', padding: '9px 11px', resize: 'vertical' }} />
+          <textarea value={form.notes} onChange={set('notes')} rows={3} placeholder="Additional notes..." style={{ ...INP_STYLE, height: 'auto', padding: '9px 11px', resize: 'vertical' }} />
 
           {/* Footer */}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, paddingTop: 16, borderTop: `1px solid ${D.lineSoft}` }}>
             <Btn onClick={onClose} disabled={saving}>Cancel</Btn>
             <Btn primary onClick={handleSave} disabled={saving} icon={Save}>
-              {saving ? 'Saving…' : (initial?.id ? 'Save Changes' : 'Tambah Customer')}
+              {saving ? 'Saving…' : (initial?.id ? 'Save Changes' : 'Add Customer')}
             </Btn>
           </div>
         </div>
@@ -536,7 +536,7 @@ const ENTITY_HEADER = {
   MSI:        { title: 'Customer MSI', sub: 'Customer freight forwarding MSI' },
   JCI:        { title: 'Customer JCI', sub: 'Customer customs & PPJK JCI' },
   SOA:        { title: 'Customer SOA', sub: 'Customer trading Storbit' },
-  FREE_AGENT: { title: 'Free Agent',   sub: 'Customer tidak terikat entitas' },
+  FREE_AGENT: { title: 'Free Agent',   sub: 'Customer not tied to an entity' },
 };
 
 // Lightweight client-side CSV export of the currently-filtered rows.
@@ -684,7 +684,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
         </div>
         <div style={P.actions}>
           <button type="button" className="cl-outline" style={P.outlineBtn}
-            onClick={() => { exportCsv(filtered, `customers_${entityFilter || 'all'}.csv`); showToast?.('Daftar customer di-export'); }}>
+            onClick={() => { exportCsv(filtered, `customers_${entityFilter || 'all'}.csv`); showToast?.('Customer list exported'); }}>
             <Ico name="download" size={16} />Export
           </button>
           <button type="button" className="cl-primary" style={P.primaryBtn} onClick={openAdd}>
@@ -696,9 +696,9 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
       {/* Stat cards */}
       <div style={P.statsRow} className="cl-stats">
         <StatCard label="Total Customer" value={total}     hint="customer terdaftar"     icon="users"     iconBg="#EAF0F8" iconFg={NAVY} />
-        <StatCard label="Active"         value={activeCnt} hint={`dari ${total} customer`} icon="usercheck" iconBg="#DEF0E4" iconFg="#1F8B4D" />
+        <StatCard label="Active"         value={activeCnt} hint={`of ${total} customers`} icon="usercheck" iconBg="#DEF0E4" iconFg="#1F8B4D" />
         <StatCard label="Tier A"         value={tierACnt}  hint="customer prioritas"      icon="award"     iconBg="#F7EAC4" iconFg="#8A6A12" />
-        <StatCard label="Free Agent"     value={freeCnt}   hint="tanpa entitas"           icon="usercog"   iconBg="#FBE6DA" iconFg="#C8521B" />
+        <StatCard label="Free Agent"     value={freeCnt}   hint="without entity"           icon="usercog"   iconBg="#FBE6DA" iconFg="#C8521B" />
       </div>
 
       {/* Table card */}
@@ -707,12 +707,12 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
         <div style={P.filterBar}>
           <div style={P.searchWrap}>
             <span style={P.searchIco}><Ico name="search" size={16} /></span>
-            <input className="cl-inp" style={P.searchInput} placeholder="Cari nama, legal name, code, PIC…"
+            <input className="cl-inp" style={P.searchInput} placeholder="Search name, legal name, code, PIC…"
               value={rawSearch} onChange={(e) => handleSearch(e.target.value)} />
           </div>
           <div style={P.selectWrap}>
             <select className="cl-sel" style={P.select} value={filterTier} onChange={(e) => setFilterTier(e.target.value)}>
-              <option value="all">Semua Tier</option>
+              <option value="all">All Tiers</option>
               {TIERS.map(t => <option key={t} value={t}>Tier {t}</option>)}
             </select>
             <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
@@ -744,7 +744,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
             <thead>
               <tr>
                 <th style={P.th}>Customer Code</th>
-                <th style={P.th}>Nama Perusahaan</th>
+                <th style={P.th}>Company Name</th>
                 <th style={P.th}>Legal Name</th>
                 <th style={P.th}>PIC Name</th>
                 <th style={P.th}>Tier</th>
@@ -759,7 +759,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
                 <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>Loading data…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>
-                  {search || filterStatus !== 'customer' || filterCo !== 'all' || filterTier !== 'all' ? 'Tidak ada customer yang cocok dengan filter.' : 'Belum ada data customer.'}
+                  {search || filterStatus !== 'customer' || filterCo !== 'all' || filterTier !== 'all' ? 'No customers match the filter.' : 'No customer data yet.'}
                 </td></tr>
               ) : (
                 filtered.map((c, i) => (

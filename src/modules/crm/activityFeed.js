@@ -30,7 +30,7 @@ export function feedTimeAgo(iso) {
   if (!iso) return '—';
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (diff < 0)     return 'just now';
-  if (diff < 60)    return `${diff} detik lalu`;
+  if (diff < 60)    return `${diff} seconds ago`;
   if (diff < 3600)  return `${Math.floor(diff / 60)} minutes ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
   return `${Math.floor(diff / 86400)} days ago`;
@@ -101,28 +101,28 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
   const events = [];
   (accRes.data || []).forEach(r => events.push({
     id: 'acc-' + r.id, timestamp: r.created_at, type: 'prospect', actType: null,
-    title: 'Prospect baru', subtitle: r.name || '(unnamed)',
+    title: 'New prospect', subtitle: r.name || '(unnamed)',
     user_id: r.created_by || r.assigned_to || null, icon: 'UserPlus',
   }));
   (inqRes.data || []).forEach(r => events.push({
     id: 'inq-' + r.id, timestamp: r.created_at, type: 'inquiry', actType: null,
-    title: 'Inquiry baru',
+    title: 'New inquiry',
     subtitle: [r.inquiry_no, r.customer?.name || r.prospect?.name].filter(Boolean).join(' — ') || '—',
     user_id: r.created_by || null, icon: 'FileText',
   }));
   (quoRes.data || []).forEach(r => events.push({
     id: 'quo-' + r.id, timestamp: r.created_at, type: 'quotation', actType: null,
-    title: 'Quotation baru',
+    title: 'New quotation',
     subtitle: [r.quotation_no, r.customer?.name || r.prospect?.name].filter(Boolean).join(' — ') || '—',
     user_id: r.created_by || null, icon: 'FileCheck',
   }));
   (actRes.data || []).forEach(r => {
     const act = r.activity || {};
     const title =
-      (r.from_status == null && r.to_status === 'todo') ? 'Aktivitas baru' :
-      r.to_status === 'done'      ? 'Aktivitas selesai' :
-      r.to_status === 'cancelled' ? 'Aktivitas dibatalkan' :
-      r.to_status === 'edited'    ? 'Aktivitas diubah' :
+      (r.from_status == null && r.to_status === 'todo') ? 'New activity' :
+      r.to_status === 'done'      ? 'Activity completed' :
+      r.to_status === 'cancelled' ? 'Activity cancelled' :
+      r.to_status === 'edited'    ? 'Activity edited' :
       'Aktivitas';
     events.push({
       id: 'actlog-' + r.id, timestamp: r.changed_at, type: 'activity', actType: act.type,
@@ -147,7 +147,7 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
   }
   events.forEach(e => {
     e.user_name = e.user_id ? (nameMap[e.user_id] || null) : null;
-    if (e.type === 'login') e.subtitle = e.user_name || 'Pengguna';
+    if (e.type === 'login') e.subtitle = e.user_name || 'User';
   });
 
   events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));

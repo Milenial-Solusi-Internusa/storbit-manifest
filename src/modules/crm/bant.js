@@ -10,10 +10,10 @@ export const BANT_DIMENSIONS = [
     label: 'Budget',
     description: 'Seberapa jelas budget customer?',
     options: [
-      { value: 0, label: 'Tidak ada indikasi budget' },
-      { value: 1, label: 'Ada budget tapi value tidak konfirm' },
+      { value: 0, label: 'No budget indication' },
+      { value: 1, label: 'Budget exists but value not confirmed' },
       { value: 2, label: 'Value range diketahui' },
-      { value: 3, label: 'Value & approval channel terkonfirmasi' },
+      { value: 3, label: 'Value & approval channel confirmed' },
     ],
   },
   {
@@ -21,7 +21,7 @@ export const BANT_DIMENSIONS = [
     label: 'Authority',
     description: 'Siapa decision maker?',
     options: [
-      { value: 0, label: 'Tidak ada PIC' },
+      { value: 0, label: 'No PIC' },
       { value: 1, label: 'Engaged 1 stakeholder operational' },
       { value: 2, label: 'Decision-maker identified' },
       { value: 3, label: 'Decision-maker engaged direct' },
@@ -32,21 +32,21 @@ export const BANT_DIMENSIONS = [
     label: 'Need',
     description: 'Seberapa jelas kebutuhan customer?',
     options: [
-      { value: 0, label: 'Pain tidak jelas' },
+      { value: 0, label: 'Pain is unclear' },
       { value: 1, label: 'Pain general (cost/transit)' },
-      { value: 2, label: 'Pain spesifik dengan context' },
+      { value: 2, label: 'Specific pain with context' },
       { value: 3, label: 'Pain quantified + alternative explored' },
     ],
   },
   {
     key: 'bant_timeline',
     label: 'Timeline',
-    description: 'Kapan customer siap mulai?',
+    description: 'When is the customer ready to start?',
     options: [
       { value: 0, label: 'Exploratory only' },
-      { value: 1, label: '6+ bulan' },
-      { value: 2, label: '1-3 bulan' },
-      { value: 3, label: 'Immediate (≤30 hari)' },
+      { value: 1, label: '6+ months' },
+      { value: 2, label: '1-3 months' },
+      { value: 3, label: 'Immediate (≤30 days)' },
     ],
   },
 ];
@@ -68,14 +68,14 @@ export const bantQualifyGate = (account) => {
     return {
       verdict: 'block',
       score,
-      message: `BANT score terlalu rendah (${score}/12). Lengkapi qualification dulu sebelum Qualified.`,
+      message: `BANT score is too low (${score}/12). Complete the qualification before moving to Qualified.`,
     };
   }
   if (score < 8) {
     return {
       verdict: 'confirm',
       score,
-      message: `BANT score ${score}/12 — prospect masih perlu di-nurture. Yakin pindah ke Qualified?`,
+      message: `BANT score ${score}/12 — this prospect still needs nurturing. Move to Qualified anyway?`,
     };
   }
   return { verdict: 'pass', score };
@@ -97,7 +97,7 @@ export const BANT_SCORE_FIELDS = [
 
 // Opsi dropdown lama (dipertahankan utk kompatibilitas import yang mungkin ada).
 export const BANT_FREQUENCY_OPTIONS = [
-  '', 'Rutin Mingguan', 'Rutin Bulanan', 'Per Kuartal', 'Tidak Menentu', 'Proyek',
+  '', 'Rutin Mingguan', 'Rutin Bulanan', 'Per Kuartal', 'Undetermined', 'Proyek',
 ];
 export const BANT_PAYMENT_OPTIONS = [
   '', 'Cash Before Delivery (CBD)', 'TOP 7', 'TOP 14', 'TOP 30', 'TOP 45', 'TOP 60',

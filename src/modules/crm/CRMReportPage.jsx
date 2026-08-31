@@ -341,7 +341,7 @@ export default function CRMReportPage() {
       .catch((e) => {
         if (cancelled) return;
         console.debug("[CRMReport] data fetch failed:", e?.message || e);
-        setErrorMsg(e?.message || "Gagal memuat data report.");
+        setErrorMsg(e?.message || "Failed to load report data.");
         setLoading(false);
       });
     return () => { cancelled = true; };
@@ -446,14 +446,14 @@ export default function CRMReportPage() {
     { key: "pending", name: "Pending", color: C.amber, Icon: Ic.Clock, val: k.pending, prev: kPrev.pending, goodWhenDown: true },
     { key: "overdue", name: "Overdue", color: C.red, Icon: Ic.AlertCircle, val: k.overdue, prev: kPrev.overdue, goodWhenDown: true },
     { key: "cancelled", name: "Dibatalkan", color: C.gray500, Icon: Ic.XCircle, val: cancelledCount, prev: prevCancelledCount, goodWhenDown: true },
-    { key: "prospect", name: "Akun Baru", color: C.purple, Icon: Ic.UserPlus, val: k.prospect, prev: kPrev.prospect },
-    { key: "quotation", name: "Quotation Dikirim", color: C.orange, Icon: Ic.FileText, val: k.quotation, prev: kPrev.quotation },
+    { key: "prospect", name: "New Accounts", color: C.purple, Icon: Ic.UserPlus, val: k.prospect, prev: kPrev.prospect },
+    { key: "quotation", name: "Quotations Sent", color: C.orange, Icon: Ic.FileText, val: k.quotation, prev: kPrev.quotation },
   ];
 
   const salesLabel = (() => {
     const ids = [...effSalesIds];
     if (salesList.length && ids.length === salesList.length) return "All Salespeople";
-    if (ids.length === 0) return "Tidak ada Sales";
+    if (ids.length === 0) return "No salesperson";
     if (ids.length === 1) return (salesList.find((s) => s.id === ids[0]) || {}).name || "1 Sales";
     return ids.length + " Sales";
   })();
@@ -491,11 +491,11 @@ export default function CRMReportPage() {
       const slug = (s) => String(s).replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "");
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Laporan-Aktivitas-${slug(salesLabel)}-${slug(periodLabel)}-${ymd(now)}.pdf`;
+      a.download = `Activity-Report-${slug(salesLabel)}-${slug(periodLabel)}-${ymd(now)}.pdf`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1500);
     } catch (err) {
-      window.alert("Gagal generate PDF: " + (err?.message || err));
+      window.alert("Failed to generate PDF: " + (err?.message || err));
     } finally {
       setExporting(false);
     }
@@ -532,8 +532,8 @@ export default function CRMReportPage() {
 
           {period === "custom" && (
             <div style={st.dateRange}>
-              <span style={{ color: C.gray400, fontSize: 12 }}>Rentang</span>
-              <strong style={{ fontSize: 13, color: C.navy }}>Hari ini</strong>
+              <span style={{ color: C.gray400, fontSize: 12 }}>Range</span>
+              <strong style={{ fontSize: 13, color: C.navy }}>Today</strong>
             </div>
           )}
 
@@ -551,7 +551,7 @@ export default function CRMReportPage() {
                   <Ic.Search style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, fill: "none", stroke: C.gray400, strokeWidth: 2.2 }} />
                   <input
                     className="crm-input"
-                    placeholder="Cari sales…"
+                    placeholder="Search salespeople…"
                     value={salesQuery}
                     onChange={(e) => setSalesQuery(e.target.value)}
                     style={st.dropInput}
@@ -580,7 +580,7 @@ export default function CRMReportPage() {
                   </label>
                 ))}
                 {salesList.length === 0 && (
-                  <div style={{ padding: "8px", fontSize: 12.5, color: C.gray400 }}>Tidak ada sales</div>
+                  <div style={{ padding: "8px", fontSize: 12.5, color: C.gray400 }}>No salespeople</div>
                 )}
               </div>,
               document.body
@@ -618,7 +618,7 @@ export default function CRMReportPage() {
             className="crm-pill"
             onClick={handleExportPDF}
             disabled={!canExport || exporting}
-            title={canExport ? "Export laporan ke PDF" : "Tidak ada aktivitas untuk diekspor"}
+            title={canExport ? "Export report to PDF" : "No activity to export"}
             style={{
               display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 16px",
               borderRadius: 11, border: "none", background: C.orange, color: "#fff",
@@ -629,7 +629,7 @@ export default function CRMReportPage() {
             }}
           >
             <Ic.Download style={{ width: 15, height: 15, fill: "none", stroke: "#fff", strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round" }} />
-            {exporting ? "Membuat…" : "Export PDF"}
+            {exporting ? "Generating…" : "Export PDF"}
           </button>
         </div>
       </div>
@@ -638,7 +638,7 @@ export default function CRMReportPage() {
       {loading ? (
         <div style={{ ...st.body, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 320, gap: 14 }}>
           <div className="crm-spinner" />
-          <div style={{ color: C.gray500, fontSize: 13.5 }}>Memuat data report…</div>
+          <div style={{ color: C.gray500, fontSize: 13.5 }}>Loading report data…</div>
         </div>
       ) : errorMsg ? (
         <div style={{ ...st.body, textAlign: "center", color: C.red, padding: "60px 24px" }}>
@@ -665,7 +665,7 @@ export default function CRMReportPage() {
                   <span style={st.trendChip}>
                     {up ? "▲" : "▼"} {Math.abs(change)}%
                   </span>
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>vs periode lalu</span>
+                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>vs previous period</span>
                 </div>
               </div>
             );
@@ -679,7 +679,7 @@ export default function CRMReportPage() {
             <div style={st.panelHead}>
               <div>
                 <div style={st.sectionLabel}>Tren Aktivitas</div>
-                <div style={st.panelSub}>Total · Selesai · Pending</div>
+                <div style={st.panelSub}>Total · Done · Pending</div>
               </div>
               <LegendDots items={[["Total", C.navy], ["Selesai", C.teal], ["Pending", C.amber]]} />
             </div>
@@ -742,7 +742,7 @@ export default function CRMReportPage() {
               <thead>
                 <tr>
                   <Th label="#" />
-                  <Th label="Nama Sales" col="name" sort={sort} onClick={clickSort} align="left" />
+                  <Th label="Salesperson Name" col="name" sort={sort} onClick={clickSort} align="left" />
                   <Th label="Call" col="call" sort={sort} onClick={clickSort} />
                   <Th label="Visit" col="visit" sort={sort} onClick={clickSort} />
                   <Th label="Task" col="task" sort={sort} onClick={clickSort} />
@@ -750,7 +750,7 @@ export default function CRMReportPage() {
                   <Th label="Selesai" col="done" sort={sort} onClick={clickSort} />
                   <Th label="Pending" col="pending" sort={sort} onClick={clickSort} />
                   <Th label="Overdue" col="overdue" sort={sort} onClick={clickSort} />
-                  <Th label="Akun Baru" col="prospect" sort={sort} onClick={clickSort} />
+                  <Th label="New Accounts" col="prospect" sort={sort} onClick={clickSort} />
                   <Th label="Quotation" col="quotation" sort={sort} onClick={clickSort} />
                   <Th label="Win Rate" col="winRate" sort={sort} onClick={clickSort} align="left" />
                 </tr>
@@ -785,7 +785,7 @@ export default function CRMReportPage() {
                   </tr>
                 ))}
                 {sortedRows.length === 0 && (
-                  <tr><td colSpan={12} style={{ ...st.td, padding: 40, color: C.gray400 }}>Tidak ada data untuk filter ini.</td></tr>
+                  <tr><td colSpan={12} style={{ ...st.td, padding: 40, color: C.gray400 }}>No data for this filter.</td></tr>
                 )}
               </tbody>
             </table>
@@ -817,7 +817,7 @@ export default function CRMReportPage() {
                 <thead>
                   <tr>
                     <th style={{ ...st.th, textAlign: "left" }}>Date</th>
-                    <th style={{ ...st.th, textAlign: "left" }}>Tipe</th>
+                    <th style={{ ...st.th, textAlign: "left" }}>Type</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Status</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Customer</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Sales</th>
@@ -845,7 +845,7 @@ export default function CRMReportPage() {
                     </tr>
                   ))}
                   {shownActs.length === 0 && (
-                    <tr><td colSpan={6} style={{ ...st.td, padding: 32, textAlign: "center", color: C.gray400 }}>Tidak ada aktivitas.</td></tr>
+                    <tr><td colSpan={6} style={{ ...st.td, padding: 32, textAlign: "center", color: C.gray400 }}>No activity.</td></tr>
                   )}
                 </tbody>
               </table>

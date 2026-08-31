@@ -54,7 +54,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
   const num = (v) => v !== '' ? Number(v) : null;
 
   const submit = async () => {
-    if (!profile?.company_id) { showToast?.('Company tidak ditemukan', 'error'); return; }
+    if (!profile?.company_id) { showToast?.('Company not found', 'error'); return; }
     setSaving(true);
     const payload = {
       company_id: profile.company_id,
@@ -80,8 +80,8 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
     };
     const { error } = await supabase.from('top_requests').insert(payload);
     setSaving(false);
-    if (error) { showToast?.('Gagal submit TOP Request: ' + error.message, 'error'); return; }
-    showToast?.('TOP Request diajukan', 'success');
+    if (error) { showToast?.('Failed to submit TOP Request: ' + error.message, 'error'); return; }
+    showToast?.('TOP Request submitted', 'success');
     onClose();
   };
 
@@ -99,7 +99,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
 
         <div style={{ padding: 22, overflowY: 'auto' }}>
           <Section title="A — Identitas Perusahaan">
-            <F label="Nama Perusahaan"><input value={account?.name || ''} readOnly style={{ ...inpStyle, background: C.surface2, color: C.inkSoft }} /></F>
+            <F label="Company Name"><input value={account?.name || ''} readOnly style={{ ...inpStyle, background: C.surface2, color: C.inkSoft }} /></F>
             <F label="Status PKP"><select value={f.status_pkp} onChange={set('status_pkp')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{PKP.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Alamat Kantor" full><textarea rows={2} value={f.alamat_kantor} onChange={set('alamat_kantor')} style={taStyle} /></F>
             <F label="Alamat Gudang" full><textarea rows={2} value={f.alamat_gudang} onChange={set('alamat_gudang')} style={taStyle} /></F>
@@ -108,14 +108,14 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
             <F label="Website"><input value={f.website} onChange={set('website')} style={inpStyle} /></F>
             <F label="NPWP"><input value={f.npwp} onChange={set('npwp')} style={inpStyle} /></F>
             <F label="NIB"><input value={f.nib} onChange={set('nib')} style={inpStyle} /></F>
-            <F label="Direktur — Nama"><input value={f.direktur_nama} onChange={set('direktur_nama')} style={inpStyle} /></F>
+            <F label="Director — Name"><input value={f.direktur_nama} onChange={set('direktur_nama')} style={inpStyle} /></F>
             <F label="Direktur — KTP"><input value={f.direktur_ktp} onChange={set('direktur_ktp')} style={inpStyle} /></F>
           </Section>
 
           <Section title="B — Profil Bisnis">
             <F label="Industri"><input value={f.industri} onChange={set('industri')} style={inpStyle} /></F>
-            <F label="Tahun Berdiri"><input value={f.tahun_berdiri} onChange={set('tahun_berdiri')} style={inpStyle} /></F>
-            <F label="Jumlah Karyawan"><input value={f.jumlah_karyawan} onChange={set('jumlah_karyawan')} style={inpStyle} /></F>
+            <F label="Year Established"><input value={f.tahun_berdiri} onChange={set('tahun_berdiri')} style={inpStyle} /></F>
+            <F label="Number of Employees"><input value={f.jumlah_karyawan} onChange={set('jumlah_karyawan')} style={inpStyle} /></F>
             <F label="Revenue Tahunan"><select value={f.revenue_tahunan} onChange={set('revenue_tahunan')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{REVENUE.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Produk/Service Utama" full><input value={f.produk_utama} onChange={set('produk_utama')} style={inpStyle} /></F>
             <F label="Customer Utama (3)" full><textarea rows={2} value={f.customer_utama} onChange={set('customer_utama')} style={taStyle} /></F>
@@ -128,16 +128,16 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
             <F label="Total Liabilities (Rp)"><input type="number" min="0" value={f.total_liabilities} onChange={set('total_liabilities')} style={inpStyle} /></F>
             <F label="Annual Revenue (Rp)"><input type="number" min="0" value={f.annual_revenue} onChange={set('annual_revenue')} style={inpStyle} /></F>
             <F label="Net Profit Margin (%)"><input value={f.net_profit_margin} onChange={set('net_profit_margin')} style={inpStyle} /></F>
-            <F label="Laporan Keuangan"><select value={f.laporan_keuangan} onChange={set('laporan_keuangan')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{LAPKEU.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Financial Statements"><select value={f.laporan_keuangan} onChange={set('laporan_keuangan')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{LAPKEU.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Outstanding Hutang ke Forwarder Lain"><input value={f.outstanding_hutang} onChange={set('outstanding_hutang')} style={inpStyle} /></F>
           </Section>
 
           <Section title="D — Referensi Bank">
-            <F label="Bank 1 — Nama"><input value={f.bank_1_nama} onChange={set('bank_1_nama')} style={inpStyle} /></F>
+            <F label="Bank 1 — Name"><input value={f.bank_1_nama} onChange={set('bank_1_nama')} style={inpStyle} /></F>
             <F label="Bank 1 — No Rekening"><input value={f.bank_1_rekening} onChange={set('bank_1_rekening')} style={inpStyle} /></F>
             <F label="Bank 1 — Cabang"><input value={f.bank_1_cabang} onChange={set('bank_1_cabang')} style={inpStyle} /></F>
             <F label="Bank 1 — Contact Person"><input value={f.bank_1_contact} onChange={set('bank_1_contact')} style={inpStyle} /></F>
-            <F label="Bank 2 — Nama"><input value={f.bank_2_nama} onChange={set('bank_2_nama')} style={inpStyle} /></F>
+            <F label="Bank 2 — Name"><input value={f.bank_2_nama} onChange={set('bank_2_nama')} style={inpStyle} /></F>
             <F label="Bank 2 — No Rekening"><input value={f.bank_2_rekening} onChange={set('bank_2_rekening')} style={inpStyle} /></F>
             <F label="Bank 2 — Cabang"><input value={f.bank_2_cabang} onChange={set('bank_2_cabang')} style={inpStyle} /></F>
             <F label="Bank 2 — Contact Person"><input value={f.bank_2_contact} onChange={set('bank_2_contact')} style={inpStyle} /></F>
@@ -149,7 +149,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
               <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
                 <input placeholder={`Ref ${i + 1} — Perusahaan`} value={r.nama} onChange={setTrade_(i, 'nama')} style={{ ...inpStyle, height: 34 }} />
                 <input placeholder="PIC + No HP" value={r.pic} onChange={setTrade_(i, 'pic')} style={{ ...inpStyle, height: 34 }} />
-                <input placeholder="Jenis Hubungan" value={r.hubungan} onChange={setTrade_(i, 'hubungan')} style={{ ...inpStyle, height: 34 }} />
+                <input placeholder="Relationship Type" value={r.hubungan} onChange={setTrade_(i, 'hubungan')} style={{ ...inpStyle, height: 34 }} />
                 <input placeholder="TOP" value={r.top} onChange={setTrade_(i, 'top')} style={{ ...inpStyle, height: 34 }} />
               </div>
             ))}
@@ -158,9 +158,9 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
           <Section title="F — Permohonan Kredit">
             <F label="TOP Requested"><select value={f.top_requested} onChange={set('top_requested')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TOP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Credit Limit Diminta (Rp)"><input type="number" min="0" value={f.credit_limit_diminta} onChange={set('credit_limit_diminta')} style={inpStyle} /></F>
-            <F label="Service yang Akan Dipakai"><input value={f.service_type} onChange={set('service_type')} style={inpStyle} /></F>
+            <F label="Services to Be Used"><input value={f.service_type} onChange={set('service_type')} style={inpStyle} /></F>
             <F label="Estimasi Volume"><input value={f.estimasi_volume} onChange={set('estimasi_volume')} style={inpStyle} /></F>
-            <F label="Alasan TOP" full><textarea rows={2} value={f.alasan_top} onChange={set('alasan_top')} style={taStyle} /></F>
+            <F label="TOP Reason" full><textarea rows={2} value={f.alasan_top} onChange={set('alasan_top')} style={taStyle} /></F>
           </Section>
         </div>
 

@@ -109,7 +109,7 @@ function RateEditor({ initial, onBack, onSaved, showToast }) {
     if (!rateName.trim()) e.rateName = 'Required';
     setErrors(e);
     if (Object.keys(e).length) return;
-    if (!profile?.company_id) { showToast?.('Company tidak ditemukan untuk user ini', 'error'); return; }
+    if (!profile?.company_id) { showToast?.('Company not found for this user', 'error'); return; }
     setSaving(true);
     try {
       const payload = {
@@ -128,10 +128,10 @@ function RateEditor({ initial, onBack, onSaved, showToast }) {
         ({ error } = await supabase.from('rate_sheets').insert(payload));
       }
       if (error) throw error;
-      showToast?.(sheetId ? 'Rate sheet berhasil diupdate' : 'Rate sheet berhasil dibuat', 'success');
+      showToast?.(sheetId ? 'Rate sheet updated' : 'Rate sheet created', 'success');
       onSaved?.();
     } catch (err) {
-      showToast?.('Gagal menyimpan rate sheet: ' + err.message, 'error');
+      showToast?.('Failed to save rate sheet: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -152,12 +152,12 @@ function RateEditor({ initial, onBack, onSaved, showToast }) {
             <ArrowLeft size={15} /> Kembali
           </button>
           <h1 style={{ margin: 0, fontFamily: "'Montserrat', sans-serif", fontSize: 20, fontWeight: 800, color: C.navy }}>
-            {readOnly ? 'Lihat Rate Sheet' : (sheetId ? 'Edit Rate Sheet' : 'Buat Rate Sheet')}
+            {readOnly ? 'Lihat Rate Sheet' : (sheetId ? 'Edit Rate Sheet' : 'Create Rate Sheet')}
           </h1>
         </div>
         {!readOnly && (
           <button onClick={handleSave} disabled={saving} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.accent, color: '#fff', border: 'none', borderRadius: 9, padding: '9px 20px', fontSize: 13.5, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'Saving…' : (sheetId ? 'Save Changes' : 'Simpan Rate')}
+            {saving ? 'Saving…' : (sheetId ? 'Save Changes' : 'Save Rate')}
           </button>
         )}
       </div>
@@ -177,12 +177,12 @@ function RateEditor({ initial, onBack, onSaved, showToast }) {
             {errors.rateName && <span style={{ fontSize: 11.5, color: C.danger, marginTop: 3, display: 'block' }}>{errors.rateName}</span>}
           </div>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Berlaku Sampai</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Valid Until</div>
             <input type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} disabled={readOnly} style={{ ...INP, background: readOnly ? C.surface2 : C.surface }} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Note</div>
-            <textarea value={note} onChange={e => setNote(e.target.value)} disabled={readOnly} rows={2} placeholder="Catatan / disclaimer rate…" style={{ ...INP, height: 'auto', padding: '10px 12px', resize: 'vertical', lineHeight: 1.5, background: readOnly ? C.surface2 : C.surface }} />
+            <textarea value={note} onChange={e => setNote(e.target.value)} disabled={readOnly} rows={2} placeholder="Rate notes / disclaimer…" style={{ ...INP, height: 'auto', padding: '10px 12px', resize: 'vertical', lineHeight: 1.5, background: readOnly ? C.surface2 : C.surface }} />
           </div>
         </div>
       </div>
@@ -210,7 +210,7 @@ function RateEditor({ initial, onBack, onSaved, showToast }) {
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <input value={h} onChange={e => renameColumn(ci, e.target.value)} placeholder="Header…" style={{ ...cellInp(), fontFamily: "'Montserrat', sans-serif", fontWeight: 700, color: C.navy, minWidth: 100 }} />
-                        <button onClick={() => removeColumn(ci)} title="Hapus kolom" style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.danger, padding: 2, display: 'inline-flex', flexShrink: 0 }}><X size={14} /></button>
+                        <button onClick={() => removeColumn(ci)} title="Delete column" style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.danger, padding: 2, display: 'inline-flex', flexShrink: 0 }}><X size={14} /></button>
                       </div>
                     )}
                   </th>
@@ -222,7 +222,7 @@ function RateEditor({ initial, onBack, onSaved, showToast }) {
                 <tr key={ri} style={{ background: ri % 2 ? C.surface2 : '#fff' }}>
                   {!readOnly && (
                     <td style={{ padding: '6px 4px', textAlign: 'center', borderBottom: `1px solid ${C.lineSoft}` }}>
-                      <button onClick={() => removeRow(ri)} title="Hapus baris" style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.danger, padding: 4, display: 'inline-flex' }}><Trash2 size={14} /></button>
+                      <button onClick={() => removeRow(ri)} title="Delete row" style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.danger, padding: 4, display: 'inline-flex' }}><Trash2 size={14} /></button>
                     </td>
                   )}
                   {columns.map((_, ci) => (
@@ -264,7 +264,7 @@ export default function RateListPage({ showToast }) {
       `)
       .order('created_at', { ascending: false })
       .limit(1000);
-    if (error) { showToast?.('Gagal memuat rate sheet: ' + error.message, 'error'); setSheets([]); setLoading(false); return; }
+    if (error) { showToast?.('Failed to load rate sheet: ' + error.message, 'error'); setSheets([]); setLoading(false); return; }
     setSheets(data || []);
     setLoading(false);
   }, [profile?.id, showToast]);
@@ -281,9 +281,9 @@ export default function RateListPage({ showToast }) {
     setDeleting(true);
     const { error } = await supabase.from('rate_sheets').delete().eq('id', delTarget.id);
     setDeleting(false);
-    if (error) { showToast?.('Gagal menghapus rate sheet: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to delete rate sheet: ' + error.message, 'error'); return; }
     setDelTarget(null);
-    showToast?.('Rate sheet berhasil dihapus', 'success');
+    showToast?.('Rate sheet deleted', 'success');
     fetchSheets();
   };
 
@@ -308,7 +308,7 @@ export default function RateListPage({ showToast }) {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      showToast?.('Gagal membuat PDF: ' + err.message, 'error');
+      showToast?.('Failed to generate PDF: ' + err.message, 'error');
     } finally {
       setPdfBusyId(null);
     }
@@ -347,7 +347,7 @@ export default function RateListPage({ showToast }) {
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 380 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.inkFaint }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari nama rate…" style={{ width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13, color: C.ink, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rate name…" style={{ width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13, color: C.ink, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
         </div>
       </div>
 
@@ -357,7 +357,7 @@ export default function RateListPage({ showToast }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-                {['Nama Rate', 'Berlaku Sampai', 'Status', 'Dibuat', 'Baris', 'Aksi'].map((h, i) => (
+                {['Rate Name', 'Valid Until', 'Status', 'Dibuat', 'Baris', 'Aksi'].map((h, i) => (
                   <th key={h} style={{ padding: '11px 14px', textAlign: (i === 4 || i === 5) ? 'center' : 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -366,7 +366,7 @@ export default function RateListPage({ showToast }) {
               {loading ? (
                 <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>{search ? 'Tidak ada rate yang cocok.' : 'Belum ada rate sheet.'}</td></tr>
+                <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>{search ? 'No matching rates.' : 'No rate sheets yet.'}</td></tr>
               ) : filtered.map((s, i) => {
                 const expired = isExpired(s.valid_until);
                 const rowCount = Array.isArray(s.rows) ? s.rows.length : 0;
@@ -399,8 +399,8 @@ export default function RateListPage({ showToast }) {
 
       <ConfirmModal
         open={!!delTarget}
-        title="Hapus Rate Sheet"
-        message={`Hapus rate "${delTarget?.rate_name || ''}"? Tindakan ini tidak bisa dibatalkan.`}
+        title="Delete Rate Sheet"
+        message={`Delete rate "${delTarget?.rate_name || ''}"? This action cannot be undone.`}
         confirmLabel={deleting ? 'Deleting…' : 'Hapus'}
         cancelLabel="Cancel"
         variant="danger"

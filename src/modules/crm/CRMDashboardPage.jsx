@@ -68,7 +68,7 @@ const rpShort = (n) => {
 
 /* ---------- static/fallback data ---------- */
 const KPIS = [
-  { label: "Total Prospect Aktif", icon: "users",  value: "—", unit: "prospect", accent: NAVY,      accentBg: "#EAF0F8", trend: null },
+  { label: "Total Active Prospects", icon: "users",  value: "—", unit: "prospect", accent: NAVY,      accentBg: "#EAF0F8", trend: null },
   { label: "Total Inquiry",        icon: "filetext",value: "—", unit: "inquiry",  accent: ORANGE,    accentBg: "#FBE6DA", trend: null },
   { label: "Total Quotation",      icon: "receipt", value: "—", unit: "quotation",accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
   { label: "Win Rate",             icon: "target",  value: "—", unit: "%",        accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
@@ -169,7 +169,7 @@ function periodRange(period, now) {
     start, end, prevStart: pStart, prevEnd: start,
     curLabel: 'This Month', prevLabel: 'Last Month',
     buckets: [1, 2, 3, 4].map((w) => ({
-      name: `Minggu ${w}`,
+      name: `Week ${w}`,
       start: new Date(y, m, (w - 1) * 7 + 1),
       end:   w === 4 ? end : new Date(y, m, w * 7 + 1),
       prevStart: new Date(y, m - 1, (w - 1) * 7 + 1),
@@ -442,12 +442,12 @@ function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last M
         <div style={D.cardIco}><Icon name="trendup" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Prospect Trend</div>
-          <div style={D.cardSub}>{`Jumlah prospect baru per ${bucketNoun} — ${curLabel.toLowerCase()} vs ${prevLabel.toLowerCase()}`}</div>
+          <div style={D.cardSub}>{`New prospects per ${bucketNoun}, ${curLabel.toLowerCase()} vs ${prevLabel.toLowerCase()}`}</div>
         </div>
       </div>
       <div style={{ padding: "16px 16px 4px" }}>
         {isEmpty ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#9AA0AC", fontSize: 13 }}>Belum ada data prospect</div>
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#9AA0AC", fontSize: 13 }}>No prospect data yet</div>
         ) : (
           <div ref={areaRef} className="bar-in">
           {areaW > 0 && (
@@ -523,7 +523,7 @@ function PipelineByStage({ stages = STAGES, conversion = [] }) {
         <div style={D.cardIco}><Icon name="bars" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Pipeline by Stage</div>
-          <div style={D.cardSub}>Jumlah inquiry per status — sumbu sama dengan papan Pipeline</div>
+          <div style={D.cardSub}>Inquiry count by status, using the same axis as the Pipeline board</div>
         </div>
       </div>
       <div style={{ padding: "14px 14px 4px" }}>
@@ -618,11 +618,11 @@ function LeadSourceDonut({ data = [] }) {
         <div style={D.cardIco}><Icon name="pie" size={17} /></div>
         <div>
           <div style={D.cardTitle}>Lead Source Distribution</div>
-          <div style={D.cardSub}>Asal lead sepanjang periode</div>
+          <div style={D.cardSub}>Lead origin across the period</div>
         </div>
       </div>
       {isEmpty ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada data lead source</div>
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No lead source data yet</div>
       ) : (
         <div style={D.donutBody}>
           <div style={D.donutWrap} className="donut-in">
@@ -694,12 +694,12 @@ function LifecycleFunnel({ funnel = [], exits = [] }) {
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="users" size={18} /></div>
         <div>
-          <div style={D.cardTitle}>Funnel Lifecycle Akun</div>
-          <div style={D.cardSub}>Distribusi akun saat ini — tidak mengikuti filter periode</div>
+          <div style={D.cardTitle}>Account Lifecycle Funnel</div>
+          <div style={D.cardSub}>Current account distribution (does not follow the period filter)</div>
         </div>
       </div>
       {isEmpty ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada akun</div>
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No accounts yet</div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
           {funnel.map((s) => <FunnelRow key={s.id} label={s.name} count={s.count} max={max} />)}
@@ -744,7 +744,7 @@ function MqlToSqlPie({ data }) {
   const lost      = data?.lost      ?? 0;
   const pct       = data?.pct ?? null;
   const slices = [
-    { name: 'Sudah jadi SQL', value: converted, color: NAVY },
+    { name: 'Reached SQL', value: converted, color: NAVY },
     { name: 'Belum',          value: pending,   color: '#C7CBD4' },
   ];
   const isEmpty = converted + pending + lost === 0;
@@ -754,7 +754,7 @@ function MqlToSqlPie({ data }) {
         <div style={D.cardIco}><Icon name="pie" size={17} /></div>
         <div>
           <div style={D.cardTitle}>Konversi MQL ke SQL</div>
-          <div style={D.cardSub}>Akun yang pernah tercatat MQL</div>
+          <div style={D.cardSub}>Accounts that have ever reached MQL</div>
         </div>
       </div>
       {isEmpty ? (
@@ -778,7 +778,7 @@ function MqlToSqlPie({ data }) {
                 <div style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 19, color: "#16243A" }}>
                   {pct === null ? '—' : pct + '%'}
                 </div>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".05em", color: "#9AA0AC" }}>JADI SQL</div>
+                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".05em", color: "#9AA0AC" }}>REACHED SQL</div>
               </div>
             </div>
             <div style={{ flex: 1, minWidth: 130 }}>
@@ -821,12 +821,12 @@ function LossReasonBreakdown({ data = [], total = 0 }) {
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="ban" size={18} /></div>
         <div>
-          <div style={D.cardTitle}>Alasan Kalah</div>
-          <div style={D.cardSub}>Deal LOST yang ditutup di periode aktif</div>
+          <div style={D.cardTitle}>Loss Reason</div>
+          <div style={D.cardSub}>Deals marked Lost that closed in the active period</div>
         </div>
       </div>
       {data.length === 0 ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Tidak ada deal kalah di periode ini</div>
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No lost deals in this period</div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
           {/* Baris "Tanpa Alasan" diredupkan tapi TIDAK disembunyikan: totalnya
@@ -852,11 +852,11 @@ function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="users" size={18} /></div>
         <div>
-          <div style={D.cardTitle}>Beban Pipeline Aktif</div>
+          <div style={D.cardTitle}>Active Pipeline Load</div>
           {/* Sengaja tegas membedakan diri dari Sales Performance: yang itu
               tentang deal yang SUDAH ditutup di periode, yang ini tentang beban
               yang MASIH dipegang hari ini. Dua sumbu waktu berbeda. */}
-          <div style={D.cardSub}>Deal terbuka yang dipegang saat ini — bukan performa deal tertutup</div>
+          <div style={D.cardSub}>Open deals currently held, not closed-deal performance</div>
         </div>
       </div>
       {rows.length === 0 ? (
@@ -870,8 +870,8 @@ function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
               <thead>
                 <tr>
                   <th style={D.th}>Salesperson</th>
-                  <th style={{ ...D.th, textAlign: "center", width: 76 }}>Deal Aktif</th>
-                  <th style={{ ...D.th, textAlign: "right" }}>Nilai Pipeline</th>
+                  <th style={{ ...D.th, textAlign: "center", width: 76 }}>Active Deals</th>
+                  <th style={{ ...D.th, textAlign: "right" }}>Pipeline Value</th>
                 </tr>
               </thead>
               <tbody>
@@ -905,7 +905,7 @@ function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
           <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
             Total <b>{totalDeals} deal</b> terbuka — sama dengan jumlah keempat batang terbuka di
             Pipeline by Stage.
-            {anyMissing && <> Nilai pipeline hanya menjumlahkan deal yang sudah punya nilai; jumlah deal tetap dihitung utuh.</>}
+            {anyMissing && <> Pipeline value only sums deals that already have a value; the deal count is still counted in full.</>}
           </div>
         </>
       )}
@@ -921,18 +921,18 @@ function AgingPerStage({ rows = [], unknown = 0 }) {
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="clock" size={18} /></div>
         <div>
-          <div style={D.cardTitle}>Aging Per Tahap</div>
-          <div style={D.cardSub}>Median hari di tahap saat ini — tidak mengikuti filter periode</div>
+          <div style={D.cardTitle}>Aging by Stage</div>
+          <div style={D.cardSub}>Median days at the current stage (does not follow the period filter)</div>
         </div>
       </div>
       {isEmpty ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada deal terbuka</div>
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No open deals yet</div>
       ) : (
         <>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={D.th}>Tahap</th>
+                <th style={D.th}>Stage</th>
                 <th style={{ ...D.th, textAlign: "center", width: 62 }}>Deal</th>
                 <th style={{ ...D.th, textAlign: "center", width: 86 }}>Median</th>
                 <th style={{ ...D.th, textAlign: "center", width: 78 }}>Ambang</th>
@@ -961,10 +961,10 @@ function AgingPerStage({ rows = [], unknown = 0 }) {
             </tbody>
           </table>
           <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
-            Ambang dari master SLA. <b>IN_REVIEW tanpa ambang</b> — kebijakannya bersumbu moda
+            Ambang dari master SLA. <b>IN_REVIEW has no threshold</b> — kebijakannya bersumbu moda
             transport yang tidak ada di inquiry, jadi tak diarang-arang. Ambang hari kerja
             diperlakukan sebagai hari kalender (belum ada kalender kerja).
-            {unknown > 0 && <> · <b>{unknown} deal</b> belum punya riwayat status, umurnya tak terhitung.</>}
+            {unknown > 0 && <> · <b>{unknown} deal</b> has no status history yet, so its age cannot be computed.</>}
             <br />Deal yang bergerak sebelum 28 Agu 2026 umurnya dihitung dari edit terakhir, bukan
             perubahan status — angkanya bisa lebih muda dari kenyataan.
           </div>
@@ -983,7 +983,7 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
         <div style={D.cardIco}><Icon name="alert" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Deal Stale</div>
-          <div style={D.cardSub}>Melewati ambang SLA di tahapnya — paling parah di atas</div>
+          <div style={D.cardSub}>Past the SLA threshold for their stage, worst first</div>
         </div>
       </div>
       {rows.length === 0 ? (
@@ -997,10 +997,10 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
               <thead>
                 <tr>
                   <th style={D.th}>Inquiry</th>
-                  <th style={D.th}>Akun</th>
-                  <th style={D.th}>Tahap</th>
-                  <th style={D.th}>Pemilik</th>
-                  <th style={{ ...D.th, textAlign: "center", width: 70 }}>Umur</th>
+                  <th style={D.th}>Account</th>
+                  <th style={D.th}>Stage</th>
+                  <th style={D.th}>Owner</th>
+                  <th style={{ ...D.th, textAlign: "center", width: 70 }}>Age</th>
                   <th style={{ ...D.th, textAlign: "center", width: 84 }}>Lewat</th>
                 </tr>
               </thead>
@@ -1024,7 +1024,7 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
           <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
             {/* Pemotongan disebutkan, tidak diam-diam. */}
             {total > cap
-              ? <>Menampilkan <b>{cap}</b> dari <b>{total}</b> deal stale — sisanya dipotong, urut dari yang paling parah.</>
+              ? <>Showing <b>{cap}</b> of <b>{total}</b> stale deals — the rest are truncated, ordered worst first.</>
               : <>Total <b>{total}</b> deal stale.</>}
             {' '}IN_REVIEW tidak ikut dinilai (tak punya ambang yang bisa dipakai).
             Deal yang bergerak sebelum 28 Agu 2026 umurnya dihitung dari edit terakhir, jadi
@@ -1105,7 +1105,7 @@ function SalesPerformance({ data = [] }) {
         <div style={D.cardIco}><Icon name="award" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Sales Performance</div>
-          <div style={D.cardSub}>Deal WON per sales — dari deal yang ditutup di periode aktif</div>
+          <div style={D.cardSub}>Won deals per salesperson, from deals closed in the active period</div>
         </div>
       </div>
       {isEmpty ? (
@@ -1119,7 +1119,7 @@ function SalesPerformance({ data = [] }) {
             <tr>
               <th style={D.th}>Salesperson</th>
               <th style={{ ...D.th, textAlign: "center" }}>Deal WON</th>
-              <th style={{ ...D.th, textAlign: "right" }}>Nilai WON</th>
+              <th style={{ ...D.th, textAlign: "right" }}>Won Value</th>
               <th style={{ ...D.th, textAlign: "center" }}>Win %</th>
               <th style={{ ...D.th, textAlign: "center", width: 108 }}>% Target</th>
               <th style={{ ...D.th, textAlign: "right" }}>Status</th>
@@ -1169,7 +1169,7 @@ function SalesPerformance({ data = [] }) {
             mana perginya selisihnya. */}
         {data.some((s) => s.noOwner) && (
           <div style={{ padding: "10px 16px 14px", fontSize: 11.5, color: "#7A828E", lineHeight: 1.5 }}>
-            <b>Unassigned</b> = deal yang <code>owner_id</code>-nya belum terisi, jadi belum bisa
+            <b>Unassigned</b> = deals that <code>owner_id</code>-nya belum terisi, jadi belum bisa
             diatribusikan ke salesperson mana pun. Barisnya tetap dihitung agar total di sini
             cocok dengan kartu Win Rate dan grafik Pipeline by Stage.
           </div>
@@ -1274,7 +1274,7 @@ const VISIT_TO_ACT_STATUS = { scheduled: 'todo', completed: 'done', cancelled: '
 
 /* ---------- visit type (BD-07) ---------- */
 const VISIT_TYPES = [
-  { id: 'discovery',             label: 'Discovery Visit',       desc: 'Gali kebutuhan prospect baru',       output: 'Output: Discovery Notes lengkap + next step jelas' },
+  { id: 'discovery',             label: 'Discovery Visit',       desc: 'Explore new prospect needs',       output: 'Output: Discovery Notes lengkap + next step jelas' },
   { id: 'solution_presentation', label: 'Solution Presentation', desc: 'Presentasi solusi',                  output: 'Output: Feedback recorded + komitmen ke RFQ' },
   { id: 'qbr',                   label: 'QBR Visit',             desc: 'Quarterly Business Review (Tier A)',  output: 'Output: Signed-off action items + JBP refresh' },
   { id: 'problem_solving',       label: 'Problem Solving',       desc: 'Resolusi complaint/issue',           output: 'Output: SLA improvement plan signed-off' },
@@ -1367,9 +1367,9 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>JADWAL VISIT</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>VISIT SCHEDULE</div>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>
-              {isEdit ? 'Edit Kunjungan' : 'Tambah Kunjungan'}
+              {isEdit ? 'Edit Visit' : 'Add Visit'}
             </h2>
           </div>
           <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1391,9 +1391,9 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
 
         {/* Stage context hint */}
         <div style={{ background: st.bg, border: `1px solid ${st.dot}30`, borderRadius: 10, padding: '10px 14px', marginBottom: 20, fontSize: 12.5, color: st.fg, fontWeight: 600 }}>
-          {status === 'scheduled' && 'Isi agenda kunjungan yang akan dilakukan.'}
-          {status === 'completed' && 'Meeting selesai — isi hasil dan tindak lanjut.'}
-          {status === 'cancelled' && 'Kunjungan dibatalkan — isi alasan pembatalan.'}
+          {status === 'scheduled' && 'Fill in the agenda for the upcoming visit.'}
+          {status === 'completed' && 'Meeting completed. Fill in the outcome and follow-up.'}
+          {status === 'cancelled' && 'Visit cancelled. Fill in the cancellation reason.'}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1405,7 +1405,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
               value: draft.visit_type || '',
               onChange: e => setDraft(d => ({ ...d, visit_type: e.target.value })),
               children: [
-                <option key="" value="">— Pilih jenis kunjungan —</option>,
+                <option key="" value="">— Select Visit Type —</option>,
                 ...VISIT_TYPES.map(t => <option key={t.id} value={t.id}>{`${t.label} — ${t.desc}`}</option>),
               ],
             })}
@@ -1425,7 +1425,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                 onChange: e => setDraft(d => ({ ...d, prospect_id: e.target.value })),
                 children: [
                   <option key="" value="">— Optional —</option>,
-                  ...(prospectOptions.length === 0 ? [<option key="__empty" value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>] : []),
+                  ...(prospectOptions.length === 0 ? [<option key="__empty" value="" disabled>All accounts are currently in the Lead Pool. Claim one from the Lead Pool first to use it.</option>] : []),
                   ...prospectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>),
                 ],
               })}
@@ -1446,7 +1446,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
           {/* Tanggal + Waktu */}
           <div className="nx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              {lbl('Tanggal Kunjungan', true)}
+              {lbl('Visit Date', true)}
               {inp({ type: 'date', value: draft.visit_date, onChange: e => setDraft(d => ({ ...d, visit_date: e.target.value })) })}
             </div>
             <div>
@@ -1464,8 +1464,8 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
           {/* Stage 1 — Agenda editable */}
           {status === 'scheduled' && (
             <div>
-              {lbl('Agenda / Point of Meeting')}
-              {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Poin-poin yang akan dibahas dalam kunjungan...')}
+              {lbl('Agenda / Points of Meeting')}
+              {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Points to be discussed during the visit...')}
             </div>
           )}
 
@@ -1474,9 +1474,9 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
             <>
               {/* Readonly agenda card */}
               <div style={{ borderTop: '1px dashed #E5E7EB', paddingTop: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Agenda yang direncanakan</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Planned agenda</div>
                 <div style={{ background: '#F3F4F6', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: draft.point_of_meeting?.trim() ? '#374151' : '#9CA3AF', fontStyle: draft.point_of_meeting?.trim() ? 'normal' : 'italic', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {draft.point_of_meeting?.trim() || 'Tidak ada agenda yang dicatat.'}
+                  {draft.point_of_meeting?.trim() || 'No agenda recorded.'}
                 </div>
               </div>
 
@@ -1485,11 +1485,11 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                 <>
                   <div>
                     {lbl('Minute of Meeting (MOM)')}
-                    {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Catatan lengkap hasil meeting...', 4)}
+                    {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Full notes from the meeting...', 4)}
                   </div>
                   <div>
                     {lbl('Follow-up')}
-                    {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up action yang perlu dilakukan...')}
+                    {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up actions required...')}
                   </div>
                 </>
               )}
@@ -1497,8 +1497,8 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
               {/* CANCELLED extra field */}
               {status === 'cancelled' && (
                 <div>
-                  {lbl('Alasan Pembatalan', true)}
-                  {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Jelaskan alasan pembatalan kunjungan...')}
+                  {lbl('Cancellation Reason', true)}
+                  {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Explain why the visit was cancelled...')}
                 </div>
               )}
             </>
@@ -1513,7 +1513,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
               Batal
             </button>
             <button onClick={onSave} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: st.dot, color: 'white', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Simpan Visit')}
+              {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Save Visit')}
             </button>
           </div>
         </div>
@@ -1578,7 +1578,7 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
     if (!log.from_status && log.to_status) return `Visit dibuat → ${VISIT_STATUS[log.to_status]?.label || log.to_status}`;
     if (log.from_status !== log.to_status)
       return `${VISIT_STATUS[log.from_status]?.label || log.from_status} → ${VISIT_STATUS[log.to_status]?.label || log.to_status}`;
-    return 'Data visit diperbarui';
+    return 'Visit updated';
   };
 
   return (
@@ -1588,10 +1588,10 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
           <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>DETAIL KUNJUNGAN</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>VISIT DETAILS</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>
-                {visit.prospect !== '—' ? visit.prospect : 'Kunjungan Umum'}
+                {visit.prospect !== '—' ? visit.prospect : 'General Visit'}
               </h2>
               <span style={{ background: st.bg, color: st.fg, padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{st.label}</span>
             </div>
@@ -1610,22 +1610,22 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
             'Visit Type',
             `${VISIT_TYPE_MAP[visit.visit_type].label} — ${VISIT_TYPE_MAP[visit.visit_type].desc}\n${VISIT_TYPE_MAP[visit.visit_type].output}`,
           )}
-          {row('Tanggal & Waktu', dateStr + (visit.time ? ' · ' + visit.time.slice(0,5) : ''))}
+          {row('Date & Time', dateStr + (visit.time ? ' · ' + visit.time.slice(0,5) : ''))}
           {row('Salesperson', visit.salesperson !== '—' ? visit.salesperson : null)}
           {row('Lokasi', visit.location !== '—' ? visit.location : null)}
-          {row('Agenda / Point of Meeting', visit.point_of_meeting || null)}
+          {row('Agenda / Points of Meeting', visit.point_of_meeting || null)}
           {visit.status === 'completed' && row('Minute of Meeting (MOM)', visit.mom || null)}
           {visit.status === 'completed' && row('Follow-up', visit.follow_up || null)}
-          {visit.status === 'cancelled' && row('Alasan Pembatalan', visit.notes || null)}
+          {visit.status === 'cancelled' && row('Cancellation Reason', visit.notes || null)}
         </div>
 
         {/* History section */}
         <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>Riwayat Perubahan</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>Change History</div>
           {logsLoad ? (
-            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>Memuat riwayat…</div>
+            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>Loading history…</div>
           ) : logs.length === 0 ? (
-            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>Belum ada riwayat perubahan.</div>
+            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>No change history yet.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {logs.map((log, i) => {
@@ -1733,7 +1733,7 @@ function DashCalendar({
 
   const fmtRangeD = (s) => { const d = new Date(s + 'T00:00:00'); return isNaN(d.getTime()) ? s : `${d.getDate()} ${MONTH_LABELS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`; };
   const inRange  = mode === 'range' && range.from && range.to;
-  const subLabel = inRange ? `Rentang: ${fmtRangeD(range.from)} – ${fmtRangeD(range.to)}` : `Kunjungan tim sales — ${MONTH_LABELS[month]} ${year}`;
+  const subLabel = inRange ? `Range: ${fmtRangeD(range.from)} – ${fmtRangeD(range.to)}` : `Sales team visits — ${MONTH_LABELS[month]} ${year}`;
 
   // control styles (white toolbar below the navy header)
   const selSm  = { height: 34, border: '1px solid #E3E7EE', borderRadius: 8, background: '#fff', padding: '0 9px', fontSize: 12.5, color: '#2A3340', cursor: 'pointer', outline: 'none', fontFamily: 'inherit' };
@@ -1746,7 +1746,7 @@ function DashCalendar({
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={D.cardIco}><Icon name="calendar" size={18} /></div>
           <div>
-            <div style={D.cardTitle}>Jadwal Visit Sales</div>
+            <div style={D.cardTitle}>Sales Visit Schedule</div>
             <div style={D.cardSub}>{subLabel}</div>
           </div>
         </div>
@@ -1756,16 +1756,16 @@ function DashCalendar({
           onClick={onAddVisit}
           style={{ display: "flex", alignItems: "center", gap: 6, background: "#EAF0F8", border: "1px solid #C3D3E8", color: NAVY, borderRadius: 8, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
           <Icon name="plus" size={14} />
-          Tambah Visit
+          Add Visit
         </button>
       </div>
 
       {/* toolbar — month nav (left) + filters & custom range (right) */}
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid #F0F1F4" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button onClick={onPrevMonth} title="Bulan sebelumnya" style={navBtn}>‹</button>
+          <button onClick={onPrevMonth} title="Previous month" style={navBtn}>‹</button>
           <div style={{ minWidth: 138, textAlign: "center", fontSize: 13, fontWeight: 700, color: "#16243A", fontFamily: "'Montserrat',system-ui,sans-serif" }}>{MONTH_LABELS[month]} {year}</div>
-          <button onClick={onNextMonth} title="Bulan berikutnya" style={navBtn}>›</button>
+          <button onClick={onNextMonth} title="Next month" style={navBtn}>›</button>
           <button onClick={onThisMonth} style={{ height: 34, border: "1px solid #CFDDF0", borderRadius: 8, background: "#EAF0F8", color: NAVY, padding: "0 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>This Month</button>
         </div>
 
@@ -1779,7 +1779,7 @@ function DashCalendar({
           <option value="all">All Statuses</option>
           {VISIT_STAGES.map(s => <option key={s} value={s}>{VISIT_STATUS[s].label}</option>)}
         </select>
-        <select value={fType} onChange={e => setFType(e.target.value)} style={selSm} title="Tipe visit">
+        <select value={fType} onChange={e => setFType(e.target.value)} style={selSm} title="Visit type">
           <option value="all">All Types</option>
           {typeOptions.map(t => <option key={t} value={t}>{VISIT_TYPE_MAP[t]?.label || t}</option>)}
         </select>
@@ -1791,9 +1791,9 @@ function DashCalendar({
         )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <input type="date" value={range.from} max={range.to || undefined} onChange={e => onApplyRange(e.target.value, range.to)} style={dateSm} title="Dari tanggal" />
+          <input type="date" value={range.from} max={range.to || undefined} onChange={e => onApplyRange(e.target.value, range.to)} style={dateSm} title="From date" />
           <span style={{ color: "#9AA3B2", fontSize: 12 }}>–</span>
-          <input type="date" value={range.to} min={range.from || undefined} onChange={e => onApplyRange(range.from, e.target.value)} style={dateSm} title="Sampai tanggal" />
+          <input type="date" value={range.to} min={range.from || undefined} onChange={e => onApplyRange(range.from, e.target.value)} style={dateSm} title="To date" />
         </div>
 
         {(filtersActive || inRange) && (
@@ -1804,7 +1804,7 @@ function DashCalendar({
       {/* stats row */}
       <div style={{ display: "flex", gap: 20, padding: "10px 16px 0", borderBottom: "1px solid #F0F1F4", flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ padding: "8px 0", fontSize: 12, color: "#7A828E" }}>
-          <b style={{ color: NAVY, fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800 }}>{totalVisits}</b> {inRange ? "jadwal pada rentang" : "jadwal bulan ini"}
+          <b style={{ color: NAVY, fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800 }}>{totalVisits}</b> {inRange ? "scheduled in range" : "scheduled this month"}
         </div>
         {Object.entries(VISIT_STATUS).map(([key, meta]) => {
           const cnt = shown.filter(v => (v.status || 'scheduled') === key).length;
@@ -1926,7 +1926,7 @@ function DashCalendar({
             </div>
             <button onClick={() => { const k = dayPopup.dateKey; setDayPopup(null); onDayClick?.(k); }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', background: NAVY, color: '#fff', border: 'none', borderRadius: 10, padding: '11px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              <Icon name="plus" size={15} /> Tambah Visit
+              <Icon name="plus" size={15} /> Add Visit
             </button>
           </div>
         </div>
@@ -1934,7 +1934,7 @@ function DashCalendar({
 
       {totalVisits === 0 && (
         <div style={{ padding: "20px", textAlign: "center", color: "#9AA0AC", fontSize: 13, borderTop: "1px solid #F4F5F7" }}>
-          Belum ada jadwal visit bulan ini. Klik "+ Tambah Visit" untuk menambah jadwal.
+          Belum ada jadwal visit bulan ini. Klik "+ Add Visit" untuk menambah jadwal.
         </div>
       )}
 
@@ -1974,7 +1974,7 @@ function DashCalendar({
                     {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {v.prospect || 'Kunjungan Umum'}
+                        {v.prospect || 'General Visit'}
                       </div>
                       <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
                         {v.salesperson !== '—' ? v.salesperson : '—'}
@@ -2001,7 +2001,7 @@ function DashCalendar({
 function fmtTimeAgo(iso) {
   if (!iso) return '—';
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)    return `${diff} detik lalu`;
+  if (diff < 60)    return `${diff} seconds ago`;
   if (diff < 3600)  return `${Math.floor(diff / 60)} minutes ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
   return `${Math.floor(diff / 86400)} days ago`;
@@ -2017,7 +2017,7 @@ function ActivityItem({ label, value, target, sublabel }) {
   const ratio = target > 0 ? value / target : 0;
   const pct   = Math.min(ratio * 100, 100);
   const color = ratio >= 1 ? '#22C55E' : ratio >= 0.5 ? '#F59E0B' : '#EF4444';
-  const status = ratio >= 1 ? 'On Track' : ratio >= 0.5 ? 'Perlu ditingkatkan' : 'Di bawah target';
+  const status = ratio >= 1 ? 'On Track' : ratio >= 0.5 ? 'Perlu ditingkatkan' : 'Below target';
   return (
     <div style={{ background: '#fff', border: '1px solid #E8EBF0', borderRadius: 12, padding: '16px 18px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, gap: 8 }}>
@@ -2048,10 +2048,10 @@ function ActivitySaya({ data }) {
         Selalu minggu &amp; bulan berjalan — tidak mengikuti filter periode di atas.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
-        <ActivityItem label="Call Minggu Ini"     value={data.callsThisWeek}        target={60} />
-        <ActivityItem label="Visit Minggu Ini"    value={data.visitsThisWeek}       target={5} />
-        <ActivityItem label="Quotation Bulan Ini" value={data.quotationsThisMonth}  target={20} />
-        <ActivityItem label="SQL Baru Bulan Ini"  value={data.sqlThisMonth}         target={15} sublabel="Qualified Lead" />
+        <ActivityItem label="Calls This Week"     value={data.callsThisWeek}        target={60} />
+        <ActivityItem label="Visits This Week"    value={data.visitsThisWeek}       target={5} />
+        <ActivityItem label="Quotations This Month" value={data.quotationsThisMonth}  target={20} />
+        <ActivityItem label="New SQL This Month"  value={data.sqlThisMonth}         target={15} sublabel="Qualified Lead" />
       </div>
     </div>
   );
@@ -2366,7 +2366,7 @@ function CRMDashboardPage() {
          melempar; sisanya dikumpulkan dan dilaporkan lewat banner. */
       const ESSENTIAL = [
         ['prospect', res[0]],
-        ['prospect aktif', res[2]],
+        ['active prospects', res[2]],
         ['pipeline terbuka', res[3]],
         ['deal tertutup', res[4]],
       ];
@@ -2375,17 +2375,17 @@ function CRMDashboardPage() {
       }
 
       const failed = [
-        ['tren periode sebelumnya', res[1]],
+        ['previous-period trend', res[1]],
         ['total inquiry', res[5]],
         ['total quotation', res[6]],
-        ['call minggu ini', res[7]],
-        ['visit minggu ini', res[8]],
-        ['quotation bulan ini', res[9]],
-        ['SQL baru bulan ini', res[10]],
-        ['funnel lifecycle akun', res[11]],
-        ['master alasan kalah', res[12]],
+        ['calls this week', res[7]],
+        ['visits this week', res[8]],
+        ['quotations this month', res[9]],
+        ['new SQL this month', res[10]],
+        ['account lifecycle funnel', res[11]],
+        ['loss reason master', res[12]],
         ['ambang SLA aging', res[13]],
-        ['target sales', res[14]],
+        ['sales targets', res[14]],
       ].filter(([, r]) => r?.error).map(([label]) => label);
 
       const accountsRows        = res[0].data  || [];
@@ -2407,7 +2407,7 @@ function CRMDashboardPage() {
       // Cap 1000 baris pada distribusi lifecycle: kalau kena, corongnya
       // memang terpotong — dikabarkan lewat banner, bukan ditampilkan
       // seolah-olah itu seluruh populasi akun.
-      if (lifecycleRows.length === 1000) failed.push('funnel lifecycle akun (terpotong di 1000 baris)');
+      if (lifecycleRows.length === 1000) failed.push('account lifecycle funnel (truncated at 1000 rows)');
 
       /* Nama pemilik deal lewat query TERPISAH, bukan embed FK — pola yang
          sudah dipakai di file ini (feed aktivitas & kalender). Satu query untuk
@@ -2420,7 +2420,7 @@ function CRMDashboardPage() {
       if (ownerIds.length) {
         const { data: profs, error: profErr } = await supabase
           .from('profiles').select('id, full_name').in('id', ownerIds).limit(1000);
-        if (profErr) failed.push('nama pemilik deal');
+        if (profErr) failed.push('deal owner names');
         else (profs || []).forEach((p) => { ownerNames[p.id] = p.full_name; });
       }
 
@@ -2476,13 +2476,13 @@ function CRMDashboardPage() {
           .order('changed_at', { ascending: false })
           .limit(1000);
         if (histErr) {
-          failed.push('konversi antar-tahap & umur di tahap');
+          failed.push('stage-to-stage conversion & stage age');
         } else {
           const rows = hist || [];
           // Cap 1000: riwayat tumbuh per TRANSISI, bukan per inquiry, jadi cap
           // ini lebih cepat kena daripada query lain. Dikabarkan, tidak dipotong
           // diam-diam jadi persentase yang terlihat sah.
-          if (rows.length === 1000) failed.push('riwayat status terpotong di 1000 baris (konversi & umur)');
+          if (rows.length === 1000) failed.push('status history truncated at 1000 rows (conversion & age)');
           const seen = {};
           for (const r of rows) {
             const s = String(r.to_status || '').toUpperCase();
@@ -2745,7 +2745,7 @@ function CRMDashboardPage() {
       const lossReasonData = Object.entries(lossCounts)
         .map(([id, count]) => ({
           id,
-          name: id === '__none__' ? 'Tanpa Alasan' : (lossNameById[id] || '(alasan tak dikenal)'),
+          name: id === '__none__' ? 'No Reason' : (lossNameById[id] || '(unknown reason)'),
           count,
           unknown: id === '__none__',
         }))
@@ -2892,7 +2892,7 @@ function CRMDashboardPage() {
       });
     } catch (err) {
       console.error('[CRMDashboardPage] fetch error:', err);
-      setDashError(err.message || 'Gagal memuat data dashboard.');
+      setDashError(err.message || 'Failed to load dashboard data.');
     } finally {
       setDashLoading(false);
     }
@@ -2996,7 +2996,7 @@ function CRMDashboardPage() {
       let list = prospRes.data || [];
       const editing = editVisitId ? calVisits.find(x => x.id === editVisitId) : null;
       if (editing?.prospect_id && !list.some(p => p.id === editing.prospect_id)) {
-        list = [{ id: editing.prospect_id, name: editing.prospect && editing.prospect !== '—' ? editing.prospect : '(akun tertaut)' }, ...list];
+        list = [{ id: editing.prospect_id, name: editing.prospect && editing.prospect !== '—' ? editing.prospect : '(linked account)' }, ...list];
       }
       setProspectOptions(list);
     });
@@ -3006,11 +3006,11 @@ function CRMDashboardPage() {
   const EMPTY_DRAFT = { visit_date: '', visit_time: '', prospect_id: '', salesperson_id: '', location: '', notes: '', status: 'scheduled', visit_type: '', point_of_meeting: '', mom: '', follow_up: '' };
 
   const handleSaveVisit = useCallback(async () => {
-    if (!visitDraft.visit_type) { setVisitError('Jenis kunjungan wajib dipilih.'); return; }
-    if (!visitDraft.visit_date) { setVisitError('Tanggal kunjungan wajib diisi.'); return; }
+    if (!visitDraft.visit_type) { setVisitError('Visit type is required.'); return; }
+    if (!visitDraft.visit_date) { setVisitError('Visit date is required.'); return; }
     if (!visitDraft.salesperson_id) { setVisitError('Salesperson is required.'); return; }
     if (visitDraft.status === 'cancelled' && !visitDraft.notes?.trim()) {
-      setVisitError('Alasan pembatalan wajib diisi.'); return;
+      setVisitError('A cancellation reason is required.'); return;
     }
     setVisitSaving(true);
     setVisitError(null);
@@ -3053,7 +3053,7 @@ function CRMDashboardPage() {
       // VISIT_STATUS lookup + the migrated logs stay consistent.
       if (visitId) {
         const logNote = editVisitId
-          ? (prevStatus !== visitDraft.status ? null : 'Data visit diperbarui')
+          ? (prevStatus !== visitDraft.status ? null : 'Visit updated')
           : 'Visit dibuat';
         supabase.from('activity_logs').insert({
           activity_id:  visitId,
@@ -3070,7 +3070,7 @@ function CRMDashboardPage() {
       fetchDash();
       fetchCalVisits();
     } catch (err) {
-      setVisitError('Gagal simpan: ' + err.message);
+      setVisitError('Failed to save: ' + err.message);
     } finally {
       setVisitSaving(false);
     }
@@ -3078,26 +3078,26 @@ function CRMDashboardPage() {
 
   // ── KPI cards from real data ─────────────────────────────────────────────
   const kpisReal = dashData ? [
-    { label: "Prospect Aktif", icon: "users",       value: String(dashData.activeProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
+    { label: "Active Prospects", icon: "users",       value: String(dashData.activeProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
     { label: "Total Inquiry",   icon: "filetext",    value: String(dashData.totalInquiries), unit: "inquiry",   accent: ORANGE,    accentBg: "#FBE6DA", trend: null },
     { label: "Total Quotation", icon: "receipt",     value: String(dashData.totalQuotations),unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
     // CANCELLED tidak masuk rumus Win Rate, tapi ikut ditampilkan di subtitle —
     // dikeluarkan dari hitungan, bukan disembunyikan dari pembaca.
     { label: "Win Rate",        icon: "checkcircle", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
-      subtitle: `${dashData.wonCount} won / ${dashData.decided} deal diputus · ${dashData.cancelledCount} cancelled (di luar hitungan)` },
+      subtitle: `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled (not counted)` },
   ] : KPIS;
 
   // ── S2 — personal KPI cards (sales/operations view) ──────────────────────
   const progColor = (v, green, yellow) => v >= green ? '#22C55E' : v >= yellow ? '#F59E0B' : '#EF4444';
   const kpisSales = dashData ? [
-    { label: "Call Minggu Ini",     icon: "target",      value: String(dashData.callsThisWeek),       unit: "call",      accent: NAVY,      accentBg: "#EAF0F8", trend: null,
-      subtitle: `${dashData.callsThisWeek} / 60 target minggu ini`,       progress: { pct: Math.min(dashData.callsThisWeek / 60 * 100, 100),       color: progColor(dashData.callsThisWeek, 60, 30) } },
-    { label: "Visit Minggu Ini",    icon: "calendar",    value: String(dashData.visitsThisWeek),      unit: "visit",     accent: ORANGE,    accentBg: "#FBE6DA", trend: null,
-      subtitle: `${dashData.visitsThisWeek} / 5 target minggu ini`,        progress: { pct: Math.min(dashData.visitsThisWeek / 5 * 100, 100),       color: progColor(dashData.visitsThisWeek, 5, 3) } },
-    { label: "Quotation Bulan Ini", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
-      subtitle: `${dashData.quotationsThisMonth} / 20 target bulan ini`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
+    { label: "Calls This Week",     icon: "target",      value: String(dashData.callsThisWeek),       unit: "call",      accent: NAVY,      accentBg: "#EAF0F8", trend: null,
+      subtitle: `${dashData.callsThisWeek} / 60 target this week`,       progress: { pct: Math.min(dashData.callsThisWeek / 60 * 100, 100),       color: progColor(dashData.callsThisWeek, 60, 30) } },
+    { label: "Visits This Week",    icon: "calendar",    value: String(dashData.visitsThisWeek),      unit: "visit",     accent: ORANGE,    accentBg: "#FBE6DA", trend: null,
+      subtitle: `${dashData.visitsThisWeek} / 5 target this week`,        progress: { pct: Math.min(dashData.visitsThisWeek / 5 * 100, 100),       color: progColor(dashData.visitsThisWeek, 5, 3) } },
+    { label: "Quotations This Month", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
+      subtitle: `${dashData.quotationsThisMonth} / 20 target this month`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
     { label: "Win Rate Personal",   icon: "checkcircle", value: String(dashData.winRate),             unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
-      subtitle: `${dashData.wonCount} won / ${dashData.decided} deal diputus · ${dashData.cancelledCount} cancelled` },
+      subtitle: `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled` },
   ] : KPIS;
 
   const kpiCards = isSalesOnly ? kpisSales : kpisReal;
@@ -3136,11 +3136,11 @@ function CRMDashboardPage() {
               <span style={D.crumbCur}>Dashboard</span>
             </nav>
             <h1 style={D.title}>CRM Dashboard</h1>
-            <div style={D.sub}>{isSalesOnly ? `Dashboard personal · ${profile?.full_name || ''}` : 'Dashboard tim · semua data'}</div>
+            <div style={D.sub}>{isSalesOnly ? `Dashboard personal · ${profile?.full_name || ''}` : 'Team dashboard · all data'}</div>
           </div>
           <div style={D.seg}>
             {PERIODS.map((p) => (
-              <button key={p} onClick={() => { setPeriod(p); showToast("Periode: " + p, "refresh"); }}
+              <button key={p} onClick={() => { setPeriod(p); showToast("Period: " + p, "refresh"); }}
                 style={{ ...D.segBtn, ...(period === p ? D.segBtnActive : null) }}>
                 {p}
               </button>
@@ -3209,7 +3209,7 @@ function CRMDashboardPage() {
               prospectOptions={prospectOptions}
               isEdit={!!editVisitId}
               canCancel={canCancel}
-              onCancelBlocked={() => showToast('Hanya Manager ke atas yang dapat membatalkan kunjungan', 'error')}
+              onCancelBlocked={() => showToast('Only Manager and above can cancel a visit', 'error')}
             />
             <VisitDetailModal
               visit={visitDetail}

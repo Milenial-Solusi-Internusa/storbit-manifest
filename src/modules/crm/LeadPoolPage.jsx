@@ -26,12 +26,12 @@ const prevStageOf = prevActiveStage;
 
 // pull_status badge palette
 const PULL_BADGE = {
-  pending:  { bg: '#FBF0DD', fg: '#B45309', bd: '#E6CE94', label: 'Menunggu Approval' },
+  pending:  { bg: '#FBF0DD', fg: '#B45309', bd: '#E6CE94', label: 'Awaiting Approval' },
   approved: { bg: '#DEF0E4', fg: '#1F8B4D', bd: '#BFE0CC', label: 'Disetujui' },
   rejected: { bg: '#FBE3E3', fg: '#C0392B', bd: '#ECC2BA', label: 'Ditolak' },
 };
 function PullBadge({ status }) {
-  if (!status) return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 600, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkFaint }}>Belum request</span>;
+  if (!status) return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 600, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkFaint }}>No request yet</span>;
   const m = PULL_BADGE[status] || PULL_BADGE.pending;
   return <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700, border: `1px solid ${m.bd}`, background: m.bg, color: m.fg }}>{m.label}</span>;
 }
@@ -59,13 +59,13 @@ function PullModal({ account, onClose, onSubmit }) {
       <div onMouseDown={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: 'min(500px, 100%)', boxShadow: '0 24px 64px rgba(19,35,59,0.28)', overflow: 'hidden' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderBottom: `1px solid ${C.line}`, background: C.surface2 }}>
           <ArrowRight size={18} color={C.navy} />
-          <h3 style={{ margin: 0, fontFamily: "'Montserrat',sans-serif", fontSize: 16, fontWeight: 700, color: C.ink, flex: 1 }}>Tarik ke Pipeline</h3>
+          <h3 style={{ margin: 0, fontFamily: "'Montserrat',sans-serif", fontSize: 16, fontWeight: 700, color: C.ink, flex: 1 }}>Claim to Pipeline</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.inkSoft, display: 'flex', padding: 4 }}><X size={18} /></button>
         </header>
         <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div><span style={labelStyle}>Prospect</span><div style={{ fontSize: 13.5, fontWeight: 600, color: C.ink }}>{account.name}</div></div>
-            <div><span style={labelStyle}>Stage Tujuan</span><div style={{ fontSize: 13.5, fontWeight: 600, color: C.navy }}>{target}</div></div>
+            <div><span style={labelStyle}>Target Stage</span><div style={{ fontSize: 13.5, fontWeight: 600, color: C.navy }}>{target}</div></div>
           </div>
           <div>
             <span style={labelStyle}>Justifikasi <span style={{ color: C.accent }}>*</span></span>
@@ -73,7 +73,7 @@ function PullModal({ account, onClose, onSubmit }) {
               value={justification}
               onChange={(e) => setJustification(e.target.value)}
               rows={4}
-              placeholder="Jelaskan alasan menarik prospect ini kembali ke pipeline (min 20 karakter)…"
+              placeholder="Explain why this prospect should be claimed back into the pipeline (min 20 characters)…"
               style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 13.5, color: C.ink, border: `1px solid ${C.line}`, borderRadius: 10, padding: '10px 12px', outline: 'none', resize: 'vertical' }}
             />
             <div style={{ fontSize: 11.5, color: valid ? C.inkFaint : C.accent, marginTop: 4 }}>{justification.trim().length}/20 karakter minimum</div>
@@ -128,7 +128,7 @@ export default function LeadPoolPage({ showToast }) {
 
     query.order('lead_pool_at', { ascending: false }).limit(1000).then(({ data, error }) => {
       if (cancelled) return;
-      if (error) { showToast?.('Gagal memuat lead pool: ' + error.message, 'error'); setRows([]); }
+      if (error) { showToast?.('Failed to load lead pool: ' + error.message, 'error'); setRows([]); }
       else setRows(data || []);
       setLoading(false);
     });
@@ -158,8 +158,8 @@ export default function LeadPoolPage({ showToast }) {
         company_id: profile.company_id,
         user_id: uid,
         event_type: 'lead_pool_pull_request',
-        title: 'Request Tarik Prospect dari Lead Pool',
-        body: `${salesName} request tarik ${account.name} dari Lead Pool. Justifikasi: ${justification.slice(0, 50)}`,
+        title: 'Request to Claim Prospect from Lead Pool',
+        body: `${salesName} requested to claim ${account.name} from the Lead Pool. Justification: ${justification.slice(0, 50)}`,
         reference_type: 'lead_pool',
         reference_id: account.id,
       }));
@@ -175,9 +175,9 @@ export default function LeadPoolPage({ showToast }) {
       pull_requested_at: new Date().toISOString(),
       pull_status: 'pending',
     }).eq('id', account.id);
-    if (error) { showToast?.('Gagal mengirim request: ' + error.message, 'error'); return false; }
+    if (error) { showToast?.('Failed to send request: ' + error.message, 'error'); return false; }
     await notifyManagers(account, justification);
-    showToast?.(`Request tarik "${account.name}" dikirim ke manager`, 'success');
+    showToast?.(`Claim request for "${account.name}" sent to the manager`, 'success');
     refetch();
     return true;
   }, [showToast, notifyManagers, refetch]);
@@ -197,11 +197,11 @@ export default function LeadPoolPage({ showToast }) {
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
         <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 360 }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: C.inkFaint }} />
-          <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Cari nama prospect / sales…"
+          <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search prospect / salesperson name…"
             style={{ width: '100%', padding: '9px 12px 9px 34px', borderRadius: 10, border: `1px solid ${C.line}`, background: C.surface, fontSize: 13.5, color: C.ink, outline: 'none' }} />
         </div>
         <span style={{ marginLeft: 'auto', fontSize: 12.5, color: C.inkFaint }}>
-          {loading ? '' : `Menampilkan ${filtered.length === 0 ? 0 : page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, filtered.length)} dari ${filtered.length}`}
+          {loading ? '' : `Showing ${filtered.length === 0 ? 0 : page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
         </span>
       </div>
 
@@ -210,7 +210,7 @@ export default function LeadPoolPage({ showToast }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-                {['Nama Prospect', 'Stage Terakhir', 'Alasan', 'Tanggal Masuk Pool', 'Sales', 'Status Pull', ''].map((h, i) => (
+                {['Prospect Name', 'Latest Stage', 'Reason', 'Date Entered Pool', 'Sales', 'Status Pull', ''].map((h, i) => (
                   <th key={i} style={{ textAlign: i === 6 ? 'right' : 'left', padding: '11px 14px', fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -218,11 +218,11 @@ export default function LeadPoolPage({ showToast }) {
             <tbody>
               {loading ? (
                 <tr><td colSpan={7} style={{ padding: '48px 14px', textAlign: 'center', color: C.inkFaint }}>
-                  <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', verticalAlign: 'middle' }} /> &nbsp;Memuat lead pool…
+                  <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', verticalAlign: 'middle' }} /> &nbsp;Loading lead pool…
                 </td></tr>
               ) : pageRows.length === 0 ? (
                 <tr><td colSpan={7} style={{ padding: '48px 14px', textAlign: 'center', color: C.inkFaint }}>
-                  {search ? 'Tidak ada prospect yang cocok.' : 'Belum ada prospect di lead pool.'}
+                  {search ? 'No matching prospects.' : 'No prospects in the lead pool yet.'}
                 </td></tr>
               ) : pageRows.map(r => {
                 const canPull = !r.pull_status || r.pull_status === 'rejected';
@@ -236,7 +236,7 @@ export default function LeadPoolPage({ showToast }) {
                     <td style={{ padding: '10px 14px' }}><PullBadge status={r.pull_status} /></td>
                     <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {r.pull_status === 'pending' ? (
-                        <span style={{ fontSize: 12, color: C.inkFaint, fontStyle: 'italic' }}>Menunggu Approval</span>
+                        <span style={{ fontSize: 12, color: C.inkFaint, fontStyle: 'italic' }}>Awaiting Approval</span>
                       ) : canPull ? (
                         <button onClick={() => setPullTarget(r)}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 9, border: 'none', background: C.navy, color: 'white', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>

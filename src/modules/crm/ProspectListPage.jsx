@@ -167,7 +167,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
       setProspects(data || []);
       setTotal(count || 0);
     } catch (err) {
-      showToast?.('Gagal memuat prospect: ' + err.message, 'error');
+      showToast?.('Failed to load prospects: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -178,7 +178,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
   const handleDelete = useCallback((prospect) => {
     showConfirm(
       'Delete Prospect',
-      `Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`,
+      `Delete prospect "${prospect.name}"? This action cannot be undone.`,
       async () => {
         closeConfirm();
         try {
@@ -187,10 +187,10 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
             .update({ deleted_at: new Date().toISOString() })
             .eq('id', prospect.id);
           if (error) throw error;
-          showToast?.('Prospect berhasil dihapus.', 'success');
+          showToast?.('Prospect deleted.', 'success');
           fetchProspects();
         } catch (err) {
-          showToast?.('Gagal hapus prospect: ' + err.message, 'error');
+          showToast?.('Failed to delete prospect: ' + err.message, 'error');
         }
       }
     );
@@ -240,7 +240,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Cari nama perusahaan…"
+            placeholder="Search company name…"
             style={{
               width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`,
               background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13,
@@ -249,13 +249,13 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
           />
         </div>
         <select value={filterStage} onChange={e => setFilterStage(e.target.value)} style={selStyle}>
-          <option value="all">Semua Stage</option>
+          <option value="all">All Stages</option>
           {Object.entries(STAGE_META).map(([k, v]) => (
             <option key={k} value={k}>{v.label}</option>
           ))}
         </select>
         <select value={filterSource} onChange={e => setFilterSource(e.target.value)} style={selStyle}>
-          <option value="all">Semua Source</option>
+          <option value="all">All Sources</option>
           {Object.entries(SOURCE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
@@ -267,7 +267,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-              {['Nama Perusahaan', 'PIC', 'Source', 'Pipeline Stage', 'Assigned To', 'Created At', ''].map(h => (
+              {['Company Name', 'PIC', 'Source', 'Pipeline Stage', 'Assigned To', 'Created At', ''].map(h => (
                 <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -276,7 +276,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
             {loading ? (
               <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
             ) : prospects.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada prospect</td></tr>
+              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>No prospects yet</td></tr>
             ) : prospects.map((p, i) => (
               <tr
                 key={p.id}

@@ -62,7 +62,7 @@ function SlaCard({ quot }) {
   );
 
   if (!pricing) {
-    return card('#EEE9DC', '#DDD3BE', '#6B6F5E', 'Belum ada timestamp pricing selesai');
+    return card('#EEE9DC', '#DDD3BE', '#6B6F5E', 'No pricing-completed timestamp yet');
   }
   const pricingMs = new Date(pricing).getTime();
 
@@ -70,20 +70,20 @@ function SlaCard({ quot }) {
     const elapsed = Date.now() - pricingMs;
     if (elapsed > targetMs) {
       return card('#F6E0DB', '#E6BBB2', '#B23227',
-        `SLA Terlewat! Target ${targetH} jam, sudah ${fmtDur(elapsed)} sejak pricing selesai`);
+        `SLA missed! Target ${targetH} hours, already ${fmtDur(elapsed)} since pricing was completed`);
     }
     return card('#F8ECCF', '#E6CE94', '#9A6B0E',
-      `Pricing selesai ${fmtDateTime(pricing)}. Belum dikirim ke customer.`,
-      `Sudah ${fmtDur(elapsed)} sejak pricing selesai (target ${targetH} jam)`);
+      `Pricing completed ${fmtDateTime(pricing)}. Not yet sent to the customer.`,
+      `${fmtDur(elapsed)} since pricing was completed (target ${targetH} hours)`);
   }
 
   const dur = new Date(sent).getTime() - pricingMs;
   if (dur <= targetMs) {
     return card('#E4F0E5', '#BFDDC4', '#2E7D4F',
-      `✓ Quote dikirim dalam ${fmtDur(dur)} (target ${targetH} jam)`);
+      `✓ Quote sent in ${fmtDur(dur)} (target ${targetH} hours)`);
   }
   return card('#F6E0DB', '#E6BBB2', '#B23227',
-    `Quote dikirim dalam ${fmtDur(dur)} — melebihi target ${targetH} jam (SLA terlewat)`);
+    `Quote sent in ${fmtDur(dur)} — over the ${targetH}-hour target (SLA missed)`);
 }
 
 const STATUS_META = {
@@ -188,8 +188,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         .order('sort_order', { ascending: true }),
     ]).then(([{ data: qData, error: qErr }, { data: iData, error: iErr }]) => {
       if (cancelled) return;
-      if (qErr) { showToast?.('Gagal memuat quotation: ' + qErr.message, 'error'); setLoading(false); return; }
-      if (iErr) { showToast?.('Gagal memuat items: ' + iErr.message, 'error'); }
+      if (qErr) { showToast?.('Failed to load quotation: ' + qErr.message, 'error'); setLoading(false); return; }
+      if (iErr) { showToast?.('Failed to load items: ' + iErr.message, 'error'); }
       setQuot(qData);
       setItems(iData || []);
       if (qData?.payment_terms_id) {
@@ -280,12 +280,12 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         .eq('id', quotationId)
         .select('id');
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error('Gagal mengirim: tidak ada baris ter-update (cek izin akses).');
+      if (!data || data.length === 0) throw new Error('Failed to send: no rows were updated (check access permissions).');
       setQuot(q => q ? { ...q, status: 'SENT', quote_sent_at: nowIso } : q);
       setConfirmSend(false);
-      showToast?.('Quotation dikirim ke customer');
+      showToast?.('Quotation sent to the customer');
     } catch (err) {
-      showToast?.('Gagal mengirim: ' + err.message, 'error');
+      showToast?.('Failed to send: ' + err.message, 'error');
     } finally {
       setSending(false);
     }
@@ -304,9 +304,9 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
       a.download = `${quot?.quotation_no || 'quotation'}_rev${quot?.revision ?? 1}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast?.('PDF berhasil diunduh');
+      showToast?.('PDF downloaded');
     } catch (err) {
-      showToast?.('Gagal generate PDF: ' + err.message, 'error');
+      showToast?.('Failed to generate PDF: ' + err.message, 'error');
     } finally {
       setGeneratingPDF(false);
     }
@@ -411,7 +411,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
             {/* Sales-only internal notes — never in the customer PDF (no-print + excluded from #quotation-print-area) */}
             {quot.internal_notes && (
               <div className="no-print" style={{ marginTop: 14, padding: '10px 14px', borderRadius: 8, background: C.dangerBg, border: `1px dashed ${C.dangerBd}` }}>
-                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.danger, marginBottom: 4 }}>Catatan Internal (Sales)</div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.danger, marginBottom: 4 }}>Internal Notes (Sales)</div>
                 <div style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{quot.internal_notes}</div>
               </div>
             )}
@@ -419,7 +419,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
 
           {/* Sectioned items */}
           {sections.length === 0 ? (
-            <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: '2rem', textAlign: 'center', color: C.inkFaint }}>Tidak ada item</div>
+            <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: '2rem', textAlign: 'center', color: C.inkFaint }}>No items</div>
           ) : sections.map((sec, si) => {
             const secCost = sec.rows.reduce((s, r) =>
               r.if_any ? s : s + Math.round((Number(r.cost_price) || 0) * (Number(r.qty) || 0) * (Number(r.exchange_rate) || 1)), 0);
@@ -486,7 +486,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         {/* RIGHT — sticky summary */}
         <div style={{ flex: '0 0 280px', position: 'sticky', top: 24 }}>
           <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: 22, boxShadow: '0 2px 12px rgba(35,41,30,.08)' }}>
-            <p style={{ margin: '0 0 14px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft }}>Ringkasan</p>
+            <p style={{ margin: '0 0 14px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft }}>Summary</p>
 
             {/* Per-section */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
@@ -797,9 +797,9 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
 
       <ConfirmModal
         open={confirmSend}
-        title="Kirim ke Customer?"
-        message={`Quotation ${quot.quotation_no} akan ditandai SENT dan waktu kirim dicatat untuk perhitungan SLA. Lanjutkan?`}
-        confirmLabel={sending ? 'Mengirim…' : 'Ya, Kirim'}
+        title="Send to Customer?"
+        message={`Quotation ${quot.quotation_no} will be marked SENT and the send time recorded for SLA calculation. Continue?`}
+        confirmLabel={sending ? 'Mengirim…' : 'Yes, Send'}
         cancelLabel="Cancel"
         variant="info"
         onConfirm={handleSendToCustomer}

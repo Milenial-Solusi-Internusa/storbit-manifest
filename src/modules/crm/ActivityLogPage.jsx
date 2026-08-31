@@ -92,7 +92,7 @@ export default function ActivityLogPage({ showToast }) {
       });
       setEvents(data);
     } catch (err) {
-      showToast?.('Gagal memuat activity log: ' + err.message, 'error');
+      showToast?.('Failed to load activity log: ' + err.message, 'error');
       setEvents([]);
     } finally {
       setLoading(false);
@@ -160,7 +160,7 @@ export default function ActivityLogPage({ showToast }) {
           <option value="this_week">This Week</option>
           <option value="this_month">This Month</option>
           <option value="custom">Custom</option>
-          <option value="all">Semua Tanggal</option>
+          <option value="all">All Dates</option>
         </select>
         {filterDate === 'custom' && (
           <>
@@ -184,7 +184,7 @@ export default function ActivityLogPage({ showToast }) {
         {loading ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint, fontSize: 13.5 }}>Loading data…</div>
         ) : pageRows.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint, fontSize: 13.5 }}>Belum ada aktivitas pada rentang ini</div>
+          <div style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint, fontSize: 13.5 }}>No activity in this range</div>
         ) : pageRows.map((e, i) => {
           const tone = TYPE_TONE[e.type] || TYPE_TONE.activity;
           const Ico = ICONS[e.icon] || Activity;

@@ -45,10 +45,10 @@ function RejectModal({ account, onClose, onSubmit }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.inkSoft, display: 'flex', padding: 4 }}><X size={18} /></button>
         </header>
         <div style={{ padding: 22 }}>
-          <div style={{ fontSize: 13, color: C.inkSoft, marginBottom: 12 }}>Tolak request tarik <b style={{ color: C.ink }}>{account.name}</b> dari Lead Pool. Prospect tetap di pool.</div>
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6, display: 'block' }}>Alasan (opsional)</span>
+          <div style={{ fontSize: 13, color: C.inkSoft, marginBottom: 12 }}>Reject the claim request for <b style={{ color: C.ink }}>{account.name}</b> from the Lead Pool. The prospect stays in the pool.</div>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6, display: 'block' }}>Reason (optional)</span>
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
-            placeholder="Alasan penolakan…"
+            placeholder="Rejection reason…"
             style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 13.5, color: C.ink, border: `1px solid ${C.line}`, borderRadius: 10, padding: '10px 12px', outline: 'none', resize: 'vertical' }} />
         </div>
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: `1px solid ${C.line}`, background: C.surface2 }}>
@@ -89,7 +89,7 @@ export default function LeadPoolApprovalPage({ showToast }) {
 
     query.order('pull_requested_at', { ascending: true }).limit(1000).then(({ data, error }) => {
       if (cancelled) return;
-      if (error) { showToast?.('Gagal memuat request: ' + error.message, 'error'); setRows([]); }
+      if (error) { showToast?.('Failed to load requests: ' + error.message, 'error'); setRows([]); }
       else setRows(data || []);
       setLoading(false);
     });
@@ -130,19 +130,19 @@ export default function LeadPoolApprovalPage({ showToast }) {
       stage_changed_at: nowIso,
     }).eq('id', account.id);
     setBusyId(null);
-    if (error) { showToast?.('Gagal approve: ' + error.message, 'error'); return; }
-    await notifySales(account, 'Request Pull Disetujui',
-      `Request pull ${account.name} disetujui. Prospect kembali ke pipeline stage ${STAGE_LABEL[newStage] || newStage}.`);
+    if (error) { showToast?.('Failed to approve: ' + error.message, 'error'); return; }
+    await notifySales(account, 'Pull Request Approved',
+      `Pull request for ${account.name} approved. The prospect returns to pipeline stage ${STAGE_LABEL[newStage] || newStage}.`);
     showToast?.(`"${account.name}" dikembalikan ke pipeline (${STAGE_LABEL[newStage] || newStage})`, 'success');
     setRows(prev => prev.filter(r => r.id !== account.id));
   }, [profile?.id, showToast, notifySales]);
 
   const handleReject = useCallback(async (account, reason) => {
     const { error } = await supabase.from('accounts').update({ pull_status: 'rejected' }).eq('id', account.id);
-    if (error) { showToast?.('Gagal reject: ' + error.message, 'error'); return false; }
-    await notifySales(account, 'Request Pull Ditolak',
-      `Request pull ${account.name} ditolak.${reason ? ' Alasan: ' + reason : ''}`);
-    showToast?.(`Request "${account.name}" ditolak`, 'success');
+    if (error) { showToast?.('Failed to reject: ' + error.message, 'error'); return false; }
+    await notifySales(account, 'Pull Request Rejected',
+      `Pull request for ${account.name} was rejected.${reason ? ' Reason: ' + reason : ''}`);
+    showToast?.(`Request for "${account.name}" rejected`, 'success');
     setRows(prev => prev.filter(r => r.id !== account.id));
     return true;
   }, [showToast, notifySales]);
@@ -157,7 +157,7 @@ export default function LeadPoolApprovalPage({ showToast }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ fontFamily: "'Montserrat',sans-serif", fontSize: 24, fontWeight: 800, color: C.navy, margin: 0, letterSpacing: '-.4px' }}>Approval Lead Pool</h1>
-          <p style={{ fontSize: 13.5, color: C.inkSoft, margin: '4px 0 0' }}>Request tarik prospect dari lead pool · {loading ? '…' : `${count} pending`}</p>
+          <p style={{ fontSize: 13.5, color: C.inkSoft, margin: '4px 0 0' }}>Prospect claim requests from the lead pool · {loading ? '…' : `${count} pending`}</p>
         </div>
       </div>
 
@@ -166,7 +166,7 @@ export default function LeadPoolApprovalPage({ showToast }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-                {['Nama Prospect', 'Stage Terakhir', 'Sales', 'Tanggal Request', 'Justifikasi', ''].map((h, i) => (
+                {['Prospect Name', 'Latest Stage', 'Sales', 'Request Date', 'Justification', ''].map((h, i) => (
                   <th key={i} style={{ textAlign: i === 5 ? 'right' : 'left', padding: '11px 14px', fontSize: 11, fontWeight: 700, color: C.inkSoft, textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -174,10 +174,10 @@ export default function LeadPoolApprovalPage({ showToast }) {
             <tbody>
               {loading ? (
                 <tr><td colSpan={6} style={{ padding: '48px 14px', textAlign: 'center', color: C.inkFaint }}>
-                  <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', verticalAlign: 'middle' }} /> &nbsp;Memuat request…
+                  <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', verticalAlign: 'middle' }} /> &nbsp;Loading requests…
                 </td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: '48px 14px', textAlign: 'center', color: C.inkFaint }}>Tidak ada request pending.</td></tr>
+                <tr><td colSpan={6} style={{ padding: '48px 14px', textAlign: 'center', color: C.inkFaint }}>No pending requests.</td></tr>
               ) : rows.map(r => {
                 const isOpen = expanded === r.id;
                 const just = r.pull_justification || '';
@@ -195,7 +195,7 @@ export default function LeadPoolApprovalPage({ showToast }) {
                           {long && (
                             <button onClick={() => setExpanded(isOpen ? null : r.id)}
                               style={{ marginLeft: 6, background: 'none', border: 'none', cursor: 'pointer', color: C.navy, fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                              {isOpen ? <>Tutup <ChevronUp size={12} /></> : <>Selengkapnya <ChevronDown size={12} /></>}
+                              {isOpen ? <>Collapse <ChevronUp size={12} /></> : <>More <ChevronDown size={12} /></>}
                             </button>
                           )}
                         </>

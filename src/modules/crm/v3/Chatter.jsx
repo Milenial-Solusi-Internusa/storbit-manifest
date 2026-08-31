@@ -139,7 +139,7 @@ export default function Chatter({
       .limit(200);
     if (error) {
       console.error('[chatter-v3] fetch comments failed:', error.message);
-      showToast?.('Gagal memuat komentar: ' + error.message, 'error');
+      showToast?.('Failed to load comments: ' + error.message, 'error');
       setLoadingComments(false);
       return;
     }
@@ -265,7 +265,7 @@ export default function Chatter({
             .insert(finalTags.map((m) => ({ comment_id: newCommentId, user_id: m.userId })));
         } catch (e) {
           console.error('[chatter-v3] insert mentions failed:', e?.message || e);
-          showToast?.('Komentar terkirim, tapi menandai beberapa orang gagal.', 'error');
+          showToast?.('Comment sent, but tagging some people failed.', 'error');
         }
 
         const taggerName = profile?.full_name || user?.email || 'Seseorang';
@@ -275,8 +275,8 @@ export default function Chatter({
             company_id: companyId,
             user_id: m.userId,
             event_type: adapter.notifEvent,
-            title: 'Anda di-tag di komentar',
-            body: `${taggerName} men-tag Anda di komentar pada ${adapter.noun} ${entityLabel || ''}`.trim(),
+            title: 'You were tagged in a comment',
+            body: `${taggerName} tagged you in a comment on ${adapter.noun} ${entityLabel || ''}`.trim(),
             reference_type: adapter.refType,
             reference_id: entityId,
           }));
@@ -285,7 +285,7 @@ export default function Chatter({
           try { await supabase.from('notifications').insert(notifRows); }
           catch (e) {
             console.error('[chatter-v3] notify mentions failed:', e?.message || e);
-            showToast?.('Komentar terkirim, tapi notifikasi ke beberapa orang gagal terkirim.', 'error');
+            showToast?.('Comment sent, but notifications to some people failed to send.', 'error');
           }
 
           // Email fan-out best-effort — kanal sekunder. Kegagalan di sini
@@ -300,9 +300,9 @@ export default function Chatter({
               const to = emailOf[n.user_id];
               if (!to) return null; // tak punya email — lewati orangnya, bukan seluruhnya
               const subject = entityLabel
-                ? `Anda di-tag di komentar — ${adapter.noun} ${entityLabel}`
-                : 'Anda di-tag di komentar';
-              const html = `<p>Halo,</p><p><strong>${escapeHtml(taggerName)}</strong> men-tag Anda di komentar pada ${escapeHtml(adapter.noun)} <strong>${escapeHtml(entityLabel || '')}</strong> di Nexus.</p><p><a href="https://nexus.msigroup.co.id">Buka Nexus</a> untuk melihat komentar selengkapnya.</p><p style="color:#7A828E;font-size:12px;margin-top:24px;">Email otomatis dari Nexus by MSI — balas lewat aplikasi, bukan email ini.</p>`;
+                ? `You were tagged in a comment — ${adapter.noun} ${entityLabel}`
+                : 'You were tagged in a comment';
+              const html = `<p>Hello,</p><p><strong>${escapeHtml(taggerName)}</strong> tagged you in a comment on ${escapeHtml(adapter.noun)} <strong>${escapeHtml(entityLabel || '')}</strong> in Nexus.</p><p><a href="https://nexus.msigroup.co.id">Open Nexus</a> to see the full comment.</p><p style="color:#7A828E;font-size:12px;margin-top:24px;">Automated email from Nexus by MSI. Please reply in the app, not to this email.</p>`;
               return supabase.functions.invoke('send-email', { body: { to, subject, html } })
                 .catch((e) => console.error('[chatter-v3] send-email failed for', n.user_id, e?.message || e));
             }));
@@ -317,7 +317,7 @@ export default function Chatter({
       await refetchComments();
     } catch (e) {
       console.error('[chatter-v3] submit comment failed:', e?.message || e);
-      showToast?.('Gagal mengirim komentar: ' + (e?.message || e), 'error');
+      showToast?.('Failed to send comment: ' + (e?.message || e), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -338,13 +338,13 @@ export default function Chatter({
         .select('id');
       if (error) throw error;
       // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
-      if (!data || data.length === 0) throw new Error('Tidak ada izin mengubah komentar ini.');
+      if (!data || data.length === 0) throw new Error('You do not have permission to edit this comment.');
       setEditingId(null);
       setEditBody('');
       await refetchComments();
     } catch (e) {
       console.error('[chatter-v3] edit comment failed:', e?.message || e);
-      showToast?.('Gagal menyimpan perubahan komentar: ' + (e?.message || e), 'error');
+      showToast?.('Failed to save comment changes: ' + (e?.message || e), 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -360,12 +360,12 @@ export default function Chatter({
         .eq('id', deleteTarget.id)
         .select('id');
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error('Tidak ada izin menghapus komentar ini.');
+      if (!data || data.length === 0) throw new Error('You do not have permission to delete this comment.');
       setDeleteTarget(null);
       await refetchComments();
     } catch (e) {
       console.error('[chatter-v3] delete comment failed:', e?.message || e);
-      showToast?.('Gagal menghapus komentar: ' + (e?.message || e), 'error');
+      showToast?.('Failed to delete comment: ' + (e?.message || e), 'error');
     } finally {
       setDeleting(false);
     }
@@ -375,9 +375,9 @@ export default function Chatter({
   if (!adapter) {
     return (
       <div style={{ padding: SP.s4, fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT }}>
-        <strong style={{ fontFamily: FONT_HEAD }}>Chatter belum tersedia untuk entity ini.</strong>
+        <strong style={{ fontFamily: FONT_HEAD }}>Chatter is not available for this entity yet.</strong>
         <div style={{ marginTop: SP.s1, color: FAINT, fontSize: 12.5 }}>
-          {`entityType "${entityType}" belum punya adapter. Sekarang baru `}
+          {`entityType "${entityType}" has no adapter yet. Currently only `}
           {Object.keys(ENTITY_ADAPTERS).join(', ')}
           {' — entity lain menyusul setelah migrasi entity_type/entity_id dijalankan.'}
         </div>
@@ -404,7 +404,7 @@ export default function Chatter({
             ref={textareaRef}
             value={newBody}
             onChange={handleComposerChange}
-            placeholder="Tulis komentar… ketik @ untuk menandai orang"
+            placeholder="Write a comment… type @ to tag someone"
             rows={3}
             style={{
               width: '100%', padding: SP.s3, borderRadius: RADIUS.md,
@@ -430,9 +430,9 @@ export default function Chatter({
 
         {/* ── Daftar komentar ── */}
         {loadingComments ? (
-          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: FAINT }}>Memuat komentar…</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: FAINT }}>Loading comments…</div>
         ) : comments.length === 0 ? (
-          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: FAINT }}>Belum ada komentar.</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: FAINT }}>No comments yet.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s4 }}>
             {comments.map((c) => {
@@ -452,7 +452,7 @@ export default function Chatter({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: SP.s2, flexWrap: 'wrap' }}>
                       <span style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 700, color: INK }}>
-                        {a?.full_name || 'Pengguna'}
+                        {a?.full_name || 'User'}
                       </span>
                       <span style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: FAINT }}>
                         {timeAgo(c.created_at)}{c.updated_at && c.updated_at !== c.created_at ? ' · disunting' : ''}
@@ -542,8 +542,8 @@ export default function Chatter({
 
       <ConfirmModal
         open={!!deleteTarget}
-        title="Hapus komentar?"
-        message="Komentar akan disembunyikan dari daftar. Tindakan ini tidak bisa dibatalkan dari UI."
+        title="Delete comment?"
+        message="The comment will be hidden from the list. This action cannot be undone from the UI."
         confirmLabel={deleting ? 'Deleting…' : 'Hapus'}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}

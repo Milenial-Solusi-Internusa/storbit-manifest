@@ -129,7 +129,7 @@ export default function IndomarcoDashboardPage() {
       try {
         const { data, error: e1 } = await supabase.rpc("storbit_sp_customers");
         if (e1) throw e1;
-        const opts = (data || []).map((c) => ({ id: c.customer_id, name: c.name || "(Tanpa nama)" }));
+        const opts = (data || []).map((c) => ({ id: c.customer_id, name: c.name || "(Unnamed)" }));
         if (alive) setCustomerOptions(opts);
       } catch { /* dropdown fallback ke opsi terpilih; data utama tetap jalan */ }
     })();
@@ -150,7 +150,7 @@ export default function IndomarcoDashboardPage() {
         if (err) throw err;
         if (alive) setStats(data || null);
       } catch (e) {
-        if (alive) { setError(e.message || "Gagal memuat data."); setStats(null); }
+        if (alive) { setError(e.message || "Failed to load data."); setStats(null); }
       } finally {
         if (alive) setLoading(false);
       }
@@ -196,9 +196,9 @@ export default function IndomarcoDashboardPage() {
   const selectedName = customerOptions.find((c) => c.id === customerId)?.name || (customerId === INDOMARCO_ID ? "Indomarco" : "Customer");
 
   const KPI = [
-    { key: "sp",       label: "Total Sales Plan",   value: fmt(totalSP),       unit: "SP tercatat",      icon: Package },
+    { key: "sp",       label: "Total Sales Plan",   value: fmt(totalSP),       unit: "SPs recorded",      icon: Package },
     { key: "ordered",  label: "Total Unit Dipesan", value: fmt(totalOrdered),  unit: "unit",             icon: Boxes },
-    { key: "realized", label: "Volume Terealisasi", value: fmt(totalRealized), unit: "unit tercatat",    icon: Truck },
+    { key: "realized", label: "Volume Terealisasi", value: fmt(totalRealized), unit: "units recorded",    icon: Truck },
     { key: "dc",       label: "Jangkauan DC",       value: fmt(dcCount),       unit: "titik se-Indonesia", icon: MapPin },
   ];
 
@@ -267,7 +267,7 @@ export default function IndomarcoDashboardPage() {
 
           {/* ── Row: donut wilayah + bar top DC ─────────────────────────── */}
           <div className="nx-grid-2" style={{ display: "grid", gridTemplateColumns: "minmax(320px, 1fr) minmax(340px, 1.3fr)", gap: 20 }}>
-            <Panel title="Jangkauan per Wilayah" subtitle="Jumlah DC unik per wilayah, dari total DC aktif customer terpilih." icon={Globe2}>
+            <Panel title="Jangkauan per Wilayah" subtitle="Unique DC count per region, out of the selected customer’s total active DCs." icon={Globe2}>
               <div style={{ position: "relative" }}>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
@@ -280,7 +280,7 @@ export default function IndomarcoDashboardPage() {
                 {/* Center label — angka DC LIVE, pembagian wilayah masih dummy */}
                 <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", textAlign: "center", pointerEvents: "none" }}>
                   <div style={{ fontFamily: FONT_HEAD, fontWeight: 800, fontSize: 26, color: C.ink }}>{fmt(dcCount)}</div>
-                  <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: C.slate }}>DC aktif</div>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: C.slate }}>active DCs</div>
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
@@ -294,9 +294,9 @@ export default function IndomarcoDashboardPage() {
               </div>
             </Panel>
 
-            <Panel title="Distribution Center Teratas" subtitle="6 DC dengan volume tertinggi. Tiga teratas ditandai oranye." icon={MapPin}>
+            <Panel title="Distribution Center Teratas" subtitle="The 6 DCs with the highest volume. The top three are marked in orange." icon={MapPin}>
               {dcData.length === 0 ? (
-                <div style={{ padding: "80px 0", textAlign: "center", color: C.slate, fontSize: 13 }}>Belum ada data DC.</div>
+                <div style={{ padding: "80px 0", textAlign: "center", color: C.slate, fontSize: 13 }}>No DC data yet.</div>
               ) : (
                 <ResponsiveContainer width="100%" height={360}>
                   <BarChart data={dcData} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 8 }}>
@@ -314,7 +314,7 @@ export default function IndomarcoDashboardPage() {
           </div>
 
           {/* ── Trend — area gradient ───────────────────────────────────── */}
-          <Panel title="Tren Sales Plan per Bulan" subtitle="Konsistensi pesanan yang tercatat secara digital sepanjang 2026 (Jan–Jul)." icon={TrendingUp}>
+          <Panel title="Monthly Sales Plan Trend" subtitle="Consistency of digitally recorded orders throughout 2026 (Jan–Jul)." icon={TrendingUp}>
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={trendData} margin={{ top: 8, right: 24, bottom: 4, left: 0 }}>
                 <defs>

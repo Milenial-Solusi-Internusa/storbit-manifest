@@ -268,7 +268,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       setInquiries(data || []);
       setTotal(count || 0);
     } catch (err) {
-      showToast?.('Gagal memuat inquiry: ' + err.message, 'error');
+      showToast?.('Failed to load inquiries: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -333,7 +333,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
             cursor: 'pointer', boxShadow: '0 2px 8px rgba(47,107,63,.25)',
           }}
         >
-          <Plus size={16} /> Tambah Inquiry
+          <Plus size={16} /> Add Inquiry
         </button>
       </div>
 
@@ -344,7 +344,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Cari nomor inquiry…"
+            placeholder="Search inquiry number…"
             style={{
               width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`,
               background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13,
@@ -353,7 +353,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           />
         </div>
         <select value={filterService} onChange={e => setFilterService(e.target.value)} style={selStyle}>
-          <option value="all">Semua Service</option>
+          <option value="all">All Services</option>
           {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
@@ -391,7 +391,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-              {['Inquiry No', 'Prospect / Customer', 'Service Type', 'Route', 'Stage', 'Status', 'Created At', 'Umur Inquiry', ''].map(h => (
+              {['Inquiry No', 'Prospect / Customer', 'Service Type', 'Route', 'Stage', 'Status', 'Created At', 'Inquiry Age', ''].map(h => (
                 <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -400,7 +400,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
             {loading ? (
               <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
             ) : inquiries.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada inquiry</td></tr>
+              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>No inquiries yet</td></tr>
             ) : inquiries.map((inq, i) => (
               <tr
                 key={inq.id}
@@ -422,7 +422,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={inq.status} /></td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(inq.created_at)}</td>
                 <td style={{ padding: '12px 14px', color: C.inkSoft, fontSize: 12.5, whiteSpace: 'nowrap' }}>
-                  {ageDays(inq.created_at) == null ? '—' : `${ageDays(inq.created_at)} hari`}
+                  {ageDays(inq.created_at) == null ? '—' : `${ageDays(inq.created_at)} days`}
                 </td>
                 <td style={{ padding: '12px 10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>

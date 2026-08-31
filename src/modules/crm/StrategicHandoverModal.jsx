@@ -127,15 +127,15 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
 
         <div style={{ padding: 22, overflowY: 'auto' }}>
           <Section title="A — Profil Customer Lengkap">
-            <F label="Nama Perusahaan"><input value={account?.name || ''} readOnly style={{ ...inpStyle, background: C.surface2, color: C.inkSoft }} /></F>
+            <F label="Company Name"><input value={account?.name || ''} readOnly style={{ ...inpStyle, background: C.surface2, color: C.inkSoft }} /></F>
             <F label="NPWP"><input value={f.npwp} onChange={set('npwp')} style={inpStyle} /></F>
             <F label="NIB"><input value={f.nib} onChange={set('nib')} style={inpStyle} /></F>
             <F label="KTP Direktur"><input value={f.ktp_direktur} onChange={set('ktp_direktur')} style={inpStyle} /></F>
             <F label="Alamat" full><textarea rows={2} value={f.alamat} onChange={set('alamat')} style={taStyle} /></F>
             <F label="Website"><input value={f.website} onChange={set('website')} style={inpStyle} /></F>
             <F label="Industri / Vertikal"><select value={f.industri} onChange={set('industri')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{INDUSTRI.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
-            <F label="Tahun Berdiri"><input value={f.tahun_berdiri} onChange={set('tahun_berdiri')} style={inpStyle} /></F>
-            <F label="Tipe Customer"><select value={f.tipe_customer} onChange={set('tipe_customer')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TIPE_CUSTOMER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Year Established"><input value={f.tahun_berdiri} onChange={set('tahun_berdiri')} style={inpStyle} /></F>
+            <F label="Customer Type"><select value={f.tipe_customer} onChange={set('tipe_customer')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TIPE_CUSTOMER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Tier Assigned"><select value={f.tier_assigned} onChange={set('tier_assigned')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TIER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
           </Section>
 
@@ -152,8 +152,8 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
           </div>
 
           <Section title="C — Commercial Commitment">
-            <F label="TCV 12 Bulan (Rp)"><input type="number" min="0" value={f.tcv_forecast} onChange={set('tcv_forecast')} style={inpStyle} /></F>
-            <F label="Quotation Number Aktif"><input value={f.quotation_ref} onChange={set('quotation_ref')} style={inpStyle} /></F>
+            <F label="12-Month TCV (Rp)"><input type="number" min="0" value={f.tcv_forecast} onChange={set('tcv_forecast')} style={inpStyle} /></F>
+            <F label="Active Quotation Number"><input value={f.quotation_ref} onChange={set('quotation_ref')} style={inpStyle} /></F>
             <F label="Volume Forecast per Lane" full><textarea rows={2} value={f.volume_per_lane} onChange={set('volume_per_lane')} style={taStyle} /></F>
             <F label="Service Type Mix" full><textarea rows={2} value={f.service_mix} onChange={set('service_mix')} style={taStyle} /></F>
             <F label="SLA Komitmen per Lane" full><textarea rows={2} value={f.sla_komitmen} onChange={set('sla_komitmen')} style={taStyle} /></F>
