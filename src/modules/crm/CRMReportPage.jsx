@@ -452,7 +452,7 @@ export default function CRMReportPage() {
 
   const salesLabel = (() => {
     const ids = [...effSalesIds];
-    if (salesList.length && ids.length === salesList.length) return "Semua Sales";
+    if (salesList.length && ids.length === salesList.length) return "All Salespeople";
     if (ids.length === 0) return "Tidak ada Sales";
     if (ids.length === 1) return (salesList.find((s) => s.id === ids[0]) || {}).name || "1 Sales";
     return ids.length + " Sales";
@@ -467,9 +467,9 @@ export default function CRMReportPage() {
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" }));
 
   const periodPresets = [
-    { id: "today", label: "Hari Ini" },
-    { id: "week", label: "Minggu Ini" },
-    { id: "month", label: "Bulan Ini" },
+    { id: "today", label: "Today" },
+    { id: "week", label: "This Week" },
+    { id: "month", label: "This Month" },
     { id: "custom", label: "Custom" },
   ];
   const periodLabel = (periodPresets.find((p) => p.id === period) || {}).label || period;
@@ -816,12 +816,12 @@ export default function CRMReportPage() {
               <table style={st.table}>
                 <thead>
                   <tr>
-                    <th style={{ ...st.th, textAlign: "left" }}>Tanggal</th>
+                    <th style={{ ...st.th, textAlign: "left" }}>Date</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Tipe</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Status</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Customer</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Sales</th>
-                    <th style={{ ...st.th, textAlign: "left" }}>Catatan</th>
+                    <th style={{ ...st.th, textAlign: "left" }}>Notes</th>
                   </tr>
                 </thead>
                 <tbody>

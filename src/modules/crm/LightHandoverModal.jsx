@@ -104,16 +104,16 @@ export default function LightHandoverModal({ account, onCancel, onSubmit }) {
             <F label="Alamat Lengkap" full><textarea rows={2} value={f.alamat} onChange={set('alamat')} style={taStyle} /></F>
             <F label="PIC Operasional (nama · jabatan · HP · email)" full><input value={f.pic_operasional} onChange={set('pic_operasional')} style={inpStyle} /></F>
             <F label="PIC Finance/Billing (nama · HP · email)" full><input value={f.pic_finance} onChange={set('pic_finance')} style={inpStyle} /></F>
-            <F label="Tipe Customer"><select value={f.tipe_customer} onChange={set('tipe_customer')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{TIPE_CUSTOMER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Tipe Customer"><select value={f.tipe_customer} onChange={set('tipe_customer')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TIPE_CUSTOMER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
           </Section>
 
           <Section title="B — Deal Summary">
-            <F label="Stream Service"><select value={f.stream_service} onChange={set('stream_service')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{STREAM_SERVICE.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Stream Service"><select value={f.stream_service} onChange={set('stream_service')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{STREAM_SERVICE.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Estimasi Volume 12 Bulan"><input value={f.estimasi_volume} onChange={set('estimasi_volume')} style={inpStyle} /></F>
-            <F label="Payment Terms"><select value={f.payment_terms} onChange={set('payment_terms')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{paymentTerms.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></F>
+            <F label="Payment Terms"><select value={f.payment_terms} onChange={set('payment_terms')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{paymentTerms.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></F>
             <F label="Credit Limit (Rp, jika TOP)"><input type="number" min="0" value={f.credit_limit} onChange={set('credit_limit')} style={inpStyle} /></F>
             <F label="Validity Quote/Kontrak"><input type="date" value={f.validity_quote} onChange={set('validity_quote')} style={inpStyle} /></F>
-            <F label="Customer Master Setup"><select value={f.customer_master_setup} onChange={set('customer_master_setup')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option><option value="SELESAI">SELESAI</option><option value="PENDING">PENDING</option></select></F>
+            <F label="Customer Master Setup"><select value={f.customer_master_setup} onChange={set('customer_master_setup')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option><option value="SELESAI">SELESAI</option><option value="PENDING">PENDING</option></select></F>
             <F label="Special Handling" full>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 {SPECIAL_HANDLING.map(o => (
@@ -142,7 +142,7 @@ export default function LightHandoverModal({ account, onCancel, onSubmit }) {
         </div>
 
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: `1px solid ${C.line}`, background: C.surface2, borderRadius: '0 0 16px 16px' }}>
-          <button onClick={onCancel} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', color: C.inkSoft, fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Batal</button>
+          <button onClick={onCancel} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', color: C.inkSoft, fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
           <button onClick={submit} disabled={saving} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: C.accent, color: '#fff', fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             {saving ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <ClipboardCheck size={15} />}Simpan &amp; Lanjutkan
           </button>

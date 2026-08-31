@@ -241,7 +241,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     const e = {};
     if (sourceType === 'prospect' && !form.prospect_id) e.source = 'Pilih prospect';
     if (sourceType === 'customer' && !form.customer_id) e.source = 'Pilih customer';
-    if (!form.service_type) e.service_type = 'Wajib diisi';
+    if (!form.service_type) e.service_type = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -337,9 +337,9 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
             <span style={S.inqBadge}>{isEdit ? (editNo || '—') : `INQ/MSI/${new Date().getFullYear()}/—`}</span>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-            <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Batal</button>
+            <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Cancel</button>
             <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleSave} disabled={saving}>
-              <Send size={16} />{saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Submit Inquiry')}
+              <Send size={16} />{saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Submit Inquiry')}
             </button>
           </div>
         </div>
@@ -480,7 +480,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               </div>
 
               <div>
-                <div style={S.label}>Jenis Kontainer</div>
+                <div style={S.label}>Container Type</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
                   {CONTAINERS.map(t => <Pill key={t} active={form.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}
                 </div>
@@ -583,9 +583,9 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
 
         {/* footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 8 }}>
-          <button type="button" style={S.btnGhost} onClick={onBack}><ChevronLeft size={16} />Batal</button>
+          <button type="button" style={S.btnGhost} onClick={onBack}><ChevronLeft size={16} />Cancel</button>
           <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleSave} disabled={saving}>
-            <Send size={16} />{saving ? 'Menyimpan…' : 'Submit Inquiry'}
+            <Send size={16} />{saving ? 'Saving…' : 'Submit Inquiry'}
           </button>
         </div>
       </div>

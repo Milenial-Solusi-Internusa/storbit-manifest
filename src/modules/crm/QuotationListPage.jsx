@@ -191,7 +191,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
           />
         </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
-          <option value="all">Semua Status</option>
+          <option value="all">All Statuses</option>
           {Object.entries(STATUS_META).map(([k, v]) => (
             <option key={k} value={k}>{v.label}</option>
           ))}
@@ -211,9 +211,9 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
             ) : quotations.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada quotation</td></tr>
+              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>No quotations yet</td></tr>
             ) : quotations.map((q, i) => (
               <tr
                 key={q.id}

@@ -398,7 +398,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
             ) : inquiries.length === 0 ? (
               <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada inquiry</td></tr>
             ) : inquiries.map((inq, i) => (

@@ -170,11 +170,11 @@ export async function saveDealUpdate({ accountId, patch, auditStageKey, prevStag
   dealUpdateInFlightIds.add(accountId);
   try {
     const { data, error } = await supabase.from('accounts').update(patch).eq('id', accountId).select('id');
-    if (error) { showToast?.('Gagal menyimpan: ' + error.message, 'error'); return false; }
+    if (error) { showToast?.('Failed to save: ' + error.message, 'error'); return false; }
     // RLS bisa menyaring baris (0 baris ter-update) tanpa Postgres mengembalikan
     // error — tanpa cek ini, penolakan RLS akan salah dilaporkan sebagai sukses.
     if (!data || data.length === 0) {
-      showToast?.('Gagal menyimpan: tidak ada izin untuk mengubah akun ini, atau akun tidak ditemukan.', 'error');
+      showToast?.('Failed to save: you do not have permission to modify this account, or the account was not found.', 'error');
       return false;
     }
     if (auditStageKey) {
@@ -186,7 +186,7 @@ export async function saveDealUpdate({ accountId, patch, auditStageKey, prevStag
         notes: `${prevStage || 'NEW'} → ${auditStageKey}`,
       }, actor);
     }
-    showToast?.('Perubahan disimpan', 'success');
+    showToast?.('Changes saved', 'success');
     return true;
   } finally {
     dealUpdateInFlightIds.delete(accountId);
@@ -340,18 +340,18 @@ export function DealHeaderControls({ value, stageKey, onEdit, onPickStage }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, flexWrap: 'wrap' }}>
       <div style={{ textAlign: 'right' }}>
-        <div style={{ fontFamily: BODY, fontSize: 11.5, fontWeight: 600, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Nilai Deal</div>
+        <div style={{ fontFamily: BODY, fontSize: 11.5, fontWeight: 600, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Deal Value</div>
         <div style={{ fontFamily: HEAD, fontSize: 26, fontWeight: 800, color: C.navy, letterSpacing: '-0.02em', lineHeight: 1.1 }}>{fmtRp(value)}</div>
       </div>
       <div style={{ display: 'flex', gap: 9 }}>
         <button onClick={onEdit} style={{ height: 40, padding: '0 14px', borderRadius: 10, border: `1px solid ${C.border}`, background: '#fff', color: C.text, fontFamily: HEAD, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}><Pencil size={15} />Edit Deal</button>
         <div style={{ position: 'relative' }} ref={ref}>
           <button onClick={() => setOpen(!open)} style={{ height: 40, padding: '0 14px', borderRadius: 10, border: 'none', background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-            <ArrowRightLeft size={15} />Pindah Stage<ChevronDown size={14} />
+            <ArrowRightLeft size={15} />Move Stage<ChevronDown size={14} />
           </button>
           {open && (
             <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: '#fff', border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: '0 16px 40px rgba(19,35,59,0.16)', padding: 7, width: 230, zIndex: 30 }}>
-              <div style={{ fontFamily: BODY, fontSize: 11, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '7px 11px 4px' }}>Pindahkan ke stage</div>
+              <div style={{ fontFamily: BODY, fontSize: 11, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '7px 11px 4px' }}>Move to stage</div>
               {ACTIVE_STAGES.map((s) => {
                 const SIcon = s.Icon;
                 const cur = s.key === stageKey;
@@ -411,7 +411,7 @@ export function EditDealModal({ open, initial, assignees, onClose, onSave }) {
           <div>
             <label style={labelStyle}>Assigned To</label>
             <select value={draft.assignedId || ''} onChange={(e) => set('assignedId', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-              <option value="">— Pilih sales —</option>
+              <option value="">— Select Salesperson —</option>
               {assignees.map((a) => <option key={a.id} value={a.id}>{a.full_name}</option>)}
             </select>
           </div>
@@ -428,7 +428,7 @@ export function EditDealModal({ open, initial, assignees, onClose, onSave }) {
               <input type="date" value={draft.closeDate || ''} onChange={(e) => set('closeDate', e.target.value)} style={inputStyle} />
             </div>
           </div>
-          <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Nilai: <b style={{ color: C.navy }}>{fmtRp(draft.value || 0)}</b></div>
+          <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Value: <b style={{ color: C.navy }}>{fmtRp(draft.value || 0)}</b></div>
         </div>
 
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: `1px solid ${C.border}`, background: C.surfaceAlt }}>
@@ -451,7 +451,7 @@ export function EditDealModal({ open, initial, assignees, onClose, onSave }) {
 export function QuotationListCard({ quotations, onCreate, onView }) {
   return (
     <Card
-      title="Daftar Quotation"
+      title="Quotation List"
       icon={<FileText size={17} />}
       right={onCreate ? (
         <button onClick={onCreate} style={{ height: 34, padding: '0 12px', borderRadius: 9, border: 'none', background: C.orange, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -460,14 +460,14 @@ export function QuotationListCard({ quotations, onCreate, onView }) {
       ) : null}
     >
       {quotations.length === 0 ? (
-        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Belum ada quotation</div>
+        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No quotations yet</div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {['No', 'Quotation No', 'Tanggal', 'Nilai', 'Status', 'Aksi'].map((h) => (
-                  <th key={h} style={{ textAlign: h === 'Nilai' ? 'right' : 'left', padding: '7px 8px', fontFamily: HEAD, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: C.textFaint, whiteSpace: 'nowrap' }}>{h}</th>
+                {['No', 'Quotation No', 'Date', 'Value', 'Status', 'Actions'].map((h) => (
+                  <th key={h} style={{ textAlign: h === 'Value' ? 'right' : 'left', padding: '7px 8px', fontFamily: HEAD, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: C.textFaint, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -514,7 +514,7 @@ export function PrfListCard({ prfs, canCreate, onCreate, onView, canSelectOffer,
   const quotedWithOffers = prfs.filter((p) => String(p.status).toUpperCase() === 'QUOTED' && Array.isArray(p.vendorOffers));
   return (
     <Card
-      title="Daftar PRF"
+      title="PRF List"
       icon={<FileText size={17} />}
       right={canCreate ? (
         <button onClick={() => onCreate?.()} style={{ height: 34, padding: '0 12px', borderRadius: 9, border: 'none', background: C.orange, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -523,13 +523,13 @@ export function PrfListCard({ prfs, canCreate, onCreate, onView, canSelectOffer,
       ) : null}
     >
       {prfs.length === 0 ? (
-        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Belum ada PRF</div>
+        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No PRFs yet</div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {['No', 'PRF No', 'Tanggal', 'Service Type', 'Status'].map((h) => (
+                {['No', 'PRF No', 'Date', 'Service Type', 'Status'].map((h) => (
                   <th key={h} style={{ textAlign: 'left', padding: '7px 8px', fontFamily: HEAD, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: C.textFaint, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -563,15 +563,15 @@ export function PrfListCard({ prfs, canCreate, onCreate, onView, canSelectOffer,
       {quotedWithOffers.map((p) => (
         <div key={`offers-${p.id}`} style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
           <div style={{ fontFamily: HEAD, fontSize: 12, fontWeight: 700, color: C.navy, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>
-            Penawaran Vendor — {p.prf_no}
+            Vendor Offers — {p.prf_no}
           </div>
           {p.min_offers_waiver_reason && (
             <div style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.orange, marginBottom: 10 }}>
-              Hanya {p.vendorOffers.length} penawaran. Alasan procurement: {p.min_offers_waiver_reason}
+              Only {p.vendorOffers.length} offers. Procurement reason: {p.min_offers_waiver_reason}
             </div>
           )}
           {p.vendorOffers.length === 0 ? (
-            <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Belum ada penawaran vendor.</div>
+            <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>No vendor offers yet.</div>
           ) : (
             p.vendorOffers.map((o) => (
               <OfferMiniCard
@@ -606,14 +606,14 @@ function OfferMiniCard({ offer, isSelected, hasSelection, canSelect, busy, onSel
         )}
         {!isSelected && canSelect && (
           <button type="button" onClick={onSelect} disabled={busy} style={{ marginLeft: 'auto', height: 30, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.navy}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontWeight: 700, fontSize: 12, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1 }}>
-            {hasSelection ? 'Ganti ke Penawaran Ini' : 'Pakai Penawaran Ini'}
+            {hasSelection ? 'Switch to This Offer' : 'Use This Offer'}
           </button>
         )}
       </div>
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontFamily: BODY, fontSize: 10.5, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>Total Biaya</div>
+        <div style={{ fontFamily: BODY, fontSize: 10.5, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>Total Cost</div>
         {totalsEntries.length === 0 ? (
-          <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>Belum ada rincian biaya.</span>
+          <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No cost breakdown yet.</span>
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             {totalsEntries.map(([cur, v]) => (
@@ -657,7 +657,7 @@ export function PriceSummaryCard({ quotations, termMap }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
             <InfoRow label="Masa Berlaku" value={fmtDate(best.valid_until)} />
             <InfoRow label="Payment Terms" value={termMap?.[best.payment_terms_id]} />
-            <InfoRow label="Rentang Penawaran" value={(minT != null && maxT != null) ? `${fmtRp(minT)} – ${fmtRp(maxT)}` : '—'} full />
+            <InfoRow label="Offer Range" value={(minT != null && maxT != null) ? `${fmtRp(minT)} – ${fmtRp(maxT)}` : '—'} full />
           </div>
         </div>
       )}

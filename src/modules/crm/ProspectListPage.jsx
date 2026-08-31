@@ -177,7 +177,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
 
   const handleDelete = useCallback((prospect) => {
     showConfirm(
-      'Hapus Prospect',
+      'Delete Prospect',
       `Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`,
       async () => {
         closeConfirm();
@@ -274,7 +274,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
             ) : prospects.length === 0 ? (
               <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada prospect</td></tr>
             ) : prospects.map((p, i) => (
@@ -301,7 +301,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
                 <td style={{ padding: '12px 14px' }}>
                   {p.assigned_profile?.full_name
                     ? <span style={{ color: C.inkSoft }}>{p.assigned_profile.full_name}</span>
-                    : <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: C.accentSoft, color: C.accent }}>Belum di-assign</span>}
+                    : <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: C.accentSoft, color: C.accent }}>Unassigned</span>}
                 </td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(p.created_at)}</td>
                 <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
@@ -350,8 +350,8 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
         open={confirmState.open}
         title={confirmState.title}
         message={confirmState.message}
-        confirmLabel="Ya, Hapus"
-        cancelLabel="Batal"
+        confirmLabel="Yes, Delete"
+        cancelLabel="Cancel"
         variant="danger"
         onConfirm={confirmState.onConfirm}
         onCancel={closeConfirm}

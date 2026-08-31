@@ -176,9 +176,9 @@ const EMPTY_FILTERS = { ownerId: '', services: [], valMin: '', valMax: '', ageDa
 
 /* Preset umur di tahap sekarang — hari; 0 = mati. */
 const AGE_PRESETS = [
-  { days: 7,  label: '> 7 hari'  },
-  { days: 14, label: '> 14 hari' },
-  { days: 30, label: '> 30 hari' },
+  { days: 7,  label: '> 7 days'  },
+  { days: 14, label: '> 14 days' },
+  { days: 30, label: '> 30 days' },
 ];
 
 /* Preset rentang nilai; string kosong = sisi itu tanpa batas. */
@@ -240,22 +240,22 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
     }}>
       {/* 1 — Pemilik Deal */}
       <div>
-        <div style={secTitle}>Pemilik Deal</div>
+        <div style={secTitle}>Deal Owner</div>
         <select
           value={flt.ownerId} onChange={(e) => set({ ownerId: e.target.value })}
           style={field}
         >
-          <option value="">Semua pemilik</option>
+          <option value="">All owners</option>
           {ownerOpts.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
       </div>
 
       {/* 2 — Jenis Layanan */}
       <div>
-        <div style={secTitle}>Jenis Layanan</div>
+        <div style={secTitle}>Service Type</div>
         <div style={row}>
           {serviceOpts.length === 0
-            ? <span style={{ fontFamily: FONT_BODY, fontSize: 12, color: FAINT }}>Tidak ada data</span>
+            ? <span style={{ fontFamily: FONT_BODY, fontSize: 12, color: FAINT }}>No data</span>
             : serviceOpts.map((s) => (
               <button
                 key={s.value} type="button"
@@ -270,7 +270,7 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
 
       {/* 3 — Rentang Nilai Deal */}
       <div>
-        <div style={secTitle}>Rentang Nilai Deal</div>
+        <div style={secTitle}>Deal Value Range</div>
         <div style={{ ...row, marginBottom: SP.s2 }}>
           {VALUE_PRESETS.map((p) => (
             <button
@@ -301,7 +301,7 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
 
       {/* 4 — Umur di Tahap Sekarang */}
       <div>
-        <div style={secTitle}>Umur di Tahap Sekarang</div>
+        <div style={secTitle}>Age in Current Stage</div>
         <div style={row}>
           {AGE_PRESETS.map((p) => (
             <button
@@ -318,7 +318,7 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
             terbaca sebagai "tidak ada hasil", padahal cuma datanya belum ada. */}
         {ageLoading && (
           <div style={{ marginTop: SP.s2, fontFamily: FONT_BODY, fontSize: 11.5, color: FAINT }}>
-            Memuat umur tahap… saringan ini belum diterapkan.
+            Loading stage age… this filter is not applied yet.
           </div>
         )}
       </div>
@@ -332,7 +332,7 @@ function FilterPanel({ flt, onChange, ownerOpts, serviceOpts, ageLoading, onRese
             fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600,
           }}
         >
-          Reset semua
+          Reset all
         </button>
         <button
           type="button" onClick={onClose}
@@ -417,13 +417,13 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
     ]);
 
     if (openRes.error) {
-      showToast?.('Gagal memuat pipeline: ' + openRes.error.message, 'error');
+      showToast?.('Failed to load pipeline: ' + openRes.error.message, 'error');
       setOpenRows([]);
     } else {
       setOpenRows(openRes.data || []);
     }
     if (closedRes.error) {
-      showToast?.('Gagal memuat deal tertutup: ' + closedRes.error.message, 'error');
+      showToast?.('Failed to load closed deals: ' + closedRes.error.message, 'error');
       setClosedRows([]);
     } else {
       setClosedRows(closedRes.data || []);
@@ -455,7 +455,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
         .limit(1000);
 
       if (profErr) {
-        showToast?.('Gagal memuat nama pemilik deal: ' + profErr.message, 'error');
+        showToast?.('Failed to load deal owner names: ' + profErr.message, 'error');
         setOwnerNames({});
       } else {
         const map = {};
@@ -492,7 +492,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
       .limit(1000);
 
     if (error) {
-      showToast?.('Gagal memuat umur tahap: ' + error.message, 'error');
+      showToast?.('Failed to load stage age: ' + error.message, 'error');
       setStageSince({});
     } else {
       const rows = data || [];
@@ -507,7 +507,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
       // terakhirnya paling tua justru yang hilang — persis yang dicari filter
       // ini — dan hasilnya akan terlihat sah padahal kurang.
       if (rows.length === 1000) {
-        showToast?.('Riwayat umur terpotong di 1000 baris — hasil filter umur bisa kurang lengkap.', 'error');
+        showToast?.('Age history was truncated at 1000 rows, so age filtering may be incomplete.', 'error');
       }
     }
     setStageLoading(false);
@@ -581,7 +581,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
       // Nama datang dari peta hasil query ketiga, bukan dari baris inquiry.
       // Fallback tetap teks, bukan UUID: id mentah di dropdown tak berarti
       // apa-apa bagi pembacanya.
-      .map((id) => ({ id, name: ownerNames[id] || '(tanpa nama)' }))
+      .map((id) => ({ id, name: ownerNames[id] || '(unnamed)' }))
       .sort((a, b) => a.name.localeCompare(b.name, 'id'));
   }, [openRows, closedRows, ownerNames]);
 
@@ -659,7 +659,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
               border: `1px solid ${LINE}`, borderRadius: RADIUS.md, background: SURFACE,
             }}>
               <button
-                type="button" aria-label="Bulan sebelumnya"
+                type="button" aria-label="Previous month"
                 onClick={() => setMonth((m) => shiftMonth(m, -1))}
                 style={{ padding: '7px 8px', border: 'none', background: 'transparent', cursor: 'pointer', color: INK_SOFT, display: 'inline-flex' }}
               >
@@ -672,7 +672,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
                 {monthLabel(month)}
               </span>
               <button
-                type="button" aria-label="Bulan berikutnya"
+                type="button" aria-label="Next month"
                 onClick={() => setMonth((m) => shiftMonth(m, 1))}
                 style={{ padding: '7px 8px', border: 'none', background: 'transparent', cursor: 'pointer', color: INK_SOFT, display: 'inline-flex' }}
               >
@@ -680,7 +680,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
               </button>
             </div>
             <OutlineBtn onClick={fetchBoard} icon={<RefreshCw size={14} />}>
-              {loading ? 'Memuat…' : 'Muat Ulang'}
+              {loading ? 'Loading…' : 'Muat Ulang'}
             </OutlineBtn>
           </div>
         }
@@ -688,7 +688,7 @@ export default function PipelineKanbanPage({ showToast, onSelectInquiry }) {
 
       {loading && (
         <div style={{ padding: SP.s4, fontFamily: FONT_BODY, fontSize: 13, color: FAINT }}>
-          Memuat pipeline…
+          Loading pipeline…
         </div>
       )}
     </div>

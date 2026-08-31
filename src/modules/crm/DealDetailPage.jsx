@@ -120,7 +120,7 @@ function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, assignedPro
               <h1
                 className="dd-account-name"
                 onClick={() => onViewCustomer(accountId)}
-                title="Lihat detail akun"
+                title="View account details"
                 style={{ margin: 0, fontFamily: HEAD, fontSize: 25, fontWeight: 800, color: C.text, letterSpacing: '-0.02em', cursor: 'pointer' }}
               >
                 {name || '—'}
@@ -138,7 +138,7 @@ function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, assignedPro
               <button
                 type="button"
                 onClick={() => onViewProfile(assignedProfileId)}
-                title="Lihat profil"
+                title="View profile"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: BODY, fontSize: 13, color: C.textMute, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
               >
                 <Avatar name={assignedName} size={26} />
@@ -146,7 +146,7 @@ function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, assignedPro
               </button>
             ) : (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: BODY, fontSize: 13, color: C.textMute }}>
-                <Avatar name={assignedName} size={26} />{assignedName || 'Belum di-assign'}
+                <Avatar name={assignedName} size={26} />{assignedName || 'Unassigned'}
               </span>
             )}
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: BODY, fontSize: 13, color: C.textMute }}>
@@ -201,15 +201,15 @@ function QuotationItemsCard({ quotation, items, loading }) {
   }, [items]);
 
   return (
-    <Card title="Rincian Harga" icon={<FileText size={17} />}>
+    <Card title="Price Breakdown" icon={<FileText size={17} />}>
       <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, marginBottom: 14 }}>
         — <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy }}>{quotation.quotation_no}</span>
         {' '}· terakhir diedit {fmtDate(quotation.updated_at || quotation.created_at)}
       </div>
       {loading ? (
-        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Memuat rincian harga…</div>
+        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Loading price breakdown…</div>
       ) : sections.length === 0 ? (
-        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Tidak ada item</div>
+        <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No items</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {sections.map((sec, si) => {
@@ -498,7 +498,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       .order('sort_order', { ascending: true })
       .then(({ data, error }) => {
         if (cancelled) return;
-        if (error) showToast?.('Gagal memuat rincian harga: ' + error.message, 'error');
+        if (error) showToast?.('Failed to load price breakdown: ' + error.message, 'error');
         setLatestQuotationItems(data || []);
         setLatestItemsLoading(false);
       });
@@ -574,7 +574,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Single shared write path (saveDealUpdate) so the audit trail matches
   // CustomerDetailPage's deal controls exactly.
   async function updateAccount(patch, auditStageKey) {
-    if (!account?.id) { showToast?.('Prospect tidak ditemukan untuk deal ini', 'error'); return false; }
+    if (!account?.id) { showToast?.('Prospect not found for this deal', 'error'); return false; }
     // Tulisan lain untuk akun ini masih berlangsung — abaikan (bukan rate-limit:
     // dilepas lagi begitu tulisan yang sedang jalan selesai).
     if (stageUpdateInFlight.current) return false;
@@ -646,8 +646,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     // bukan 'error' — penyimpanannya memang berhasil.
     if (ok && !stageWritable) {
       showToast?.(stageKnown
-        ? `Stage "${seedStage}" sekarang mengikuti status inquiry — stage tidak diubah. Perubahan lain tersimpan.`
-        : `Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
+        ? `Stage "${seedStage}" now follows the inquiry status. Stage was not changed; other changes were saved.`
+        : `Stage "${seedStage || '(empty)'}" is not recognized. Stage was not changed; other changes were saved.`);
     }
     return ok;
   }
@@ -690,7 +690,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       })
       .eq('id', inquiry.id);
     setLossSaving(false);
-    if (error) { showToast?.('Gagal menandai kalah: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to mark as Lost: ' + error.message, 'error'); return; }
     // Berjejak: ini SATU-SATUNYA jalur menandai deal kalah, dan alasannya ikut
     // menghitung win rate. Pola sama saveDealUpdate — fire-and-forget, tak memblokir.
     logAudit(supabase, {
@@ -698,10 +698,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       entityType: ENTITY_TYPES.INQUIRY,
       entityId: inquiry.id,
       entityLabel: inquiry.inquiry_no,
-      notes: `${prevStatus} → LOST · alasan: ${lossReasons.find(r => r.id === values.loss_reason_id)?.name || values.loss_reason_id}`,
+      notes: `${prevStatus} → LOST · reason: ${lossReasons.find(r => r.id === values.loss_reason_id)?.name || values.loss_reason_id}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setLossOpen(false);
-    showToast?.('Deal ditandai KALAH.', 'success');
+    showToast?.('Deal marked as Lost.', 'success');
     refetch();
   }
 
@@ -749,16 +749,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       .update({ status: 'CANCELLED', cancel_reason: values.cancel_reason })
       .eq('id', inquiry.id);
     setCancelSaving(false);
-    if (error) { showToast?.('Gagal membatalkan deal: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to cancel deal: ' + error.message, 'error'); return; }
     logAudit(supabase, {
       action: ACTION_TYPES.UPDATE_INQUIRY,
       entityType: ENTITY_TYPES.INQUIRY,
       entityId: inquiry.id,
       entityLabel: inquiry.inquiry_no,
-      notes: `${prevStatus} → CANCELLED · alasan: ${values.cancel_reason}`,
+      notes: `${prevStatus} → CANCELLED · reason: ${values.cancel_reason}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setCancelOpen(false);
-    showToast?.('Deal dibatalkan.', 'success');
+    showToast?.('Deal cancelled.', 'success');
     refetch();
   }
 
@@ -777,10 +777,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       .eq('id', inquiry.id)
       .select('id');
     setNegoSaving(false);
-    if (error) { showToast?.('Gagal memulai negosiasi: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to start negotiation: ' + error.message, 'error'); return; }
     // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
     if (!data || data.length === 0) {
-      showToast?.('Gagal memulai negosiasi: tidak ada izin mengubah inquiry ini.', 'error');
+      showToast?.('Failed to start negotiation: you do not have permission to modify this deal.', 'error');
       return;
     }
     logAudit(supabase, {
@@ -791,7 +791,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       notes: `${prevStatus} → NEGOTIATION`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setNegoOpen(false);
-    showToast?.('Deal masuk tahap negosiasi.', 'success');
+    showToast?.('Deal moved to negotiation.', 'success');
     refetch();
   }
 
@@ -801,7 +801,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   async function reassignOwner() {
     if (!inquiry?.id || !ownerDraft) return;
     if (ownerDraft === inquiry.owner_id) { setOwnerOpen(false); return; }
-    const prevName = ownerName || '(kosong)';
+    const prevName = ownerName || '(empty)';
     const nextName = salesOpts.find((s) => s.id === ownerDraft)?.full_name || ownerDraft;
     setOwnerSaving(true);
     const { data, error } = await supabase
@@ -810,10 +810,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       .eq('id', inquiry.id)
       .select('id');
     setOwnerSaving(false);
-    if (error) { showToast?.('Gagal mengganti pemilik: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to change owner: ' + error.message, 'error'); return; }
     // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
     if (!data || data.length === 0) {
-      showToast?.('Gagal mengganti pemilik: tidak ada izin mengubah inquiry ini.', 'error');
+      showToast?.('Failed to change owner: you do not have permission to modify this deal.', 'error');
       return;
     }
     logAudit(supabase, {
@@ -821,10 +821,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       entityType: ENTITY_TYPES.INQUIRY,
       entityId: inquiry.id,
       entityLabel: inquiry.inquiry_no,
-      notes: `Pemilik deal: ${prevName} → ${nextName}`,
+      notes: `Deal owner: ${prevName} → ${nextName}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setOwnerOpen(false);
-    showToast?.('Pemilik deal diperbarui.', 'success');
+    showToast?.('Deal owner updated.', 'success');
     refetch();
   }
 
@@ -839,7 +839,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     // dihitung sebagai deal bernilai nol di total pipeline Dashboard.
     const next = valueDraft === '' ? null : Number(valueDraft);
     if (next !== null && !Number.isFinite(next)) {
-      showToast?.('Nilai tidak valid.', 'error');
+      showToast?.('Invalid value.', 'error');
       return;
     }
     const prev = inquiry.estimated_value == null ? null : Number(inquiry.estimated_value);
@@ -852,9 +852,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       .eq('id', inquiry.id)
       .select('id');
     setValueSaving(false);
-    if (error) { showToast?.('Gagal menyimpan nilai: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to save value: ' + error.message, 'error'); return; }
     if (!data || data.length === 0) {
-      showToast?.('Gagal menyimpan nilai: tidak ada izin mengubah inquiry ini.', 'error');
+      showToast?.('Failed to save value: you do not have permission to modify this deal.', 'error');
       return;
     }
     logAudit(supabase, {
@@ -862,10 +862,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       entityType: ENTITY_TYPES.INQUIRY,
       entityId: inquiry.id,
       entityLabel: inquiry.inquiry_no,
-      notes: `Nilai estimasi: ${prev === null ? '(kosong)' : fmtRp(prev)} → ${next === null ? '(kosong)' : fmtRp(next)}`,
+      notes: `Estimated value: ${prev === null ? '(empty)' : fmtRp(prev)} → ${next === null ? '(empty)' : fmtRp(next)}`,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setValueOpen(false);
-    showToast?.('Nilai estimasi diperbarui.', 'success');
+    showToast?.('Estimated value updated.', 'success');
     refetch();
   }
 
@@ -881,7 +881,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     const { error } = await supabase.rpc('mark_inquiry_won', { p_inquiry_id: inquiry.id });
     setWonSaving(false);
     if (error) { showToast?.(error.message, 'error'); return; }
-    showToast?.('Deal ditandai WON. Akun terkait sudah jadi customer.', 'success');
+    showToast?.('Deal marked as Won. The linked account is now a customer.', 'success');
     refetch();
   }
 
@@ -903,10 +903,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         entityId: prf.id,
         entityLabel: prf.prf_no,
         notes: isSwitch
-          ? `Ganti pilihan: ${prevOffer?.vendorName || 'vendor sebelumnya'} (offer ${prf.selected_offer_id}) → ${offer.vendorName} (offer ${offer.id})`
-          : `Penawaran dipilih: ${offer.vendorName} (offer ${offer.id})`,
+          ? `Selection changed: ${prevOffer?.vendorName || 'previous vendor'} (offer ${prf.selected_offer_id}) → ${offer.vendorName} (offer ${offer.id})`
+          : `Vendor offer selected: ${offer.vendorName} (offer ${offer.id})`,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.('Penawaran vendor dipilih.', 'success');
+      showToast?.('Vendor offer selected.', 'success');
       refetch();
     } catch (err) {
       showToast?.(err.message, 'error');
@@ -928,7 +928,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return (
       <div style={{ margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textFaint, fontFamily: BODY }}>
         <Loader2 size={30} className="dd-spin" />
-        <div style={{ fontSize: 13.5 }}>Memuat detail deal…</div>
+        <div style={{ fontSize: 13.5 }}>Loading deal details…</div>
         <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}`}</style>
       </div>
     );
@@ -937,8 +937,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return (
       <div style={{ margin: '0 auto', padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: C.textMute, fontFamily: BODY }}>
         <AlertCircle size={30} color={C.red} />
-        <div style={{ fontFamily: HEAD, fontSize: 16, fontWeight: 700, color: C.text }}>Deal tidak ditemukan</div>
-        <button onClick={onBack} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}><ChevronLeft size={15} />Kembali</button>
+        <div style={{ fontFamily: HEAD, fontSize: 16, fontWeight: 700, color: C.text }}>Deal not found</div>
+        <button onClick={onBack} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}><ChevronLeft size={15} />Back</button>
       </div>
     );
   }
@@ -998,36 +998,36 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                   setValueOpen((v) => !v);
                 }}
                 style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: valueOpen ? C.navySoft : '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Wallet size={14} />{inquiry.estimated_value == null ? 'Isi Nilai' : 'Ubah Nilai'}
+                <Wallet size={14} />{inquiry.estimated_value == null ? 'Set Value' : 'Edit Value'}
               </button>
             )}
             {canReassignOwner && (
               <button
                 onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
                 style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: ownerOpen ? C.navySoft : '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <UserCog size={14} />Ganti Pemilik
+                <UserCog size={14} />Change Owner
               </button>
             )}
             {canMarkWon && (
               <button onClick={() => setWonOpen(true)} disabled={wonSaving}
                 style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.greenBd}`, background: '#fff', color: C.green, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: wonSaving ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: wonSaving ? 0.6 : 1 }}>
-                <CheckCircle2 size={14} />{wonSaving ? 'Memproses…' : 'Tandai sebagai WON'}
+                <CheckCircle2 size={14} />{wonSaving ? 'Processing…' : 'Mark as Won'}
               </button>
             )}
             {canNegotiate && (
               <button onClick={() => setNegoOpen(true)} disabled={negoSaving}
                 style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.orange, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: negoSaving ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: negoSaving ? 0.6 : 1 }}>
-                <Handshake size={14} />{negoSaving ? 'Memproses…' : 'Mulai Negosiasi'}
+                <Handshake size={14} />{negoSaving ? 'Processing…' : 'Start Negotiation'}
               </button>
             )}
             {canMarkLost && (
               <button onClick={() => setLossOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.redBd}`, background: '#fff', color: C.red, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <XCircle size={14} />Tandai Kalah
+                <XCircle size={14} />Mark as Lost
               </button>
             )}
             {canCancel && (
               <button onClick={() => setCancelOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Ban size={14} />Batalkan
+                <Ban size={14} />Cancel Deal
               </button>
             )}
           </div>
@@ -1038,7 +1038,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         {canEditValue && valueOpen && (
           <div style={{ marginBottom: 16, padding: 14, borderRadius: 11, border: `1px solid ${C.border}`, background: C.navySoft }}>
             <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
-              Nilai Estimasi Deal
+              Deal Estimated Value
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ position: 'relative', flex: '1 1 220px' }}>
@@ -1054,7 +1054,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 onClick={saveEstimatedValue}
                 disabled={valueSaving}
                 style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`, background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: valueSaving ? 'not-allowed' : 'pointer', opacity: valueSaving ? 0.6 : 1 }}>
-                {valueSaving ? 'Menyimpan…' : 'Simpan'}
+                {valueSaving ? 'Saving…' : 'Simpan'}
               </button>
               <button
                 onClick={() => setValueOpen(false)}
@@ -1063,8 +1063,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               </button>
             </div>
             <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
-              {valueDraft !== '' ? <b>{fmtRp(Number(valueDraft))}</b> : 'Dikosongkan = belum ada taksiran (bukan nol).'}
-              {' '}Angka ini memberi isi widget nilai pipeline di Dashboard.
+              {valueDraft !== '' ? <b>{fmtRp(Number(valueDraft))}</b> : 'Left empty = no estimate yet (not zero).'}
+              {' '}This figure feeds the pipeline value widget on the Dashboard.
             </div>
           </div>
         )}
@@ -1075,7 +1075,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         {canReassignOwner && ownerOpen && (
           <div style={{ marginBottom: 16, padding: 14, borderRadius: 11, border: `1px solid ${C.border}`, background: C.navySoft }}>
             <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
-              Ganti Pemilik Deal
+              Change Deal Owner
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <select
@@ -1083,7 +1083,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 onChange={(e) => setOwnerDraft(e.target.value)}
                 style={{ flex: '1 1 220px', height: 34, padding: '0 10px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', fontFamily: BODY, fontSize: 13, color: C.text }}
               >
-                <option value="">— pilih sales —</option>
+                <option value="">— Select Salesperson —</option>
                 {salesOpts.map((s) => (
                   <option key={s.id} value={s.id}>{s.full_name}</option>
                 ))}
@@ -1092,7 +1092,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 onClick={reassignOwner}
                 disabled={ownerSaving || !ownerDraft}
                 style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`, background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: (ownerSaving || !ownerDraft) ? 'not-allowed' : 'pointer', opacity: (ownerSaving || !ownerDraft) ? 0.6 : 1 }}>
-                {ownerSaving ? 'Menyimpan…' : 'Simpan'}
+                {ownerSaving ? 'Saving…' : 'Simpan'}
               </button>
               <button
                 onClick={() => setOwnerOpen(false)}
@@ -1101,8 +1101,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               </button>
             </div>
             <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
-              Kepemilikan terkunci permanen begitu deal berstatus WON, LOST, atau CANCELLED —
-              demi menjaga angka Sales Performance dan Win Rate historis tetap utuh.
+              Ownership is permanently locked once the deal reaches WON, LOST, or CANCELLED —
+              so historical Sales Performance and Win Rate figures stay intact.
             </div>
           </div>
         )}
@@ -1116,7 +1116,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           </span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px' }}>
-          <InfoRow label="Jenis Layanan" value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type} />
+          <InfoRow label="Service Type" value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type} />
           <InfoRow label="Status" value={inquiry.status} />
           {/* POL → POD */}
           <div style={{ gridColumn: '1 / -1' }}>
@@ -1133,7 +1133,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             </div>
           </div>
           <BadgeRow label="Incoterm" values={inquiry.incoterms} />
-          <BadgeRow label="Jenis Kontainer" values={inquiry.container_types} />
+          <BadgeRow label="Container Type" values={inquiry.container_types} />
           <InfoRow label="Nama Barang" value={inquiry.goods_name} />
           <InfoRow label="HS Code" value={inquiry.hs_code} />
           <InfoRow label="Berat Total (KG)" value={inquiry.weight_kg != null ? String(inquiry.weight_kg) : ''} />
@@ -1142,18 +1142,18 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           <BadgeRow label="Layanan Tambahan" values={inquiry.additional_services} />
           <InfoRow label="Deadline Quote" value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''} />
           <InfoRow label="Route" value={inquiry.route} />
-          <InfoRow label="Dibuat Oleh" value={createdByName} />
+          <InfoRow label="Created By" value={createdByName} />
           {/* Pemilik deal ≠ pembuat: owner_id bisa dipindahtangankan selama deal
               masih terbuka, created_by tidak pernah berubah. Keduanya ditampilkan
               supaya perpindahan kepemilikan tetap terbaca jejaknya. */}
-          <InfoRow label="Pemilik Deal" value={ownerName} />
+          <InfoRow label="Deal Owner" value={ownerName} />
           {/* Kosong ditampilkan sebagai "—" oleh InfoRow, bukan Rp 0 — deal
               tanpa taksiran beda dari deal bernilai nol. */}
           <InfoRow
-            label="Nilai Estimasi"
+            label="Estimated Value"
             value={inquiry.estimated_value == null ? '' : fmtRp(Number(inquiry.estimated_value))}
           />
-          <InfoRow label="Tanggal Dibuat" value={fmtDate(inquiry.created_at)} />
+          <InfoRow label="Created Date" value={fmtDate(inquiry.created_at)} />
           <InfoRow label="Notes" value={inquiry.notes} full />
         </div>
       </Card>
@@ -1167,7 +1167,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       {tab === 'aktivitas' && (
         <Card title="Aktivitas Terkait" icon={<ListChecks size={17} />}>
           {activities.length === 0 ? (
-            <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Belum ada aktivitas</div>
+            <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity yet</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {activities.map((a) => {
@@ -1242,10 +1242,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <ConfirmModal
         open={stageGate.open}
         variant="warning"
-        title="Score BANT Belum Optimal"
+        title="Suboptimal BANT Score"
         message={stageGate.message}
-        confirmLabel="Ya, Lanjut"
-        cancelLabel="Batal"
+        confirmLabel="Yes, Continue"
+        cancelLabel="Cancel"
         onConfirm={() => { stageGate.onYes?.(); setStageGate({ open: false, message: '', onYes: null }); }}
         onCancel={() => setStageGate({ open: false, message: '', onYes: null })}
       />
@@ -1254,10 +1254,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <ConfirmModal
         open={offerSwitchConfirm.open}
         variant="warning"
-        title="Ganti Penawaran Terpilih"
-        message={`Ganti pilihan penawaran ke vendor ${offerSwitchConfirm.offer?.vendorName || ''}? Ini akan menggantikan penawaran yang sedang dipakai untuk quotation.`}
-        confirmLabel="Ya, Ganti"
-        cancelLabel="Batal"
+        title="Change Selected Offer"
+        message={`Switch the selected offer to vendor ${offerSwitchConfirm.offer?.vendorName || ''}? This replaces the offer currently used for the quotation.`}
+        confirmLabel="Yes, Change"
+        cancelLabel="Cancel"
         onConfirm={() => {
           const { prf, offer } = offerSwitchConfirm;
           setOfferSwitchConfirm({ open: false, prf: null, offer: null });
@@ -1294,10 +1294,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <ConfirmModal
         open={negoOpen}
         variant="info"
-        title="Mulai Negosiasi"
-        message="Pindahkan deal ini ke tahap NEGOTIATION? Penawaran sudah terkirim dan sedang dinegosiasikan dengan customer."
-        confirmLabel="Ya, Mulai Negosiasi"
-        cancelLabel="Batal"
+        title="Start Negotiation"
+        message="Move this deal to the NEGOTIATION stage? The offer has been sent and is being negotiated with the customer."
+        confirmLabel="Yes, Start Negotiation"
+        cancelLabel="Cancel"
         onConfirm={() => { setNegoOpen(false); startNegotiation(); }}
         onCancel={() => setNegoOpen(false)}
       />
@@ -1308,10 +1308,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <ConfirmModal
         open={wonOpen}
         variant="info"
-        title="Tandai sebagai WON"
-        message="Tandai inquiry ini sebagai WON? Akun terkait akan otomatis jadi customer."
-        confirmLabel="Ya, Tandai WON"
-        cancelLabel="Batal"
+        title="Mark as Won"
+        message="Mark this deal as Won? The linked account will automatically become a customer."
+        confirmLabel="Yes, Mark as Won"
+        cancelLabel="Cancel"
         onConfirm={() => { setWonOpen(false); markInquiryWon(); }}
         onCancel={() => setWonOpen(false)}
       />

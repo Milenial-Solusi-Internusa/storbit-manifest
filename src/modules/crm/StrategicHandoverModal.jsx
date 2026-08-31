@@ -133,10 +133,10 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
             <F label="KTP Direktur"><input value={f.ktp_direktur} onChange={set('ktp_direktur')} style={inpStyle} /></F>
             <F label="Alamat" full><textarea rows={2} value={f.alamat} onChange={set('alamat')} style={taStyle} /></F>
             <F label="Website"><input value={f.website} onChange={set('website')} style={inpStyle} /></F>
-            <F label="Industri / Vertikal"><select value={f.industri} onChange={set('industri')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{INDUSTRI.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Industri / Vertikal"><select value={f.industri} onChange={set('industri')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{INDUSTRI.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Tahun Berdiri"><input value={f.tahun_berdiri} onChange={set('tahun_berdiri')} style={inpStyle} /></F>
-            <F label="Tipe Customer"><select value={f.tipe_customer} onChange={set('tipe_customer')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{TIPE_CUSTOMER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
-            <F label="Tier Assigned"><select value={f.tier_assigned} onChange={set('tier_assigned')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{TIER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Tipe Customer"><select value={f.tipe_customer} onChange={set('tipe_customer')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TIPE_CUSTOMER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Tier Assigned"><select value={f.tier_assigned} onChange={set('tier_assigned')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TIER.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
           </Section>
 
           <div style={{ fontSize: 12.5, fontWeight: 800, color: C.navy, textTransform: 'uppercase', letterSpacing: '.4px', margin: '10px 0 12px', fontFamily: "'Montserrat',sans-serif" }}>B — PIC Tree &amp; Escalation</div>
@@ -146,7 +146,7 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
                 <span style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft }}>{r.label}</span>
                 <input placeholder="Nama" value={pic[r.key].nama} onChange={setPicField(r.key, 'nama')} style={{ ...inpStyle, height: 34 }} />
                 <input placeholder="No HP / Email" value={pic[r.key].kontak} onChange={setPicField(r.key, 'kontak')} style={{ ...inpStyle, height: 34 }} />
-                <input placeholder="Catatan" value={pic[r.key].catatan} onChange={setPicField(r.key, 'catatan')} style={{ ...inpStyle, height: 34 }} />
+                <input placeholder="Notes" value={pic[r.key].catatan} onChange={setPicField(r.key, 'catatan')} style={{ ...inpStyle, height: 34 }} />
               </div>
             ))}
           </div>
@@ -157,7 +157,7 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
             <F label="Volume Forecast per Lane" full><textarea rows={2} value={f.volume_per_lane} onChange={set('volume_per_lane')} style={taStyle} /></F>
             <F label="Service Type Mix" full><textarea rows={2} value={f.service_mix} onChange={set('service_mix')} style={taStyle} /></F>
             <F label="SLA Komitmen per Lane" full><textarea rows={2} value={f.sla_komitmen} onChange={set('sla_komitmen')} style={taStyle} /></F>
-            <F label="MSA Status"><select value={f.msa_status} onChange={set('msa_status')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{MSA_STATUS.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="MSA Status"><select value={f.msa_status} onChange={set('msa_status')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{MSA_STATUS.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Special Handling" full>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 {SPECIAL_HANDLING.map(o => (
@@ -170,20 +170,20 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
           </Section>
 
           <Section title="D — Payment Terms & Credit">
-            <F label="Payment Terms"><select value={f.payment_terms} onChange={set('payment_terms')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{paymentTerms.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></F>
+            <F label="Payment Terms"><select value={f.payment_terms} onChange={set('payment_terms')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{paymentTerms.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></F>
             <F label="Credit Limit Approved (Rp)"><input type="number" min="0" value={f.credit_limit} onChange={set('credit_limit')} style={inpStyle} /></F>
             <F label="Pefindo Score"><input value={f.pefindo_score} onChange={set('pefindo_score')} style={inpStyle} /></F>
             <F label="Pefindo Date"><input type="date" value={f.pefindo_date} onChange={set('pefindo_date')} style={inpStyle} /></F>
             <F label="Bank Reference"><input value={f.bank_reference} onChange={set('bank_reference')} style={inpStyle} /></F>
-            <F label="Tax/VAT Status"><select value={f.tax_status} onChange={set('tax_status')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{TAX_STATUS.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Tax/VAT Status"><select value={f.tax_status} onChange={set('tax_status')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TAX_STATUS.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Invoicing Instructions" full><textarea rows={2} value={f.invoicing_instructions} onChange={set('invoicing_instructions')} style={taStyle} /></F>
           </Section>
 
           <Section title="E — Customer-Specific SOP">
             <F label="Document Requirement" full><textarea rows={2} value={f.doc_requirement} onChange={set('doc_requirement')} style={taStyle} /></F>
-            <F label="Communication Preference"><select value={f.communication_pref} onChange={set('communication_pref')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{COMM_PREF.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
-            <F label="Reporting Cadence"><select value={f.reporting_cadence} onChange={set('reporting_cadence')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{CADENCE.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
-            <F label="KAM Assigned" full><select value={f.kam_assigned} onChange={set('kam_assigned')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{kams.map(k => <option key={k.id} value={k.id}>{k.full_name}</option>)}</select></F>
+            <F label="Communication Preference"><select value={f.communication_pref} onChange={set('communication_pref')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{COMM_PREF.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Reporting Cadence"><select value={f.reporting_cadence} onChange={set('reporting_cadence')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{CADENCE.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="KAM Assigned" full><select value={f.kam_assigned} onChange={set('kam_assigned')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{kams.map(k => <option key={k.id} value={k.id}>{k.full_name}</option>)}</select></F>
           </Section>
 
           <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 8, background: '#EAF0F8', border: '1px solid #CFE0F2', fontSize: 12, color: '#1B4E86' }}>
@@ -192,7 +192,7 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
         </div>
 
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: `1px solid ${C.line}`, background: C.surface2, borderRadius: '0 0 16px 16px' }}>
-          <button onClick={onCancel} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', color: C.inkSoft, fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Batal</button>
+          <button onClick={onCancel} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', color: C.inkSoft, fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
           <button onClick={submit} disabled={saving} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: C.accent, color: '#fff', fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             {saving ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Crown size={15} />}Simpan &amp; Lanjutkan
           </button>

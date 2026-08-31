@@ -41,10 +41,10 @@ function escapeHtml(s) {
 function timeAgo(iso) {
   if (!iso) return '';
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (d < 60) return 'baru saja';
-  if (d < 3600) return `${Math.floor(d / 60)} menit lalu`;
-  if (d < 86400) return `${Math.floor(d / 3600)} jam lalu`;
-  return `${Math.floor(d / 86400)} hari lalu`;
+  if (d < 60) return 'just now';
+  if (d < 3600) return `${Math.floor(d / 60)} minutes ago`;
+  if (d < 86400) return `${Math.floor(d / 3600)} hours ago`;
+  return `${Math.floor(d / 86400)} days ago`;
 }
 
 // Cari token "@query" yang sedang diketik tepat sebelum cursor. Match hanya
@@ -374,8 +374,8 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                         style={{ width: '100%', boxSizing: 'border-box', borderRadius: 9, border: `1px solid ${C.borderStrong}`, padding: '8px 10px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
                       />
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button type="button" onClick={() => saveEdit(c.id)} disabled={savingEdit} style={ghostBtn(false)}><Check size={13} />{savingEdit ? 'Menyimpan…' : 'Simpan'}</button>
-                        <button type="button" onClick={cancelEdit} disabled={savingEdit} style={ghostBtn(false)}><X size={13} />Batal</button>
+                        <button type="button" onClick={() => saveEdit(c.id)} disabled={savingEdit} style={ghostBtn(false)}><Check size={13} />{savingEdit ? 'Saving…' : 'Simpan'}</button>
+                        <button type="button" onClick={cancelEdit} disabled={savingEdit} style={ghostBtn(false)}><X size={13} />Cancel</button>
                       </div>
                     </div>
                   ) : (
@@ -459,8 +459,8 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
         open={!!deleteTarget}
         title="Hapus komentar?"
         message="Komentar ini akan dihapus dari chatter. Tindakan ini tidak bisa dibatalkan."
-        confirmLabel={deleting ? 'Menghapus…' : 'Hapus'}
-        cancelLabel="Batal"
+        confirmLabel={deleting ? 'Deleting…' : 'Hapus'}
+        cancelLabel="Cancel"
         variant="danger"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}

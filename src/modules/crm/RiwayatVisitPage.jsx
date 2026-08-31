@@ -103,15 +103,15 @@ function VisitDetail({ v, onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mute, padding: 4, display: 'flex' }}><X size={18} /></button>
         </div>
         <div style={{ padding: '6px 20px 18px' }}>
-          <DetailRow label="Tanggal" value={fmtDateTime(v.date, v.time)} />
+          <DetailRow label="Date" value={fmtDateTime(v.date, v.time)} />
           <DetailRow label="Sales" value={v.salesName} />
-          <DetailRow label="Customer / Prospek" value={v.customer} />
+          <DetailRow label="Customer / Prospect" value={v.customer} />
           <DetailRow label="Entitas" value={v.entity} mono />
-          <DetailRow label="Jenis Kunjungan" value={v.visit_type} />
+          <DetailRow label="Visit Type" value={v.visit_type} />
           <DetailRow label="Lokasi" value={v.location} />
           <DetailRow label="Point of Meeting" value={v.point_of_meeting} />
-          <DetailRow label="Tindak Lanjut" value={v.next_action} />
-          <DetailRow label="Catatan" value={v.notes} />
+          <DetailRow label="Follow-up" value={v.next_action} />
+          <DetailRow label="Notes" value={v.notes} />
           {/* MOM — lengkap */}
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.navy, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Minute of Meeting (MOM)</div>
@@ -250,7 +250,7 @@ export default function RiwayatVisitPage({ showToast }) {
         : 'Semua Periode';
       const meta = {
         periodLabel,
-        salesLabel: filterSales !== 'all' ? filterSales : 'Semua Sales',
+        salesLabel: filterSales !== 'all' ? filterSales : 'All Salespeople',
         generatedAt: new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       };
       const pdfRows = filtered.map(r => ({
@@ -315,7 +315,7 @@ export default function RiwayatVisitPage({ showToast }) {
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', padding: '18px 20px', background: C.headBg, border: `1px solid ${C.line}`, borderRadius: 12 }}>
         <FilterField label="Sales" wide>
           <select value={filterSales} onChange={e => { setFilterSales(e.target.value); setPage(1); }} style={selStyle}>
-            <option value="all">Semua Sales</option>
+            <option value="all">All Salespeople</option>
             {salesOptions.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </FilterField>
@@ -327,14 +327,14 @@ export default function RiwayatVisitPage({ showToast }) {
         </FilterField>
         <FilterField label="Status">
           <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} style={selStyle}>
-            <option value="all">Semua Status</option>
+            <option value="all">All Statuses</option>
             {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
           </select>
         </FilterField>
         {isSuper && (
           <FilterField label="Entitas">
             <select value={filterEntity} onChange={e => { setFilterEntity(e.target.value); setPage(1); }} style={selStyle}>
-              <option value="all">Semua Entitas</option>
+              <option value="all">All Entities</option>
               {entityOptions.map(en => <option key={en} value={en}>{en}</option>)}
             </select>
           </FilterField>
@@ -372,9 +372,9 @@ export default function RiwayatVisitPage({ showToast }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              <th style={th}>Tanggal</th>
+              <th style={th}>Date</th>
               <th style={th}>Sales</th>
-              <th style={th}>Customer / Prospek</th>
+              <th style={th}>Customer / Prospect</th>
               <th style={th}>Status</th>
               <th style={th}>Entitas</th>
               <th style={{ ...th, textAlign: 'center' }}>MOM</th>
@@ -382,7 +382,7 @@ export default function RiwayatVisitPage({ showToast }) {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.faint, height: 120 }}>Memuat…</td></tr>
+              <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.faint, height: 120 }}>Loading…</td></tr>
             ) : paged.length === 0 ? (
               <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.faint, height: 120 }}>Tidak ada visit yang cocok dengan filter ini</td></tr>
             ) : paged.map(v => (

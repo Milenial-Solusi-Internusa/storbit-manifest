@@ -62,10 +62,10 @@ function escapeHtml(s) {
 function timeAgo(iso) {
   if (!iso) return '';
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (d < 60) return 'baru saja';
-  if (d < 3600) return `${Math.floor(d / 60)} menit lalu`;
-  if (d < 86400) return `${Math.floor(d / 3600)} jam lalu`;
-  return `${Math.floor(d / 86400)} hari lalu`;
+  if (d < 60) return 'just now';
+  if (d < 3600) return `${Math.floor(d / 60)} minutes ago`;
+  if (d < 86400) return `${Math.floor(d / 3600)} hours ago`;
+  return `${Math.floor(d / 86400)} days ago`;
 }
 
 // Token "@query" tepat sebelum cursor. "@" harus didahului awal-string atau
@@ -544,7 +544,7 @@ export default function Chatter({
         open={!!deleteTarget}
         title="Hapus komentar?"
         message="Komentar akan disembunyikan dari daftar. Tindakan ini tidak bisa dibatalkan dari UI."
-        confirmLabel={deleting ? 'Menghapus…' : 'Hapus'}
+        confirmLabel={deleting ? 'Deleting…' : 'Hapus'}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
         variant="danger"

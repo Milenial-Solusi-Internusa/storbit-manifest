@@ -401,7 +401,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               <InfoRow label="Routing" value={quot.route} />
               <InfoRow label="Quotation No" value={<span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>{quot.quotation_no}</span>} />
               <InfoRow label="Inquiry No" value={quot.inquiry?.inquiry_no ? <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1B4D8A' }}>{quot.inquiry.inquiry_no}</span> : '—'} />
-              <InfoRow label="Tanggal" value={fmtDate(quot.created_at)} />
+              <InfoRow label="Date" value={fmtDate(quot.created_at)} />
               <InfoRow label="Valid Until" value={fmtDate(quot.valid_until)} />
               <InfoRow label="Payment Terms" value={paymentTermName} />
               <InfoRow label="Diskon" value={`${discountPct}%`} />
@@ -800,7 +800,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         title="Kirim ke Customer?"
         message={`Quotation ${quot.quotation_no} akan ditandai SENT dan waktu kirim dicatat untuk perhitungan SLA. Lanjutkan?`}
         confirmLabel={sending ? 'Mengirim…' : 'Ya, Kirim'}
-        cancelLabel="Batal"
+        cancelLabel="Cancel"
         variant="info"
         onConfirm={handleSendToCustomer}
         onCancel={() => setConfirmSend(false)}

@@ -132,7 +132,7 @@ function periodRange(period, now) {
     return {
       start, end: new Date(y + 1, 0, 1),
       prevStart: new Date(y - 1, 0, 1), prevEnd: start,
-      curLabel: 'Tahun Ini', prevLabel: 'Tahun Lalu',
+      curLabel: 'This Year', prevLabel: 'Last Year',
       buckets: Array.from({ length: 12 }, (_, i) => ({
         name: MONTH_SHORT[i],
         start: new Date(y, i, 1),     end: new Date(y, i + 1, 1),
@@ -147,7 +147,7 @@ function periodRange(period, now) {
     return {
       start, end: new Date(y, q + 3, 1),
       prevStart: new Date(y, q - 3, 1), prevEnd: start,
-      curLabel: 'Kuartal Ini', prevLabel: 'Kuartal Lalu',
+      curLabel: 'This Quarter', prevLabel: 'Last Quarter',
       buckets: Array.from({ length: 3 }, (_, i) => {
         const bs = new Date(y, q + i, 1);
         return {
@@ -167,7 +167,7 @@ function periodRange(period, now) {
   const pStart = new Date(y, m - 1, 1);
   return {
     start, end, prevStart: pStart, prevEnd: start,
-    curLabel: 'Bulan Ini', prevLabel: 'Bulan Lalu',
+    curLabel: 'This Month', prevLabel: 'Last Month',
     buckets: [1, 2, 3, 4].map((w) => ({
       name: `Minggu ${w}`,
       start: new Date(y, m, (w - 1) * 7 + 1),
@@ -413,7 +413,7 @@ function KpiCard({ data }) {
 }
 
 /* ---------- pipeline prospect trend (recharts area — count per week) ---------- */
-function AreaTip({ active, payload, label, curLabel = 'Bulan Ini', prevLabel = 'Bulan Lalu' }) {
+function AreaTip({ active, payload, label, curLabel = 'This Month', prevLabel = 'Last Month' }) {
   if (!active || !payload || !payload.length) return null;
   const get = (k) => { const p = payload.find((x) => x.dataKey === k); return p ? p.value : 0; };
   return (
@@ -433,7 +433,7 @@ function AreaTip({ active, payload, label, curLabel = 'Bulan Ini', prevLabel = '
   );
 }
 
-function PipelineTrend({ data = [], curLabel = 'Bulan Ini', prevLabel = 'Bulan Lalu', bucketNoun = 'minggu' }) {
+function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last Month', bucketNoun = 'minggu' }) {
   const [areaRef, areaW] = useWidth();
   const isEmpty = data.length === 0;
   return (
@@ -1169,7 +1169,7 @@ function SalesPerformance({ data = [] }) {
             mana perginya selisihnya. */}
         {data.some((s) => s.noOwner) && (
           <div style={{ padding: "10px 16px 14px", fontSize: 11.5, color: "#7A828E", lineHeight: 1.5 }}>
-            <b>Tanpa Pemilik</b> = deal yang <code>owner_id</code>-nya belum terisi, jadi belum bisa
+            <b>Unassigned</b> = deal yang <code>owner_id</code>-nya belum terisi, jadi belum bisa
             diatribusikan ke salesperson mana pun. Barisnya tetap dihitung agar total di sini
             cocok dengan kartu Win Rate dan grafik Pipeline by Stage.
           </div>
@@ -1191,7 +1191,7 @@ function RecentActivity({ items = ACTIVITY }) {
           <div style={D.cardIco}><Icon name="activity" size={18} /></div>
           <div><div style={D.cardTitle}>Recent Activity</div><div style={D.cardSub}>Prospect, inquiry, quotation & aktivitas terbaru</div></div>
         </div>
-        <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada aktivitas</div>
+        <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No activity yet</div>
       </div>
     );
   }
@@ -1400,7 +1400,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
 
           {/* Jenis Kunjungan (BD-07) */}
           <div>
-            {lbl('Jenis Kunjungan', true)}
+            {lbl('Visit Type', true)}
             {sel({
               value: draft.visit_type || '',
               onChange: e => setDraft(d => ({ ...d, visit_type: e.target.value })),
@@ -1424,7 +1424,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                 value: draft.prospect_id,
                 onChange: e => setDraft(d => ({ ...d, prospect_id: e.target.value })),
                 children: [
-                  <option key="" value="">— Opsional —</option>,
+                  <option key="" value="">— Optional —</option>,
                   ...(prospectOptions.length === 0 ? [<option key="__empty" value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>] : []),
                   ...prospectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>),
                 ],
@@ -1436,7 +1436,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                 value: draft.salesperson_id,
                 onChange: e => setDraft(d => ({ ...d, salesperson_id: e.target.value })),
                 children: [
-                  <option key="" value="">— Pilih —</option>,
+                  <option key="" value="">— Select —</option>,
                   ...salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>),
                 ],
               })}
@@ -1488,7 +1488,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                     {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Catatan lengkap hasil meeting...', 4)}
                   </div>
                   <div>
-                    {lbl('Tindak Lanjut')}
+                    {lbl('Follow-up')}
                     {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up action yang perlu dilakukan...')}
                   </div>
                 </>
@@ -1513,7 +1513,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
               Batal
             </button>
             <button onClick={onSave} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: st.dot, color: 'white', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Simpan Visit')}
+              {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Simpan Visit')}
             </button>
           </div>
         </div>
@@ -1607,7 +1607,7 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
         {/* Info rows */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
           {visit.visit_type && VISIT_TYPE_MAP[visit.visit_type] && row(
-            'Jenis Kunjungan',
+            'Visit Type',
             `${VISIT_TYPE_MAP[visit.visit_type].label} — ${VISIT_TYPE_MAP[visit.visit_type].desc}\n${VISIT_TYPE_MAP[visit.visit_type].output}`,
           )}
           {row('Tanggal & Waktu', dateStr + (visit.time ? ' · ' + visit.time.slice(0,5) : ''))}
@@ -1615,7 +1615,7 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
           {row('Lokasi', visit.location !== '—' ? visit.location : null)}
           {row('Agenda / Point of Meeting', visit.point_of_meeting || null)}
           {visit.status === 'completed' && row('Minute of Meeting (MOM)', visit.mom || null)}
-          {visit.status === 'completed' && row('Tindak Lanjut', visit.follow_up || null)}
+          {visit.status === 'completed' && row('Follow-up', visit.follow_up || null)}
           {visit.status === 'cancelled' && row('Alasan Pembatalan', visit.notes || null)}
         </div>
 
@@ -1766,26 +1766,26 @@ function DashCalendar({
           <button onClick={onPrevMonth} title="Bulan sebelumnya" style={navBtn}>‹</button>
           <div style={{ minWidth: 138, textAlign: "center", fontSize: 13, fontWeight: 700, color: "#16243A", fontFamily: "'Montserrat',system-ui,sans-serif" }}>{MONTH_LABELS[month]} {year}</div>
           <button onClick={onNextMonth} title="Bulan berikutnya" style={navBtn}>›</button>
-          <button onClick={onThisMonth} style={{ height: 34, border: "1px solid #CFDDF0", borderRadius: 8, background: "#EAF0F8", color: NAVY, padding: "0 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Bulan Ini</button>
+          <button onClick={onThisMonth} style={{ height: 34, border: "1px solid #CFDDF0", borderRadius: 8, background: "#EAF0F8", color: NAVY, padding: "0 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>This Month</button>
         </div>
 
         <div style={{ flex: 1, minWidth: 8 }} />
 
         <select value={fSales} onChange={e => setFSales(e.target.value)} style={selSm} title="Sales">
-          <option value="all">Semua Sales</option>
+          <option value="all">All Salespeople</option>
           {salesOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={selSm} title="Status">
-          <option value="all">Semua Status</option>
+          <option value="all">All Statuses</option>
           {VISIT_STAGES.map(s => <option key={s} value={s}>{VISIT_STATUS[s].label}</option>)}
         </select>
         <select value={fType} onChange={e => setFType(e.target.value)} style={selSm} title="Tipe visit">
-          <option value="all">Semua Tipe</option>
+          <option value="all">All Types</option>
           {typeOptions.map(t => <option key={t} value={t}>{VISIT_TYPE_MAP[t]?.label || t}</option>)}
         </select>
         {isSuper && (
           <select value={fEntity} onChange={e => setFEntity(e.target.value)} style={selSm} title="Entitas">
-            <option value="all">Semua Entitas</option>
+            <option value="all">All Entities</option>
             {entityOptions.map(en => <option key={en} value={en}>{en}</option>)}
           </select>
         )}
@@ -1816,7 +1816,7 @@ function DashCalendar({
             </div>
           );
         })}
-        {loading && <div style={{ padding: "8px 0", fontSize: 12, color: "#9AA3B2" }}>Memuat…</div>}
+        {loading && <div style={{ padding: "8px 0", fontSize: 12, color: "#9AA3B2" }}>Loading…</div>}
       </div>
 
       {/* day headers */}
@@ -2002,9 +2002,9 @@ function fmtTimeAgo(iso) {
   if (!iso) return '—';
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (diff < 60)    return `${diff} detik lalu`;
-  if (diff < 3600)  return `${Math.floor(diff / 60)} menit lalu`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} jam lalu`;
-  return `${Math.floor(diff / 86400)} hari lalu`;
+  if (diff < 3600)  return `${Math.floor(diff / 60)} minutes ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+  return `${Math.floor(diff / 86400)} days ago`;
 }
 
 /* Urutan/label/warna funnel kini hidup di INQ_STAGE_* (dekat puncak file),
@@ -2546,7 +2546,7 @@ function CRMDashboardPage() {
       const loadRows = Object.entries(loadByOwner)
         .map(([id, s]) => ({
           id,
-          name:    id === '__no_owner__' ? 'Tanpa Pemilik' : (ownerNames[id] || '(tanpa nama)'),
+          name:    id === '__no_owner__' ? 'Unassigned' : (ownerNames[id] || '(unnamed)'),
           noOwner: id === '__no_owner__',
           deals: s.deals, value: s.value, missing: s.missing,
         }))
@@ -2626,7 +2626,7 @@ function CRMDashboardPage() {
               inquiryNo: r.inquiry_no || '—',
               account:   r.customer?.name || r.prospect?.name || '—',
               statusLabel: INQ_STAGE_LABELS[st],
-              owner:     r.owner_id ? (ownerNames[r.owner_id] || '(tanpa nama)') : 'Tanpa Pemilik',
+              owner:     r.owner_id ? (ownerNames[r.owner_id] || '(unnamed)') : 'Unassigned',
               noOwner:   !r.owner_id,
               days,
               over:      days - thr,
@@ -2710,7 +2710,7 @@ function CRMDashboardPage() {
          Snapshot distribusi akun, bukan cohort periode (lihat query [11]). */
       const lcCounts = {};
       lifecycleRows.forEach((a) => {
-        const s = a.lifecycle_stage || '(kosong)';
+        const s = a.lifecycle_stage || '(empty)';
         lcCounts[s] = (lcCounts[s] || 0) + 1;
       });
       const lifecycleFunnel = LIFECYCLE_FUNNEL.map((id) => ({
@@ -2854,7 +2854,7 @@ function CRMDashboardPage() {
           const dec = s.won + s.lost;
           return {
             ownerId:   id,
-            name:      id === NO_OWNER ? 'Tanpa Pemilik' : (ownerNames[id] || '(tanpa nama)'),
+            name:      id === NO_OWNER ? 'Unassigned' : (ownerNames[id] || '(unnamed)'),
             noOwner:   id === NO_OWNER,
             won:       s.won,
             lost:      s.lost,
@@ -3008,7 +3008,7 @@ function CRMDashboardPage() {
   const handleSaveVisit = useCallback(async () => {
     if (!visitDraft.visit_type) { setVisitError('Jenis kunjungan wajib dipilih.'); return; }
     if (!visitDraft.visit_date) { setVisitError('Tanggal kunjungan wajib diisi.'); return; }
-    if (!visitDraft.salesperson_id) { setVisitError('Salesperson wajib dipilih.'); return; }
+    if (!visitDraft.salesperson_id) { setVisitError('Salesperson is required.'); return; }
     if (visitDraft.status === 'cancelled' && !visitDraft.notes?.trim()) {
       setVisitError('Alasan pembatalan wajib diisi.'); return;
     }

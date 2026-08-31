@@ -29,11 +29,11 @@ const FEED_ACT_ICON = {
 export function feedTimeAgo(iso) {
   if (!iso) return '—';
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 0)     return 'baru saja';
+  if (diff < 0)     return 'just now';
   if (diff < 60)    return `${diff} detik lalu`;
-  if (diff < 3600)  return `${Math.floor(diff / 60)} menit lalu`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} jam lalu`;
-  return `${Math.floor(diff / 86400)} hari lalu`;
+  if (diff < 3600)  return `${Math.floor(diff / 60)} minutes ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+  return `${Math.floor(diff / 86400)} days ago`;
 }
 export function feedFmtDate(iso) {
   if (!iso) return '';
@@ -101,7 +101,7 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
   const events = [];
   (accRes.data || []).forEach(r => events.push({
     id: 'acc-' + r.id, timestamp: r.created_at, type: 'prospect', actType: null,
-    title: 'Prospect baru', subtitle: r.name || '(tanpa nama)',
+    title: 'Prospect baru', subtitle: r.name || '(unnamed)',
     user_id: r.created_by || r.assigned_to || null, icon: 'UserPlus',
   }));
   (inqRes.data || []).forEach(r => events.push({

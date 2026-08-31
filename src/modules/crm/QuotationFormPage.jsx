@@ -1116,7 +1116,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                   placeholder="cth: Jakarta – Singapore" />
               </Field>
 
-              <Field label="Tanggal">
+              <Field label="Date">
                 <input type="date" value={header.quote_date} onChange={setH('quote_date')} style={inpStyle()} />
               </Field>
 

@@ -95,9 +95,9 @@ function Shell({ icon, title, subtitle, err, children, onCancel, onSubmit, savin
         </div>
 
         <footer style={{ padding: '14px 20px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>Batal</button>
+          <button type="button" style={btnGhost} onClick={onCancel} disabled={saving}>Cancel</button>
           <button type="button" style={btnDanger(saving)} onClick={onSubmit} disabled={saving}>
-            {saving ? 'Menyimpan…' : submitLabel}
+            {saving ? 'Saving…' : submitLabel}
           </button>
         </footer>
       </div>
@@ -122,13 +122,13 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
   if (!open) return null;
 
   const submit = () => {
-    if (!reasonId) { setErr('Alasan kalah wajib dipilih.'); return; }
+    if (!reasonId) { setErr('A loss reason is required.'); return; }
     if (needCompetitor) {
-      if (!compName.trim()) { setErr('Nama pesaing wajib diisi untuk alasan ini.'); return; }
+      if (!compName.trim()) { setErr('Competitor name is required for this reason.'); return; }
       if (compPrice === '' || Number.isNaN(Number(compPrice))) {
-        setErr('Harga pesaing wajib diisi berupa angka untuk alasan ini.'); return;
+        setErr('Competitor price must be a number for this reason.'); return;
       }
-      if (Number(compPrice) < 0) { setErr('Harga pesaing tidak boleh negatif.'); return; }
+      if (Number(compPrice) < 0) { setErr('Competitor price cannot be negative.'); return; }
     }
     setErr('');
     onSave?.({
@@ -145,25 +145,25 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
   return (
     <Shell
       icon={<XCircle size={18} style={{ color: C.red, flexShrink: 0, marginTop: 1 }} />}
-      title="Tandai Kalah"
+      title="Mark as Lost"
       subtitle={inquiryNo ? `Inquiry ${inquiryNo}` : undefined}
       err={err} onCancel={onCancel} onSubmit={submit} saving={saving}
-      submitLabel="Tandai Kalah"
+      submitLabel="Mark as Lost"
     >
       <div>
-        <label style={label} htmlFor="lost-reason">Alasan kalah</label>
+        <label style={label} htmlFor="lost-reason">Loss reason</label>
         <select
           id="lost-reason" style={field} value={reasonId}
           onChange={(e) => { setReasonId(e.target.value); setErr(''); }}
         >
-          <option value="">— Pilih alasan —</option>
+          <option value="">— Select a reason —</option>
           {reasons.map((r) => (
             <option key={r.id} value={r.id}>{r.name}</option>
           ))}
         </select>
         {reasons.length === 0 && (
           <div style={{ marginTop: 6, fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
-            Master alasan kalah belum terisi. Hubungi admin untuk mengisi Loss Reasons.
+            No loss reasons defined yet. Ask an admin to populate Loss Reasons.
           </div>
         )}
       </div>
@@ -171,15 +171,15 @@ export function LostReasonModal({ open, inquiryNo, reasons = [], saving, onSave,
       {needCompetitor && (
         <>
           <div>
-            <label style={label} htmlFor="comp-name">Nama pesaing</label>
+            <label style={label} htmlFor="comp-name">Competitor name</label>
             <input
               id="comp-name" style={field} value={compName}
               onChange={(e) => { setCompName(e.target.value); setErr(''); }}
-              placeholder="Nama perusahaan pesaing"
+              placeholder="Competitor company name"
             />
           </div>
           <div>
-            <label style={label} htmlFor="comp-price">Harga pesaing</label>
+            <label style={label} htmlFor="comp-price">Competitor price</label>
             <input
               id="comp-price" style={field} value={compPrice} type="number" min="0"
               onChange={(e) => { setCompPrice(e.target.value); setErr(''); }}
@@ -202,7 +202,7 @@ export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel })
   if (!open) return null;
 
   const submit = () => {
-    if (!reason.trim()) { setErr('Alasan pembatalan wajib diisi.'); return; }
+    if (!reason.trim()) { setErr('A cancellation reason is required.'); return; }
     setErr('');
     onSave?.({ cancel_reason: reason.trim() });
   };
@@ -210,13 +210,13 @@ export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel })
   return (
     <Shell
       icon={<Ban size={18} style={{ color: C.red, flexShrink: 0, marginTop: 1 }} />}
-      title="Batalkan Deal"
+      title="Cancel Deal"
       subtitle={inquiryNo ? `Inquiry ${inquiryNo}` : undefined}
       err={err} onCancel={onCancel} onSubmit={submit} saving={saving}
-      submitLabel="Batalkan Deal"
+      submitLabel="Cancel Deal"
     >
       <div>
-        <label style={label} htmlFor="cancel-reason">Alasan pembatalan</label>
+        <label style={label} htmlFor="cancel-reason">Cancellation reason</label>
         <textarea
           id="cancel-reason" rows={4}
           style={{ ...field, resize: 'vertical' }}
@@ -225,7 +225,7 @@ export function CancelReasonModal({ open, inquiryNo, saving, onSave, onCancel })
           placeholder="Mis. customer menunda proyek, salah input, pengiriman dialihkan…"
         />
         <div style={{ marginTop: 6, fontFamily: BODY, fontSize: 12, color: C.textFaint }}>
-          Catatan operasional, bukan taksonomi kalah — tulis apa adanya.
+          An operational note, not a loss taxonomy — write it as-is.
         </div>
       </div>
     </Shell>

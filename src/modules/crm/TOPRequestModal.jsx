@@ -100,7 +100,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
         <div style={{ padding: 22, overflowY: 'auto' }}>
           <Section title="A — Identitas Perusahaan">
             <F label="Nama Perusahaan"><input value={account?.name || ''} readOnly style={{ ...inpStyle, background: C.surface2, color: C.inkSoft }} /></F>
-            <F label="Status PKP"><select value={f.status_pkp} onChange={set('status_pkp')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{PKP.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Status PKP"><select value={f.status_pkp} onChange={set('status_pkp')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{PKP.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Alamat Kantor" full><textarea rows={2} value={f.alamat_kantor} onChange={set('alamat_kantor')} style={taStyle} /></F>
             <F label="Alamat Gudang" full><textarea rows={2} value={f.alamat_gudang} onChange={set('alamat_gudang')} style={taStyle} /></F>
             <F label="Telepon"><input value={f.telepon} onChange={set('telepon')} style={inpStyle} /></F>
@@ -116,7 +116,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
             <F label="Industri"><input value={f.industri} onChange={set('industri')} style={inpStyle} /></F>
             <F label="Tahun Berdiri"><input value={f.tahun_berdiri} onChange={set('tahun_berdiri')} style={inpStyle} /></F>
             <F label="Jumlah Karyawan"><input value={f.jumlah_karyawan} onChange={set('jumlah_karyawan')} style={inpStyle} /></F>
-            <F label="Revenue Tahunan"><select value={f.revenue_tahunan} onChange={set('revenue_tahunan')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{REVENUE.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Revenue Tahunan"><select value={f.revenue_tahunan} onChange={set('revenue_tahunan')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{REVENUE.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Produk/Service Utama" full><input value={f.produk_utama} onChange={set('produk_utama')} style={inpStyle} /></F>
             <F label="Customer Utama (3)" full><textarea rows={2} value={f.customer_utama} onChange={set('customer_utama')} style={taStyle} /></F>
             <F label="Supplier Utama (3)" full><textarea rows={2} value={f.supplier_utama} onChange={set('supplier_utama')} style={taStyle} /></F>
@@ -128,7 +128,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
             <F label="Total Liabilities (Rp)"><input type="number" min="0" value={f.total_liabilities} onChange={set('total_liabilities')} style={inpStyle} /></F>
             <F label="Annual Revenue (Rp)"><input type="number" min="0" value={f.annual_revenue} onChange={set('annual_revenue')} style={inpStyle} /></F>
             <F label="Net Profit Margin (%)"><input value={f.net_profit_margin} onChange={set('net_profit_margin')} style={inpStyle} /></F>
-            <F label="Laporan Keuangan"><select value={f.laporan_keuangan} onChange={set('laporan_keuangan')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{LAPKEU.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="Laporan Keuangan"><select value={f.laporan_keuangan} onChange={set('laporan_keuangan')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{LAPKEU.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Outstanding Hutang ke Forwarder Lain"><input value={f.outstanding_hutang} onChange={set('outstanding_hutang')} style={inpStyle} /></F>
           </Section>
 
@@ -156,7 +156,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
           </div>
 
           <Section title="F — Permohonan Kredit">
-            <F label="TOP Requested"><select value={f.top_requested} onChange={set('top_requested')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Pilih —</option>{TOP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
+            <F label="TOP Requested"><select value={f.top_requested} onChange={set('top_requested')} style={{ ...inpStyle, cursor: 'pointer' }}><option value="">— Select —</option>{TOP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select></F>
             <F label="Credit Limit Diminta (Rp)"><input type="number" min="0" value={f.credit_limit_diminta} onChange={set('credit_limit_diminta')} style={inpStyle} /></F>
             <F label="Service yang Akan Dipakai"><input value={f.service_type} onChange={set('service_type')} style={inpStyle} /></F>
             <F label="Estimasi Volume"><input value={f.estimasi_volume} onChange={set('estimasi_volume')} style={inpStyle} /></F>
@@ -165,7 +165,7 @@ export default function TOPRequestModal({ account, onClose, showToast }) {
         </div>
 
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: `1px solid ${C.line}`, background: C.surface2, borderRadius: '0 0 16px 16px' }}>
-          <button onClick={onClose} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', color: C.inkSoft, fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Batal</button>
+          <button onClick={onClose} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: `1px solid ${C.line}`, background: '#fff', color: C.inkSoft, fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
           <button onClick={submit} disabled={saving} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: C.accent, color: '#fff', fontFamily: "'Montserrat',sans-serif", fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             {saving ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CreditCard size={15} />}Submit TOP Request
           </button>

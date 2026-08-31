@@ -106,7 +106,7 @@ function RateEditor({ initial, onBack, onSaved, showToast }) {
 
   const handleSave = async () => {
     const e = {};
-    if (!rateName.trim()) e.rateName = 'Wajib diisi';
+    if (!rateName.trim()) e.rateName = 'Required';
     setErrors(e);
     if (Object.keys(e).length) return;
     if (!profile?.company_id) { showToast?.('Company tidak ditemukan untuk user ini', 'error'); return; }
@@ -157,7 +157,7 @@ function RateEditor({ initial, onBack, onSaved, showToast }) {
         </div>
         {!readOnly && (
           <button onClick={handleSave} disabled={saving} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: C.accent, color: '#fff', border: 'none', borderRadius: 9, padding: '9px 20px', fontSize: 13.5, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'Menyimpan…' : (sheetId ? 'Simpan Perubahan' : 'Simpan Rate')}
+            {saving ? 'Saving…' : (sheetId ? 'Save Changes' : 'Simpan Rate')}
           </button>
         )}
       </div>
@@ -364,7 +364,7 @@ export default function RateListPage({ showToast }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+                <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>{search ? 'Tidak ada rate yang cocok.' : 'Belum ada rate sheet.'}</td></tr>
               ) : filtered.map((s, i) => {
@@ -401,8 +401,8 @@ export default function RateListPage({ showToast }) {
         open={!!delTarget}
         title="Hapus Rate Sheet"
         message={`Hapus rate "${delTarget?.rate_name || ''}"? Tindakan ini tidak bisa dibatalkan.`}
-        confirmLabel={deleting ? 'Menghapus…' : 'Hapus'}
-        cancelLabel="Batal"
+        confirmLabel={deleting ? 'Deleting…' : 'Hapus'}
+        cancelLabel="Cancel"
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => { if (!deleting) setDelTarget(null); }}

@@ -325,7 +325,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
 
   const validate = () => {
     const e = {};
-    if (!form.name.trim()) e.name = 'Wajib diisi';
+    if (!form.name.trim()) e.name = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -485,7 +485,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
             </FG>
             <FG label="Payment Terms">
               <select value={form.payment_terms_id} onChange={set('payment_terms_id')} style={SEL_STYLE}>
-                <option value="">— Pilih —</option>
+                <option value="">— Select —</option>
                 {payTerms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </FG>
@@ -499,7 +499,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
             </FG>
             <FG label="Assigned Salesperson">
               <select value={form.assigned_to} onChange={set('assigned_to')} style={SEL_STYLE}>
-                <option value="">— Pilih —</option>
+                <option value="">— Select —</option>
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
               </select>
             </FG>
@@ -519,9 +519,9 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
 
           {/* Footer */}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, paddingTop: 16, borderTop: `1px solid ${D.lineSoft}` }}>
-            <Btn onClick={onClose} disabled={saving}>Batal</Btn>
+            <Btn onClick={onClose} disabled={saving}>Cancel</Btn>
             <Btn primary onClick={handleSave} disabled={saving} icon={Save}>
-              {saving ? 'Menyimpan…' : (initial?.id ? 'Simpan Perubahan' : 'Tambah Customer')}
+              {saving ? 'Saving…' : (initial?.id ? 'Save Changes' : 'Tambah Customer')}
             </Btn>
           </div>
         </div>
@@ -720,7 +720,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
           {entityFilter !== 'FREE_AGENT' && (
             <div style={P.selectWrap}>
               <select className="cl-sel" style={P.select} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                <option value="all">Semua Status</option>
+                <option value="all">All Statuses</option>
                 {STATUS_FILTERS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
               <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
@@ -729,7 +729,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
           {!entityLocked && (
             <div style={P.selectWrap}>
               <select className="cl-sel" style={P.select} value={filterCo} onChange={(e) => setFilterCo(e.target.value)}>
-                <option value="all">Semua Entitas</option>
+                <option value="all">All Entities</option>
                 {['MSI', 'JCI', 'SOA'].map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
@@ -756,7 +756,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>Memuat data…</td></tr>
+                <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>Loading data…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>
                   {search || filterStatus !== 'customer' || filterCo !== 'all' || filterTier !== 'all' ? 'Tidak ada customer yang cocok dengan filter.' : 'Belum ada data customer.'}

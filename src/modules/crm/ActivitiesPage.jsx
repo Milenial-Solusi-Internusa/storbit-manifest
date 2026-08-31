@@ -214,7 +214,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
         {!isEdit ? (
           <div style={{ padding: '20px 28px 28px' }}>
             <DSection title="Info Aktivitas">
-              <DField label="Tanggal"     value={fmtDate(act.scheduled_for)} mono />
+              <DField label="Date"     value={fmtDate(act.scheduled_for)} mono />
               <DField label="Waktu"       value={fmtTime(act.activity_time)} mono />
               <DField label="Salesperson" value={act.salesperson_name} />
               <DField label="Lokasi"      value={act.details?.location} />
@@ -230,7 +230,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
                 <div style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, whiteSpace: 'pre-wrap', background: C.surface2, borderRadius: 8, padding: '10px 14px' }}>{act.outcome || act.notes}</div>
               </div>
             )}
-            <DSection title="Tindak Lanjut">
+            <DSection title="Follow-up">
               <DField label="Next Action"      value={act.next_action} full />
               <DField label="Next Action Date" value={act.next_action_date ? fmtDate(act.next_action_date) : null} mono />
             </DSection>
@@ -266,7 +266,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
               <div>
                 {lbl('Salesperson', true)}
                 <select value={draft.assigned_to} onChange={e => upd('assigned_to', e.target.value)} style={selStyle}>
-                  <option value="">— Pilih sales —</option>
+                  <option value="">— Select Salesperson —</option>
                   {salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
                 </select>
               </div>
@@ -274,7 +274,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
-                {lbl('Tanggal', true)}
+                {lbl('Date', true)}
                 <input type="date" value={draft.scheduled_for} onChange={e => upd('scheduled_for', e.target.value)} style={inpStyle} />
               </div>
               <div>
@@ -286,7 +286,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
             <div>
               {lbl('Account (Customer / Prospek)')}
               <select value={draft.account_id} onChange={e => upd('account_id', e.target.value)} style={selStyle}>
-                <option value="">— Opsional —</option>
+                <option value="">— Optional —</option>
                 {accounts.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
@@ -313,7 +313,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
             )}
 
             <div>
-              {lbl('Catatan')}
+              {lbl('Notes')}
               <textarea value={draft.notes} onChange={e => upd('notes', e.target.value)} rows={3} style={taStyle} placeholder="Catatan / agenda…" />
             </div>
 
@@ -339,7 +339,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
                 Batal
               </button>
               <button onClick={() => onSave?.(draft)} disabled={saving} style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-                {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
+                {saving ? 'Saving…' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -399,7 +399,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
             <div>
               {lbl('Salesperson', true)}
               <select value={draft.assigned_to} onChange={e => upd('assigned_to', e.target.value)} style={selStyle}>
-                <option value="">— Pilih sales —</option>
+                <option value="">— Select Salesperson —</option>
                 {salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
               </select>
             </div>
@@ -407,7 +407,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              {lbl('Tanggal', true)}
+              {lbl('Date', true)}
               <input type="date" value={draft.scheduled_for} onChange={e => upd('scheduled_for', e.target.value)} style={inpStyle} />
             </div>
             <div>
@@ -419,7 +419,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
           <div>
             {lbl('Account (Customer / Prospek)')}
             <select value={draft.account_id} onChange={e => upd('account_id', e.target.value)} style={selStyle}>
-              <option value="">— Opsional —</option>
+              <option value="">— Optional —</option>
               {accounts.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
@@ -467,7 +467,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
               Batal
             </button>
             <button onClick={onSave} disabled={saving} style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Menyimpan…' : 'Simpan Task'}
+              {saving ? 'Saving…' : 'Simpan Task'}
             </button>
           </div>
         </div>
@@ -650,7 +650,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   const handleSave = useCallback(async () => {
     if (!draft.type)          { setFormError('Tipe wajib dipilih.'); return; }
     if (!draft.scheduled_for) { setFormError('Tanggal wajib diisi.'); return; }
-    if (!draft.assigned_to)   { setFormError('Salesperson wajib dipilih.'); return; }
+    if (!draft.assigned_to)   { setFormError('Salesperson is required.'); return; }
     setSaving(true);
     setFormError(null);
     try {
@@ -771,7 +771,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     if (!detail) return;
     if (!draft.type)          { setDetailError('Tipe wajib dipilih.'); return; }
     if (!draft.scheduled_for) { setDetailError('Tanggal wajib diisi.'); return; }
-    if (!draft.assigned_to)   { setDetailError('Salesperson wajib dipilih.'); return; }
+    if (!draft.assigned_to)   { setDetailError('Salesperson is required.'); return; }
     setDetailSaving(true);
     setDetailError(null);
     try {
@@ -872,19 +872,19 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           />
         </div>
         <select value={filterType} onChange={e => setFilterType(e.target.value)} style={selStyle}>
-          <option value="all">Semua Tipe</option>
+          <option value="all">All Types</option>
           {TYPE_FORM.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
-          <option value="all">Semua Status</option>
+          <option value="all">All Statuses</option>
           <option value="todo">To Do</option>
           <option value="done">Selesai</option>
           <option value="cancelled">Dibatalkan</option>
         </select>
         <select value={filterDate} onChange={e => setFilterDate(e.target.value)} style={selStyle}>
-          <option value="today">Hari Ini</option>
-          <option value="this_week">Minggu Ini</option>
-          <option value="this_month">Bulan Ini</option>
+          <option value="today">Today</option>
+          <option value="this_week">This Week</option>
+          <option value="this_month">This Month</option>
           <option value="custom">Custom</option>
           <option value="all">Semua Tanggal</option>
         </select>
@@ -895,7 +895,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           </>
         )}
         <select value={filterSales} onChange={e => setFilterSales(e.target.value)} style={selStyle}>
-          <option value="all">Semua Sales</option>
+          <option value="all">All Salespeople</option>
           {salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
         </select>
       </div>
@@ -906,16 +906,16 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-                {['No', 'Tanggal', 'Tipe', 'Status', 'Customer / Prospek', 'Sales', 'Catatan / Outcome', 'Aksi'].map(h => (
+                {['No', 'Date', 'Tipe', 'Status', 'Customer / Prospect', 'Sales', 'Catatan / Outcome', 'Aksi'].map(h => (
                   <th key={h} style={{ padding: '11px 14px', textAlign: h === 'No' ? 'center' : 'left', minWidth: h === 'No' ? 48 : undefined, fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
               ) : pageRows.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada aktivitas</td></tr>
+                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>No activity yet</td></tr>
               ) : pageRows.map((r, i) => (
                 <tr key={r.id} onClick={() => setDetail(r)} style={{ borderBottom: i < pageRows.length - 1 ? `1px solid ${C.lineSoft}` : 'none', cursor: 'pointer' }}>
                   <td style={{ padding: '12px 14px', textAlign: 'center', minWidth: 48, fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.inkSoft, whiteSpace: 'nowrap' }}>
@@ -1013,7 +1013,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         title="Jadikan Prospek?"
         message="Buat prospek baru dari kontak aktivitas ini?"
         confirmLabel="Ya, Jadikan Prospek"
-        cancelLabel="Batal"
+        cancelLabel="Cancel"
         onConfirm={() => { const r = confirmProspect; setConfirmProspect(null); openProspectFromActivity(r); }}
         onCancel={() => setConfirmProspect(null)}
       />
@@ -1023,8 +1023,8 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         variant="danger"
         title="Hapus Aktivitas?"
         message="Aktivitas ini akan dihapus permanen."
-        confirmLabel="Ya, Hapus"
-        cancelLabel="Batal"
+        confirmLabel="Yes, Delete"
+        cancelLabel="Cancel"
         onConfirm={() => deleteConfirm && handleDeleteActivity(deleteConfirm.id)}
         onCancel={() => setDeleteConfirm(null)}
       />
