@@ -394,6 +394,7 @@ const D = {
    tak pernah muncul — markupnya tetap disiapkan supaya begitu jalur datanya
    ada, tile langsung memakainya tanpa ubah komponen. */
 function KpiCard({ data }) {
+  const unitInline = data.unit === "%";
   return (
     <div className="kpi">
       <div className="kpi-top">
@@ -402,17 +403,23 @@ function KpiCard({ data }) {
           <Icon name={data.icon} size={27} color="rgba(255,255,255,.85)" strokeWidth={2} />
         </span>
       </div>
-      {/* Value + unit = SATU grup, di-center bareng ("100" + "%" dibaca
-          sebagai "100%"). Unit sengaja TIDAK lagi jadi penghuni kpi-foot. */}
+      {/* Unit diperlakukan dua macam, dan pembedanya BUKAN kosmetik:
+          "%" adalah simbol yang secara tipografis menempel pada angkanya —
+          "28.4%" satu kesatuan, dibaca sebagai satu nilai. Sedangkan
+          "prospect"/"inquiry"/"quotation" adalah KATA yang menerangkan angka,
+          bukan bagian dari nilainya, jadi ia berdiri sendiri di pojok kiri
+          bawah. Berlaku sama untuk kpisReal maupun kpisSales (unit "%" hanya
+          dipakai kedua tile Win Rate). */}
       <div className="kpi-value-group">
         <span className="kpi-value">{data.value}</span>
-        {data.unit && <span className="kpi-unit">{data.unit}</span>}
+        {unitInline && <span className="kpi-unit">{data.unit}</span>}
       </div>
-      {/* Slot foot selalu dirender walau hint-nya kosong; min-height 1 baris
-          di CSS yang menjaga tingginya tetap ada, sebab sejak unit pindah ke
-          atas slot ini bisa benar-benar kosong (3 dari 4 tile tampilan admin
-          memang tak punya subtitle). */}
+      {/* Slot foot selalu dirender; min-height 2 baris di CSS yang menjaga
+          tingginya seragam, sebab isinya berbeda antar-tile: tiga tile
+          mengisi sisi kiri dengan unit dan sisi kanannya kosong, Win Rate
+          justru sebaliknya. */}
       <div className="kpi-foot">
+        <span className="kpi-unit">{unitInline ? "" : (data.unit || "")}</span>
         <span className="kpi-hint">{data.trend?.note || data.subtitle || ""}</span>
       </div>
       {data.progress && (
@@ -3201,45 +3208,16 @@ function CRMDashboardPage() {
           background:radial-gradient(circle at 34% 22%,#B4E0F2 0%,#7FBBDA 55%,#5A9CC3 100%);
           pointer-events:none;
         }
-        /* Scrim gelap di pita bawah — supaya unit & hint konsisten terbaca di
-           atas slate/peach/blob.
-           Dua hal yang WAJIB dipertahankan kalau blok ini disentuh:
-           (1) z-index:1, BUKAN 0. Scrim (::before) dan blob (::after) sama-sama
-               pseudo-element .kpi; kalau z-index-nya sama, urutan cat mengikuti
-               urutan tree dan ::after SELALU sesudah ::before — blob menutup
-               scrim sepenuhnya dan pita gelapnya tak pernah terlihat sama
-               sekali. Isi kartu juga z-index:1 tapi berada sesudah ::before di
-               tree, jadi teks tetap di atas scrim.
-           (2) Stop-nya px dari DASAR (to top), bukan persen dari tinggi. Isi
-               kartu semuanya px tetap (padding 30, foot ±31), sedangkan tinggi
-               kartu berubah-ubah ikut lebar kolom; scrim berbasis persen
-               membuat pita gelap bergeser relatif terhadap teks, dan baris
-               pertama hint 2-baris jatuh di zona terang (terukur 3,14:1, gagal
-               AA). Dengan px, pita gelap selalu menutup foot berapa pun tinggi
-               kartunya. 68px menutup foot + padding bawah, 104px titik fade
-               habis.
-           (3) Scrim ini HANYA pengaman baris hint, bukan latar seluruh kartu.
-               62px menutup foot (padding bawah 31 + hint sampai 2 baris),
-               80px titik fade habis — cukup menaungi deretan teks bawah lalu
-               berhenti, tidak menyapu sampai ke angka.
-           (4) Alpha .60, bukan .82. Terukur pada bentuk ini hint masih
-               5,54:1 (lolos AA 4,5:1) di seluruh breakpoint; .45 menjatuhkannya
-               ke 3,67:1 dan itu batas bawahnya.
-           (5) Grup value+unit SENGAJA berada di luar jangkauan scrim. Karena
-               grup itu menyerap sisa tinggi kartu, makin lebar layar makin
-               tinggi ia naik ke bagian blob paling terang: unit terukur
-               1,4:1 di 1920+ bahkan dengan scrim tebal .82/68/104 yang lama,
-               jadi memaksanya lolos AA menuntut scrim menutupi ±45-60%
-               tinggi kartu — persis pita besar yang dibuang di sini.
-               KEPUTUSAN SADAR (Den): unit diterima sekelas kontras dengan
-               angka besar yang ia tempeli (angka itu sendiri 1,55-1,72:1 dan
-               memang sudah begitu sejak awal), dan dibantu text-shadow yang
-               sama. JANGAN "diperbaiki" dengan menebalkan scrim lagi. */
-        .kpi::before{
-          content:""; position:absolute; z-index:1; inset:0; pointer-events:none;
-          background:linear-gradient(to top,
-            rgba(10,16,26,.60) 0, rgba(10,16,26,.60) 62px, rgba(10,16,26,0) 80px);
-        }
+        /* SCRIM DIHAPUS TOTAL (keputusan Den) — dulu ada .kpi::before berisi
+           gradasi gelap di pita bawah supaya unit & hint terbaca. Sekarang
+           blob biru tampil penuh tanpa lapisan gelap apa pun, dan keterbacaan
+           teks bawah bersandar pada text-shadow saja.
+           Kalau kelak dipertimbangkan menghidupkannya lagi: ia HARUS
+           z-index:1, bukan 0. Scrim (::before) dan blob (::after) sama-sama
+           pseudo-element .kpi; kalau z-index-nya sama, urutan cat mengikuti
+           urutan tree dan ::after SELALU sesudah ::before, sehingga blob
+           menutup scrim sepenuhnya dan pita gelapnya tak pernah terlihat —
+           bug yang pernah terjadi dan butuh pixel-sampling untuk ketahuan. */
         .kpi-top{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:8px;}
         .kpi-icon{flex-shrink:0;opacity:.85;}
         .kpi-label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.7);}
@@ -3262,7 +3240,8 @@ function CRMDashboardPage() {
            unit terlempar ke baris kedua di kolom sempit. */
         .kpi-value-group{
           position:relative;z-index:1;flex:1 1 auto;margin:0;
-          display:grid;grid-auto-flow:column;gap:6px;
+          /* gap:0 — "%" harus MENEMPEL ke angka ("28.4%"), bukan "28.4 %". */
+          display:grid;grid-auto-flow:column;gap:0;
           justify-content:center;align-content:center;align-items:baseline;
         }
         .kpi-value{
@@ -3271,10 +3250,23 @@ function CRMDashboardPage() {
           color:#fff;letter-spacing:.02em;
           text-shadow:0 2px 10px rgba(8,14,24,.35);
         }
+        /* Bentuk dasar = unit INLINE ("%" di sebelah angka besar). Tetap putih
+           dengan shadow yang sama persis seperti .kpi-value, karena ia dibaca
+           sebagai satu kesatuan dengan angkanya ("28.4%"); membuatnya gelap
+           sendirian justru memutus kesatuan itu. Kontrasnya memang rendah
+           (1,45-1,51:1), sama seperti angka besar yang ia tempeli — diterima
+           sadar, lihat catatan di blok scrim. */
         .kpi-unit{font-size:14px;font-weight:600;color:rgba(255,255,255,.72);white-space:nowrap;
-          /* shadow sama persis dengan .kpi-value: unit dibaca sebagai satu
-             kesatuan dengan angka, jadi bantuan keterbacaannya pun sama. */
           text-shadow:0 2px 10px rgba(8,14,24,.35);}
+        /* Teks di kpi-foot justru dibalik jadi GELAP. Sejak scrim dihapus,
+           latar di belakang dua teks ini selalu bagian terang blob —
+           tersampling (167-170, 215-217, 236-237) di 1024/1440/2560 pada kedua
+           tampilan, tak ada satu lebar pun yang jatuh ke area slate gelap.
+           Teks putih di situ cuma 1,31-1,47:1 (praktis tak terbaca), dan
+           text-shadow TIDAK menolong: ia hanya menambah halo tipis, angkanya
+           tak bergerak sama sekali. Teks gelap membalik keadaan jadi
+           7,5-9,2:1 tanpa perlu mengembalikan lapisan gelap apa pun. */
+        .kpi-foot .kpi-unit{color:rgba(12,22,34,.88);text-shadow:none;}
         /* Slot foot menempel dasar kartu dengan sendirinya karena grup
            value+unit di atasnya flex:1 1 auto — tak perlu margin-top:auto
            maupun margin tetap.
@@ -3292,9 +3284,10 @@ function CRMDashboardPage() {
            teks. */
         .kpi-foot{
           position:relative;z-index:1;margin-top:0;
+          display:flex;align-items:flex-end;justify-content:space-between;gap:8px;
           font-size:11.5px;line-height:1.35;min-height:2.7em;
         }
-        .kpi-hint{display:block;font-size:11.5px;line-height:1.35;color:rgba(255,255,255,.9);text-align:center;}
+        .kpi-hint{font-size:11.5px;line-height:1.35;color:rgba(12,22,34,.88);text-align:right;min-width:0;}
         /* .nx-grid-kpi turun ke 2 kolom di bawah 1024px dan 1 kolom di bawah
            640px (src/index.css); pembagi min-height ikut berubah supaya rasio
            1.6:1 tetap jadi batas bawah yang benar di kedua mode itu. */
