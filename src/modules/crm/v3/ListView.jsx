@@ -43,13 +43,17 @@ function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelect
         <div style={{ display: 'flex', gap: SP.s1, flexWrap: 'wrap', alignItems: 'center' }}>
           {savedViews.map((v) => {
             const on = v.id === activeView;
+            /* Satu-satunya yang `color` ubah adalah warna aksen saat pil AKTIF.
+               Tanpa `color` nilainya jatuh ke NAVY, sehingga pemanggil savedViews
+               yang belum mengisinya berperilaku persis seperti sebelumnya. */
+            const accent = v.color || NAVY;
             return (
               <button
                 key={v.id} type="button" onClick={() => onSelectView?.(v.id)}
                 style={{
                   padding: '5px 12px', borderRadius: RADIUS.pill, cursor: 'pointer',
-                  border: `1px solid ${on ? NAVY : LINE}`,
-                  background: on ? NAVY : 'transparent', color: on ? '#FFFFFF' : INK_SOFT,
+                  border: `1px solid ${on ? accent : LINE}`,
+                  background: on ? accent : 'transparent', color: on ? '#FFFFFF' : INK_SOFT,
                   fontFamily: FONT_HEAD, fontSize: 12, fontWeight: on ? 700 : 600,
                 }}
               >
@@ -242,7 +246,10 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
  * @param {string}   [props.search]
  * @param {Function} [props.onSearch]
  * @param {Node}     [props.filters]
- * @param {Array}    [props.savedViews]- [{ id, label, count }]
+ * @param {Array}    [props.savedViews]- [{ id, label, count, color? }]
+ *                                       `color` OPSIONAL: warna pil saat AKTIF.
+ *                                       Tidak diisi → NAVY, persis seperti
+ *                                       sebelum field ini ada.
  * @param {string}   [props.activeView]
  * @param {Function} [props.onSelectView]
  * @param {Node}     [props.right]

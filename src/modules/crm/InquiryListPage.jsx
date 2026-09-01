@@ -323,18 +323,26 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     return () => { cancelled = true; };
   }, [profile?.company_id]);
 
-  /* Chip status lama dipetakan ke savedViews ListView. Konsekuensi yang disadari:
-     ListView merender pil-nya seragam (navy saat aktif), jadi warna per-status
-     dari STATUS_META tidak ikut terbawa. Itu kontrak komponennya, bukan kelalaian. */
+  /* Chip status lama dipetakan ke savedViews ListView, LENGKAP dengan warna
+     per-status lewat field `color` yang baru.
+     Nilainya diambil dari STATUS_META — peta yang sama yang dipakai StatusBadge
+     di kolom Status, jadi chip dan badge dijamin sewarna untuk status yang sama.
+     `C.accent` untuk pil "All" dan `C.neutral` sebagai fallback keduanya nilai
+     yang persis dipakai StatusChip lama (chip "Semua" ber-meta C.accent; status
+     tanpa entri STATUS_META — mis. NEGOTIATION — jatuh ke CHIP_FALLBACK yang
+     warnanya C.neutral). Tak ada warna baru yang dikarang di sini. */
   const statusViews = [
-    { id: 'all', label: 'All', count: countsTotal },
+    { id: 'all', label: 'All', count: countsTotal, color: C.accent },
     ...Object.keys(statusCounts)
       .filter((k) => statusCounts[k] > 0)
       .sort((a, b) => {
         const ia = STATUS_ORDER.indexOf(a), ib = STATUS_ORDER.indexOf(b);
         return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
       })
-      .map((k) => ({ id: k, label: STATUS_LABEL[k] || k, count: statusCounts[k] })),
+      .map((k) => ({
+        id: k, label: STATUS_LABEL[k] || k, count: statusCounts[k],
+        color: STATUS_META[k]?.color || C.neutral,
+      })),
   ];
 
   /* Kolom Owner ditaruh SESUDAH Status. Tiga keadaan sengaja dibedakan, mengikuti
