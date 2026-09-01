@@ -31,23 +31,6 @@ const C = {
   orange:    '#A45A22', orangeBg: '#F6E8D6', orangeBd: '#E7CDA9',
 };
 
-// Pipeline stage badge palette — mirrors ProspectListPage STAGE_META (same tokens).
-const STAGE_META = {
-  NEW:         { label: 'New',         bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
-  CONTACTED:   { label: 'Contacted',   bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
-  QUALIFIED:   { label: 'Qualified',   bg: C.tealBg,    color: C.teal,    bd: C.tealBd    },
-  PROPOSAL:    { label: 'Proposal',    bg: C.warnBg,    color: C.warn,    bd: C.warnBd    },
-  NEGOTIATION: { label: 'Negotiation', bg: C.orangeBg,  color: C.orange,  bd: C.orangeBd  },
-  WON:         { label: 'Won',         bg: C.okBg,      color: C.ok,      bd: C.okBd      },
-  LOST:        { label: 'Lost',        bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
-  // Jaring pengaman. NURTURE ada di accounts.pipeline_stage (5 akun per 31 Agu
-  // 2026) tapi belum satu pun punya inquiry — begitu ada, tanpa entri ini kolom
-  // Stage-nya diam-diam jatuh ke '—' tanpa error. Ungu dipakai karena satu-
-  // satunya tone di palet C yang belum terpakai di peta ini, sekaligus membaca
-  // sebagai "di luar jalur funnel" — dan NURTURE memang bukan tahap progresif.
-  NURTURE:     { label: 'Nurture',     bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
-};
-
 // Warna badge status — palet TINTED (mockup Claude Design). Teksnya dirujuk dari
 // STATUS_LABEL (v3/tokens.js) yang dipakai bareng papan Pipeline — jangan tulis
 // ulang teksnya di sini, itu yang dulu bikin dua peta melenceng.
@@ -174,21 +157,6 @@ function applyDeadlineFilter(query, preset, today) {
   return query;
 }
 
-function StageBadge({ stage }) {
-  const m = STAGE_META[stage];
-  if (!m) return <span style={{ color: '#A29684', fontSize: 12 }}>—</span>;
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center',
-      padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700,
-      letterSpacing: '.3px', border: `1px solid ${m.bd}`,
-      background: m.bg, color: m.color,
-    }}>
-      {m.label}
-    </span>
-  );
-}
-
 function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.OPEN;
   return (
@@ -196,8 +164,6 @@ function StatusBadge({ status }) {
       display: 'inline-flex', alignItems: 'center',
       // Rounded-square, bukan pill: RADIUS.sm dari v3/tokens.js — token kit yang
       // sudah dipakai komponen lain (skeleton ListView), bukan radius baru.
-      // StageBadge di atas SENGAJA tetap pill: itu sumbu lifecycle akun, bukan
-      // status deal, dan tidak ikut diredesain batch ini.
       padding: '2px 10px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700,
       letterSpacing: '.3px', border: `1px solid ${m.bd}`,
       background: m.bg, color: m.color,
@@ -334,8 +300,8 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           id, inquiry_no, service_type, route, status, created_at, estimated_volume, notes,
           pol, pod, incoterms, container_types, goods_name, hs_code, weight_kg, volume_cbm, dimension,
           cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
-          prospect:accounts!inquiries_prospect_id_fkey(name, pipeline_stage),
-          customer:accounts!inquiries_customer_id_fkey(name, pipeline_stage),
+          prospect:accounts!inquiries_prospect_id_fkey(name),
+          customer:accounts!inquiries_customer_id_fkey(name),
           owner_id,
           created_by_profile:profiles!inquiries_created_by_fkey(full_name)
         `, { count: 'exact' })
@@ -477,8 +443,6 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     { key: 'service_type', label: 'Service Type',
       render: (inq) => SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—' },
     { key: 'route', label: 'Route', render: (inq) => inq.route || '—' },
-    { key: 'stage', label: 'Stage',
-      render: (inq) => <StageBadge stage={inq.prospect?.pipeline_stage || inq.customer?.pipeline_stage} /> },
     { key: 'status', label: 'Status', render: (inq) => <StatusBadge status={inq.status} /> },
     { key: 'owner', label: 'Owner', render: ownerCell },
     { key: 'created_at', label: 'Created At', render: (inq) => fmtDate(inq.created_at) },
