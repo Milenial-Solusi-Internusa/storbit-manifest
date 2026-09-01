@@ -218,8 +218,17 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       const { data: inserted, error: insErr } = await supabase
         .from('inquiry_comments')
         .insert({ inquiry_id: inquiryId, company_id: companyId, created_by: currentUserId, body })
-        .select('id').single();
+        .select('id').maybeSingle();
       if (insErr) throw insErr;
+      /* maybeSingle(), BUKAN single(). Ini insert-returning: kalau insert-nya
+         berhasil tapi barisnya tak terbaca balik (policy SELECT menutupnya),
+         PostgREST mengembalikan NOL baris — single() melempar PGRST116 yang
+         pesannya tak berarti apa-apa bagi user.
+         Guard di bawah WAJIB ada bersama perubahan ini: `inserted` kini bisa
+         null, sedangkan seluruh langkah sesudahnya (mention, notifikasi,
+         email) butuh id ini sebagai kunci. Dilempar, bukan di-return diam-diam,
+         supaya jatuh ke catch yang sudah ada (console.error + showToast). */
+      if (!inserted?.id) throw new Error('Comment saved but could not be read back — tagging and notifications were skipped.');
       const newCommentId = inserted.id;
 
       // Tag final — hanya yang teksnya masih ada di body (user mungkin sudah
