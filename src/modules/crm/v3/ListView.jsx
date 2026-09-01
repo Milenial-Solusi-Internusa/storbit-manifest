@@ -35,9 +35,20 @@ import { NAVY, INK, INK_SOFT, FAINT, LINE, LINE_SOFT, SURFACE, SURFACE_2,
 import { Badge, EmptyState } from './kit';
 
 /* ---------- Filter bar ---------- */
-function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelectView, right }) {
+function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelectView, right, card }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s3, marginBottom: SP.s4 }}>
+    /* `card` OPT-IN. Tanpa ia, gaya wrapper persis seperti sebelum prop ini ada —
+       itulah sebabnya PipelineKanbanPage, yang juga merender FilterBar ini lewat
+       search/filters/savedViews, tak berubah sedikit pun.
+       Tiga nilainya token yang sudah ada: SURFACE (#FFFFFF), LINE, RADIUS.md.
+       Padding SP.s4 menyamai marginBottom yang sudah dipakai wrapper ini. */
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: SP.s3, marginBottom: SP.s4,
+      ...(card ? {
+        background: SURFACE, border: `1px solid ${LINE}`,
+        borderRadius: RADIUS.md, padding: SP.s4,
+      } : null),
+    }}>
       {/* saved view */}
       {!!savedViews?.length && (
         <div style={{ display: 'flex', gap: SP.s1, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -264,6 +275,9 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
  * @param {string}   [props.activeView]
  * @param {Function} [props.onSelectView]
  * @param {Node}     [props.right]
+ * @param {boolean}  [props.filterCard] - true → baris filter dibungkus kartu putih
+ *                                       berbingkai. Default false = tampilan lama
+ *                                       persis, tanpa wadah.
  * @param {string}   [props.emptyTitle]
  * @param {Function} [props.onRowClick] - mode table: baris jadi bisa diklik.
  *                                       TIDAK diisi = perilaku lama persis
@@ -276,6 +290,7 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
 export default function ListView({
   mode = 'table', columns = [], rows = [], lanes = [], renderCard,
   search, onSearch, filters, savedViews, activeView, onSelectView, right,
+  filterCard = false,
   emptyTitle = 'No data', emptySub, groupedBoard = false,
   onRowClick, loading = false,
 }) {
@@ -293,7 +308,7 @@ export default function ListView({
   const bar = (
     <FilterBar
       search={search} onSearch={onSearch} filters={filters}
-      savedViews={savedViews} activeView={activeView} onSelectView={onSelectView}
+      savedViews={savedViews} activeView={activeView} onSelectView={onSelectView} card={filterCard}
       right={right}
     />
   );

@@ -509,6 +509,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
 
       <ListView
         mode="table"
+        filterCard
         loading={loading}
         search={search}
         onSearch={setSearch}
