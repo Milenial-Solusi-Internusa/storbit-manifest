@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useAuth } from '../../contexts/useAuth';
 import InquiryPDF from './InquiryPDF';
-import { STATUS_LABEL } from './v3/tokens';
+import { STATUS_LABEL, RADIUS } from './v3/tokens';
 import ListView from './v3/ListView';
 import { fetchOperationalRoster } from './salesRoster';
 
@@ -48,16 +48,35 @@ const STAGE_META = {
   NURTURE:     { label: 'Nurture',     bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
 };
 
-// Warna badge status. Teksnya dirujuk dari STATUS_LABEL (v3/tokens.js) yang
-// dipakai bareng papan Pipeline — jangan tulis ulang teksnya di sini, itu yang
-// dulu bikin dua peta melenceng.
+// Warna badge status — palet TINTED (mockup Claude Design). Teksnya dirujuk dari
+// STATUS_LABEL (v3/tokens.js) yang dipakai bareng papan Pipeline — jangan tulis
+// ulang teksnya di sini, itu yang dulu bikin dua peta melenceng.
+//
+// Hex ditulis literal, BUKAN lewat palet C, karena tujuh pasangan ini datang dari
+// mockup sebagai satu set utuh; menyalurkannya lewat C berarti mengubah token yang
+// juga dipakai kolom lain di file ini (Payment Term, Service Type) yang TIDAK ikut
+// diredesain.
+//
+// `bd` diturunkan dari `color`: 20% warna teks dicampur ke `bg`. Rasio itu bukan
+// karangan — ia rata-rata pola yang SUDAH dipakai palet C file ini sendiri
+// (info .178, ok .196, warn .243, danger .225, purple .173, neutral .183) dan
+// sejalan dengan TONE di v3/tokens.js. Preseden bentuknya: HEADLINE_META di
+// SalesOrderDetailPage.jsx:218 — "semua badge tint + teks senada, tanpa blok solid".
+//
+// ⚠️ Dua nilai SENGAJA menyimpang dari mockup demi kontras AA 4.5:1 (teks 11.5px =
+// normal text): In Review #9C6B12→#916312 (4.11→4.66) dan Negotiation #C1440E→
+// #B53F0D (4.30→4.79). Jangan "dikembalikan" ke hex mockup.
+//
+// NEGOTIATION entri BARU. Sebelumnya status ini tak punya baris di sini dan jatuh
+// ke fallback STATUS_META.OPEN — badge-nya tertulis "Open", label yang salah.
 const STATUS_META = {
-  OPEN:       { label: STATUS_LABEL.OPEN,      bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
-  IN_REVIEW:  { label: STATUS_LABEL.IN_REVIEW, bg: C.warnBg,    color: C.warn,    bd: C.warnBd    },
-  QUOTED:     { label: STATUS_LABEL.QUOTED,    bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
-  WON:        { label: STATUS_LABEL.WON,       bg: C.okBg,      color: C.ok,      bd: C.okBd      },
-  LOST:       { label: STATUS_LABEL.LOST,      bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
-  CANCELLED:  { label: STATUS_LABEL.CANCELLED, bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
+  OPEN:        { label: STATUS_LABEL.OPEN,        bg: '#E4EEF7', color: '#1D5A96', bd: '#BCD0E4' },
+  IN_REVIEW:   { label: STATUS_LABEL.IN_REVIEW,   bg: '#FBF0DD', color: '#916312', bd: '#E6D4B4' },
+  QUOTED:      { label: STATUS_LABEL.QUOTED,      bg: '#EEEAF6', color: '#5B4A96', bd: '#D1CAE3' },
+  NEGOTIATION: { label: STATUS_LABEL.NEGOTIATION, bg: '#FDE7DB', color: '#B53F0D', bd: '#EFC5B2' },
+  WON:         { label: STATUS_LABEL.WON,         bg: '#E1E9F2', color: '#144682', bd: '#B8C8DC' },
+  LOST:        { label: STATUS_LABEL.LOST,        bg: '#FBE7E5', color: '#B33A2E', bd: '#EDC4C0' },
+  CANCELLED:   { label: STATUS_LABEL.CANCELLED,   bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
 };
 
 const SERVICE_TYPE_LABELS = {
@@ -68,7 +87,6 @@ const SERVICE_TYPE_LABELS = {
 
 // Urutan kanonik chip (progresi status). Status di luar daftar → jatuh ke akhir.
 const STATUS_ORDER = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION', 'WON', 'LOST', 'CANCELLED'];
-// Warna fallback utk status yg belum punya entri STATUS_META (mis. NEGOTIATION).
 
 const PAGE_SIZE = 20;
 
@@ -109,7 +127,11 @@ function StatusBadge({ status }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center',
-      padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700,
+      // Rounded-square, bukan pill: RADIUS.sm dari v3/tokens.js — token kit yang
+      // sudah dipakai komponen lain (skeleton ListView), bukan radius baru.
+      // StageBadge di atas SENGAJA tetap pill: itu sumbu lifecycle akun, bukan
+      // status deal, dan tidak ikut diredesain batch ini.
+      padding: '2px 10px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700,
       letterSpacing: '.3px', border: `1px solid ${m.bd}`,
       background: m.bg, color: m.color,
     }}>
@@ -323,16 +345,22 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     return () => { cancelled = true; };
   }, [profile?.company_id]);
 
-  /* Chip status lama dipetakan ke savedViews ListView, LENGKAP dengan warna
-     per-status lewat field `color` yang baru.
-     Nilainya diambil dari STATUS_META — peta yang sama yang dipakai StatusBadge
-     di kolom Status, jadi chip dan badge dijamin sewarna untuk status yang sama.
-     `C.accent` untuk pil "All" dan `C.neutral` sebagai fallback keduanya nilai
-     yang persis dipakai StatusChip lama (chip "Semua" ber-meta C.accent; status
-     tanpa entri STATUS_META — mis. NEGOTIATION — jatuh ke CHIP_FALLBACK yang
-     warnanya C.neutral). Tak ada warna baru yang dikarang di sini. */
+  /* Chip status lama dipetakan ke savedViews ListView, kini mengirim TRIO
+     {bg,text,border} sehingga pil aktif tampil TINTED — bentuk yang sama dengan
+     badge di kolom Status. Nilainya diambil dari STATUS_META, peta yang sama yang
+     dipakai StatusBadge, jadi chip dan badge dijamin sewarna untuk status yang sama.
+
+     Pil "All" tetap keluarga oranye accent, tapi memakai pasangan C.accentSoft +
+     C.orange (dua-duanya SUDAH ADA di palet C di atas) alih-alih C.accent solid:
+     putih di atas #E85A1E cuma 3.55:1 dan tinted #E85A1E cuma 3.23:1 — dua-duanya
+     gagal AA. #A45A22 di atas #FEF2EC = 4.71:1, LOLOS, tanpa mengarang hex baru.
+     Border-nya mengikuti aturan yang sama dengan tujuh status: 20% teks ke dalam bg.
+
+     Status tanpa entri STATUS_META jatuh ke trio netral — perilaku fallback yang
+     sama seperti sebelumnya, cuma sekarang lengkap tiga nilainya. */
   const statusViews = [
-    { id: 'all', label: 'All', count: countsTotal, color: C.accent },
+    { id: 'all', label: 'All', count: countsTotal,
+      bg: C.accentSoft, text: C.orange, border: '#ECD4C4' },
     ...Object.keys(statusCounts)
       .filter((k) => statusCounts[k] > 0)
       .sort((a, b) => {
@@ -341,7 +369,9 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       })
       .map((k) => ({
         id: k, label: STATUS_LABEL[k] || k, count: statusCounts[k],
-        color: STATUS_META[k]?.color || C.neutral,
+        bg:     STATUS_META[k]?.bg    || C.neutralBg,
+        text:   STATUS_META[k]?.color || C.neutral,
+        border: STATUS_META[k]?.bd    || C.neutralBd,
       })),
   ];
 
