@@ -238,7 +238,7 @@ function InquiryDetailModal({ inquiry, onClose }) {
               <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 700, color: C.accent, marginBottom: 10, letterSpacing: -0.5 }}>
                 {inquiry.inquiry_no || '—'}
               </div>
-              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 12px', borderRadius: 99, fontSize: 11.5, fontWeight: 700, border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 12px', borderRadius: RADIUS.sm, fontSize: 11.5, fontWeight: 700, border: `1px solid ${m.bd}`, background: m.bg, color: m.color }}>
                 {m.label}
               </span>
             </div>
