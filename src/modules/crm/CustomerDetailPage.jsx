@@ -850,7 +850,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         const ids = [...new Set(rows.map(a => a.assigned_to).filter(Boolean))];
         const nm = {};
         if (ids.length) {
-          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids).limit(1000);
           (profs || []).forEach(p => { nm[p.id] = p.full_name; });
         }
         setVisits(rows.map(a => ({
@@ -887,7 +887,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         const ids = [...new Set(rows.map(a => a.assigned_to).filter(Boolean))];
         const nm = {};
         if (ids.length) {
-          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids).limit(1000);
           (profs || []).forEach(p => { nm[p.id] = p.full_name; });
         }
         setActivities(rows.map(a => ({
@@ -975,7 +975,8 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         .eq('account_id', id)
         .is('deleted_at', null)
         .order('is_primary', { ascending: false })
-        .order('name');
+        .order('name')
+        .limit(1000);
       if (error) throw error;
       setContacts(data || []);
       setContactsLoaded(true);
