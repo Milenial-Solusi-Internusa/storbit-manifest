@@ -66,8 +66,10 @@ function Icon({ name, size = 18, color, style, strokeWidth = 1.7 }) {
 /* ---------- formatting ---------- */
 const rp = (n) => "Rp " + Number(n || 0).toLocaleString("id-ID");
 const rpShort = (n) => {
-  if (n >= 1e9) return "Rp " + (n / 1e9).toLocaleString("id-ID", { maximumFractionDigits: 2 }) + " M";
-  if (n >= 1e6) return "Rp " + (n / 1e6).toLocaleString("id-ID", { maximumFractionDigits: 0 }) + " Jt";
+  // "Bn"/"Mn", bukan "M"/"Jt": "M" ambigu antara Million dan Miliar — selisih
+  // seribu kali di kolom nilai deal.
+  if (n >= 1e9) return "Rp " + (n / 1e9).toLocaleString("id-ID", { maximumFractionDigits: 2 }) + " Bn";
+  if (n >= 1e6) return "Rp " + (n / 1e6).toLocaleString("id-ID", { maximumFractionDigits: 0 }) + " Mn";
   return rp(n);
 };
 
@@ -95,7 +97,7 @@ const INQ_STAGE_LABELS = {
 // Warna bar dipertahankan apa adanya dari versi sebelumnya (won hijau / lost
 // merah); CANCELLED lajur baru → abu netral. Penyelarasan visual ke kit v3
 // adalah batch tersendiri dan sengaja TIDAK dikerjakan di sini.
-const INQ_STAGE_COLOR = { WON: '#1F8B4D', LOST: '#C0392B', CANCELLED: '#9AA0AC' };
+const INQ_STAGE_COLOR = { WON: '#1F8B4D', LOST: '#C0392B', CANCELLED: '#6B7280' };
 
 // Fallback funnel — dipakai PipelineByStage saat data belum tiba.
 const STAGES = INQ_STAGE_ORDER.map((id) => ({
@@ -188,29 +190,41 @@ const STATUS_BADGE = {
   "On Track":  { bg: "#E5EDF7", fg: "#1E5894" },
   "Need Push": { bg: "#FBEFD3", fg: "#9A6B12" },
   "At Risk":   { bg: "#F7E1DE", fg: "#C0392B" },
+  // Netral, bukan merah: tak punya target ≠ gagal mencapai target.
+  "No Target": { bg: "#EEF0F3", fg: "#5A6270" },
 };
 
 const ACTIVITY = [];
 
+/* Nada ikon feed — semuanya turunan navy #144682 / orange #E85A1E.
+   PENGECUALIAN SENGAJA: `won` hijau dan `lost` merah dipertahankan karena
+   keduanya kembaran semantik INQ_STAGE_COLOR, yang penyelarasannya ke kit v3
+   memang ditunda ke batch tersendiri. Mengubah yang di sini saja justru
+   melahirkan dua bahasa warna untuk satu konsep yang sama.
+   `login` DIHAPUS bersama sumber datanya (lihat activityFeed.js). */
 const ACT_META = {
   quotation: { icon: "filetext",    bg: "#FBE6DA", fg: "#C8521B" },
   prospect:  { icon: "userplus",    bg: "#EAF0F8", fg: NAVY },
   won:       { icon: "checkcircle", bg: "#DEF0E4", fg: "#1F8B4D" },
   inquiry:   { icon: "inbox",       bg: "#E5EDF7", fg: "#1E5894" },
-  move:      { icon: "arrowright",  bg: "#EAF0F8", fg: NAVY },
+  move:      { icon: "arrowright",  bg: "#EAF0F8", fg: "#2A6FA8" },
   lost:      { icon: "ban",         bg: "#F7E1DE", fg: "#C0392B" },
-  activity:  { icon: "activity",    bg: "#EFE7F6", fg: "#7C3AED" },
-  login:     { icon: "login",       bg: "#EEF0F3", fg: "#51607A" },
+  activity:  { icon: "activity",    bg: "#FDEEE6", fg: ORANGE },
 };
 
 /* ---------- lead source color palette ---------- */
 // Pastel ungu/pink/biru — selaras dengan gradient line "Bulan Ini" (pie only)
+/* Turunan navy #144682 → orange #E85A1E, bukan pastel ungu/pink lepas.
+   Urutannya sengaja navy dulu: sumber lead terbesar (slice pertama) mendapat
+   warna brand paling kuat. */
 const SOURCE_PALETTE = [
-  "#8B7DD8", "#E89BC4", "#7FB5E6", "#A8C5E0", "#C9B8E0",
+  "#144682", "#2A6FA8", "#6E9BC4", "#E85A1E", "#F08C7D",
 ];
 
 /* ---------- avatar helper ---------- */
-const AV_COLORS = ["#144682", "#1E5894", "#1F8B4D", "#6E4B8C", "#C8521B", "#1F6B6B"];
+/* Avatar — hijau/ungu/teal lama diganti turunan navy+orange. Semuanya
+   sengaja tetap gelap: inisialnya ditulis putih di atas warna ini. */
+const AV_COLORS = ["#144682", "#1E5894", "#2A6FA8", "#A8410F", "#C8521B", "#E85A1E"];
 function initials(name) { return (name || '?').split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 function avatarColor(name) { let h = 0; for (let i = 0; i < (name||'').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return AV_COLORS[h % AV_COLORS.length]; }
 
@@ -278,10 +292,10 @@ const D = {
   wrap: { maxWidth: "100%", margin: "0 auto" },
 
   topRow: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 18, marginBottom: 22, flexWrap: "wrap" },
-  crumbs: { display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#9AA0AC", marginBottom: 8 },
+  crumbs: { display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#6B7280", marginBottom: 8 },
   crumbCur: { color: "#545B66", fontWeight: 600 },
   title: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 24, fontWeight: 800, letterSpacing: -0.4, color: "#16243A", margin: 0 },
-  sub: { fontSize: 13, color: "#7A828E", marginTop: 4 },
+  sub: { fontSize: 13, color: "#5A6270", marginTop: 4 },
 
   /* segmented date filter */
   seg: { display: "inline-flex", background: "#ECEDF1", borderRadius: 11, padding: 4, gap: 2 },
@@ -301,14 +315,14 @@ const D = {
 
   /* tab navigation (below page header) */
   tabBar: { display: "flex", gap: 4, borderBottom: "1px solid #ECEDF1", marginBottom: 22 },
-  tab: { position: "relative", display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "transparent", border: 0, color: "#7A828E", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", transition: "color .15s ease" },
+  tab: { position: "relative", display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "transparent", border: 0, color: "#5A6270", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", transition: "color .15s ease" },
   tabHover: { color: NAVY },
   tabActive: { color: NAVY },
   tabInd: { position: "absolute", left: 0, right: 0, bottom: -1, height: 2, background: NAVY },
 
   /* calendar */
   calGridHead: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)" },
-  calDow: { padding: "9px 10px", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#9AA0AC", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", borderRight: "1px solid #F4F5F7" },
+  calDow: { padding: "9px 10px", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#6B7280", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", borderRight: "1px solid #F4F5F7" },
   calGrid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)" },
   calCell: { minHeight: 110, padding: "7px 8px", borderRight: "1px solid #F4F5F7", borderBottom: "1px solid #F4F5F7" },
   calCellMuted: { background: "#FBFBFC" },
@@ -330,10 +344,10 @@ const D = {
   kpiTop: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   kpiIco: { width: 40, height: 40, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" },
   kpiTrend: { display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 700, padding: "4px 8px", borderRadius: 20, fontVariantNumeric: "tabular-nums" },
-  kpiLabel: { fontSize: 12, fontWeight: 600, color: "#7A828E", letterSpacing: 0.1 },
+  kpiLabel: { fontSize: 12, fontWeight: 600, color: "#5A6270", letterSpacing: 0.1 },
   kpiValue: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 29, color: "#16243A", letterSpacing: -0.8, lineHeight: 1.05, marginTop: 5, display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", whiteSpace: "nowrap" },
-  kpiUnit: { fontSize: 13, fontWeight: 600, color: "#9AA0AC", letterSpacing: 0 },
-  kpiNote: { fontSize: 11.5, color: "#9AA0AC", marginTop: 9 },
+  kpiUnit: { fontSize: 13, fontWeight: 600, color: "#6B7280", letterSpacing: 0 },
+  kpiNote: { fontSize: 11.5, color: "#6B7280", marginTop: 9 },
 
   /* bar chart */
   barBody: { padding: "16px 20px 18px" },
@@ -352,16 +366,16 @@ const D = {
   donutWrap: { position: "relative", flex: "0 0 150px", width: 150, height: 160 },
   donutCenter: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
   donutTotal: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 26, color: "#16243A", letterSpacing: -0.6, lineHeight: 1 },
-  donutTotalLbl: { fontSize: 10.5, color: "#9AA0AC", fontWeight: 600, marginTop: 3, letterSpacing: 0.3 },
+  donutTotalLbl: { fontSize: 10.5, color: "#6B7280", fontWeight: 600, marginTop: 3, letterSpacing: 0.3 },
   legend: { flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 1 },
   legRow: { display: "flex", alignItems: "center", gap: 7, padding: "3px 0", fontSize: 11 },
   legName: { color: "#48505C", fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   legVal: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 700, color: "#16243A", fontVariantNumeric: "tabular-nums" },
-  legPct: { color: "#9AA0AC", fontWeight: 600, fontSize: 10, width: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" },
+  legPct: { color: "#6B7280", fontWeight: 600, fontSize: 10, width: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" },
   legItem: { display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: "#48505C" },
 
   /* tables */
-  th: { fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: "#9AA0AC", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", padding: "9px 16px", textAlign: "left", whiteSpace: "nowrap" },
+  th: { fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: "#6B7280", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", padding: "9px 16px", textAlign: "left", whiteSpace: "nowrap" },
   td: { padding: "11px 16px", borderBottom: "1px solid #F4F5F7", fontSize: 12.5, color: "#1A2330", verticalAlign: "middle" },
   avatar: { width: 30, height: 30, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 11, flex: "0 0 30px", fontFamily: "'Montserrat', system-ui, sans-serif" },
   num: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, fontVariantNumeric: "tabular-nums" },
@@ -374,8 +388,8 @@ const D = {
   actRow: { display: "flex", alignItems: "center", gap: 14, padding: "13px 0", borderBottom: "1px solid #F4F5F7" },
   actIco: { width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 38px" },
   actText: { fontWeight: 600, fontSize: 13, color: "#16243A" },
-  actCo: { fontSize: 12, color: "#7A828E", marginTop: 2 },
-  actTime: { fontSize: 11.5, color: "#9AA0AC", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
+  actCo: { fontSize: 12, color: "#5A6270", marginTop: 2 },
+  actTime: { fontSize: 11.5, color: "#6B7280", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   userBadge: { display: "inline-flex", alignItems: "center", gap: 7, background: "#F5F6F8", border: "1px solid #ECEDF1", borderRadius: 20, padding: "4px 11px 4px 4px", fontSize: 11.5, fontWeight: 600, color: "#48505C", whiteSpace: "nowrap" },
   userBadgeAv: { width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 9, flex: "0 0 22px", fontFamily: "'Montserrat', system-ui, sans-serif" },
 
@@ -440,19 +454,23 @@ function AreaTip({ active, payload, label, curLabel = 'This Month', prevLabel = 
       <div style={D.tipTitle}>{label}</div>
       <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#8B5CF6", flex: "0 0 8px" }} />
-          {curLabel} · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanIni")} prospect</b>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: NAVY, flex: "0 0 8px" }} />
+          {curLabel} · <b style={{ color: "#fff", fontWeight: 700 }}>{get("current")} deal</b>
         </div>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 8, height: 8, borderRadius: 2, background: "#CBD5E1", flex: "0 0 8px" }} />
-          {prevLabel} · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanLalu")} prospect</b>
+          {prevLabel} · <b style={{ color: "#fff", fontWeight: 700 }}>{get("previous")} deal</b>
         </div>
       </div>
     </div>
   );
 }
 
-function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last Month', bucketNoun = 'minggu' }) {
+/* Sumbu = DEAL yang dibuat per bucket (inquiries.created_at), bukan akun baru.
+   Kartunya bernama "Pipeline Trend" dan pipeline diisi deal; sebelumnya judul
+   dan datanya berselisih. Field `current`/`previous` sengaja netral supaya
+   tetap benar di ketiga mode periode (minggu/bulan). */
+function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last Month', bucketNoun = 'week' }) {
   const [areaRef, areaW] = useWidth();
   const isEmpty = data.length === 0;
   return (
@@ -460,28 +478,26 @@ function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last M
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="trendup" size={18} /></div>
         <div>
-          <div style={D.cardTitle}>Prospect Trend</div>
-          <div style={D.cardSub}>{`New prospects per ${bucketNoun}, ${curLabel.toLowerCase()} vs ${prevLabel.toLowerCase()}`}</div>
+          <div style={D.cardTitle}>Pipeline Trend</div>
+          <div style={D.cardSub}>{`New deals per ${bucketNoun}, ${curLabel.toLowerCase()} vs ${prevLabel.toLowerCase()}`}</div>
         </div>
       </div>
       <div style={{ padding: "16px 16px 4px" }}>
         {isEmpty ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#9AA0AC", fontSize: 13 }}>No prospect data yet</div>
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280", fontSize: 13 }}>No pipeline data yet</div>
         ) : (
           <div ref={areaRef} className="bar-in">
           {areaW > 0 && (
             <AreaChart width={areaW} height={240} data={data} margin={{ top: 10, right: 22, left: -10, bottom: 0 }}>
               <defs>
-                {/* Horizontal (kiri→kanan) gradient untuk garis "Bulan Ini" */}
-                <linearGradient id="lineGradIni" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%"   stopColor="#7C3AED" />
-                  <stop offset="35%"  stopColor="#D946A6" />
-                  <stop offset="70%"  stopColor="#3B82F6" />
-                  <stop offset="100%" stopColor="#60A5FA" />
-                </linearGradient>
+                {/* Gradasi 4-stop ungu→pink→biru DIHAPUS: warnanya lepas dari
+                    brand, dan karena arahnya horizontal, nilai yang sama
+                    terbaca beda warna tergantung posisi X — dekoratif tanpa
+                    makna data. Diganti navy solid; pembanding tetap abu
+                    putus-putus. Isian area tetap ada tapi turunan navy. */}
                 <linearGradient id="areaIni" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#8B5CF6" stopOpacity={0.18} />
-                  <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0.02} />
+                  <stop offset="0%"   stopColor={NAVY} stopOpacity={0.16} />
+                  <stop offset="100%" stopColor={NAVY} stopOpacity={0.02} />
                 </linearGradient>
                 <linearGradient id="areaLalu" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor="#CBD5E1" stopOpacity={0.08} />
@@ -490,21 +506,21 @@ function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last M
               </defs>
               <CartesianGrid vertical={false} stroke="#F1F2F5" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} dy={6}
-                tick={{ fontSize: 11.5, fill: "#7A828E", fontWeight: 600 }} />
+                tick={{ fontSize: 11.5, fill: "#5A6270", fontWeight: 600 }} />
               <YAxis axisLine={false} tickLine={false} width={30} allowDecimals={false}
-                tick={{ fontSize: 11, fill: "#9AA0AC" }} />
+                tick={{ fontSize: 11, fill: "#6B7280" }} />
               <Tooltip content={<AreaTip curLabel={curLabel} prevLabel={prevLabel} />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
-              <Area type="monotone" dataKey="bulanLalu" stroke="#CBD5E1" strokeWidth={2} strokeDasharray="6 5"
+              <Area type="monotone" dataKey="previous" stroke="#CBD5E1" strokeWidth={2} strokeDasharray="6 5"
                 fill="url(#areaLalu)" dot={{ r: 3, fill: "#CBD5E1", strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
-              <Area type="monotone" dataKey="bulanIni" stroke="url(#lineGradIni)" strokeWidth={2.5}
-                fill="url(#areaIni)" dot={{ r: 3, fill: "#8B5CF6", strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+              <Area type="monotone" dataKey="current" stroke={NAVY} strokeWidth={2.5}
+                fill="url(#areaIni)" dot={{ r: 3, fill: NAVY, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
             </AreaChart>
           )}
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "center", gap: 24, padding: "8px 0 14px" }}>
           <span style={D.legItem}>
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#8B5CF6", flex: "0 0 11px" }} />
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: NAVY, flex: "0 0 11px" }} />
             {curLabel}
           </span>
           <span style={D.legItem}>
@@ -536,6 +552,10 @@ function BarTip({ active, payload }) {
 function PipelineByStage({ stages = STAGES, conversion = [] }) {
   const [barRef, barW] = useWidth();
   const totalVal   = stages.reduce((a, s) => a + (s.value || 0), 0);
+  /* Tanpa ini, `stages` default (STAGES) yang seluruh count-nya 0 tetap
+     menggambar sumbu lengkap dengan tujuh label dan NOL batang — terbaca
+     sebagai chart rusak, bukan sebagai "belum ada data". */
+  const isEmpty    = stages.every((s) => !s.count);
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
@@ -545,6 +565,9 @@ function PipelineByStage({ stages = STAGES, conversion = [] }) {
           <div style={D.cardSub}>Inquiry count by status, using the same axis as the Pipeline board</div>
         </div>
       </div>
+      {isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No pipeline data yet</div>
+      ) : (
       <div style={{ padding: "14px 14px 4px" }}>
         <div ref={barRef} className="bar-in">
         {barW > 0 && (
@@ -580,8 +603,8 @@ function PipelineByStage({ stages = STAGES, conversion = [] }) {
             bukan tahap berikutnya. */}
         {conversion.length > 0 && (
           <div style={{ borderTop: "1px solid #ECEDF1", margin: "2px 8px 0", padding: "11px 0 13px" }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "#9AA0AC", marginBottom: 7 }}>
-              Konversi antar-tahap
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "#6B7280", marginBottom: 7 }}>
+              Stage-to-stage conversion
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {conversion.map((c) => (
@@ -591,13 +614,14 @@ function PipelineByStage({ stages = STAGES, conversion = [] }) {
                 </span>
               ))}
             </div>
-            <div style={{ marginTop: 7, fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
-              Dari riwayat transisi. Deal yang bergerak sebelum 28 Agu 2026 belum punya riwayat
-              penuh, jadi angkanya masih under-report untuk data lama.
+            <div style={{ marginTop: 7, fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
+              From transition history. Deals that moved before 28 Agu 2026 have no full
+              history yet, so these figures still under-report older data.
             </div>
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -621,7 +645,9 @@ function PieTip({ active, payload, total }) {
 function LeadSourceDonut({ data = [] }) {
   // Normalise: data has { source, count } — add name + color for chart
   const normalised = data.map((d, i) => ({
-    name:  d.source || 'Lainnya',
+    // Fallback dihapus: sourceCounts di fetchDash sudah menjamin `source`
+    // selalu terisi ('Other'), jadi cabang di sini tak pernah tercapai.
+    name:  d.source,
     count: d.count,
     color: SOURCE_PALETTE[i % SOURCE_PALETTE.length],
   }));
@@ -641,7 +667,7 @@ function LeadSourceDonut({ data = [] }) {
         </div>
       </div>
       {isEmpty ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No lead source data yet</div>
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No lead source data yet</div>
       ) : (
         <div style={D.donutBody}>
           <div style={D.donutWrap} className="donut-in">
@@ -690,7 +716,7 @@ function FunnelRow({ label, count, max, muted = false }) {
   return (
     <div style={{ marginBottom: 9 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-        <span style={{ flex: 1, minWidth: 0, color: muted ? "#7A828E" : "#48505C", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ flex: 1, minWidth: 0, color: muted ? "#5A6270" : "#48505C", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {label}
         </span>
         <span style={D.legVal}>{count}</span>
@@ -718,18 +744,18 @@ function LifecycleFunnel({ funnel = [], exits = [] }) {
         </div>
       </div>
       {isEmpty ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No accounts yet</div>
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No accounts yet</div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
           {funnel.map((s) => <FunnelRow key={s.id} label={s.name} count={s.count} max={max} />)}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid #ECEDF1", paddingTop: 12, marginTop: 3 }}>
             {exits.map((e) => (
-              <span key={e.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, background: "#F4F5F7", fontSize: 11.5, color: "#7A828E", fontWeight: 600 }}>
+              <span key={e.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, background: "#F4F5F7", fontSize: 11.5, color: "#5A6270", fontWeight: 600 }}>
                 {e.name}<span style={D.legVal}>{e.count}</span>
               </span>
             ))}
-            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9AA0AC" }}>
-              Total akun <b style={{ color: "#16243A" }}>{totalFun + totalExit}</b>
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#6B7280" }}>
+              Total accounts <b style={{ color: "#16243A" }}>{totalFun + totalExit}</b>
             </span>
           </div>
         </div>
@@ -752,7 +778,7 @@ function MqlTip({ active, payload, total }) {
         <span style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flex: "0 0 8px" }} />
         <span style={D.tipTitle}>{d.name}</span>
       </div>
-      <div style={D.tipRow}><b style={{ color: "#fff", fontWeight: 700 }}>{d.value}</b> akun · {pct}%</div>
+      <div style={D.tipRow}><b style={{ color: "#fff", fontWeight: 700 }}>{d.value}</b> accounts · {pct}%</div>
     </div>
   );
 }
@@ -764,7 +790,7 @@ function MqlToSqlPie({ data }) {
   const pct       = data?.pct ?? null;
   const slices = [
     { name: 'Reached SQL', value: converted, color: NAVY },
-    { name: 'Belum',          value: pending,   color: '#C7CBD4' },
+    { name: 'Not yet',        value: pending,   color: '#C7CBD4' },
   ];
   const isEmpty = converted + pending + lost === 0;
   return (
@@ -772,13 +798,13 @@ function MqlToSqlPie({ data }) {
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="pie" size={17} /></div>
         <div>
-          <div style={D.cardTitle}>Konversi MQL ke SQL</div>
+          <div style={D.cardTitle}>MQL to SQL Conversion</div>
           <div style={D.cardSub}>Accounts that have ever reached MQL</div>
         </div>
       </div>
       {isEmpty ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
-          Belum ada akun yang tercatat mencapai MQL
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
+          No account has been recorded reaching MQL yet
         </div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
@@ -797,7 +823,7 @@ function MqlToSqlPie({ data }) {
                 <div style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 19, color: "#16243A" }}>
                   {pct === null ? '—' : pct + '%'}
                 </div>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".05em", color: "#9AA0AC" }}>REACHED SQL</div>
+                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".05em", color: "#6B7280" }}>REACHED SQL</div>
               </div>
             </div>
             <div style={{ flex: 1, minWidth: 190 }}>
@@ -814,17 +840,17 @@ function MqlToSqlPie({ data }) {
                   selesai. Tetap ditampilkan supaya tak hilang dari pandangan. */}
               {lost > 0 && (
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #ECEDF1" }}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: 20, background: "#F4F5F7", fontSize: 11, color: "#7A828E", fontWeight: 600 }}>
-                    Lost (di luar hitungan)<span style={D.legVal}>{lost}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: 20, background: "#F4F5F7", fontSize: 11, color: "#5A6270", fontWeight: 600 }}>
+                    Lost (excluded)<span style={D.legVal}>{lost}</span>
                   </span>
                 </div>
               )}
             </div>
           </div>
-          <div style={{ marginTop: 10, fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
-            Kohort dari riwayat lifecycle, bukan dari tahap sekarang — akun bisa melompati MQL.
-            Akun yang melewati MQL sebelum 27 Agu 2026 belum punya jejaknya, jadi kohort ini
-            masih under-report untuk data lama.
+          <div style={{ marginTop: 10, fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
+            Cohort from lifecycle history, not from the current stage — an account can skip
+            past MQL. Accounts that passed MQL before 27 Agu 2026 left no trace, so this
+            cohort still under-reports older data.
           </div>
         </div>
       )}
@@ -845,7 +871,7 @@ function LossReasonBreakdown({ data = [], total = 0 }) {
         </div>
       </div>
       {data.length === 0 ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No lost deals in this period</div>
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No lost deals in this period</div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
           {/* Baris "Tanpa Alasan" diredupkan tapi TIDAK disembunyikan: totalnya
@@ -853,7 +879,7 @@ function LossReasonBreakdown({ data = [], total = 0 }) {
           {data.map((s) => (
             <FunnelRow key={s.id} label={s.name} count={s.count} max={max} muted={s.unknown} />
           ))}
-          <div style={{ borderTop: "1px solid #ECEDF1", paddingTop: 12, marginTop: 3, fontSize: 11.5, color: "#9AA0AC" }}>
+          <div style={{ borderTop: "1px solid #ECEDF1", paddingTop: 12, marginTop: 3, fontSize: 11.5, color: "#6B7280" }}>
             Total LOST periode ini <b style={{ color: "#16243A" }}>{total}</b> — harus sama dengan batang LOST di Pipeline by Stage.
           </div>
         </div>
@@ -879,7 +905,7 @@ function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
         </div>
       </div>
       {rows.length === 0 ? (
-        <div style={{ padding: "32px 16px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
           Tidak ada deal terbuka
         </div>
       ) : (
@@ -902,7 +928,7 @@ function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
                         <span style={{ ...D.avatar, background: r.noOwner ? "#C7CBD4" : avatarColor(r.name) }}>
                           {r.noOwner ? "—" : initials(r.name)}
                         </span>
-                        <span style={{ fontWeight: 600, color: r.noOwner ? "#7A828E" : "#16243A" }}>{r.name}</span>
+                        <span style={{ fontWeight: 600, color: r.noOwner ? "#5A6270" : "#16243A" }}>{r.name}</span>
                       </div>
                     </td>
                     <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{r.deals}</span></td>
@@ -921,7 +947,7 @@ function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
               </tbody>
             </table>
           </div>
-          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
             Total <b>{totalDeals} deal</b> terbuka — sama dengan jumlah keempat batang terbuka di
             Pipeline by Stage.
             {anyMissing && <> Pipeline value only sums deals that already have a value; the deal count is still counted in full.</>}
@@ -945,7 +971,7 @@ function AgingPerStage({ rows = [], unknown = 0 }) {
         </div>
       </div>
       {isEmpty ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No open deals yet</div>
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No open deals yet</div>
       ) : (
         <>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -971,7 +997,7 @@ function AgingPerStage({ rows = [], unknown = 0 }) {
                         {r.median === null ? '—' : `${r.median} hr`}
                       </span>
                     </td>
-                    <td style={{ ...D.td, textAlign: "center", color: "#9AA0AC" }}>
+                    <td style={{ ...D.td, textAlign: "center", color: "#6B7280" }}>
                       <span style={D.num}>{r.threshold === null ? '—' : `${r.threshold} hr`}</span>
                     </td>
                   </tr>
@@ -979,7 +1005,7 @@ function AgingPerStage({ rows = [], unknown = 0 }) {
               })}
             </tbody>
           </table>
-          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
             Ambang dari master SLA. <b>IN_REVIEW has no threshold</b> — kebijakannya bersumbu moda
             transport yang tidak ada di inquiry, jadi tak diarang-arang. Ambang hari kerja
             diperlakukan sebagai hari kalender (belum ada kalender kerja).
@@ -1006,7 +1032,7 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
         </div>
       </div>
       {rows.length === 0 ? (
-        <div style={{ padding: "32px 16px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
           Tidak ada deal yang melewati ambang
         </div>
       ) : (
@@ -1029,8 +1055,8 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
                     style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
                     <td style={{ ...D.td, ...D.num, whiteSpace: "nowrap" }}>{r.inquiryNo}</td>
                     <td style={D.td}><span style={{ fontWeight: 600, color: "#16243A" }}>{r.account}</span></td>
-                    <td style={{ ...D.td, color: "#7A828E" }}>{r.statusLabel}</td>
-                    <td style={{ ...D.td, color: r.noOwner ? "#9AA0AC" : "#48505C" }}>{r.owner}</td>
+                    <td style={{ ...D.td, color: "#5A6270" }}>{r.statusLabel}</td>
+                    <td style={{ ...D.td, color: r.noOwner ? "#6B7280" : "#48505C" }}>{r.owner}</td>
                     <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{r.days} hr</span></td>
                     <td style={{ ...D.td, textAlign: "center" }}>
                       <span style={{ ...D.num, fontWeight: 700, color: "#C0392B" }}>+{r.over} hr</span>
@@ -1040,7 +1066,7 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
               </tbody>
             </table>
           </div>
-          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#9AA0AC", lineHeight: 1.5 }}>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
             {/* Pemotongan disebutkan, tidak diam-diam. */}
             {total > cap
               ? <>Showing <b>{cap}</b> of <b>{total}</b> stale deals — the rest are truncated, ordered worst first.</>
@@ -1072,12 +1098,12 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
    memegang penilaian visual, dan dua sumbu warna yang bisa bertentangan
    (mis. 120% target tapi win rate "At Risk") justru membingungkan. */
 function AttainmentCell({ att }) {
-  if (!att) return <span style={{ ...D.num, color: "#9AA0AC" }}>—</span>;
+  if (!att) return <span style={{ ...D.num, color: "#6B7280" }}>—</span>;
 
   const row = (label, pct) => (
     <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-      <span style={{ fontSize: 10, color: "#9AA0AC", fontWeight: 600, width: 32 }}>{label}</span>
-      <span style={{ ...D.num, fontWeight: 700, fontSize: 12.5, color: pct === null ? "#9AA0AC" : "#16243A" }}>
+      <span style={{ fontSize: 10, color: "#6B7280", fontWeight: 600, width: 32 }}>{label}</span>
+      <span style={{ ...D.num, fontWeight: 700, fontSize: 12.5, color: pct === null ? "#6B7280" : "#16243A" }}>
         {pct === null ? "—" : `${pct}%`}
       </span>
     </div>
@@ -1090,16 +1116,16 @@ function AttainmentCell({ att }) {
 
   return (
     <div style={{ display: "inline-flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
-      {row("Nilai", att.valuePct)}
-      {row("Deal", att.dealsPct)}
+      {row("Value", att.valuePct)}
+      {row("Deals", att.dealsPct)}
       {att.valueUnmeasured && (
         <div style={{ fontSize: 9.5, color: "#C0392B", lineHeight: 1.35, maxWidth: 104 }}>
-          nilai deal belum diisi
+          deal value not recorded
         </div>
       )}
       {partial && (
-        <div style={{ fontSize: 9.5, color: "#9AA0AC", lineHeight: 1.35 }}>
-          {att.monthsCovered}/{att.expectedMonths} bln
+        <div style={{ fontSize: 9.5, color: "#6B7280", lineHeight: 1.35 }}>
+          {att.monthsCovered}/{att.expectedMonths} mo
         </div>
       )}
     </div>
@@ -1107,10 +1133,28 @@ function AttainmentCell({ att }) {
 }
 
 /* ---------- sales performance table ---------- */
-function salesStatus(convRate) {
-  if (convRate >= 30) return "Exceeding";
-  if (convRate >= 20) return "On Track";
-  if (convRate >= 10) return "Need Push";
+/* Basis badge Status = CAPAIAN TARGET, bukan lagi win rate.
+   Sebelumnya Status diturunkan dari convRate sementara kolom di sebelahnya
+   menampilkan capaian target, sehingga satu baris bisa berlabel hijau
+   "Exceeding" tepat di samping angka "Nilai 15%" — dua kolom bersebelahan
+   yang saling membantah.
+   Dipakai nilai TERKECIL dari dua persentase yang tersedia (value & deals).
+   Alasannya: kolom % Target menampilkan KEDUANYA, jadi memakai yang tertinggi
+   membuat badge tetap bisa berlawanan arah dengan salah satu angka yang
+   terlihat. Yang terkecil tak pernah bisa mengklaim lebih dari yang tertulis.
+   Tanpa baris target sama sekali → null, BUKAN 0%: "belum punya target" dan
+   "target tak tercapai" dua pernyataan berbeda (pola yang sama dengan
+   attainmentFor di fetchDash). */
+function attainmentBasis(att) {
+  if (!att) return null;
+  const parts = [att.valuePct, att.dealsPct].filter((v) => v !== null && v !== undefined);
+  return parts.length ? Math.min(...parts) : null;
+}
+function salesStatus(pct) {
+  if (pct === null) return "No Target";
+  if (pct >= 30) return "Exceeding";
+  if (pct >= 20) return "On Track";
+  if (pct >= 10) return "Need Push";
   return "At Risk";
 }
 
@@ -1128,8 +1172,8 @@ function SalesPerformance({ data = [] }) {
         </div>
       </div>
       {isEmpty ? (
-        <div style={{ padding: "32px 16px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
-          Belum ada deal yang ditutup di periode ini
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
+          No deals closed in this period yet
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
@@ -1146,7 +1190,7 @@ function SalesPerformance({ data = [] }) {
           </thead>
           <tbody>
             {data.map((s, i) => {
-              const status = salesStatus(s.convRate || 0);
+              const status = salesStatus(attainmentBasis(s.att));
               const b = STATUS_BADGE[status];
               return (
                 <tr key={s.name + i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
@@ -1156,11 +1200,20 @@ function SalesPerformance({ data = [] }) {
                       <span style={{ ...D.avatar, background: s.noOwner ? "#C7CBD4" : avatarColor(s.name) }}>
                         {s.noOwner ? "—" : initials(s.name)}
                       </span>
-                      <span style={{ fontWeight: 600, color: s.noOwner ? "#7A828E" : "#16243A" }}>{s.name}</span>
+                      <span style={{ fontWeight: 600, color: s.noOwner ? "#5A6270" : "#16243A" }}>{s.name}</span>
                     </div>
                   </td>
                   <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.won}</span></td>
-                  <td style={{ ...D.td, textAlign: "right" }}><span style={D.num}>{rpShort(s.value)}</span></td>
+                  {/* `valueUnmeasured` = WON > 0 tapi total nilainya 0, artinya
+                      estimated_value-nya memang belum pernah diisi (deal lama).
+                      "Rp 0" di sini adalah pernyataan yang salah — bukan "tidak
+                      menghasilkan", tapi "hasilnya tak terukur". Penanda yang
+                      sama sudah dipakai di kolom % Target. */}
+                  <td style={{ ...D.td, textAlign: "right" }}>
+                    <span style={{ ...D.num, color: s.att?.valueUnmeasured ? "#6B7280" : undefined }}>
+                      {s.att?.valueUnmeasured ? "—" : rpShort(s.value)}
+                    </span>
+                  </td>
                   <td style={{ ...D.td, textAlign: "center" }}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
                       <span style={{ ...D.num, fontWeight: 700, color: "#16243A" }}>{s.convRate}%</span>
@@ -1187,15 +1240,48 @@ function SalesPerformance({ data = [] }) {
             selalu bisa dicocokkan dengan kartu Win Rate tanpa user menebak ke
             mana perginya selisihnya. */}
         {data.some((s) => s.noOwner) && (
-          <div style={{ padding: "10px 16px 14px", fontSize: 11.5, color: "#7A828E", lineHeight: 1.5 }}>
-            <b>Unassigned</b> = deals that <code>owner_id</code>-nya belum terisi, jadi belum bisa
-            diatribusikan ke salesperson mana pun. Barisnya tetap dihitung agar total di sini
-            cocok dengan kartu Win Rate dan grafik Pipeline by Stage.
+          <div style={{ padding: "10px 16px 14px", fontSize: 11.5, color: "#5A6270", lineHeight: 1.5 }}>
+            <b>Unassigned</b> = deals whose <code>owner_id</code> is not filled in yet, so they
+            cannot be attributed to any salesperson. The row is still counted so the totals here
+            reconcile with the Win Rate card and the Pipeline by Stage chart.
           </div>
         )}
         </div>
       )}
     </div>
+  );
+}
+
+/* Kerangka untuk SELURUH baris di bawah KPI.
+   Sebelumnya hanya baris KPI yang di-gate `dashLoading`; baris 2 ke bawah
+   dirender tanpa syarat dengan `dashData?.x || []`, sehingga selama fetch
+   berjalan ketujuh kartu menampilkan empty-state-nya sendiri — "No prospect
+   data yet", "No lead source data yet", dan seterusnya. Di koneksi lambat
+   user membaca pernyataan yang SALAH: "belum dimuat" tak bisa dibedakan dari
+   "memang kosong". Bentuk kerangkanya sengaja mengikuti tinggi & jumlah
+   kolom baris aslinya supaya tak ada lompatan layout saat data tiba. */
+function SkeletonBlock({ h }) {
+  return (
+  <div style={{ height: h, borderRadius: 14, background: "linear-gradient(90deg,#F2F4F7 25%,#E8EBF0 50%,#F2F4F7 75%)", backgroundSize: "400% 100%", animation: "db-shimmer 1.4s ease infinite" }} />
+  );
+}
+function SkeletonBelow({ isSalesOnly }) {
+  return (
+  <>
+    <div style={{ marginBottom: 16 }}><SkeletonBlock h={330} /></div>
+    <div className="nx-grid-2" style={D.chartsRow}>
+      <SkeletonBlock h={420} /><SkeletonBlock h={420} />
+    </div>
+    <div className="nx-grid-3" style={{ ...D.tablesRow, gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
+      <SkeletonBlock h={300} /><SkeletonBlock h={300} /><SkeletonBlock h={300} />
+    </div>
+    <div style={{ marginBottom: 16 }}><SkeletonBlock h={260} /></div>
+    <div className="nx-grid-2" style={{ ...D.tablesRow, gridTemplateColumns: "minmax(0,1fr) minmax(0,1.9fr)" }}>
+      <SkeletonBlock h={300} /><SkeletonBlock h={300} />
+    </div>
+    {!isSalesOnly && <div style={{ marginBottom: 16 }}><SkeletonBlock h={300} /></div>}
+    <SkeletonBlock h={360} />
+  </>
   );
 }
 
@@ -1208,9 +1294,9 @@ function RecentActivity({ items = ACTIVITY }) {
       <div className="om-card" style={D.card}>
         <div style={D.cardHead}>
           <div style={D.cardIco}><Icon name="activity" size={18} /></div>
-          <div><div style={D.cardTitle}>Recent Activity</div><div style={D.cardSub}>Prospect, inquiry, quotation & aktivitas terbaru</div></div>
+          <div><div style={D.cardTitle}>Recent Activity</div><div style={D.cardSub}>Latest prospects, inquiries, quotations & activities</div></div>
         </div>
-        <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>No activity yet</div>
+        <div style={{ padding: "32px 20px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No activity yet</div>
       </div>
     );
   }
@@ -1220,7 +1306,7 @@ function RecentActivity({ items = ACTIVITY }) {
         <div style={D.cardIco}><Icon name="activity" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Recent Activity</div>
-          <div style={D.cardSub}>Prospect, inquiry, quotation & aktivitas terbaru</div>
+          <div style={D.cardSub}>Latest prospects, inquiries, quotations & activities</div>
         </div>
       </div>
       <div style={D.actBody}>
@@ -1822,7 +1908,7 @@ function DashCalendar({
 
       {/* stats row */}
       <div style={{ display: "flex", gap: 20, padding: "10px 16px 0", borderBottom: "1px solid #F0F1F4", flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ padding: "8px 0", fontSize: 12, color: "#7A828E" }}>
+        <div style={{ padding: "8px 0", fontSize: 12, color: "#5A6270" }}>
           <b style={{ color: NAVY, fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800 }}>{totalVisits}</b> {inRange ? "scheduled in range" : "scheduled this month"}
         </div>
         {Object.entries(VISIT_STATUS).map(([key, meta]) => {
@@ -1890,7 +1976,7 @@ function DashCalendar({
                   );
                 })}
                 {dayVisits.length > 3 && (
-                  <div style={{ fontSize: 10, color: "#9AA0AC", fontWeight: 600, paddingLeft: 2 }}>+{dayVisits.length - 3} lainnya</div>
+                  <div style={{ fontSize: 10, color: "#6B7280", fontWeight: 600, paddingLeft: 2 }}>+{dayVisits.length - 3} lainnya</div>
                 )}
               </div>
 
@@ -1902,7 +1988,7 @@ function DashCalendar({
                       background: VISIT_DOT_PASTEL[v.status || 'scheduled'] || VISIT_DOT_PASTEL.scheduled }} />
                   ))}
                   {dayVisits.length > 3 && (
-                    <span style={{ fontSize: 8.5, fontWeight: 700, color: '#9AA0AC', lineHeight: 1 }}>+{dayVisits.length - 3}</span>
+                    <span style={{ fontSize: 8.5, fontWeight: 700, color: '#6B7280', lineHeight: 1 }}>+{dayVisits.length - 3}</span>
                   )}
                 </div>
               )}
@@ -1952,7 +2038,7 @@ function DashCalendar({
       )}
 
       {totalVisits === 0 && (
-        <div style={{ padding: "20px", textAlign: "center", color: "#9AA0AC", fontSize: 13, borderTop: "1px solid #F4F5F7" }}>
+        <div style={{ padding: "20px", textAlign: "center", color: "#6B7280", fontSize: 13, borderTop: "1px solid #F4F5F7" }}>
           Belum ada jadwal visit bulan ini. Klik "+ Add Visit" untuk menambah jadwal.
         </div>
       )}
@@ -2045,7 +2131,7 @@ function ActivityItem({ label, value, target, sublabel }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 10 }}>
         <span style={{ fontSize: 22, fontWeight: 800, color: '#1F2430', fontFamily: "'IBM Plex Mono',monospace" }}>{value}</span>
-        <span style={{ fontSize: 13, color: '#9AA0AC' }}>/ {target}</span>
+        <span style={{ fontSize: 13, color: '#6B7280' }}>/ {target}</span>
       </div>
       <div style={{ height: 6, borderRadius: 99, background: '#EEF0F3', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99, transition: 'width .3s' }} />
@@ -2063,7 +2149,7 @@ function ActivitySaya({ data }) {
       <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 2 }}>
         Aktivitas Saya — Minggu Ini &amp; Bulan Ini
       </div>
-      <div style={{ fontSize: 11.5, color: '#9AA0AC', marginBottom: 12 }}>
+      <div style={{ fontSize: 11.5, color: '#6B7280', marginBottom: 12 }}>
         Selalu minggu &amp; bulan berjalan — tidak mengikuti filter periode di atas.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
@@ -2205,10 +2291,25 @@ function CRMDashboardPage() {
           ? [0, 1, 2].map((i) => Math.floor(now.getMonth() / 3) * 3 + i + 1)
           : [now.getMonth() + 1];
 
-      const feedPromise = fetchActivityFeed({ companyId: cid, uid, isAllEntities, isSalesOnly });
+      /* Kartu Recent Activity hanya menampilkan 7 baris teratas, jadi menarik
+         1000 baris per sumber (sampai 4200 baris) adalah pemborosan murni.
+         20 per sumber lebih dari cukup: 7 teratas hasil merge dijamin ada di
+         dalam gabungan 20-teratas tiap sumber.
+         includeLogin:false — "user X login" bukan aktivitas CRM dan memakan
+         jatah 7 slot yang sangat terbatas. includeStatusChanges:true — deal
+         menang/kalah/pindah tahap justru peristiwa paling layak diberitakan,
+         dan ikonnya sudah lama ada di ACT_META tanpa pernah terpakai.
+         ⚠️ Keduanya OPSI, bukan perubahan global: ActivityLogPage memakai modul
+         yang sama, punya filter tipe "Login" sendiri, dan memaginasi seluruh
+         hasil di klien — default modul sengaja dibiarkan seperti semula. */
+      const feedPromise = fetchActivityFeed({
+        companyId: cid, uid, isAllEntities, isSalesOnly,
+        limitPerSource: 20, includeLogin: false, includeStatusChanges: true,
+      });
 
       const res = await Promise.all([
-        // [0] accounts periode aktif — sumber Lead Source + Prospect Trend
+        // [0] accounts periode aktif — kini HANYA sumber donut Lead Source.
+        //     Grafik trend sudah pindah ke sumbu deal (lihat [15] dan [1]).
         ownAccounts(byCompany(supabase
           .from('accounts')
           .select('id, created_at, source'))
@@ -2218,11 +2319,15 @@ function CRMDashboardPage() {
           .lt('created_at', P.end.toISOString())
           .limit(1000)),
 
-        // [1] accounts periode SEBELUMNYA — garis pembanding trend
-        ownAccounts(byCompany(supabase
-          .from('accounts')
-          .select('created_at'))
-          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+        /* [1] Deal periode SEBELUMNYA — garis pembanding Pipeline Trend.
+               Slot ini dulu menarik `accounts`; sesudah sumbu trend pindah ke
+               deal, query akun periode-sebelumnya tak punya pembaca lagi, jadi
+               slotnya DIPAKAI ULANG alih-alih menambah query ke-17 dan
+               meninggalkan fetch 1000 baris yang tak dipakai siapa pun.
+               Filter & alasan "tanpa status" sama dengan [15]. */
+        ownInquiries(byCompany(supabase
+          .from('inquiries')
+          .select('id, created_at'))
           .is('deleted_at', null)
           .gte('created_at', P.prevStart.toISOString())
           .lt('created_at', P.prevEnd.toISOString())
@@ -2377,6 +2482,26 @@ function CRMDashboardPage() {
           .eq('is_active', true)
           .is('deleted_at', null)
           .limit(1000),
+
+        /* [15] Deal yang DIBUAT di periode aktif — sumber grafik Pipeline
+           Trend. Pembandingnya ada di slot [1].
+           Sumbunya sengaja DEAL (inquiries), bukan akun: kartunya bernama
+           "Pipeline Trend" dan pipeline diisi deal, bukan pendaftaran akun.
+           Query accounts [0]/[1] TETAP ADA karena donut Lead Source masih
+           membutuhkannya.
+           ⚠️ TANPA filter status — DISENGAJA. Kalau disaring ke status terbuka,
+           deal yang dibuat minggu ke-1 lalu menang di minggu ke-3 akan HILANG
+           dari batang minggu ke-1, sehingga bentuk grafik masa lalu berubah
+           tiap kali ada deal closing. Menghitung semua deal yang dibuat
+           (termasuk CANCELLED) membuat batang historis stabil. Keputusan Den. */
+        ownInquiries(byCompany(supabase
+          .from('inquiries')
+          .select('id, created_at'))
+          .is('deleted_at', null)
+          .gte('created_at', P.start.toISOString())
+          .lt('created_at', P.end.toISOString())
+          .limit(1000)),
+
       ]);
 
       /* Pemeriksaan error MENYELURUH. Sebelumnya hanya hasil [0] yang diperiksa
@@ -2405,10 +2530,11 @@ function CRMDashboardPage() {
         ['loss reason master', res[12]],
         ['ambang SLA aging', res[13]],
         ['sales targets', res[14]],
+        ['pipeline trend', res[15]],
       ].filter(([, r]) => r?.error).map(([label]) => label);
 
       const accountsRows        = res[0].data  || [];
-      const prevRows            = res[1].data  || [];
+      const prevDealRows        = res[1].data  || [];
       const activeProspects     = res[2].count ?? 0;
       const openInq             = res[3].data  || [];
       const closedInq           = res[4].data  || [];
@@ -2422,11 +2548,23 @@ function CRMDashboardPage() {
       const lossReasonRows      = res[12].data || [];
       const slaRows             = res[13].data || [];
       const targetRows          = res[14].data || [];
+      const dealRows            = res[15].data || [];
 
       // Cap 1000 baris pada distribusi lifecycle: kalau kena, corongnya
       // memang terpotong — dikabarkan lewat banner, bukan ditampilkan
       // seolah-olah itu seluruh populasi akun.
       if (lifecycleRows.length === 1000) failed.push('account lifecycle funnel (truncated at 1000 rows)');
+      /* Empat guard di bawah menutup lubang yang sebelumnya membuat query
+         berikut memotong data DIAM-DIAM di 1000 baris, padahal tiga query lain
+         di fungsi yang sama sudah punya guard. Yang paling berbahaya
+         `accountsRows`: Lead Source adalah PERSENTASE, jadi kalau 1000 baris
+         pertama tak representatif seluruh proporsinya salah sambil tetap
+         terlihat utuh. */
+      if (accountsRows.length === 1000) failed.push('lead source (truncated at 1000 rows)');
+      if (dealRows.length === 1000)     failed.push('pipeline trend (truncated at 1000 rows)');
+      if (prevDealRows.length === 1000) failed.push('pipeline trend comparison period (truncated at 1000 rows)');
+      if (openInq.length === 1000)      failed.push('pipeline by stage — open deals (truncated at 1000 rows)');
+      if (closedInq.length === 1000)    failed.push('sales performance & win rate — closed deals (truncated at 1000 rows)');
 
       /* Nama pemilik deal lewat query TERPISAH, bukan embed FK — pola yang
          sudah dipakai di file ini (feed aktivitas & kalender). Satu query untuk
@@ -2700,10 +2838,10 @@ function CRMDashboardPage() {
           .in('account_id', accIds)
           .limit(1000);
         if (mqlErr) {
-          failed.push('konversi MQL ke SQL');
+          failed.push('MQL to SQL conversion');
         } else {
           const rows = mqlRows || [];
-          if (rows.length === 1000) failed.push('konversi MQL ke SQL (kohort terpotong di 1000 baris)');
+          if (rows.length === 1000) failed.push('MQL to SQL conversion (cohort truncated at 1000 rows)');
           const cohort = new Set(rows.map((r) => r.account_id));
           // Klasifikasi EKSHAUSTIF — tiap anggota kohort masuk salah satu dari
           // tiga ember, tak ada yang jatuh diam-diam ke luar hitungan.
@@ -2774,22 +2912,23 @@ function CRMDashboardPage() {
       // ── Lead source (periode aktif) ─────────────────────────────────────
       const sourceCounts = {};
       accountsRows.forEach((a) => {
-        const s = a.source || 'Lainnya';
+        const s = a.source || 'Other';
         sourceCounts[s] = (sourceCounts[s] || 0) + 1;
       });
       const leadSourceData = Object.entries(sourceCounts)
         .map(([source, count]) => ({ source, count }))
         .sort((a, b) => b.count - a.count);
 
-      // ── Trend — bucket adaptif + pembanding periode setara ──────────────
+      // ── Pipeline Trend — bucket adaptif + pembanding periode setara ─────
+      //    Sumbernya DEAL (res[15] aktif, res[1] pembanding), bukan lagi akun.
       const inBucket = (rows, from, to) => rows.filter((r) => {
         const d = new Date(r.created_at);
         return d >= from && d < to;
       }).length;
       const trendData = P.buckets.map((b) => ({
-        name:      b.name,
-        bulanIni:  inBucket(accountsRows, b.start, b.end),
-        bulanLalu: inBucket(prevRows, b.prevStart, b.prevEnd),
+        name:     b.name,
+        current:  inBucket(dealRows, b.start, b.end),
+        previous: inBucket(prevDealRows, b.prevStart, b.prevEnd),
       }));
 
       /* ── Sales performance — per PEMILIK DEAL (inquiries.owner_id) ───────
@@ -2907,7 +3046,7 @@ function CRMDashboardPage() {
         loadRows, openDealTotal,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
         curLabel: P.curLabel, prevLabel: P.prevLabel,
-        bucketNoun: period === 'This Month' ? 'minggu' : 'bulan',
+        bucketNoun: period === 'This Month' ? 'week' : 'month',
       });
     } catch (err) {
       console.error('[CRMDashboardPage] fetch error:', err);
@@ -3130,6 +3269,7 @@ function CRMDashboardPage() {
     </div>
   );
 
+
   return (
     <div className="nx-page-pad" style={D.root}>
       <style>{`
@@ -3333,8 +3473,8 @@ function CRMDashboardPage() {
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E", fontSize: 13, marginBottom: 16 }}>
             <Icon name="alert" size={15} />
             <span>
-              Sebagian data gagal dimuat — angka berikut belum tentu benar:{' '}
-              <b>{partialFail.join(', ')}</b>. Coba muat ulang halaman.
+              Some data failed to load — the following figures may not be correct:{' '}
+              <b>{partialFail.join(', ')}</b>. Try reloading the page.
             </span>
           </div>
         )}
@@ -3418,6 +3558,7 @@ function CRMDashboardPage() {
           {/* S2 — Aktivitas Saya (sales/operations view only) */}
           {!dashLoading && isSalesOnly && dashData && <ActivitySaya data={dashData} />}
 
+          {dashLoading ? <SkeletonBelow isSalesOnly={isSalesOnly} /> : (<>
           {/* row 2 — pipeline trend */}
           <div style={{ marginBottom: 16 }}>
             <PipelineTrend
@@ -3488,6 +3629,7 @@ function CRMDashboardPage() {
 
           {/* row 5 — activity */}
           <RecentActivity items={dashData?.recentActivity} />
+          </>)}
           </React.Fragment>
         )}
       </div>

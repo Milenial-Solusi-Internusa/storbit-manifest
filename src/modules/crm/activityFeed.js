@@ -26,6 +26,14 @@ const FEED_ACT_ICON = {
   meeting: 'Users', email: 'Mail', followup: 'CornerUpRight', login: 'LogIn',
 };
 
+// Label tahap untuk judul event 'move'. Sengaja disalin kecil di sini alih-alih
+// diimpor dari CRMDashboardPage — modul data tak boleh bergantung pada halaman.
+// CANCELLED ikut jalur 'move' karena ACT_META hanya punya won/lost/move.
+const FEED_STAGE_LABEL = {
+  OPEN: 'Open', IN_REVIEW: 'In Review', QUOTED: 'Quoted',
+  NEGOTIATION: 'Negotiation', WON: 'Won', LOST: 'Lost', CANCELLED: 'Cancelled',
+};
+
 export function feedTimeAgo(iso) {
   if (!iso) return '—';
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -44,9 +52,24 @@ export function feedFmtDate(iso) {
 
 // Returns unified events sorted newest-first. Each event:
 //   { id, timestamp, type, actType, title, subtitle, user_id, user_name, icon }
-// type ∈ prospect | inquiry | quotation | activity. Never throws — a failed source
-// (e.g. RLS/embed error) just contributes no events.
-export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSalesOnly }) {
+// type ∈ prospect | inquiry | quotation | activity | login | won | lost | move.
+// Never throws — a failed source (e.g. RLS/embed error) just contributes no events.
+//
+// ⚠️ MODUL INI DIPAKAI DUA HALAMAN dengan kebutuhan yang berlawanan:
+//   • ActivityLogPage — log lengkap, difilter & dipaginasi DI KLIEN di atas
+//     seluruh hasil, dan punya filter tipe "Login" tersendiri. Ia butuh banyak
+//     baris dan butuh event login.
+//   • CRMDashboardPage (kartu Recent Activity) — hanya menampilkan 7 baris
+//     teratas, tak mau event login, dan mau event perubahan status.
+// Karena itu perbedaannya dijadikan OPSI, bukan diubah sepihak: default di
+// bawah = perilaku lama persis, sehingga ActivityLogPage tak berubah sama
+// sekali. Hanya pemanggil yang meminta yang mendapat perilaku baru.
+export async function fetchActivityFeed({
+  companyId, uid, isAllEntities, isSalesOnly,
+  limitPerSource = 1000,
+  includeLogin = true,
+  includeStatusChanges = false,
+}) {
   const scopeCo = (q) => (isAllEntities ? q : q.eq('company_id', companyId));
 
   const accountsQ = (() => {
@@ -57,7 +80,7 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
       .is('deleted_at', null);
     q = scopeCo(q);
     if (isSalesOnly) q = q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`);
-    return q.order('created_at', { ascending: false }).limit(1000);
+    return q.order('created_at', { ascending: false }).limit(limitPerSource);
   })();
 
   const inquiriesQ = (() => {
@@ -66,7 +89,7 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
       .is('deleted_at', null);
     q = scopeCo(q);
     if (isSalesOnly) q = q.eq('created_by', uid);
-    return q.order('created_at', { ascending: false }).limit(1000);
+    return q.order('created_at', { ascending: false }).limit(limitPerSource);
   })();
 
   const quotationsQ = (() => {
@@ -75,7 +98,7 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
       .is('deleted_at', null);
     q = scopeCo(q);
     if (isSalesOnly) q = q.eq('created_by', uid);
-    return q.order('created_at', { ascending: false }).limit(1000);
+    return q.order('created_at', { ascending: false }).limit(limitPerSource);
   })();
 
   // Activity lifecycle events come from activity_logs (created / done / cancelled /
@@ -87,16 +110,41 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
       activity:activities(type, contact_name, account:accounts(name))
     `)
     .order('changed_at', { ascending: false })
-    .limit(200);
+    .limit(Math.min(200, limitPerSource));
 
   // Login source — no company_id column; RLS (manager+/super_admin/own) does the
   // scoping, so NO manual company/owner filter here.
-  const loginsQ = supabase.from('user_login_logs')
-    .select('*')
-    .order('logged_in_at', { ascending: false })
-    .limit(1000);
+  const loginsQ = includeLogin
+    ? supabase.from('user_login_logs')
+        .select('*')
+        .order('logged_in_at', { ascending: false })
+        .limit(limitPerSource)
+    : null;
 
-  const [accRes, inqRes, quoRes, actRes, logRes] = await Promise.all([accountsQ, inquiriesQ, quotationsQ, activityLogsQ, loginsQ]);
+  // Perubahan status deal (WON / LOST / pindah tahap). Sumbernya tabel audit
+  // inquiry_status_history, yang RLS-nya mendelegasikan ke `inquiries`
+  // (USING EXISTS ... FROM inquiries) — jadi scoping company/owner sudah
+  // ditangani di DB, sama seperti activity_logs, dan TIDAK boleh ditambahi
+  // filter manual di sini.
+  const statusQ = includeStatusChanges
+    ? supabase.from('inquiry_status_history')
+        .select(`
+          id, inquiry_id, from_status, to_status, changed_by, changed_at,
+          inquiry:inquiries!ish_inquiry_fkey(
+            inquiry_no,
+            prospect:accounts!inquiries_prospect_id_fkey(name),
+            customer:accounts!inquiries_customer_id_fkey(name)
+          )
+        `)
+        .order('changed_at', { ascending: false })
+        .limit(limitPerSource)
+    : null;
+
+  const [accRes, inqRes, quoRes, actRes, logRes, stsRes] = await Promise.all([
+    accountsQ, inquiriesQ, quotationsQ, activityLogsQ,
+    loginsQ  || Promise.resolve({ data: [] }),
+    statusQ  || Promise.resolve({ data: [] }),
+  ]);
 
   const events = [];
   (accRes.data || []).forEach(r => events.push({
@@ -129,6 +177,24 @@ export async function fetchActivityFeed({ companyId, uid, isAllEntities, isSales
       title,
       subtitle: act.contact_name || act.account?.name || '—',
       user_id: r.changed_by || null, icon: FEED_ACT_ICON[act.type] || 'Activity',
+    });
+  });
+  (stsRes.data || []).forEach(r => {
+    // from_status NULL = baris kelahiran inquiry, bukan perpindahan. Dilewati
+    // supaya tidak menduplikasi event 'New inquiry' yang sudah ada di atas.
+    if (r.from_status == null) return;
+    const to = String(r.to_status || '').toUpperCase();
+    const type  = to === 'WON' ? 'won' : to === 'LOST' ? 'lost' : 'move';
+    const title = to === 'WON' ? 'Deal won'
+                : to === 'LOST' ? 'Deal lost'
+                : `Moved to ${FEED_STAGE_LABEL[to] || to}`;
+    const inq = r.inquiry || {};
+    events.push({
+      id: 'ish-' + r.id, timestamp: r.changed_at, type, actType: null,
+      title,
+      subtitle: [inq.inquiry_no, inq.customer?.name || inq.prospect?.name].filter(Boolean).join(' — ') || '—',
+      user_id: r.changed_by || null,
+      icon: type === 'won' ? 'CheckCircle' : type === 'lost' ? 'Ban' : 'ArrowRight',
     });
   });
   (logRes.data || []).forEach(r => events.push({
