@@ -1,12 +1,14 @@
 // src/modules/crm/InquiryListPage.jsx
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, ChevronRight, FileText, Download } from 'lucide-react';
+import { Plus, ChevronRight, FileText, Download } from 'lucide-react';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useAuth } from '../../contexts/useAuth';
 import InquiryPDF from './InquiryPDF';
 import { STATUS_LABEL } from './v3/tokens';
+import ListView from './v3/ListView';
+import { fetchOperationalRoster } from './salesRoster';
 
 const C = {
   bg:        '#F6EFE3',
@@ -67,7 +69,6 @@ const SERVICE_TYPE_LABELS = {
 // Urutan kanonik chip (progresi status). Status di luar daftar → jatuh ke akhir.
 const STATUS_ORDER = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION', 'WON', 'LOST', 'CANCELLED'];
 // Warna fallback utk status yg belum punya entri STATUS_META (mis. NEGOTIATION).
-const CHIP_FALLBACK = { bg: C.neutralBg, color: C.neutral, bd: C.neutralBd };
 
 const PAGE_SIZE = 20;
 
@@ -117,31 +118,6 @@ function StatusBadge({ status }) {
   );
 }
 
-// Chip filter status (clickable) — bentuk pill sama StatusBadge, +count +state aktif.
-function StatusChip({ label, count, meta, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 7,
-        padding: '6px 12px', borderRadius: 99, cursor: 'pointer',
-        fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, letterSpacing: '.3px',
-        border: `1px solid ${active ? meta.bd : C.line}`,
-        background: active ? meta.bg : C.surface,
-        color: active ? meta.color : C.inkSoft,
-        transition: 'background .12s, border-color .12s, color .12s',
-      }}
-    >
-      {label}
-      <span style={{
-        fontSize: 11, fontWeight: 700, lineHeight: 1.4,
-        padding: '0 7px', borderRadius: 99,
-        background: active ? meta.color : C.surface2,
-        color: active ? '#fff' : C.inkFaint,
-      }}>{count}</span>
-    </button>
-  );
-}
 
 function InquiryDetailModal({ inquiry, onClose }) {
   if (!inquiry) return null;
@@ -226,6 +202,13 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterService, setFilterService] = useState('all');
+  const [filterOwner, setFilterOwner] = useState('all');
+  /* Nama pemilik TIDAK di-embed dari `profiles`. PipelineKanbanPage:111-121 sudah
+     membuktikan embed FK inquiries.owner_id -> profiles ditolak PostgREST walau
+     FK-nya valid dan schema cache sudah di-reload. Pola dua langkah: owner_id
+     diambil sebagai kolom biasa, namanya diambil sekali per pemuatan halaman. */
+  const [ownerNames, setOwnerNames] = useState({});
+  const [ownerOptions, setOwnerOptions] = useState([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [detailInquiry, setDetailInquiry] = useState(null);
@@ -247,6 +230,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
           cargo_types, un_number, imo_class, has_msds, additional_services, deadline_quote,
           prospect:accounts!inquiries_prospect_id_fkey(name, pipeline_stage),
           customer:accounts!inquiries_customer_id_fkey(name, pipeline_stage),
+          owner_id,
           created_by_profile:profiles!inquiries_created_by_fkey(full_name)
         `, { count: 'exact' })
         .is('deleted_at', null);
@@ -261,21 +245,37 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
 
       if (filterStatus !== 'all') query = query.eq('status', filterStatus);
       if (filterService !== 'all') query = query.eq('service_type', filterService);
+      if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
       if (search.trim()) query = query.ilike('inquiry_no', `%${search.trim()}%`);
 
       const { data, error, count } = await query;
       if (error) throw error;
-      setInquiries(data || []);
+      const rows = data || [];
+      setInquiries(rows);
       setTotal(count || 0);
+
+      /* Langkah 2 pola dua-langkah: SATU query per pemuatan halaman, bukan satu per
+         baris. Nama yang tak ketemu sengaja dibiarkan kosong — kolom Owner sendiri
+         yang memutuskan menampilkan '(unnamed)'. */
+      const ownerIds = [...new Set(rows.map(r => r.owner_id).filter(Boolean))];
+      if (ownerIds.length) {
+        const { data: profs } = await supabase
+          .from('profiles').select('id, full_name').in('id', ownerIds).limit(1000);
+        const map = {};
+        (profs || []).forEach(pr => { map[pr.id] = pr.full_name; });
+        setOwnerNames(map);
+      } else {
+        setOwnerNames({});
+      }
     } catch (err) {
       showToast?.('Failed to load inquiries: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, page, filterStatus, filterService, search, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, page, filterStatus, filterService, filterOwner, search, showToast]);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
-  useEffect(() => { setPage(0); }, [filterStatus, filterService, search]);
+  useEffect(() => { setPage(0); }, [filterStatus, filterService, filterOwner, search]);
 
   // Query ringan terpisah untuk chip: ambil kolom status saja (dataset kecil, patuh
   // .limit(1000)), hitung per status di client. Scope RLS + service + search SAMA
@@ -290,6 +290,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       if (!isAllEntities) query = query.eq('company_id', profile.company_id);
       if (isSalesOnly)    query = query.eq('created_by', profile.id);
       if (filterService !== 'all') query = query.eq('service_type', filterService);
+      if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
       if (search.trim())  query = query.ilike('inquiry_no', `%${search.trim()}%`);
       const { data, error } = await query.limit(1000);
       if (cancelled) return;
@@ -301,7 +302,88 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       setCountsTotal((data || []).length);
     })();
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, filterService, search]);
+  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, filterService, filterOwner, search]);
+
+  /* Opsi dropdown Owner dari roster OPERASIONAL — sumber yang sama dengan
+     CRMDashboardPage, bukan query distinct owner_id sendiri. Roster memuat sales
+     yang belum punya inquiry sekalipun; itu disengaja, supaya memilih sales yang
+     "kosong" menghasilkan daftar kosong yang jujur, bukan opsinya yang hilang. */
+  useEffect(() => {
+    if (!profile?.company_id) return;
+    let cancelled = false;
+    fetchOperationalRoster(profile.company_id)
+      .then((rows) => { if (!cancelled) setOwnerOptions(rows || []); })
+      .catch(() => { if (!cancelled) setOwnerOptions([]); });
+    return () => { cancelled = true; };
+  }, [profile?.company_id]);
+
+  /* Chip status lama dipetakan ke savedViews ListView. Konsekuensi yang disadari:
+     ListView merender pil-nya seragam (navy saat aktif), jadi warna per-status
+     dari STATUS_META tidak ikut terbawa. Itu kontrak komponennya, bukan kelalaian. */
+  const statusViews = [
+    { id: 'all', label: 'All', count: countsTotal },
+    ...Object.keys(statusCounts)
+      .filter((k) => statusCounts[k] > 0)
+      .sort((a, b) => {
+        const ia = STATUS_ORDER.indexOf(a), ib = STATUS_ORDER.indexOf(b);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      })
+      .map((k) => ({ id: k, label: STATUS_LABEL[k] || k, count: statusCounts[k] })),
+  ];
+
+  /* Kolom Owner ditaruh SESUDAH Status. Tiga keadaan sengaja dibedakan, mengikuti
+     konvensi CRMDashboardPage:2790/:3103 dan DealDetailPage:149 — 'Unassigned'
+     (owner_id NULL) tidak sama dengan '(unnamed)' (owner ada, namanya tak ketemu). */
+  const ownerCell = (inq) => {
+    if (!inq.owner_id) return <span style={{ color: C.inkFaint }}>Unassigned</span>;
+    return ownerNames[inq.owner_id] || '(unnamed)';
+  };
+
+  const columns = [
+    { key: 'inquiry_no', label: 'Inquiry No',
+      render: (inq) => (
+        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>
+          {inq.inquiry_no || '—'}
+        </span>
+      ) },
+    { key: 'account', label: 'Prospect / Customer',
+      render: (inq) => (
+        <span style={{ fontWeight: 600 }}>{inq.prospect?.name || inq.customer?.name || '—'}</span>
+      ) },
+    { key: 'service_type', label: 'Service Type',
+      render: (inq) => SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—' },
+    { key: 'route', label: 'Route', render: (inq) => inq.route || '—' },
+    { key: 'stage', label: 'Stage',
+      render: (inq) => <StageBadge stage={inq.prospect?.pipeline_stage || inq.customer?.pipeline_stage} /> },
+    { key: 'status', label: 'Status', render: (inq) => <StatusBadge status={inq.status} /> },
+    { key: 'owner', label: 'Owner', render: ownerCell },
+    { key: 'created_at', label: 'Created At', render: (inq) => fmtDate(inq.created_at) },
+    { key: 'age', label: 'Inquiry Age',
+      render: (inq) => (ageDays(inq.created_at) == null ? '—' : `${ageDays(inq.created_at)} days`) },
+    { key: 'actions', label: '', align: 'right',
+      render: (inq) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+          <PDFDownloadLink
+            document={<InquiryPDF inquiry={inq} prospectName={inq.prospect?.name || inq.customer?.name || '—'} salesName={inq.created_by_profile?.full_name || '—'} />}
+            fileName={`Inquiry-${inq.inquiry_no?.replace(/\//g, '-') || 'unknown'}-${getTodayWIB()}.pdf`}
+            style={{ textDecoration: 'none' }}
+          >
+            {({ loading: pdfLoading }) => (
+              <span
+                title="Download PDF"
+                onClick={(e) => e.stopPropagation()}
+                style={{ display: 'inline-flex', alignItems: 'center', padding: 6, borderRadius: 6, opacity: pdfLoading ? 0.4 : 1, cursor: 'pointer' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#EAF0F8'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <Download size={16} color="#1B4D8A" />
+              </span>
+            )}
+          </PDFDownloadLink>
+          <ChevronRight size={15} color={C.inkFaint} />
+        </div>
+      ) },
+  ];
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -337,120 +419,39 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         </button>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '1 1 220px', minWidth: 180 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.inkFaint }} />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search inquiry number…"
-            style={{
-              width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`,
-              background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13,
-              color: C.ink, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
-            }}
-          />
-        </div>
-        <select value={filterService} onChange={e => setFilterService(e.target.value)} style={selStyle}>
-          <option value="all">All Services</option>
-          {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Chip filter status — hanya status yg punya data; angka = baris saat diklik */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-        <StatusChip
-          label="Semua" count={countsTotal}
-          meta={{ bg: C.accentSoft, color: C.accent, bd: C.accent }}
-          active={filterStatus === 'all'}
-          onClick={() => setFilterStatus('all')}
-        />
-        {Object.keys(statusCounts)
-          .filter(k => statusCounts[k] > 0)
-          .sort((a, b) => {
-            const ia = STATUS_ORDER.indexOf(a), ib = STATUS_ORDER.indexOf(b);
-            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-          })
-          .map(k => (
-            <StatusChip
-              key={k}
-              label={STATUS_LABEL[k] || k}
-              count={statusCounts[k]}
-              meta={STATUS_META[k] || CHIP_FALLBACK}
-              active={filterStatus === k}
-              onClick={() => setFilterStatus(k)}
-            />
-          ))}
-      </div>
-
-      {/* Table */}
-      <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, overflow: 'hidden', boxShadow: '0 1px 6px rgba(35,41,30,.06)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
-          <thead>
-            <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-              {['Inquiry No', 'Prospect / Customer', 'Service Type', 'Route', 'Stage', 'Status', 'Created At', 'Inquiry Age', ''].map(h => (
-                <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
+      <ListView
+        mode="table"
+        loading={loading}
+        search={search}
+        onSearch={setSearch}
+        savedViews={statusViews}
+        activeView={filterStatus}
+        onSelectView={setFilterStatus}
+        filters={
+          <>
+            <select value={filterService} onChange={e => setFilterService(e.target.value)} style={selStyle}>
+              <option value="all">All Services</option>
+              {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
-            ) : inquiries.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>No inquiries yet</td></tr>
-            ) : inquiries.map((inq, i) => (
-              <tr
-                key={inq.id}
-                onClick={() => (onSelectInquiry ? onSelectInquiry(inq) : setDetailInquiry(inq))}
-                style={{
-                  borderBottom: i < inquiries.length - 1 ? `1px solid ${C.lineSoft}` : 'none',
-                  cursor: 'pointer',
-                }}
-              >
-                <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>{inq.inquiry_no || '—'}</td>
-                <td style={{ padding: '12px 14px', fontWeight: 600, color: C.ink }}>
-                  {inq.prospect?.name || inq.customer?.name || '—'}
-                </td>
-                <td style={{ padding: '12px 14px', color: C.inkSoft, fontSize: 12.5 }}>
-                  {SERVICE_TYPE_LABELS[inq.service_type] || inq.service_type || '—'}
-                </td>
-                <td style={{ padding: '12px 14px', color: C.inkSoft }}>{inq.route || '—'}</td>
-                <td style={{ padding: '12px 14px' }}><StageBadge stage={inq.prospect?.pipeline_stage || inq.customer?.pipeline_stage} /></td>
-                <td style={{ padding: '12px 14px' }}><StatusBadge status={inq.status} /></td>
-                <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(inq.created_at)}</td>
-                <td style={{ padding: '12px 14px', color: C.inkSoft, fontSize: 12.5, whiteSpace: 'nowrap' }}>
-                  {ageDays(inq.created_at) == null ? '—' : `${ageDays(inq.created_at)} days`}
-                </td>
-                <td style={{ padding: '12px 10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-                    <PDFDownloadLink
-                      document={<InquiryPDF inquiry={inq} prospectName={inq.prospect?.name || inq.customer?.name || '—'} salesName={inq.created_by_profile?.full_name || '—'} />}
-                      fileName={`Inquiry-${inq.inquiry_no?.replace(/\//g, '-') || 'unknown'}-${getTodayWIB()}.pdf`}
-                      style={{ textDecoration: 'none' }}
-                    >
-                      {({ loading }) => (
-                        <span
-                          title="Download PDF"
-                          onClick={(e) => e.stopPropagation()}
-                          style={{ display: 'inline-flex', alignItems: 'center', padding: 6, borderRadius: 6, opacity: loading ? 0.4 : 1, cursor: 'pointer' }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = '#EAF0F8'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                        >
-                          <Download size={16} color="#1B4D8A" />
-                        </span>
-                      )}
-                    </PDFDownloadLink>
-                    <ChevronRight size={15} color={C.inkFaint} />
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </select>
+            {/* Filter Owner — SERVER-SIDE (masuk ke query), bukan client-side seperti
+                papan Pipeline. Halaman ini berpaginasi 20 baris/halaman, jadi menyaring
+                di klien hanya akan menyaring 20 baris yang kebetulan tampil. */}
+            <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)} style={selStyle}>
+              <option value="all">All Owners</option>
+              {ownerOptions.map(o => (
+                <option key={o.id} value={o.id}>{o.full_name || '(unnamed)'}</option>
+              ))}
+            </select>
+          </>
+        }
+        columns={columns}
+        rows={inquiries}
+        onRowClick={(inq) => (onSelectInquiry ? onSelectInquiry(inq) : setDetailInquiry(inq))}
+        emptyTitle="No inquiries yet"
+        emptySub="Inquiries created for this entity will appear here."
+      />
 
       <InquiryDetailModal inquiry={detailInquiry} onClose={() => setDetailInquiry(null)} />
 
