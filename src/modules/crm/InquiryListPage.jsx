@@ -191,12 +191,20 @@ function InquiryDetailModal({ inquiry, onClose }) {
 
 export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToast }) {
   const { profile, erpRole } = useAuth();
-  // Visibility scope by role (mirrors RLS on `inquiries`):
-  //  • super_admin / admin → all entities (no company filter)
-  //  • sales / operations  → only inquiries they created
-  //  • everyone else (manager, ceo, gm, …) → their own entity
+  /* Scope per-baris TIDAK lagi disaring di sini — policy `inquiries_read`
+     (migrasi 20260830000003) yang menanganinya di server: manager-ke-atas
+     melihat seluruh entitasnya, sales melihat yang `owner_id`-nya dirinya,
+     procurement melihat yang punya PRF.
+     Filter `created_by` yang dulu ada di sini adalah SUMBU LAMA. Sejak policy
+     pindah ke `owner_id`, keduanya ber-AND: sales hanya melihat inquiry yang
+     SEKALIGUS ia miliki DAN ia buat — sehingga deal yang DIOPER kepadanya
+     lewat "Ganti Pemilik" hilang dari daftar, padahal RLS mengizinkan dan
+     Pipeline menampilkannya. Sengaja tidak diganti ke .eq('owner_id', …):
+     menyalin aturan RLS ke FE hanya melahirkan sumbu kedua yang bisa melenceng
+     lagi persis seperti ini.
+     `isAllEntities` TETAP — ia bukan aturan baris, melainkan pilihan apakah
+     query dibatasi ke satu entitas. */
   const isAllEntities = ['super_admin'].includes(erpRole);
-  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -237,7 +245,6 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
 
       // Role-aware scope (see flags above)
       if (!isAllEntities) query = query.eq('company_id', profile.company_id);
-      if (isSalesOnly)    query = query.eq('created_by', profile.id);
 
       query = query
         .order('created_at', { ascending: false })
@@ -272,7 +279,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, page, filterStatus, filterService, filterOwner, search, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, page, filterStatus, filterService, filterOwner, search, showToast]);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
   useEffect(() => { setPage(0); }, [filterStatus, filterService, filterOwner, search]);
@@ -288,7 +295,6 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     (async () => {
       let query = supabase.from('inquiries').select('status').is('deleted_at', null);
       if (!isAllEntities) query = query.eq('company_id', profile.company_id);
-      if (isSalesOnly)    query = query.eq('created_by', profile.id);
       if (filterService !== 'all') query = query.eq('service_type', filterService);
       if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
       if (search.trim())  query = query.ilike('inquiry_no', `%${search.trim()}%`);
@@ -302,7 +308,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       setCountsTotal((data || []).length);
     })();
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.company_id, isAllEntities, isSalesOnly, filterService, filterOwner, search]);
+  }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterOwner, search]);
 
   /* Opsi dropdown Owner dari roster OPERASIONAL — sumber yang sama dengan
      CRMDashboardPage, bukan query distinct owner_id sendiri. Roster memuat sales
