@@ -90,6 +90,18 @@ const STATUS_ORDER = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION', 'WON', 'LOST
 
 const PAGE_SIZE = 20;
 
+/* Role yang boleh melihat toggle My/All. Daftar ini DISALIN PERSIS dari fungsi
+   RLS is_manager_or_above() di database — sama persis pula dengan MANAGER_OR_ABOVE
+   di DealDetailPage.jsx:54. Kalau daftar di DB berubah, ubah di sini juga; dua
+   daftar yang melenceng adalah cara bug `created_by` kemarin lahir.
+
+   Kenapa digerbang sama sekali: policy `inquiries_read` sudah membatasi user
+   non-manager ke `owner_id = auth.uid()`, jadi bagi mereka "All" dan "My"
+   mengembalikan baris yang PERSIS SAMA — dua tombol satu hasil. Toggle-nya
+   DISEMBUNYIKAN, bukan di-disable: kontrol yang tak pernah mengubah apa pun
+   lebih membingungkan daripada tak ada sama sekali. */
+const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
+
 function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -267,7 +279,7 @@ function InquiryDetailModal({ inquiry, onClose }) {
 }
 
 export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToast }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, erpRoles } = useAuth();
   /* Scope per-baris TIDAK lagi disaring di sini — policy `inquiries_read`
      (migrasi 20260830000003) yang menanganinya di server: manager-ke-atas
      melihat seluruh entitasnya, sales melihat yang `owner_id`-nya dirinya,
@@ -282,6 +294,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
      `isAllEntities` TETAP — ia bukan aturan baris, melainkan pilihan apakah
      query dibatasi ke satu entitas. */
   const isAllEntities = ['super_admin'].includes(erpRole);
+  // Cek SELURUH role aktif (erpRoles), bukan erpRole primer — user multi-role akan
+  // salah dinilai kalau hanya role utamanya yang dilihat, sementara fungsi DB
+  // memeriksa semua baris user_roles. Pola sama: CustomerDetailPage.jsx:722.
+  const canScopeToggle = erpRoles?.some((r) => MANAGER_OR_ABOVE.includes(r.roles?.code));
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -289,6 +305,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   const [filterService, setFilterService] = useState('all');
   const [filterOwner, setFilterOwner] = useState('all');
   const [filterDeadline, setFilterDeadline] = useState('all');
+  /* Default "All", bukan "My" — halaman ini dipakai manager untuk mengawasi, dan
+     membuka daftar yang diam-diam sudah tersaring ke diri sendiri menyembunyikan
+     pekerjaan tim tanpa memberi tahu. */
+  const [scopeMine, setScopeMine] = useState(false);
   /* Nama pemilik TIDAK di-embed dari `profiles`. PipelineKanbanPage:111-121 sudah
      membuktikan embed FK inquiries.owner_id -> profiles ditolak PostgREST walau
      FK-nya valid dan schema cache sudah di-reload. Pola dua langkah: owner_id
@@ -332,6 +352,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       if (filterService !== 'all') query = query.eq('service_type', filterService);
       if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
       if (filterDeadline !== 'all') query = applyDeadlineFilter(query, filterDeadline, getTodayWIB());
+      if (scopeMine && profile?.id) query = query.eq('owner_id', profile.id);
       if (search.trim()) query = query.ilike('inquiry_no', `%${search.trim()}%`);
 
       const { data, error, count } = await query;
@@ -358,10 +379,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.company_id, isAllEntities, page, filterStatus, filterService, filterOwner, filterDeadline, search, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, page, filterStatus, filterService, filterOwner, filterDeadline, scopeMine, search, showToast]);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
-  useEffect(() => { setPage(0); }, [filterStatus, filterService, filterOwner, filterDeadline, search]);
+  useEffect(() => { setPage(0); }, [filterStatus, filterService, filterOwner, filterDeadline, scopeMine, search]);
 
   // Query ringan terpisah untuk chip: ambil kolom status saja (dataset kecil, patuh
   // .limit(1000)), hitung per status di client. Scope RLS + service + search SAMA
@@ -377,6 +398,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       if (filterService !== 'all') query = query.eq('service_type', filterService);
       if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
       if (filterDeadline !== 'all') query = applyDeadlineFilter(query, filterDeadline, getTodayWIB());
+      if (scopeMine && profile?.id) query = query.eq('owner_id', profile.id);
       if (search.trim())  query = query.ilike('inquiry_no', `%${search.trim()}%`);
       const { data, error } = await query.limit(1000);
       if (cancelled) return;
@@ -388,7 +410,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       setCountsTotal((data || []).length);
     })();
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterOwner, filterDeadline, search]);
+  }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterOwner, filterDeadline, scopeMine, search]);
 
   /* Opsi dropdown Owner dari roster OPERASIONAL — sumber yang sama dengan
      CRMDashboardPage, bukan query distinct owner_id sendiri. Roster memuat sales
@@ -531,6 +553,37 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
         onSelectView={setFilterStatus}
         filters={
           <>
+            {/* Scope My/All — hanya manager ke atas (lihat MANAGER_OR_ABOVE di atas).
+                Ditaruh paling kiri karena ia menentukan HIMPUNAN barisnya, sementara
+                tiga dropdown di kanannya menyaring DI DALAM himpunan itu.
+
+                Label "All inquiries", bukan "All": baris pil status tepat di atasnya
+                sudah punya pil "All" yang artinya "semua STATUS". Dua kata yang sama
+                bersebelahan dengan arti berbeda akan terbaca sebagai kontrol yang sama. */}
+            {canScopeToggle && (
+              <div style={{
+                display: 'flex', gap: 2, height: 34, padding: 2,
+                borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface,
+              }}>
+                {[{ mine: false, label: 'All inquiries' }, { mine: true, label: 'My inquiries' }].map((opt) => {
+                  const on = scopeMine === opt.mine;
+                  return (
+                    <button
+                      key={opt.label} type="button" onClick={() => setScopeMine(opt.mine)}
+                      style={{
+                        padding: '0 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                        background: on ? '#144682' : 'transparent',
+                        color: on ? '#FFFFFF' : C.inkSoft,
+                        fontSize: 12.5, fontWeight: on ? 700 : 600,
+                        fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <select value={filterService} onChange={e => setFilterService(e.target.value)} style={selStyle}>
               <option value="all">All Services</option>
               {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => (
