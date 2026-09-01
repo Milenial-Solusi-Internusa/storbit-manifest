@@ -43,17 +43,26 @@ function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelect
         <div style={{ display: 'flex', gap: SP.s1, flexWrap: 'wrap', alignItems: 'center' }}>
           {savedViews.map((v) => {
             const on = v.id === activeView;
-            /* Satu-satunya yang `color` ubah adalah warna aksen saat pil AKTIF.
-               Tanpa `color` nilainya jatuh ke NAVY, sehingga pemanggil savedViews
-               yang belum mengisinya berperilaku persis seperti sebelumnya. */
-            const accent = v.color || NAVY;
+            /* Warna pil AKTIF, tiga tingkat dari yang paling spesifik:
+                 1. trio {bg,text,border} → TINTED (blok lembut + teks senada),
+                    selaras badge status tinted di halaman pemanggil.
+                 2. `color` saja        → SOLID warna itu (perilaku yang lahir
+                    sebelum trio ini ada — PipelineKanbanPage memakai jalur ini).
+                 3. tak diisi sama sekali → SOLID NAVY, persis perilaku awal.
+               Pil TIDAK AKTIF tak tersentuh ketiganya: tetap outline `LINE` +
+               teks `INK_SOFT`, dua token netral yang dipakai sejak awal. */
+            const tinted   = !!(v.bg && v.text);
+            const accent   = v.color || NAVY;
+            const onBg     = tinted ? v.bg : accent;
+            const onText   = tinted ? v.text : '#FFFFFF';
+            const onBorder = tinted ? (v.border || v.text) : accent;
             return (
               <button
                 key={v.id} type="button" onClick={() => onSelectView?.(v.id)}
                 style={{
                   padding: '5px 12px', borderRadius: RADIUS.pill, cursor: 'pointer',
-                  border: `1px solid ${on ? accent : LINE}`,
-                  background: on ? accent : 'transparent', color: on ? '#FFFFFF' : INK_SOFT,
+                  border: `1px solid ${on ? onBorder : LINE}`,
+                  background: on ? onBg : 'transparent', color: on ? onText : INK_SOFT,
                   fontFamily: FONT_HEAD, fontSize: 12, fontWeight: on ? 700 : 600,
                 }}
               >
@@ -246,10 +255,12 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
  * @param {string}   [props.search]
  * @param {Function} [props.onSearch]
  * @param {Node}     [props.filters]
- * @param {Array}    [props.savedViews]- [{ id, label, count, color? }]
- *                                       `color` OPSIONAL: warna pil saat AKTIF.
- *                                       Tidak diisi → NAVY, persis seperti
- *                                       sebelum field ini ada.
+ * @param {Array}    [props.savedViews]- [{ id, label, count, color?, bg?, text?, border? }]
+ *                                       Warna pil saat AKTIF, tiga tingkat:
+ *                                       trio {bg,text,border} → TINTED;
+ *                                       `color` saja → SOLID warna itu;
+ *                                       tak diisi → SOLID NAVY (perilaku awal).
+ *                                       Pil non-aktif selalu outline netral.
  * @param {string}   [props.activeView]
  * @param {Function} [props.onSelectView]
  * @param {Node}     [props.right]
