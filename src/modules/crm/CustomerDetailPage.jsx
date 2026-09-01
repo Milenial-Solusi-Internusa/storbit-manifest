@@ -389,7 +389,11 @@ const INQ_STATUS_TONE = {
   OPEN:      { bg: '#E1ECF5', fg: '#2A5B8C', label: 'Open'      },
   IN_REVIEW: { bg: '#F8ECCF', fg: '#9A6B0E', label: 'In Review' },
   QUOTED:    { bg: '#ECE3F4', fg: '#6E4B8C', label: 'Quoted'    },
-  WON:       { bg: '#E4F0E5', fg: '#2E7D4F', label: 'Won'       },
+  // Won disinkronkan ke navy mengikuti InquiryListPage (batch redesign v3):
+  // status yang sama tak boleh tampil hijau di satu layar dan navy di layar lain.
+  // Enam entri lain SENGAJA belum ikut — sisanya menyusul saat konstanta status
+  // CRM bersama dibuat (tech debt LOW di komentar atas), bukan disalin lagi di sini.
+  WON:       { bg: '#E1E9F2', fg: '#144682', label: 'Won'       },
   LOST:      { bg: '#F6E0DB', fg: '#B23227', label: 'Lost'      },
   CANCELLED: { bg: '#EEE9DC', fg: '#6B6F5E', label: 'Cancelled' },
 };
