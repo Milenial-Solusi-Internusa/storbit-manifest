@@ -415,8 +415,41 @@ export async function listPickingLists() {
   return { data: data || [], error };
 }
 
+// Identitas cetak dokumen gudang (Picking List + Surat Jalan): entitas
+// penerbit + nama DC tujuan. Dipakai dua loader di bawah supaya komponen PDF
+// tetap murni presentasi.
+//
+// company_id dibaca DARI BARIS dokumennya, BUKAN konstanta SOA — pola yang
+// sama dengan getInvoicePdfData, supaya tetap benar kalau modul ini kelak
+// dipakai entitas lain (hari ini praktis selalu SOA karena default kolomnya).
+//
+// dc_id cuma hidup di sp_orders, jadi DC ditempuh lewat sp_order_id. Kolom itu
+// nullable (di-backfill migrasi 20260826000001, dan diisi generate_picking_
+// from_sp / generate_delivery_from_picking untuk baris baru) — kalau kosong,
+// dc_name jatuh ke null dan PDF menampilkan '—', bukan gagal.
+async function getPrintIdentity(companyId, spOrderId) {
+  const [companyRes, spRes] = await Promise.all([
+    companyId
+      ? supabase.from('companies')
+        .select('name, legal_name, address, address_2, city, province, postal_code')
+        .eq('id', companyId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    spOrderId
+      ? supabase.from('sp_orders').select('dc_id').eq('id', spOrderId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  let dcName = null;
+  if (spRes.data?.dc_id) {
+    const { data: dc } = await supabase
+      .from('dc_master').select('nama').eq('id', spRes.data.dc_id).maybeSingle();
+    dcName = dc?.nama || null;
+  }
+  return { company: companyRes.data || {}, dc_name: dcName };
+}
+
 // Fetch one picking list + its items + resolved customer name (via sp_no → SP).
-// Returns { data: { ...header, warehouse_name, customer_name, items }, error }.
+// Returns { data: { ...header, warehouse_name, customer_name, company, dc_name,
+// items, materials }, error }.
 export async function getPickingListDetail(pickingListId) {
   const { data: header, error: hErr } = await supabase
     .from('picking_lists')
@@ -453,11 +486,15 @@ export async function getPickingListDetail(pickingListId) {
     .eq('picking_list_id', pickingListId)
     .neq('status', 'cancelled');
 
+  const { company, dc_name } = await getPrintIdentity(header.company_id, header.sp_order_id);
+
   return {
     data: {
       ...header,
       warehouse_name: header.warehouses?.name || null,
       customer_name: spRow?.customers?.name || null,
+      company,
+      dc_name,
       items: items || [],
       materials: materials || [],
       has_delivery: (dnCount || 0) > 0,
@@ -692,7 +729,8 @@ export async function getDeliveryNoteDetail(deliveryNoteId) {
     .eq('delivery_note_id', deliveryNoteId)
     .order('created_at', { ascending: true, nullsFirst: false });
   if (iErr) return { data: null, error: iErr };
-  return { data: { ...header, items: items || [] }, error: null };
+  const { company, dc_name } = await getPrintIdentity(header.company_id, header.sp_order_id);
+  return { data: { ...header, company, dc_name, items: items || [] }, error: null };
 }
 
 // Update armada + packing + destination fields (partial patch object).

@@ -100,7 +100,6 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
         driver_name: data.driver_name || '', driver_phone: data.driver_phone || '',
         vehicle_no: data.vehicle_no || '', ship_date: data.ship_date || '',
         total_koli: data.total_koli ?? '', total_weight: data.total_weight ?? '',
-        destination_address: data.destination_address || '',
       });
     }
     setLoading(false);
@@ -127,7 +126,10 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
       ship_date: form.ship_date || null,
       total_koli: form.total_koli === '' || form.total_koli == null ? null : Number(form.total_koli),
       total_weight: form.total_weight === '' || form.total_weight == null ? null : Number(form.total_weight),
-      destination_address: form.destination_address?.trim() || null,
+      // destination_address SENGAJA tidak ikut: sejak migrasi RPC-nya, alamat
+      // tujuan bersumber dari dc_master.alamat (lewat sp_orders.dc_id) dan
+      // ditulis sekali saat surat jalan dibuat. Tak lagi bisa diketik manual —
+      // dulu textarea di sini menimpanya dengan alamat HQ customer.
     };
     const { error } = await updateDeliveryArmada(deliveryNoteId, patch);
     setBusy(false);
@@ -190,7 +192,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
   const handlePrint = useCallback(async () => {
     if (!detail) return;
     try {
-      const blob = await pdf(<DeliveryNotePDF dn={detail} generatedAt={new Date().toISOString()} />).toBlob();
+      const blob = await pdf(<DeliveryNotePDF dn={detail} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -261,10 +263,14 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
                 <div><span style={lblStyle}>Koli</span><input type="number" style={inputStyle} value={form.total_koli} onChange={e => setField('total_koli', e.target.value)} placeholder="0" /></div>
                 <div><span style={lblStyle}>Berat (kg)</span><input type="number" style={inputStyle} value={form.total_weight} onChange={e => setField('total_weight', e.target.value)} placeholder="0" /></div>
               </div>
+              {/* Read-only: alamat tujuan datang dari dc_master.alamat (DC pada
+                  SP-nya), disnapshot saat surat jalan dibuat. Tak bisa diedit di
+                  sini — perbaikannya di Master DC, bukan per-surat-jalan. */}
               <div style={{ marginTop: 14 }}>
                 <span style={lblStyle}><MapPin size={11} style={{ verticalAlign: 'middle' }} /> Alamat Tujuan</span>
-                <textarea value={form.destination_address} onChange={e => setField('destination_address', e.target.value)} rows={2}
-                  style={{ ...inputStyle, height: 'auto', padding: '10px 12px', resize: 'vertical' }} placeholder="Alamat pengiriman customer" />
+                <div style={{ fontSize: 13, color: detail.destination_address ? C.ink : C.faint, lineHeight: 1.5, padding: '2px 0' }}>
+                  {detail.destination_address || 'Belum ada alamat DC — lengkapi di Master DC.'}
+                </div>
               </div>
               <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
                 <button onClick={handleSaveArmada} disabled={busy || !canWarehouseOps}
