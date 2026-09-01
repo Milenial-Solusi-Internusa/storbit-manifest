@@ -98,6 +98,12 @@ const INQ_STAGE_LABELS = {
 // merah); CANCELLED lajur baru → abu netral. Penyelarasan visual ke kit v3
 // adalah batch tersendiri dan sengaja TIDAK dikerjakan di sini.
 const INQ_STAGE_COLOR = { WON: '#1F8B4D', LOST: '#C0392B', CANCELLED: '#6B7280' };
+/* Empat tahap TERBUKA memakai satu warna navy dengan opacity bertingkat —
+   makin jauh dari Open, makin pudar. Sebelumnya keempatnya memakai gradient
+   `navyBar` yang IDENTIK, jadi tak ada beda visual antar-tahap sama sekali.
+   WON/LOST/CANCELLED tidak ikut: ketiganya punya warna sendiri di
+   INQ_STAGE_COLOR dan selalu tampil penuh. */
+const OPEN_STAGE_OPACITY = { OPEN: 1, IN_REVIEW: 0.75, QUOTED: 0.55, NEGOTIATION: 0.4 };
 
 // Fallback funnel — dipakai PipelineByStage saat data belum tiba.
 const STAGES = INQ_STAGE_ORDER.map((id) => ({
@@ -214,12 +220,82 @@ const ACT_META = {
 
 /* ---------- lead source color palette ---------- */
 // Pastel ungu/pink/biru — selaras dengan gradient line "Bulan Ini" (pie only)
-/* Turunan navy #144682 → orange #E85A1E, bukan pastel ungu/pink lepas.
-   Urutannya sengaja navy dulu: sumber lead terbesar (slice pertama) mendapat
-   warna brand paling kuat. */
-const SOURCE_PALETTE = [
-  "#144682", "#2A6FA8", "#6E9BC4", "#E85A1E", "#F08C7D",
-];
+/* ─── Palet chart MULTI-KATEGORI ──────────────────────────────────────────
+   Dipakai Account Lifecycle Funnel, Lead Source Distribution, dan MQL→SQL.
+   Ini BUKAN kasus "warna lepas brand yang perlu diseragamkan ke navy":
+   ketiga chart itu membedakan kategori, jadi warna berbeda adalah FUNGSI,
+   bukan hiasan. Nilai di bawah diambil dari mockup desain apa adanya.
+   ⚠️ Pipeline by Stage TIDAK memakai palet ini — ia satu warna navy dengan
+   opacity berbeda per tahap, dan memang sudah sesuai mockup. */
+/* Lead Source — peta EKSPLISIT per nilai `accounts.source`, bukan hash.
+   Hash sebelumnya menabrakkan warna justru di slice terbesar: cold_call
+   (36,8%) sewarna dengan `other`, dan sales_visit (21,3%) sewarna dengan
+   `website` — dua slice terbesar kehilangan bedanya. Tabel eksplisit menjamin
+   tak ada tabrakan sekarang maupun nanti saat nilai baru mulai terpakai.
+
+   Cakupan = 11 nilai yang diizinkan CHECK constraint produksi hari ini
+   (`prospects_source_check`) + `whatsapp` (migrasi 20260830000004 sudah ada di
+   kode dan sudah jalan di staging, tinggal menunggu produksi — warnanya
+   disiapkan lebih dulu supaya tak perlu sentuh file ini lagi saat migrasinya
+   jalan) + `__none__` untuk baris yang `source`-nya NULL. Total 13 slot.
+
+   Empat warna disebut eksplisit di mockup (referral/website/exhibition/other);
+   dua lagi (#E39CA8, #D2A0CB) juga milik mockup dan diberikan ke dua sumber
+   TERBESAR di produksi. Enam sisanya BUKAN pilihan tangan: dicari lewat
+   farthest-point di ruang CIELAB, DIKUNCI ke pita milik keluarga mockup
+   sendiri (S 38-56, L 68-77) supaya tetap sekelas pastel dan tidak melompat
+   jadi warna vivid. Hasilnya jarak minimum antar-13-warna = ΔE 21,5.
+   ⚠️ Percobaan pertama memakai hash menghasilkan Sales Visit vs Instagram
+   ΔE 7,4 — praktis kembar. Kalau peta ini disunting, ukur ulang jarak
+   minimumnya; unik secara hex TIDAK cukup.
+   `__none__` sengaja NETRAL abu, bukan pastel: "tidak diisi" bukan kategori
+   setara dengan sumber lead yang sebenarnya. */
+const SOURCE_META = {
+  referral:         { label: 'Referral',         color: '#EEAD86' },  // mockup
+  website:          { label: 'Website',          color: '#B8A4E3' },  // mockup
+  exhibition:       { label: 'Exhibition',       color: '#EFC873' },  // mockup
+  other:            { label: 'Other',            color: '#8FCBBF' },  // mockup
+  cold_call:        { label: 'Cold Call',        color: '#E39CA8' },  // mockup
+  sales_visit:      { label: 'Sales Visit',      color: '#D2A0CB' },  // mockup
+  whatsapp:         { label: 'WhatsApp',         color: '#81D981' },
+  walk_in:          { label: 'Walk In',          color: '#CEE2A7' },
+  tiktok:           { label: 'TikTok',           color: '#DDC9AC' },
+  existing_network: { label: 'Existing Network', color: '#81D9AA' },
+  linkedin:         { label: 'LinkedIn',         color: '#81B0D9' },
+  instagram:        { label: 'Instagram',        color: '#D981D9' },
+  __none__:         { label: 'Not specified',    color: '#C7CBD4' },
+};
+/* Nilai di luar tabel = constraint dilebarkan tanpa peta ini ikut diperbarui.
+   Warnanya sengaja abu yang BERBEDA dari `__none__` supaya "belum dipetakan"
+   tak tertukar dengan "tidak diisi", dan labelnya di-Title Case apa adanya. */
+function sourceMeta(key) {
+  const k = String(key || '__none__').trim().toLowerCase();
+  if (SOURCE_META[k]) return SOURCE_META[k];
+  return {
+    label: k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    color: '#AEB6C2',
+  };
+}
+
+/* Account Lifecycle Funnel — warna bar + warna angka per tahap. Angkanya
+   duduk di atas kartu putih (bukan di atas bar), jadi warna gelap di sini
+   adalah teks pada latar putih. */
+const LIFECYCLE_COLOR = {
+  lead:     { bar: "#B8A4E3", num: "#2E2440" },
+  mql:      { bar: "#D2A0CB", num: "#3A2438" },
+  prospect: { bar: "#E39CA8", num: "#3E2229" },
+  sql:      { bar: "#EEAD86", num: "#402A16" },
+  customer: { bar: "#EFC873", num: "#3F2E0B" },
+};
+
+/* MQL → SQL. Slice "Not yet" bukan warna penuh melainkan track terang
+   ber-border, supaya bacaannya "ruang yang belum terisi", bukan kategori
+   setara. */
+const MQL_COLOR = {
+  converted: "#D2A0CB",
+  pendingBg: "#F3ECF7",
+  pendingBd: "#DFD3E6",
+};
 
 /* ---------- avatar helper ---------- */
 /* Avatar — hijau/ungu/teal lama diganti turunan navy+orange. Semuanya
@@ -572,12 +648,6 @@ function PipelineByStage({ stages = STAGES, conversion = [] }) {
         <div ref={barRef} className="bar-in">
         {barW > 0 && (
           <BarChart layout="vertical" width={barW} height={300} data={stages} margin={{ top: 4, right: 80, left: 6, bottom: 4 }} barCategoryGap={10}>
-            <defs>
-              <linearGradient id="navyBar" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#2A6FA8" />
-                <stop offset="100%" stopColor="#144682" />
-              </linearGradient>
-            </defs>
             <CartesianGrid horizontal={false} stroke="#F1F2F5" />
             <XAxis type="number" hide domain={[0, "dataMax"]} />
             <YAxis type="category" dataKey="name" width={86} axisLine={false} tickLine={false}
@@ -586,7 +656,9 @@ function PipelineByStage({ stages = STAGES, conversion = [] }) {
             <Tooltip content={<BarTip />} cursor={{ fill: "rgba(20,70,130,.05)" }} />
             <Bar dataKey="count" radius={[0, 7, 7, 0]} barSize={22} isAnimationActive={false}>
               {stages.map((s) => (
-                <Cell key={s.id} fill={INQ_STAGE_COLOR[s.id] || "url(#navyBar)"} />
+                <Cell key={s.id}
+                  fill={INQ_STAGE_COLOR[s.id] || NAVY}
+                  fillOpacity={INQ_STAGE_COLOR[s.id] ? 1 : (OPEN_STAGE_OPACITY[s.id] ?? 1)} />
               ))}
               <LabelList dataKey="count" position="right" fill="#16243A" fontSize={11} fontWeight={700} />
             </Bar>
@@ -644,13 +716,13 @@ function PieTip({ active, payload, total }) {
 
 function LeadSourceDonut({ data = [] }) {
   // Normalise: data has { source, count } — add name + color for chart
-  const normalised = data.map((d, i) => ({
-    // Fallback dihapus: sourceCounts di fetchDash sudah menjamin `source`
-    // selalu terisi ('Other'), jadi cabang di sini tak pernah tercapai.
-    name:  d.source,
-    count: d.count,
-    color: SOURCE_PALETTE[i % SOURCE_PALETTE.length],
-  }));
+  // Label & warna dari SOURCE_META — legenda menampilkan "Cold Call", bukan
+  // kode mentah "cold_call". Pengelompokan datanya TIDAK diubah: setiap
+  // sumber tetap berdiri sendiri, tak ada yang dilebur ke "Other".
+  const normalised = data.map((d) => {
+    const m = sourceMeta(d.source);
+    return { name: m.label, count: d.count, color: m.color };
+  });
   const total = normalised.reduce((a, s) => a + s.count, 0);
   // Skala bar volume — warisan satu-satunya kolom bermakna dari tabel "New
   // Leads by Source" yang dilebur ke sini (kolom conv/response tabel itu
@@ -712,17 +784,21 @@ function LeadSourceDonut({ data = [] }) {
 // Gaya bar mengikuti D.miniTrack yang sudah dipakai legenda donut Lead Source —
 // bukan Recharts, karena kedua widget ini cuma butuh daftar berbanding, bukan
 // grafik dengan sumbu.
-function FunnelRow({ label, count, max, muted = false }) {
+/* `barColor`/`numColor` OPSIONAL — kalau tak diberikan, perilakunya persis
+   seperti sebelumnya (bar navy, angka #16243A). Ini disengaja: FunnelRow juga
+   dipakai LossReasonBreakdown, yang di luar scope revisi palet ini dan harus
+   tetap sama persis. */
+function FunnelRow({ label, count, max, muted = false, barColor, numColor }) {
   return (
     <div style={{ marginBottom: 9 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
         <span style={{ flex: 1, minWidth: 0, color: muted ? "#5A6270" : "#48505C", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {label}
         </span>
-        <span style={D.legVal}>{count}</span>
+        <span style={numColor ? { ...D.legVal, color: numColor } : D.legVal}>{count}</span>
       </div>
       <div style={D.miniTrack}>
-        <span style={{ display: "block", height: "100%", borderRadius: 4, background: muted ? "#C7CBD4" : NAVY, width: (max > 0 ? (count / max) * 100 : 0) + "%" }} />
+        <span style={{ display: "block", height: "100%", borderRadius: 4, background: muted ? "#C7CBD4" : (barColor || NAVY), width: (max > 0 ? (count / max) * 100 : 0) + "%" }} />
       </div>
     </div>
   );
@@ -747,7 +823,10 @@ function LifecycleFunnel({ funnel = [], exits = [] }) {
         <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No accounts yet</div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
-          {funnel.map((s) => <FunnelRow key={s.id} label={s.name} count={s.count} max={max} />)}
+          {funnel.map((s) => (
+            <FunnelRow key={s.id} label={s.name} count={s.count} max={max}
+              barColor={LIFECYCLE_COLOR[s.id]?.bar} numColor={LIFECYCLE_COLOR[s.id]?.num} />
+          ))}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid #ECEDF1", paddingTop: 12, marginTop: 3 }}>
             {exits.map((e) => (
               <span key={e.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, background: "#F4F5F7", fontSize: 11.5, color: "#5A6270", fontWeight: 600 }}>
@@ -789,8 +868,10 @@ function MqlToSqlPie({ data }) {
   const lost      = data?.lost      ?? 0;
   const pct       = data?.pct ?? null;
   const slices = [
-    { name: 'Reached SQL', value: converted, color: NAVY },
-    { name: 'Not yet',        value: pending,   color: '#C7CBD4' },
+    { name: 'Reached SQL', value: converted, color: MQL_COLOR.converted },
+    // "Not yet" sengaja track terang ber-border, bukan warna penuh: ia ruang
+    // yang belum terisi, bukan kategori yang setara dengan yang sudah konversi.
+    { name: 'Not yet',     value: pending,   color: MQL_COLOR.pendingBg, border: MQL_COLOR.pendingBd },
   ];
   const isEmpty = converted + pending + lost === 0;
   return (
@@ -814,7 +895,9 @@ function MqlToSqlPie({ data }) {
                 <Pie data={slices} dataKey="value" nameKey="name" cx={66} cy={66}
                   innerRadius={40} outerRadius={62} paddingAngle={1.5} stroke="none"
                   startAngle={90} endAngle={-270} isAnimationActive={false}>
-                  {slices.map((s) => <Cell key={s.name} fill={s.color} />)}
+                  {slices.map((s) => (
+                    <Cell key={s.name} fill={s.color} stroke={s.border || 'none'} strokeWidth={s.border ? 1 : 0} />
+                  ))}
                 </Pie>
                 <Tooltip content={<MqlTip total={converted + pending} />} />
               </PieChart>
@@ -829,7 +912,8 @@ function MqlToSqlPie({ data }) {
             <div style={{ flex: 1, minWidth: 190 }}>
               {slices.map((s) => (
                 <div key={s.name} style={D.legRow}>
-                  <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color,
+                    border: s.border ? `1px solid ${s.border}` : undefined, boxSizing: "border-box", flex: "0 0 9px" }} />
                   <span style={D.legName}>{s.name}</span>
                   <span style={D.legVal}>{s.value}</span>
                 </div>
@@ -2912,7 +2996,11 @@ function CRMDashboardPage() {
       // ── Lead source (periode aktif) ─────────────────────────────────────
       const sourceCounts = {};
       accountsRows.forEach((a) => {
-        const s = a.source || 'Other';
+        // '__none__', BUKAN 'Other': `other` adalah nilai source yang SAH dan
+        // punya 109 baris sendiri di produksi. Meleburkan NULL ke situ membuat
+        // dua hal berbeda tak bisa dipisahkan lagi. Pola sentinel ini sama
+        // dengan `loss_reason_id || '__none__'` di atas.
+        const s = a.source || '__none__';
         sourceCounts[s] = (sourceCounts[s] || 0) + 1;
       });
       const leadSourceData = Object.entries(sourceCounts)
