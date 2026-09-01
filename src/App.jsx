@@ -1627,12 +1627,12 @@ function NexusSidebar({
 
   return (
     <aside className={asideClass} style={asideStyle}>
-      {/* Brand */}
+      {/* Brand — hex literal DISENGAJA, bukan token --ink/--faint: keduanya mewarnai teks umum sidebar di 15 titik lain (termasuk `color` dasar <aside> di :1523), jadi mengubah definisinya di index.css akan ikut mengecat label nav, ikon, judul grup, dan nama user. */}
       <div className="flex items-center gap-3" style={{ padding: '18px 16px 16px' }}>
         <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 17, flexShrink: 0 }}>N</div>
         <div style={{ lineHeight: 1.1 }}>
-          <div style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 16, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Nexus</div>
-          <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--faint)', letterSpacing: '1.5px' }}>BY MSI</div>
+          <div style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 16, color: '#144682', letterSpacing: '-0.3px' }}>Nexus</div>
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: '#E85A1E', letterSpacing: '1.5px' }}>BY MSI</div>
         </div>
         {asDrawer && (
           <button type="button" onClick={onClose} aria-label="Tutup menu" className="ml-auto" style={{ background: 'transparent', border: 'none', color: 'var(--mute)', cursor: 'pointer' }}>
@@ -2808,7 +2808,7 @@ export default function StorbitManifest() {
                 <Package size={17} style={{ color: 'white' }} strokeWidth={2}/>
               </div>
               <div>
-                <h1 className="font-display text-lg font-semibold leading-tight">Nexus by MSI</h1>
+                <h1 className="font-display text-lg font-semibold leading-tight"><span style={{ color: '#144682' }}>Nexus</span><span style={{ color: '#E85A1E' }}> by MSI</span></h1>
                 <p className="text-[8px] uppercase tracking-[0.14em] font-semibold leading-tight" style={{ color: PASTEL.inkMute }}>Unified Business Core</p>
               </div>
             </div>
