@@ -107,6 +107,61 @@ function ageDays(iso) {
   return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
 
+/* ── Preset filter Deadline Quote ──────────────────────────────────────────
+   `deadline_quote` bertipe `date` (bukan timestamptz), jadi pembandingnya cukup
+   string 'YYYY-MM-DD' — tak ada konversi zona di sisi query. Yang TETAP wajib
+   WIB adalah "hari ini": getTodayWIB(), BUKAN toISOString(), yang antara
+   00:00-06:59 WIB mengembalikan tanggal KEMARIN (lihat src/lib/dateUtils.js).
+
+   ⚠️ "Due this week/month" dihitung dari HARI INI sampai akhir periode, bukan
+   dari awal periode. Dua alasan: (1) tenggat yang sudah lewat sudah punya
+   rumahnya sendiri di preset Overdue — kalau dihitung dari Senin, maka pada hari
+   Rabu preset "this week" akan mengulang baris Senin & Selasa yang juga muncul
+   di Overdue; (2) yang berguna bagi sales adalah "apa yang jatuh tempo dari
+   sekarang". Pekan memakai konvensi Indonesia (Senin–Minggu), jadi akhir pekan
+   = hari Minggu. */
+const DEADLINE_PRESETS = [
+  { id: 'all',     label: 'Any Deadline'   },
+  { id: 'overdue', label: 'Overdue'        },
+  { id: 'week',    label: 'Due this week'  },
+  { id: 'month',   label: 'Due this month' },
+  { id: 'none',    label: 'No deadline'    },
+];
+
+// Aritmetika tanggal murni di atas string 'YYYY-MM-DD'. Date lokal dipakai TANPA
+// komponen jam lalu diformat balik jadi string; nilainya tak pernah dipakai
+// sebagai timestamp, sehingga zona mesin tak bisa menggesernya.
+function shiftDay(ymd, n) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+}
+function endOfWeekWIB(ymd) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dow = new Date(y, m - 1, d).getDay();      // 0=Minggu … 6=Sabtu
+  return shiftDay(ymd, dow === 0 ? 0 : 7 - dow);
+}
+function endOfMonthWIB(ymd) {
+  const [y, m] = ymd.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();        // hari ke-0 bulan berikutnya
+  return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+}
+
+/* Modul-scope, dan `today` masuk sebagai ARGUMEN supaya fungsinya murni: satu
+   definisi dipakai dua query (list & hitungan chip) tanpa perlu ikut ke dep
+   array useCallback mana pun.
+   Baris ber-deadline NULL otomatis gugur dari overdue/week/month — perbandingan
+   terhadap NULL tak pernah true di Postgres — jadi 'No deadline' benar-benar
+   satu-satunya preset yang memunculkannya. */
+function applyDeadlineFilter(query, preset, today) {
+  if (preset === 'overdue') return query.lt('deadline_quote', today);
+  if (preset === 'week')    return query.gte('deadline_quote', today).lte('deadline_quote', endOfWeekWIB(today));
+  if (preset === 'month')   return query.gte('deadline_quote', today).lte('deadline_quote', endOfMonthWIB(today));
+  if (preset === 'none')    return query.is('deadline_quote', null);
+  return query;
+}
+
 function StageBadge({ stage }) {
   const m = STAGE_META[stage];
   if (!m) return <span style={{ color: '#A29684', fontSize: 12 }}>—</span>;
@@ -233,6 +288,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterService, setFilterService] = useState('all');
   const [filterOwner, setFilterOwner] = useState('all');
+  const [filterDeadline, setFilterDeadline] = useState('all');
   /* Nama pemilik TIDAK di-embed dari `profiles`. PipelineKanbanPage:111-121 sudah
      membuktikan embed FK inquiries.owner_id -> profiles ditolak PostgREST walau
      FK-nya valid dan schema cache sudah di-reload. Pola dua langkah: owner_id
@@ -275,6 +331,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       if (filterStatus !== 'all') query = query.eq('status', filterStatus);
       if (filterService !== 'all') query = query.eq('service_type', filterService);
       if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
+      if (filterDeadline !== 'all') query = applyDeadlineFilter(query, filterDeadline, getTodayWIB());
       if (search.trim()) query = query.ilike('inquiry_no', `%${search.trim()}%`);
 
       const { data, error, count } = await query;
@@ -301,10 +358,10 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.company_id, isAllEntities, page, filterStatus, filterService, filterOwner, search, showToast]);
+  }, [profile?.id, profile?.company_id, isAllEntities, page, filterStatus, filterService, filterOwner, filterDeadline, search, showToast]);
 
   useEffect(() => { fetchInquiries(); }, [fetchInquiries]);
-  useEffect(() => { setPage(0); }, [filterStatus, filterService, filterOwner, search]);
+  useEffect(() => { setPage(0); }, [filterStatus, filterService, filterOwner, filterDeadline, search]);
 
   // Query ringan terpisah untuk chip: ambil kolom status saja (dataset kecil, patuh
   // .limit(1000)), hitung per status di client. Scope RLS + service + search SAMA
@@ -319,6 +376,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       if (!isAllEntities) query = query.eq('company_id', profile.company_id);
       if (filterService !== 'all') query = query.eq('service_type', filterService);
       if (filterOwner !== 'all') query = query.eq('owner_id', filterOwner);
+      if (filterDeadline !== 'all') query = applyDeadlineFilter(query, filterDeadline, getTodayWIB());
       if (search.trim())  query = query.ilike('inquiry_no', `%${search.trim()}%`);
       const { data, error } = await query.limit(1000);
       if (cancelled) return;
@@ -330,7 +388,7 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
       setCountsTotal((data || []).length);
     })();
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterOwner, search]);
+  }, [profile?.id, profile?.company_id, isAllEntities, filterService, filterOwner, filterDeadline, search]);
 
   /* Opsi dropdown Owner dari roster OPERASIONAL — sumber yang sama dengan
      CRMDashboardPage, bukan query distinct owner_id sendiri. Roster memuat sales
@@ -486,6 +544,14 @@ export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToa
               <option value="all">All Owners</option>
               {ownerOptions.map(o => (
                 <option key={o.id} value={o.id}>{o.full_name || '(unnamed)'}</option>
+              ))}
+            </select>
+            {/* Deadline Quote — SERVER-SIDE, alasan sama dengan filter Owner di atas.
+                Ikut masuk ke query hitungan chip juga, supaya angka di pil status
+                tetap sama dengan jumlah baris yang benar-benar muncul. */}
+            <select value={filterDeadline} onChange={e => setFilterDeadline(e.target.value)} style={selStyle}>
+              {DEADLINE_PRESETS.map(d => (
+                <option key={d.id} value={d.id}>{d.label}</option>
               ))}
             </select>
           </>
