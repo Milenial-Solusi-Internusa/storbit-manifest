@@ -247,14 +247,24 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
  * @param {Function} [props.onSelectView]
  * @param {Node}     [props.right]
  * @param {string}   [props.emptyTitle]
+ * @param {Function} [props.onRowClick] - mode table: baris jadi bisa diklik.
+ *                                       TIDAK diisi = perilaku lama persis
+ *                                       (nol onClick, nol cursor, nol hover).
+ * @param {boolean}  [props.loading]   - mode table: render skeleton row di
+ *                                       tempat baris, BUKAN EmptyState —
+ *                                       "belum dimuat" harus bisa dibedakan
+ *                                       dari "memang kosong".
  */
 export default function ListView({
   mode = 'table', columns = [], rows = [], lanes = [], renderCard,
   search, onSearch, filters, savedViews, activeView, onSelectView, right,
   emptyTitle = 'No data', emptySub, groupedBoard = false,
+  onRowClick, loading = false,
 }) {
   // Lajur `closed` menciut secara default; user boleh membukanya per sesi.
   const [expanded, setExpanded] = useState({});
+  // Baris yang sedang di-hover — hanya berarti saat `onRowClick` diisi.
+  const [hoverRow, setHoverRow] = useState(-1);
   const toggle = (id) => setExpanded((s) => ({ ...s, [id]: !s[id] }));
 
   const laneState = useMemo(
@@ -325,51 +335,83 @@ export default function ListView({
     );
   }
 
+  /* Kerangka tabel dipakai ulang oleh baris data DAN baris skeleton, supaya
+     header tetap terlihat saat memuat dan tak ada lompatan layout begitu data
+     tiba. */
+  const shell = (body) => (
+    <div style={{ overflowX: 'auto', border: `1px solid ${LINE}`, borderRadius: RADIUS.lg }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: FONT_BODY, fontSize: 13.5 }}>
+        <thead>
+          <tr style={{ background: SURFACE_2 }}>
+            {columns.map((c) => (
+              <th
+                key={c.key}
+                style={{
+                  textAlign: c.align || 'left', padding: `${SP.s3}px ${SP.s3}px`,
+                  fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700,
+                  letterSpacing: '.04em', textTransform: 'uppercase', color: INK_SOFT,
+                  borderBottom: `1px solid ${LINE}`, whiteSpace: 'nowrap',
+                }}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{body}</tbody>
+      </table>
+    </div>
+  );
+
+  const cellStyle = (c) => ({
+    textAlign: c.align || 'left', padding: `${SP.s3}px ${SP.s3}px`,
+    borderBottom: `1px solid ${LINE_SOFT}`, color: INK,
+  });
+
+  const dataBody = rows.map((r, i) => (
+    /* onRowClick TIDAK diisi → onClick/handler/style semuanya undefined,
+       sehingga <tr> yang dirender identik dengan versi sebelum prop ini ada.
+       Ini yang menjaga PipelineKanbanPage (mode lanes) dan pemakaian table
+       lain tak berubah sama sekali. */
+    <tr
+      key={r.id ?? i}
+      onClick={onRowClick ? () => onRowClick(r) : undefined}
+      onMouseEnter={onRowClick ? () => setHoverRow(i) : undefined}
+      onMouseLeave={onRowClick ? () => setHoverRow(-1) : undefined}
+      style={onRowClick ? {
+        cursor: 'pointer',
+        background: hoverRow === i ? SURFACE_2 : 'transparent',
+        transition: 'background .12s ease',
+      } : undefined}
+    >
+      {columns.map((c) => (
+        <td key={c.key} style={cellStyle(c)}>
+          {c.render ? c.render(r) : r[c.key]}
+        </td>
+      ))}
+    </tr>
+  ));
+
+  const skeletonBody = Array.from({ length: 5 }, (_, i) => (
+    <tr key={`sk-${i}`}>
+      {columns.map((c) => (
+        <td key={c.key} style={cellStyle(c)}>
+          <span style={{
+            display: 'block', height: 10, borderRadius: RADIUS.sm,
+            background: LINE_SOFT, maxWidth: 160,
+            marginLeft: c.align === 'right' ? 'auto' : 0,
+          }} />
+        </td>
+      ))}
+    </tr>
+  ));
+
   return (
     <div>
       {bar}
-      {rows.length === 0 ? (
+      {loading ? shell(skeletonBody) : rows.length === 0 ? (
         <EmptyState title={emptyTitle} sub={emptySub} />
-      ) : (
-        <div style={{ overflowX: 'auto', border: `1px solid ${LINE}`, borderRadius: RADIUS.lg }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: FONT_BODY, fontSize: 13.5 }}>
-            <thead>
-              <tr style={{ background: SURFACE_2 }}>
-                {columns.map((c) => (
-                  <th
-                    key={c.key}
-                    style={{
-                      textAlign: c.align || 'left', padding: `${SP.s3}px ${SP.s3}px`,
-                      fontFamily: FONT_HEAD, fontSize: 11, fontWeight: 700,
-                      letterSpacing: '.04em', textTransform: 'uppercase', color: INK_SOFT,
-                      borderBottom: `1px solid ${LINE}`, whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {c.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.id ?? i}>
-                  {columns.map((c) => (
-                    <td
-                      key={c.key}
-                      style={{
-                        textAlign: c.align || 'left', padding: `${SP.s3}px ${SP.s3}px`,
-                        borderBottom: `1px solid ${LINE_SOFT}`, color: INK,
-                      }}
-                    >
-                      {c.render ? c.render(r) : r[c.key]}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      ) : shell(dataBody)}
     </div>
   );
 }
