@@ -10,7 +10,6 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
-import WinLossModal from './WinLossModal';
 import { BANT_DIMENSIONS, calcBantScore, bantQualifyGate, BANT_FREQUENCY_OPTIONS } from './bant';
 import { ACTIVE_STAGE_KEYS, isActiveStage, isKnownStage } from './DealPanels';
 import BantScoreBar from './BantScoreBar';
@@ -102,7 +101,6 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     bant_current_vendor: '', bant_payment: '', bant_decision_maker: '', bant_score: 0,
   });
 
-  const [winLoss, setWinLoss] = useState({ open: false, mode: 'won' });
   const [nameWarning, setNameWarning] = useState('');
   // Kode entitas (MSI/JCI/SOA) untuk pesan tolak duplikat. Pola sama dgn
   // InquiryFormPage:286 / QuotationFormPage:964 — fetch sekali saat mount.
@@ -225,9 +223,6 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   const handleStageChange = (e) => {
     const v = e.target.value;
-    // Cabang WON/LOST kini TAK TERJANGKAU — keduanya tidak lagi ditawarkan dropdown.
-    // Dibiarkan utuh (bukan lingkup batch ini untuk membongkar WinLossModal).
-    if (v === 'WON' || v === 'LOST') { setWinLoss({ open: true, mode: v.toLowerCase() }); return; }
     // Gate BANT untuk naik ke QUALIFIED — aturan & teks sama persis dengan Kanban.
     if (v === 'QUALIFIED') {
       const gate = bantQualifyGate(form);
@@ -248,11 +243,6 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   //    disabled, tapi tidak bisa dipilih ulang dan tidak ikut ditulis saat simpan.
   const stageKnown = isKnownStage(form.pipeline_stage);
   const stageOffered = isActiveStage(form.pipeline_stage);
-
-  const handleWinLossSave = (values) => {
-    setForm(f => ({ ...f, pipeline_stage: winLoss.mode.toUpperCase(), ...values }));
-    setWinLoss(wl => ({ ...wl, open: false }));
-  };
 
   const validate = () => {
     const e = {};
@@ -533,11 +523,6 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         </div>
       </div>
 
-      <WinLossModal
-        key={`${winLoss.mode}-${winLoss.open}`}
-        open={winLoss.open} mode={winLoss.mode} prospectName={form.name}
-        onSave={handleWinLossSave} onCancel={() => setWinLoss(wl => ({ ...wl, open: false }))}
-      />
       <ConfirmModal
         open={confirmState.open} title={confirmState.title} message={confirmState.message}
         confirmLabel="Yes, Delete" cancelLabel="Cancel" variant="danger"
