@@ -320,7 +320,7 @@ function ModalGrid({ cols, children }) {
   );
 }
 
-function EditItemModal({ item, spExpiredDate, spDc, spDate, spNo, customer, onClose, onSave }) {
+function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, onSave }) {
   // Katalog produk (dropdown-only) di-pin ke Storbit/SOA.
   const { products } = useProducts({ companyId: SOA_COMPANY_ID });
   const [draft, setDraft] = useState({
@@ -328,7 +328,8 @@ function EditItemModal({ item, spExpiredDate, spDc, spDate, spNo, customer, onCl
     productName: item.productName || '',
     sku:          item.sku         || '',
     // `dc` SENGAJA TIDAK ADA di draft. DC tujuan adalah atribut HEADER
-    // (sp_orders.dc_id → dc_master), ditampilkan read-only dari prop `spDc`.
+    // (sp_orders.dc_id → dc_master), ditampilkan di kartu "DC Tujuan" tab
+    // Overview — bukan di modal ini, dan bukan per baris item.
     // Dulu di sini ada teks bebas yang menulis sp_items.dc — kolom LEGACY yang
     // tak pernah dibaca Surat Jalan, sehingga mengubahnya terasa seperti
     // memperbaiki alamat kirim padahal tidak. Lihat catatan di handleSave.
@@ -475,18 +476,10 @@ function EditItemModal({ item, spExpiredDate, spDc, spDate, spNo, customer, onCl
               />
             </ModalField>
             <ModalField label="SKU"><ModalInp value={draft.sku} readOnly mono/></ModalField>
-            {/* DC Tujuan — READ-ONLY, sumbernya sp_orders.dc_id → dc_master
-                (prop `spDc`), BUKAN sp_items.dc yang legacy. Tanda `req`
-                dicabut: ini bukan input lagi. Pola terkunci = Unit Price di
-                bawah (ModalInp readOnly + helper text). DC hanya bisa berubah
-                lewat header SP; hari ini belum ada jalur UI untuk itu, jadi
-                sengaja TANPA tombol edit — jangan pasang affordance palsu. */}
-            <ModalField label="DC Tujuan">
-              <ModalInp value={spDc?.nama || '—'} readOnly/>
-              <div style={{ fontSize: 11, color: C.inkFaint }}>
-                {spDc?.alamat || 'Terkunci — ditentukan di header SP'}
-              </div>
-            </ModalField>
+            {/* Field "DC Tujuan" DIHAPUS di sini — DC adalah atribut level SP,
+                bukan level item, jadi menampilkannya per baris item duplikatif
+                dan membingungkan. Satu-satunya tempatnya sekarang: kartu
+                "DC Tujuan" di tab Overview halaman ini. JANGAN dikembalikan. */}
           </ModalGrid>
 
           {/* Quantity */}
@@ -1371,8 +1364,9 @@ export default function SalesOrderDetailPage({
   // jadi menjadikannya cadangan justru mengembalikan angka yang salah dengan
   // tampilan meyakinkan. Kalau embed null (SP lama tanpa dc_id, atau RLS
   // dc_master menolak — lihat catatan di db.js), konsumen tampilkan '—'.
-  // Satu nilai ini dipakai bersama kartu "DC Tujuan" + EditItemModal: satu
-  // fetch, dua konsumen.
+  // Konsumen tunggal: kartu "DC Tujuan" di tab Overview. Field DC di
+  // EditItemModal sudah DIHAPUS (duplikat — DC atribut level SP, bukan item),
+  // jadi jangan tambah konsumen baru di level item.
   const spDc = spOrder?.dc_master || null;
   const firstDeadline = spExpiredDate;
   const days = daysUntil(firstDeadline);
@@ -1721,11 +1715,26 @@ export default function SalesOrderDetailPage({
                 menulisnya), jadi jangan pasang affordance yang tak ada jalurnya. */}
             <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3 }}>
               <div style={{ ...kickerStyle }}>DC Tujuan</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s1}px ${SP.s3}px`, fontSize: 13, marginTop: SP.s1, alignContent: 'start' }}>
-                <div style={{ color: C.inkSoft }}>Nama</div>
-                <div>{spDc?.nama || '—'}</div>
-                <div style={{ color: C.inkSoft }}>Alamat</div>
-                <div style={{ lineHeight: 1.45 }}>{spDc?.alamat || '—'}</div>
+              {/* Kedua nilai dibungkus box read-only — pola boxed panel yang
+                  sudah hidup di file ini (card "Dokumen Terkait"/"Danger Zone"):
+                  border C.line + background C.surface2 + RADIUS.md. Bukan token
+                  baru, dan sengaja BUKAN salinan ModalInp: box modal itu pakai
+                  height 38 + radius 8 (skala modal), yang akan memotong alamat
+                  3-4 baris dan bentrok dgn radius kartu di halaman ini.
+                  Box alamat karena itu tanpa tinggi tetap → teks membungkus.
+                  Row-gap SP.s1 → SP.s2 supaya dua box terbaca sebagai dua baris
+                  info berurutan dalam satu kartu, bukan menyatu. Label diberi
+                  padding vertikal 8px (= 1px border + 7px padding box) supaya
+                  baris pertamanya sebaris dgn teks di dalam box. */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s2}px ${SP.s3}px`, fontSize: 13, marginTop: SP.s2, alignItems: 'start', alignContent: 'start' }}>
+                <div style={{ color: C.inkSoft, padding: '8px 0' }}>Nama</div>
+                <div style={{ border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface2, padding: '7px 10px', minWidth: 0 }}>
+                  {spDc?.nama || '—'}
+                </div>
+                <div style={{ color: C.inkSoft, padding: '8px 0' }}>Alamat</div>
+                <div style={{ border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface2, padding: '7px 10px', minWidth: 0, fontSize: 12.5, lineHeight: 1.45 }}>
+                  {spDc?.alamat || '—'}
+                </div>
               </div>
             </div>
 
@@ -2475,7 +2484,6 @@ export default function SalesOrderDetailPage({
         <EditItemModal
           item={editingItem}
           spExpiredDate={spExpiredDate}
-          spDc={spDc}
           spDate={spDate}
           spNo={spNo}
           customer={customer}

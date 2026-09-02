@@ -647,9 +647,10 @@ export async function completePicking(pickingListId) {
 // `dc_id` + embed `dc_master(nama, alamat)` ikut di sini SENGAJA, bukan lewat
 // fungsi terpisah: DC adalah atribut HEADER sp_orders, sekelas status/
 // expired_date yang sudah diambil fungsi ini, jadi embed lewat FK
-// sp_orders_dc_id_fkey nol round-trip tambahan — dan satu fetch memasok
-// kartu "DC Tujuan" Detail SP + tampilan DC read-only di EditItemModal
-// sekaligus. Pola resolusi DC-nya sama dengan getPrintIdentity di atas.
+// sp_orders_dc_id_fkey nol round-trip tambahan. Konsumennya TUNGGAL: kartu
+// "DC Tujuan" di tab Overview Detail SP. (EditItemModal sempat ikut memakainya
+// sebagai field read-only, lalu field itu DIHAPUS — DC atribut level SP, bukan
+// level item.) Pola resolusi DC-nya sama dengan getPrintIdentity di atas.
 // ⚠️ dc_master_read = `is_super_admin() OR company_id = get_user_company_id()`
 // (varian TUNGGAL). User multi-entitas yang home-nya bukan SOA bisa dapat
 // embed null walau SP-nya terbaca — semua konsumen WAJIB degrade ke '—',
