@@ -333,8 +333,27 @@ export async function updateSpItem(id, item) {
   return { data: spFromDb(data), error };
 }
 
+// Hapus SATU baris item SP via RPC delete_sp_item_dual (SECURITY DEFINER,
+// migrasi 20260902000002). Nama & signature ekspor SENGAJA tidak berubah supaya
+// useSpItems.removeRow tak perlu disentuh — pola sama seperti updateSpItem
+// yang dipindah ke RPC pada 25 Agu 2026.
+//
+// SENGAJA BUKAN .delete() langsung lagi. Dua alasan, keduanya nyata:
+//   1. OTORISASI — RLS sp_items_delete dulu USING(true) dan `authenticated`
+//      memang punya GRANT DELETE, jadi setiap user yang bisa login (sales,
+//      viewer, hrga, finance) bisa menghapus baris item SP. Migrasi itu
+//      mencabut GRANT-nya; .delete() langsung kini PASTI gagal.
+//   2. ORPHAN — .delete() hanya menghapus sp_items. Kembarannya di
+//      sp_order_items tertinggal (legacy_sp_item_id TANPA FK), dan
+//      create_invoice menghitung Σqty dari sp_order_items → baris hantu itu
+//      membuat Σshipped=Σqty mustahil tercapai → SP TAK BISA DIINVOICE
+//      SELAMANYA. RPC menghapus kedua tabel dalam satu transaksi.
+//
+// Guard di RPC: is_sp_item_writer() + status ∈ (DRAFT, CONFIRMED,
+// MENUNGGU_STOK) + tolak baris terakhir. Pesan RAISE-nya sudah manusiawi &
+// berbahasa Indonesia → teruskan apa adanya ke user, jangan dibungkus generik.
 export async function deleteSpItem(id) {
-  const { error } = await supabase.from('sp_items').delete().eq('id', id);
+  const { error } = await supabase.rpc('delete_sp_item_dual', { p_id: id });
   return { error };
 }
 

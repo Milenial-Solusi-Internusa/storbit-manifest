@@ -1024,6 +1024,18 @@ export default function SalesOrderDetailPage({
   // Sisi company sudah ditegakkan server; FE hanya mencerminkan sisi PERAN,
   // supaya tombol tidak menawarkan aksi yang pasti ditolak RPC.
   const canWarehouseOps = isSuperAdmin || isManagerAbove || roleCodes.includes('operations');
+  // CERMIN guard server is_sp_item_writer() (migrasi 20260902000001), dipakai
+  // update_sp_item_dual DAN delete_sp_item_dual + policy sp_items_delete.
+  // SENGAJA LEBIH SEMPIT dari canWarehouseOps: ceo/gm/gm_bd VIEW-ONLY untuk
+  // TULIS baris item SP (keputusan Den 2 Sep 2026, sejalan
+  // 04_ROLE_PERMISSION_MATRIX baris Logistics: ceo=R, gm_bd=tanpa akses).
+  // 'supervisor' tidak ada di daftar karena role itu tak ada di tabel roles
+  // (TD-106) — jangan ditambahkan "supaya lengkap".
+  // ⚠️ canWarehouseOps di atas TETAP DIPAKAI untuk konteks lain (BTB, generate
+  // picking, tenggat SP, TTF) yang keputusan itu TIDAK sentuh. Jangan
+  // digabungkan jadi satu flag.
+  const canWriteSpItem = isSuperAdmin
+    || roleCodes.some(c => ['admin', 'manager', 'operations'].includes(c));
 
   const [payments,    setPayments]    = useState([]);
   const [ttf,         setTtf]         = useState(null);
@@ -2184,8 +2196,14 @@ export default function SalesOrderDetailPage({
                         {/* Mockup cuma punya ikon Edit di kolom Aksi. Tombol Hapus
                             DIPERTAHANKAN — aksi nyata yang sudah ada; membuangnya
                             demi kemiripan = menghilangkan fungsi, bukan restyle. */}
+                        {/* Kedua tombol digate canWriteSpItem — cermin
+                            is_sp_item_writer() di update_sp_item_dual DAN
+                            delete_sp_item_dual. Tombol Hapus dulu TANPA GATE
+                            SAMA SEKALI sementara Edit digate: siapa pun yang
+                            login bisa menghapus baris item SP. JANGAN
+                            dilepas lagi. */}
                         <div style={{ ...cell, display: 'flex', gap: 4 }}>
-                          {canWarehouseOps && (
+                          {canWriteSpItem && (
                           <button
                             onClick={() => setEditingItem(item)}
                             aria-label="Edit baris"
@@ -2195,6 +2213,7 @@ export default function SalesOrderDetailPage({
                             <Pencil size={14}/>
                           </button>
                           )}
+                          {canWriteSpItem && (
                           <button
                             onClick={() => handleDeleteItem(item.id)}
                             aria-label="Hapus baris"
@@ -2203,6 +2222,7 @@ export default function SalesOrderDetailPage({
                           >
                             <Trash2 size={14}/>
                           </button>
+                          )}
                         </div>
                       </div>
                     );
