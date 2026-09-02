@@ -15,7 +15,7 @@ import {
 import { useAuth } from './contexts/useAuth';
 import useMyApproverScope, { approverKey, HRGA_PENDING_STATUSES } from './hooks/useMyApproverScope';
 import { supabase } from './lib/supabase';
-import { generatePickingFromSp, generateDeliveryFromPicking, listSpOrderStatuses, getSpOrderStatus } from './lib/db';
+import { generatePickingFromSp, generateDeliveryFromPicking, listSpOrderStatuses, getSpOrderStatus, setSpFinanceDocs } from './lib/db';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
@@ -4051,7 +4051,18 @@ export default function StorbitManifest() {
         />
       )}
       {shipmentRow && <ShipmentModal row={shipmentRow} onClose={() => setShipmentRow(null)} onSave={handleSave}/>}
-      {financeRow && <FinanceModal row={financeRow} onClose={() => setFinanceRow(null)} onSave={handleSave}/>}
+      {/* onSave -> onSaved: FinanceModal kini memanggil RPC set_sp_finance_docs
+          sendiri (level SP), bukan lagi menumpang dbSaveRow milik handleSave
+          yang bermuara di update_sp_item_dual. ShipmentModal di atas TIDAK
+          diubah — masih jalur item, masih handleSave. */}
+      {financeRow && (
+        <FinanceModal
+          row={financeRow}
+          showToast={showToast}
+          onClose={() => setFinanceRow(null)}
+          onSaved={async () => { await refreshSp(); setFinanceRow(null); }}
+        />
+      )}
 
       {/* TOAST */}
       {toast && (
@@ -4626,17 +4637,66 @@ function ShipmentModal({ row, onClose, onSave }) {
   );
 }
 
-function FinanceModal({ row, onClose, onSave }) {
+// Duplikat 3 nilai EMAIL_OPTIONS milik SalesOrderDetailPage.jsx — SENGAJA
+// tidak di-import: file itu lazy-loaded, mengimpor konstanta darinya menyeret
+// chunk-nya ke bundle utama. Pola duplikasi-dengan-catatan ini sudah dipakai
+// CustomerDetailPage.jsx:386 atas alasan yang sama. ⚠️ Kalau daftarnya berubah
+// di satu tempat, ubah juga di tempat lain — tidak ada yang menegakkannya.
+const FINANCE_EMAIL_OPTIONS = ['Belum dikirim', 'Terkirim ke customer', 'Dibalas customer'];
+
+// Modal status dokumen SP — LEVEL SP, bukan level item (promosi 2 Sep 2026,
+// migrasi 20260902000003/4). `row` tetap satu baris sp_items karena halaman
+// Finance/Outstanding memang berbaris per-item, tapi yang ditulis adalah
+// header SP-nya lewat kunci komposit (customer_id, sp_no) — dan RPC
+// menyinkronkan turun ke SELURUH item se-SP.
+//
+// Jalur simpan pindah dari dbSaveRow -> setSpFinanceDocs. Alasannya bukan
+// kosmetik: dbSaveRow bermuara di update_sp_item_dual yang guard-nya sumbu
+// GUDANG (is_sp_item_writer) dan TIDAK punya cabang finance — sehingga sejak
+// 25 Agu 2026 modal ini bisa dibuka & di-toggle oleh Finance tapi Save-nya
+// PASTI ditolak 'Tidak berhak mengubah item SP ini'. RPC baru ber-guard sumbu
+// FINANCE, jadi Save akhirnya benar-benar berhasil untuk role yang memang
+// memakai halaman ini.
+//
+// Field "Notes" DICABUT: notes adalah atribut per-ITEM (sp_items.notes) yang
+// ditulis update_sp_item_dual — role finance tak berhak menulisnya, jadi
+// mempertahankannya di sini = menawarkan aksi yang dijamin gagal. Edit notes
+// tetap ada di Edit Item (Detail SP) untuk role gudang.
+//
+// "Email Status" kini <select>, bukan <input type="date">. Kolomnya memang
+// text berisi 3 nilai enum-ish (lihat COMMENT sp_items.email_status di
+// schema_snapshot) — input date di sini adalah bug lama yang tidak dibawa
+// serta ke kode baru.
+function FinanceModal({ row, onClose, onSaved, showToast }) {
   const [data, setData] = useState({
     inv: row.inv, fp: row.fp, submit: row.submit, kirim: row.kirim,
     submitDate: row.submitDate || '', emailStatus: row.emailStatus || '',
-    notes: row.notes || ''
   });
-  const submit = () => onSave({ ...row, ...data });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (saving) return;
+    if (!row.customerId || !row.spNo) {
+      showToast?.('SP tidak dikenali (customer/nomor SP kosong)', 'error');
+      return;
+    }
+    setSaving(true);
+    const { error } = await setSpFinanceDocs(row.customerId, row.spNo, data);
+    setSaving(false);
+    // Pesan RAISE dari RPC sudah manusiawi & berbahasa Indonesia
+    // ('Tidak berhak…', 'SP sudah dibatalkan…') — diteruskan apa adanya.
+    if (error) { showToast?.('Gagal simpan status dokumen: ' + (error.message || 'unknown error'), 'error'); return; }
+    showToast?.(`Status dokumen ${row.spNo} diperbarui ✨`);
+    await onSaved?.();
+  };
 
   return (
-    <ModalShell title="Update Finance Status" subtitle={`SP-${row.spNo} • ${formatRupiah(row.grandTotal)}`} onClose={onClose} maxWidth="max-w-xl">
+    <ModalShell title="Update Status Dokumen SP" subtitle={`SP-${row.spNo} • ${formatRupiah(row.grandTotal)}`} onClose={onClose} maxWidth="max-w-xl">
       <div className="p-6 space-y-4">
+        <div className="rounded-xl px-3.5 py-2.5 text-xs" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>
+          Status dokumen adalah atribut <b>level SP</b> — perubahan di sini berlaku untuk <b>seluruh item</b> SP ini.
+        </div>
+
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-2" style={{ color: PASTEL.inkMute }}>Document Status</div>
           <div className="grid grid-cols-2 gap-2">
@@ -4648,19 +4708,21 @@ function FinanceModal({ row, onClose, onSave }) {
         </div>
 
         <Input label="Submit Date" type="date" value={data.submitDate} onChange={v=>setData({...data, submitDate: v})}/>
-        <Input label="Email Status" type="date" value={data.emailStatus} onChange={v=>setData({...data, emailStatus: v})}/>
 
         <div>
-          <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Notes</label>
-          <textarea value={data.notes} onChange={e=>setData({...data, notes: e.target.value})} rows={2}
+          <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Email Status</label>
+          <select value={data.emailStatus} onChange={e=>setData({...data, emailStatus: e.target.value})}
             className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
-            style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}/>
+            style={{ background: 'white', border: `1px solid ${PASTEL.line}` }}>
+            <option value="">— Belum ditentukan —</option>
+            {FINANCE_EMAIL_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}>Cancel</button>
-          <button onClick={submit} className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold" style={{ background: PASTEL.mintDeep, color: 'white' }}>
-            <Save size={14}/> Save
+          <button onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-full text-sm font-medium" style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft, cursor: saving ? 'not-allowed' : 'pointer' }}>Cancel</button>
+          <button onClick={submit} disabled={saving} className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold" style={{ background: PASTEL.mintDeep, color: 'white', opacity: saving ? .7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+            <Save size={14}/> {saving ? 'Menyimpan…' : 'Save'}
           </button>
         </div>
       </div>

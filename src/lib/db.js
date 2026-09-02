@@ -396,6 +396,34 @@ export async function setSpExpiredDate(customerId, spNo, expiredDate) {
   return { error };
 }
 
+// Set status dokumen finance SP (inv/fp/submit/kirim/submit_date/email_status)
+// di level HEADER. Backed by RPC set_sp_finance_docs (SECURITY DEFINER,
+// migrasi 20260902000004): satu transaksi menulis sp_orders DAN semua baris
+// sp_items se-SP. Alasan RPC-nya sama persis dengan setSpExpiredDate di atas —
+// RLS sp_items_update = USING(true) sementara sp_orders_update role-gated,
+// jadi dua .update() terpisah bisa SUKSES SEPARUH.
+//
+// BUKAN partial patch: keenam nilai WAJIB dikirim tiap panggilan. UI mengirim
+// seluruh isi kartu tiap Simpan, jadi NULL pada submitDate/emailStatus berarti
+// BENAR-BENAR dikosongkan, bukan "jangan ubah".
+//
+// Guard di RPC = sumbu FINANCE (super_admin / finance_controller / finance),
+// SENGAJA tanpa is_manager_or_above() — matrix baris Finance menaruh manager
+// di R, bukan CRUD. Berbeda dari canWarehouseOps maupun canWriteSpItem.
+export async function setSpFinanceDocs(customerId, spNo, docs = {}) {
+  const { error } = await supabase.rpc('set_sp_finance_docs', {
+    p_customer_id:  customerId,
+    p_sp_no:        spNo,        // identitas komposit (customer_id, sp_no)
+    p_inv:          !!docs.inv,
+    p_fp:           !!docs.fp,
+    p_submit:       !!docs.submit,
+    p_kirim:        !!docs.kirim,
+    p_submit_date:  docs.submitDate || null,
+    p_email_status: docs.emailStatus || null,
+  });
+  return { error };
+}
+
 // Set the SP document link (Fase 0.3) across all line items sharing sp_no.
 // external_url is per-SP conceptually; sp_items is line-level → update all rows.
 export async function setSpExternalUrl(spNo, url) {
@@ -670,6 +698,12 @@ export async function completePicking(pickingListId) {
 // "DC Tujuan" di tab Overview Detail SP. (EditItemModal sempat ikut memakainya
 // sebagai field read-only, lalu field itu DIHAPUS — DC atribut level SP, bukan
 // level item.) Pola resolusi DC-nya sama dengan getPrintIdentity di atas.
+// inv/fp/submit/kirim/submit_date/email_status ikut di sini sejak promosi
+// 2 Sep 2026 (migrasi 20260902000003): keenamnya kini atribut level SP, sumber
+// kebenarannya sp_orders. Konsumennya kartu "Finance & Dokumen" tab Overview.
+// Versi sp_items masih ada dan tetap disinkronkan turun oleh
+// set_sp_finance_docs() — itu yang menjaga groupBySP/financePct, KPI
+// FinancePage, chip OutstandingPage, dan export CSV tetap benar tanpa diubah.
 // ⚠️ dc_master_read = `is_super_admin() OR company_id = get_user_company_id()`
 // (varian TUNGGAL). User multi-entitas yang home-nya bukan SOA bisa dapat
 // embed null walau SP-nya terbaca — semua konsumen WAJIB degrade ke '—',
@@ -677,7 +711,7 @@ export async function completePicking(pickingListId) {
 export async function getSpOrderStatus(customerId, spNo) {
   const { data, error } = await supabase
     .from('sp_orders')
-    .select('id, status, had_cancelled_picking, expired_date, dc_id, dc_master(nama, alamat)')
+    .select('id, status, had_cancelled_picking, expired_date, dc_id, dc_master(nama, alamat), inv, fp, submit, kirim, submit_date, email_status')
     .eq('customer_id', customerId)
     .eq('sp_no', spNo)
     .is('deleted_at', null)
