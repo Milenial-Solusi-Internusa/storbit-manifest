@@ -73,9 +73,25 @@
 - **Refresh snapshot** setelah perubahan SQL Editor:
   ```bash
   pg_dump "postgresql://postgres.untmpqceexwxzuhlmyrg@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres" \
-    --schema-only --schema=public --no-owner --no-privileges > supabase/schema_snapshot.sql
+    -f /tmp/snap.sql && mv /tmp/snap.sql supabase/schema_snapshot.sql
   ```
   (`pg_dump` langsung — `supabase db pull` butuh Docker yang belum terpasang.)
+
+  ⚠️ **TANPA `--schema-only`, `--no-owner`, maupun `--no-privileges`.** Snapshot yang
+  berlaku memang data-inclusive + ACL: per 2 Sep 2026 berisi **133 blok `COPY`**,
+  **931 `GRANT`**, dan **69 `REVOKE`**. Ketiga flag lama itu akan MENGHAPUS-nya
+  diam-diam — bukan "refresh", melainkan regresi. ACL-nya bukan kebetulan: tanpa
+  itu, gap GRANT (mis. `DELETE ON sp_items` untuk `authenticated`) tak bisa
+  diaudit dari repo sama sekali.
+
+  Lewat `/tmp` lalu `mv` — supaya `schema_snapshot.sql` tidak pernah tertulis
+  separuh kalau `pg_dump` gagal di tengah.
+
+  **Verifikasi wajib sesudahnya** (kalau `COPY` jatuh ke 0 → JANGAN commit):
+  ```bash
+  grep -c "^COPY public\." supabase/schema_snapshot.sql   # harus ~133
+  grep -c "^GRANT"         supabase/schema_snapshot.sql   # harus ~931
+  ```
 
 ---
 

@@ -88,7 +88,7 @@ Live modules:
 
 Ongoing tech debt:
 
-- `src/App.jsx` is large (5,435 lines) with many inline components — decompose incrementally, never in one big change.
+- `src/App.jsx` is large (5,530 lines) with many inline components — decompose incrementally, never in one big change.
 - `PASTEL` design tokens duplicated across many files — pending a single `src/lib/tokens.js`.
 
 Do not perform a big-bang rewrite.

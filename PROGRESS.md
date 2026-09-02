@@ -31,6 +31,75 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-02
+
+### Item SP Security (Fase 0) + status dokumen Finance naik ke level SP (Fase 1) + TD-180 batch 2 & 3
+
+> **Sifat: 7 migrasi DB + FE Storbit + audit read-only.** Seluruh SQL dijalankan manual di SQL Editor dan **SEMUANYA SUDAH LIVE di produksi** (terverifikasi). ✅ **`schema_snapshot.sql` sudah di-refresh** (`2f55c6d` pasca-Fase 0, lalu `d10e09a` untuk Fase 1 + TD-180) dan terverifikasi mencerminkan ketujuh migrasi — termasuk memastikan blok `COPY` tetap **133**, tidak hilang. Dua migrasi terakhir (`…000006`/`…000007`) **ditulis retroaktif**: SQL-nya dijalankan lebih dulu, file migrasinya menyusul.
+
+**0. Konteks awal — dari 5 nomor SP jadi rantai temuan sepanjang hari.** Berawal dari cek 5 nomor SP Indomarco yang ternyata belum ada di database (**backlog input manual, bukan bug**). Dari situ ketemu masalah kedua: field **Expired Date** di form Input SP Baru memblokir input SP historis (tanggal sudah lewat). Investigasi itu yang membuka semua temuan berikutnya.
+
+**1. DC Tujuan pindah ke level SP + tenggat SP boleh backdate** (dikerjakan di branch `fix/sp-dc-readonly-expired-warning`; `d38c55f`, `c654837` — FE-only, nol migrasi). Dua temuan dari audit read-only:
+- **`min: getTodayWIB()` di Input SP Baru adalah FOSIL** dari saat field itu masih bernama "Deadline" — bukan aturan bisnis, dan bertentangan dengan komentar eksplisit di halaman Detail SP yang menyatakan tenggat harus bisa di-backdate. Dicabut, diganti **banner peringatan (bukan blok keras)** kalau tanggalnya sudah lewat (`InputSPPage.jsx:228` `expiredIsPast`).
+- **Field DC di `EditItemModal` & `ShipmentModal` masih terikat kolom LAMA `sp_items.dc`** (text bebas), BUKAN `sp_orders.dc_id` (FK ke `dc_master`) yang dipakai form baru & Surat Jalan. Akibatnya mengubah DC di modal itu **tampak tersimpan tapi TIDAK PERNAH menyentuh alamat pengiriman sebenarnya**. ⚠️ **Satu kasus divergensi NYATA ditemukan di produksi:** SP `2262797` — item bilang DC GRESIK, header menunjuk DC PALEMBANG; **sudah dikoreksi manual ke GRESIK** sesuai konfirmasi Den.
+- Fix: field DC dikunci read-only, lalu direvisi lagi jadi **prefill dari `dc_master` via `dc_id`** (bukan sekadar "freeze nilai lama"). Kartu **"DC Tujuan"** baru ditambahkan di tab Overview Detail SP (nama & alamat masing-masing dibungkus box terpisah). Akhirnya field DC **dihapus total dari `EditItemModal`** karena duplikat kartu itu — field di `ShipmentModal` **sengaja dipertahankan** (masih relevan sbg konteks pengiriman).
+
+**2. Audit besar Edit Item Modal** (dikerjakan di branch `feat/edit-item-inline-redesign`). Dipicu laporan konkret: **Elvira (Finance) tidak bisa membuka Edit Item di Detail SP** (ikon pensil tak muncul), padahal semestinya bisa mengedit bagian Finance & Dokumen.
+
+*Temuan Bagian A (kritis):*
+- **`EditItemModal` sendiri NOL role check.** Gate-nya seluruhnya di luar: tombol pensil digate `canWarehouseOps` (tak termasuk `finance`), DAN RPC `update_sp_item_dual` juga menolak `finance` di guard-nya.
+- **Ada modal KEDUA** (`FinanceModal`, halaman Finance/Outstanding) yang memang **didesain untuk Finance** mengisi 6 field dokumen (INV/FP/SUBMIT/KIRIM/Submit Date/Email Status) — tapi memanggil **RPC yang SAMA**. Jadi Finance bisa membuka & men-toggle, **tapi Save PASTI gagal server-side**. Bug ini **baru aktif efektif sejak 25 Agustus**, efek samping tak sengaja dari migrasi security yang niatnya cuma mengunci qty/harga.
+- **CRITICAL terpisah: tombol Hapus item di sebelah pensil TANPA GATE SAMA SEKALI** — hard-delete langsung, RLS `sp_items` `USING(true)`. **Siapa pun yang login bisa menghapus baris item SP.** Lebih jauh, hapus itu meninggalkan **baris orphan di `sp_order_items`** (karena `legacy_sp_item_id` tanpa FK) yang membuat SP tersebut **tak bisa di-invoice selamanya** — guard `Σshipped = Σqty` jadi mustahil terpenuhi.
+- **Divergensi role:** `ceo` & `gm_bd` lolos `is_manager_or_above()` untuk edit item SP, padahal matrix menyatakan `ceo` = Read-only dan `gm_bd` = tanpa akses Logistics sama sekali.
+
+*Temuan Bagian B (peta jangka panjang — BELUM dikerjakan):* rekomendasi memindah form modal jadi **inline** di halaman Detail SP, **BERTAHAP per section** (bukan sekaligus) karena tiga risiko HIGH kalau digabung: **whole-row overwrite**, **`shipped_qty` bisa ter-rollback diam-diam**, dan **RLS `sp_items` masih longgar di 4 operasi**. Disepakati: **Finance = paket PERTAMA** (datanya memang seragam se-SP). **Item/Qty/Pricing/Tanggal = paket KEDUA, terpisah, belum dikerjakan** — tetap di modal untuk sekarang (`09_ROADMAP.md` Next Up #2d).
+
+**3. FASE 0 — keamanan tulis & hapus item SP** (migrasi `20260902000001` + `20260902000002`, FE `91dc380`).
+
+*Keputusan Den:*
+- **Manager & Operations tetap full CRUD** di item SP (tidak berubah). **Super Admin tidak berubah.**
+- **CEO, GM (`gm`), dan GM Business Development (`gm_bd`) diturunkan jadi VIEW-ONLY** untuk edit item SP. **Blast radius nyata: 1 user** (ber-role `gm_bd`) — **nol user aktif** ber-role `ceo`/`gm`.
+- Role **`supervisor` sengaja TIDAK dimasukkan** ke guard baru: role itu **tak eksis di tabel `roles`** (TD-106), jadi memasukkannya = izin nganggur yang otomatis menyala kalau role itu suatu hari dibuat.
+- **`is_manager_or_above()` (fungsi global) SENGAJA TIDAK diubah** — dipakai banyak gate lain di luar Logistics. Dibuat fungsi baru khusus konteks ini.
+
+*Isi migrasi:* **`is_sp_item_writer()`** (true hanya untuk `super_admin`/`admin`/`manager`/`operations`), menggantikan `is_manager_or_above()` di guard `update_sp_item_dual` · **`delete_sp_item_dual(p_id)`** — hapus `sp_items` DAN kembarannya `sp_order_items` dalam satu transaksi, plus guard status (hanya DRAFT/CONFIRMED/MENUNGGU_STOK) dan guard baris-terakhir (baris terakhir SP tak boleh dihapus lewat sini) · **`REVOKE DELETE ON sp_items FROM authenticated`** + policy `sp_items_delete` dipersempit ke `is_super_admin() OR is_sp_item_writer()`. **Tetap hard-delete** — soft-delete `sp_items` **ditunda ke M13** karena terlalu banyak titik baca (7 FE + ~15 fungsi DB) yang harus disisir serentak.
+
+*Sisi FE:* tombol pensil & tombol Hapus di `SalesOrderDetailPage.jsx` digate `canWriteSpItem` (cermin `is_sp_item_writer()`, `:1040`); `deleteSpItem()` (`db.js:355-358`) memanggil RPC baru, bukan `.delete()` langsung.
+
+**4. FASE 1 — promosi 6 field Finance ke level SP** (migrasi `20260902000003`/`…000004`/`…000005`, FE `2ce6d1f`).
+
+*Keputusan Den:*
+- **INV/FP/SUBMIT/KIRIM/Submit Date/Email Status naik jadi atribut level SP** (header `sp_orders`), bukan per-item lagi — praktiknya memang selalu seragam se-SP (satu invoice menutup semua item).
+- **Backfill `bool_and`** (konservatif — header `true` HANYA kalau SEMUA item `true`). **13 SP divergen**; dicek manual, **hanya 4 yang benar-benar konflik nilai**: `2172914`, `2173356`, `2204884`, `2204886` (sisanya cuma beda `submit_date`/`email_status`). Keempatnya sudah punya BTB valid, dugaan kuat cuma **kelewat toggle manual** — ⚠️ **Finance disarankan cek ulang 4 SP itu**, belum dilakukan.
+- **`financePct` yang tadinya bisa granular per-item (mis. 60%) kini biner per-SP** (0/25/50/75/100%) — **disetujui Den** sebagai efek samping yang wajar.
+- **`FinanceModal` di-repoint ke RPC baru, BUKAN dihapus** — supaya Finance tetap bisa kerja dari daftar seperti biasa.
+
+*Isi migrasi (urutan penting):* **`…000003`** — 6 kolom baru di `sp_orders` (4 boolean `NOT NULL DEFAULT false`, `submit_date date` nullable, `email_status text` nullable tanpa CHECK) + backfill `bool_and` + normalisasi 13 SP divergen turun balik ke semua item-nya (supaya `groupBySP` konsisten) · **`…000004`** — RPC **`set_sp_finance_docs(...)`**, satu-satunya penulis sah keenam kolom itu; guard `is_super_admin() OR has_role('finance_controller') OR has_role('finance')`, **SENGAJA tanpa `is_manager_or_above()`** (matrix menaruh manager di **R** untuk modul Finance) · **`…000005`** — **dijalankan PALING TERAKHIR, setelah FE live**: cabut 6 kolom finance dari daftar `SET` `update_sp_item_dual`, **menutup jendela race dua-penulis**. Terverifikasi pasca-eksekusi: fungsi itu kini nol referensi ke `v_rec.inv` dkk, tapi tetap menulis `qty` dan guard `is_sp_item_writer()` tetap utuh.
+
+*Sisi FE:* kartu baru **"Finance & Dokumen"** di tab Overview Detail SP (sibling kartu DC Tujuan), pola inline edit (pensil → toggle/form → Simpan/Batal), gate `canEditFinanceDocs` (`:1049`), freeze kalau status `CANCELLED` · section "Finance & Dokumen" **dan** "SP Information" (yang cuma duplikat readonly) **dicabut total** dari `EditItemModal` · `FinanceModal` (`App.jsx:4684`) memanggil `setSpFinanceDocs()`. Dua penyesuaian menyusul: field **"Notes" dicabut** dari modal itu (atribut per-item, finance tak berhak menulisnya) dan **"Email Status" diubah dari input tanggal jadi dropdown** — memperbaiki bug lama, kolomnya memang enum-ish 3 nilai (⚠️ domainnya **tidak** dikunci CHECK di DB).
+
+**5. TD-180 batch 2 & 3 — RLS multi-company salah scope** (migrasi `20260902000006_td180_sp_btb_dc_master.sql` + `20260902000007_td180_batch3_dc_master_write.sql`, keduanya LIVE, **ditulis retroaktif**). Ditemukan saat testing dengan akun **Elvira Nurhuda** (Finance MSI, aktif juga di SOA lewat `user_roles`, tapi home `profiles.company_id` = MSI): kartu **BTB Numbers** menampilkan *"0 nomor BTB"* padahal datanya ADA, dan kartu **DC Tujuan** menampilkan *"—"* padahal `dc_id`-nya valid. **Root cause:** 4 policy (`sp_btb_read`, `sp_btb_insert`, `sp_btb_update`, `dc_master_read`) masih memakai `company_id = get_user_company_id()` (fungsi TUNGGAL, cuma membaca `profiles.company_id`), bukan varian **JAMAK** `get_user_company_ids()` (membaca semua `user_roles` aktif). Data `sp_btb`/`dc_master` 100% milik SOA sementara home Elvira MSI → selalu `false` → **RLS menyaring habis, gagal senyap (HTTP 200 kosong, bukan error)**. Batch 3 menambal `dc_master_insert`/`dc_master_update` dengan cacat identik — ditemukan sekaligus, **preventif** (belum menimbulkan gejala yang terlihat). Bentuknya **menambah** (`OR (company_id IN (SELECT get_user_company_ids()))`); **syarat role di policy tulis TIDAK diubah**. **NOL perubahan FE dibutuhkan** — kartu-kartunya sudah query data yang benar; begitu policy diperluas, langsung terisi tanpa deploy apa pun. ⛔ **TD-180 TETAP PARTIAL** — sisir ulang snapshot baru: **198 policy** masih varian tunggal di **76 tabel**, `payment_terms_*` tetap OPEN.
+
+**3 bug nyata yang tertutup hari ini:**
+1. **Finance tidak pernah bisa menyimpan status dokumen SP sejak 25 Agustus** — Save selalu gagal server-side, UI tak memberi tahu kenapa.
+2. **Siapa pun yang login bisa hard-delete baris item SP tanpa gate**, dan hapus itu meninggalkan baris hantu yang membuat SP tersebut **tak bisa di-invoice selamanya**.
+3. **User multi-company (spt Elvira) ter-blokir senyap** dari data BTB dan DC master milik company lain tempat dia legitimate aktif.
+
+**Status tes runtime:** ✅ **Fase 1 — smoke test di produksi LOLOS** (dikonfirmasi Den). ⚠️ **Fase 0 — belum ada laporan smoke test eksplisit**; jalur hapus item lewat RPC baru (termasuk kedua guard-nya) **belum terbukti dijalankan di browser**.
+
+**Yang SENGAJA belum dikerjakan (7 item, semuanya keputusan sadar — bukan pekerjaan tertinggal):**
+1. **Paket kedua** — redesain Item/Qty/Pricing/Tanggal jadi inline di tabel Items. Peta lengkap sudah ada dari audit butir 2; tinggal dieksekusi bertahap. (`09_ROADMAP.md` #2d)
+2. **TD-180 di tabel lain** — baru disisir untuk `sp_btb` & `dc_master`. `payment_terms_read` sudah lama tercatat OPEN, belum ditambal.
+3. **Soft-delete `sp_items`** — ditunda ke **M13** (bareng drop kolom mati `exp_date`, `btb_no_deprecated`). Terlalu banyak titik baca (7 FE + ~15 fungsi DB) untuk disisir serentak sebagai "prasyarat urgent".
+4. **`GRANT ALL` ke role `anon`** di 11 tabel bisnis (`app_settings`, `audit_logs`, `prf`, `rate_sheets`, dkk) + RPC `indomarco_dashboard_stats`/`storbit_sp_customers`. **Tertahan RLS aktif di semua tabel itu (bukan lubang terbuka)**, tapi lebih longgar dari seharusnya. Dicatat ke **TD-24** (angka pastinya kini ada di sana), layak jadi item audit terpisah.
+5. **`02_RULES_GOVERNANCE.md` blok `pg_dump`** — dulu menuliskan `--schema-only --no-privileges`, padahal praktik nyata selama ini **data-inclusive + ikut ACL**. ✅ **Sudah dikoreksi hari ini** (lengkap dgn peringatan + langkah verifikasi wajib).
+6. **Konsekuensi lanjutan promosi Finance** — `FinancePage`/`OutstandingPage` kini menampilkan baris berulang per-item dengan nilai identik (karena semua item satu SP dijamin seragam). Merapikannya jadi baris per-SP = task terpisah → **TD-215**.
+7. **Field DC di `ShipmentModal`** — subtext alamatnya masih teks polos, belum dibungkus box seperti kartu DC Tujuan. Konsistensi visual minor → **TD-216**.
+
+**Housekeeping dokumentasi (3 koreksi bookkeeping, diverifikasi ulang doc-keeper):** **TD-201** kolom status masih `OPEN` padahal severity & deskripsinya sudah menyatakan RESOLVED sejak 26 Agu — **kontradiksi internal, diperbaiki** · **TD-20** (drop `profiles.role` + enum `user_role_legacy`) **terbukti sudah selesai** dari snapshot baru: `CREATE TABLE public.profiles` = 27 baris **tanpa** kolom `role`, dan **nol** `CREATE TYPE public.user_role_legacy` (3 sisa hit cuma COMMENT + 2 baris riwayat `schema_migrations`) → status jadi RESOLVED, ⚠️ **kapan persisnya dieksekusi tidak diketahui** · **TD-12** angka baris `App.jsx` basi di TIGA tempat (`08_TECH_DEBT.md` memuat 4.667/5.274/5.421 dalam satu baris, `CLAUDE.md` 5.421, `AGENTS.md` 5.435) — **diseragamkan ke 5.530** per `wc -l`. ⚠️ **Ditemukan menyusul: TD-49 keliru** — klaim "Gated super_admin-only" tidak pernah benar; tombol Hapus itu tak punya gate sama sekali (dikonfirmasi dari diff `91dc380`: hanya SATU pembungkus `canWarehouseOps` yang diganti, tapi DUA pembungkus baru ditambahkan). TD-49 kini **RESOLVED** sekaligus dikoreksi.
+
+---
+
 ## 2026-08-26
 
 ### Environment staging lahir + 3 migrasi Storbit (semua LIVE staging→produksi) + tab Shipment/Dokumen Detail SP
