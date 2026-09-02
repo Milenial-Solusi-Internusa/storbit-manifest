@@ -91,12 +91,13 @@
 | Cream | `#F6EFE3` | (legacy surface; app shell kini `#ffffff` sejak 2.10F) |
 | accentSoft | `#FEF2EC` | Icon container, hover highlight |
 
-- **Font:** heading `Montserrat`, body/UI `Inter` (Google Fonts). PDF: Helvetica built-in (Montserrat upgrade pending).
+- **Font:** heading `Montserrat`, body/UI `Inter`, angka/nomor dokumen `IBM Plex Mono` (Google Fonts, di-load `index.html`). **`Oswald` (600/700) = font KEEMPAT, TAMBAHAN bukan pengganti** — dipakai HANYA di `.kpi-value` (angka 4 KPI hero tile CRM Dashboard). PDF: Helvetica built-in (Montserrat upgrade pending).
 - **Ikon:** **Lucide only**. Tidak ada inline-SVG icon ad-hoc untuk hal yang ada di Lucide.
 - **LARANGAN:**
   - ❌ **No emoji** di UI.
   - ❌ **No dark green** — `#1a3a2a`, `#2d5a3d`, `#0F2A23`, `#173D34`, `#2F6B3F`, `#E7EFE2` semua deprecated. (Teal/hijau-status tertentu mis. `#1F8B4D` WON, `#0F766E` Head boleh.)
   - ❌ `Plus Jakarta Sans` (diganti Inter+Montserrat).
+- **⚠️ PENGECUALIAN PALET YANG DISETUJUI (jangan dibaca sebagai pelanggaran di atas):** 4 tile KPI hero CRM Dashboard (`src/modules/crm/CRMDashboardPage.jsx`, kelas `.kpi`) memakai `#5C6070`, `#EE9A7E`, `#B4E0F2`, `#7FBBDA`, `#5A9CC3` — semuanya **di luar palet resmi**, *approved* dan **ber-scope ke komponen itu saja**. Jangan disalin ke komponen lain, jangan dibalikkan ke palet standar. Detail + alasan implementasi CSS: `06_UI_UX_FLOW.md §1`.
 
 ---
 

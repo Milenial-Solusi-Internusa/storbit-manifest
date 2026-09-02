@@ -23,12 +23,37 @@
 
 **Sidebar:** `linear-gradient(165deg, #144682 0%, #0f3366 100%)`. Active item: bg `rgba(255,255,255,0.13)`, left-border `rgba(255,212,184,0.7)`, icon `#FFB899`. Primary button: `#E85A1E` → hover `#c44d18`.
 
+**⚠️ APPROVED EXCEPTION — KPI hero tile (CRM Dashboard).** 4 tile KPI baris atas `src/modules/crm/CRMDashboardPage.jsx` (komponen `KpiCard`) memakai **5 warna di luar tabel di atas**: `#5C6070` (slate gelap) + `#EE9A7E` (peach) untuk latar gradasi diagonal 135° (hard split 50/50, bukan blend halus), `#B4E0F2`/`#7FBBDA`/`#5A9CC3` untuk blob radial berukuran RELATIF (`width:158.5%` + `aspect-ratio:1/1`, `left:-29.25%`, `top:36%`) — sengaja bukan px, karena lebar tile fluid (±218px @1280 s/d ±386px @1920). Hasil eksplorasi desain di Claude Design, **sudah di-approve Den** — ini **bukan** pelanggaran §4 / "no dark green". **Scope: komponen ini saja** — JANGAN dipakai di komponen lain, dan JANGAN "dibetulkan" balik ke palet standar oleh sesi berikutnya.
+- Implementasi = kelas CSS `.kpi` / `.kpi::before` (scrim gelap pita bawah) / `.kpi::after` (blob) di blok `<style>` inline file itu, **bukan** objek style `D` — karena butuh pseudo-element yang tak bisa diekspresikan lewat inline style React. Teks tile putih.
+- **Card lain di Dashboard TIDAK berubah** (funnel, tabel, chart, kalender tetap kit v3 terang: `cardHead` bar `#F7F8FA` + judul `#16243A`). Hero card = exception di luar kit v3 standar, bukan arah baru untuk semua card.
+
+**⭐ Peta warna STATUS DEAL (CRM v3, 2 Sep 2026) — "Berhasil = Navy", bukan hijau.** Mengikuti pemetaan resmi **§18.3 blueprint CRM v3**: status `WON` pindah dari hijau `#2E7D4F` ke **navy `#144682`**, sekalian menutup larangan *no dark green* (§4). Peta tinted 7 status (`InquiryListPage.STATUS_META`) — `bg` / `text` / `border`:
+
+| Status | bg | text | border |
+|---|---|---|---|
+| Open | `#E4EEF7` | `#1D5A96` | `#BCD0E4` |
+| In Review | `#FBF0DD` | `#916312` | `#E6D4B4` |
+| Quoted | `#EEEAF6` | `#5B4A96` | `#D1CAE3` |
+| Negotiation | `#FDE7DB` | `#B53F0D` | `#EFC5B2` |
+| **Won** | `#E1E9F2` | **`#144682`** | `#B8C8DC` |
+| Lost | `#FBE7E5` | `#B33A2E` | `#EDC4C0` |
+| Cancelled | `#EDEBE7` | `#6B6459` | `#D3D0CB` |
+
+- ⚠️ **Dua hex SENGAJA menyimpang dari mockup demi kontras AA 4.5:1** (teks 11.5px = normal text): In Review `#9C6B12`→`#916312` (4.11→**4.66**) · Negotiation `#C1440E`→`#B53F0D` (4.30→**4.79**). **JANGAN "dikembalikan" ke hex mockup.** Palet LAMA punya 3 kegagalan AA (In Review 3.99, Won 4.30, Cancelled 4.27) — jadi ini perbaikan bersih, bukan sekadar selera.
+- Pil filter **"All"** ikut diperbaiki: solid `#E85A1E` (putih di atasnya cuma **3.55:1**, gagal) → `accentSoft #FEF2EC` + `orange #A45A22` = **4.71:1**, dua token yang **sudah ada** — nol hex baru dikarang.
+- **`CustomerDetailPage.INQ_STATUS_TONE.WON` disinkronkan** ke pasangan navy yang sama supaya status yang sama tak tampil hijau di satu layar & navy di layar lain. ⚠️ **Enam entri lain BELUM disinkronkan** dan kedua peta sengaja belum digabung — lihat **TD-99**.
+- ⚠️ **"Berhasil = Navy" BARU berlaku di SATU layar.** Diverifikasi doc-keeper 2 Sep 2026: **`CRMDashboardPage.jsx:100`** masih `INQ_STAGE_COLOR = { WON: '#1F8B4D', … }` — **sumbu yang SAMA** (`inquiries.status`), warna hijau, dipakai bar funnel. Komentar di kode itu menyatakan penyelarasan ke kit v3 memang **batch tersendiri yang sengaja belum dikerjakan**. Jadi saat ini WON tampil **navy di Inquiry List** tapi **hijau di funnel CRM Dashboard** — divergensi yang **diketahui**, bukan luput. Peta ketiga ini menambah cakupan **TD-99** (yang semula cuma menyebut 2 file).
+- ⚠️ Baris `#1F8B4D` WON di daftar "hijau-status yang boleh" (`02_RULES_GOVERNANCE.md §4`) **belum dicabut** — mencabutnya sekarang akan menandai puluhan pemakaian sah lain (`#1F8B4D` juga dipakai badge Customer/Active/Approved/Selesai di banyak modul) sebagai pelanggaran. Cabut hanya bila peta status deal sudah diselaraskan di **semua** layar.
+
+**Brand mark "Nexus" + "BY MSI" (sidebar `NexusSidebar` + header mobile, 2 Sep 2026):** teks **Nexus `#144682`** + **BY MSI `#E85A1E`**, ditulis **hex LITERAL** — **BUKAN** lewat `var(--ink)`/`var(--faint)`, dan itu keputusan sadar: kedua variabel itu mewarnai teks umum chrome sidebar di **~15 titik lain** (label nav, ikon, judul grup, item disabled, nama user, termasuk `color` dasar `<aside>` yang diwarisi seluruh isinya). ⚠️ **JANGAN "merapikannya" balik jadi variabel** — mengubah definisinya di `index.css` akan menavykan & mengoranyekan 15 titik yang tak dimaksud. `src/index.css` nol perubahan. Kotak placeholder **"N" masih `var(--navy)` `#1B4D8A`** (menunggu file logo asli) sehingga bersebelahan dengan teks `#144682` — konsekuensi yang **sudah diketahui**. Kontras "BY MSI" di atas putih naik 2.23 → **3.55:1**, **masih di bawah AA** untuk 9.5px → **TD-220**.
+
 **Font:**
 | Font | Pakai |
 |------|-------|
 | **Montserrat** | Heading, judul, nama, label penting |
 | **Inter** | Body / UI default |
 | **IBM Plex Mono** | Angka, nomor dokumen, SKU, code, jam, tanggal mono |
+| **Oswald** (600/700) | **Font resmi KEEMPAT — TAMBAHAN, bukan pengganti.** Dipakai HANYA di `.kpi-value` (angka 46px, 4 KPI hero tile CRM Dashboard). Di-load di `index.html` (rantai `&family=` yang sama + `display=swap`). Jangan diterapkan ke elemen lain. |
 | JetBrains Mono | `.font-mono` utility (sebagian) |
 
 **Ikon:** **Lucide React only**. Tidak ada inline-SVG ad-hoc untuk ikon yang tersedia di Lucide. PDF: ikon di-skip / pakai bentuk View (react-pdf tak render Lucide).
@@ -53,11 +78,12 @@
 
 - **Form:** field via primitives per modul (`Field`/`FieldLabel`/`FieldInput`/`FieldSelect`); validasi client-side; state lokal `useState`; reset modal via `key` prop (remount), bukan effect. Tokens inline (`C`/`D`/`S`).
 - **Tabel/list:** header row + body row; zebra opsional; `overflowX:auto` wrapper untuk tabel lebar; mobile min-width class via `@media`. Pagination client-side `PAGE_SIZE` (≤500 row) atau server-side `.range()`.
+- **`ListView` (design kit CRM v3, `src/modules/crm/v3/ListView.jsx`) — komponen BERSAMA, tiap penambahan WAJIB aditif.** Dipakai `PipelineKanbanPage` (`mode="lanes"`) **dan** `InquiryListPage` (`mode="table"`, sejak 2 Sep 2026). Empat kemampuan ditambahkan 2 Sep 2026, semuanya **mati secara default** sehingga pemakaian lama pixel-identik: **`onRowClick`** (mode table dulu merender `<tr>` polos — nol onClick/cursor/hover, sehingga halaman berbaris-klik tak bisa memakainya) · **`loading`** (dulu `rows=[]` saat memuat langsung memicu `EmptyState` → "belum dimuat" tak bisa dibedakan dari "memang kosong"; kini kerangka tabel + `<thead>` tetap dirender dengan 5 skeleton row, nol lompatan layout) · **`savedViews` berwarna** (resolusi 3 tingkat: trio `{bg,text,border}` → TINTED · `color` saja → SOLID warna itu · tak diisi → SOLID navy `#144682`) · **`filterCard`** (opt-in kartu putih di belakang filter bar: `SURFACE` + border `LINE` + `RADIUS.md` + `SP.s4`, nol hex baru). ⚠️ **Dua jebakan yang sudah terbukti — baca sebelum menyentuh file ini:** (a) `PipelineKanbanPage` **MEMAKAI `savedViews`** dan `FilterBar` dirender untuk **kedua** mode, jadi jalur kode itu memang dieksekusi untuk Pipeline — yang menjaganya tak berubah **hanya** fallback `|| NAVY`; **membuat field warna jadi wajib = regresi Pipeline seketika**. (b) Search + baris pil saved-view + slot `filters` semuanya milik `FilterBar` **di dalam** `ListView`, bukan milik halaman pemanggil — perubahan visual di sekitarnya tak bisa dilakukan tanpa menyentuh file bersama ini, karena itu polanya **prop opt-in**, bukan perubahan tanpa syarat. Verifikasi standarnya: `git diff --stat` ke `PipelineKanbanPage.jsx` harus **kosong**.
 - **Modal:** centered overlay `position:fixed inset:0` + backdrop blur; `AdminFormModal` (admin), `ConfirmModal` (`src/components/ConfirmModal.jsx` — reusable, variant danger/warning/info, Escape close) menggantikan semua `window.confirm`.
 - **Toast:** `showToast?.(message, type)` — `type` = `'success'`(default)/`'error'`; auto-dismiss ~3s; posisi bottom-right. Shell-level toast di-pass via prop agar survive navigasi state-swap.
 - **Dropdown/popover:** state `openMenu` tunggal (satu popover sekaligus) + overlay `fixed inset-0` (click-outside, tanpa document listener) + menu `absolute zIndex 150` dalam wrapper `position:relative`. Lihat pola PipelineKanban toolbar.
 - **Card:** `background:#fff`, `border:1px solid <line>`, `borderRadius:12-14`, shadow halus; `cardHead` bg navy + ikon putih.
-- **Badge:** pill `borderRadius:99`, bg-soft + fg per status; per modul punya map (STAGE_BADGE, TYPE_META, dll).
+- **Badge:** pill `borderRadius:99`, bg-soft + fg per status; per modul punya map (STAGE_BADGE, TYPE_META, dll). **⭐ [2 Sep 2026, CRM v3 — arah BARU untuk badge STATUS DEAL, bukan untuk semua badge]** Badge status inquiry (`InquiryListPage`) pindah dari pill ke **tinted rounded-square**: `borderRadius: RADIUS.sm` (6px, token `crm/v3/tokens.js`) + trio `bg`/`text`/`border` per status. Border tiap badge = **20% warna teks dicampur ke `bg`** — rasio itu bukan karangan, ia rata-rata pola yang sudah dipakai palet lokal file itu (.173–.243) dan sejalan dengan `TONE` di `v3/tokens.js`. ⚠️ **Cakupannya SEMPIT dan disengaja:** `StageBadge` (sumbu lifecycle akun) sempat tetap pill karena bukan sumbu deal — lalu kolomnya dihapus seluruhnya hari itu juga; badge modul lain **tidak ikut berubah**. Jangan digeneralisasi jadi "semua badge sekarang rounded-square" tanpa keputusan terpisah.
 - **Detail page pattern:** breadcrumb + header card (avatar/initials) + tab bar underline (orange aktif) + state-swap (bukan route) untuk list↔detail (mirror AssetDetailPage).
 
 ---
@@ -69,7 +95,7 @@
 - ❌ **No `Plus Jakarta Sans`** (diganti Inter + Montserrat).
 - ❌ Jangan redesign UI kecuali task memintanya. Jangan ubah komponen tak terkait.
 - ❌ Jangan tambah npm package tanpa approval.
-- ⚠️ Inline-style untuk warna brand boleh (banyak modul pakai token `C`/`D`/`S` inline); konsistenkan ke palet — jangan warna acak di luar palet.
+- ⚠️ Inline-style untuk warna brand boleh (banyak modul pakai token `C`/`D`/`S` inline); konsistenkan ke palet — jangan warna acak di luar palet. **Pengecualian tercatat & disetujui:** 5 warna KPI hero tile CRM Dashboard (§1) — di luar palet, tapi *approved* dan ber-scope ke komponen itu saja.
 - Wrap section page besar di `ErrorBoundary`; list view baru pakai pagination; search baru di-debounce (min 300ms).
 
 ---
