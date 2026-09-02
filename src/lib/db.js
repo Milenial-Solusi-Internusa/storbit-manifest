@@ -643,10 +643,21 @@ export async function completePicking(pickingListId) {
 
 // FASE 1: status headline SP (sp_orders 12-tahap) + flag pernah picking dibatalkan,
 // untuk badge Detail SP. Kunci komposit (customer_id, sp_no). Read-only.
+//
+// `dc_id` + embed `dc_master(nama, alamat)` ikut di sini SENGAJA, bukan lewat
+// fungsi terpisah: DC adalah atribut HEADER sp_orders, sekelas status/
+// expired_date yang sudah diambil fungsi ini, jadi embed lewat FK
+// sp_orders_dc_id_fkey nol round-trip tambahan — dan satu fetch memasok
+// kartu "DC Tujuan" Detail SP + tampilan DC read-only di EditItemModal
+// sekaligus. Pola resolusi DC-nya sama dengan getPrintIdentity di atas.
+// ⚠️ dc_master_read = `is_super_admin() OR company_id = get_user_company_id()`
+// (varian TUNGGAL). User multi-entitas yang home-nya bukan SOA bisa dapat
+// embed null walau SP-nya terbaca — semua konsumen WAJIB degrade ke '—',
+// jangan asumsikan selalu terisi. Ini gejala TD-180, bukan bug fungsi ini.
 export async function getSpOrderStatus(customerId, spNo) {
   const { data, error } = await supabase
     .from('sp_orders')
-    .select('id, status, had_cancelled_picking, expired_date')
+    .select('id, status, had_cancelled_picking, expired_date, dc_id, dc_master(nama, alamat)')
     .eq('customer_id', customerId)
     .eq('sp_no', spNo)
     .is('deleted_at', null)

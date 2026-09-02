@@ -320,14 +320,18 @@ function ModalGrid({ cols, children }) {
   );
 }
 
-function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, onSave }) {
+function EditItemModal({ item, spExpiredDate, spDc, spDate, spNo, customer, onClose, onSave }) {
   // Katalog produk (dropdown-only) di-pin ke Storbit/SOA.
   const { products } = useProducts({ companyId: SOA_COMPANY_ID });
   const [draft, setDraft] = useState({
     productId:    item.productId   ?? null,
     productName: item.productName || '',
     sku:          item.sku         || '',
-    dc:           item.dc          || '',
+    // `dc` SENGAJA TIDAK ADA di draft. DC tujuan adalah atribut HEADER
+    // (sp_orders.dc_id → dc_master), ditampilkan read-only dari prop `spDc`.
+    // Dulu di sini ada teks bebas yang menulis sp_items.dc — kolom LEGACY yang
+    // tak pernah dibaca Surat Jalan, sehingga mengubahnya terasa seperti
+    // memperbaiki alamat kirim padahal tidak. Lihat catatan di handleSave.
     qty:          item.qty         ?? 0,
     shippedQty:   item.shippedQty  ?? 0,
     expDate:      item.expDate     || '',
@@ -385,6 +389,21 @@ function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, o
     return                         { ...TAG_NEUTRAL, label: 'Open'      };
   }
 
+  // `dc` masih ikut terkirim ke update_sp_item_dual lewat spread `...item` —
+  // ECHO-BACK yang DISENGAJA, bukan kelalaian. Alasannya berlapis:
+  //   1. spToDb() (db.js) SELALU memancarkan key `dc` dan dipakai bersama jalur
+  //      create (bulkInsertSpItems) yang memang wajib menulis kolom itu.
+  //   2. sp_items.dc = NOT NULL DEFAULT ''. Menghapus key-nya dari payload
+  //      membuat jsonb_populate_record mengisi NULL → not_null_violation →
+  //      SELURUH Save di modal ini gagal. Mengirim '' juga bukan jalan keluar:
+  //      itu MENGHAPUS DC legacy yang masih memasok kolom/filter DC SP Manifest,
+  //      grouping byDC, Dashboard, dan peta region Indomarco Dashboard.
+  // Karena `dc` sudah dicabut dari draft, nilai yang dikirim SELALU sama persis
+  // dengan yang ada di DB → RPC menulis balik nilai identik (no-op). Efek nyata:
+  // modal ini TIDAK BISA LAGI mengubah sp_items.dc.
+  // ⚠️ JANGAN "membersihkan" ini dengan menghapus `dc` dari payload — itu
+  // memecahkan Save. Pencabutan sejati harus di RPC (preseden expired_date,
+  // migrasi 20260825000001) dan itu perubahan DB, task terpisah.
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -456,8 +475,17 @@ function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, o
               />
             </ModalField>
             <ModalField label="SKU"><ModalInp value={draft.sku} readOnly mono/></ModalField>
-            <ModalField label="DC" req>
-              <input value={draft.dc} onChange={e => set('dc', e.target.value)} style={{ height: 38, padding: '0 11px', border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface, fontSize: 13, color: C.ink, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }}/>
+            {/* DC Tujuan — READ-ONLY, sumbernya sp_orders.dc_id → dc_master
+                (prop `spDc`), BUKAN sp_items.dc yang legacy. Tanda `req`
+                dicabut: ini bukan input lagi. Pola terkunci = Unit Price di
+                bawah (ModalInp readOnly + helper text). DC hanya bisa berubah
+                lewat header SP; hari ini belum ada jalur UI untuk itu, jadi
+                sengaja TANPA tombol edit — jangan pasang affordance palsu. */}
+            <ModalField label="DC Tujuan">
+              <ModalInp value={spDc?.nama || '—'} readOnly/>
+              <div style={{ fontSize: 11, color: C.inkFaint }}>
+                {spDc?.alamat || 'Terkunci — ditentukan di header SP'}
+              </div>
             </ModalField>
           </ModalGrid>
 
@@ -1335,6 +1363,17 @@ export default function SalesOrderDetailPage({
   // item pernah berbeda). Nama `firstDeadline` DIPERTAHANKAN: dipakai di
   // beberapa titik lain di file ini.
   const spExpiredDate = spOrder?.expired_date || items.find(i => i.expired_date)?.expired_date || null;
+
+  // ── DC tujuan (level HEADER) ───────────────────────────────────────────
+  // Sumber kebenaran: sp_orders.dc_id → dc_master, ikut terbawa embed di
+  // getSpOrderStatus. SENGAJA TANPA fallback ke sp_items.dc: kolom legacy itu
+  // teks bebas yang bisa menyimpang dari header (kasus nyata pernah terjadi),
+  // jadi menjadikannya cadangan justru mengembalikan angka yang salah dengan
+  // tampilan meyakinkan. Kalau embed null (SP lama tanpa dc_id, atau RLS
+  // dc_master menolak — lihat catatan di db.js), konsumen tampilkan '—'.
+  // Satu nilai ini dipakai bersama kartu "DC Tujuan" + EditItemModal: satu
+  // fetch, dua konsumen.
+  const spDc = spOrder?.dc_master || null;
   const firstDeadline = spExpiredDate;
   const days = daysUntil(firstDeadline);
   const deadlineSub = days == null ? '—' : days < 0 ? `${Math.abs(days)} hari lalu · overdue` : days === 0 ? 'Hari ini · urgent' : `${days} hari lagi · on track`;
@@ -1669,6 +1708,24 @@ export default function SalesOrderDetailPage({
                 </div>
                 <div style={{ color: C.inkSoft }}>Finance Progress</div>
                 <div>{finOverallPct}%</div>
+              </div>
+            </div>
+
+            {/* DC Tujuan — kartu baru, struktur menyalin "SP Date & Expired" di
+                atas (grid label/nilai 2 kolom). Sumbernya sp_orders.dc_id →
+                dc_master, satu-satunya sumber yang juga dipakai Surat Jalan &
+                Picking List. Sebelum ini, DC hanya terlihat lewat sp_items.dc
+                (legacy, teks bebas) di subtitle baris Items — dua nilai yang
+                bisa menyimpang tanpa penanda apa pun. READ-ONLY tanpa tombol
+                edit: dc_id hari ini write-once (cuma create_sp_order_dual yang
+                menulisnya), jadi jangan pasang affordance yang tak ada jalurnya. */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3 }}>
+              <div style={{ ...kickerStyle }}>DC Tujuan</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s1}px ${SP.s3}px`, fontSize: 13, marginTop: SP.s1, alignContent: 'start' }}>
+                <div style={{ color: C.inkSoft }}>Nama</div>
+                <div>{spDc?.nama || '—'}</div>
+                <div style={{ color: C.inkSoft }}>Alamat</div>
+                <div style={{ lineHeight: 1.45 }}>{spDc?.alamat || '—'}</div>
               </div>
             </div>
 
@@ -2418,6 +2475,7 @@ export default function SalesOrderDetailPage({
         <EditItemModal
           item={editingItem}
           spExpiredDate={spExpiredDate}
+          spDc={spDc}
           spDate={spDate}
           spNo={spNo}
           customer={customer}

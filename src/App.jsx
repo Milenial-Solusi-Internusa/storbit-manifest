@@ -15,7 +15,7 @@ import {
 import { useAuth } from './contexts/useAuth';
 import useMyApproverScope, { approverKey, HRGA_PENDING_STATUSES } from './hooks/useMyApproverScope';
 import { supabase } from './lib/supabase';
-import { generatePickingFromSp, generateDeliveryFromPicking, listSpOrderStatuses } from './lib/db';
+import { generatePickingFromSp, generateDeliveryFromPicking, listSpOrderStatuses, getSpOrderStatus } from './lib/db';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
@@ -4550,9 +4550,32 @@ function ShipmentModal({ row, onClose, onSave }) {
   const [data, setData] = useState({
     shippedQty: row.shippedQty,
     shippingDate: row.shippingDate || '',
-    dc: row.dc || '',
+    // `dc` SENGAJA TIDAK ADA di state. DC tujuan = atribut HEADER
+    // (sp_orders.dc_id → dc_master), ditampilkan read-only dari `spDc` di bawah.
+    // Dulu di sini ada teks bebas yang menulis sp_items.dc — kolom LEGACY yang
+    // tak pernah dibaca Surat Jalan. Cermin perubahan yang sama di EditItemModal
+    // (SalesOrderDetailPage.jsx).
     notes: row.notes || ''
   });
+  // DC tujuan dari header SP. Fetch sendiri karena modal ini hidup di App.jsx
+  // dan tak punya akses ke state Detail SP. setState HANYA di dalam .then()
+  // (aturan lint set-state-in-effect project-wide).
+  const [spDc, setSpDc] = useState(null);
+  useEffect(() => {
+    if (!row.customerId || !row.spNo) return undefined;
+    let cancelled = false;
+    getSpOrderStatus(row.customerId, row.spNo).then(({ data: sp }) => {
+      if (!cancelled) setSpDc(sp?.dc_master || null);
+    });
+    return () => { cancelled = true; };
+  }, [row.customerId, row.spNo]);
+  // `dc` tetap terkirim ke update_sp_item_dual lewat spread `...row` —
+  // ECHO-BACK yang DISENGAJA. spToDb() selalu memancarkan key `dc` dan
+  // sp_items.dc NOT NULL, jadi menghapusnya dari payload = not_null_violation,
+  // dan mengirim '' = menghapus DC legacy yang masih memasok kolom/filter DC
+  // SP Manifest + Dashboard. Karena `dc` sudah dicabut dari state, nilai yang
+  // dikirim selalu identik dengan isi DB (no-op). Penjelasan lengkap ada di
+  // handleSave EditItemModal (SalesOrderDetailPage.jsx).
   const submit = () => onSave({ ...row, ...data });
   const newOutstanding = row.qty - Number(data.shippedQty || 0);
 
@@ -4576,7 +4599,15 @@ function ShipmentModal({ row, onClose, onSave }) {
 
         <Input label="Shipped QTY" type="number" value={data.shippedQty} onChange={v=>setData({...data, shippedQty: Number(v)})}/>
         <Input label="Shipping Date" type="date" value={data.shippingDate} onChange={v=>setData({...data, shippingDate: v})}/>
-        <Input label="DC" value={data.dc} onChange={v=>setData({...data, dc: v})}/>
+        {/* DC Tujuan — READ-ONLY dari sp_orders.dc_id → dc_master, BUKAN
+            sp_items.dc. Tanpa onChange: tak ada jalur ubah DC dari modal ini.
+            Pakai <Input disabled> (pola terkunci yang sudah ada di file ini). */}
+        <div>
+          <Input label="DC Tujuan" value={spDc?.nama || '—'} disabled/>
+          <div className="text-[11px] mt-1" style={{ color: PASTEL.inkMute }}>
+            {spDc?.alamat || 'Terkunci — ditentukan di header SP'}
+          </div>
+        </div>
         <div>
           <label className="block text-[10px] uppercase tracking-[0.15em] font-semibold mb-1.5" style={{ color: PASTEL.inkMute }}>Notes</label>
           <textarea value={data.notes} onChange={e=>setData({...data, notes: e.target.value})} rows={2}

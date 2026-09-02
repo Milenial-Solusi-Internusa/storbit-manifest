@@ -15,7 +15,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { PPN_RATE } from '../../lib/taxConstants';
 import {
   ChevronRight, ChevronLeft, Plus, Trash2,
-  Receipt, Check, Save, Package,
+  Receipt, Check, Save, Package, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { bulkInsertSpItems, createSpOrderDual, setSpOrderPriceCategory } from '../../lib/db';
@@ -219,6 +219,13 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
   // Dropdown-only: item valid hanya bila produk dipilih dari master (productId terisi).
   const itemsOk  = items.length > 0 && items.every(i => i.productId && Number(i.qty) >= 1 && Number(i.unitPrice) >= 0);
   const isValid  = headerOk && itemsOk;
+
+  // Tenggat sudah lewat = PERINGATAN, bukan syarat. SENGAJA di luar headerOk/
+  // isValid: SP historis (backfill manual dari SP fisik lama) memang lahir
+  // dengan tenggat di masa lalu, dan itu sah. Lihat komentar di field Expired
+  // Date di bawah. Perbandingan string aman: keduanya 'YYYY-MM-DD', urutan
+  // leksikografisnya = urutan kronologis.
+  const expiredIsPast = !!expiredDate && expiredDate < getTodayWIB();
 
   // Submit helper
   const doInsert = useCallback(async () => {
@@ -460,7 +467,16 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
                   })}
                 </Field>
                 <Field label="Expired Date" req>
-                  {inp({ type: 'date', value: expiredDate, min: getTodayWIB(), onChange: e => setExpiredDate(e.target.value) })}
+                  {/* TANPA atribut `min` — DISENGAJA. Tenggat harus bisa diisi
+                      MUNDUR ke masa lalu untuk SP historis / audit pinalti;
+                      sejalan dgn input tenggat di SalesOrderDetailPage yang
+                      memang sudah tanpa `min` atas alasan yang sama. `min` di
+                      sini fosil dari saat field ini masih bernama "Deadline"
+                      (SLA masa depan) — bukan aturan bisnis, dan lagipula bocor
+                      (atribut itu cuma menandai rangeUnderflow, tidak menahan
+                      nilai yang diketik). Penggantinya: banner peringatan di
+                      bawah — memberi tahu tanpa memblokir. JANGAN dikembalikan. */}
+                  {inp({ type: 'date', value: expiredDate, onChange: e => setExpiredDate(e.target.value) })}
                 </Field>
                 <Field label="Tipe SP">
                   {sel({
@@ -475,6 +491,27 @@ export default function InputSPPage({ onBack, customers = [], showToast }) {
                   })}
                 </Field>
               </div>
+
+              {/* Peringatan tenggat lewat — PENGGANTI atribut `min` yang dicabut
+                  dari field Expired Date di atas. Sengaja informatif, bukan
+                  gerbang: form tetap bisa disubmit (headerOk tak menyentuh ini).
+                  "Lewat Tenggat Kirim" = label resmi kategori dashboard
+                  (spStatusConstants.js), supaya istilahnya sama dgn yang nanti
+                  user lihat di Dashboard Storbit. */}
+              {expiredIsPast && (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 9,
+                  padding: '11px 13px', marginBottom: 14,
+                  borderRadius: 10, border: `1px solid ${C.warnBd}`, background: C.warnBg,
+                  fontSize: 12.5, lineHeight: 1.45, color: C.warn,
+                }}>
+                  <AlertTriangle size={15} strokeWidth={2.5} style={{ flexShrink: 0, marginTop: 1 }}/>
+                  <span>
+                    <b>Tenggat sudah lewat</b> — SP ini akan langsung masuk kategori
+                    “Lewat Tenggat Kirim”. Lanjutkan bila ini SP historis.
+                  </span>
+                </div>
+              )}
 
               {/* Row 3: Notes full-width */}
               <Field label="Notes">
