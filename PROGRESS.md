@@ -100,6 +100,36 @@
 
 ---
 
+## 2026-08-31
+
+> ⚠️ **Entri ini ditulis SUSULAN pada 2 Sep 2026.** Sesi 31 Agu 2026 sempat **nol jejak dokumentasi** — ditemukan saat audit doc-keeper (grep `2026-08-31` / `20260831` / `delivery_destination` di `PROGRESS.md`, `CLAUDE.md`, dan seluruh `docs/Governance/` = **nol hit**), padahal ada 3 commit + **2 migrasi yang sudah LIVE di produksi**. Isi di bawah direkonstruksi dari `git show` ketiga commit, bukan dari ingatan. **Tanggal entri sengaja 31 Agu, bukan tanggal penulisan** — supaya kronologinya tetap akurat.
+
+**1. Format cetak baru Surat Jalan & Picking List — mengikuti Claude Design.** Tampilan dua dokumen gudang diganti mengikuti `Storbit Surat Jalan.dc.html` + `Storbit Picking List.dc.html`, satu keluarga dengan `Storbit Invoice.dc.html` yang sudah dipakai `InvoicePDF.jsx` (ungu `#5b3fa0` / krem `#f6f4f1` / Lora + Cormorant — font sudah ter-bundle, **nol aset baru**). **Logika bisnis nol perubahan**; tetap `@react-pdf/renderer`.
+
+- **Dua file baru dipisah karena lint, bukan selera:** `printTokens.js` (token/style/util) + `printKit.jsx` (komponen). `react-refresh/only-export-components` melarang satu file mengekspor komponen DAN konstanta sekaligus. Menghapus duplikasi palet, `fmtDate`, dan style header/tabel/footer yang selama ini kembar di dua PDF.
+- Ukuran halaman **A4 → LETTER** (mengikuti `doc-page size="letter"` di desain). Semua angka desain dilewatkan `px()` (rasio 96dpi→pt = 0.75) supaya bisa diadu langsung dengan file desainnya.
+- Ornamen 4 sudut: `clip-path` desain digambar ulang sebagai SVG `Polygon` (react-pdf tak mengenal `clip-path`), `fixed` agar ikut di halaman lanjutan.
+- **`getPrintIdentity()` baru di `db.js`** — entitas dari `companies` by `company_id` BARIS-nya (bukan hardcode SOA; pola `getInvoicePdfData`) + nama DC lewat `sp_order_id` → `sp_orders.dc_id` → `dc_master.nama`. Dipakai dua loader. Header entitas berhenti hardcode "Milenial Solusi Internusa Group · SOA"; judul kini tetap "Storbit Indonesia" + `companies.legal_name`. Blok Penerima memakai **nama DC**, bukan alamat customer.
+- **Keputusan yang perlu diketahui:** (a) tanda tangan (Picker/Checker/Pengirim/Sopir/Penerima) **SEMUA dikosongkan** — `picking_lists.assigned_to` tak pernah ditulis siapa pun (nol INSERT/UPDATE di FE maupun RPC), jadi tak ada sumber nama yang bisa dipercaya; pre-fill nama sopir yang lama ikut dilepas (sudah tercetak di blok Armada, dan mengisinya membuat garis kotak Sopir tak sejajar). (b) Kotak Catatan tampil sebagai area bergaris + teks bantu — kolom `notes` di kedua tabel memang **kolom mati** (nol penulis), dan task itu sengaja tidak menambah UI pengisinya. (c) **Tabel Material Packing DIPERTAHANKAN** di Picking List walau tak ada di desain: satu-satunya permukaan cetak bahan kemas, dan ia memotong `stock_ledger` lewat `add_picking_material`. Aturan tampil/sembunyi tak diubah. (d) Nama gudang tak lagi tampil di Picking List — blok "Gudang" di desain berisi identitas entitas, bukan gudang fisik.
+- **Dua jebakan react-pdf yang ditambal (bukan preferensi):** `rgba()` **DIABAIKAN** pada `border*Color` dan digambar MERAH — hanya `color`/`backgroundColor` yang menerimanya; garis kini dihitung solid lewat `inkLine()` (`#201f1d` dicampur ke latar `#f6f4f1` pada alpha yang sama seperti desain). Hyphenation default memenggal nama produk (`"(SAY-BREAD)"`) → dimatikan lewat `registerHyphenationCallback` identitas.
+- Verifikasi saat itu: `npm run build` clean · `npm run lint` 170 problems (148 errors, 22 warnings) = net-zero. PDF kedua dokumen di-render & dibandingkan visual ke desain, termasuk kasus picking tanpa material untuk memastikan section-nya benar-benar hilang.
+
+**2. Alamat tujuan Surat Jalan pindah ke `dc_master.alamat` — 2 migrasi, SUDAH LIVE.** `delivery_notes.destination_address` selama ini di-seed dari `accounts.address` — **alamat kantor pusat customer, bukan tujuan kiriman**. Untuk pengiriman ke DC yang benar adalah `dc_master.alamat`, ditempuh lewat `sp_order_id` → `sp_orders.dc_id`.
+
+- **Audit produksi 31 Agu 2026 (85 Surat Jalan) sebelum perubahan:** **67 (79%) `destination_address` NULL** — `accounts.address` memang mayoritas kosong, jadi masalahnya bukan sekadar "alamat salah" tapi **Alamat Tujuan praktis tak pernah tercetak**; 15 berisi alamat HQ; 3 pernah diedit manual; **0 berisi alamat DC**. 85/85 punya `sp_order_id` (jalur join aman), 46/47 DC sudah punya alamat.
+- **`20260831000001_delivery_destination_from_dc.sql`** — `CREATE OR REPLACE generate_delivery_from_picking`. `accounts` tinggal dipakai untuk nama; alamat dari `dc_master` lewat `sp_orders`, dibaca **SETELAH** `v_sp_order_id` dipastikan terisi karena `dc_id` cuma hidup di `sp_orders`. ⚠️ **DC tanpa alamat dibiarkan NULL — sengaja TIDAK jatuh balik ke `accounts.address`**, itu justru bug yang sedang dihapus.
+- **`20260831000002_backfill_delivery_destination_active.sql`** — backfill **5 Surat Jalan aktif** (`in_transit`) yang alamatnya NULL atau persis sama dengan `accounts.address`. Dry-run `SELECT` dipisah dari `UPDATE` supaya bisa direview dulu. **SENGAJA tidak menyentuh:** 1 draft yang alamatnya pernah diedit tangan (bisa jadi sudah benar, jangan ditimpa mesin) dan **79 `delivered`** (kertasnya sudah dicetak dan barang sudah jalan; menulis ulang membuat DB tak lagi cocok dengan dokumen yang beredar).
+- **FE (`DeliveryNoteDetailPage.jsx`):** textarea Alamat Tujuan **dihapus**; kolomnya keluar dari patch `updateDeliveryArmada` dan dari state form. Nilainya kini dibaca langsung dari `detail.destination_address`. Sebelumnya field ini bebas diketik di status `draft` MAUPUN `in_transit`. Ditampilkan read-only di KEDUA cabang; cabang editable dapat empty-state *"Belum ada alamat DC — lengkapi di Master DC."*, karena hanya di sanalah ajakan memperbaiki masih relevan.
+- Nilainya tetap **SNAPSHOT** saat surat jalan dibuat (bukan lookup hidup) — konsisten dgn `customer_name`/`product_name` di skema ini dan menjaga akurasi historis. Detail RPC: `03_DATA_MODEL.md` §RPC `generate_delivery_from_picking`.
+- **Di luar scope, sengaja belum dikerjakan:** pengetatan GRANT/RLS `delivery_notes` — menghapus textarea menutup UI, tapi kolom ini **masih bisa ditulis langsung lewat PostgREST** (kerabat TD-176).
+- Verifikasi saat itu: `npm run build` clean · `npm run lint` net-zero. Tiga kondisi tampilan (`in_transit` beralamat, `in_transit` kosong, `delivered`) dicek dengan me-mount komponen aslinya di preview sementara.
+
+**3. Refresh `schema_snapshot.sql` dari produksi.** Merekam kedua migrasi di atas. Ini refresh yang **pertama kali membawa ACL** (`GRANT`/`REVOKE`) masuk ke snapshot — fakta yang baru disadari 2 Sep 2026 dan memicu koreksi perintah `pg_dump` di `02_RULES_GOVERNANCE.md`.
+
+⚠️ **Status tes runtime:** kedua migrasi **sudah dijalankan manual & diverifikasi di produksi** (dinyatakan di commit message-nya). Verifikasi FE bersifat visual/preview, **bukan** smoke test end-to-end dengan login peran nyata.
+
+---
+
 ## 2026-08-26
 
 ### Environment staging lahir + 3 migrasi Storbit (semua LIVE staging→produksi) + tab Shipment/Dokumen Detail SP
