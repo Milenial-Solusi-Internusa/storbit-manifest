@@ -634,8 +634,11 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   }, [isEdit, duplicateFrom?.id]);
 
   // ── PRF mode — prefill a NEW (create) quotation from an answered PRF ─────
-  // Identitas (prf_id + inquiry_id) + currency/valid_until + SATU baris item
-  // (harga jual PRF sbg unit_price, Σ prf_cost_items sbg cost_price). Field
+  // Identitas (prf_id + inquiry_id) + currency/valid_until + item. Item punya
+  // DUA bentuk (lihat cabang di bawah): N baris per cost item untuk PRF modul
+  // Penawaran Vendor, atau SATU baris agregat untuk PRF jalur lama yang sudah
+  // punya suggested_rate (harga jual PRF sbg unit_price, Σ cost item sbg
+  // cost_price) — bentuk kedua ini yang berlaku sebelum batch ini. Field
   // service_type/route/vat diambil dari INQUIRY (pola handleInquiryChange),
   // BUKAN dari PRF — sumbu service_type beda (TD-108); gw/dimension/cw/cbm/
   // container dibiarkan kosong (mode-dependent, TD-107). prf.pricing_notes
@@ -653,7 +656,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       if (p.inquiry_id) {
         const { data } = await supabase
           .from('inquiries')
-          .select('id, inquiry_no, service_type, route, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
+          .select('id, inquiry_no, service_type, route, pickup_address, delivery_address, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
           .eq('id', p.inquiry_id)
           .maybeSingle();
         inq = data || null;
@@ -675,24 +678,81 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         service_type:  inq?.service_type || h.service_type,
         route:         inq?.route || h.route,
         vat_rate:      vatDefaultFor(inq?.service_type || h.service_type),
+        // Alamat: PRF lebih diprioritaskan daripada inquiry karena hanya versi
+        // PRF yang divalidasi per incoterm (PRFFormPage.validate); PRF mengisinya
+        // dari inquiry secara fill-empty-only, jadi koreksi manual di PRF memang
+        // disengaja dan tak boleh ditimpa balik oleh nilai inquiry.
+        // inland_* SENGAJA tidak dipakai — itu field cabang moda Inland, bukan
+        // alamat dokumen.
+        pickup_address:   p.pickup_address   || inq?.pickup_address   || '',
+        delivery_address: p.delivery_address || inq?.delivery_address || '',
       }));
-      // Satu baris item: teks generik menyebut layanan (netral, TANPA pricing_notes).
-      const svcLabel = SERVICE_TYPES_FALLBACK.find(s => s.value === inq?.service_type)?.label || 'Freight Forwarding';
-      const row = {
-        ...freshRow(),
-        description: `Jasa ${svcLabel}`,
-        qty:         1,
-        currency:    p.rate_currency || 'IDR',
-        // Jalur PRF baru (modul Penawaran Vendor): suggested_rate NULL — harga
-        // jual belum ditentukan procurement, sales mengisi sendiri. Dibiarkan
-        // '' (bukan 0) supaya field tampil KOSONG, bukan angka 0 yang terbaca
-        // sebagai harga jual valid di sebelah cost_price yang sudah terisi
-        // nyata. Jalur PRF lama (suggested_rate terisi) tidak berubah.
-        unit_price:  p.suggested_rate != null ? Number(p.suggested_rate) : '',
-        cost_price:  Number(p.cost_total) || 0,
-      };
-      row.total = calcRowTotal(row);
-      setSections([{ id: crypto.randomUUID(), name: 'CHARGES', rows: [row] }]);
+
+      // ── Item: DUA cabang, dan urutannya yang menentukan ──────────────────
+      // Cabang dipilih dari `has_suggested_rate`, BUKAN dari "cost_items kosong".
+      // Sebabnya konkret: PRF jalur lama terbukti bisa punya cost item juga
+      // (PRF/MSI/2026/VII/001 & /005 di produksi), sehingga mencabangkan di
+      // cost_items akan menyeret mereka ke jalur N-baris dan MEMBUANG
+      // suggested_rate mereka tanpa suara. `?? ` di bawah menjaga pemanggil lama
+      // yang belum mengirim flag ini tetap jatuh ke perilaku benar.
+      const hasSuggested = p.has_suggested_rate
+        ?? (p.suggested_rate != null && Number(p.suggested_rate) > 0);
+      const costItems = Array.isArray(p.cost_items) ? p.cost_items : [];
+
+      if (!hasSuggested && costItems.length) {
+        // (A) N baris — satu per cost item PRF, dikelompokkan per item_group.
+        // Kurs diambil dari tabel kurs header PRF (p.exchange_rates), BUKAN
+        // prf_cost_items.exchange_rate per baris, supaya Σ cost_price N baris
+        // sama dengan costTotalIdr yang dipakai gerbang di PRFDetailPage.
+        // TANPA pembulatan saat ingest: cost_price numeric(15,2), dan pembulatan
+        // memang sudah terjadi belakangan di totalCost (per baris).
+        const rates = (p.exchange_rates && typeof p.exchange_rates === 'object') ? p.exchange_rates : {};
+        const rateOf = (c) => ((c || 'IDR') === 'IDR' ? 1 : (Number(rates[c]) || 1));
+        const order = [];
+        const byGroup = new Map();
+        costItems.forEach((ci) => {
+          // item_group PRF ('Origin Charges') → nama section quotation
+          // ('ORIGIN CHARGES'); kosong/null → 'CHARGES'.
+          const key = String(ci.item_group || '').trim().toUpperCase() || 'CHARGES';
+          if (!byGroup.has(key)) { byGroup.set(key, []); order.push(key); }
+          const r = {
+            ...freshRow(),
+            description: ci.component || '',
+            qty:         1,   // cost item PRF adalah NILAI TOTAL, bukan harga satuan
+            currency:    'IDR',
+            exchange_rate: 1,
+            // Harga jual dikosongkan di SETIAP baris — tak ada markup otomatis.
+            // suggested_rate tak pernah menyentuh cabang ini (lihat guard di atas),
+            // jadi tak ada angka jual yang bisa disebar per komponen.
+            unit_price:  '',
+            cost_price:  Number(ci.amount) * rateOf(ci.currency),
+          };
+          r.total = calcRowTotal(r);
+          byGroup.get(key).push(r);
+        });
+        setSections(order.map((name) => ({ id: crypto.randomUUID(), name, rows: byGroup.get(name) })));
+      } else {
+        // (B) SATU baris agregat — perilaku sebelum batch ini, tidak diubah.
+        // Dipakai untuk PRF jalur lama (suggested_rate terisi) DAN sebagai
+        // fallback saat tak ada cost_items sama sekali.
+        // Teks generik menyebut layanan (netral, TANPA pricing_notes).
+        const svcLabel = SERVICE_TYPES_FALLBACK.find(s => s.value === inq?.service_type)?.label || 'Freight Forwarding';
+        const row = {
+          ...freshRow(),
+          description: `Jasa ${svcLabel}`,
+          qty:         1,
+          currency:    p.rate_currency || 'IDR',
+          // Jalur PRF baru (modul Penawaran Vendor): suggested_rate NULL — harga
+          // jual belum ditentukan procurement, sales mengisi sendiri. Dibiarkan
+          // '' (bukan 0) supaya field tampil KOSONG, bukan angka 0 yang terbaca
+          // sebagai harga jual valid di sebelah cost_price yang sudah terisi
+          // nyata. Jalur PRF lama (suggested_rate terisi) tidak berubah.
+          unit_price:  p.suggested_rate != null ? Number(p.suggested_rate) : '',
+          cost_price:  Number(p.cost_total) || 0,
+        };
+        row.total = calcRowTotal(row);
+        setSections([{ id: crypto.randomUUID(), name: 'CHARGES', rows: [row] }]);
+      }
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps

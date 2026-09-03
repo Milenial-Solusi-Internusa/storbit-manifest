@@ -669,6 +669,25 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // di-coerce num() jadi 0: 0 akan terbaca sebagai "harga jual Rp 0" (keliru),
   // bukan "belum ditentukan, sales mengisi sendiri". QuotationFormPage
   // (prefillFromPrf) membedakan dua kondisi ini di unit_price.
+  // cost_items — RINCIAN per komponen, sumbernya array yang SAMA PERSIS yang
+  // menghasilkan costTotalIdr di atas ([...legacyRows, ...selectedOfferRows]).
+  // JANGAN ganti dengan query/filter baru: scoping "cuma offer yang menang +
+  // biaya internal" sudah hidup di dua array itu (lihat blok TD-156 di atas).
+  // Baris ber-amount 0 dibuang di sini — biasanya salah-ketik saat input, dan
+  // kalau lolos ia jadi baris berharga Rp 0 di dokumen yang dikirim ke customer.
+  // Pembuangan ini TIDAK menyentuh costTotalIdr, dan memang tak perlu: baris
+  // bernilai 0 menyumbang 0 ke total, dan `awardedNonIdr` sudah menyaring
+  // currency bertotal 0 — jadi angkanya identik dengan atau tanpa filter ini.
+  const quotationCostItems = [...legacyRows, ...selectedOfferRows]
+    .filter((r) => num(r.amount) !== 0)
+    .map((r) => ({
+      component:  r.component,
+      amount:     num(r.amount),
+      currency:   r.currency || 'IDR',
+      item_group: r.item_group || null,
+      sort_order: r.sort_order,
+    }));
+
   const handleCreateQuotation = () => onCreateQuotation({
     prf_id:         prf.id,
     inquiry_id:     prf.inquiry_id || null,
@@ -676,6 +695,21 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
     valid_until:    prf.valid_until || null,
     suggested_rate: prf.suggested_rate != null ? num(prf.suggested_rate) : null,
     cost_total:     costTotalIdr,
+    // Penentu cabang 1-baris vs N-baris di QuotationFormPage. SENGAJA dikirim
+    // sebagai flag tersendiri, bukan disimpulkan ulang di sana dari
+    // suggested_rate: PRF jalur lama TERBUKTI bisa punya cost item juga
+    // (PRF/MSI/2026/VII/001 & /005), jadi "cost_items kosong" BUKAN penanda
+    // jalur lama yang sah — memakainya akan membuang suggested_rate mereka.
+    has_suggested_rate: num(prf.suggested_rate) > 0,
+    cost_items:     quotationCostItems,
+    // Tabel kurs header PRF — dipakai penerima untuk mengonversi amount tiap
+    // cost item ke IDR (savedRateFor), BUKAN prf_cost_items.exchange_rate per
+    // baris, supaya Σ N baris tetap sama dengan costTotalIdr yang dihitung di atas.
+    exchange_rates: savedRates,
+    // Alamat: versi PRF yang dipakai (bukan inquiry) karena hanya versi ini yang
+    // divalidasi PRFFormPage per incoterm; penerima tetap fallback ke inquiry.
+    pickup_address:   prf.pickup_address ?? null,
+    delivery_address: prf.delivery_address ?? null,
   });
 
   // Identitas & Urgensi — "Dibuat Oleh" digabung dengan tanggal jadi SATU baris
