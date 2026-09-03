@@ -6,7 +6,10 @@
 // Props:
 //   inquiryId          : string — inquiry to render
 //   onBack             : () => void
-//   onCreateQuotation  : () => void                 — open blank Quotation form
+//   onCreateQuotation  : (inquiryId) => void        — open Quotation form dengan
+//                                                     inquiry ini sudah terpilih
+//                                                     (item tetap kosong: sumber
+//                                                     item hanya ada lewat PRF)
 //   onViewQuotation    : (quotation) => void        — open Quotation detail
 //   showToast          : (msg, type?) => void
 //
@@ -1192,7 +1195,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
       {tab === 'quotation' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <QuotationListCard quotations={quotations} onCreate={onCreateQuotation} onView={onViewQuotation} />
+          {/* Dibungkus arrow, BUKAN dioper langsung: QuotationListCard memasang
+              handler ini sebagai onClick, jadi meneruskannya apa adanya akan
+              mengirim MouseEvent sebagai argumen pertama. Inquiry-nya dioper
+              supaya form quotation terbuka dengan inquiry ini sudah terpilih —
+              halaman ini memang sudah memegang id-nya. */}
+          <QuotationListCard quotations={quotations} onCreate={() => onCreateQuotation(inquiryId)} onView={onViewQuotation} />
           {latestQuotation && (
             <QuotationItemsCard quotation={latestQuotation} items={latestQuotationItems} loading={latestItemsLoading} />
           )}

@@ -365,7 +365,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
 }
 
 // ─── Main component ───────────────────────────────────────────────────────
-export default function QuotationFormPage({ onBack, showToast, quotation = null, duplicateFrom = null, prefillFromPrf = null }) {
+export default function QuotationFormPage({ onBack, showToast, quotation = null, duplicateFrom = null, prefillFromPrf = null, prefillInquiryId = null }) {
   const { profile, erpRole, user } = useAuth();
   const isEdit = !!quotation;
 
@@ -757,6 +757,38 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, duplicateFrom, prefillFromPrf?.prf_id]);
+
+  // ── Inquiry mode — "Buat Quotation" dari Detail Deal (TANPA PRF) ─────────
+  // Hanya memilihkan inquiry-nya: hasil akhirnya identik dengan user memilih
+  // inquiry itu sendiri di dropdown (handleInquiryChange) — service_type/route/
+  // vat_rate ikut terisi, ITEM TETAP KOSONG. Item memang tak bisa diisi di sini:
+  // satu-satunya sumber baris item adalah cost item PRF, dan jalur ini tak punya PRF.
+  // Didahului guard `prefillFromPrf` supaya tak pernah bentrok dengan effect di atas.
+  useEffect(() => {
+    if (isEdit || duplicateFrom || prefillFromPrf || !prefillInquiryId) return undefined;
+    let cancelled = false;
+    // Dropdown hanya memuat inquiry status OPEN — deal yang sudah non-OPEN tetap
+    // harus bisa dibuatkan quotation, jadi resolve by id lalu inject (pola sama
+    // dengan jalur PRF di atas).
+    supabase.from('inquiries')
+      .select('id, inquiry_no, service_type, route, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
+      .eq('id', prefillInquiryId)
+      .maybeSingle()
+      .then(({ data: inq }) => {
+        if (cancelled || !inq) return;
+        setInquiries(list => (list.some(i => i.id === inq.id) ? list : [inq, ...list]));
+        setSelectedInquiry(inq);
+        setClientName(inq.prospect?.name || inq.customer?.name || '');
+        setHeader(h => ({
+          ...h,
+          inquiry_id:   inq.id,
+          service_type: inq.service_type || h.service_type,
+          route:        inq.route || h.route,
+          vat_rate:     vatDefaultFor(inq.service_type || h.service_type),
+        }));
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, duplicateFrom, prefillFromPrf, prefillInquiryId]);
 
   const setH = (k) => (e) => setHeader(h => ({ ...h, [k]: e.target.value }));
 
