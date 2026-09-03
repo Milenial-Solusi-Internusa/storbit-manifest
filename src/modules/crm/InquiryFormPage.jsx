@@ -148,13 +148,13 @@ async function generateInquiryNo(companyId, companyCode) {
   return `INQ/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
 }
 
-export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = 'create' }) {
+export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = 'create', prefillAccountId = null, prefillContactId = null }) {
   const { profile, erpRole, user } = useAuth();
   const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
   const isEdit = mode === 'edit' && !!inquiryId;
 
   const [form, setForm] = useState({
-    prospect_id: '', customer_id: '', service_type: 'freight_forwarding',
+    prospect_id: '', customer_id: '', contact_id: '', service_type: 'freight_forwarding',
     route: '', estimated_volume: '', estimated_value: '', notes: '',
     // new RFQ fields
     deadline_quote: '', pol: '', pod: '', incoterms: [], container_types: [],
@@ -165,6 +165,11 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
   });
   const [prospects, setProspects] = useState([]);
   const [customers, setCustomers] = useState([]);
+  // Kontak milik akun yang SEDANG terpilih saja — bukan seluruh contacts perusahaan.
+  // Disimpan BESERTA id akun pemiliknya supaya daftar milik akun sebelumnya tak sempat
+  // terbaca sebagai milik akun baru selama fetch berikutnya masih jalan (lihat turunan
+  // `contacts`/`contactsLoaded` di bawah). Reset-nya turunan, bukan setState di effect.
+  const [contactsFor, setContactsFor] = useState({ accountId: null, list: [] });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [sourceType, setSourceType] = useState('prospect');
@@ -184,6 +189,81 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
 
+  // Akun yang sedang jadi sumber inquiry ini. Satu turunan dipakai bersama oleh
+  // fetch kontak + render field Kontak, supaya tak ada dua definisi yang melenceng.
+  const resolvedAccountId = sourceType === 'prospect' ? form.prospect_id : form.customer_id;
+  // Daftar kontak dianggap milik akun sekarang HANYA bila id-nya cocok. Selama fetch
+  // akun baru belum selesai, `contactsLoaded` false → UI menahan diri (bukan menampilkan
+  // "belum punya kontak" yang keliru, dan bukan daftar akun sebelumnya).
+  const contactsLoaded = contactsFor.accountId === resolvedAccountId;
+  const contacts = contactsLoaded ? contactsFor.list : [];
+
+  // ── Prefill dari Detail Account ("+ New Inquiry") ────────────────────────────
+  // HANYA mode create: mode edit punya jalur populate sendiri di bawah dan tak boleh
+  // ditimpa. Toggle Prospect|Customer diturunkan dari lifecycle_stage akunnya (bukan
+  // ditebak), memakai dua daftar status yang SUDAH dipakai dropdown di atas — jadi
+  // akun yang jatuh di bucket customer otomatis membuka toggle "Customer (Existing)".
+  // Akun di-inject ke daftar dropdown-nya supaya namanya tampil walau daftar utama
+  // belum/tak memuatnya (pola sama dengan inject edit-mode di bawah).
+  useEffect(() => {
+    if (isEdit || !prefillAccountId) return undefined;
+    let cancelled = false;
+    supabase.from('accounts').select('id, name, lifecycle_stage')
+      .eq('id', prefillAccountId).is('deleted_at', null).maybeSingle()
+      .then(({ data: acc }) => {
+        if (cancelled || !acc) return;
+        const isCustomerSide = CUSTOMER_SIDE_STATUS.includes(acc.lifecycle_stage);
+        const opt = { id: acc.id, name: acc.name, lifecycle_stage: acc.lifecycle_stage };
+        setSourceType(isCustomerSide ? 'customer' : 'prospect');
+        if (isCustomerSide) {
+          setCustomers(prev => prev.some(c => c.id === acc.id) ? prev : [opt, ...prev]);
+          setCustomerText(acc.name);
+        } else {
+          setProspects(prev => prev.some(p => p.id === acc.id) ? prev : [opt, ...prev]);
+          setProspectText(acc.name);
+        }
+        setForm(f => ({
+          ...f,
+          prospect_id: isCustomerSide ? '' : acc.id,
+          customer_id: isCustomerSide ? acc.id : '',
+          // Kontak dari pemanggil (kontak utama akun) dipakai bila ada; kalau null,
+          // fetch kontak di bawah yang menentukan default-nya.
+          contact_id: prefillContactId || f.contact_id,
+        }));
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, prefillAccountId, prefillContactId]);
+
+  // ── Kontak akun terpilih ────────────────────────────────────────────────────
+  // SATU mekanisme untuk ketiga kasus (0 / 1 / banyak kontak): selalu ambil daftar
+  // kontak akun ini, lalu pilih default-nya di sini — bukan tiga cabang UI berbeda.
+  // Default = kontak UTAMA (is_primary) bila ada; kalau tidak ada primary TAPI cuma
+  // ada satu kontak, pakai yang satu itu. Selebihnya dibiarkan kosong supaya user
+  // memilih sadar. Pilihan yang SUDAH ada (prefill dari pemanggil / mode edit / hasil
+  // klik user) TIDAK PERNAH ditimpa.
+  // Filter `deleted_at` saja — sengaja TIDAK menyaring is_active, supaya jumlah kontak
+  // di sini sama persis dengan tab Kontak di Detail Account (yang juga menampilkan yang
+  // non-aktif, dengan badge). Yang non-aktif ditandai di label, bukan disembunyikan.
+  useEffect(() => {
+    if (!resolvedAccountId) return undefined;
+    let cancelled = false;
+    supabase.from('contacts')
+      .select('id, name, position, is_primary, is_active')
+      .eq('account_id', resolvedAccountId).is('deleted_at', null)
+      .order('is_primary', { ascending: false }).order('name').limit(1000)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const list = data || [];
+        setContactsFor({ accountId: resolvedAccountId, list });
+        setForm(f => {
+          if (f.contact_id) return f;
+          const auto = list.find(c => c.is_primary) || (list.length === 1 ? list[0] : null);
+          return auto ? { ...f, contact_id: auto.id } : f;
+        });
+      });
+    return () => { cancelled = true; };
+  }, [resolvedAccountId]);
+
   // Edit mode — fetch the inquiry and populate the form once.
   useEffect(() => {
     if (!isEdit) return undefined;
@@ -197,6 +277,10 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         setForm({
           prospect_id: data.prospect_id || '',
           customer_id: data.customer_id || '',
+          // WAJIB ikut dipopulate: `fields` di handleSave dipakai bersama oleh create
+          // DAN update, jadi tanpa baris ini setiap Simpan di mode edit akan menimpa
+          // contact_id yang sudah tersimpan dengan NULL.
+          contact_id: data.contact_id || '',
           service_type: data.service_type || 'freight_forwarding',
           route: data.route || '',
           estimated_volume: data.estimated_volume || '',
@@ -255,6 +339,10 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       const fields = {
         prospect_id: sourceType === 'prospect' ? (form.prospect_id || null) : (form.customer_id || null),
         customer_id: null,
+        // Jalur tulis PERTAMA untuk kolom `inquiries.contact_id` (FK ke contacts,
+        // nullable — akun tanpa kontak tetap boleh punya inquiry). Sebelum ini kolomnya
+        // ada tapi nol penulis di seluruh FE.
+        contact_id: form.contact_id || null,
         service_type: form.service_type,
         route: form.route || null,
         estimated_volume: form.estimated_volume || null,
@@ -365,7 +453,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               <Field label="Sumber" span>
                 <div style={{ display: 'flex', gap: 10 }}>
                   {['prospect', 'customer'].map(t => (
-                    <button key={t} type="button" onClick={() => { setSourceType(t); setForm(f => ({ ...f, prospect_id: '', customer_id: '' })); setProspectText(''); setCustomerText(''); }}
+                    <button key={t} type="button" onClick={() => { setSourceType(t); setForm(f => ({ ...f, prospect_id: '', customer_id: '', contact_id: '' })); setProspectText(''); setCustomerText(''); }}
                       style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", border: '1px solid ' + (sourceType === t ? C.navy : C.border), background: sourceType === t ? C.navy : '#fff', color: sourceType === t ? '#fff' : C.sub }}>
                       {t === 'prospect' ? 'Prospect' : 'Customer (Existing)'}
                     </button>
@@ -382,8 +470,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                       statusLabel={lifecycleLabel}
                       inputStyle={S.input}
                       placeholder="Search prospects…"
-                      onChangeText={(v) => { setProspectText(v); setForm(f => ({ ...f, prospect_id: '' })); }}
-                      onPick={(a) => { setProspectText(a.name); setForm(f => ({ ...f, prospect_id: a.id })); }}
+                      onChangeText={(v) => { setProspectText(v); setForm(f => ({ ...f, prospect_id: '', contact_id: '' })); }}
+                      onPick={(a) => { setProspectText(a.name); setForm(f => ({ ...f, prospect_id: a.id, contact_id: '' })); }}
                     />
                   ) : (
                     <AccountPicker
@@ -392,8 +480,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                       statusLabel={lifecycleLabel}
                       inputStyle={S.input}
                       placeholder="Search customers…"
-                      onChangeText={(v) => { setCustomerText(v); setForm(f => ({ ...f, customer_id: '' })); }}
-                      onPick={(a) => { setCustomerText(a.name); setForm(f => ({ ...f, customer_id: a.id })); }}
+                      onChangeText={(v) => { setCustomerText(v); setForm(f => ({ ...f, customer_id: '', contact_id: '' })); }}
+                      onPick={(a) => { setCustomerText(a.name); setForm(f => ({ ...f, customer_id: a.id, contact_id: '' })); }}
                     />
                   )}
                   {sourceType === 'prospect' && prospects.length === 0 && (
@@ -405,6 +493,38 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   <input type="date" value={form.deadline_quote} onChange={set('deadline_quote')} style={S.input} />
                 </Field>
               </div>
+
+              {/* Contact — hanya muncul setelah akun terpilih (lewat prefill "+ New
+                  Inquiry" dari Detail Account MAUPUN pilih manual di picker atas), karena
+                  daftarnya DIBATASI ke kontak akun itu saja. Tidak wajib: akun tanpa
+                  kontak tetap boleh menyimpan inquiry (lihat catatan gate di laporan). */}
+              {resolvedAccountId && (
+                <div style={grid2}>
+                  <Field label="Contact">
+                    {!contactsLoaded ? (
+                      <span style={{ fontSize: 12, color: C.muted, display: 'block', paddingTop: 6 }}>Loading contacts…</span>
+                    ) : contacts.length === 0 ? (
+                      <span style={{ fontSize: 12, color: C.sub, display: 'block', paddingTop: 6 }}>
+                        This account has no contacts yet. Add one from Account Detail → Contacts tab.
+                      </span>
+                    ) : (
+                      <div style={{ position: 'relative' }}>
+                        <select value={form.contact_id} onChange={set('contact_id')} style={selInput}>
+                          <option value="">— Select contact —</option>
+                          {contacts.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                              {c.position ? ` — ${c.position}` : ''}
+                              {c.is_primary ? ' (Primary)' : ''}
+                              {c.is_active === false ? ' (Inactive)' : ''}
+                            </option>
+                          ))}
+                        </select><Chevron />
+                      </div>
+                    )}
+                  </Field>
+                </div>
+              )}
 
               <div style={grid2}>
                 <Field label="Service Type" required>

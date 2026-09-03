@@ -53,6 +53,7 @@ const ICONS = {
   trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
   x:          '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   check:      '<path d="M20 6 9 17l-5-5"/>',
+  plus:       '<path d="M5 12h14"/><path d="M12 5v14"/>',
   save:       '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
   info:       '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   briefcase:  '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
@@ -713,7 +714,7 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────────
-export default function CustomerDetailPage({ id, onBack, showToast, onEditInquiry, onViewQuotation, onCreatePRF, onViewPRF, initialTab }) {
+export default function CustomerDetailPage({ id, onBack, showToast, onCreateInquiry, onEditInquiry, onViewQuotation, onCreatePRF, onViewPRF, initialTab }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   // Delete customer is restricted to super_admin (soft-delete via deleted_at).
   const canDelete = erpRole === 'super_admin';
@@ -1399,6 +1400,16 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
           <h1 style={S.title}>Detail Account</h1>
         </div>
         <div style={S.actions}>
+          {/* "+ New Inquiry" — titik awal rantai Account → Inquiry. Mengoper id akun
+              yang sedang dibuka + kontak UTAMA-nya (primaryContact sudah dibaca eager
+              di atas untuk header/Info Dasar, jadi tak ada fetch tambahan di sini).
+              contactId boleh null: akun tanpa kontak primary tetap boleh bikin inquiry —
+              form tujuan yang memutuskan cara menampilkannya, bukan tombol ini. */}
+          {onCreateInquiry && (
+            <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => onCreateInquiry(id, primaryContact?.id || null)}>
+              <Icon name="plus" size={16} />New Inquiry
+            </button>
+          )}
           {isTempoTerm(customer.payment_term?.name) && (
             <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setTopOpen(true)}><Icon name="creditcard" size={16} />Ajukan TOP Request</button>
           )}

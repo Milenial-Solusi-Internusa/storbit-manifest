@@ -1800,6 +1800,11 @@ export default function StorbitManifest() {
   // crmDealInquiry (DealDetailPage) supaya jalur DDP tak berubah. Balik → clear → remount tab Riwayat.
   const [customerQuotationView, setCustomerQuotationView] = useState(null); // quotation id → QuotationDetail
   const [customerPrfInquiryId,  setCustomerPrfInquiryId]  = useState(null); // inquiry id → PRFFormPage prefill
+  // Prefill "+ New Inquiry" dari Detail Account → InquiryFormPage (mode create).
+  // Bentuk: { accountId, contactId } — contactId = kontak UTAMA akun itu bila ada,
+  // null bila belum punya (InquiryFormPage tetap bisa menentukan sendiri dari daftar
+  // kontak akun). null = form create dibuka TANPA konteks (jalur "+" Inquiry List).
+  const [inquiryPrefill,        setInquiryPrefill]        = useState(null);
   // Lihat PRF dari tab Dokumen Detail Account — jalur TERPISAH dari customerPrfInquiryId
   // (yang untuk BUAT PRF baru dari tab Riwayat). Balik → clear → CustomerDetailPage remount.
   const [customerPrfViewId,     setCustomerPrfViewId]     = useState(null); // prf id → PRFDetailPage (dari tab Dokumen)
@@ -1971,6 +1976,7 @@ export default function StorbitManifest() {
     setCustomerPrfInquiryId(null);
     setCustomerPrfViewId(null);
     setCustomerDetailTab('info');
+    setInquiryPrefill(null);
     setPrfPrefillInquiryId(null);
     setProcPrfDetailId(null);
     setProcPrfEditId(null);
@@ -2017,6 +2023,7 @@ export default function StorbitManifest() {
     setCustomerPrfInquiryId(null);
     setCustomerPrfViewId(null);
     setCustomerDetailTab('info');
+    setInquiryPrefill(null);
     setActiveMenu('customer-detail');
   }, [activeMenu]);
   const backFromCustomerDetail = useCallback(() => {
@@ -3492,8 +3499,10 @@ export default function StorbitManifest() {
           {activeMenu === 'crm-inquiry' && !showInquiryForm && !crmDealInquiry && (
             <ErrorBoundary title="CRM Inquiry temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                {/* Jalur "+" lama: SELALU tanpa konteks. Clear eksplisit supaya prefill
+                    sisa dari jalur Detail Account tak pernah bocor ke form kosong ini. */}
                 <InquiryListPage
-                  onAddInquiry={() => setShowInquiryForm(true)}
+                  onAddInquiry={() => { setInquiryPrefill(null); setShowInquiryForm(true); }}
                   onSelectInquiry={(inq) => setCrmDealInquiry(inq)}
                   showToast={showToast}
                 />
@@ -3504,7 +3513,9 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Inquiry Form temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <InquiryFormPage
-                  onBack={() => setShowInquiryForm(false)}
+                  prefillAccountId={inquiryPrefill?.accountId || null}
+                  prefillContactId={inquiryPrefill?.contactId || null}
+                  onBack={() => { setShowInquiryForm(false); setInquiryPrefill(null); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -3680,6 +3691,10 @@ export default function StorbitManifest() {
                   onBack={backFromCustomerDetail}
                   showToast={showToast}
                   initialTab={customerDetailTab}
+                  // "+ New Inquiry" — bawa akun (+ kontak utamanya) ke form create di menu
+                  // Inquiry. Digerbangi izin yang SAMA dengan Edit Inquiry (crm_inquiry.view),
+                  // supaya tombolnya tak muncul untuk user yang tak boleh masuk modul itu.
+                  onCreateInquiry={hasMenuPermission('crm_inquiry', 'view') ? (accountId, contactId) => { setInquiryPrefill({ accountId, contactId }); setActiveMenu('crm-inquiry'); setShowInquiryForm(true); } : undefined}
                   onEditInquiry={hasMenuPermission('crm_inquiry', 'view') ? (inq) => { setCustomerDetailTab('riwayat'); setCustomerInquiryEdit(inq.id); } : undefined}
                   onViewQuotation={(q) => { setCustomerDetailTab('riwayat'); setCustomerQuotationView(q.id); }}
                   onCreatePRF={(inq) => { setCustomerDetailTab('riwayat'); setCustomerPrfInquiryId(inq.id); }}
