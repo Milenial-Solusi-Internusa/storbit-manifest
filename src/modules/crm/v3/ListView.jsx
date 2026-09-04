@@ -88,18 +88,28 @@ function FilterBar({ search, onSearch, filters, savedViews, activeView, onSelect
       )}
 
       <div style={{ display: 'flex', gap: SP.s2, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 200 }}>
-          <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: FAINT }} />
-          <input
-            value={search || ''} onChange={(e) => onSearch?.(e.target.value)}
-            placeholder="Search…"
-            style={{
-              width: '100%', padding: '8px 12px 8px 32px', borderRadius: RADIUS.md,
-              border: `1px solid ${LINE}`, background: SURFACE,
-              fontFamily: FONT_BODY, fontSize: 13.5, color: INK, outline: 'none',
-            }}
-          />
-        </div>
+        {/* Input pencarian hanya dirender bila pemanggil MEMANG menyediakan
+            `onSearch`. Sebelumnya ia selalu dirender, sehingga daftar yang tak
+            punya pencarian tetap menampilkan kotak "Search…" yang tak melakukan
+            apa-apa — dan itu tidak konsisten dengan blok saved-view di atasnya,
+            yang sejak awal dijaga `!!savedViews?.length`. Diverifikasi sebelum
+            diubah: DUA pemakai ListView yang ada (InquiryListPage:515,
+            PipelineKanbanPage:613) sama-sama mengoper `onSearch`, jadi keduanya
+            nol regresi. */}
+        {onSearch && (
+          <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 200 }}>
+            <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: FAINT }} />
+            <input
+              value={search || ''} onChange={(e) => onSearch(e.target.value)}
+              placeholder="Search…"
+              style={{
+                width: '100%', padding: '8px 12px 8px 32px', borderRadius: RADIUS.md,
+                border: `1px solid ${LINE}`, background: SURFACE,
+                fontFamily: FONT_BODY, fontSize: 13.5, color: INK, outline: 'none',
+              }}
+            />
+          </div>
+        )}
         {filters}
         {right && <div style={{ marginLeft: 'auto' }}>{right}</div>}
       </div>

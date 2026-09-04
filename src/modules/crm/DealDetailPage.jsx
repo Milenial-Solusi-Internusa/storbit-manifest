@@ -21,17 +21,20 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock, ArrowRight,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  CheckCircle2, Handshake, Ban, UserCog, Wallet,
+  CheckCircle2, Handshake, Ban, UserCog, Wallet, Download,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import {
-  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card, Tab,
-  DealHeaderControls, EditDealModal, QuotationListCard,
-  PrfListCard, PriceSummaryCard, fetchAssignees, saveDealUpdate,
+  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card,
+  DealHeaderControls, EditDealModal,
+  PriceSummaryCard, fetchAssignees, saveDealUpdate,
 } from './DealPanels';
 import StatusBar from './v3/StatusBar';
 import FormSheet from './v3/FormSheet';
+import Notebook from './v3/Notebook';
+import ListView from './v3/ListView';
+import { RADIUS } from './v3/tokens';
 import { bantQualifyGate } from './bant';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -68,16 +71,6 @@ const ACT_ICON = {
   email: Mail, followup: ListChecks,
 };
 
-// Detail Inquiry BUKAN tab — itu primary view, selalu tampil di atas tab bar
-// ini (lihat render). Cuma 3 tab di bawahnya. Icon sengaja pakai FileText yang
-// sama untuk Quotation/PRF — kedua Card-nya sendiri sudah memakai FileText
-// sebagai icon-nya masing-masing, jadi ini bukan oversight, cuma meneruskan
-// pilihan visual yang sudah ada.
-const DEAL_TABS = [
-  { id: 'aktivitas', icon: <ListChecks size={15} />, label: 'Aktivitas' },
-  { id: 'quotation', icon: <FileText size={15} />,   label: 'Quotation' },
-  { id: 'prf',       icon: <FileText size={15} />,   label: 'PRF' },
-];
 
 // Papan Pipeline nanti butuh daftar tahap yang SAMA PERSIS dengan ini; konsolidasinya
 // (ke tokens.js atau modul bersama) menunggu Batch B3 — jangan disatukan sekarang.
@@ -96,6 +89,102 @@ const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
 // dengan hanya warna/border yang berbeda — sebelumnya style yang sama disalin
 // utuh di tiap tombol. Tinggi 36 (bukan 32 seperti saat masih di header kartu)
 // supaya sebaris dengan DealHeaderControls yang tingginya 40.
+/* ---------- Kesiapan PRF (Batch B3) ----------
+   Menjawab satu pertanyaan yang sebelumnya tak terjawab di layar ini: dari
+   beberapa PRF milik satu inquiry, yang MANA yang sudah layak jadi sumber
+   quotation. Diturunkan dari data yang SUDAH di-fetch (`status`,
+   `selected_offer_id`) — nol query baru.
+
+   ⚠️ URUTAN PENGECEKAN MENGIKAT. Keadaan tertutup dicek PALING DULU: PRF
+   CANCELLED/EXPIRED tak akan pernah dijawab procurement, jadi menampilkannya
+   sebagai "Awaiting procurement" adalah janji yang tak akan datang. */
+// PRF service_type = MODA transport, taksonomi BEDA dari inquiry SERVICE_LABEL
+// (TD-108). Dicermin di sini karena PRF_SERVICE_LABEL tidak diekspor DealPanels
+// dan file itu di luar scope batch ini — pola mirror-per-file yang sudah berulang
+// di codebase ini (lih. MANAGER_OR_ABOVE di atas).
+const PRF_SERVICE_LABEL = { sea: 'Sea', air: 'Air', inland: 'Inland', project: 'Project', custom: 'Custom' };
+
+const PRF_READINESS = {
+  not_active:  { label: 'Not active',           bg: '#F2F1EE', color: '#8A8478', bd: '#DEDBD4' },
+  ready:       { label: 'Ready as source',      bg: '#E1E9F2', color: '#144682', bd: '#B8C8DC' },
+  needs:       { label: 'Needs selection',      bg: '#FDE7DB', color: '#B53F0D', bd: '#EFC5B2' },
+  awaiting:    { label: 'Awaiting procurement', bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
+};
+function prfReadinessKey(p) {
+  const st = String(p?.status || '').toUpperCase();
+  if (st === 'CANCELLED' || st === 'EXPIRED') return 'not_active';
+  if (st === 'QUOTED' && p?.selected_offer_id) return 'ready';
+  if (st === 'QUOTED') return 'needs';
+  return 'awaiting';
+}
+
+/* Badge tinted rounded-square — pola dan bentuknya menyalin StatusBadge di
+   InquiryListPage (RADIUS.sm, bukan pill), supaya dua layar tak melahirkan dua
+   bahasa visual untuk hal yang sama. */
+function TintBadge({ meta }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap',
+      padding: '2px 10px', borderRadius: RADIUS.sm, fontFamily: HEAD,
+      fontSize: 11.5, fontWeight: 700, letterSpacing: '.3px',
+      border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color,
+    }}>
+      {meta.label}
+    </span>
+  );
+}
+
+/* ---------- Kolom tabel di dalam tab (Batch B3) ----------
+   Bentuk `columns` mengikuti kontrak ListView: { key, label, align?, render? }.
+   Keduanya konstanta modul karena `render` hanya membaca baris + konstanta —
+   tak ada satu pun yang butuh state halaman. */
+const QUOTATION_COLUMNS = [
+  { key: 'no', label: 'No', render: (r, i) => i + 1 },
+  { key: 'quotation_no', label: 'Quotation No', render: (r) => (
+    <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy }}>{r.quotation_no}</span>
+  ) },
+  { key: 'created_at', label: 'Date', render: (r) => fmtDate(r.created_at) },
+  { key: 'total_amount', label: 'Value', align: 'right', render: (r) => (
+    <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtRp(r.total_amount)}</span>
+  ) },
+  { key: 'status', label: 'Status', render: (r) => {
+    const m = QUO_STATUS[String(r.status || '').toUpperCase()] || QUO_STATUS.DRAFT;
+    return <TintBadge meta={m} />;
+  } },
+  /* Ikon Download SENGAJA dipertahankan disabled — ia menandai pekerjaan yang
+     belum jadi, dan menghapusnya menghilangkan penanda itu. Tombol "View"
+     duplikat tak ditambahkan: nomor quotation sudah membuka detailnya. */
+  { key: 'actions', label: 'Actions', render: () => (
+    <button title="Download (coming soon)" disabled
+      style={{ background: 'none', border: 'none', cursor: 'not-allowed', color: C.textFaint, padding: 4, opacity: 0.5 }}>
+      <Download size={15} />
+    </button>
+  ) },
+];
+
+const PRF_COLUMNS = [
+  { key: 'no', label: 'No', render: (r, i) => i + 1 },
+  { key: 'prf_no', label: 'PRF No', render: (r) => (
+    <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy }}>{r.prf_no}</span>
+  ) },
+  { key: 'created_at', label: 'Date', render: (r) => fmtDate(r.created_at) },
+  { key: 'service_type', label: 'Service Type', render: (r) => PRF_SERVICE_LABEL[r.service_type] || r.service_type || '—' },
+  { key: 'status', label: 'Status', render: (r) => String(r.status || '').toUpperCase() },
+  { key: 'readiness', label: 'Readiness', render: (r) => <TintBadge meta={PRF_READINESS[prfReadinessKey(r)]} /> },
+];
+
+/* Status quotation yang BENAR-BENAR dipakai sistem ini: DRAFT/SENT/SUBMITTED
+   terbukti ada di data produksi, ACCEPTED/REJECTED dirujuk kode (QuotationListPage,
+   PriceSummaryCard) walau baris-nya belum ada. Tak ada CHECK constraint di DB,
+   jadi kelimanya konvensi kode — nilai tak dikenal jatuh ke DRAFT, bukan dikarang. */
+const QUO_STATUS = {
+  DRAFT:     { label: 'Draft',     bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
+  SUBMITTED: { label: 'Submitted', bg: '#FBF0DD', color: '#916312', bd: '#E6D4B4' },
+  SENT:      { label: 'Sent',      bg: '#E4EEF7', color: '#1D5A96', bd: '#BCD0E4' },
+  ACCEPTED:  { label: 'Accepted',  bg: '#E1E9F2', color: '#144682', bd: '#B8C8DC' },
+  REJECTED:  { label: 'Rejected',  bg: '#FBE7E5', color: '#B33A2E', bd: '#EDC4C0' },
+};
+
 /* Subjudul kelompok + label mikro baris rute. Diangkat jadi konstanta karena
    dipakai berulang di kartu badan. */
 const GRP_TITLE = {
@@ -598,6 +687,14 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // penutupan membaca nilai yang sama. `stageIdx` di atas TETAP dipakai jalur lama
   // (EditDealModal + saveEdit) yang menulis ke `accounts` — tidak dicabut batch ini.
   const dealStatus = String(inquiry?.status || 'OPEN').toUpperCase();
+  // Badge angka di label tab PRF = PRF yang MENUNGGU TINDAKAN SALES saja.
+  // "Not active" (CANCELLED/EXPIRED) dan "Awaiting procurement" sengaja tak
+  // dihitung — badge yang menghitung semuanya cuma mengulang jumlah baris.
+  const prfNeedsSelectionCount = prfs.filter((p) => prfReadinessKey(p) === 'needs').length;
+  // Cetak PRF — cek SELURUH role aktif (erpRoles), bukan erpRole (role primer).
+  // User multi-role (mis. manager+sales) sebelumnya kehilangan tombol ini karena
+  // role prioritas lebih tinggi menutupi 'sales' di erpRole. Cermin RLS prf_insert.
+  const canCreatePRF = erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code));
   const assignedName = profMap[account?.assigned_profile] || profMap[account?.assigned_to] || null;
   // Id di balik assignedName — fallback SAMA PERSIS supaya id-nya konsisten dgn
   // nama yang tampil. Dipakai utk buka mini profil (klik nama sales di Header).
@@ -1292,70 +1389,157 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         </div>
       </Card>
 
-      <div style={{ borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'stretch', gap: 4, flexWrap: 'wrap' }}>
-        {DEAL_TABS.map((t) => (
-          <Tab key={t.id} id={t.id} icon={t.icon} label={t.label} active={tab === t.id} onClick={setTab} />
-        ))}
-      </div>
-
-      {tab === 'aktivitas' && (
-        <Card title="Aktivitas Terkait" icon={<ListChecks size={17} />}>
-          {activities.length === 0 ? (
-            <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity yet</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {activities.map((a) => {
-                const AIcon = ACT_ICON[a.type] || ListChecks;
-                return (
-                  <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
-                    <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
-                        {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Aktivitas')}{a.contact_name ? ` · ${a.contact_name}` : ''}
-                      </div>
-                      {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
-                      <div style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, marginTop: 2 }}>{fmtDate(a.created_at)}</div>
-                    </div>
+      {/* Tiga tab pindah ke Notebook (kit v3). Badge angka di label PRF dioper
+          sebagai NODE lewat prop `label` — Notebook merender `{t.label}` apa
+          adanya, jadi kontraknya tak perlu disentuh sama sekali. Angkanya =
+          jumlah PRF ber-kesiapan "Needs selection", yaitu yang benar-benar
+          menunggu tindakan sales; PRF "Not active" sengaja tak ikut dihitung. */}
+      <Notebook
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          {
+            id: 'aktivitas',
+            label: 'Activity',
+            render: () => (
+              <Card title="Related Activity" icon={<ListChecks size={17} />}>
+                {activities.length === 0 ? (
+                  <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No activity recorded for this deal yet.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {activities.map((a) => {
+                      const AIcon = ACT_ICON[a.type] || ListChecks;
+                      return (
+                        <div key={a.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+                          <span style={{ width: 32, height: 32, borderRadius: 9, background: C.navySoft, color: C.navy, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><AIcon size={15} /></span>
+                          <div style={{ minWidth: 0, flex: 1, display: 'flex', gap: 12 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>
+                                {(a.type ? a.type.charAt(0).toUpperCase() + a.type.slice(1) : 'Activity')}{a.contact_name ? ` · ${a.contact_name}` : ''}
+                              </div>
+                              {(a.notes || a.outcome) && <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, lineHeight: 1.4 }}>{a.notes || a.outcome}</div>}
+                            </div>
+                            <span style={{ fontFamily: BODY, fontSize: 11.5, color: C.textFaint, flex: 'none' }}>{fmtDate(a.created_at)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      )}
-
-      {tab === 'quotation' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Dibungkus arrow, BUKAN dioper langsung: QuotationListCard memasang
-              handler ini sebagai onClick, jadi meneruskannya apa adanya akan
-              mengirim MouseEvent sebagai argumen pertama. Inquiry-nya dioper
-              supaya form quotation terbuka dengan inquiry ini sudah terpilih —
-              halaman ini memang sudah memegang id-nya. */}
-          <QuotationListCard quotations={quotations} onCreate={() => onCreateQuotation(inquiryId)} onView={onViewQuotation} />
-          {latestQuotation && (
-            <QuotationItemsCard quotation={latestQuotation} items={latestQuotationItems} loading={latestItemsLoading} />
-          )}
-          <PriceSummaryCard quotations={quotations} termMap={termMap} />
-        </div>
-      )}
-
-      {tab === 'prf' && (
-        <PrfListCard
-          prfs={prfs}
-          // Cetak PRF — cek SELURUH role aktif (erpRoles), bukan erpRole (role
-          // primer). User multi-role (mis. manager+sales) sebelumnya kehilangan
-          // tombol ini karena role prioritas lebih tinggi menutupi 'sales' di
-          // erpRole. Cermin RLS prf_insert (has_role('sales') = EXISTS lintas
-          // user_roles, bukan role primer).
-          canCreate={erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code))}
-          onCreate={onCreatePRF}
-          onView={onViewPRF}
-          canSelectOffer={(p) => p.created_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole)}
-          onSelectOffer={handleSelectOffer}
-          offerActionBusy={offerActionBusy}
-        />
-      )}
-
+                )}
+              </Card>
+            ),
+          },
+          {
+            id: 'quotation',
+            label: 'Quotation',
+            render: () => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* `onSearch` sengaja TIDAK dioper: daftar quotation satu deal
+                    isinya sedikit, dan sejak guard baru di ListView, kotak
+                    pencarian memang tak dirender kalau tak disediakan. */}
+                <ListView
+                  mode="table"
+                  rows={quotations}
+                  onRowClick={onViewQuotation}
+                  emptyTitle="No quotations yet"
+                  emptySub="Quotations created from this deal will appear here."
+                  right={(
+                    <button onClick={() => onCreateQuotation(inquiryId)} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
+                      <FileText size={14} />Create Quotation
+                    </button>
+                  )}
+                  columns={QUOTATION_COLUMNS}
+                />
+                {latestQuotation && (
+                  <QuotationItemsCard quotation={latestQuotation} items={latestQuotationItems} loading={latestItemsLoading} />
+                )}
+                <PriceSummaryCard quotations={quotations} termMap={termMap} />
+              </div>
+            ),
+          },
+          {
+            id: 'prf',
+            label: (
+              <>
+                PRF
+                {prfNeedsSelectionCount > 0 && (
+                  <span style={{ marginLeft: 6, background: C.orange, color: '#fff', fontFamily: HEAD, fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px' }}>
+                    {prfNeedsSelectionCount}
+                  </span>
+                )}
+              </>
+            ),
+            render: () => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <ListView
+                  mode="table"
+                  rows={prfs}
+                  onRowClick={onViewPRF}
+                  emptyTitle="No PRFs yet"
+                  emptySub="PRFs raised for this deal will appear here."
+                  right={canCreatePRF ? (
+                    <button onClick={onCreatePRF} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
+                      <FileText size={14} />Create PRF
+                    </button>
+                  ) : null}
+                  columns={PRF_COLUMNS}
+                />
+                {/* Kartu penawaran vendor — SALINAN LOKAL dari blok di PrfListCard
+                    (DealPanels.jsx). Disalin, bukan diedit di tempat, karena
+                    PrfListCard masih dipakai CustomerDetailPage:1597 dan file itu
+                    di luar scope batch ini. Kalau kelak PrfListCard tak lagi punya
+                    pemakai kedua, dua salinan ini WAJIB disatukan. */}
+                {prfs.filter((p) => String(p.status).toUpperCase() === 'QUOTED' && Array.isArray(p.vendorOffers)).map((p) => (
+                  <Card key={`offers-${p.id}`} title={`Vendor Offers — ${p.prf_no}`} icon={<FileText size={17} />}>
+                    {p.min_offers_waiver_reason && (
+                      <div style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.orange, marginBottom: 10 }}>
+                        Only {p.vendorOffers.length} offers. Procurement reason: {p.min_offers_waiver_reason}
+                      </div>
+                    )}
+                    {p.vendorOffers.length === 0 ? (
+                      <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>No vendor offers yet.</div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        {p.vendorOffers.map((o) => {
+                          const isSelected = p.selected_offer_id === o.id;
+                          const canSelect = p.created_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole);
+                          return (
+                            <div key={o.id} style={{ width: 240, boxSizing: 'border-box', background: '#fff', border: `${isSelected ? 2 : 1}px solid ${isSelected ? C.orange : C.border}`, borderRadius: 10, padding: '14px 16px' }}>
+                              {isSelected && (
+                                <div style={{ fontFamily: HEAD, fontSize: 10, fontWeight: 800, letterSpacing: '.06em', color: C.orange, marginBottom: 6 }}>SELECTED BY SALES</div>
+                              )}
+                              <div style={{ fontFamily: HEAD, fontSize: 13, fontWeight: 700, color: C.text }}>{o.vendorName}</div>
+                              <div style={{ fontFamily: BODY, fontSize: 11.5, color: C.textMute, marginTop: 2 }}>Currency: {o.currency || '—'}</div>
+                              <div style={{ marginTop: 8, marginBottom: 10 }}>
+                                {Object.entries(o.totals || {}).length === 0 ? (
+                                  <span style={{ fontFamily: BODY, fontSize: 12, color: C.textFaint }}>No cost breakdown yet.</span>
+                                ) : Object.entries(o.totals).map(([cur, v]) => (
+                                  <div key={cur} style={{ fontFamily: HEAD, fontSize: 14, fontWeight: 800, color: C.navy, fontVariantNumeric: 'tabular-nums' }}>
+                                    {cur} {Number(v).toLocaleString('id-ID')}
+                                  </div>
+                                ))}
+                              </div>
+                              {!isSelected && canSelect && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectOffer(p, o)}
+                                  disabled={offerActionBusy}
+                                  style={{ width: '100%', background: 'transparent', color: C.navy, border: `1px solid ${C.navy}`, borderRadius: 6, padding: '7px 0', fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: offerActionBusy ? 'not-allowed' : 'pointer', opacity: offerActionBusy ? 0.6 : 1 }}>
+                                  {p.selected_offer_id ? 'Switch to This Offer' : 'Use This Offer'}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            ),
+          },
+        ]}
+      />
       </div>
       </FormSheet>
 
