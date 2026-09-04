@@ -4,7 +4,7 @@
    ini menyalin polanya, bukan mengimpor darinya.
 
    ANATOMI (tiga slot, semuanya opsional kecuali body):
-     header → nomor dokumen · judul · StatusBar/badge · aksi utama
+     header → nomor dokumen · judul · StatusBar/badge · aksi utama · toolbar
      body   → slot Notebook (atau konten bebas)
      aside  → slot Chatter (kolom kanan persisten lintas tab)
 
@@ -29,13 +29,14 @@ import { DocNo } from './kit';
  * @param {Node}   [props.status]   - slot StatusBar / Badge
  * @param {Node}   [props.actions]  - slot aksi utama (tombol)
  * @param {Node}   [props.meta]     - baris metadata kecil di bawah judul
+ * @param {Node}   [props.toolbar]  - baris aksi selebar dokumen, di bawah status
  * @param {Node}   props.children   - body (biasanya <Notebook/>)
  * @param {Node}   [props.aside]    - kolom kanan (biasanya <Chatter/>)
  * @param {Node}   [props.breadcrumb]
  */
 export default function FormSheet({
   docNo, title, kicker, status, actions, meta,
-  children, aside = null, breadcrumb = null,
+  children, aside = null, breadcrumb = null, toolbar = null,
 }) {
   return (
     <div
@@ -85,6 +86,21 @@ export default function FormSheet({
         </div>
 
         {status && <div style={{ marginTop: SP.s1 }}>{status}</div>}
+
+        {/* ── `toolbar` — SLOT BARU, 4 September 2026 ───────────────────────
+            Baris aksi dokumen. Ditaruh di dalam <header> (yang membentang DUA
+            kolom) dan BUKAN di `children`, karena `children` hanya menempati
+            kolom kiri: dengan `aside` terpasang, lebarnya cuma ~766px dari 1240px
+            header. Diukur langsung di browser: satu baris tujuh tombol aksi
+            Detail Deal butuh 986px, sehingga di kolom kiri ia SELALU pecah dua
+            baris — di lebar layar mana pun, bukan hanya layar sempit. Mengecilkan
+            tombol tak menolong: varian paling agresif (nol ikon, padding 10,
+            font 12) masih 768px.
+            `actions` TIDAK bisa dipakai untuk ini — slot itu duduk sebaris dengan
+            judul dan berbagi lebar dengannya. Dua slot ini memang beda peran:
+            `actions` untuk beberapa aksi pendek di sebelah judul, `toolbar` untuk
+            baris aksi selebar dokumen. ── */}
+        {toolbar && <div style={{ marginTop: SP.s2 }}>{toolbar}</div>}
       </header>
 
       {/* ── Body ── */}

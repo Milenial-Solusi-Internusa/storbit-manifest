@@ -19,14 +19,14 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock,
-  Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
+  FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock, ArrowRight,
+  Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
   CheckCircle2, Handshake, Ban, UserCog, Wallet,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import {
-  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card, InfoRow, Tab,
+  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card, Tab,
   DealHeaderControls, EditDealModal, QuotationListCard,
   PrfListCard, PriceSummaryCard, fetchAssignees, saveDealUpdate,
 } from './DealPanels';
@@ -96,6 +96,74 @@ const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
 // dengan hanya warna/border yang berbeda — sebelumnya style yang sama disalin
 // utuh di tiap tombol. Tinggi 36 (bukan 32 seperti saat masih di header kartu)
 // supaya sebaris dengan DealHeaderControls yang tingginya 40.
+/* Subjudul kelompok + label mikro baris rute. Diangkat jadi konstanta karena
+   dipakai berulang di kartu badan. */
+const GRP_TITLE = {
+  fontFamily: HEAD, fontWeight: 600, fontSize: 12, textTransform: 'uppercase',
+  letterSpacing: '.04em', color: C.navy, marginBottom: 10,
+};
+const GRP_MICRO = {
+  fontFamily: BODY, fontSize: 10.5, textTransform: 'uppercase',
+  letterSpacing: '.04em', color: C.textFaint, marginBottom: 4,
+};
+
+/* Pengelompokan field kartu badan. Urutan kelompok = urutan tampil (mengalir dua
+   kolom). `fields` sengaja fungsi, bukan array statis: nilainya turunan inquiry.
+   Catatan: `Route` masuk SERVICE & STATUS (bukan TIMELINE) karena ia atribut
+   layanan, bukan linimasa — keputusan Den 4 Sep 2026. Field TIDAK ada yang
+   dihapus: kedelapan belas tetap tampil. */
+const FIELD_GROUPS = [
+  {
+    title: 'Service & Status',
+    fields: (i) => [
+      { label: 'Service Type', value: SERVICE_LABEL[i.service_type] || i.service_type },
+      { label: 'Status', value: i.status || 'OPEN' },
+      { label: 'Route', value: i.route },
+    ],
+  },
+  {
+    title: 'Terms & Container',
+    fields: (i) => [
+      { label: 'Incoterm', value: i.incoterms, pills: true },
+      { label: 'Container Type', value: i.container_types, pills: true },
+    ],
+  },
+  {
+    title: 'Cargo',
+    fields: (i) => [
+      { label: 'Goods Name', value: i.goods_name },
+      { label: 'HS Code', value: i.hs_code, mono: true },
+      { label: 'Total Weight (KG)', value: i.weight_kg != null ? String(i.weight_kg) : '', mono: true },
+      { label: 'Volume (CBM)', value: i.volume_cbm != null ? String(i.volume_cbm) : '', mono: true },
+      { label: 'Cargo Type', value: i.cargo_types, pills: true },
+    ],
+  },
+  {
+    title: 'Additional Services',
+    fields: (i) => [
+      { label: 'Additional Services', value: i.additional_services, pills: true },
+    ],
+  },
+  {
+    title: 'Timeline & Ownership',
+    fields: (i, x) => [
+      { label: 'Deadline Quote', value: i.deadline_quote ? fmtDate(i.deadline_quote) : '' },
+      { label: 'Created By', value: x.createdByName },
+      // "Deal Owner" di sini = `inquiries.owner_id`, BEDA dari "Assigned To" di
+      // meta header yang membaca `accounts.assigned_profile`. Jangan disamakan.
+      { label: 'Deal Owner', value: x.ownerName },
+      { label: 'Created Date', value: fmtDate(i.created_at) },
+    ],
+  },
+  {
+    title: 'Value',
+    fields: (i) => [
+      // Kosong tampil "—", bukan Rp 0 — deal tanpa taksiran beda dari yang bernilai nol.
+      { label: 'Estimated Value', value: i.estimated_value == null ? '' : fmtRp(Number(i.estimated_value)), mono: true },
+    ],
+  },
+];
+
 const ACT_BTN = {
   height: 36, padding: '0 13px', borderRadius: 9,
   border: `1px solid ${C.border}`, background: '#fff', color: C.navy,
@@ -196,22 +264,6 @@ function HeaderMeta({ assignedName, assignedProfileId, onViewProfile, createdAt,
   );
 }
 
-// Render a text[] (or null) as pills; "—" when empty.
-function BadgeRow({ label, values, full }) {
-  const arr = Array.isArray(values) ? values.filter(Boolean) : [];
-  return (
-    <div style={{ gridColumn: full ? '1 / -1' : undefined }}>
-      <div style={{ fontFamily: BODY, fontSize: 11, fontWeight: 700, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{label}</div>
-      {arr.length ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {arr.map((v) => (
-            <span key={v} style={{ fontFamily: BODY, fontSize: 12, fontWeight: 600, color: C.navy, background: C.navySoft, borderRadius: 7, padding: '3px 9px' }}>{v}</span>
-          ))}
-        </div>
-      ) : <div style={{ fontFamily: BODY, fontSize: 13.5, color: C.text }}>—</div>}
-    </div>
-  );
-}
 
 // ---------- QuotationItemsCard (lokal — bukan shared DealPanels) ----------
 // Rincian harga itemized untuk SATU quotation (yang terbaru dibuat/diedit dari
@@ -1015,49 +1067,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             onPickStage={pickStage}
           />
         )}
-        meta={(
-          <HeaderMeta
-            assignedName={assignedName}
-            assignedProfileId={assignedProfileId}
-            onViewProfile={onViewProfile}
-            createdAt={inquiry.created_at}
-            closeDate={account?.estimated_closing_date}
-          />
-        )}
-        /* Sumbu deal yang SAH = `inquiries.status`, bukan `accounts.pipeline_stage`
-           (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
-           oleh deal LOST/CANCELLED sengaja TIDAK ditebak: riwayatnya cuma ada di
-           `inquiry_status_history` yang masih staging-only (TD-218), dan menyimpulkannya
-           dari keberadaan quotation adalah jawaban separuh — keempat segmennya
-           dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
-           WON menutup dengan `done` sehingga keempatnya tercentang. */
-        status={(
-          <StatusBar
-            stages={DEAL_STAGE_SEGMENTS}
-            current={dealStatus}
-            closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
-          />
-        )}
-        aside={(
-          <InquiryChatter
-            inquiryId={inquiry.id}
-            companyId={profile?.company_id}
-            inquiryNo={inquiry.inquiry_no}
-            priorityUserIds={priorityUserIds}
-            showToast={showToast}
-          />
-        )}
-      >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-      {/* Baris aksi INQUIRY — tujuh tombol yang menulis ke `inquiries`. SENGAJA di
-          dalam `children`, bukan slot `actions`: slot itu sudah dipakai trio yang
-          menulis ke `accounts`, dan mencampur keduanya di satu tempat menghapus
-          satu-satunya petunjuk visual bahwa mereka mengubah tabel yang berbeda.
-          Blok destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
-          `marginLeft:auto` — kini tanpa saingan, karena DealHeaderControls sudah
-          pindah ke header. */}
-      {(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner || canEditValue) && (
+        /* Baris aksi INQUIRY — tujuh tombol yang menulis ke `inquiries`, dipisahkan
+           dari trio `accounts` di slot `actions`. Ditaruh di slot `toolbar` (selebar
+           dokumen) dan BUKAN di `children`: diukur di browser, baris ini butuh 986px
+           sementara kolom kiri cuma ~766px — di `children` ia pecah dua baris di
+           lebar layar mana pun. Blok destruktif (Mark as Lost + Cancel Deal) didorong
+           ke kanan lewat `marginLeft:auto`. */
+        toolbar={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner || canEditValue) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {onEditInquiry && (
             <button onClick={onEditInquiry} style={ACT_BTN}>
@@ -1107,14 +1123,48 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               )}
             </div>
           )}
-        </div>
-      )}
+          </div>
+        )}
+        meta={(
+          <HeaderMeta
+            assignedName={assignedName}
+            assignedProfileId={assignedProfileId}
+            onViewProfile={onViewProfile}
+            createdAt={inquiry.created_at}
+            closeDate={account?.estimated_closing_date}
+          />
+        )}
+        /* Sumbu deal yang SAH = `inquiries.status`, bukan `accounts.pipeline_stage`
+           (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
+           oleh deal LOST/CANCELLED sengaja TIDAK ditebak: riwayatnya cuma ada di
+           `inquiry_status_history` yang masih staging-only (TD-218), dan menyimpulkannya
+           dari keberadaan quotation adalah jawaban separuh — keempat segmennya
+           dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
+           WON menutup dengan `done` sehingga keempatnya tercentang. */
+        status={(
+          <StatusBar
+            stages={DEAL_STAGE_SEGMENTS}
+            current={dealStatus}
+            closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
+          />
+        )}
+        aside={(
+          <InquiryChatter
+            inquiryId={inquiry.id}
+            companyId={profile?.company_id}
+            inquiryNo={inquiry.inquiry_no}
+            priorityUserIds={priorityUserIds}
+            showToast={showToast}
+          />
+        )}
+      >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Primary view — SELALU tampil, bukan bagian dari tab (koreksi struktur: sesuai
           referensi Odoo, field utama tak boleh hilang saat pindah tab). Tab bar 3 tab
           (Aktivitas/Quotation/PRF) ada DI BAWAH kartu ini, bukan di atasnya. */}
       <Card
-        title="Detail Deal"
+        title="Deal Detail"
         icon={<FileText size={17} />}
       >
         {/* Panel nilai estimasi — bentuknya sengaja kembar dengan panel Ganti
@@ -1138,12 +1188,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 onClick={saveEstimatedValue}
                 disabled={valueSaving}
                 style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`, background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: valueSaving ? 'not-allowed' : 'pointer', opacity: valueSaving ? 0.6 : 1 }}>
-                {valueSaving ? 'Saving…' : 'Simpan'}
+                {valueSaving ? 'Saving…' : 'Save'}
               </button>
               <button
                 onClick={() => setValueOpen(false)}
                 style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                Batal
+                Cancel
               </button>
             </div>
             <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
@@ -1176,12 +1226,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                 onClick={reassignOwner}
                 disabled={ownerSaving || !ownerDraft}
                 style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`, background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: (ownerSaving || !ownerDraft) ? 'not-allowed' : 'pointer', opacity: (ownerSaving || !ownerDraft) ? 0.6 : 1 }}>
-                {ownerSaving ? 'Saving…' : 'Simpan'}
+                {ownerSaving ? 'Saving…' : 'Save'}
               </button>
               <button
                 onClick={() => setOwnerOpen(false)}
                 style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                Batal
+                Cancel
               </button>
             </div>
             <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
@@ -1191,54 +1241,54 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-          <span style={{ padding: '4px 11px', borderRadius: 99, background: C.orangeSoft, color: C.orange, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
-            {SERVICE_LABEL[inquiry.service_type] || inquiry.service_type || '—'}
-          </span>
-          <span style={{ padding: '4px 11px', borderRadius: 99, background: C.navySoft, color: C.navy, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
-            {inquiry.status || 'OPEN'}
-          </span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px' }}>
-          <InfoRow label="Service Type" value={SERVICE_LABEL[inquiry.service_type] || inquiry.service_type} />
-          <InfoRow label="Status" value={inquiry.status} />
-          {/* POL → POD */}
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Anchor size={15} color={C.navy} />
-                <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{inquiry.pol || '—'}</span>
-              </span>
-              <ChevronRight size={15} color={C.textFaint} />
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <MapPin size={15} color={C.orange} />
-                <span style={{ fontFamily: BODY, fontSize: 13.5, fontWeight: 600, color: C.text }}>{inquiry.pod || '—'}</span>
-              </span>
-            </div>
+        {/* Rute — SATU baris penuh di paling atas kartu, dipisah garis. Bukan dua
+            field biasa: POL→POD adalah identitas shipment, bukan atribut setara
+            HS Code. Panah menggantikan ikon Anchor/MapPin yang dulu dipakai. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 20, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={GRP_MICRO}>POL — Port of Loading</div>
+            <div style={{ fontFamily: HEAD, fontWeight: 600, fontSize: 18, color: C.navy }}>{inquiry.pol || '—'}</div>
           </div>
-          <BadgeRow label="Incoterm" values={inquiry.incoterms} />
-          <BadgeRow label="Container Type" values={inquiry.container_types} />
-          <InfoRow label="Nama Barang" value={inquiry.goods_name} />
-          <InfoRow label="HS Code" value={inquiry.hs_code} />
-          <InfoRow label="Berat Total (KG)" value={inquiry.weight_kg != null ? String(inquiry.weight_kg) : ''} />
-          <InfoRow label="Volume (CBM)" value={inquiry.volume_cbm != null ? String(inquiry.volume_cbm) : ''} />
-          <BadgeRow label="Cargo Type" values={inquiry.cargo_types} />
-          <BadgeRow label="Layanan Tambahan" values={inquiry.additional_services} />
-          <InfoRow label="Deadline Quote" value={inquiry.deadline_quote ? fmtDate(inquiry.deadline_quote) : ''} />
-          <InfoRow label="Route" value={inquiry.route} />
-          <InfoRow label="Created By" value={createdByName} />
-          {/* Pemilik deal ≠ pembuat: owner_id bisa dipindahtangankan selama deal
-              masih terbuka, created_by tidak pernah berubah. Keduanya ditampilkan
-              supaya perpindahan kepemilikan tetap terbaca jejaknya. */}
-          <InfoRow label="Deal Owner" value={ownerName} />
-          {/* Kosong ditampilkan sebagai "—" oleh InfoRow, bukan Rp 0 — deal
-              tanpa taksiran beda dari deal bernilai nol. */}
-          <InfoRow
-            label="Estimated Value"
-            value={inquiry.estimated_value == null ? '' : fmtRp(Number(inquiry.estimated_value))}
-          />
-          <InfoRow label="Created Date" value={fmtDate(inquiry.created_at)} />
-          <InfoRow label="Notes" value={inquiry.notes} full />
+          <ArrowRight size={26} color={C.orange} style={{ flex: 'none' }} />
+          <div style={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
+            <div style={GRP_MICRO}>POD — Port of Discharge</div>
+            <div style={{ fontFamily: HEAD, fontWeight: 600, fontSize: 18, color: C.navy }}>{inquiry.pod || '—'}</div>
+          </div>
+        </div>
+
+        {/* Field dikelompokkan bersubjudul, mengalir dua kolom. Grid ini disusun
+            LOKAL, bukan ditambahkan ke kit: bentuknya (kelompok yang mengalir,
+            bukan field yang mengalir) baru punya satu pemakai — konsolidasi ke
+            v3/kit menunggu Quotation/PRF Detail ikut dimigrasi. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 40px' }}>
+          {FIELD_GROUPS.map((g) => (
+            <div key={g.title} style={{ marginBottom: 22 }}>
+              <div style={GRP_TITLE}>{g.title}</div>
+              {g.fields(inquiry, { createdByName, ownerName }).map((f) => (
+                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '8px 0', borderBottom: `1px solid ${C.surfaceAlt}` }}>
+                  <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, flex: 'none', width: 150 }}>{f.label}</span>
+                  {f.pills ? (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
+                      {(f.value || []).length === 0
+                        ? <span style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint }}>—</span>
+                        : f.value.map((v) => (
+                          <span key={v} style={{ fontFamily: BODY, fontSize: 11.5, background: C.navySoft, color: C.navy, borderRadius: 999, padding: '2px 10px', fontWeight: 500 }}>{v}</span>
+                        ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontFamily: f.mono ? 'ui-monospace, monospace' : BODY, fontSize: 13, fontWeight: 600, color: C.text, textAlign: 'right', flex: 1 }}>
+                      {f.value == null || f.value === '' ? '—' : f.value}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 4, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+          <div style={{ ...GRP_TITLE, marginBottom: 8 }}>Notes</div>
+          <p style={{ fontFamily: BODY, fontSize: 13.5, lineHeight: 1.6, color: C.text, margin: 0 }}>{inquiry.notes || '—'}</p>
         </div>
       </Card>
 
