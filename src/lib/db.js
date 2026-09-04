@@ -1439,3 +1439,84 @@ export async function getStorbitStockDrilldown(category, { companyId = null, lim
   });
   return { data: data || [], error };
 }
+
+// ── Laporan Per Barang (Dashboard Storbit) ──────────────────────────────────
+// Empat RPC dari migrasi 20260905000001. Lingkup barisnya SAMA PERSIS di
+// keempatnya (sp_orders.deleted_at IS NULL AND status NOT IN
+// ('CANCELLED','DRAFT')) dan ditulis sebagai CTE bersama di SQL — jadi angka
+// kartu, tabel, dan file export mustahil drift satu sama lain.
+//
+// ⚠️ SELURUH nilai rupiah dari ketiganya (kecuali `piutang` di
+// getStorbitOutstandingSummary) adalah DPP — BELUM termasuk PPN. Label di UI
+// wajib menyatakan itu; lihat COMMENT ON FUNCTION di migrasinya.
+
+/**
+ * Laporan satu produk: ringkasan + rincian per customer.
+ * @param {string} productId
+ * @returns {Promise<{data: object|null, error: object|null}>}
+ *          data = { summary: {...}, per_customer: [...], generated_at }
+ */
+export async function getStorbitProductReport(productId, { companyId = null, dateFrom = null, dateTo = null } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_product_report', {
+    p_product_id: productId,
+    p_company_id: companyId || null,
+    p_date_from:  dateFrom  || null,
+    p_date_to:    dateTo    || null,
+  });
+  return { data: data || null, error };
+}
+
+/**
+ * Daftar SP yang memuat satu produk, satu baris per SP.
+ *
+ * `limit` sengaja dibuka sebagai parameter: layar memakai 200, export memakai
+ * angka jauh lebih tinggi supaya file tak terpotong diam-diam. Pemanggil WAJIB
+ * membandingkan panjang hasil dengan limit yang dikirim — kalau menyentuh
+ * limit, peringatkan user SEBELUM file dibuat.
+ *
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getStorbitProductSpList(productId, { companyId = null, dateFrom = null, dateTo = null, limit = 200 } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_product_sp_list', {
+    p_product_id: productId,
+    p_company_id: companyId || null,
+    p_date_from:  dateFrom  || null,
+    p_date_to:    dateTo    || null,
+    p_limit:      limit,
+  });
+  return { data: data || [], error };
+}
+
+/**
+ * Tiga angka outstanding: kirim / tagih / piutang.
+ * kirim & tagih DPP tanpa PPN; piutang BRUTO (total_amount sudah termasuk PPN).
+ * Ketiganya JANGAN dijumlahkan — beda basis pajak.
+ * @returns {Promise<{data: object|null, error: object|null}>}
+ */
+export async function getStorbitOutstandingSummary({ companyId = null, customerId = null, priceCategory = null } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_outstanding_summary', {
+    p_company_id:     companyId     || null,
+    p_customer_id:    customerId    || null,
+    p_price_category: priceCategory || null,
+  });
+  return { data: data || null, error };
+}
+
+/**
+ * Produk dengan nilai outstanding terbesar.
+ *
+ * RPC-nya SENGAJA tidak memfilter sisa > 0, jadi dengan `limit` tinggi fungsi
+ * ini sekaligus mengembalikan SELURUH produk yang pernah muncul di SP (38 per
+ * 5 Sep 2026). Halaman dashboard memakainya untuk DUA hal dari SATU panggilan:
+ * isi combobox produk (semua baris) dan tabel Top 10 (10 baris pertama, sudah
+ * urut nilai DESC). Satu sumber = mustahil drift antara dropdown dan tabel.
+ *
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getStorbitTopOutstandingProducts({ companyId = null, limit = 10 } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_top_outstanding_products', {
+    p_company_id: companyId || null,
+    p_limit:      limit,
+  });
+  return { data: data || [], error };
+}

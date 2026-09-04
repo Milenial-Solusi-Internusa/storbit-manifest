@@ -18,14 +18,20 @@
 // exclusive adalah donut (DONUT_STATUS_SLICES, 6 slice = persis total_sp).
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { pdf } from '@react-pdf/renderer';
 import {
   ClipboardList, Truck, PackageCheck, FileCheck2, Receipt, XCircle,
   AlertOctagon, Clock, AlertTriangle, PackageX, Boxes, ChevronRight,
-  Search, RotateCcw, ShieldAlert,
+  Search, RotateCcw, ShieldAlert, Send, Wallet,
+  FileSpreadsheet, FileText, X,
 } from 'lucide-react';
 import {
   getStorbitDashboardStats, getStorbitSpDrilldown, getStorbitStockDrilldown,
+  getStorbitProductReport, getStorbitProductSpList,
+  getStorbitOutstandingSummary, getStorbitTopOutstandingProducts,
 } from '../../lib/db';
+import { useAuth } from '../../contexts/useAuth';
+import StorbitReportPDF from './StorbitReportPDF';
 import { STATUS_GROUP_LABELS, DONUT_STATUS_SLICES } from '../../lib/spStatusConstants';
 import './salesOrderDetail.module.css';   // @font-face 'Storbit Display' / 'Storbit Text'
 
@@ -94,6 +100,30 @@ const WAREHOUSE_CARDS = [
   { key: 'rop_belum_diisi', icon: Boxes,         label: 'ROP Belum Diisi', desc: 'Produk tanpa reorder point' },
 ];
 
+// Strip nilai outstanding (TASK 3). Sublabel WAJIB ada — tiga angka ini beda
+// basis pajak dan tanpa penjelasan mudah dibaca keliru sebagai satu deret yang
+// bisa dijumlahkan. `ppn: false` mencetak penanda "belum termasuk PPN".
+const OUTSTANDING_CARDS = [
+  { key: 'kirim',   icon: Truck,  label: 'Outstanding Kirim',
+    desc: 'Nilai barang yang belum dikirim', ppn: false, unit: 'SP' },
+  { key: 'tagih',   icon: Send,   label: 'Outstanding Tagih',
+    desc: 'Sudah ada BTB, invoice belum terbit', ppn: false, unit: 'SP' },
+  { key: 'piutang', icon: Wallet, label: 'Outstanding Piutang',
+    desc: 'Invoice terbit, belum lunas dibayar', ppn: true,  unit: 'invoice' },
+];
+
+// Batas baris khusus export. Layar memakai 200; export menembak jauh lebih
+// tinggi supaya file tak terpotong diam-diam. Kalau hasilnya MENYENTUH angka
+// ini, user diperingatkan eksplisit SEBELUM file dibuat (lihat runExport).
+const EXPORT_ROW_LIMIT = 5000;
+
+// Satu panggilan get_storbit_top_outstanding_products melayani DUA kebutuhan:
+// isi combobox (seluruh produk yang pernah muncul di SP — 38 per 5 Sep 2026)
+// dan tabel Top 10 (10 baris pertama; RPC-nya sudah urut nilai DESC). Satu
+// sumber = daftar dropdown dan tabel mustahil melenceng satu sama lain.
+const PRODUCT_FETCH_LIMIT = 1000;
+const TOP_PRODUCT_ROWS = 10;
+
 const SP_TYPE_OPTIONS = [
   { value: '',         label: 'Semua tipe' },
   { value: 'semester', label: 'Semester' },
@@ -103,6 +133,17 @@ const SP_TYPE_OPTIONS = [
 
 /* ---------- helpers ---------- */
 const nf = (n) => Number(n || 0).toLocaleString('id-ID');
+
+// Rupiah penuh (tabel & tooltip) dan ringkas (kartu, supaya tak membungkus).
+const rp = (n) => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+function rpShort(n) {
+  const v = Math.round(Number(n) || 0);
+  const abs = Math.abs(v);
+  if (abs >= 1e12) return `Rp ${(v / 1e12).toFixed(2)} T`;
+  if (abs >= 1e9)  return `Rp ${(v / 1e9).toFixed(2)} M`;
+  if (abs >= 1e6)  return `Rp ${(v / 1e6).toFixed(1)} jt`;
+  return rp(v);
+}
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -357,6 +398,231 @@ function Select({ label, options, value, onChange }) {
   );
 }
 
+// ── Kartu strip outstanding (TASK 3) ────────────────────────────────────────
+// Bentuknya sengaja BEDA dari KpiCard: tidak bisa diklik (tak ada drill-down
+// di baliknya) dan angkanya rupiah, bukan cacah. Memakai KpiCard apa adanya
+// akan menjanjikan afordansi klik yang tak ada.
+function OutstandingCard({ item, value, count, loading }) {
+  const Icon = item.icon;
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4,
+      padding: '16px 16px 14px', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ ...body, fontSize: 11.5, color: C.muted, marginBottom: 3 }}>{item.label}</div>
+          <div
+            style={{ ...heading, fontWeight: 600, fontSize: 26, lineHeight: 1.1, color: C.ink }}
+            title={loading ? '' : rp(value)}
+          >
+            {loading ? '…' : rpShort(value)}
+          </div>
+        </div>
+        <div style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 4, background: C.purpleSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={15} color={C.purple} strokeWidth={1.75} />
+        </div>
+      </div>
+      <div style={{ ...body, fontSize: 11, color: C.faint }}>{item.desc}</div>
+      <div style={{ ...mono, fontSize: 9.5, color: C.faint, borderTop: `1px solid ${C.divider}`, paddingTop: 6 }}>
+        {loading ? '—' : `${nf(count)} ${item.unit}`} · {item.ppn ? 'sudah termasuk PPN' : 'belum termasuk PPN'}
+      </div>
+    </div>
+  );
+}
+
+// ── Tile ringkasan produk ───────────────────────────────────────────────────
+// `warn` memakai C.orange/C.orangeSoft/C.orangeBorder — token PERSIS yang
+// dipakai kartu "Lewat Tenggat Kirim" (KpiCard warn). Tidak ada warna baru.
+function SummaryTile({ label, value, sub, warn }) {
+  return (
+    <div style={{
+      background: warn ? C.orangeSoft : C.card,
+      border: `1px solid ${warn ? C.orangeBorder : C.divider}`,
+      borderRadius: 4, padding: '14px 14px 12px', minWidth: 0,
+    }}>
+      <div style={{ ...body, fontSize: 11, color: C.muted, marginBottom: 4 }}>{label}</div>
+      <div style={{ ...heading, fontWeight: 600, fontSize: 24, lineHeight: 1.1, color: warn ? C.orange : C.ink }}>
+        {value}
+      </div>
+      {sub ? <div style={{ ...mono, fontSize: 9.5, color: warn ? C.orange : C.faint, marginTop: 4 }}>{sub}</div> : null}
+    </div>
+  );
+}
+
+// ── Combobox produk ─────────────────────────────────────────────────────────
+// Daftarnya dimuat SEKALI di mount dan disaring di klien — 38 baris, jadi
+// tak ada gunanya menembak server tiap ketikan. Karena itu juga TIDAK ada
+// debounce: aturan debounce 300ms di AGENTS.md menyasar input yang memicu
+// query, bukan filter array in-memory.
+function ProductCombobox({ products, value, onChange, loading, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const selected = products.find((p) => p.product_id === value) || null;
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return products;
+    return products.filter((p) =>
+      (p.product_name || '').toLowerCase().includes(needle)
+      || (p.code || '').toLowerCase().includes(needle));
+  }, [products, q]);
+
+  return (
+    <div style={{ position: 'relative', minWidth: 320, flex: 1, maxWidth: 460 }}>
+      <label style={{ ...body, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.faint, display: 'block', marginBottom: 4 }}>
+        Produk
+      </label>
+      <div style={{ position: 'relative' }}>
+        <Search size={13} strokeWidth={1.75} color={C.faint} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+        <input
+          value={open ? q : (selected ? `${selected.code || '—'} · ${selected.product_name || ''}` : '')}
+          placeholder={loading ? 'Memuat produk…' : 'Cari nama atau kode produk…'}
+          disabled={disabled || loading}
+          onFocus={() => { setOpen(true); setQ(''); }}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          style={{
+            ...body, fontSize: 13, width: '100%', padding: '8px 30px 8px 30px',
+            borderRadius: 4, border: `1px solid ${open ? C.purple : C.divider}`,
+            background: C.card, color: C.ink,
+          }}
+        />
+        {selected && !open ? (
+          <button
+            type="button"
+            aria-label="Kosongkan pilihan produk"
+            onClick={() => { onChange(''); setQ(''); }}
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, lineHeight: 0 }}
+          >
+            <X size={13} color={C.faint} strokeWidth={2} />
+          </button>
+        ) : null}
+      </div>
+      {open && (
+        <div style={{
+          position: 'absolute', zIndex: 30, top: '100%', left: 0, right: 0, marginTop: 4,
+          maxHeight: 260, overflowY: 'auto', background: C.card,
+          border: `1px solid ${C.divider}`, borderRadius: 4, boxShadow: '0 6px 18px rgba(32,31,29,0.12)',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ ...body, fontSize: 12.5, color: C.faint, padding: '12px 14px' }}>
+              Tidak ada produk yang cocok.
+            </div>
+          ) : filtered.map((p) => (
+            <button
+              key={p.product_id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onChange(p.product_id); setOpen(false); setQ(''); }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
+                background: p.product_id === value ? C.purpleSoft : C.card,
+                border: 'none', borderBottom: `1px solid ${C.divider}`, padding: '9px 14px',
+              }}
+            >
+              <div style={{ ...mono, fontSize: 11, color: C.purpleDeep }}>{p.code || '—'}</div>
+              <div style={{ ...body, fontSize: 12.5, color: C.ink }}>{p.product_name || '—'}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tabel laporan ───────────────────────────────────────────────────────────
+// Sengaja komponen TERPISAH dari DrillTable, bukan menambah `kind` ke sana:
+// DrillTable dipakai dua blok existing dan menyentuhnya berarti mempertaruhkan
+// keduanya untuk fitur yang tak mereka pakai. Gaya visualnya ditiru, kodenya
+// tidak dibagi.
+function ReportTable({ title, cols, rows, loading, error, empty, onRowClick, footer }) {
+  const td = { padding: '9px 14px', borderBottom: `1px solid ${C.divider}` };
+  const rowProps = (row) => (onRowClick ? {
+    onClick: () => onRowClick(row),
+    style: { background: C.card, transition: 'background .1s', cursor: 'pointer' },
+    onMouseEnter: (e) => { e.currentTarget.style.background = C.bg; },
+    onMouseLeave: (e) => { e.currentTarget.style.background = C.card; },
+  } : {});
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.divider}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <div style={{ ...heading, fontWeight: 600, fontSize: 16 }}>{title}</div>
+        <div style={{ ...mono, fontSize: 11, color: C.faint, whiteSpace: 'nowrap' }}>
+          {loading ? 'Memuat…' : footer}
+        </div>
+      </div>
+      {error ? (
+        <div style={{ ...body, padding: '22px 16px', textAlign: 'center', color: C.orange, fontSize: 12.5 }}>
+          {error}
+        </div>
+      ) : loading ? (
+        <div style={{ ...body, padding: '28px 16px', textAlign: 'center', color: C.faint, fontSize: 13 }}>
+          Memuat data…
+        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ ...body, padding: '28px 16px', textAlign: 'center', color: C.faint, fontSize: 13 }}>
+          {empty}
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{cols.map((c) => (
+              <th key={c.h} style={{ ...body, textAlign: c.a || 'left', fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.faint, padding: '8px 14px', borderBottom: `1px solid ${C.divider}`, whiteSpace: 'nowrap' }}>
+                {c.h}
+              </th>
+            ))}</tr></thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.sp_no ? `${r.customer_id || ''}|${r.sp_no}` : (r.customer_id || r.product_id || i)} {...rowProps(r)}>
+                  {cols.map((c) => (
+                    <td key={c.h} style={{ ...(c.mono ? mono : body), fontSize: c.mono ? 12 : 12.5, ...td, textAlign: c.a || 'left', color: c.dim ? C.muted : C.ink, whiteSpace: c.wrap ? 'normal' : 'nowrap' }}>
+                      {c.render(r, i)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Kolom tabel per-customer & daftar SP. Kolom daftar SP mengikuti PERSIS
+// bentuk baris get_storbit_product_sp_list (1b) — urutan & isi yang sama
+// dipakai ulang oleh StorbitReportPDF dan storbitReportExcel, jadi layar, PDF,
+// dan Excel menampilkan hal yang sama.
+const CUSTOMER_COLS = [
+  { h: 'Customer',   wrap: true, render: (r) => r.customer_name || '—' },
+  { h: 'Jml SP',     a: 'right', mono: true, render: (r) => nf(r.jml_sp) },
+  { h: 'Sisa Qty',   a: 'right', mono: true, render: (r) => nf(r.qty_outstanding) },
+  { h: 'Nilai Sisa', a: 'right', mono: true, render: (r) => rp(r.nilai_outstanding) },
+];
+
+const SP_COLS = [
+  { h: 'No SP',      mono: true, render: (r) => r.sp_no || '—' },
+  { h: 'Customer',   wrap: true, render: (r) => r.customer_name || '—' },
+  { h: 'DC',         dim: true,  render: (r) => r.dc_nama || '—' },
+  { h: 'Tgl SP',     mono: true, render: (r) => fmtDate(r.sp_date) },
+  { h: 'Tenggat',    mono: true, render: (r) => fmtDate(r.expired_date) },
+  { h: 'Status',                 render: (r) => r.status || '—' },
+  { h: 'Qty',        a: 'right', mono: true, render: (r) => nf(r.qty) },
+  { h: 'Kirim',      a: 'right', mono: true, render: (r) => nf(r.shipped_qty) },
+  { h: 'Sisa',       a: 'right', mono: true, render: (r) => nf(r.sisa) },
+  { h: 'Nilai Sisa', a: 'right', mono: true, render: (r) => rp(r.nilai_sisa) },
+  { h: 'Umur',       a: 'right', mono: true, render: (r) => (r.umur_hari == null ? '—' : `${nf(r.umur_hari)}h`) },
+];
+
+const TOP_COLS = [
+  { h: 'Kode',       mono: true, render: (r) => r.code || '—' },
+  { h: 'Produk',     wrap: true, render: (r) => r.product_name || '—' },
+  { h: 'Jml SP',     a: 'right', mono: true, render: (r) => nf(r.jml_sp) },
+  { h: 'Sisa Qty',   a: 'right', mono: true, render: (r) => nf(r.qty_outstanding) },
+  { h: 'Stok',       a: 'right', mono: true, render: (r) => nf(r.stok_tersedia) },
+  { h: 'Nilai Sisa', a: 'right', mono: true, render: (r) => rp(r.nilai_outstanding) },
+];
+
 /* ---------- halaman ---------- */
 export default function StorbitDashboardPage({ customers = [], showToast, onSelectSP, onSelectProduct }) {
   const [customerId, setCustomerId] = useState('');
@@ -373,6 +639,30 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   const [whCat, setWhCat]               = useState('danger_stock');
   const [whRows, setWhRows]             = useState([]);
   const [whRowsLoading, setWhRowsLoad]  = useState(false);
+
+  // ── Laporan Per Barang + strip outstanding (tambahan 5 Sep 2026) ──────────
+  const { hasMenuPermission } = useAuth();
+
+  const [outstanding, setOutstanding]   = useState(null);
+  const [outLoading, setOutLoading]     = useState(true);
+
+  const [products, setProducts]         = useState([]);
+  const [productsLoading, setProdLoad]  = useState(true);
+  const [productsError, setProdError]   = useState(null);
+
+  const [productId, setProductId]       = useState('');
+  const [dateFrom, setDateFrom]         = useState('');
+  const [dateTo, setDateTo]             = useState('');
+
+  const [report, setReport]             = useState(null);
+  const [reportLoading, setReportLoad]  = useState(false);
+  const [reportError, setReportError]   = useState(null);
+
+  const [spListRows, setSpListRows]     = useState([]);
+  const [spListLoading, setSpListLoad]  = useState(false);
+  const [spListError, setSpListError]   = useState(null);
+
+  const [exporting, setExporting]       = useState(null);   // null | 'pdf' | 'xlsx'
 
   const notifyError = useCallback((msg) => {
     setError(msg);
@@ -438,6 +728,101 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
     return () => { alive = false; };
   }, [whCat, notifyError]);
 
+  // ── Strip outstanding — ikut filter customer/tipe yang sama dgn kartu lain ─
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setOutLoading(true);
+      const { data, error: err } = await getStorbitOutstandingSummary({
+        companyId: SOA_COMPANY_ID,
+        customerId: customerId || null,
+        priceCategory: spType || null,
+      });
+      if (!alive) return;
+      if (err) {
+        setOutstanding(null);
+        showToast?.('Gagal memuat nilai outstanding: ' + (err.message || 'unknown'), 'error');
+      } else {
+        setOutstanding(data || null);
+      }
+      setOutLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [customerId, spType, showToast]);
+
+  // ── Daftar produk — SEKALI di mount, dipakai combobox + tabel Top 10 ──────
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setProdLoad(true);
+      setProdError(null);
+      const { data, error: err } = await getStorbitTopOutstandingProducts({
+        companyId: SOA_COMPANY_ID,
+        limit: PRODUCT_FETCH_LIMIT,
+      });
+      if (!alive) return;
+      if (err) {
+        setProducts([]);
+        setProdError('Gagal memuat daftar produk: ' + (err.message || 'unknown'));
+      } else {
+        setProducts(data);
+      }
+      setProdLoad(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // ── Laporan produk terpilih (ringkasan + per customer) ────────────────────
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      // Guard sengaja DI DALAM IIFE, bukan di badan effect: setState sinkron
+      // di badan effect memicu cascading render (react-hooks/set-state-in-effect).
+      // Pola ini sama dengan tiga effect existing di halaman ini.
+      if (!productId) { setReport(null); setReportError(null); return; }
+      setReportLoad(true);
+      setReportError(null);
+      const { data, error: err } = await getStorbitProductReport(productId, {
+        companyId: SOA_COMPANY_ID,
+        dateFrom: dateFrom || null,
+        dateTo:   dateTo   || null,
+      });
+      if (!alive) return;
+      if (err) {
+        setReport(null);
+        setReportError('Gagal memuat laporan produk: ' + (err.message || 'unknown'));
+      } else {
+        setReport(data || null);
+      }
+      setReportLoad(false);
+    })();
+    return () => { alive = false; };
+  }, [productId, dateFrom, dateTo]);
+
+  // ── Daftar SP produk terpilih ─────────────────────────────────────────────
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!productId) { setSpListRows([]); setSpListError(null); return; }
+      setSpListLoad(true);
+      setSpListError(null);
+      const { data, error: err } = await getStorbitProductSpList(productId, {
+        companyId: SOA_COMPANY_ID,
+        dateFrom: dateFrom || null,
+        dateTo:   dateTo   || null,
+      });
+      if (!alive) return;
+      if (err) {
+        setSpListRows([]);
+        setSpListError('Gagal memuat daftar SP: ' + (err.message || 'unknown'));
+      } else {
+        setSpListRows(data);
+      }
+      setSpListLoad(false);
+    })();
+    return () => { alive = false; };
+  }, [productId, dateFrom, dateTo]);
+
   // useMemo (bukan ekspresi polos): keduanya jadi dependency useMemo di bawah,
   // dan `|| {}` menghasilkan objek baru tiap render -> memo tak pernah kena.
   const m = useMemo(() => stats?.manifest  || {}, [stats]);
@@ -491,6 +876,84 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   ]), [customers]);
 
   const resetFilters = useCallback(() => { setCustomerId(''); setSpType(''); }, []);
+
+  const selectedProduct = useMemo(
+    () => products.find((p) => p.product_id === productId) || null,
+    [products, productId],
+  );
+  const topProducts = useMemo(() => products.slice(0, TOP_PRODUCT_ROWS), [products]);
+
+  const resetReportFilters = useCallback(() => { setDateFrom(''); setDateTo(''); }, []);
+
+  // Gate export — menu key 'logistics_sp' (Dashboard Storbit memakai ulang key
+  // Sales Order/SP, lihat MENU_KEY_MAP di App.jsx). Kedua action ada & aktif di
+  // menu_actions: 'export' untuk Excel, 'print' untuk PDF. hasMenuPermission
+  // default-deny, jadi tombolnya memang tak terlihat sampai grant-nya diberikan.
+  const canExportExcel = hasMenuPermission('logistics_sp', 'export');
+  const canExportPdf   = hasMenuPermission('logistics_sp', 'print');
+
+  // Export TIDAK BOLEH terpotong diam-diam: daftar SP ditembak ulang dengan
+  // limit jauh lebih tinggi dari yang dipakai layar. Kalau hasilnya MENYENTUH
+  // limit itu, user diperingatkan dan harus menyetujui SEBELUM file dibuat —
+  // dan peringatan yang sama ikut tercetak di dalam file, supaya penerima yang
+  // tak melihat dialog ini tetap tahu isinya tak lengkap.
+  const runExport = useCallback(async (kind) => {
+    if (!productId || !report) return;
+    setExporting(kind);
+    try {
+      const { data: rows, error: err } = await getStorbitProductSpList(productId, {
+        companyId: SOA_COMPANY_ID,
+        dateFrom: dateFrom || null,
+        dateTo:   dateTo   || null,
+        limit:    EXPORT_ROW_LIMIT,
+      });
+      if (err) throw new Error(err.message || 'unknown');
+
+      const truncated = rows.length >= EXPORT_ROW_LIMIT;
+      if (truncated) {
+        const lanjut = window.confirm(
+          `Daftar SP menyentuh batas ${nf(EXPORT_ROW_LIMIT)} baris.\n\n`
+          + 'File yang dibuat TIDAK akan memuat seluruh data. Persempit filter '
+          + 'periode untuk hasil lengkap.\n\nTetap buat file yang terpotong?',
+        );
+        if (!lanjut) { setExporting(null); return; }
+      }
+
+      const payload = {
+        report,
+        spRows: rows,
+        outstanding: outstanding || {},
+        product: selectedProduct || {},
+        filters: { dateFrom, dateTo },
+        truncated,
+      };
+
+      let blob;
+      let ext;
+      if (kind === 'pdf') {
+        blob = await pdf(<StorbitReportPDF {...payload} />).toBlob();
+        ext = 'pdf';
+      } else {
+        // exceljs (~950 KB) sengaja lazy — nol beban sampai tombol ditekan.
+        const { buildStorbitReportWorkbook } = await import('./storbitReportExcel');
+        blob = await buildStorbitReportWorkbook(payload);
+        ext = 'xlsx';
+      }
+
+      const safe = (selectedProduct?.code || 'produk').replace(/[/\\]/g, '-');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `LaporanBarang-${safe}-${new Date().toISOString().slice(0, 10)}.${ext}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      showToast?.(`Laporan ${ext.toUpperCase()} dibuat${truncated ? ' (terpotong)' : ''}.`);
+    } catch (e) {
+      showToast?.('Gagal membuat file: ' + (e?.message || e), 'error');
+    } finally {
+      setExporting(null);
+    }
+  }, [productId, report, outstanding, selectedProduct, dateFrom, dateTo, showToast]);
 
   const spCardValue = (key) => Number(m[key]) || 0;
 
@@ -578,6 +1041,22 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         ))}
       </div>
 
+      {/* 6b — Strip nilai outstanding (kirim / tagih / piutang) ───────────── */}
+      <div style={{ ...body, fontSize: 11, letterSpacing: '0.11em', textTransform: 'uppercase', color: C.purple, fontWeight: 600, marginBottom: 10 }}>
+        Nilai Outstanding
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 22 }}>
+        {OUTSTANDING_CARDS.map((c) => (
+          <OutstandingCard
+            key={c.key}
+            item={c}
+            loading={outLoading}
+            value={outstanding?.[c.key]?.nilai}
+            count={c.key === 'piutang' ? outstanding?.piutang?.jml_invoice : outstanding?.[c.key]?.jml_sp}
+          />
+        ))}
+      </div>
+
       {/* 7 — Perlu Perhatian · Tenggat */}
       <div style={{ ...body, fontSize: 11, letterSpacing: '0.11em', textTransform: 'uppercase', color: C.orange, fontWeight: 600, marginBottom: 10 }}>
         Perlu Perhatian · Tenggat
@@ -653,6 +1132,171 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         loading={whRowsLoading}
         onRowClick={onSelectProduct}
       />
+
+      {/* 14 — Laporan Per Barang ─────────────────────────────────────────── */}
+      <div style={{ marginTop: 34 }}>
+        <Kicker>Laporan Per Barang</Kicker>
+        <div style={{ ...body, fontSize: 12.5, color: C.muted }}>
+          Sisa kirim, nilai, dan kecukupan stok untuk satu produk
+        </div>
+      </div>
+
+      {/* 14a — Filter + export */}
+      <div style={{
+        background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4,
+        padding: '14px 16px', display: 'flex', gap: 16, alignItems: 'flex-end',
+        flexWrap: 'wrap', marginTop: 14, marginBottom: 18,
+      }}>
+        <ProductCombobox
+          products={products}
+          value={productId}
+          onChange={setProductId}
+          loading={productsLoading}
+          disabled={!!productsError}
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ ...body, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.faint }}>
+            Tgl SP dari
+          </label>
+          <input
+            type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+            style={{ ...body, fontSize: 13, padding: '8px 10px', borderRadius: 4, border: `1px solid ${C.divider}`, background: C.card, color: C.ink }}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ ...body, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.faint }}>
+            sampai
+          </label>
+          <input
+            type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+            style={{ ...body, fontSize: 13, padding: '8px 10px', borderRadius: 4, border: `1px solid ${C.divider}`, background: C.card, color: C.ink }}
+          />
+        </div>
+        {(dateFrom || dateTo) && (
+          <button onClick={resetReportFilters} style={{
+            ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '8px 12px', borderRadius: 4, border: `1px solid ${C.divider}`,
+            background: C.card, color: C.muted, cursor: 'pointer',
+          }}>
+            <RotateCcw size={13} strokeWidth={1.75} /> Periode
+          </button>
+        )}
+
+        <div style={{ flex: 1, minWidth: 120, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          {canExportExcel && (
+            <button
+              onClick={() => runExport('xlsx')}
+              disabled={!productId || reportLoading || !!exporting}
+              style={{
+                ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
+                background: C.card, color: productId && !exporting ? C.ink : C.faint,
+                cursor: productId && !exporting ? 'pointer' : 'not-allowed',
+              }}
+            >
+              <FileSpreadsheet size={13} strokeWidth={1.75} />
+              {exporting === 'xlsx' ? 'Menyiapkan…' : 'Excel'}
+            </button>
+          )}
+          {canExportPdf && (
+            <button
+              onClick={() => runExport('pdf')}
+              disabled={!productId || reportLoading || !!exporting}
+              style={{
+                ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
+                background: C.card, color: productId && !exporting ? C.ink : C.faint,
+                cursor: productId && !exporting ? 'pointer' : 'not-allowed',
+              }}
+            >
+              <FileText size={13} strokeWidth={1.75} />
+              {exporting === 'pdf' ? 'Menyiapkan…' : 'PDF'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {productsError && (
+        <div style={{ ...body, fontSize: 12.5, color: C.orange, background: C.orangeSoft, border: `1px solid ${C.orangeBorder}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18 }}>
+          {productsError}
+        </div>
+      )}
+
+      {/* 14b — Belum ada produk dipilih: Top 10 sebagai pintu masuk */}
+      {!productId ? (
+        <ReportTable
+          title="Top 10 Produk — Nilai Belum Dikirim"
+          cols={TOP_COLS}
+          rows={topProducts}
+          loading={productsLoading}
+          error={productsError}
+          empty="Belum ada produk dengan sisa kirim."
+          footer={`${nf(topProducts.length)} dari ${nf(products.length)} produk`}
+          onRowClick={(r) => setProductId(r.product_id)}
+        />
+      ) : (
+        <>
+          {/* 14c — Kartu ringkasan */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
+            <SummaryTile label="Total Dipesan"  value={reportLoading ? '…' : nf(report?.summary?.qty_ordered)} />
+            <SummaryTile label="Terkirim"       value={reportLoading ? '…' : nf(report?.summary?.qty_shipped)} />
+            <SummaryTile label="Belum Dikirim"  value={reportLoading ? '…' : nf(report?.summary?.qty_outstanding)} />
+            <SummaryTile
+              label="Nilai Belum Dikirim"
+              value={reportLoading ? '…' : rpShort(report?.summary?.nilai_outstanding)}
+              sub="belum termasuk PPN"
+            />
+            {/* Defisit memakai token peringatan yang SAMA dengan kartu
+                "Lewat Tenggat Kirim" (C.orange / C.orangeSoft / C.orangeBorder)
+                — tidak ada warna baru diperkenalkan. */}
+            <SummaryTile
+              label="Stok Tersedia"
+              value={reportLoading ? '…' : nf(report?.summary?.stok_tersedia)}
+              warn={!reportLoading && Number(report?.summary?.defisit) > 0}
+              sub={reportLoading ? null
+                : Number(report?.summary?.defisit) > 0
+                  ? `Defisit ${nf(report?.summary?.defisit)}`
+                  : 'Stok mencukupi'}
+            />
+          </div>
+
+          {reportError && (
+            <div style={{ ...body, fontSize: 12.5, color: C.orange, background: C.orangeSoft, border: `1px solid ${C.orangeBorder}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18 }}>
+              {reportError}
+            </div>
+          )}
+
+          {/* 14d — Breakdown per customer */}
+          <div style={{ marginBottom: 18 }}>
+            <ReportTable
+              title="Rincian Per Customer"
+              cols={CUSTOMER_COLS}
+              rows={report?.per_customer || []}
+              loading={reportLoading}
+              error={reportError}
+              empty="Produk ini belum pernah dipesan customer mana pun pada periode terpilih."
+              footer={`${nf(report?.per_customer?.length)} customer`}
+            />
+          </div>
+
+          {/* 14e — Daftar SP; baris bisa diklik ke Detail SP */}
+          <ReportTable
+            title="Daftar SP"
+            cols={SP_COLS}
+            rows={spListRows}
+            loading={spListLoading}
+            error={spListError}
+            empty="Tidak ada SP untuk produk ini pada periode terpilih."
+            footer={`${nf(spListRows.length)} SP ditampilkan`}
+            onRowClick={onSelectSP}
+          />
+          {spListRows.length >= 200 && (
+            <div style={{ ...mono, fontSize: 10.5, color: C.faint, marginTop: 8 }}>
+              Layar dibatasi 200 baris. Export mengambil sampai {nf(EXPORT_ROW_LIMIT)} baris.
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
