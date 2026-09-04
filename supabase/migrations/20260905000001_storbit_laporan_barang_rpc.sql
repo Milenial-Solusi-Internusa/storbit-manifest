@@ -3,7 +3,7 @@
 -- Phase:     Laporan Per Barang (Dashboard Storbit) — 4 RPC baca-saja + 1 index.
 -- Depends:   sp_orders, sp_items, sp_btb, sp_invoices, sp_payments,
 --            products, stock_summary, accounts, dc_master
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
+-- Status:    LIVE — dieksekusi di produksi 5 Sep 2026.
 --
 -- SIFAT: 100% BACA. Nol DDL pada tabel, nol perubahan RLS, nol backfill,
 --   nol sentuhan ke get_storbit_dashboard_stats / get_storbit_sp_drilldown /

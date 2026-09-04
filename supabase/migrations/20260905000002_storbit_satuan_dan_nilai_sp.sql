@@ -3,7 +3,7 @@
 -- Phase:     Laporan Per Barang — tambah satuan produk + nilai total SP.
 -- Depends:   20260905000001_storbit_laporan_barang_rpc (ketiga fungsi di bawah
 --            HARUS sudah ada; migrasi ini hanya mengubahnya).
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
+-- Status:    LIVE — dieksekusi di produksi 5 Sep 2026.
 --
 -- SIFAT: 100% BACA. Nol DDL tabel, nol perubahan RLS, nol index baru.
 --   Tiga fungsi disentuh; get_storbit_product_sp_list dan create_invoice
