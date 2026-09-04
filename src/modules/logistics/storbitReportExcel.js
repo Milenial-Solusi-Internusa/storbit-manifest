@@ -59,44 +59,54 @@ export async function buildStorbitReportWorkbook({
 
   const sum = report.summary || {};
   const perCust = report.per_customer || [];
+  const uom = sum.uom || '';
+  // Satuan ikut ke JUDUL kolom, bukan ke tiap sel: sel harus tetap NUMBER
+  // supaya bisa dijumlah ulang di Excel. Menempelkan "PCS" ke nilainya akan
+  // mengubahnya jadi teks dan mematikan SUM.
+  const qtyHdr = (label) => (uom ? `${label} (${uom})` : label);
   const periode = filters.dateFrom || filters.dateTo
     ? `${filters.dateFrom || 'awal'} s/d ${filters.dateTo || 'sekarang'}`
     : 'Seluruh periode';
 
   // ── Sheet 1: Ringkasan ────────────────────────────────────────────────────
   const ws1 = wb.addWorksheet('Ringkasan');
-  autoWidth(ws1, [34, 22, 40]);
+  autoWidth(ws1, [34, 22, 22, 28]);
 
   titleRow(ws1, 'Laporan Per Barang — Dashboard Storbit');
   ws1.addRow(['Produk', product.product_name || '—']);
   ws1.addRow(['Kode', product.code || '—']);
+  ws1.addRow(['Satuan', uom || '—']);
   ws1.addRow(['Periode SP', periode]);
   ws1.addRow(['Dibuat', new Date().toLocaleString('id-ID')]);
   ws1.addRow([]);
 
   titleRow(ws1, 'Outstanding Storbit — seluruh entitas');
-  styleHeader(ws1.addRow(['Metrik', 'Jumlah', 'Nilai']));
-  const oKirim = ws1.addRow(['Outstanding Kirim',   Number(outstanding?.kirim?.jml_sp) || 0,      Number(outstanding?.kirim?.nilai) || 0]);
-  const oTagih = ws1.addRow(['Outstanding Tagih',   Number(outstanding?.tagih?.jml_sp) || 0,      Number(outstanding?.tagih?.nilai) || 0]);
-  const oPiut  = ws1.addRow(['Outstanding Piutang', Number(outstanding?.piutang?.jml_invoice) || 0, Number(outstanding?.piutang?.nilai) || 0]);
-  [oKirim, oTagih, oPiut].forEach((r) => {
+  styleHeader(ws1.addRow(['Metrik', 'Jumlah', 'Nilai', 'Basis pajak']));
+  // Nilai Total SP paling atas: ia penyebut dari tiga angka di bawahnya.
+  const oTotal = ws1.addRow(['Nilai Total SP',      Number(outstanding?.total_sp?.jml_sp) || 0,     Number(outstanding?.total_sp?.nilai) || 0,   'BRUTO — sudah termasuk PPN']);
+  const oKirim = ws1.addRow(['Outstanding Kirim',   Number(outstanding?.kirim?.jml_sp) || 0,        Number(outstanding?.kirim?.nilai) || 0,      'DPP — belum termasuk PPN']);
+  const oTagih = ws1.addRow(['Outstanding Tagih',   Number(outstanding?.tagih?.jml_sp) || 0,        Number(outstanding?.tagih?.nilai) || 0,      'DPP — belum termasuk PPN']);
+  const oPiut  = ws1.addRow(['Outstanding Piutang', Number(outstanding?.piutang?.jml_invoice) || 0, Number(outstanding?.piutang?.nilai) || 0,    'BRUTO — sudah termasuk PPN']);
+  [oTotal, oKirim, oTagih, oPiut].forEach((r) => {
     r.getCell(2).numFmt = NUM;
     r.getCell(3).numFmt = RP;
   });
-  ws1.addRow(['Kirim & Tagih = DPP, BELUM termasuk PPN. Piutang = bruto, SUDAH termasuk PPN.']);
-  ws1.addRow(['Ketiganya beda basis pajak — jangan dijumlahkan.']);
+  ws1.addRow(['DUA BRUTO (Nilai Total SP, Piutang) dan DUA DPP (Kirim, Tagih).']);
+  ws1.addRow(['Beda basis pajak — jangan dijumlahkan lintas basis.']);
   ws1.addRow([]);
 
   titleRow(ws1, 'Ringkasan Produk');
-  styleHeader(ws1.addRow(['Metrik', 'Nilai']));
-  const rOrd  = ws1.addRow(['Total Dipesan',       Number(sum.qty_ordered) || 0]);
-  const rShp  = ws1.addRow(['Terkirim',            Number(sum.qty_shipped) || 0]);
-  const rOut  = ws1.addRow(['Belum Dikirim',       Number(sum.qty_outstanding) || 0]);
-  const rVal  = ws1.addRow(['Nilai Belum Dikirim', Number(sum.nilai_outstanding) || 0]);
-  const rStk  = ws1.addRow(['Stok Tersedia',       Number(sum.stok_tersedia) || 0]);
-  const rDef  = ws1.addRow(['Defisit',             Number(sum.defisit) || 0]);
-  const rSp   = ws1.addRow(['Jumlah SP',           Number(sum.jml_sp) || 0]);
-  const rCust = ws1.addRow(['Jumlah Customer',     Number(sum.jml_customer) || 0]);
+  styleHeader(ws1.addRow(['Metrik', 'Nilai', 'Satuan']));
+  const rOrd  = ws1.addRow(['Total Dipesan',       Number(sum.qty_ordered) || 0,       uom || '—']);
+  const rShp  = ws1.addRow(['Terkirim',            Number(sum.qty_shipped) || 0,       uom || '—']);
+  const rOut  = ws1.addRow(['Belum Dikirim',       Number(sum.qty_outstanding) || 0,   uom || '—']);
+  const rVal  = ws1.addRow(['Nilai Belum Dikirim', Number(sum.nilai_outstanding) || 0, 'Rp · DPP']);
+  const rStk  = ws1.addRow(['Stok Tersedia',       Number(sum.stok_tersedia) || 0,     uom || '—']);
+  const rDef  = ws1.addRow(['Defisit',             Number(sum.defisit) || 0,           uom || '—']);
+  const rNtsp = ws1.addRow(['Nilai Total SP',      Number(sum.nilai_total_sp) || 0,    'Rp · BRUTO']);
+  const rSp   = ws1.addRow(['Jumlah SP',           Number(sum.jml_sp) || 0,            'SP']);
+  const rCust = ws1.addRow(['Jumlah Customer',     Number(sum.jml_customer) || 0,      'customer']);
+  rNtsp.getCell(2).numFmt = RP;
   [rOrd, rShp, rOut, rStk, rDef, rSp, rCust].forEach((r) => { r.getCell(2).numFmt = NUM; });
   rVal.getCell(2).numFmt = RP;
   if ((Number(sum.defisit) || 0) > 0) {
@@ -107,7 +117,7 @@ export async function buildStorbitReportWorkbook({
   // ── Sheet 2: Per Customer ─────────────────────────────────────────────────
   const ws2 = wb.addWorksheet('Per Customer');
   autoWidth(ws2, [40, 10, 14, 20]);
-  styleHeader(ws2.addRow(['Customer', 'Jml SP', 'Sisa Qty', 'Nilai Sisa (DPP)']));
+  styleHeader(ws2.addRow(['Customer', 'Jml SP', qtyHdr('Sisa Qty'), 'Nilai Sisa (DPP)']));
   perCust.forEach((c) => {
     const r = ws2.addRow([
       c.customer_name || '—',
@@ -130,7 +140,7 @@ export async function buildStorbitReportWorkbook({
   }
   styleHeader(ws3.addRow([
     'No SP', 'Customer', 'DC', 'Tgl SP', 'Tenggat', 'Status',
-    'Qty', 'Terkirim', 'Sisa', 'Nilai Sisa (DPP)', 'Umur (hari)',
+    qtyHdr('Qty'), qtyHdr('Terkirim'), qtyHdr('Sisa'), 'Nilai Sisa (DPP)', 'Umur (hari)',
   ]));
   spRows.forEach((r) => {
     const row = ws3.addRow([

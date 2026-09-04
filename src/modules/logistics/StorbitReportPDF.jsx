@@ -28,6 +28,8 @@ const L_H = PAGE_W;   // 612
 // Rupiah tanpa desimal — seluruh nilai laporan ini bulat rupiah.
 const fmtIDR = (n) => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const fmtNum = (n) => Number(n || 0).toLocaleString('id-ID');
+// Qty + satuan produk, apa adanya dari master (products.unit -> uom).
+const fmtQtyU = (n, uom) => (uom ? `${fmtNum(n)} ${uom}` : fmtNum(n));
 
 // Ornamen sudut versi landscape — bentuk & fillOpacity identik PageChrome.
 function ReportChrome() {
@@ -73,24 +75,26 @@ function Section({ title, children }) {
 }
 
 // ── Tabel per customer ──────────────────────────────────────────────────────
-const cuCols = [
+// Seluruh baris kedua tabel ini produk yang SAMA, jadi satuan cukup sekali di
+// header — bukan diulang di tiap sel.
+const makeCuCols = (uom) => [
   { k: 'customer_name',     h: 'Customer',      w: '46%', a: 'left'  },
   { k: 'jml_sp',            h: 'Jml SP',        w: '10%', a: 'right' },
-  { k: 'qty_outstanding',   h: 'Sisa Qty',      w: '16%', a: 'right' },
+  { k: 'qty_outstanding',   h: uom ? `Sisa Qty (${uom})` : 'Sisa Qty', w: '16%', a: 'right' },
   { k: 'nilai_outstanding', h: 'Nilai Sisa',    w: '28%', a: 'right' },
 ];
 
 // ── Tabel daftar SP — 11 kolom, sama persis dengan yang di layar ────────────
-const spCols = [
+const makeSpCols = (uom) => [
   { k: 'sp_no',        h: 'No SP',     w: '9%',  a: 'left'  },
   { k: 'customer_name',h: 'Customer',  w: '17%', a: 'left'  },
   { k: 'dc_nama',      h: 'DC',        w: '12%', a: 'left'  },
   { k: 'sp_date',      h: 'Tgl SP',    w: '9%',  a: 'left'  },
   { k: 'expired_date', h: 'Tenggat',   w: '9%',  a: 'left'  },
   { k: 'status',       h: 'Status',    w: '12%', a: 'left'  },
-  { k: 'qty',          h: 'Qty',       w: '6%',  a: 'right' },
-  { k: 'shipped_qty',  h: 'Kirim',     w: '6%',  a: 'right' },
-  { k: 'sisa',         h: 'Sisa',      w: '6%',  a: 'right' },
+  { k: 'qty',          h: uom ? `Qty (${uom})`   : 'Qty',   w: '6%', a: 'right' },
+  { k: 'shipped_qty',  h: uom ? `Kirim (${uom})` : 'Kirim', w: '6%', a: 'right' },
+  { k: 'sisa',         h: uom ? `Sisa (${uom})`  : 'Sisa',  w: '6%', a: 'right' },
   { k: 'nilai_sisa',   h: 'Nilai Sisa',w: '10%', a: 'right' },
   { k: 'umur_hari',    h: 'Umur',      w: '4%',  a: 'right' },
 ];
@@ -152,6 +156,9 @@ export default function StorbitReportPDF({
   const sum = report.summary || {};
   const perCust = report.per_customer || [];
   const defisit = Number(sum.defisit) || 0;
+  const uom = sum.uom || '';
+  const cuCols = makeCuCols(uom);
+  const spCols = makeSpCols(uom);
   const periode = filters.dateFrom || filters.dateTo
     ? `${filters.dateFrom ? fmtDate(filters.dateFrom) : 'awal'} s/d ${filters.dateTo ? fmtDate(filters.dateTo) : 'sekarang'}`
     : 'Seluruh periode';
@@ -175,8 +182,8 @@ export default function StorbitReportPDF({
                 <Text style={s.metaValue}>{product.product_name || '—'}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={s.metaLabel}>Kode</Text>
-                <Text style={s.metaValue}>{product.code || '—'}</Text>
+                <Text style={s.metaLabel}>Kode · Satuan</Text>
+                <Text style={s.metaValue}>{product.code || '—'}{uom ? ` · ${uom}` : ''}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={s.metaLabel}>Periode SP</Text>
@@ -191,6 +198,13 @@ export default function StorbitReportPDF({
         {/* Strip outstanding — angka seluruh entitas, bukan per produk. */}
         <Section title="Outstanding Storbit — seluruh entitas">
           <View style={{ flexDirection: 'row', gap: px(8), marginTop: px(4) }}>
+            {/* Paling kiri: penyebut dari tiga angka lain. Dua kartu BRUTO
+                (Nilai Total SP, Piutang), dua DPP (Kirim, Tagih). */}
+            <Stat
+              label="Nilai Total SP"
+              value={fmtIDR(outstanding?.total_sp?.nilai)}
+              sub={`${fmtNum(outstanding?.total_sp?.jml_sp)} SP · sudah termasuk PPN`}
+            />
             <Stat
               label="Outstanding Kirim"
               value={fmtIDR(outstanding?.kirim?.nilai)}
@@ -212,20 +226,23 @@ export default function StorbitReportPDF({
         {/* Ringkasan produk */}
         <Section title="Ringkasan Produk">
           <View style={{ flexDirection: 'row', gap: px(8), marginTop: px(4) }}>
-            <Stat label="Total Dipesan"      value={fmtNum(sum.qty_ordered)} />
-            <Stat label="Terkirim"           value={fmtNum(sum.qty_shipped)} />
-            <Stat label="Belum Dikirim"      value={fmtNum(sum.qty_outstanding)} />
+            <Stat
+              label="Total Dipesan"
+              value={fmtQtyU(sum.qty_ordered, uom)}
+              sub={`dari ${fmtNum(sum.jml_sp)} SP · ${fmtNum(sum.jml_customer)} customer`}
+            />
+            <Stat label="Terkirim"      value={fmtQtyU(sum.qty_shipped, uom)}      sub="sudah dikirim ke customer" />
+            <Stat label="Belum Dikirim" value={fmtQtyU(sum.qty_outstanding, uom)}  sub="sisa yang masih harus dikirim" />
             <Stat label="Nilai Belum Dikirim" value={fmtIDR(sum.nilai_outstanding)} sub="belum termasuk PPN" />
             <Stat
               label="Stok Tersedia"
-              value={fmtNum(sum.stok_tersedia)}
-              sub={defisit > 0 ? `Defisit ${fmtNum(defisit)}` : 'Stok mencukupi'}
+              value={fmtQtyU(sum.stok_tersedia, uom)}
+              sub={defisit > 0 ? `defisit ${fmtQtyU(defisit, uom)}` : 'cukup untuk menutup sisa kirim'}
               warn={defisit > 0}
             />
           </View>
           <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>
-            {fmtNum(sum.jml_sp)} SP · {fmtNum(sum.jml_customer)} customer. Stok adalah angka saat laporan dibuat
-            dan tidak mengikuti filter periode.
+            Stok adalah angka saat laporan dibuat dan tidak mengikuti filter periode.
           </Text>
         </Section>
 

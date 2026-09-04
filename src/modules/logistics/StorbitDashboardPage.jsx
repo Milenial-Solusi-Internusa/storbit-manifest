@@ -22,7 +22,7 @@ import { pdf } from '@react-pdf/renderer';
 import {
   ClipboardList, Truck, PackageCheck, FileCheck2, Receipt, XCircle,
   AlertOctagon, Clock, AlertTriangle, PackageX, Boxes, ChevronRight,
-  Search, RotateCcw, ShieldAlert, Send, Wallet,
+  Search, RotateCcw, ShieldAlert, Send, Wallet, Coins,
   FileSpreadsheet, FileText, X,
 } from 'lucide-react';
 import {
@@ -104,6 +104,12 @@ const WAREHOUSE_CARDS = [
 // basis pajak dan tanpa penjelasan mudah dibaca keliru sebagai satu deret yang
 // bisa dijumlahkan. `ppn: false` mencetak penanda "belum termasuk PPN".
 const OUTSTANDING_CARDS = [
+  // Nilai Total SP SENGAJA paling kiri: ia penyebut dari tiga angka lain
+  // (nilai kontrak seluruh SP), jadi dibaca lebih dulu baru turunannya.
+  // ⚠️ Dua kartu BRUTO (total_sp, piutang) dan dua DPP (kirim, tagih) —
+  // `ppn` mengendalikan penanda di kaki kartu, jangan disamakan.
+  { key: 'total_sp', icon: Coins, label: 'Nilai Total SP',
+    desc: 'Nilai kontrak seluruh SP', ppn: true,  unit: 'SP' },
   { key: 'kirim',   icon: Truck,  label: 'Outstanding Kirim',
     desc: 'Nilai barang yang belum dikirim', ppn: false, unit: 'SP' },
   { key: 'tagih',   icon: Send,   label: 'Outstanding Tagih',
@@ -133,6 +139,12 @@ const SP_TYPE_OPTIONS = [
 
 /* ---------- helpers ---------- */
 const nf = (n) => Number(n || 0).toLocaleString('id-ID');
+
+// Angka qty + satuan produk. Satuan datang APA ADANYA dari master
+// (products.unit -> uom); master belum seragam kapitalisasinya ('PCS' vs
+// 'Pcs'), dan itu SENGAJA tidak dinormalisasi di sini — merapikannya pekerjaan
+// master-data, bukan laporan.
+const qtyU = (n, uom) => (uom ? `${nf(n)} ${uom}` : nf(n));
 
 // Rupiah penuh (tabel & tooltip) dan ringkas (kartu, supaya tak membungkus).
 const rp = (n) => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
@@ -593,23 +605,31 @@ function ReportTable({ title, cols, rows, loading, error, empty, onRowClick, foo
 // bentuk baris get_storbit_product_sp_list (1b) — urutan & isi yang sama
 // dipakai ulang oleh StorbitReportPDF dan storbitReportExcel, jadi layar, PDF,
 // dan Excel menampilkan hal yang sama.
-const CUSTOMER_COLS = [
+// CUSTOMER_COLS & SP_COLS jadi FUNGSI karena satuannya ikut produk yang
+// dipilih — dan seluruh baris kedua tabel itu produk yang SAMA, jadi satuan
+// cukup sekali di header. Menaruhnya di tiap sel akan mengulang kata yang sama
+// ratusan kali tanpa menambah informasi.
+const makeCustomerCols = (uom) => [
   { h: 'Customer',   wrap: true, render: (r) => r.customer_name || '—' },
   { h: 'Jml SP',     a: 'right', mono: true, render: (r) => nf(r.jml_sp) },
-  { h: 'Sisa Qty',   a: 'right', mono: true, render: (r) => nf(r.qty_outstanding) },
+  { h: uom ? `Sisa Qty (${uom})` : 'Sisa Qty',
+                     a: 'right', mono: true, render: (r) => nf(r.qty_outstanding) },
   { h: 'Nilai Sisa', a: 'right', mono: true, render: (r) => rp(r.nilai_outstanding) },
 ];
 
-const SP_COLS = [
+const makeSpCols = (uom) => [
   { h: 'No SP',      mono: true, render: (r) => r.sp_no || '—' },
   { h: 'Customer',   wrap: true, render: (r) => r.customer_name || '—' },
   { h: 'DC',         dim: true,  render: (r) => r.dc_nama || '—' },
   { h: 'Tgl SP',     mono: true, render: (r) => fmtDate(r.sp_date) },
   { h: 'Tenggat',    mono: true, render: (r) => fmtDate(r.expired_date) },
   { h: 'Status',                 render: (r) => r.status || '—' },
-  { h: 'Qty',        a: 'right', mono: true, render: (r) => nf(r.qty) },
-  { h: 'Kirim',      a: 'right', mono: true, render: (r) => nf(r.shipped_qty) },
-  { h: 'Sisa',       a: 'right', mono: true, render: (r) => nf(r.sisa) },
+  { h: uom ? `Qty (${uom})` : 'Qty',
+                     a: 'right', mono: true, render: (r) => nf(r.qty) },
+  { h: uom ? `Kirim (${uom})` : 'Kirim',
+                     a: 'right', mono: true, render: (r) => nf(r.shipped_qty) },
+  { h: uom ? `Sisa (${uom})` : 'Sisa',
+                     a: 'right', mono: true, render: (r) => nf(r.sisa) },
   { h: 'Nilai Sisa', a: 'right', mono: true, render: (r) => rp(r.nilai_sisa) },
   { h: 'Umur',       a: 'right', mono: true, render: (r) => (r.umur_hari == null ? '—' : `${nf(r.umur_hari)}h`) },
 ];
@@ -617,6 +637,10 @@ const SP_COLS = [
 const TOP_COLS = [
   { h: 'Kode',       mono: true, render: (r) => r.code || '—' },
   { h: 'Produk',     wrap: true, render: (r) => r.product_name || '—' },
+  // Beda dari dua tabel lain: tiap baris di sini produk BERBEDA, jadi satuan
+  // tak bisa dititipkan ke header. Satu kolom sendiri lebih tenang daripada
+  // mengulangnya di dalam kolom Sisa Qty DAN Stok.
+  { h: 'Satuan',     dim: true,  render: (r) => r.uom || '—' },
   { h: 'Jml SP',     a: 'right', mono: true, render: (r) => nf(r.jml_sp) },
   { h: 'Sisa Qty',   a: 'right', mono: true, render: (r) => nf(r.qty_outstanding) },
   { h: 'Stok',       a: 'right', mono: true, render: (r) => nf(r.stok_tersedia) },
@@ -883,6 +907,13 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   );
   const topProducts = useMemo(() => products.slice(0, TOP_PRODUCT_ROWS), [products]);
 
+  // Satuan produk terpilih. Sumbernya `summary.uom` (RPC), bukan baris combobox
+  // — keduanya lahir dari ekspresi COALESCE yang sama di SQL, tapi mengambil
+  // dari summary menjaga kartu, tabel, dan file export memakai satu nilai.
+  const uom = report?.summary?.uom || '';
+  const customerCols = useMemo(() => makeCustomerCols(uom), [uom]);
+  const spCols       = useMemo(() => makeSpCols(uom), [uom]);
+
   const resetReportFilters = useCallback(() => { setDateFrom(''); setDateTo(''); }, []);
 
   // Gate export — menu key 'logistics_sp' (Dashboard Storbit memakai ulang key
@@ -1041,7 +1072,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         ))}
       </div>
 
-      {/* 6b — Strip nilai outstanding (kirim / tagih / piutang) ───────────── */}
+      {/* 6b — Strip nilai (total SP / kirim / tagih / piutang) ─────────────── */}
       <div style={{ ...body, fontSize: 11, letterSpacing: '0.11em', textTransform: 'uppercase', color: C.purple, fontWeight: 600, marginBottom: 10 }}>
         Nilai Outstanding
       </div>
@@ -1238,9 +1269,22 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         <>
           {/* 14c — Kartu ringkasan */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
-            <SummaryTile label="Total Dipesan"  value={reportLoading ? '…' : nf(report?.summary?.qty_ordered)} />
-            <SummaryTile label="Terkirim"       value={reportLoading ? '…' : nf(report?.summary?.qty_shipped)} />
-            <SummaryTile label="Belum Dikirim"  value={reportLoading ? '…' : nf(report?.summary?.qty_outstanding)} />
+            <SummaryTile
+              label="Total Dipesan"
+              value={reportLoading ? '…' : qtyU(report?.summary?.qty_ordered, uom)}
+              sub={reportLoading ? null
+                : `dari ${nf(report?.summary?.jml_sp)} SP · ${nf(report?.summary?.jml_customer)} customer`}
+            />
+            <SummaryTile
+              label="Terkirim"
+              value={reportLoading ? '…' : qtyU(report?.summary?.qty_shipped, uom)}
+              sub={reportLoading ? null : 'sudah dikirim ke customer'}
+            />
+            <SummaryTile
+              label="Belum Dikirim"
+              value={reportLoading ? '…' : qtyU(report?.summary?.qty_outstanding, uom)}
+              sub={reportLoading ? null : 'sisa yang masih harus dikirim'}
+            />
             <SummaryTile
               label="Nilai Belum Dikirim"
               value={reportLoading ? '…' : rpShort(report?.summary?.nilai_outstanding)}
@@ -1251,12 +1295,12 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
                 — tidak ada warna baru diperkenalkan. */}
             <SummaryTile
               label="Stok Tersedia"
-              value={reportLoading ? '…' : nf(report?.summary?.stok_tersedia)}
+              value={reportLoading ? '…' : qtyU(report?.summary?.stok_tersedia, uom)}
               warn={!reportLoading && Number(report?.summary?.defisit) > 0}
               sub={reportLoading ? null
                 : Number(report?.summary?.defisit) > 0
-                  ? `Defisit ${nf(report?.summary?.defisit)}`
-                  : 'Stok mencukupi'}
+                  ? `defisit ${qtyU(report?.summary?.defisit, uom)}`
+                  : 'cukup untuk menutup sisa kirim'}
             />
           </div>
 
@@ -1270,7 +1314,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
           <div style={{ marginBottom: 18 }}>
             <ReportTable
               title="Rincian Per Customer"
-              cols={CUSTOMER_COLS}
+              cols={customerCols}
               rows={report?.per_customer || []}
               loading={reportLoading}
               error={reportError}
@@ -1282,7 +1326,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
           {/* 14e — Daftar SP; baris bisa diklik ke Detail SP */}
           <ReportTable
             title="Daftar SP"
-            cols={SP_COLS}
+            cols={spCols}
             rows={spListRows}
             loading={spListLoading}
             error={spListError}
