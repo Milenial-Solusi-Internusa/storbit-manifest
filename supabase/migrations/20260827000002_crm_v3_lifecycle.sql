@@ -1,4 +1,50 @@
 -- =============================================================================
+-- ⛔⛔ JANGAN JALANKAN MIGRASI INI DULU — DITAHAN 4 September 2026 ⛔⛔
+--     (blok ini KOMENTAR saja; nol baris SQL di bawahnya diubah)
+--
+-- ALASAN: STEP 1 me-RENAME accounts.account_status -> lifecycle_stage.
+--   Begitu ia jalan, kolom lama LENYAP SEKETIKA — dan `main` yang SEDANG
+--   MELAYANI PRODUKSI masih membacanya. Produksi patah SEBELUM branch CRM v3
+--   di-merge, jadi tak ada urutan deploy FE-dulu yang menyelamatkannya selama
+--   `main` belum berubah. Ini BLOKIR, bukan sekadar urutan deploy.
+--
+-- CAKUPAN (diukur `git grep` ke `main`, 4 Sep 2026 — bukan perkiraan):
+--   14 file · 29 baris hidup (di luar komentar)
+--     - 8 baris di dalam .select()  : DcMasterPage:175 · ActivitiesPage:589 ·
+--       CRMDashboardPage:1956,2200 · CRMReportPage:197 · InquiryFormPage:181,183,225
+--     - 15 baris filter .in()/.eq() : db.js:228 · CustomerListPage:598,611 ·
+--       PipelineKanbanPage:471 · ProspectListPage:128 · activityFeed.js:56 · dll
+--     - 3 baris MENULIS             : db.js:266 · CustomerListPage.jsx:373 ·
+--                                     ProspectFormPage.jsx:282
+--   ⚠️ Angka "sepuluh file" yang sempat beredar UNDER-COUNT. Jangan dipakai.
+--
+-- YANG BOLEH DIJALANKAN SEKARANG (nol dampak ke `main`), berurutan:
+--   20260827000001_crm_v3_master_data
+--   20260828000001_inquiry_status_history
+--   20260828000002_inquiries_closure_fields
+--   20260830000002_inquiry_owner_backfill_and_lock
+--   lalu refresh supabase/schema_snapshot.sql via pg_dump, baru FE.
+--
+-- PENAHANAN DICABUT HANYA SETELAH Keputusan Terbuka #32 dijawab
+-- (docs/Governance/09_ROADMAP.md):
+--   A — rename langsung: nol kerja tambahan, ADA jendela downtime sepanjang
+--       deploy Vercel, dan rollback praktis MUSTAHIL (STEP 4 sudah menimpa
+--       empat fungsi plpgsql).
+--   B — tulis ulang jadi tambah-kolom + trigger sinkron dua arah, drop
+--       account_status setelah branch stabil: nol downtime, perlu migrasi baru.
+--
+-- ⚠️ POIN KEDUA YANG BELUM SELESAI — Keputusan Terbuka #33:
+--   Penyempitan set_prospect_on_inquiry di STEP 4 ('lead','mql','sql') ->
+--   ('lead','mql') MEMBATALKAN keputusan tertulis 18 Jul 2026. Header di bawah
+--   menyatakan ini "disetujui Den"; per keputusan Den 4 Sep 2026 statusnya
+--   DIKEMBALIKAN jadi PERTANYAAN TERBUKA sampai dikonfirmasi ulang. Jangan
+--   menjalankan migrasi ini sambil menganggap poin ini sudah beres.
+--
+-- Rujukan: 08_TECH_DEBT.md TD-218 · 03_DATA_MODEL.md gotcha #21 ·
+--          09_ROADMAP.md Keputusan Terbuka #32/#33 · PROGRESS.md 2026-09-04
+-- =============================================================================
+
+-- =============================================================================
 -- Migration: 20260827000002_crm_v3_lifecycle
 -- Batch:     CRM v3 — Batch Persiapan, bagian B2 (lifecycle akun bersih)
 -- Depends:   accounts · inquiries · profiles · 20260718000001_lifecycle_split_fase2

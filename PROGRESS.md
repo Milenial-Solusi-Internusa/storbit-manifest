@@ -31,6 +31,115 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-04
+
+### CRM v3 — Detail Deal jadi halaman KEDUA yang migrasi penuh ke design kit v3 (Batch A + B) + dua audit kesiapan produksi (FE-only, NOL migrasi baru, NOL SQL dijalankan)
+
+> **⚠️ BACA DULU — CRM v3 TETAP BELUM SELESAI.** Sesudah hari ini yang benar-benar migrasi penuh ke kit v3 ada **DUA halaman**: `InquiryListPage` (2 Sep) dan **`DealDetailPage` (hari ini)**. Rencana blueprint tetap **Batch B1–B6**. **Account · Approval Lead Pool · Quotation · Customer · Aktivitas masih belum tersentuh sama sekali.**
+>
+> **⚠️ BELUM DI PRODUKSI, dan hari ini blokirnya bertambah jelas.** Selain **TD-218** (`inquiries.owner_id` belum ada di produksi), audit hari ini menemukan blokir KEDUA yang lebih keras: migrasi `20260827000002_crm_v3_lifecycle` **me-RENAME** `accounts.account_status` → `lifecycle_stage`, sementara `main` yang sedang melayani produksi masih membaca kolom lama. Lihat bagian **6** di bawah, **TD-218**, dan **Keputusan Terbuka #32** (`09_ROADMAP.md`).
+>
+> **✅ BEDA DARI 2 SEP: ADA tes runtime.** Seluruh Batch A + B diuji manual Den di staging (rinciannya di bagian "Verifikasi"). Yang **tidak** diuji: kedua audit (memang read-only) dan jalur produksi mana pun.
+
+**1. Batch A — `StatusBar` diubah jadi chevron, dipasang di Detail Deal** (`9e265bd`, `cf17fbe`).
+- **Token baru `ORANGE_AA = '#C24A14'`** (`v3/tokens.js`). Alasannya **terukur, bukan selera**: putih di atas `ORANGE_DK` (`#D14E18`) hanya **4.36:1**, meleset dari WCAG AA 4.5:1; `ORANGE_AA` memberi **4.90:1**. ⚠️ **Jangan "dikembalikan" ke `ORANGE_DK`** — komentar tokennya memuat kedua angka supaya alasannya tak hilang.
+- **Sumbu tampilan berpindah ke `inquiries.status`.** Chevron merender 4 tahap aktif (OPEN → IN REVIEW → QUOTED → NEGOTIATION) + penanda penutupan WON/LOST/CANCELLED di kanan. **`accounts.pipeline_stage` TIDAK dicabut jalur tulisnya** — `Edit Deal` dan `Move Stage` tetap menulis ke sana; pencabutannya adalah **Batch B3 blueprint**.
+- ⚠️ **Konsekuensi yang DISENGAJA:** `Move Stage` sekarang **tersimpan tapi tidak mengubah chevron**. Itu benar, bukan bug. **Tidak ada penjelasan/tooltip/peringatan apa pun yang ditambahkan di UI** (keputusan Den — jangan "diperbaiki" dengan menambahkan penjelasan di layar).
+- **Perubahan semantik `closed` — ini kontrak komponen, bukan detail visual.** Sebelumnya `closed` adalah **early-return yang MENGGANTIKAN seluruh bar**; sekarang ia **penanda di kanan yang hidup berdampingan dengan segmen**. Terdokumentasi bertanggal di komentar kepala `StatusBar.jsx`. Pemakai kit berikutnya yang mengoper `closed` akan mendapat perilaku berbeda dari yang tertulis di rencana kit awal.
+- **Asimetri WON vs LOST/CANCELLED — disengaja, jangan "dikonsistenkan".** WON merender keempat segmen **tuntas**; LOST dan CANCELLED merender keempatnya **belum-dijangkau**. Alasannya: WON menyatakan **HASIL** (sah tanpa riwayat), sedangkan LOST/CANCELLED kalau ditampilkan sebagian akan menyatakan **TITIK GAGAL spesifik** — dan `inquiry_status_history` **belum ada di produksi**, jadi titik itu belum bisa diketahui. Diimplementasikan lewat flag `done: true` pada entri WON di tabel `CLOSED_STYLE`. Saat riwayat tersedia (Batch B3), LOST/CANCELLED boleh menampilkan tahap sesungguhnya; **WON tidak perlu berubah**.
+- `DealStepper` + `StageBadge` dicabut dari Detail Deal. ⚠️ **`DealPanels.jsx` tidak dihapus** — `DealStepper` dan `PrfListCard` masih punya pemakai kedua di `CustomerDetailPage`.
+
+**2. Batch B — Detail Deal dibungkus kit v3, empat sub-batch** (`60f0ae4` B1 · `ea14d8c` · `cf522c3` B2 · `2708efd` · `a8d25a6` B3 · `1efedef` · `745a4e0` B4 · `9c40a99`).
+- **Struktur baru halaman:** Breadcrumb → judul (nama akun, klik-able) + `DocNo` nomor inquiry → baris meta (Assigned To · Created · Est. Closing) → StatusBar chevron → baris tujuh aksi inquiry → kartu badan → tiga tab → Chatter di kolom kanan (slot `aside`, **menetap lintas tab**).
+- ⭐ **Baris aksi dipisah berdasarkan TABEL YANG DITULIS, bukan berdasarkan muat/tidak muat** (`ea14d8c`). `Deal Value` · `Edit Deal` · `Move Stage` menulis ke **`accounts`** → slot `actions`, sebaris judul. Tujuh aksi inquiry menulis ke **`inquiries`** → slot `toolbar`, di bawah StatusBar. Pemisahan ini **visual sekaligus semantik**; jangan digabung lagi hanya karena terlihat lebih rapi.
+- **Kartu badan:** baris **POL → POD** naik ke puncak sebagai satu baris penuh dengan panah. **18 field** dikelompokkan bersubjudul mengalir dua kolom: SERVICE & STATUS (termasuk `Route`) · TERMS & CONTAINER · CARGO · ADDITIONAL SERVICES · TIMELINE & OWNERSHIP · VALUE · NOTES. **Nol field hilang.** Grid disusun **LOKAL, tidak ditambahkan ke kit** — baru satu pemakai.
+- **Tiga tab pindah ke `Notebook`; tabel Quotation & PRF pindah ke `ListView mode="table"`.**
+- **Kolom Readiness di tabel PRF — empat keadaan, DICEK BERURUTAN** (`prfReadinessKey()`): (1) `status IN ('CANCELLED','EXPIRED')` → **Not active** (abu redup) · (2) `status='QUOTED' && selected_offer_id` → **Ready as source** (navy) · (3) `status='QUOTED' && !selected_offer_id` → **Needs selection** (oranye) · (4) selain itu → **Awaiting procurement** (abu netral). ⚠️ **Keadaan tertutup WAJIB dicek paling dulu** — kalau tidak, PRF yang sudah batal akan tampil *"Awaiting procurement"* padahal tak akan pernah datang.
+- **Badge angka di tab PRF** = jumlah PRF berstatus **"Needs selection" saja** (bukan total PRF). Dioper sebagai **node** lewat prop `label` — **kontrak `Notebook` tidak disentuh**.
+
+**3. TIGA perubahan kontrak kit v3 — semuanya ADITIF.** (Detail kontraknya dicatat sebagai design-system di `06_UI_UX_FLOW.md` §3, bukan cuma di sini.)
+- **`FormSheet` +slot `toolbar`**, dirender di dalam `<header>` yang membentang dua kolom. **Alasannya terukur:** baris tujuh aksi butuh **986px**, sedangkan kolom `children` cuma **766px** saat `aside` terpasang → di kolom kiri ia **SELALU** pecah dua baris, di lebar layar mana pun. Varian tombol paling agresif (nol ikon, padding 10, font 12) masih **768px**. Slot `actions` **tidak bisa dipakai** karena duduk sebaris dengan judul dan berbagi lebar dengannya. Diukur di tujuh lebar sebelum diputuskan.
+- **`ListView` — input pencarian kini dirender hanya bila `onSearch` diberikan.** Sebelumnya dirender tanpa syarat, padahal blok saved-view di sebelahnya sudah punya penjaga — **tidak konsisten di file yang sama**. ⚠️ **Kedua pemakai lama diverifikasi mengoper `onSearch` SEBELUM diubah** (`InquiryListPage:515`, `PipelineKanbanPage:613`).
+- **`ListView` — `render` kolom kini menerima `(row, index)`**, sebelumnya `(row)` saja. Indeksnya sudah ada di `rows.map((r,i))` tapi tak pernah diteruskan → **kolom nomor urut mustahil dibuat**. Nol pemakai lama memakai argumen kedua.
+- ⚠️ **Regresi `NaN` (`1efedef`) — cacatnya milik B3, bukan warisan.** B3 menulis kolom `NO` yang mengharapkan `(r, i)` padahal `ListView` baru mengoper `(r)`; layar menampilkan `NaN`. **Diperbaiki di SUMBER (kit), bukan diakali dari sisi pemanggil** — kalau ditambal lokal, kolom nomor urut tetap mustahil untuk halaman berikutnya.
+- **Catatan keadaan kit ditulis di komentar kepala `FormSheet.jsx`** (`2708efd`): kit v3 dibangun **sebelum ada satu pun pemakai produksi**, jadi bentuknya ditebak dari rencana; ketiga celah di atas baru muncul di pemakaian pertama. **Perlakukan sisa kit sebagai BELUM TERUJI.** Siapa pun yang memasang kit di halaman berikutnya: **kalau ada slot yang terasa dipaksakan, LAPORKAN — jangan diakali dari sisi pemanggil.**
+
+**4. File baru `src/modules/crm/inquiryOptions.js` + larangan `DealPanels.jsx` dicabut SEBAGIAN** (`745a4e0`, `9c40a99`).
+- `CARGO_TYPES` dan `SERVICES` dipindah ke file sendiri dari `InquiryFormPage`. **Alasannya bukan selera:** meng-export konstanta langsung dari file komponen **ditolak lint** (`react-refresh/only-export-components`, **+2 error terukur**). Mengikuti preseden yang sudah ada di repo — `v3/tokens.js`, `bant.js`, `salesRoster.js`, `activityFeed.js` semuanya lahir karena rule yang sama. ⭐ **`InquiryFormPage` (yang MENULIS nilainya) ikut membaca dari sana** → **satu sumber kebenaran, BUKAN cermin**. Dampak bundling terukur: DealDetailPage **+38 byte**, InquiryFormPage **+34 byte**.
+- ⚠️ **`id` di file itu adalah nilai yang benar-benar tersimpan** di `inquiries.cargo_types[]`/`additional_services[]` — mengubah `id` memutus data lama; yang bebas diubah hanya `label`/`desc`.
+- Dua label `CARGO_TYPES` dikonversi ke Inggris (`Temperature Controlled (Reefer)`, `Special Permit (BPOM, Kementan, etc.)`) — keduanya outlier di antara empat yang sudah English. **Field `desc` sengaja tidak disentuh** (masih 3 label Indonesia — ikut waktu `InquiryFormPage` dikonversi).
+- **Larangan menyentuh `DealPanels.jsx` dicabut SEBAGIAN.** Larangan dipasang di Batch A karena `DealStepper` & `PrfListCard` punya pemakai kedua di `CustomerDetailPage`. **`PriceSummaryCard` TIDAK punya pemakai kedua — diverifikasi grep sebelum disentuh** → alasan larangan tak berlaku untuknya; **dua baris** dikonversi ("Summary Harga" → "Price Summary", "Masa Berlaku" → "Valid Until"). **Komponen lain di file itu tetap tidak boleh disentuh.**
+- Sapuan i18n penutup: 5 string `InquiryChatter` + 2 baris `PriceSummaryCard`.
+
+**5. Yang SENGAJA tidak dipindah — dan alasannya (jangan "dirapikan" tanpa membaca ini).**
+- **Price Breakdown tetap tabel lokal.** `ListView mode="table"` **tidak mendukung baris berkelompok bersubjudul** — dukungan `grouped` hanya ada di jalur `mode="lanes"`. Price Breakdown punya subjudul kategori + subtotal + margin. Memaksakannya menuntut perluasan kontrak yang **belum jelas bentuknya dengan satu pemakai**.
+- **Tab Aktivitas tetap daftar lokal** — bukan tabel.
+- **`InquiryChatter` dipertahankan, `v3/Chatter` TIDAK dipakai.** Fiturnya identik (header `v3/Chatter` menyatakan sendiri logikanya disalin apa adanya); `InquiryChatter` **sudah jalan di produksi**, `v3/Chatter` **nol pemakai**. Penukaran layak saat entity kedua benar-benar dipasang.
+- **Chrome `aside` mengikuti FormSheet (kartu sticky), bukan mockup (kolom penuh)** — konsistensi antar halaman yang nanti memakai FormSheet lebih penting daripada kemiripan persis dengan mockup.
+- **Kolom Actions tetap ikon Download disabled** (title "Download (coming soon)") — menandai pekerjaan yang belum jadi. Nomor quotation sudah klik-able, jadi tombol "Lihat" di mockup adalah duplikat.
+- **Followers di panel kanan tidak dibuat** — **nol tabel followers di skema**, nol kode di kedua komponen chatter. Itu **fitur baru**, bukan penataan ulang.
+
+**6. AUDIT kesiapan produksi (read-only, NOL SQL dijalankan dari sesi ini).** Pra-cek dijalankan MANUAL oleh Den di SQL Editor produksi (ref `untmpqceexwxzuhlmyrg`).
+- **Kondisi produksi terkonfirmasi langsung:** `inquiries.owner_id` **TIDAK ADA** (ERROR 42703) · `loss_reasons` dan `inquiry_status_history` **nol** · `accounts` masih memakai **`account_status`**. → **`schema_snapshot.sql` (refresh 31 Agu) terbukti AKURAT**, bukan sekadar diasumsikan.
+- **Batch A + B tidak menambah satu pun ketergantungan kolom baru** — diverifikasi doc-keeper: `git diff 37f4b05..HEAD -- DealDetailPage.jsx` **nol perubahan pada `.select()`**; `loss_reason_id`/`cancel_reason`/`competitor_*`/`owner_id` sudah dipakai halaman itu **sebelum** Batch A (warisan batch 28 Agu). Yang menahan merge adalah **utang yang sudah ada di branch ini sejak sebelum Batch A**.
+- **Sembilan migrasi CRM v3 diklasifikasi:** **WAJIB** = `master_data` (satu-satunya sumber `owner_id` + `loss_reasons`) → `status_history` (**wajib bukan karena FE** — `closure_fields` meng-`CREATE OR REPLACE` fungsi milik migrasi ini; urutan terbalik = fungsi merujuk tabel yang belum ada) → `closure_fields` → `owner_backfill_and_lock`. **TERBLOKIR** = `crm_v3_lifecycle`. **Bisa menyusul** = `rls_owner_based`, `sales_targets` (nol pembaca di `src/`), `crm_menu_permissions_sales`, `accounts_source_add_whatsapp`.
+- 🔴 **BLOCKER — `crm_v3_lifecycle` melakukan RENAME, bukan ADD.** `20260827000002_crm_v3_lifecycle.sql:60` = `ALTER TABLE public.accounts RENAME COLUMN account_status TO lifecycle_stage;`. Begitu jalan, `account_status` **lenyap seketika**, dan `main` yang sedang melayani produksi masih membacanya. **Cakupan diukur ulang doc-keeper (LEBIH BESAR dari angka rekap sesi):** **14 file, 29 baris hidup** di `main` — **8 baris di dalam `.select()`** (6 file), **15 baris filter `.in()`/`.eq()`** (9 file), **3 baris menulis** (`db.js:266`, `CustomerListPage.jsx:373`, `ProspectFormPage.jsx:282`), sisanya render/blocklist. **Produksi patah SEBELUM branch di-merge.** Header migrasinya sadar akan hal ini dan menyebut pola tambah-kolom + sinkron dua arah sebagai alternatif yang **tidak dipakai** — keputusan itu diambil **sebelum** diketahui berapa banyak file di `main` yang terdampak. **Dua jalan keluar, BELUM DIPUTUSKAN → `09_ROADMAP.md` Keputusan Terbuka #32.**
+- ⚠️ **Perubahan perilaku bisnis yang terselip di migrasi yang sama:** `set_prospect_on_inquiry` dipersempit dari `('lead','mql','sql')` jadi `('lead','mql')` — **MEMBATALKAN keputusan tertulis 18 Juli 2026**. Header migrasi mengklaim ini "disetujui Den" dan mencatat urutan 18 Jul sebagai heuristik transisi. **Tetap ditandai PERTANYAAN TERBUKA, bukan fakta selesai** (keputusan Den 4 Sep) → **Keputusan Terbuka #33**.
+- **Risiko RLS:** `rls_owner_based` mengganti `created_by = auth.uid()` jadi `owner_id = auth.uid()`. **Kalau naik sebelum backfill tuntas, setiap sales kehilangan SELURUH inquiry-nya — dan SENYAP** (nol baris, nol error; kelas TD-207/TD-216). Efek samping **disengaja**: karena `WITH CHECK` juga berbasis `owner_id`, sales pemilik **tidak bisa mengoper deal** lewat PostgREST → pengoperan jadi aksi **manager-ke-atas**.
+- **Pra-cek produksi — ketiganya LOLOS:** `accounts` dengan `bant_*` di luar 0-3 = **0** · `inquiries` tanpa `created_by` = **0** (backfill `owner_id` mengisi 100%) · `accounts` dengan `account_status` NULL = **0**.
+- **Nilai `accounts.source` di produksi:** `cold_call`, `exhibition`, `existing_network`, `instagram`, `linkedin`, `other`, `referral`, `sales_visit`, `walk_in`, `website`, + NULL. ⚠️ **Bandingkan dengan CHECK baru di `source_add_whatsapp` SEBELUM migrasi itu dijalankan.**
+
+**7. AUDIT falsifikasi PostgREST (uji hipotesis, hasilnya NEGATIF — dicatat supaya tak diulang).** Pertanyaannya: apakah sembilan file yang menyebut `lifecycle_stage` membuktikan sesuatu tentang perilaku produksi. **Jawabannya: TIDAK — buktinya tidak cukup.** `main` **tak pernah** men-`select` `lifecycle_stage`, jadi tak ada jalur produksi yang bisa diamati. Dicatat sebagai hasil nol, bukan temuan.
+
+**Verifikasi & batasan (jujur).**
+- **✅ TES RUNTIME DILAKUKAN** (staging, manual Den) — beda dari sesi 2 Sep. Terbukti: **lima+ skenario chevron** (OPEN, QUOTED, WON, LOST, CANCELLED, NEGOTIATION) · `Set Value` & `Change Owner` tersimpan **dan bertahan setelah refresh** · `Move Stage` tersimpan ke `accounts` · RPC `prf_select_offer` bekerja (badge "SELECTED BY SALES" pindah kartu) · Chatter **menetap lintas tab** · **18 field lengkap** · baris tujuh tombol **satu baris** · kolom NO menampilkan angka. **Regresi lintas halaman NOL:** Deal List, Pipeline, Detail Account, New Inquiry semuanya normal.
+- Uji chevron **LOST** dan **NEGOTIATION** memakai **data uji sementara** di staging (`INQ/MSI/2026/004`) — **sudah dikembalikan bersih**, termasuk `closed_at`/`closed_by` dan baris `inquiry_status_history`.
+- **Lint konsisten di baseline `163 problems (142 errors, 21 warnings)` di SELURUH commit** — bukan "net-zero" kira-kira; angka sebenarnya dicatat apa adanya.
+- **NOL migrasi baru, NOL SQL dijalankan dari sesi ini.** Pra-cek produksi = SELECT read-only, dijalankan manual Den.
+- **NOL tes di produksi.** Seluruh bukti runtime di atas berasal dari **staging**.
+
+---
+
+## 2026-09-03
+
+### Rantai dokumen Account → Inquiry → PRF → Quotation: dua lompatan disambung + dua audit (FE-only 3 commit, NOL perubahan DB/RLS/migrasi)
+
+> **Catatan tanggal:** rekap sesi menyebut pekerjaan ini "sesi 2 September"; **`git log` mencatat ketiga commit-nya 3 Sep 2026 (11:52–11:59 WIB)**. Tanggal di sini mengikuti git. Doc-keeper terakhir sebelum ini jalan di `09f4a1a` (3 Sep) — empat hal berikut lahir sesudahnya dan **belum pernah punya entri `PROGRESS.md`**.
+
+**1. Lompatan 1 — Account → Inquiry DISAMBUNG** (`106cc43`).
+- Tombol **"+ New Inquiry"** di Detail Account, dengan **prefill akun + kontak**.
+- ⭐ **`inquiries.contact_id` akhirnya punya JALUR TULIS** (`InquiryFormPage.jsx:329-332`) — sebelumnya **nol penulis**: kolomnya ada di skema tapi tak pernah diisi dari UI mana pun. Nilai kosong ditulis sebagai `null`, bukan string kosong.
+- Pemilihan kontak otomatis hanya jalan kalau akun punya **tepat satu** kontak (`:246-248`); kalau lebih, field dibiarkan kosong supaya user memilih sendiri — **tidak menebak**.
+
+**2. Lompatan 3 — PRF → Quotation pecah jadi N baris** (`e7e3a1a`, + `37f4b05`).
+- Item quotation **dipecah N-baris dari `prf_cost_items`**, grouping per `item_group`, alamat ikut prefill, **currency dikonversi ke IDR per baris**.
+- **PRF jalur LAMA (`suggested_rate > 0`) tetap 1 baris** — jalur itu tak disentuh.
+- Baris ber-`amount = 0` **dibuang otomatis**.
+- ⚠️ **Gerbang eksekusi yang sempat dipasang ("cost item PRF jalur lama selalu kosong") DIGUGURKAN oleh data produksi** — PRF jalur lama **TERNYATA punya** cost item. Karena itu percabangannya memakai `suggested_rate > 0`, bukan "ada/tidaknya cost item".
+- `37f4b05` menutup turunannya: **"Buat Quotation" dari Detail Deal kini membawa inquiry-nya**, bukan mendarat di dropdown kosong.
+- **✅ Lolos tes end-to-end di staging.**
+
+**3. Lompatan 2 & 4 — sengaja TIDAK dikerjakan, dan alasannya.**
+- **Inquiry → PRF** adalah lompatan paling matang; sisanya butuh **tabel terjemahan** `cargo_types ↔ commodity` dan `additional_services ↔ add_on_services` → itu **TD-107/TD-108**, lintas-modul, **jangan ditambal per-task prefill**.
+- **Quotation → SO** = **D6 blueprint CRM v3**, dijadwalkan batch tersendiri. **Bukan gap yang perlu ditangani sekarang.**
+
+**4. AUDIT `FormSheet` — kesimpulannya: `InquiryFormPage` JANGAN dimigrasi ke `FormSheet`.**
+- Keduanya **beda spesies**: `FormSheet` = cangkang **dokumen bertab dengan chatter**; `InquiryFormPage` = **form entri linear**. Subjek uji yang benar adalah **`DealDetailPage`**.
+- ⭐ **Kesimpulan ini terbukti benar sehari kemudian** — inventaris UI 4 Sep: `InquiryFormPage` = **3 slot ADA / 4 TIDAK ADA**; `DealDetailPage` = **6 ADA / 1 TIDAK ADA**. Batch B memakai `DealDetailPage`, dan berhasil.
+
+**5. AUDIT navigasi rantai Inquiry → PRF → Quotation → SO — sembilan titik kesasar terpetakan.** Yang paling penting:
+- **Pesan blokir `quotationBlockReason`** (`PRFDetailPage.jsx:378-380`) menyala berbasis `hasOffers && !selected_offer_id` **TANPA filter status** → saat PRF masih `ACKNOWLEDGED`, pesannya **menyalahkan sales** padahal aksi yang kurang **milik procurement sendiri**.
+- Pesan itu juga menyebut **"menu CRM → Inquiry"**, padahal menu itu sekarang berlabel **"Deal"** (`App.jsx:491`) — diverifikasi doc-keeper. Ini **regresi teks dari perbaikan TD-158 29 Jul**: lokasinya disebut, tapi namanya sudah berubah sejak itu.
+- **Panel "pilih penawaran" di Detail Deal MASIH ADA** (Batch 3C, 28 Jul) — **tidak hilang** oleh redesign 4-tab. Ada di tab PRF, hanya dirender untuk PRF berstatus `QUOTED`.
+- `onCreatePRF`/`onViewPRF` **membuang `crmDealInquiry`** lalu pindah menu; `onBack` form PRF **mendarat di Home**, bukan kembali ke deal.
+- ⚠️ **Sales dibutakan selama status `ACKNOWLEDGED` adalah BY DESIGN, bukan bug.** Alurnya: procurement klaim → isi penawaran → "Nyatakan Penawaran Siap" → `QUOTED` → sales pilih → procurement "Buat Quotation". **Yang rusak hanya pesan blokirnya.** Jangan "memperbaiki" dengan membuka panel lebih awal.
+- **Rencana perbaikan "Rantai Berkonteks" (4 lapis, ≈4.5 unit ≈ 1 minggu) DITUNDA** — digantikan pekerjaan redesign Detail Deal (4 Sep). **L1** (pesan blokir kondisional per status) dan **L2** (konteks deal bertahan saat navigasi) **masih relevan dan belum dikerjakan**.
+
+**6. TD-158 muncul kembali di konteks baru — permukaan BEDA, nomor sama.** Dua tombol berlabel **identik "Buat Quotation"** di dua halaman berbeda dengan perilaku **sangat** berbeda: satu di **Detail Deal** (selalu aktif, prefill kosong), satu di **PRF Detail** (bergerbang, prefill penuh). **Label belum dibedakan — keputusan sengaja ditunda.** Lihat addendum TD-158 di `08_TECH_DEBT.md`.
+
+**Verifikasi & batasan.** FE-only 3 commit; **NOL perubahan DB/RLS/migrasi**. Lompatan 3 **lolos tes end-to-end di staging**; lompatan 1 **belum dilaporkan tes runtime terpisah**. Kedua audit read-only, **nol file diubah dari audit itu sendiri**.
+
+---
 ## 2026-09-02
 
 ### CRM v3 — `InquiryListPage` jadi halaman PERTAMA yang migrasi PENUH ke design kit v3 + cleanup kode mati + investigasi trigger (FE-only, NOL migrasi baru)
