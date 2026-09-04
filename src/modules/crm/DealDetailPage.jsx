@@ -1000,6 +1000,21 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         breadcrumb={<Breadcrumb onBack={onBack} />}
         title={<DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />}
         docNo={inquiry.inquiry_no}
+        /* Slot `actions` diisi HANYA aksi yang menulis ke `accounts` — Deal Value,
+           Edit Deal, Move Stage. Tempatnya memang di sini: judul dokumen di slot
+           `title` adalah nama AKUN, jadi ketiganya sebaris dengan subjek yang
+           mereka ubah. Aksi yang menulis ke `inquiries` hidup di baris terpisah
+           di bawah StatusBar (lihat `children`) — pemisahan per tabel yang
+           ditulis, bukan per bentuk tombol. DealHeaderControls dipakai APA ADANYA
+           dari DealPanels; yang berpindah cuma tempat pemanggilannya. */
+        actions={(
+          <DealHeaderControls
+            value={estValue}
+            stageKey={account?.pipeline_stage || 'NEW'}
+            onEdit={() => setEditOpen(true)}
+            onPickStage={pickStage}
+          />
+        )}
         meta={(
           <HeaderMeta
             assignedName={assignedName}
@@ -1035,15 +1050,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Baris aksi — SENGAJA di dalam `children`, bukan slot `actions` FormSheet.
-          Slot itu menaruh isinya sebaris dengan judul dan rata kanan; sembilan
-          tombol tak muat di sisa lebar sebelah judul. Di sini ia jadi baris
-          tersendiri tepat di bawah StatusBar, sesuai mockup.
-          `DealHeaderControls` (Deal Value + Edit Deal + Move Stage) dipakai APA
-          ADANYA dari DealPanels — keduanya menulis ke `accounts` dan wajib utuh —
-          dan didorong ke kanan lewat `marginLeft:auto`. */}
+      {/* Baris aksi INQUIRY — tujuh tombol yang menulis ke `inquiries`. SENGAJA di
+          dalam `children`, bukan slot `actions`: slot itu sudah dipakai trio yang
+          menulis ke `accounts`, dan mencampur keduanya di satu tempat menghapus
+          satu-satunya petunjuk visual bahwa mereka mengubah tabel yang berbeda.
+          Blok destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
+          `marginLeft:auto` — kini tanpa saingan, karena DealHeaderControls sudah
+          pindah ke header. */}
       {(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner || canEditValue) && (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {onEditInquiry && (
             <button onClick={onEditInquiry} style={ACT_BTN}>
               <Pencil size={14} />Edit Inquiry
@@ -1078,24 +1093,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <Handshake size={14} />{negoSaving ? 'Processing…' : 'Start Negotiation'}
             </button>
           )}
-          {canMarkLost && (
-            <button onClick={() => setLossOpen(true)} style={{ ...ACT_BTN, border: `1px solid ${C.redBd}`, color: C.red }}>
-              <XCircle size={14} />Mark as Lost
-            </button>
+          {(canMarkLost || canCancel) && (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginLeft: 'auto' }}>
+              {canMarkLost && (
+                <button onClick={() => setLossOpen(true)} style={{ ...ACT_BTN, border: `1px solid ${C.redBd}`, color: C.red }}>
+                  <XCircle size={14} />Mark as Lost
+                </button>
+              )}
+              {canCancel && (
+                <button onClick={() => setCancelOpen(true)} style={{ ...ACT_BTN, color: C.textMute }}>
+                  <Ban size={14} />Cancel Deal
+                </button>
+              )}
+            </div>
           )}
-          {canCancel && (
-            <button onClick={() => setCancelOpen(true)} style={{ ...ACT_BTN, color: C.textMute }}>
-              <Ban size={14} />Cancel Deal
-            </button>
-          )}
-          <div style={{ marginLeft: 'auto' }}>
-            <DealHeaderControls
-              value={estValue}
-              stageKey={account?.pipeline_stage || 'NEW'}
-              onEdit={() => setEditOpen(true)}
-              onPickStage={pickStage}
-            />
-          </div>
         </div>
       )}
 
