@@ -27,9 +27,10 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import {
   C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card, InfoRow, Tab,
-  DealStepper, DealHeaderControls, EditDealModal, QuotationListCard,
+  DealHeaderControls, EditDealModal, QuotationListCard,
   PrfListCard, PriceSummaryCard, fetchAssignees, saveDealUpdate,
 } from './DealPanels';
+import StatusBar from './v3/StatusBar';
 import { bantQualifyGate } from './bant';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -77,6 +78,19 @@ const DEAL_TABS = [
   { id: 'prf',       icon: <FileText size={15} />,   label: 'PRF' },
 ];
 
+// Papan Pipeline nanti butuh daftar tahap yang SAMA PERSIS dengan ini; konsolidasinya
+// (ke tokens.js atau modul bersama) menunggu Batch B3 — jangan disatukan sekarang.
+// Empat tahap AKTIF sumbu deal (`inquiries.status`). WON/LOST/CANCELLED sengaja TIDAK
+// di sini: ketiganya penanda penutupan di ujung kanan StatusBar, bukan segmen.
+// DEAL_STATUS_ORDER di v3/tokens.js TIDAK dipakai — isinya lima, termasuk WON.
+const DEAL_STAGE_SEGMENTS = [
+  { id: 'OPEN',        label: 'OPEN' },
+  { id: 'IN_REVIEW',   label: 'IN REVIEW' },
+  { id: 'QUOTED',      label: 'QUOTED' },
+  { id: 'NEGOTIATION', label: 'NEGOTIATION' },
+];
+const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
+
 function Avatar({ name, size = 28 }) {
   const init = (name && name !== '—')
     ? name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
@@ -88,18 +102,11 @@ function Avatar({ name, size = 28 }) {
   );
 }
 
-function StageBadge({ idx }) {
-  const s = STAGES[idx] || STAGES[0];
-  const tone = s.key === 'WON' ? { bg: C.greenBg, fg: C.green } : s.key === 'LOST' ? { bg: C.redBg, fg: C.red } : { bg: C.navySoft, fg: C.navy };
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 11px', borderRadius: 99, background: tone.bg, color: tone.fg, fontFamily: HEAD, fontSize: 11.5, fontWeight: 700 }}>
-      <span style={{ width: 7, height: 7, borderRadius: 99, background: tone.fg }} />{s.label}
-    </span>
-  );
-}
-
 /* ---------- Header ---------- */
-function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, assignedProfileId, onViewProfile, accountId, onViewCustomer, closeDate, value, onBack, onEdit, onPickStage }) {
+// StageBadge (badge `accounts.pipeline_stage` di sebelah nama akun) DIHAPUS 4 Sep 2026:
+// sumbu itu digantikan StatusBar yang membaca `inquiries.status`. Kolom & jalur tulis
+// pipeline_stage TIDAK dicabut — itu Batch B3.
+function Header({ name, stageKey, inquiryNo, assignedName, assignedProfileId, onViewProfile, accountId, onViewCustomer, closeDate, value, onBack, onEdit, onPickStage }) {
   // Nama assignee jadi klik-able HANYA bila id-nya dan handler-nya tersedia — kalau
   // tidak (belum di-assign, atau prop tak dikirim dari pemanggil), render persis
   // seperti sebelumnya (teks polos, tanpa cursor pointer). Nol regresi kasus kosong.
@@ -131,7 +138,6 @@ function Header({ name, stageIdx, stageKey, inquiryNo, assignedName, assignedPro
             ) : (
               <h1 style={{ margin: 0, fontFamily: HEAD, fontSize: 25, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>{name || '—'}</h1>
             )}
-            <StageBadge idx={stageIdx} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, fontWeight: 600, color: C.navy, background: C.navySoft, padding: '4px 11px', borderRadius: 8 }}>
@@ -510,6 +516,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
   const stageIdx = stageIndex(account?.pipeline_stage);
   const estValue = Number(account?.estimated_value || 0);
+  // Sumbu deal untuk StatusBar. Dinormalkan sekali di sini supaya render dan gate
+  // penutupan membaca nilai yang sama. `stageIdx` di atas TETAP dipakai jalur lama
+  // (EditDealModal + saveEdit) yang menulis ke `accounts` — tidak dicabut batch ini.
+  const dealStatus = String(inquiry?.status || 'OPEN').toUpperCase();
   const assignedName = profMap[account?.assigned_profile] || profMap[account?.assigned_to] || null;
   // Id di balik assignedName — fallback SAMA PERSIS supaya id-nya konsisten dgn
   // nama yang tampil. Dipakai utk buka mini profil (klik nama sales di Header).
@@ -954,11 +964,21 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           dirender (CustomerDetailPage punya rule identik di file-nya sendiri). */}
       <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}.dd-account-name:hover{text-decoration:underline;}`}</style>
 
-      <DealStepper current={stageIdx} value={estValue} />
+      {/* Sumbu deal yang SAH = `inquiries.status`, bukan `accounts.pipeline_stage`
+          (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
+          oleh deal LOST/CANCELLED sengaja TIDAK ditebak: riwayatnya cuma ada di
+          `inquiry_status_history` yang masih staging-only (TD-218), dan menyimpulkannya
+          dari keberadaan quotation adalah jawaban separuh — keempat segmennya
+          dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
+          WON menutup dengan `done` sehingga keempatnya tercentang. */}
+      <StatusBar
+        stages={DEAL_STAGE_SEGMENTS}
+        current={dealStatus}
+        closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
+      />
 
       <Header
         name={account?.name}
-        stageIdx={stageIdx}
         stageKey={account?.pipeline_stage || 'NEW'}
         inquiryNo={inquiry.inquiry_no}
         assignedName={assignedName}
