@@ -19,7 +19,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  FileText, ChevronLeft, ChevronRight, Pencil, Hash, CalendarClock,
+  FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, Anchor, XCircle,
   CheckCircle2, Handshake, Ban, UserCog, Wallet,
 } from 'lucide-react';
@@ -31,6 +31,7 @@ import {
   PrfListCard, PriceSummaryCard, fetchAssignees, saveDealUpdate,
 } from './DealPanels';
 import StatusBar from './v3/StatusBar';
+import FormSheet from './v3/FormSheet';
 import { bantQualifyGate } from './bant';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -91,6 +92,17 @@ const DEAL_STAGE_SEGMENTS = [
 ];
 const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
 
+// Gaya dasar tombol baris aksi. Diangkat jadi konstanta karena dipakai tujuh kali
+// dengan hanya warna/border yang berbeda — sebelumnya style yang sama disalin
+// utuh di tiap tombol. Tinggi 36 (bukan 32 seperti saat masih di header kartu)
+// supaya sebaris dengan DealHeaderControls yang tingginya 40.
+const ACT_BTN = {
+  height: 36, padding: '0 13px', borderRadius: 9,
+  border: `1px solid ${C.border}`, background: '#fff', color: C.navy,
+  fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', gap: 6,
+};
+
 function Avatar({ name, size = 28 }) {
   const init = (name && name !== '—')
     ? name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
@@ -102,70 +114,84 @@ function Avatar({ name, size = 28 }) {
   );
 }
 
-/* ---------- Header ---------- */
-// StageBadge (badge `accounts.pipeline_stage` di sebelah nama akun) DIHAPUS 4 Sep 2026:
-// sumbu itu digantikan StatusBar yang membaca `inquiries.status`. Kolom & jalur tulis
-// pipeline_stage TIDAK dicabut — itu Batch B3.
-function Header({ name, stageKey, inquiryNo, assignedName, assignedProfileId, onViewProfile, accountId, onViewCustomer, closeDate, value, onBack, onEdit, onPickStage }) {
-  // Nama assignee jadi klik-able HANYA bila id-nya dan handler-nya tersedia — kalau
-  // tidak (belum di-assign, atau prop tak dikirim dari pemanggil), render persis
-  // seperti sebelumnya (teks polos, tanpa cursor pointer). Nol regresi kasus kosong.
-  const canViewProfile = !!(assignedProfileId && onViewProfile);
-  // Sama pola utk nama akun (h1) — accountId & name sama-sama turunan account?.*,
-  // jadi "account kosong" otomatis jatuh ke cabang non-klik (bukan crash).
-  const canViewCustomer = !!(accountId && onViewCustomer);
+/* ---------- Slot header FormSheet (Batch B1) ----------
+   `Header` yang lama (breadcrumb + h1 + chip nomor + assignee + est. closing +
+   DealHeaderControls, semuanya dalam satu blok) DIPECAH jadi potongan-potongan
+   yang masuk slot FormSheet: breadcrumb / title / docNo / meta. Susunannya kini
+   milik FormSheet (breadcrumb → judul+docNo+meta → status), sehingga StatusBar
+   yang sebelumnya terlanjur dirender DI ATAS breadcrumb otomatis turun ke
+   tempat yang benar tanpa kode urutan di sini.
+   StageBadge (badge `accounts.pipeline_stage`) DIHAPUS 4 Sep 2026 — sumbu itu
+   digantikan StatusBar yang membaca `inquiries.status`. Kolom & jalur tulis
+   pipeline_stage TIDAK dicabut; itu Batch B3. */
+function Breadcrumb({ onBack }) {
   return (
-    <div style={{ padding: '4px 0 8px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textMute }}><ChevronLeft size={18} /></button>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Deal List</button>
-        <ChevronRight size={14} color={C.textFaint} />
-        <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, fontWeight: 600 }}>Detail Deal</span>
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.textMute }}><ChevronLeft size={18} /></button>
+      <button onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BODY, fontSize: 12.5, color: C.textFaint }}>Deal List</button>
+      <ChevronRight size={14} color={C.textFaint} />
+      <span style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, fontWeight: 600 }}>Deal Detail</span>
+    </div>
+  );
+}
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 260 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-            {canViewCustomer ? (
-              <h1
-                className="dd-account-name"
-                onClick={() => onViewCustomer(accountId)}
-                title="View account details"
-                style={{ margin: 0, fontFamily: HEAD, fontSize: 25, fontWeight: 800, color: C.text, letterSpacing: '-0.02em', cursor: 'pointer' }}
-              >
-                {name || '—'}
-              </h1>
-            ) : (
-              <h1 style={{ margin: 0, fontFamily: HEAD, fontSize: 25, fontWeight: 800, color: C.text, letterSpacing: '-0.02em' }}>{name || '—'}</h1>
-            )}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, fontWeight: 600, color: C.navy, background: C.navySoft, padding: '4px 11px', borderRadius: 8 }}>
-              <Hash size={13} />{inquiryNo || '—'}
-            </span>
-            {canViewProfile ? (
-              <button
-                type="button"
-                onClick={() => onViewProfile(assignedProfileId)}
-                title="View profile"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: BODY, fontSize: 13, color: C.textMute, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-              >
-                <Avatar name={assignedName} size={26} />
-                <span style={{ textDecoration: 'underline', textDecorationColor: C.border, textUnderlineOffset: 3 }}>{assignedName}</span>
-              </button>
-            ) : (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: BODY, fontSize: 13, color: C.textMute }}>
-                <Avatar name={assignedName} size={26} />{assignedName || 'Unassigned'}
-              </span>
-            )}
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: BODY, fontSize: 13, color: C.textMute }}>
-              <CalendarClock size={15} color={C.textFaint} />Est. closing {fmtDate(closeDate)}
-            </span>
-          </div>
-        </div>
+/* Judul dokumen. FormSheet merender `title` DI DALAM <h1>-nya sendiri, dan
+   `{title}` menerima node apa pun — jadi nama akun tetap bisa diklik tanpa
+   menambah prop baru ke kit. Cabang non-klik dipertahankan persis: akun kosong
+   atau handler tak dikirim → teks polos, tanpa cursor pointer. */
+function DealTitle({ name, accountId, onViewCustomer }) {
+  if (!(accountId && onViewCustomer)) return name || '—';
+  return (
+    <span
+      className="dd-account-name"
+      onClick={() => onViewCustomer(accountId)}
+      title="View account details"
+      style={{ cursor: 'pointer' }}
+    >
+      {name || '—'}
+    </span>
+  );
+}
 
-        <DealHeaderControls value={value} stageKey={stageKey} onEdit={onEdit} onPickStage={onPickStage} />
-      </div>
+/* Baris meta di bawah judul: siapa yang memegang akun, kapan deal dibuat, dan
+   perkiraan closing-nya.
+   ⚠️ Label "Assigned To" SENGAJA bukan "Deal Owner": nilai di sini
+   `accounts.assigned_profile`, sedangkan "Deal Owner" di kartu badan adalah
+   `inquiries.owner_id` — dua kolom berbeda yang kebetulan sering berisi orang
+   yang sama. Memakai label yang sama untuk keduanya akan menyembunyikan
+   perpindahan kepemilikan deal. */
+function HeaderMeta({ assignedName, assignedProfileId, onViewProfile, createdAt, closeDate }) {
+  const canViewProfile = !!(assignedProfileId && onViewProfile);
+  const item = { display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: BODY, fontSize: 13, color: C.textMute };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      {canViewProfile ? (
+        <button
+          type="button"
+          onClick={() => onViewProfile(assignedProfileId)}
+          title="View profile"
+          style={{ ...item, gap: 7, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+        >
+          <Avatar name={assignedName} size={26} />
+          <span style={{ color: C.textFaint }}>Assigned To</span>
+          <span style={{ fontWeight: 600, color: C.text, textDecoration: 'underline', textDecorationColor: C.border, textUnderlineOffset: 3 }}>{assignedName}</span>
+        </button>
+      ) : (
+        <span style={{ ...item, gap: 7 }}>
+          <Avatar name={assignedName} size={26} />
+          <span style={{ color: C.textFaint }}>Assigned To</span>
+          <span style={{ fontWeight: 600, color: C.text }}>{assignedName || 'Unassigned'}</span>
+        </span>
+      )}
+      <span style={item}>
+        <span style={{ color: C.textFaint }}>Created</span>
+        <span style={{ fontWeight: 600, color: C.text }}>{fmtDate(createdAt)}</span>
+      </span>
+      <span style={item}>
+        <CalendarClock size={15} color={C.textFaint} />
+        <span style={{ color: C.textFaint }}>Est. Closing</span>
+        <span style={{ fontWeight: 600, color: C.text }}>{fmtDate(closeDate)}</span>
+      </span>
     </div>
   );
 }
@@ -957,49 +983,121 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   }
 
   return (
-    <div style={{ margin: '0 auto', padding: '24px 24px 48px', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: BODY, color: C.text }}>
+    <div style={{ padding: '24px 24px 48px', fontFamily: BODY, color: C.text }}>
       {/* .cd-tab:hover di sini SUPAYA hover tab konsisten dengan CustomerDetailPage —
           Tab (dari DealPanels.jsx) sama-sama merender className="cd-tab" di kedua
           halaman, tapi rule hover-nya sendiri hanya hidup di mana pun <style> ini
           dirender (CustomerDetailPage punya rule identik di file-nya sendiri). */}
       <style>{`@keyframes dd-spin{to{transform:rotate(360deg)}}.dd-spin{animation:dd-spin .8s linear infinite}.cd-tab:hover{color:${C.navy};}.dd-account-name:hover{text-decoration:underline;}`}</style>
 
-      {/* Sumbu deal yang SAH = `inquiries.status`, bukan `accounts.pipeline_stage`
-          (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
-          oleh deal LOST/CANCELLED sengaja TIDAK ditebak: riwayatnya cuma ada di
-          `inquiry_status_history` yang masih staging-only (TD-218), dan menyimpulkannya
-          dari keberadaan quotation adalah jawaban separuh — keempat segmennya
-          dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
-          WON menutup dengan `done` sehingga keempatnya tercentang. */}
-      <StatusBar
-        stages={DEAL_STAGE_SEGMENTS}
-        current={dealStatus}
-        closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
-      />
+      {/* Batch B1 — seluruh halaman dibungkus FormSheet. Grid dua kolomnya
+          (1.7fr/1fr, header membentang penuh) + collapse di bawah 1024px lewat
+          `.nx-grid-2`/`.nx-stack` datang dari kit, jadi wrapper `.nx-stack`
+          lokal yang dulu ada di sini dicabut — nol CSS baru, nol duplikasi.
+          Chatter masuk slot `aside` (DI LUAR `children`), sehingga ia menetap
+          saat tab di body berganti. */}
+      <FormSheet
+        breadcrumb={<Breadcrumb onBack={onBack} />}
+        title={<DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />}
+        docNo={inquiry.inquiry_no}
+        meta={(
+          <HeaderMeta
+            assignedName={assignedName}
+            assignedProfileId={assignedProfileId}
+            onViewProfile={onViewProfile}
+            createdAt={inquiry.created_at}
+            closeDate={account?.estimated_closing_date}
+          />
+        )}
+        /* Sumbu deal yang SAH = `inquiries.status`, bukan `accounts.pipeline_stage`
+           (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
+           oleh deal LOST/CANCELLED sengaja TIDAK ditebak: riwayatnya cuma ada di
+           `inquiry_status_history` yang masih staging-only (TD-218), dan menyimpulkannya
+           dari keberadaan quotation adalah jawaban separuh — keempat segmennya
+           dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
+           WON menutup dengan `done` sehingga keempatnya tercentang. */
+        status={(
+          <StatusBar
+            stages={DEAL_STAGE_SEGMENTS}
+            current={dealStatus}
+            closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
+          />
+        )}
+        aside={(
+          <InquiryChatter
+            inquiryId={inquiry.id}
+            companyId={profile?.company_id}
+            inquiryNo={inquiry.inquiry_no}
+            priorityUserIds={priorityUserIds}
+            showToast={showToast}
+          />
+        )}
+      >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      <Header
-        name={account?.name}
-        stageKey={account?.pipeline_stage || 'NEW'}
-        inquiryNo={inquiry.inquiry_no}
-        assignedName={assignedName}
-        assignedProfileId={assignedProfileId}
-        onViewProfile={onViewProfile}
-        accountId={account?.id}
-        onViewCustomer={onViewCustomer}
-        closeDate={account?.estimated_closing_date}
-        value={estValue}
-        onBack={onBack}
-        onEdit={() => setEditOpen(true)}
-        onPickStage={pickStage}
-      />
-
-      {/* 2 kolom di bawah Header: kiri = konten existing (Detail Inquiry + tab bar
-          + tab content, verbatim, cuma dipindah satu level nesting), kanan = Chatter
-          PERSISTEN (tak berubah apa pun tab kiri yang aktif). Reuse class `.nx-stack`
-          (index.css) — sama persis dipakai QuotationDetailPage.jsx: collapse jadi
-          1 kolom + sticky→static di bawah 1024px, nol CSS baru. */}
-      <div className="nx-stack" style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-      <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Baris aksi — SENGAJA di dalam `children`, bukan slot `actions` FormSheet.
+          Slot itu menaruh isinya sebaris dengan judul dan rata kanan; sembilan
+          tombol tak muat di sisa lebar sebelah judul. Di sini ia jadi baris
+          tersendiri tepat di bawah StatusBar, sesuai mockup.
+          `DealHeaderControls` (Deal Value + Edit Deal + Move Stage) dipakai APA
+          ADANYA dari DealPanels — keduanya menulis ke `accounts` dan wajib utuh —
+          dan didorong ke kanan lewat `marginLeft:auto`. */}
+      {(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner || canEditValue) && (
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          {onEditInquiry && (
+            <button onClick={onEditInquiry} style={ACT_BTN}>
+              <Pencil size={14} />Edit Inquiry
+            </button>
+          )}
+          {canEditValue && (
+            <button
+              onClick={() => {
+                setValueDraft(inquiry.estimated_value == null ? '' : String(inquiry.estimated_value));
+                setValueOpen((v) => !v);
+              }}
+              style={{ ...ACT_BTN, background: valueOpen ? C.navySoft : '#fff' }}>
+              <Wallet size={14} />{inquiry.estimated_value == null ? 'Set Value' : 'Edit Value'}
+            </button>
+          )}
+          {canReassignOwner && (
+            <button
+              onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
+              style={{ ...ACT_BTN, background: ownerOpen ? C.navySoft : '#fff' }}>
+              <UserCog size={14} />Change Owner
+            </button>
+          )}
+          {canMarkWon && (
+            <button onClick={() => setWonOpen(true)} disabled={wonSaving}
+              style={{ ...ACT_BTN, border: `1px solid ${C.greenBd}`, color: C.green, cursor: wonSaving ? 'not-allowed' : 'pointer', opacity: wonSaving ? 0.6 : 1 }}>
+              <CheckCircle2 size={14} />{wonSaving ? 'Processing…' : 'Mark as Won'}
+            </button>
+          )}
+          {canNegotiate && (
+            <button onClick={() => setNegoOpen(true)} disabled={negoSaving}
+              style={{ ...ACT_BTN, color: C.orange, cursor: negoSaving ? 'not-allowed' : 'pointer', opacity: negoSaving ? 0.6 : 1 }}>
+              <Handshake size={14} />{negoSaving ? 'Processing…' : 'Start Negotiation'}
+            </button>
+          )}
+          {canMarkLost && (
+            <button onClick={() => setLossOpen(true)} style={{ ...ACT_BTN, border: `1px solid ${C.redBd}`, color: C.red }}>
+              <XCircle size={14} />Mark as Lost
+            </button>
+          )}
+          {canCancel && (
+            <button onClick={() => setCancelOpen(true)} style={{ ...ACT_BTN, color: C.textMute }}>
+              <Ban size={14} />Cancel Deal
+            </button>
+          )}
+          <div style={{ marginLeft: 'auto' }}>
+            <DealHeaderControls
+              value={estValue}
+              stageKey={account?.pipeline_stage || 'NEW'}
+              onEdit={() => setEditOpen(true)}
+              onPickStage={pickStage}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Primary view — SELALU tampil, bukan bagian dari tab (koreksi struktur: sesuai
           referensi Odoo, field utama tak boleh hilang saat pindah tab). Tab bar 3 tab
@@ -1007,54 +1105,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       <Card
         title="Detail Deal"
         icon={<FileText size={17} />}
-        right={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner || canEditValue) ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {onEditInquiry && (
-              <button onClick={onEditInquiry} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Pencil size={14} />Edit Inquiry
-              </button>
-            )}
-            {canEditValue && (
-              <button
-                onClick={() => {
-                  setValueDraft(inquiry.estimated_value == null ? '' : String(inquiry.estimated_value));
-                  setValueOpen((v) => !v);
-                }}
-                style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: valueOpen ? C.navySoft : '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Wallet size={14} />{inquiry.estimated_value == null ? 'Set Value' : 'Edit Value'}
-              </button>
-            )}
-            {canReassignOwner && (
-              <button
-                onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
-                style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: ownerOpen ? C.navySoft : '#fff', color: C.navy, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <UserCog size={14} />Change Owner
-              </button>
-            )}
-            {canMarkWon && (
-              <button onClick={() => setWonOpen(true)} disabled={wonSaving}
-                style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.greenBd}`, background: '#fff', color: C.green, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: wonSaving ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: wonSaving ? 0.6 : 1 }}>
-                <CheckCircle2 size={14} />{wonSaving ? 'Processing…' : 'Mark as Won'}
-              </button>
-            )}
-            {canNegotiate && (
-              <button onClick={() => setNegoOpen(true)} disabled={negoSaving}
-                style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.orange, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: negoSaving ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: negoSaving ? 0.6 : 1 }}>
-                <Handshake size={14} />{negoSaving ? 'Processing…' : 'Start Negotiation'}
-              </button>
-            )}
-            {canMarkLost && (
-              <button onClick={() => setLossOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.redBd}`, background: '#fff', color: C.red, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <XCircle size={14} />Mark as Lost
-              </button>
-            )}
-            {canCancel && (
-              <button onClick={() => setCancelOpen(true)} style={{ height: 32, padding: '0 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Ban size={14} />Cancel Deal
-              </button>
-            )}
-          </div>
-        ) : null}
       >
         {/* Panel nilai estimasi — bentuknya sengaja kembar dengan panel Ganti
             Pemilik di bawahnya: satu dropdown/input, tombol Simpan + Batal. */}
@@ -1246,17 +1296,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       )}
 
       </div>
-
-      <div style={{ flex: '0 0 400px', position: 'sticky', top: 24 }}>
-        <InquiryChatter
-          inquiryId={inquiry.id}
-          companyId={profile?.company_id}
-          inquiryNo={inquiry.inquiry_no}
-          priorityUserIds={priorityUserIds}
-          showToast={showToast}
-        />
-      </div>
-      </div>
+      </FormSheet>
 
       <EditDealModal
         open={editOpen}
