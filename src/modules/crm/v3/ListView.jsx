@@ -266,6 +266,8 @@ function Lane({ lane, renderCard, collapsed, onToggle, grouped = false, divider 
  * @param {Object}   props
  * @param {'table'|'lanes'} [props.mode]
  * @param {Array}    [props.columns]   - mode table: [{ key, label, align, render }]
+ *                                       `render(row, index)` — index dipakai kolom
+ *                                       nomor urut; argumen kedua boleh diabaikan.
  * @param {Array}    [props.rows]      - mode table
  * @param {Array}    [props.lanes]     - mode lanes: [{ id, label, tone, closed, items, step }]
  * @param {Function} [props.renderCard]- mode lanes
@@ -427,9 +429,17 @@ export default function ListView({
         transition: 'background .12s ease',
       } : undefined}
     >
+      {/* `render` menerima DUA argumen: baris DAN indeksnya. Argumen kedua
+          ditambahkan 4 September 2026 — sebelumnya hanya baris yang dioper,
+          sehingga kolom nomor urut mustahil dibuat dari sisi pemanggil tanpa
+          menyuntikkan field sintetis ke data. Indeksnya memang SUDAH ada di
+          `rows.map((r, i)` di atas, cuma tak pernah diteruskan.
+          ADITIF: pemanggil lama yang menulis `render: (r) => …` mengabaikan
+          argumen kedua dan berperilaku persis seperti sebelumnya — diverifikasi,
+          nol pemakai yang ada memakai parameter kedua. */}
       {columns.map((c) => (
         <td key={c.key} style={cellStyle(c)}>
-          {c.render ? c.render(r) : r[c.key]}
+          {c.render ? c.render(r, i) : r[c.key]}
         </td>
       ))}
     </tr>
