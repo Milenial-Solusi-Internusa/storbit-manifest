@@ -130,6 +130,15 @@ const EXPORT_ROW_LIMIT = 5000;
 const PRODUCT_FETCH_LIMIT = 1000;
 const TOP_PRODUCT_ROWS = 10;
 
+// Tiga topik halaman ini. Sebelumnya menumpuk vertikal sehingga "Laporan Per
+// Barang" hanya bisa dicapai setelah menggulir seluruh manifest + warehouse.
+// Urutan di sini = urutan tab bar; `manifest` default.
+const TABS = [
+  { key: 'manifest', label: 'Shipping Manifest' },
+  { key: 'gudang',   label: 'Gudang' },
+  { key: 'laporan',  label: 'Laporan Per Barang' },
+];
+
 const SP_TYPE_OPTIONS = [
   { value: '',         label: 'Semua tipe' },
   { value: 'semester', label: 'Semester' },
@@ -176,14 +185,6 @@ function fmtStamp(iso) {
 const labelOf = (key) => STATUS_GROUP_LABELS[key] || key;
 
 /* ---------- komponen (struktur & style verbatim dari mockup) ---------- */
-function Kicker({ children }) {
-  return (
-    <div style={{ ...body, fontSize: 10.5, letterSpacing: '0.11em', textTransform: 'uppercase', color: C.purple, fontWeight: 600, marginBottom: 6 }}>
-      {children}
-    </div>
-  );
-}
-
 function KpiCard({ item, active, onClick, warn, totalForPct }) {
   const pct = totalForPct ? Math.min(100, Math.round((item.value / totalForPct) * 100)) : 0;
   const accent = warn ? C.orange : C.purple;
@@ -647,6 +648,42 @@ const TOP_COLS = [
   { h: 'Nilai Sisa', a: 'right', mono: true, render: (r) => rp(r.nilai_outstanding) },
 ];
 
+// ── Tab bar ─────────────────────────────────────────────────────────────────
+// <button> asli (bukan div onClick) supaya bisa dijangkau Tab/Enter/Space tanpa
+// handler keyboard tambahan. Nol library baru; warna seluruhnya dari palet
+// lokal C yang sudah ada.
+function TabBar({ active, onSelect }) {
+  return (
+    <div role="tablist" style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${C.divider}`, marginBottom: 22 }}>
+      {TABS.map((t) => {
+        const on = t.key === active;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onSelect(t.key)}
+            style={{
+              ...body, fontSize: 13, cursor: 'pointer',
+              padding: '9px 16px',
+              background: on ? C.purpleSoft : 'transparent',
+              color: on ? C.purpleDeep : C.muted,
+              fontWeight: on ? 600 : 400,
+              border: 'none',
+              borderBottom: `2px solid ${on ? C.purple : 'transparent'}`,
+              borderTopLeftRadius: 4, borderTopRightRadius: 4,
+              marginBottom: -1,
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ---------- halaman ---------- */
 export default function StorbitDashboardPage({ customers = [], showToast, onSelectSP, onSelectProduct }) {
   const [customerId, setCustomerId] = useState('');
@@ -687,6 +724,17 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   const [spListError, setSpListError]   = useState(null);
 
   const [exporting, setExporting]       = useState(null);   // null | 'pdf' | 'xlsx'
+
+  // Tab aktif — state lokal, tanpa URL param (sesuai permintaan). `tabLaporanDibuka`
+  // sekali berubah true TIDAK pernah kembali false; itulah yang membuat pindah
+  // tab bolak-balik tak memicu fetch ulang (lihat effect daftar produk).
+  const [activeTab, setActiveTab] = useState('manifest');
+  const [tabLaporanDibuka, setTabLaporanDibuka] = useState(false);
+
+  const selectTab = useCallback((key) => {
+    setActiveTab(key);
+    if (key === 'laporan') setTabLaporanDibuka(true);
+  }, []);
 
   const notifyError = useCallback((msg) => {
     setError(msg);
@@ -774,10 +822,21 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
     return () => { alive = false; };
   }, [customerId, spType, showToast]);
 
-  // ── Daftar produk — SEKALI di mount, dipakai combobox + tabel Top 10 ──────
+  // ── Daftar produk — LAZY: baru ditembak saat tab Laporan pertama dibuka ───
+  // Dependency-nya HANYA `tabLaporanDibuka`, yang berpindah false->true tepat
+  // sekali dan tak pernah balik. Konsekuensinya effect ini jalan paling banyak
+  // dua kali: sekali saat mount (langsung keluar lewat guard) dan sekali saat
+  // tab dibuka. Bolak-balik antar tab TIDAK memicu fetch ulang — hasilnya
+  // tersimpan di `products` dan dipakai apa adanya.
+  //
+  // `productsLoading` SENGAJA tetap berawal `true`: nilainya tak pernah tampil
+  // sebelum tab Laporan dirender, dan saat tab itu dibuka pertama kali ia sudah
+  // bernilai true sehingga tabel langsung menampilkan loading — bukan berkedip
+  // ke empty state "Belum ada produk" selama satu frame.
   useEffect(() => {
     let alive = true;
     (async () => {
+      if (!tabLaporanDibuka) return;
       setProdLoad(true);
       setProdError(null);
       const { data, error: err } = await getStorbitTopOutstandingProducts({
@@ -794,7 +853,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       setProdLoad(false);
     })();
     return () => { alive = false; };
-  }, []);
+  }, [tabLaporanDibuka]);
 
   // ── Laporan produk terpilih (ringkasan + per customer) ────────────────────
   useEffect(() => {
@@ -1024,17 +1083,6 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         }}>
           <RotateCcw size={13} strokeWidth={1.75} /> Reset
         </button>
-        <div style={{ flex: 1, minWidth: 180, display: 'flex', justifyContent: 'flex-end' }}>
-          {/* Kosmetik di v1 — pencarian nomor SP belum difungsikan. */}
-          <div style={{ position: 'relative', minWidth: 200 }}>
-            <Search size={13} strokeWidth={1.75} color={C.faint} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
-            <input
-              disabled
-              placeholder="Cari nomor SP… (segera)"
-              style={{ ...body, fontSize: 13, width: '100%', padding: '8px 10px 8px 30px', borderRadius: 4, border: `1px solid ${C.divider}`, background: C.bg, color: C.faint }}
-            />
-          </div>
-        </div>
       </div>
 
       {error && (
@@ -1043,38 +1091,9 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         </div>
       )}
 
-      {/* 4 — Kicker Shipping Manifest */}
-      <div style={{ marginBottom: 14 }}>
-        <Kicker>Shipping Manifest</Kicker>
-        <div style={{ ...body, fontSize: 12.5, color: C.muted }}>
-          {loading ? 'Memuat…' : `${nf(totalSp)} SP total di entitas ini`}
-        </div>
-      </div>
-
-      {/* 5 — Donut distribusi status */}
-      <DonutCard
-        title="Distribusi Status SP"
-        data={donutData}
-        centerValue={nf(totalSp)}
-        centerLabel="Total SP"
-      />
-
-      {/* 6 — Grid 6 kartu KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 22 }}>
-        {MANIFEST_CARDS.map((c) => (
-          <KpiCard
-            key={c.key}
-            item={{ ...c, label: labelOf(c.key), value: spCardValue(c.key) }}
-            active={spCat === c.key}
-            totalForPct={totalSp}
-            onClick={() => setSpCat(c.key)}
-          />
-        ))}
-      </div>
-
       {/* 6b — Strip nilai (total SP / kirim / tagih / piutang) ─────────────── */}
       <div style={{ ...body, fontSize: 11, letterSpacing: '0.11em', textTransform: 'uppercase', color: C.purple, fontWeight: 600, marginBottom: 10 }}>
-        Nilai Outstanding
+        Nilai SP &amp; Outstanding
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 22 }}>
         {OUTSTANDING_CARDS.map((c) => (
@@ -1088,257 +1107,322 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         ))}
       </div>
 
-      {/* 7 — Perlu Perhatian · Tenggat */}
-      <div style={{ ...body, fontSize: 11, letterSpacing: '0.11em', textTransform: 'uppercase', color: C.orange, fontWeight: 600, marginBottom: 10 }}>
-        Perlu Perhatian · Tenggat
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 14 }}>
-        {EXPIRY_CARDS.map((c) => (
-          <KpiCard
-            key={c.key}
-            warn
-            item={{ ...c, label: labelOf(c.key), value: spCardValue(c.key) }}
-            active={spCat === c.key}
-            totalForPct={totalSp}
-            onClick={() => setSpCat(c.key)}
-          />
-        ))}
-      </div>
+      {/* Tab bar — memisah tiga topik yang sebelumnya menumpuk vertikal.
+          Blok di bawahnya dipindah APA ADANYA; nol perubahan isi. */}
+      <TabBar active={activeTab} onSelect={selectTab} />
 
-      {/* 8 — Kartu risiko pinalti (numerator + penyebut) */}
-      <div style={{ marginBottom: 22 }}>
-        <PenaltyRiskCard data={{
-          value:    Number(m.pernah_risiko_pinalti)  || 0,
-          covered:  Number(m.dispatch_data_tersedia) || 0,
-          eligible: Number(m.dispatch_eligible)      || 0,
-        }} />
-      </div>
-
-      {/* 9 — Tabel drill-down SP */}
-      <div style={{ marginBottom: 34 }}>
-        <DrillTable
-          title={labelOf(spCat)}
-          rows={spRows}
-          kind="sp"
-          loading={spRowsLoading}
-          onRowClick={onSelectSP}
-        />
-      </div>
-
-      {/* 10 — Kicker Warehouse */}
-      <div style={{ marginBottom: 14 }}>
-        <Kicker>Warehouse</Kicker>
-        <div style={{ ...body, fontSize: 12.5, color: C.muted }}>
-          {loading ? 'Memuat…' : `${nf(w.total_produk)} produk aktif`}
-        </div>
-      </div>
-
-      {/* 11 — Donut kesehatan stok */}
-      <DonutCard
-        title="Kesehatan Stok"
-        data={stockDonut}
-        centerValue={nf(w.total_produk)}
-        centerLabel="Produk aktif"
-      />
-
-      {/* 12 — Grid 3 kartu warehouse */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 22 }}>
-        {WAREHOUSE_CARDS.map((c) => (
-          <KpiCard
-            key={c.key}
-            warn
-            item={{ ...c, value: Number(w[c.key]) || 0 }}
-            active={whCat === c.key}
-            totalForPct={Number(w.total_produk) || 0}
-            onClick={() => setWhCat(c.key)}
-          />
-        ))}
-      </div>
-
-      {/* 13 — Tabel drill-down produk */}
-      <DrillTable
-        title={WAREHOUSE_CARDS.find((c) => c.key === whCat)?.label || 'Produk'}
-        rows={whRows}
-        kind="product"
-        loading={whRowsLoading}
-        onRowClick={onSelectProduct}
-      />
-
-      {/* 14 — Laporan Per Barang ─────────────────────────────────────────── */}
-      <div style={{ marginTop: 34 }}>
-        <Kicker>Laporan Per Barang</Kicker>
-        <div style={{ ...body, fontSize: 12.5, color: C.muted }}>
-          Sisa kirim, nilai, dan kecukupan stok untuk satu produk
-        </div>
-      </div>
-
-      {/* 14a — Filter + export */}
-      <div style={{
-        background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4,
-        padding: '14px 16px', display: 'flex', gap: 16, alignItems: 'flex-end',
-        flexWrap: 'wrap', marginTop: 14, marginBottom: 18,
-      }}>
-        <ProductCombobox
-          products={products}
-          value={productId}
-          onChange={setProductId}
-          loading={productsLoading}
-          disabled={!!productsError}
-        />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ ...body, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.faint }}>
-            Tgl SP dari
-          </label>
-          <input
-            type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-            style={{ ...body, fontSize: 13, padding: '8px 10px', borderRadius: 4, border: `1px solid ${C.divider}`, background: C.card, color: C.ink }}
-          />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ ...body, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.faint }}>
-            sampai
-          </label>
-          <input
-            type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-            style={{ ...body, fontSize: 13, padding: '8px 10px', borderRadius: 4, border: `1px solid ${C.divider}`, background: C.card, color: C.ink }}
-          />
-        </div>
-        {(dateFrom || dateTo) && (
-          <button onClick={resetReportFilters} style={{
-            ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '8px 12px', borderRadius: 4, border: `1px solid ${C.divider}`,
-            background: C.card, color: C.muted, cursor: 'pointer',
-          }}>
-            <RotateCcw size={13} strokeWidth={1.75} /> Periode
-          </button>
-        )}
-
-        <div style={{ flex: 1, minWidth: 120, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          {canExportExcel && (
-            <button
-              onClick={() => runExport('xlsx')}
-              disabled={!productId || reportLoading || !!exporting}
-              style={{
-                ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
-                background: C.card, color: productId && !exporting ? C.ink : C.faint,
-                cursor: productId && !exporting ? 'pointer' : 'not-allowed',
-              }}
-            >
-              <FileSpreadsheet size={13} strokeWidth={1.75} />
-              {exporting === 'xlsx' ? 'Menyiapkan…' : 'Excel'}
-            </button>
-          )}
-          {canExportPdf && (
-            <button
-              onClick={() => runExport('pdf')}
-              disabled={!productId || reportLoading || !!exporting}
-              style={{
-                ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
-                background: C.card, color: productId && !exporting ? C.ink : C.faint,
-                cursor: productId && !exporting ? 'pointer' : 'not-allowed',
-              }}
-            >
-              <FileText size={13} strokeWidth={1.75} />
-              {exporting === 'pdf' ? 'Menyiapkan…' : 'PDF'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {productsError && (
-        <div style={{ ...body, fontSize: 12.5, color: C.orange, background: C.orangeSoft, border: `1px solid ${C.orangeBorder}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18 }}>
-          {productsError}
-        </div>
-      )}
-
-      {/* 14b — Belum ada produk dipilih: Top 10 sebagai pintu masuk */}
-      {!productId ? (
-        <ReportTable
-          title="Top 10 Produk — Nilai Belum Dikirim"
-          cols={TOP_COLS}
-          rows={topProducts}
-          loading={productsLoading}
-          error={productsError}
-          empty="Belum ada produk dengan sisa kirim."
-          footer={`${nf(topProducts.length)} dari ${nf(products.length)} produk`}
-          onRowClick={(r) => setProductId(r.product_id)}
-        />
-      ) : (
+      {activeTab === 'manifest' && (
         <>
-          {/* 14c — Kartu ringkasan */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
-            <SummaryTile
-              label="Total Dipesan"
-              value={reportLoading ? '…' : qtyU(report?.summary?.qty_ordered, uom)}
-              sub={reportLoading ? null
-                : `dari ${nf(report?.summary?.jml_sp)} SP · ${nf(report?.summary?.jml_customer)} customer`}
-            />
-            <SummaryTile
-              label="Terkirim"
-              value={reportLoading ? '…' : qtyU(report?.summary?.qty_shipped, uom)}
-              sub={reportLoading ? null : 'sudah dikirim ke customer'}
-            />
-            <SummaryTile
-              label="Belum Dikirim"
-              value={reportLoading ? '…' : qtyU(report?.summary?.qty_outstanding, uom)}
-              sub={reportLoading ? null : 'sisa yang masih harus dikirim'}
-            />
-            <SummaryTile
-              label="Nilai Belum Dikirim"
-              value={reportLoading ? '…' : rpShort(report?.summary?.nilai_outstanding)}
-              sub="belum termasuk PPN"
-            />
-            {/* Defisit memakai token peringatan yang SAMA dengan kartu
-                "Lewat Tenggat Kirim" (C.orange / C.orangeSoft / C.orangeBorder)
-                — tidak ada warna baru diperkenalkan. */}
-            <SummaryTile
-              label="Stok Tersedia"
-              value={reportLoading ? '…' : qtyU(report?.summary?.stok_tersedia, uom)}
-              warn={!reportLoading && Number(report?.summary?.defisit) > 0}
-              sub={reportLoading ? null
-                : Number(report?.summary?.defisit) > 0
-                  ? `defisit ${qtyU(report?.summary?.defisit, uom)}`
-                  : 'cukup untuk menutup sisa kirim'}
+        {/* Cari nomor SP — dipindah dari filter bar ATAS ke dalam tab ini
+            (5 Sep 2026): hanya relevan untuk manifest, tak ada urusannya dengan
+            tab Gudang maupun Laporan. Filter Customer & Tipe SP tetap di ATAS
+            karena dipakai tab 1 DAN 2. Masih kosmetik — belum difungsikan. */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+          <div style={{ position: 'relative', minWidth: 200 }}>
+            <Search size={13} strokeWidth={1.75} color={C.faint} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+            <input
+              disabled
+              placeholder="Cari nomor SP… (segera)"
+              style={{ ...body, fontSize: 13, width: '100%', padding: '8px 10px 8px 30px', borderRadius: 4, border: `1px solid ${C.divider}`, background: C.bg, color: C.faint }}
             />
           </div>
+        </div>
 
-          {reportError && (
-            <div style={{ ...body, fontSize: 12.5, color: C.orange, background: C.orangeSoft, border: `1px solid ${C.orangeBorder}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18 }}>
-              {reportError}
-            </div>
-          )}
-
-          {/* 14d — Breakdown per customer */}
-          <div style={{ marginBottom: 18 }}>
-            <ReportTable
-              title="Rincian Per Customer"
-              cols={customerCols}
-              rows={report?.per_customer || []}
-              loading={reportLoading}
-              error={reportError}
-              empty="Produk ini belum pernah dipesan customer mana pun pada periode terpilih."
-              footer={`${nf(report?.per_customer?.length)} customer`}
-            />
+        {/* 4 — Subjudul Shipping Manifest (kicker dihapus 5 Sep 2026: redundan
+            dengan label tab di atasnya) */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ ...body, fontSize: 12.5, color: C.muted }}>
+            {loading ? 'Memuat…' : `${nf(totalSp)} SP total di entitas ini`}
           </div>
+        </div>
 
-          {/* 14e — Daftar SP; baris bisa diklik ke Detail SP */}
-          <ReportTable
-            title="Daftar SP"
-            cols={spCols}
-            rows={spListRows}
-            loading={spListLoading}
-            error={spListError}
-            empty="Tidak ada SP untuk produk ini pada periode terpilih."
-            footer={`${nf(spListRows.length)} SP ditampilkan`}
+        {/* 5 — Donut distribusi status */}
+        <DonutCard
+          title="Distribusi Status SP"
+          data={donutData}
+          centerValue={nf(totalSp)}
+          centerLabel="Total SP"
+        />
+
+        {/* 6 — Grid 6 kartu KPI */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 22 }}>
+          {MANIFEST_CARDS.map((c) => (
+            <KpiCard
+              key={c.key}
+              item={{ ...c, label: labelOf(c.key), value: spCardValue(c.key) }}
+              active={spCat === c.key}
+              totalForPct={totalSp}
+              onClick={() => setSpCat(c.key)}
+            />
+          ))}
+        </div>
+
+        {/* 7 — Perlu Perhatian · Tenggat */}
+        <div style={{ ...body, fontSize: 11, letterSpacing: '0.11em', textTransform: 'uppercase', color: C.orange, fontWeight: 600, marginBottom: 10 }}>
+          Perlu Perhatian · Tenggat
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 14 }}>
+          {EXPIRY_CARDS.map((c) => (
+            <KpiCard
+              key={c.key}
+              warn
+              item={{ ...c, label: labelOf(c.key), value: spCardValue(c.key) }}
+              active={spCat === c.key}
+              totalForPct={totalSp}
+              onClick={() => setSpCat(c.key)}
+            />
+          ))}
+        </div>
+
+        {/* 8 — Kartu risiko pinalti (numerator + penyebut) */}
+        <div style={{ marginBottom: 22 }}>
+          <PenaltyRiskCard data={{
+            value:    Number(m.pernah_risiko_pinalti)  || 0,
+            covered:  Number(m.dispatch_data_tersedia) || 0,
+            eligible: Number(m.dispatch_eligible)      || 0,
+          }} />
+        </div>
+
+        {/* 9 — Tabel drill-down SP */}
+        <div style={{ marginBottom: 34 }}>
+          <DrillTable
+            title={labelOf(spCat)}
+            rows={spRows}
+            kind="sp"
+            loading={spRowsLoading}
             onRowClick={onSelectSP}
           />
-          {spListRows.length >= 200 && (
-            <div style={{ ...mono, fontSize: 10.5, color: C.faint, marginTop: 8 }}>
-              Layar dibatasi 200 baris. Export mengambil sampai {nf(EXPORT_ROW_LIMIT)} baris.
-            </div>
+        </div>
+        </>
+      )}
+
+      {activeTab === 'gudang' && (
+        <>
+        {/* 10 — Subjudul Warehouse (kicker dihapus 5 Sep 2026: redundan dengan
+            label tab, sekaligus menutup selisih nama "Warehouse" vs "Gudang") */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ ...body, fontSize: 12.5, color: C.muted }}>
+            {loading ? 'Memuat…' : `${nf(w.total_produk)} produk aktif`}
+          </div>
+        </div>
+
+        {/* 11 — Donut kesehatan stok */}
+        <DonutCard
+          title="Kesehatan Stok"
+          data={stockDonut}
+          centerValue={nf(w.total_produk)}
+          centerLabel="Produk aktif"
+        />
+
+        {/* 12 — Grid 3 kartu warehouse */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 22 }}>
+          {WAREHOUSE_CARDS.map((c) => (
+            <KpiCard
+              key={c.key}
+              warn
+              item={{ ...c, value: Number(w[c.key]) || 0 }}
+              active={whCat === c.key}
+              totalForPct={Number(w.total_produk) || 0}
+              onClick={() => setWhCat(c.key)}
+            />
+          ))}
+        </div>
+
+        {/* 13 — Tabel drill-down produk */}
+        <DrillTable
+          title={WAREHOUSE_CARDS.find((c) => c.key === whCat)?.label || 'Produk'}
+          rows={whRows}
+          kind="product"
+          loading={whRowsLoading}
+          onRowClick={onSelectProduct}
+        />
+        </>
+      )}
+
+      {activeTab === 'laporan' && (
+        <>
+        {/* 14 — Laporan Per Barang ─────────────────────────────────────────── */}
+        {/* marginTop:34 diganti marginBottom:14 (5 Sep 2026) — angka 34 itu sisa
+            dari saat blok ini menempel di bawah tabel warehouse dalam satu kolom
+            panjang. Sebagai elemen pertama TAB-3 ia jadi jarak puncak yang tak
+            dimiliki dua tab lain. Kini seragam dengan blok 4 & 10.
+            Jarak ke blok 14a TIDAK berubah: 14a punya marginTop:14, dan margin
+            sibling yang bersebelahan mengerucut ke max(14,14) = 14. */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ ...body, fontSize: 12.5, color: C.muted }}>
+            Sisa kirim, nilai, dan kecukupan stok untuk satu produk
+          </div>
+        </div>
+
+        {/* 14a — Filter + export */}
+        <div style={{
+          background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4,
+          padding: '14px 16px', display: 'flex', gap: 16, alignItems: 'flex-end',
+          flexWrap: 'wrap', marginTop: 14, marginBottom: 18,
+        }}>
+          <ProductCombobox
+            products={products}
+            value={productId}
+            onChange={setProductId}
+            loading={productsLoading}
+            disabled={!!productsError}
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ ...body, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.faint }}>
+              Tgl SP dari
+            </label>
+            <input
+              type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              style={{ ...body, fontSize: 13, padding: '8px 10px', borderRadius: 4, border: `1px solid ${C.divider}`, background: C.card, color: C.ink }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ ...body, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.faint }}>
+              sampai
+            </label>
+            <input
+              type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              style={{ ...body, fontSize: 13, padding: '8px 10px', borderRadius: 4, border: `1px solid ${C.divider}`, background: C.card, color: C.ink }}
+            />
+          </div>
+          {(dateFrom || dateTo) && (
+            <button onClick={resetReportFilters} style={{
+              ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '8px 12px', borderRadius: 4, border: `1px solid ${C.divider}`,
+              background: C.card, color: C.muted, cursor: 'pointer',
+            }}>
+              <RotateCcw size={13} strokeWidth={1.75} /> Periode
+            </button>
           )}
+
+          <div style={{ flex: 1, minWidth: 120, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            {canExportExcel && (
+              <button
+                onClick={() => runExport('xlsx')}
+                disabled={!productId || reportLoading || !!exporting}
+                style={{
+                  ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
+                  background: C.card, color: productId && !exporting ? C.ink : C.faint,
+                  cursor: productId && !exporting ? 'pointer' : 'not-allowed',
+                }}
+              >
+                <FileSpreadsheet size={13} strokeWidth={1.75} />
+                {exporting === 'xlsx' ? 'Menyiapkan…' : 'Excel'}
+              </button>
+            )}
+            {canExportPdf && (
+              <button
+                onClick={() => runExport('pdf')}
+                disabled={!productId || reportLoading || !!exporting}
+                style={{
+                  ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
+                  background: C.card, color: productId && !exporting ? C.ink : C.faint,
+                  cursor: productId && !exporting ? 'pointer' : 'not-allowed',
+                }}
+              >
+                <FileText size={13} strokeWidth={1.75} />
+                {exporting === 'pdf' ? 'Menyiapkan…' : 'PDF'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {productsError && (
+          <div style={{ ...body, fontSize: 12.5, color: C.orange, background: C.orangeSoft, border: `1px solid ${C.orangeBorder}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18 }}>
+            {productsError}
+          </div>
+        )}
+
+        {/* 14b — Belum ada produk dipilih: Top 10 sebagai pintu masuk */}
+        {!productId ? (
+          <ReportTable
+            title="Top 10 Produk — Nilai Belum Dikirim"
+            cols={TOP_COLS}
+            rows={topProducts}
+            loading={productsLoading}
+            error={productsError}
+            empty="Belum ada produk dengan sisa kirim."
+            footer={`${nf(topProducts.length)} dari ${nf(products.length)} produk`}
+            onRowClick={(r) => setProductId(r.product_id)}
+          />
+        ) : (
+          <>
+            {/* 14c — Kartu ringkasan */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
+              <SummaryTile
+                label="Total Dipesan"
+                value={reportLoading ? '…' : qtyU(report?.summary?.qty_ordered, uom)}
+                sub={reportLoading ? null
+                  : `dari ${nf(report?.summary?.jml_sp)} SP · ${nf(report?.summary?.jml_customer)} customer`}
+              />
+              <SummaryTile
+                label="Terkirim"
+                value={reportLoading ? '…' : qtyU(report?.summary?.qty_shipped, uom)}
+                sub={reportLoading ? null : 'sudah dikirim ke customer'}
+              />
+              <SummaryTile
+                label="Belum Dikirim"
+                value={reportLoading ? '…' : qtyU(report?.summary?.qty_outstanding, uom)}
+                sub={reportLoading ? null : 'sisa yang masih harus dikirim'}
+              />
+              <SummaryTile
+                label="Nilai Belum Dikirim"
+                value={reportLoading ? '…' : rpShort(report?.summary?.nilai_outstanding)}
+                sub="belum termasuk PPN"
+              />
+              {/* Defisit memakai token peringatan yang SAMA dengan kartu
+                  "Lewat Tenggat Kirim" (C.orange / C.orangeSoft / C.orangeBorder)
+                  — tidak ada warna baru diperkenalkan. */}
+              <SummaryTile
+                label="Stok Tersedia"
+                value={reportLoading ? '…' : qtyU(report?.summary?.stok_tersedia, uom)}
+                warn={!reportLoading && Number(report?.summary?.defisit) > 0}
+                sub={reportLoading ? null
+                  : Number(report?.summary?.defisit) > 0
+                    ? `defisit ${qtyU(report?.summary?.defisit, uom)}`
+                    : 'cukup untuk menutup sisa kirim'}
+              />
+            </div>
+
+            {reportError && (
+              <div style={{ ...body, fontSize: 12.5, color: C.orange, background: C.orangeSoft, border: `1px solid ${C.orangeBorder}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18 }}>
+                {reportError}
+              </div>
+            )}
+
+            {/* 14d — Breakdown per customer */}
+            <div style={{ marginBottom: 18 }}>
+              <ReportTable
+                title="Rincian Per Customer"
+                cols={customerCols}
+                rows={report?.per_customer || []}
+                loading={reportLoading}
+                error={reportError}
+                empty="Produk ini belum pernah dipesan customer mana pun pada periode terpilih."
+                footer={`${nf(report?.per_customer?.length)} customer`}
+              />
+            </div>
+
+            {/* 14e — Daftar SP; baris bisa diklik ke Detail SP */}
+            <ReportTable
+              title="Daftar SP"
+              cols={spCols}
+              rows={spListRows}
+              loading={spListLoading}
+              error={spListError}
+              empty="Tidak ada SP untuk produk ini pada periode terpilih."
+              footer={`${nf(spListRows.length)} SP ditampilkan`}
+              onRowClick={onSelectSP}
+            />
+            {spListRows.length >= 200 && (
+              <div style={{ ...mono, fontSize: 10.5, color: C.faint, marginTop: 8 }}>
+                Layar dibatasi 200 baris. Export mengambil sampai {nf(EXPORT_ROW_LIMIT)} baris.
+              </div>
+            )}
+          </>
+        )}
         </>
       )}
     </div>

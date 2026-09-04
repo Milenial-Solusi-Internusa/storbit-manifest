@@ -31,6 +31,43 @@ const fmtNum = (n) => Number(n || 0).toLocaleString('id-ID');
 // Qty + satuan produk, apa adanya dari master (products.unit -> uom).
 const fmtQtyU = (n, uom) => (uom ? `${fmtNum(n)} ${uom}` : fmtNum(n));
 
+// ── Ligatur fi/fl/ff: pecah run shaping ─────────────────────────────────────
+// GEJALA: "defisit" tercetak seperti "defsit", "filter" seperti "flter".
+//
+// SEBAB SEBENARNYA (didiagnosis 5 Sep 2026 — BUKAN font rusak, BUKAN bug
+// embedding, dan BUKAN salah ketik di source):
+//   1. Lora & Cormorant sama-sama membawa fitur GSUB `liga`, dan fontkit
+//      menerapkannya secara default. "defisit" (7 huruf) jadi 6 glyph — f+i
+//      dikolaps ke SATU glyph ligatur (Lora id 369, Cormorant id 1041).
+//   2. Glyph ligatur itu SEHAT dan lengkap (advanceWidth 623, bbox penuh),
+//      dan PDF-nya pun benar: ToUnicode memetakan glyph tsb ke <0066 0069>,
+//      jadi copy-paste dari PDF tetap menghasilkan "defisit".
+//   3. Yang bermasalah murni KETERBACAAN: ligatur `fi` memang DIRANCANG tanpa
+//      titik — glyph `i` sendiri punya 2 kontur (batang + titik), ligatur `fi`
+//      cuma 1 kontur. Pada px(8.5)–px(9) titik yang lebur itu membuat huruf i
+//      seolah hilang. Di px(13) ke atas ia terbaca normal.
+//
+// KENAPA BUKAN CARA LAIN:
+//   · Tak ada style prop untuk mematikan ligature di @react-pdf/renderer 4.5.1
+//     — getFragments (@react-pdf/layout) merakit atribut textkit secara
+//     eksplisit dan TIDAK PERNAH mengisi `features`, sehingga fontkit selalu
+//     memakai fitur default. Menaikkannya butuh patch library.
+//   · ZWNJ (U+200C) justru merusak: di ketiga font ini ia memetakan ke glyph
+//     `space` (advanceWidth 263/234), jadi hasilnya "def isit".
+//   · Mengganti kata / keluarga font / ukuran = menambal gejala, bukan sebab.
+//
+// YANG DIPAKAI: memecah RUN SHAPING lewat <Text> bersarang. Ligatur tak bisa
+// terbentuk melintasi batas elemen. Terbukti dari content stream PDF — versi
+// polos menghasilkan glyph ligatur tunggal <0003>, versi terpecah menghasilkan
+// <000a><0005> (f dan i sebagai glyph terpisah). Nol perubahan pada teks yang
+// terbaca maupun yang ter-copy-paste.
+const LIG_SPLIT = /(?<=f)(?=[fil])/;
+function noLig(value) {
+  const s = String(value ?? '');
+  if (!LIG_SPLIT.test(s)) return s;
+  return s.split(LIG_SPLIT).map((part, i) => (i === 0 ? part : <Text key={i}>{part}</Text>));
+}
+
 // Ornamen sudut versi landscape — bentuk & fillOpacity identik PageChrome.
 function ReportChrome() {
   const topH = px(96);
@@ -55,12 +92,12 @@ function Stat({ label, value, sub, warn }) {
       borderRadius: px(4), paddingVertical: px(9), paddingHorizontal: px(11),
     }}>
       <Text style={{ fontSize: px(9), color: ink(0.55), textTransform: 'uppercase', letterSpacing: px(9) * 0.06 }}>
-        {label}
+        {noLig(label)}
       </Text>
       <Text style={{ fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: px(17), marginTop: px(3), color: INK }}>
-        {value}
+        {noLig(value)}
       </Text>
-      {sub ? <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(2) }}>{sub}</Text> : null}
+      {sub ? <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(2) }}>{noLig(sub)}</Text> : null}
     </View>
   );
 }
@@ -68,7 +105,7 @@ function Stat({ label, value, sub, warn }) {
 function Section({ title, children }) {
   return (
     <View style={{ marginTop: px(16) }}>
-      <Text style={s.sectionLabel}>{title}</Text>
+      <Text style={s.sectionLabel}>{noLig(title)}</Text>
       {children}
     </View>
   );
@@ -120,7 +157,7 @@ function Table({ cols, rows, empty }) {
   if (!rows.length) {
     return (
       <View style={{ borderWidth: 1, borderColor: '#ded9d4', borderRadius: px(4), padding: px(14) }}>
-        <Text style={{ fontSize: px(10), color: ink(0.45), textAlign: 'center' }}>{empty}</Text>
+        <Text style={{ fontSize: px(10), color: ink(0.45), textAlign: 'center' }}>{noLig(empty)}</Text>
       </View>
     );
   }
@@ -128,13 +165,13 @@ function Table({ cols, rows, empty }) {
     <View>
       <View style={[s.thRow, { marginTop: px(4) }]}>
         {cols.map((c) => (
-          <Text key={c.h} style={[s.th, { width: c.w, textAlign: c.a, fontSize: px(8) }]}>{c.h}</Text>
+          <Text key={c.h} style={[s.th, { width: c.w, textAlign: c.a, fontSize: px(8) }]}>{noLig(c.h)}</Text>
         ))}
       </View>
       {rows.map((r, i) => (
         <View key={`${r.sp_no || r.customer_id || i}-${i}`} style={[s.tr, { paddingVertical: px(4) }]} wrap={false}>
           {cols.map((c) => (
-            <Text key={c.h} style={{ width: c.w, textAlign: c.a, fontSize: px(9) }}>{cell(r, c)}</Text>
+            <Text key={c.h} style={{ width: c.w, textAlign: c.a, fontSize: px(9) }}>{noLig(cell(r, c))}</Text>
           ))}
         </View>
       ))}
@@ -242,7 +279,7 @@ export default function StorbitReportPDF({
             />
           </View>
           <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>
-            Stok adalah angka saat laporan dibuat dan tidak mengikuti filter periode.
+            {noLig('Stok adalah angka saat laporan dibuat dan tidak mengikuti filter periode.')}
           </Text>
         </Section>
 
@@ -255,7 +292,7 @@ export default function StorbitReportPDF({
         <Section title={`Daftar SP (${fmtNum(spRows.length)} baris)`}>
           {truncated ? (
             <Text style={{ fontSize: px(9), color: PURPLE, marginBottom: px(4) }}>
-              PERINGATAN: daftar menyentuh batas baris — isi di bawah TIDAK LENGKAP. Persempit filter periode.
+              {noLig('PERINGATAN: daftar menyentuh batas baris — isi di bawah TIDAK LENGKAP. Persempit filter periode.')}
             </Text>
           ) : null}
           <Table cols={spCols} rows={spRows} empty="Tidak ada SP untuk produk ini pada periode terpilih." />
