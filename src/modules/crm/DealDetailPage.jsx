@@ -41,6 +41,10 @@ import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
 import { fetchOperationalRoster } from './salesRoster';
 import InquiryChatter from './InquiryChatter';
+// Label kargo & layanan tambahan diimpor dari SUMBER BERSAMA, BUKAN dicermin.
+// Cermin sudah terjadi tiga kali di file ini dan tiap cermin adalah sumber
+// kebenaran kedua yang pasti ketinggalan.
+import { CARGO_TYPES, SERVICES } from './inquiryOptions';
 
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
@@ -98,6 +102,15 @@ const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
    ⚠️ URUTAN PENGECEKAN MENGIKAT. Keadaan tertutup dicek PALING DULU: PRF
    CANCELLED/EXPIRED tak akan pernah dijawab procurement, jadi menampilkannya
    sebagai "Awaiting procurement" adalah janji yang tak akan datang. */
+// Peta id → label, diturunkan dari konstanta yang DIIMPOR (bukan disalin), supaya
+// menambah satu kategori kargo/layanan di form otomatis ikut terbaca di sini.
+const CARGO_LABEL = Object.fromEntries(CARGO_TYPES.map((c) => [c.id, c.label]));
+const SERVICE_ADDON_LABEL = Object.fromEntries(SERVICES.map((x) => [x.id, x.label]));
+// Nilai yang tak dikenal peta DIKEMBALIKAN APA ADANYA, bukan disembunyikan atau
+// diganti '—': id asing berarti data menyimpan sesuatu yang form tak lagi kenal,
+// dan itu harus terlihat, bukan ditelan.
+const mapLabels = (arr, dict) => (Array.isArray(arr) ? arr.map((v) => dict[v] || v) : arr);
+
 // PRF service_type = MODA transport, taksonomi BEDA dari inquiry SERVICE_LABEL
 // (TD-108). Dicermin di sini karena PRF_SERVICE_LABEL tidak diekspor DealPanels
 // dan file itu di luar scope batch ini — pola mirror-per-file yang sudah berulang
@@ -224,13 +237,13 @@ const FIELD_GROUPS = [
       { label: 'HS Code', value: i.hs_code, mono: true },
       { label: 'Total Weight (KG)', value: i.weight_kg != null ? String(i.weight_kg) : '', mono: true },
       { label: 'Volume (CBM)', value: i.volume_cbm != null ? String(i.volume_cbm) : '', mono: true },
-      { label: 'Cargo Type', value: i.cargo_types, pills: true },
+      { label: 'Cargo Type', value: mapLabels(i.cargo_types, CARGO_LABEL), pills: true },
     ],
   },
   {
     title: 'Additional Services',
     fields: (i) => [
-      { label: 'Additional Services', value: i.additional_services, pills: true },
+      { label: 'Additional Services', value: mapLabels(i.additional_services, SERVICE_ADDON_LABEL), pills: true },
     ],
   },
   {
@@ -380,7 +393,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
     <Card title="Price Breakdown" icon={<FileText size={17} />}>
       <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, marginBottom: 14 }}>
         — <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy }}>{quotation.quotation_no}</span>
-        {' '}· terakhir diedit {fmtDate(quotation.updated_at || quotation.created_at)}
+        {' '}· last edited {fmtDate(quotation.updated_at || quotation.created_at)}
       </div>
       {loading ? (
         <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Loading price breakdown…</div>

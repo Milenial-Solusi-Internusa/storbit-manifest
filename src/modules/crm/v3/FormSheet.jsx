@@ -17,7 +17,7 @@
    Turun ke satu kolom di bawah 1024px lewat helper `nx-grid-2`/`nx-stack`
    yang SUDAH ADA di index.css — nol perubahan file global.
 
-   ⚠️ KEADAAN KIT INI, APA ADANYA — 4 September 2026.
+   ⚠️ KEADAAN KIT INI, APA ADANYA — 4 September 2026 (diperbarui akhir Batch B).
    FormSheet kini punya SEPULUH slot dan sudah DUA KALI diperluas (chrome
    `aside`, lalu `toolbar`) sementara pemakai produksinya baru SATU:
    DealDetailPage. Artinya bentuknya sejauh ini didikte satu halaman.
@@ -29,6 +29,15 @@
    terasa dipaksakan, LAPORKAN — jangan diakali dari sisi pemanggil. Slot yang
    salah bentuk lebih murah diperbaiki sekarang, selagi pemakainya masih sedikit,
    daripada setelah lima halaman terlanjur menyiasatinya masing-masing.
+
+   Dan ini bukan cuma soal FormSheet. ListView mengalami hal yang sama di batch
+   yang sama: input pencariannya dirender tanpa memeriksa apakah pemanggil
+   menyediakan `onSearch`, dan `render` kolomnya tak pernah mengoper indeks baris
+   sehingga kolom nomor urut mustahil dibuat (ketahuan sebagai NaN di layar).
+   Ketiga celah — satu di FormSheet, dua di ListView — sama sebabnya: kit v3
+   dibangun LEBIH DULU, sebelum ada satu pun pemakai produksi, jadi bentuknya
+   ditebak dari rencana. Ketiganya baru muncul saat halaman pertama benar-benar
+   memakainya. Perlakukan sisa kit ini sebagai BELUM TERUJI, bukan sudah jadi.
    ========================================================================= */
 
 import { INK, INK_SOFT, LINE, SURFACE, FONT_HEAD, FONT_BODY, SP, RADIUS } from './tokens';

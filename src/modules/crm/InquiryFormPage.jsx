@@ -7,8 +7,7 @@
 import { useState, useEffect } from 'react';
 import {
   ChevronLeft, ChevronDown, Send, X, Check, User, Calendar, Hash, Anchor, MapPin,
-  Package, AlertTriangle, Droplets, Thermometer, Maximize2, FileCheck,
-  Shield, Warehouse, FileText, Umbrella, Truck,
+  AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -16,6 +15,9 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import AccountPicker from '../../components/AccountPicker';
+// Sumber TUNGGAL kosakata kargo & layanan tambahan — dipakai bersama
+// DealDetailPage. Tidak boleh dideklarasikan ulang di sini.
+import { CARGO_TYPES, SERVICES } from './inquiryOptions';
 
 const C = {
   navy: '#1B4D8A', navyDark: '#0F3768', navySoft: '#EEF3FB',
@@ -34,21 +36,6 @@ const SERVICE_TYPES_FALLBACK = [
 const INCOTERMS = ['EXW', 'FOB', 'CFR/CNF', 'CIF', 'DDU/DAP', 'DDP'];
 const CONTAINERS = ["FCL 20'", "FCL 40'", "FCL 40'HC", 'LCL'];
 const IMO_CLASSES = ['Class 1 — Explosives', 'Class 2 — Gases', 'Class 3 — Flammable Liquids', 'Class 4 — Flammable Solids', 'Class 5 — Oxidizers', 'Class 6 — Toxic', 'Class 7 — Radioactive', 'Class 8 — Corrosives', 'Class 9 — Miscellaneous'];
-const CARGO_TYPES = [
-  { id: 'normal', Icon: Package, label: 'Normal Cargo', desc: 'General cargo, no special handling' },
-  { id: 'dg', Icon: AlertTriangle, label: 'Dangerous Goods (DG) / Hazmat', desc: 'Bahan berbahaya & beracun' },
-  { id: 'liquid', Icon: Droplets, label: 'Liquid Cargo', desc: 'Liquids, flexitank or drums' },
-  { id: 'reefer', Icon: Thermometer, label: 'Perlu Suhu Khusus (Reefer)', desc: 'Rantai dingin / temperature-controlled' },
-  { id: 'oversize', Icon: Maximize2, label: 'Oversize / Overweight', desc: 'Out-of-gauge / break bulk' },
-  { id: 'permit', Icon: FileCheck, label: 'Izin Khusus (BPOM, Kementan, dll)', desc: 'Memerlukan izin instansi terkait' },
-];
-const SERVICES = [
-  { id: 'customs', Icon: Shield, label: 'Custom Clearance' },
-  { id: 'warehouse', Icon: Warehouse, label: 'Warehouse' },
-  { id: 'undername', Icon: FileText, label: 'Undername' },
-  { id: 'insurance', Icon: Umbrella, label: 'Cargo Insurance' },
-  { id: 'trucking', Icon: Truck, label: 'Trucking' },
-];
 const MSDS_OPTS = ['Ya', 'Tidak', 'Not Sure Yet'];
 
 // Kelompok lifecycle lifecycle_stage. Dropdown inquiry harus bisa memilih akun
