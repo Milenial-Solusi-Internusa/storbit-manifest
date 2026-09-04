@@ -383,7 +383,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                         style={{ width: '100%', boxSizing: 'border-box', borderRadius: 9, border: `1px solid ${C.borderStrong}`, padding: '8px 10px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
                       />
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button type="button" onClick={() => saveEdit(c.id)} disabled={savingEdit} style={ghostBtn(false)}><Check size={13} />{savingEdit ? 'Saving…' : 'Simpan'}</button>
+                        <button type="button" onClick={() => saveEdit(c.id)} disabled={savingEdit} style={ghostBtn(false)}><Check size={13} />{savingEdit ? 'Saving…' : 'Save'}</button>
                         <button type="button" onClick={cancelEdit} disabled={savingEdit} style={ghostBtn(false)}><X size={13} />Cancel</button>
                       </div>
                     </div>
@@ -420,7 +420,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
               disabled={submitting || !newBody.trim()}
               style={{ height: 34, padding: '0 14px', borderRadius: 9, border: 'none', background: submitting || !newBody.trim() ? C.grayBg : C.orange, color: submitting || !newBody.trim() ? C.gray : '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: submitting || !newBody.trim() ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <Send size={13} />{submitting ? 'Mengirim…' : 'Kirim'}
+              <Send size={13} />{submitting ? 'Sending…' : 'Send'}
             </button>
           </div>
 
@@ -436,7 +436,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             >
               {mentionMatches.priority.length > 0 && (
                 <>
-                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Terkait deal ini</div>
+                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Related to this deal</div>
                   {mentionMatches.priority.map((p) => (
                     <button key={p.id} type="button" onMouseDown={(e) => { e.preventDefault(); pickMention(p); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
@@ -448,7 +448,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
               )}
               {mentionMatches.rest.length > 0 && (
                 <>
-                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Lainnya</div>
+                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Others</div>
                   {mentionMatches.rest.map((p) => (
                     <button key={p.id} type="button" onMouseDown={(e) => { e.preventDefault(); pickMention(p); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
@@ -468,7 +468,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
         open={!!deleteTarget}
         title="Delete comment?"
         message="This comment will be removed from the chatter. This action cannot be undone."
-        confirmLabel={deleting ? 'Deleting…' : 'Hapus'}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
         cancelLabel="Cancel"
         variant="danger"
         onConfirm={confirmDelete}

@@ -644,7 +644,7 @@ export function PriceSummaryCard({ quotations, termMap }) {
   const minT = totals.length ? Math.min(...totals) : null;
   const maxT = totals.length ? Math.max(...totals) : null;
   return (
-    <Card title="Summary Harga" icon={<FileText size={17} />}>
+    <Card title="Price Summary" icon={<FileText size={17} />}>
       {!best ? (
         <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>—</div>
       ) : (
@@ -655,7 +655,7 @@ export function PriceSummaryCard({ quotations, termMap }) {
             <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, opacity: 0.85 }}>{best.quotation_no}</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
-            <InfoRow label="Masa Berlaku" value={fmtDate(best.valid_until)} />
+            <InfoRow label="Valid Until" value={fmtDate(best.valid_until)} />
             <InfoRow label="Payment Terms" value={termMap?.[best.payment_terms_id]} />
             <InfoRow label="Offer Range" value={(minT != null && maxT != null) ? `${fmtRp(minT)} – ${fmtRp(maxT)}` : '—'} full />
           </div>
