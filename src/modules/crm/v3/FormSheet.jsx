@@ -16,6 +16,19 @@
 
    Turun ke satu kolom di bawah 1024px lewat helper `nx-grid-2`/`nx-stack`
    yang SUDAH ADA di index.css — nol perubahan file global.
+
+   ⚠️ KEADAAN KIT INI, APA ADANYA — 4 September 2026.
+   FormSheet kini punya SEPULUH slot dan sudah DUA KALI diperluas (chrome
+   `aside`, lalu `toolbar`) sementara pemakai produksinya baru SATU:
+   DealDetailPage. Artinya bentuknya sejauh ini didikte satu halaman.
+   Slot `toolbar` lahir dari kebutuhan yang terukur, bukan selera — baris aksi
+   butuh lebar dokumen penuh (986px), sedangkan kolom `children` cuma 766px saat
+   `aside` terpasang — jadi kemungkinan besar ia berguna untuk halaman lain juga.
+   Tapi sampai ADA PEMAKAI KEDUA, itu belum terbukti.
+   Siapa pun yang memasang FormSheet di halaman berikutnya: kalau ada slot yang
+   terasa dipaksakan, LAPORKAN — jangan diakali dari sisi pemanggil. Slot yang
+   salah bentuk lebih murah diperbaiki sekarang, selagi pemakainya masih sedikit,
+   daripada setelah lima halaman terlanjur menyiasatinya masing-masing.
    ========================================================================= */
 
 import { INK, INK_SOFT, LINE, SURFACE, FONT_HEAD, FONT_BODY, SP, RADIUS } from './tokens';
