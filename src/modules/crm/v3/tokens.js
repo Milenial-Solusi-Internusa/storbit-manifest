@@ -17,6 +17,11 @@ export const NAVY_DK   = '#0E3260';
 export const NAVY_SOFT = '#EAF0F8';
 export const ORANGE    = '#E85A1E';
 export const ORANGE_DK = '#D14E18';
+/* Varian oranye yang digelapkan KHUSUS untuk teks putih di atasnya. ORANGE_DK
+   (#D14E18) hanya memberi rasio kontras 4.36:1 terhadap putih — meleset dari
+   WCAG AA (4.5:1); ORANGE_AA memberi 4.90:1. JANGAN menggantinya kembali ke
+   ORANGE_DK. */
+export const ORANGE_AA = '#C24A14';
 export const ORANGE_SOFT = '#FEF2EC';
 export const CORAL     = '#F08C7D';
 export const CREAM     = '#F6EFE3';

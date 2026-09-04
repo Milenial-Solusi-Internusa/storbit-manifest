@@ -100,7 +100,7 @@ export default function CrmV3DemoPage() {
       {/* ── 2. StatusBar ── */}
       <DemoSection
         n="2" title="StatusBar"
-        note="Generik: menerima daftar tahap + tahap sekarang. Status tertutup dirender sebagai ribbon penutup, bukan bar yang berhenti di tengah."
+        note="Generik: menerima daftar tahap + tahap sekarang, dirender sebagai chevron bersambung. Status tertutup BUKAN lagi ribbon pengganti bar — sejak 4 Sep 2026 ia penanda di ujung kanan yang hidup berdampingan dengan segmen (lihat varian gabungan paling bawah); tanpa `closed`, penanda berbunyi 'Not closed'."
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: SP.s5 }}>
           <div>
@@ -125,6 +125,16 @@ export default function CrmV3DemoPage() {
               <StatusBar stages={[]} closed={{ stage: 'CANCELLED', label: 'Cancelled' }} />
               <StatusBar stages={[]} closed={{ stage: 'free_agent', label: 'Free Agent' }} />
             </div>
+          </div>
+          <div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: FAINT, marginBottom: SP.s2 }}>
+              gabungan · segmen + penanda penutupan berdampingan (stages DAN closed)
+            </div>
+            <StatusBar
+              stages={stagesOf(DEAL_STATUS_ORDER, DEAL_LABEL)}
+              current="QUOTED"
+              closed={{ stage: 'LOST', label: 'Lost' }}
+            />
           </div>
         </div>
       </DemoSection>
