@@ -18,7 +18,7 @@
 | DB pooler | `aws-1-ap-northeast-2.pooler.supabase.com:5432` (region Seoul) |
 | Storage bucket publik | `assets` (logo MSI), `avatars` (foto profil) |
 
-**Migrasi vs snapshot:** file di `supabase/migrations/` **berhenti 3 Jun 2026** (`...026_assets_kendaraan.sql`). Sumber kebenaran struktur DB terkini = **`supabase/schema_snapshot.sql`** (`pg_dump` full, 73 tabel). Banyak perubahan dilakukan via **SQL Editor** dan belum jadi migrasi formal.
+**Migrasi vs snapshot:** file di `supabase/migrations/` **berhenti 3 Jun 2026** (`...026_assets_kendaraan.sql`). Sumber kebenaran struktur DB terkini = **`supabase/schema_snapshot.sql`** (~~`pg_dump` full, 73 tabel~~ **[koreksi 5 Sep 2026, dihitung ulang doc-keeper via `grep -c "^CREATE TABLE public\."`]** **133 tabel `public`** = 123 tabel bisnis + 10 tabel backup menunggu drop-sekaligus). Banyak perubahan dilakukan via **SQL Editor** dan belum jadi migrasi formal.
 
 ---
 
@@ -92,6 +92,26 @@
   grep -c "^COPY public\." supabase/schema_snapshot.sql   # harus ~133
   grep -c "^GRANT"         supabase/schema_snapshot.sql   # harus ~931
   ```
+
+  ⚠️ **[KONTRADIKSI TERCATAT 5 Sep 2026 — aturan di atas dan praktik nyata sedang
+  BERTENTANGAN. Aturannya SENGAJA TIDAK diubah di sini; itu keputusan Den.]**
+  Refresh 5 Sep 2026 dijalankan dengan **`--schema-only --schema=public`**, yaitu
+  persis flag yang dilarang blok di atas. Hasil terukurnya:
+
+  | | sebelum (2 Sep) | sesudah (5 Sep) |
+  |---|---|---|
+  | `CREATE TABLE public.` | 133 | **133** (nol hilang) |
+  | `CREATE TABLE` semua skema | 168 | **133** (−35 tabel sistem `auth`/`storage`/`realtime`/`vault`) |
+  | `COPY public.` | 133 | **0** ← verifikasi wajib di atas GAGAL |
+  | `GRANT … public.… TO anon` (tabel) | 105 | **105** (ACL bisnis selamat) |
+
+  Jadi **`--schema=public` jelas perbaikan** (dump lama memang tak seharusnya
+  membawa skema sistem), sedangkan **`--schema-only` adalah perubahan kebijakan
+  yang belum diputuskan** — ia mencabut data dari repo. Sampai Den memutuskan,
+  **jangan pakai blok ini sebagai dasar menolak/menerima snapshot** tanpa membaca
+  `09_ROADMAP.md` **Keputusan Terbuka #32** dan `03_DATA_MODEL.md` **gotcha #23**
+  lebih dulu. Begitu diputuskan, perbarui blok perintah + baris verifikasi di atas
+  supaya dokumen dan praktik kembali satu.
 
 ---
 
