@@ -31,6 +31,38 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-06
+### Keputusan: `schema_snapshot.sql` TETAP schema-only — kontradiksi §4 ditutup
+
+**Keputusan Den:** perintah baku refresh jadi `pg_dump --schema-only --schema=public`. `--no-owner` dan
+`--no-privileges` **tetap DILARANG** — ACL harus ikut. Kontradiksi yang tercatat 5 Sep antara aturan tertulis dan
+praktik nyata **selesai**, bukan lagi keadaan berjalan.
+
+**Dasarnya audit jejak read-only (nol file diubah saat auditnya):**
+- Snapshot **lahir schema-only** (`74b0c1b`, 17 Jun 2026) dan bertahan begitu **119 commit refresh**.
+- Data baru ikut **31 Agu 2026** (`0c736fb`) **tanpa keputusan tertulis** — pesan commit-nya cuma "refresh dari
+  production".
+- Aturan yang mewajibkan data ditulis **2 Sep** (`83a6c26`), **dua hari sesudahnya**, dan alasannya **hanya soal ACL**.
+- Dari **680 rujukan** `schema_snapshot` di dokumentasi, **NOL** memakai bagian datanya; dua dokumen justru
+  menyatakan datanya di luar jangkauan lalu pergi ke SQL Editor.
+- Versi berdata memuat **385 email unik**, 1.246 baris `accounts`, 1.004 `contacts`, kolom `npwp`/`ktp_direktur`/`nib`
+  — permanen di riwayat Git, tanpa pemakaian yang pernah tercatat. **9,62 MB vs 704 KB.**
+
+**Perubahan dokumen:** `02_RULES_GOVERNANCE.md` §4 (perintah baku + verifikasi baru + alasan keputusan; blok
+"KONTRADIKSI TERCATAT" dihapus) · verifikasi `grep -c "^COPY public\." ~133` **DICABUT**, diganti `CREATE TABLE
+public.` = 133 dan `GRANT … TO authenticated` **tidak boleh turun** dibanding refresh sebelumnya · Keputusan Terbuka
+**#32 DITUTUP** · `03_DATA_MODEL.md` gotcha #23 & `CLAUDE.md` disesuaikan · **+TD-221 (LOW, baru)**.
+
+**⚠️ Langkah manual yang KINI SUDAH BOLEH dijalankan:** refresh `schema_snapshot.sql` sesudah migrasi **B1**
+(`20260827000001_crm_v3_master_data` + `20260830000002_inquiry_owner_backfill_and_lock`). Sebelumnya tertahan karena
+aturan dan praktik saling bertentangan — perintahnya kini baku, jadi penahanan itu **dicabut**. Urutannya tetap:
+migrasi naik ke produksi → refresh snapshot → baru FE.
+
+**Yang TIDAK berubah:** keputusan ini menghentikan penambahan data, **tidak menghapus** data di commit
+`0c736fb`…`d10e09a` (31 Agu–5 Sep) yang sudah permanen di riwayat Git. Larangan `--no-owner`/`--no-privileges`
+beserta alasan ACL-nya dipertahankan apa adanya.
+
+
 ## 2026-09-05
 
 ### Dashboard Storbit — Laporan Per Barang + strip Nilai/Outstanding + export Excel/PDF + pecah jadi 3 tab
@@ -75,7 +107,7 @@
 **7. ⚠️ Cara `pg_dump` snapshot BERUBAH — dan sekarang bertentangan dengan aturan tertulis.** Refresh 5 Sep memakai `--schema-only --schema=public`; sebelumnya tanpa `--schema=public` sama sekali.
 
 - **Yang jelas perbaikan:** dump lama ikut membawa **35 tabel skema sistem** (`auth`, `storage`, `realtime`, `vault`). **Jumlah tabel `public` TETAP 133 ↔ 133 — NOL tabel bisnis hilang.** File menyusut ~44.000 baris; **itu bukan tabel terhapus**, dan perlu dicatat eksplisit supaya orang yang membandingkan antar-commit tak salah paham.
-- **Yang belum diputuskan:** `--schema-only` menghapus seluruh **133 blok `COPY`** (`grep -c "^COPY public\."` = **133 → 0**), padahal `02_RULES_GOVERNANCE.md` §4 — ditulis 2 Sep 2026 — **melarang flag itu eksplisit** dan mewajibkan verifikasi *"kalau `COPY` jatuh ke 0 → JANGAN commit"*. **Aturannya sengaja TIDAK diubah**; kontradiksinya direkam apa adanya di §4 + `09_ROADMAP.md` **Keputusan Terbuka #32**.
+- **Yang belum diputuskan:** `--schema-only` menghapus seluruh **133 blok `COPY`** (`grep -c "^COPY public\."` = **133 → 0**), padahal `02_RULES_GOVERNANCE.md` §4 — ditulis 2 Sep 2026 — **melarang flag itu eksplisit** dan mewajibkan verifikasi *"kalau `COPY` jatuh ke 0 → JANGAN commit"*. **Aturannya sengaja TIDAK diubah**; kontradiksinya direkam apa adanya di §4 + `09_ROADMAP.md` **Keputusan Terbuka #32**. **[→ DIJAWAB 6 Sep 2026: tetap schema-only. §4 sudah diselaraskan, verifikasi `COPY ~133` dicabut, Keputusan Terbuka #32 ditutup. Lihat entri 2026-09-06. Kalimat di atas dibiarkan apa adanya karena merekam keadaan yang berlaku pada 5 Sep.]**
 - **ACL selamat:** `GRANT` tabel `public` ke `anon` identik **105 ↔ 105**, jadi auditabilitas **TD-24** tak hilang. Penurunan `GRANT` total 931 → 482 hampir seluruhnya milik fungsi ekstensi `pg_trgm`/`pgcrypto`.
 - ⚠️ **Satu GRANT non-ekstensi benar-benar hilang: `GRANT ALL ON FUNCTION public.get_table_columns(p_table text) TO anon`.** Fungsinya masih ada beserta ACL `service_role`/`authenticated` (`:18480-18482`), jadi ini **perubahan DB nyata — anon dicabut — bukan artefak flag**. **Tak ada migrasi yang merekamnya dan tak ada catatan siapa/kapan.** Kebetulan itu persis objek yang **TD-24** sebut "paling layak dicabut duluan". **TD-24 dikoreksi** (RPC ber-`anon` 3 → 2), **tapi perlu konfirmasi Den.**
 

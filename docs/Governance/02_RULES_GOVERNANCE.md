@@ -73,45 +73,65 @@
 - **Refresh snapshot** setelah perubahan SQL Editor:
   ```bash
   pg_dump "postgresql://postgres.untmpqceexwxzuhlmyrg@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres" \
+    --schema-only --schema=public \
     -f /tmp/snap.sql && mv /tmp/snap.sql supabase/schema_snapshot.sql
   ```
   (`pg_dump` langsung — `supabase db pull` butuh Docker yang belum terpasang.)
 
-  ⚠️ **TANPA `--schema-only`, `--no-owner`, maupun `--no-privileges`.** Snapshot yang
-  berlaku memang data-inclusive + ACL: per 2 Sep 2026 berisi **133 blok `COPY`**,
-  **931 `GRANT`**, dan **69 `REVOKE`**. Ketiga flag lama itu akan MENGHAPUS-nya
-  diam-diam — bukan "refresh", melainkan regresi. ACL-nya bukan kebetulan: tanpa
-  itu, gap GRANT (mis. `DELETE ON sp_items` untuk `authenticated`) tak bisa
-  diaudit dari repo sama sekali.
+  ⚠️ **TANPA `--no-owner` maupun `--no-privileges`.** Snapshot yang berlaku
+  memang ber-ACL. Kedua flag itu akan MENGHAPUS-nya diam-diam — bukan "refresh",
+  melainkan regresi. ACL-nya bukan kebetulan: tanpa itu, gap GRANT (mis.
+  `DELETE ON sp_items` untuk `authenticated`) tak bisa diaudit dari repo sama
+  sekali.
+
+  `--schema=public` menjaga isinya tetap skema aplikasi saja; tanpa flag itu
+  dump ikut membawa ~35 tabel skema sistem (`auth`/`storage`/`realtime`/`vault`)
+  yang bukan milik proyek ini.
 
   Lewat `/tmp` lalu `mv` — supaya `schema_snapshot.sql` tidak pernah tertulis
   separuh kalau `pg_dump` gagal di tengah.
 
-  **Verifikasi wajib sesudahnya** (kalau `COPY` jatuh ke 0 → JANGAN commit):
+  **Verifikasi wajib sesudahnya.** Bandingkan dengan refresh SEBELUMNYA, bukan
+  dengan angka mati. Kalau salah satu **TURUN** → JANGAN commit:
   ```bash
-  grep -c "^COPY public\." supabase/schema_snapshot.sql   # harus ~133
-  grep -c "^GRANT"         supabase/schema_snapshot.sql   # harus ~931
+  grep -c "^CREATE TABLE public\."      supabase/schema_snapshot.sql   # 133 per 6 Sep 2026
+  grep -c "^GRANT .* TO authenticated;" supabase/schema_snapshot.sql   # tak boleh turun
   ```
+  Angka kedua sengaja tanpa patokan tetap — ia tumbuh tiap kali ada tabel/RPC
+  baru. Yang dijaga adalah **tidak menyusut**: penyusutan berarti ACL raib, dan
+  itu persis kegagalan senyap yang pernah jadi insiden produksi nyata (5 Agu
+  2026 — GRANT tabel BNF kelewat, berujung 403 berulang).
 
-  ⚠️ **[KONTRADIKSI TERCATAT 5 Sep 2026 — aturan di atas dan praktik nyata sedang
-  BERTENTANGAN. Aturannya SENGAJA TIDAK diubah di sini; itu keputusan Den.]**
-  Refresh 5 Sep 2026 dijalankan dengan **`--schema-only --schema=public`**, yaitu
-  persis flag yang dilarang blok di atas. Hasil terukurnya:
+  ⚠️ `grep -c "^COPY public\."` **BUKAN lagi verifikasi.** Snapshot ini
+  schema-only, jadi angkanya memang **0**. Baris verifikasi lama yang mewajibkan
+  `~133` sudah **DICABUT** — jangan dihidupkan lagi tanpa membaca keputusan di
+  bawah.
 
-  | | sebelum (2 Sep) | sesudah (5 Sep) |
-  |---|---|---|
-  | `CREATE TABLE public.` | 133 | **133** (nol hilang) |
-  | `CREATE TABLE` semua skema | 168 | **133** (−35 tabel sistem `auth`/`storage`/`realtime`/`vault`) |
-  | `COPY public.` | 133 | **0** ← verifikasi wajib di atas GAGAL |
-  | `GRANT … public.… TO anon` (tabel) | 105 | **105** (ACL bisnis selamat) |
+  **[KEPUTUSAN 6 Sep 2026 — `schema_snapshot.sql` TETAP schema-only.]** Ditutup
+  sesudah audit jejak read-only. Ringkasan alasannya dicatat di sini supaya tak
+  perlu dibuka ulang dari nol:
+  - **Snapshot lahir schema-only** (`74b0c1b`, 17 Jun 2026 — pesan commit-nya
+    menyebut sendiri "pg_dump schema-only") dan bertahan begitu **119 commit
+    refresh**.
+  - **Data baru ikut 31 Agu 2026** (`0c736fb`) **tanpa keputusan tertulis**:
+    pesan commit-nya cuma "refresh dari production", nol penyebutan data.
+  - **Aturan yang mewajibkan data ditulis 2 Sep** (`83a6c26`) — **dua hari
+    SESUDAHNYA**. Ia mendeskripsikan keadaan yang sudah terjadi, dan **alasan
+    yang diberikannya hanya soal ACL, bukan data**. Bagian ACL itu benar dan
+    **DIPERTAHANKAN** di atas; bagian datanya tak pernah punya alasan tertulis.
+  - **Nol pemakaian.** Dari **680 rujukan** `schema_snapshot` di seluruh
+    dokumentasi, **NOL** memakai bagian datanya. Dua dokumen malah menyatakan
+    datanya di luar jangkauan lalu pergi ke SQL Editor: `03_DATA_MODEL.md:131`
+    (`chart_of_accounts`) dan `docs/archive/audits/16_SP_TABLES_SYNC_AUDIT.md:107`
+    (`sp_order_items`).
+  - **Biayanya nyata.** Versi berdata memuat **385 alamat email unik**, **1.246
+    baris `accounts`**, **1.004 `contacts`**, plus kolom `npwp`/`ktp_direktur`/
+    `nib` — data pelanggan yang **tersimpan permanen di riwayat Git** tanpa satu
+    pun pemakaian yang pernah tercatat. Ukuran **9,62 MB vs 704 KB**.
 
-  Jadi **`--schema=public` jelas perbaikan** (dump lama memang tak seharusnya
-  membawa skema sistem), sedangkan **`--schema-only` adalah perubahan kebijakan
-  yang belum diputuskan** — ia mencabut data dari repo. Sampai Den memutuskan,
-  **jangan pakai blok ini sebagai dasar menolak/menerima snapshot** tanpa membaca
-  `09_ROADMAP.md` **Keputusan Terbuka #32** dan `03_DATA_MODEL.md` **gotcha #23**
-  lebih dulu. Begitu diputuskan, perbarui blok perintah + baris verifikasi di atas
-  supaya dokumen dan praktik kembali satu.
+  ⚠️ Keputusan ini menghentikan PENAMBAHAN data, **tidak menghapus yang lampau**:
+  commit `0c736fb`…`d10e09a` (31 Agu–5 Sep 2026) tetap memuat data itu di
+  riwayat Git.
 
 ---
 
