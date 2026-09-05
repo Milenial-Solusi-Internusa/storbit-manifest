@@ -25,7 +25,7 @@
 --   20260830000002_inquiry_owner_backfill_and_lock
 --   lalu refresh supabase/schema_snapshot.sql via pg_dump, baru FE.
 --
--- PENAHANAN DICABUT HANYA SETELAH Keputusan Terbuka #32 dijawab
+-- PENAHANAN DICABUT HANYA SETELAH Keputusan Terbuka #35 dijawab
 -- (docs/Governance/09_ROADMAP.md):
 --   A — rename langsung: nol kerja tambahan, ADA jendela downtime sepanjang
 --       deploy Vercel, dan rollback praktis MUSTAHIL (STEP 4 sudah menimpa
@@ -33,15 +33,15 @@
 --   B — tulis ulang jadi tambah-kolom + trigger sinkron dua arah, drop
 --       account_status setelah branch stabil: nol downtime, perlu migrasi baru.
 --
--- ⚠️ POIN KEDUA YANG BELUM SELESAI — Keputusan Terbuka #33:
+-- ⚠️ POIN KEDUA YANG BELUM SELESAI — Keputusan Terbuka #36:
 --   Penyempitan set_prospect_on_inquiry di STEP 4 ('lead','mql','sql') ->
 --   ('lead','mql') MEMBATALKAN keputusan tertulis 18 Jul 2026. Header di bawah
 --   menyatakan ini "disetujui Den"; per keputusan Den 4 Sep 2026 statusnya
 --   DIKEMBALIKAN jadi PERTANYAAN TERBUKA sampai dikonfirmasi ulang. Jangan
 --   menjalankan migrasi ini sambil menganggap poin ini sudah beres.
 --
--- Rujukan: 08_TECH_DEBT.md TD-218 · 03_DATA_MODEL.md gotcha #21 ·
---          09_ROADMAP.md Keputusan Terbuka #32/#33 · PROGRESS.md 2026-09-04
+-- Rujukan: 08_TECH_DEBT.md TD-225 · 03_DATA_MODEL.md gotcha #21 ·
+--          09_ROADMAP.md Keputusan Terbuka #35/#36 · PROGRESS.md 2026-09-04
 -- =============================================================================
 
 -- =============================================================================

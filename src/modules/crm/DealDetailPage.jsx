@@ -1247,7 +1247,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         /* Sumbu deal yang SAH = `inquiries.status`, bukan `accounts.pipeline_stage`
            (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
            oleh deal LOST/CANCELLED sengaja TIDAK ditebak: riwayatnya cuma ada di
-           `inquiry_status_history` yang masih staging-only (TD-218), dan menyimpulkannya
+           `inquiry_status_history` yang masih staging-only (TD-225), dan menyimpulkannya
            dari keberadaan quotation adalah jawaban separuh — keempat segmennya
            dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
            WON menutup dengan `done` sehingga keempatnya tercentang. */
