@@ -108,6 +108,13 @@ export function customerFromDb(row) {
     picName:   row.pic_name   || '',
     picEmail:  row.pic_email  || '',
     active:    row.is_active !== false,   // accounts uses `is_active` (default true), not `active`
+    // Entitas pemilik record. HARUS dipetakan eksplisit di sini: loop
+    // pass-through di bawah hanya meneruskan kolom NON-standar, dan
+    // 'company_id' ada di CUSTOMER_STANDARD_DB_COLS — jadi tanpa baris ini
+    // ia hilang diam-diam dan setiap konsumen melihat `undefined`.
+    // Aditif & aman untuk arah tulis: customerToDb() membuang company_id
+    // (ada di standardAppKeys), jadi ia tak pernah ikut ke payload UPDATE.
+    company_id: row.company_id ?? null,
   };
   // Pass through all custom (non-standard) columns unchanged
   for (const [k, v] of Object.entries(row)) {

@@ -79,6 +79,10 @@ const heading = { fontFamily: "'Storbit Display', 'Cormorant Garamond', Georgia,
 const body    = { fontFamily: "'Storbit Text', Lora, Georgia, serif" };
 const mono    = { fontFamily: "'IBM Plex Mono', monospace" };
 
+// Penanda basis pajak untuk kartu status. Dipakai di DUA section (manifest &
+// tenggat) — satu kali per section, tak pernah per kartu.
+const PPN_NOTE = 'Nilai rupiah pada kartu di bawah: belum termasuk PPN';
+
 /* ---------- konfigurasi kartu ---------- */
 const MANIFEST_CARDS = [
   { key: 'pending_open',        icon: ClipboardList, desc: 'Belum dikirim — draft s/d dikemas' },
@@ -206,6 +210,11 @@ function KpiCard({ item, active, onClick, warn, totalForPct }) {
           <div style={{ ...heading, fontWeight: 600, fontSize: item.emphasize ? 40 : 30, lineHeight: 1, color: warn && item.value > 0 ? C.orange : C.ink }}>
             {item.value.toLocaleString('id-ID')}
           </div>
+          {item.subValue != null && (
+            <div style={{ ...mono, fontSize: 11.5, color: C.muted, marginTop: 5 }} title={rp(item.subValue)}>
+              {rpShort(item.subValue)}
+            </div>
+          )}
         </div>
         <div style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 4, background: accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Icon size={15} color={accent} strokeWidth={1.75} />
@@ -950,7 +959,11 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   // dalam body-nya. Pindah ke sana adalah pekerjaan tersendiri.
   //
   // `company_id` tersedia di objek ini karena customerFromDb() (db.js)
-  // meneruskan seluruh kolom non-standar apa adanya.
+  // MEMETAKANNYA EKSPLISIT. Jangan andalkan loop pass-through di sana: loop itu
+  // hanya meneruskan kolom NON-standar, sedangkan company_id justru terdaftar
+  // di CUSTOMER_STANDARD_DB_COLS. Asumsi keliru itulah yang membuat filter di
+  // bawah mengembalikan nol baris (setiap c.company_id === undefined) sejak
+  // 4 Sep 2026 — dropdown ini cuma berisi "Semua customer".
   const customerOptions = useMemo(() => ([
     { value: '', label: 'Semua customer' },
     ...customers
@@ -1046,6 +1059,18 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   }, [productId, report, outstanding, selectedProduct, dateFrom, dateTo, showToast]);
 
   const spCardValue = (key) => Number(m[key]) || 0;
+  // Nilai rupiah per kartu (DPP). Mengembalikan null — BUKAN 0 — kalau kunci
+  // `<key>_value` belum ada di payload, karena dua keadaan itu berbeda arti:
+  // 0 = kategorinya memang nol rupiah, tak ada = RPC belum menyediakannya.
+  // Dua hal bergantung pada perbedaan ini:
+  //   · migrasi 20260907000002 belum tentu sudah jalan saat build ini tayang —
+  //     tanpa penjagaan ini setiap kartu akan berbohong "Rp 0";
+  //   · `cancelled` SENGAJA tak punya `_value` (keputusan 7 Sep 2026, alasannya
+  //     di kepala migrasi) — kartunya harus tetap tanpa baris nilai.
+  const spCardSubValue = (key) => {
+    const raw = m?.[`${key}_value`];
+    return raw === undefined || raw === null ? null : Number(raw) || 0;
+  };
 
   return (
     <div style={{ ...body, color: C.ink, maxWidth: 1240 }}>
@@ -1145,11 +1170,14 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         />
 
         {/* 6 — Grid 6 kartu KPI */}
+        {/* Basis pajak ditulis SEKALI di level section. Mengulangnya di tiap
+            kartu membuat enam baris identik yang justru berhenti dibaca. */}
+        <div style={{ ...mono, fontSize: 9.5, color: C.faint, marginBottom: 8 }}>{PPN_NOTE}</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 22 }}>
           {MANIFEST_CARDS.map((c) => (
             <KpiCard
               key={c.key}
-              item={{ ...c, label: labelOf(c.key), value: spCardValue(c.key) }}
+              item={{ ...c, label: labelOf(c.key), value: spCardValue(c.key), subValue: spCardSubValue(c.key) }}
               active={spCat === c.key}
               totalForPct={totalSp}
               onClick={() => setSpCat(c.key)}
@@ -1161,12 +1189,13 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         <div style={{ ...body, fontSize: 11, letterSpacing: '0.11em', textTransform: 'uppercase', color: C.orange, fontWeight: 600, marginBottom: 10 }}>
           Perlu Perhatian · Tenggat
         </div>
+        <div style={{ ...mono, fontSize: 9.5, color: C.faint, marginBottom: 8 }}>{PPN_NOTE}</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 14 }}>
           {EXPIRY_CARDS.map((c) => (
             <KpiCard
               key={c.key}
               warn
-              item={{ ...c, label: labelOf(c.key), value: spCardValue(c.key) }}
+              item={{ ...c, label: labelOf(c.key), value: spCardValue(c.key), subValue: spCardSubValue(c.key) }}
               active={spCat === c.key}
               totalForPct={totalSp}
               onClick={() => setSpCat(c.key)}
