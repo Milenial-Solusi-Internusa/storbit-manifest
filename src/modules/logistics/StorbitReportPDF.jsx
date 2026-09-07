@@ -348,6 +348,19 @@ export default function StorbitReportPDF({ meta = {}, sections = [] }) {
                 <Text style={s.metaLabel}>Customer · Tipe SP</Text>
                 <Text style={s.metaValue}>{noLig(`${meta.filterCustomer || '—'} · ${meta.filterSpType || '—'}`)}</Text>
               </View>
+              {/* Cakupan per-bagian, hanya dicetak kalau bagiannya ikut.
+                  Nilainya dari pilihan panel, bukan filter layar. */}
+              {meta.spStatus || meta.stockCategory ? (
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={s.metaLabel}>
+                    {meta.spStatus && meta.stockCategory ? 'Status SP · Kategori stok'
+                      : meta.spStatus ? 'Status SP' : 'Kategori stok'}
+                  </Text>
+                  <Text style={s.metaValue}>
+                    {noLig([meta.spStatus, meta.stockCategory].filter(Boolean).join(' · '))}
+                  </Text>
+                </View>
+              ) : null}
               {/* Produk & periode hanya relevan kalau Laporan Per Barang ikut. */}
               {meta.product ? (
                 <View style={{ alignItems: 'flex-end' }}>

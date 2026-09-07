@@ -57,8 +57,14 @@ function infoSheet(wb, meta) {
   ws.addRow([]);
   ws.addRow(['Dicetak', new Date(meta.printedAt).toLocaleString('id-ID')]);
   ws.addRow(['Entitas', meta.entity]);
+  // ⚠️ Seluruh baris cakupan ini mencerminkan pilihan DI PANEL EXPORT, bukan
+  // filter yang sedang aktif di layar pengekspor. Penerima file tak punya cara
+  // tahu keadaan layar orang lain, jadi yang tercetak harus benar-benar cakupan
+  // yang dipakai merakit angka di file ini.
   ws.addRow(['Filter Customer', meta.filterCustomer]);
   ws.addRow(['Filter Tipe SP', meta.filterSpType]);
+  if (meta.spStatus)      ws.addRow(['Status SP', meta.spStatus]);
+  if (meta.stockCategory) ws.addRow(['Kategori stok', meta.stockCategory]);
   if (meta.product) {
     ws.addRow(['Produk', `${meta.product.product_name || '—'}${meta.product.code ? ` (${meta.product.code})` : ''}`]);
     ws.addRow(['Periode SP', meta.periode || 'Seluruh periode']);

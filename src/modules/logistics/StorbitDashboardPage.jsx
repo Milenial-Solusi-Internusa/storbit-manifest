@@ -142,10 +142,25 @@ const EXPORT_SECTIONS = [
   { key: 'outstanding', sheet: 'Outstanding',       label: 'Nilai SP & Outstanding',              hint: '4 kartu strip',                          def: true  },
   { key: 'manifest',    sheet: 'Manifest',          label: 'Shipping Manifest — ringkasan',       hint: 'distribusi status + 6 kartu status',     def: true  },
   { key: 'attention',   sheet: 'Perlu Perhatian',   label: 'Shipping Manifest — perlu perhatian', hint: '2 kartu tenggat + kartu risiko pinalti', def: false },
-  { key: 'spList',      sheet: 'Daftar SP Kategori',label: 'Daftar SP kategori aktif',            hint: 'tabel drilldown yang sedang tampil',     def: false },
+  { key: 'spList',      sheet: 'Daftar SP Kategori',label: 'Daftar SP',                           hint: 'satu status per file',                   def: false, scope: 'spCat'    },
   { key: 'stockHealth', sheet: 'Kesehatan Stok',    label: 'Gudang — kesehatan stok',             hint: 'donut + 3 kartu',                        def: false },
-  { key: 'stockList',   sheet: 'Daftar Produk',     label: 'Gudang — daftar produk',              hint: 'tabel drilldown stok yang sedang tampil',def: false },
-  { key: 'report',      sheet: null,                label: 'Laporan Per Barang',                  hint: 'Ringkasan · Per Customer · Daftar SP',   def: true, needsProduct: true },
+  { key: 'stockList',   sheet: 'Daftar Produk',     label: 'Gudang — daftar produk',              hint: 'satu kategori stok per file',            def: false, scope: 'whCat'    },
+  { key: 'report',      sheet: null,                label: 'Laporan Per Barang',                  hint: 'Ringkasan · Per Customer · Daftar SP',   def: true,  scope: 'productId', needsProduct: true },
+];
+
+// Kategori yang BENAR-BENAR diterima get_storbit_sp_drilldown, urut sesuai CASE
+// di dalam RPC-nya. ⚠️ RPC itu diakhiri `ELSE false`: kategori di luar daftar
+// ini mengembalikan NOL BARIS TANPA ERROR — gagalnya senyap, jadi daftar ini
+// harus ikut berubah kalau CASE di RPC berubah.
+//
+// TIDAK ada opsi "semua status" (keputusan Den, 7 Sep 2026): kategorinya SALING
+// TUMPANG TINDIH (mis. `shipped` ∩ `delivered_belum_btb` di status SAMPAI),
+// jadi menggabungkan sepuluhnya membuat SP yang sama muncul di dua tempat dan
+// jumlah barisnya tak bisa diadu dengan kartu mana pun. Satu status per file
+// justru menjaga sifat "cocok 1:1 dengan layar".
+const SP_DRILLDOWN_CATEGORIES = [
+  'pending_open', 'shipped', 'delivered_belum_btb', 'btb_terbit', 'terkirim_penuh',
+  'expired', 'mendekati_expired', 'pernah_risiko_pinalti', 'finance', 'cancelled',
 ];
 
 const defaultPicks = (canReport) => Object.fromEntries(
@@ -728,11 +743,46 @@ function TabBar({ active, onSelect }) {
 // Satu panel untuk DUA format: pilihan isinya identik, formatnya ditentukan
 // tombol di footer. Gate hasMenuPermission dievaluasi per tombol, jadi user
 // yang cuma punya 'print' hanya melihat PDF.
+// Select ringkas untuk kontrol cakupan di dalam panel. Bentuknya sama dengan
+// <Select> bar filter halaman, cuma tanpa minWidth 180 supaya dua-duanya muat
+// berdampingan dan yang inline bisa menempel di bawah label bagiannya.
+function ScopeSelect({ label, options, value, onChange, disabled }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+      <label style={{ ...body, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.faint }}>{label}</label>
+      <select
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        style={{
+          ...body, fontSize: 13, padding: '8px 10px', borderRadius: 4,
+          border: `1px solid ${C.divider}`, background: C.card,
+          color: disabled ? C.faint : C.ink, width: '100%',
+        }}
+      >
+        {options.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function ExportPanel({
-  picks, setPicks, canReport, canExcel, canPdf, phase, onClose, onRun,
+  picks, setPicks, scope, setScope, customerOptions, products, productsLoading,
+  canExcel, canPdf, phase, onClose, onRun,
 }) {
   const chosen = EXPORT_SECTIONS.filter((sc) => picks[sc.key]).length;
   const busy = !!phase;
+  // Laporan Per Barang tak lagi digerbang "belum pilih produk" — produknya
+  // dipilih DI SINI. Yang menggerbang tinggal ketersediaan daftarnya.
+  const productOptions = products.map((pr) => ({
+    value: pr.product_id, label: `${pr.code || '—'} · ${pr.product_name || ''}`,
+  }));
+  const scopeOptionsFor = (key) => {
+    if (key === 'spCat') return SP_DRILLDOWN_CATEGORIES.map((k) => ({ value: k, label: labelOf(k) }));
+    if (key === 'whCat') return WAREHOUSE_CARDS.map((c) => ({ value: c.key, label: c.label }));
+    return productOptions;
+  };
+  const scopeLabelFor = (key) => (key === 'spCat' ? 'Status' : key === 'whCat' ? 'Kategori stok' : 'Produk');
   return (
     <>
       <div
@@ -741,7 +791,7 @@ function ExportPanel({
       />
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-        zIndex: 81, width: 'calc(100% - 32px)', maxWidth: 560, maxHeight: '88vh',
+        zIndex: 81, width: 'calc(100% - 32px)', maxWidth: 600, maxHeight: '88vh',
         background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4,
         boxShadow: '0 12px 34px rgba(32,31,29,0.18)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -769,32 +819,63 @@ function ExportPanel({
 
         {/* Body */}
         <div style={{ overflowY: 'auto', padding: '8px 18px 12px', flex: 1 }}>
+          {/* Cakupan global — berlaku untuk SELURUH bagian. Nilai awalnya
+              menyalin filter halaman, tapi mengubahnya di sini TIDAK menyentuh
+              halaman: seluruhnya hidup di `scope` milik panel. */}
+          <div style={{ display: 'flex', gap: 10, padding: '10px 0 12px', borderBottom: `1px solid ${C.divider}` }}>
+            <ScopeSelect
+              label="Customer" options={customerOptions} value={scope.customerId} disabled={busy}
+              onChange={(e) => setScope((prev) => ({ ...prev, customerId: e.target.value }))}
+            />
+            <ScopeSelect
+              label="Tipe SP" options={SP_TYPE_OPTIONS} value={scope.spType} disabled={busy}
+              onChange={(e) => setScope((prev) => ({ ...prev, spType: e.target.value }))}
+            />
+          </div>
+
           {EXPORT_SECTIONS.map((sc) => {
-            const blocked = sc.needsProduct && !canReport;
+            // Hanya Laporan Per Barang yang bisa terkunci, dan kini alasannya
+            // cuma satu: daftar produknya belum termuat.
+            const blocked = sc.needsProduct && !products.length;
+            // Dropdown cakupan DIRENDER hanya saat bagiannya dicentang — bukan
+            // tampil-tapi-disabled. Itu yang menjaga panel tetap muat tanpa
+            // scroll di keadaan default; ia tumbuh sejauh yang diminta saja.
+            const showScope = sc.scope && picks[sc.key] && !blocked;
             return (
-              <label
-                key={sc.key}
-                style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0',
-                  borderBottom: `1px solid ${C.divider}`,
+              <div key={sc.key} style={{ padding: '10px 0', borderBottom: `1px solid ${C.divider}`, opacity: blocked ? 0.55 : 1 }}>
+                {/* <label> membungkus HANYA checkbox + teks. Kalau ia ikut
+                    membungkus <select>, mengklik dropdown akan menoggle
+                    centangnya. */}
+                <label style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
                   cursor: blocked || busy ? 'not-allowed' : 'pointer',
-                  opacity: blocked ? 0.55 : 1,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!picks[sc.key]}
-                  disabled={blocked || busy}
-                  onChange={(e) => setPicks((prev) => ({ ...prev, [sc.key]: e.target.checked }))}
-                  style={{ marginTop: 2, accentColor: C.purple, width: 15, height: 15, flexShrink: 0 }}
-                />
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ ...body, fontSize: 13, color: C.ink, display: 'block' }}>{sc.label}</span>
-                  <span style={{ ...body, fontSize: 11, color: C.faint, display: 'block', marginTop: 1 }}>
-                    {blocked ? 'pilih produk dulu' : sc.hint}
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={!!picks[sc.key]}
+                    disabled={blocked || busy}
+                    onChange={(e) => setPicks((prev) => ({ ...prev, [sc.key]: e.target.checked }))}
+                    style={{ marginTop: 2, accentColor: C.purple, width: 15, height: 15, flexShrink: 0 }}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ ...body, fontSize: 13, color: C.ink, display: 'block' }}>{sc.label}</span>
+                    <span style={{ ...body, fontSize: 11, color: C.faint, display: 'block', marginTop: 1 }}>
+                      {blocked ? (productsLoading ? 'memuat daftar produk…' : 'daftar produk tak tersedia') : sc.hint}
+                    </span>
                   </span>
-                </span>
-              </label>
+                </label>
+                {showScope && (
+                  <div style={{ display: 'flex', marginLeft: 25, marginTop: 8 }}>
+                    <ScopeSelect
+                      label={scopeLabelFor(sc.scope)}
+                      options={scopeOptionsFor(sc.scope)}
+                      value={scope[sc.scope]}
+                      disabled={busy}
+                      onChange={(e) => setScope((prev) => ({ ...prev, [sc.scope]: e.target.value }))}
+                    />
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -892,6 +973,11 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   // (bukan disimpan) — permintaan eksplisit: pilihan tidak bertahan antar sesi.
   const [panelOpen, setPanelOpen]       = useState(false);
   const [picks, setPicks]               = useState(() => defaultPicks(false));
+  // Cakupan file — MILIK PANEL, bukan halaman. Di-seed dari filter halaman tiap
+  // kali panel dibuka, lalu hidup sendiri: tak satu pun setter halaman
+  // (setCustomerId/setSpType/setSpCat/setWhCat/setProductId) dipanggil dari
+  // panel, jadi menutup panel meninggalkan layar persis seperti semula.
+  const [scope, setScope] = useState({ customerId: '', spType: '', spCat: 'btb_terbit', whCat: 'danger_stock', productId: '' });
   const [exportPhase, setExportPhase]   = useState(null); // { kind, label, done, total }
 
   // Tab aktif — state lokal, tanpa URL param (sesuai permintaan). `tabLaporanDibuka`
@@ -1133,10 +1219,6 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
 
   const resetFilters = useCallback(() => { setCustomerId(''); setSpType(''); }, []);
 
-  const selectedProduct = useMemo(
-    () => products.find((p) => p.product_id === productId) || null,
-    [products, productId],
-  );
   const topProducts = useMemo(() => products.slice(0, TOP_PRODUCT_ROWS), [products]);
 
   // Satuan produk terpilih. Sumbernya `summary.uom` (RPC), bukan baris combobox
@@ -1161,11 +1243,42 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   // dibuat — dan peringatan yang sama ikut tercetak di dalam file, supaya
   // penerima yang tak melihat dialog ini tetap tahu isinya tak lengkap.
   // Berlaku untuk KETIGA daftar: SP kategori aktif, produk stok, dan SP produk.
+  // Memuat daftar produk untuk dropdown panel TANPA menyentuh
+  // `tabLaporanDibuka`. `products` adalah cache murni — mengisinya tak mengubah
+  // filter, tab, maupun pilihan apa pun di layar, jadi tidak melanggar aturan
+  // "panel tak boleh mengubah keadaan halaman".
+  const ensureProducts = useCallback(async () => {
+    if (products.length || productsLoading) return;
+    setProdLoad(true);
+    setProdError(null);
+    const { data, error: err } = await getStorbitTopOutstandingProducts({
+      companyId: SOA_COMPANY_ID, limit: PRODUCT_FETCH_LIMIT,
+    });
+    if (err) {
+      setProducts([]);
+      setProdError('Gagal memuat daftar produk: ' + (err.message || 'unknown'));
+    } else {
+      setProducts(data);
+    }
+    if (!err && data?.length) {
+      // Panel dibuka sebelum daftar termuat: isi pilihan produk begitu tiba,
+      // tapi jangan pernah menimpa pilihan yang sudah dibuat pengguna.
+      setScope((prev) => (prev.productId ? prev : { ...prev, productId: data[0].product_id }));
+    }
+    setProdLoad(false);
+  }, [products.length, productsLoading]);
+
   const openExportPanel = useCallback(() => {
-    setPicks(defaultPicks(!!productId));
+    // Reset, bukan mengingat: tiap kali dibuka, cakupan mengulang dari filter
+    // halaman yang sedang aktif — konsisten dgn "tidak disimpan antar sesi".
+    setPicks(defaultPicks(true));
+    // Kalau halaman belum memilih produk tapi daftarnya sudah termuat, ambil
+    // yang pertama — dropdown tak boleh terbuka dalam keadaan tak sinkron.
+    setScope({ customerId, spType, spCat, whCat, productId: productId || products[0]?.product_id || '' });
     setExportPhase(null);
     setPanelOpen(true);
-  }, [productId]);
+    ensureProducts();
+  }, [customerId, spType, spCat, whCat, productId, products, ensureProducts]);
 
   // Merakit payload yang dikonsumsi KEDUA builder (Excel & PDF). Halaman yang
   // merakit — bukan builder — supaya konfigurasi kartu (MANIFEST_CARDS dkk)
@@ -1174,9 +1287,11 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   // Bentuk tiap bagian: { key, sheet, title, note?, blocks: [{subtitle?,
   // columns, fmt, rows}] }. `fmt` mengendalikan numFmt di Excel dan perataan
   // di PDF: 'text' | 'num' | 'rp'.
-  const buildExportPayload = useCallback((got) => {
+  const buildExportPayload = useCallback((got, picksIn, sc) => {
+    const picks = picksIn;
     const truncatedNotes = [];
     const sections = [];
+    const scopeProduct = products.find((pr) => pr.product_id === sc.productId) || null;
     const mm = got.stats?.manifest || {};
     const ww = got.stats?.warehouse || {};
     const valOf = (key) => {
@@ -1258,7 +1373,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       if (rows.length >= EXPORT_ROW_LIMIT) truncatedNotes.push('Daftar SP kategori aktif');
       sections.push({
         key: 'spList', sheet: 'Daftar SP Kategori',
-        title: `Daftar SP — ${labelOf(spCat)}`,
+        title: `Daftar SP — ${labelOf(sc.spCat)}`,
         truncated: rows.length >= EXPORT_ROW_LIMIT,
         blocks: [{
           columns: ['No SP', 'Customer', 'DC', 'Tanggal', 'Status'],
@@ -1298,7 +1413,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
     if (picks.stockList) {
       const rows = got.stockList || [];
       if (rows.length >= EXPORT_ROW_LIMIT) truncatedNotes.push('Gudang — daftar produk');
-      const catLabel = WAREHOUSE_CARDS.find((c) => c.key === whCat)?.label || 'Produk';
+      const catLabel = WAREHOUSE_CARDS.find((c) => c.key === sc.whCat)?.label || 'Produk';
       sections.push({
         key: 'stockList', sheet: 'Daftar Produk',
         title: `Gudang — ${catLabel}`,
@@ -1321,7 +1436,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         key: 'report',
         report: got.report.report,
         spRows: rows,
-        product: selectedProduct || {},
+        product: scopeProduct || {},
         filters: { dateFrom, dateTo },
         truncated: rows.length >= EXPORT_ROW_LIMIT,
         // Blok Outstanding di dalam Laporan Per Barang hanya dicetak kalau
@@ -1333,14 +1448,23 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       });
     }
 
-    const chosenLabels = EXPORT_SECTIONS.filter((sc) => picks[sc.key]).map((sc) => sc.label);
+    const chosenLabels = EXPORT_SECTIONS.filter((x) => picks[x.key]).map((x) => x.label);
+    // ⚠️ SELURUH baris cakupan di bawah dibaca dari `scope`, BUKAN dari filter
+    // halaman. Penerima file tak tahu apa yang sedang aktif di layar
+    // pengekspor, jadi yang tercetak harus benar-benar cakupan yang dipakai
+    // merakit angka di file ini. Sengaja TANPA penanda "berbeda dari layar" —
+    // itu informasi yang tak berguna bagi penerima.
     return {
       meta: {
         printedAt: new Date().toISOString(),
         entity: SOA_COMPANY_LABEL,
-        filterCustomer: customerOptions.find((c) => c.value === customerId)?.label || 'Semua customer',
-        filterSpType: SP_TYPE_OPTIONS.find((t) => t.value === spType)?.label || 'Semua tipe',
-        product: picks.report ? (selectedProduct || null) : null,
+        filterCustomer: customerOptions.find((c) => c.value === sc.customerId)?.label || 'Semua customer',
+        filterSpType: SP_TYPE_OPTIONS.find((t) => t.value === sc.spType)?.label || 'Semua tipe',
+        spStatus: picks.spList ? labelOf(sc.spCat) : null,
+        stockCategory: picks.stockList
+          ? (WAREHOUSE_CARDS.find((c) => c.key === sc.whCat)?.label || sc.whCat)
+          : null,
+        product: picks.report ? (scopeProduct || null) : null,
         periode: picks.report
           ? (dateFrom || dateTo ? `${dateFrom || 'awal'} s/d ${dateTo || 'sekarang'}` : 'Seluruh periode')
           : null,
@@ -1349,27 +1473,30 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       },
       sections,
     };
-  }, [picks, customerId, spType, spCat, whCat, dateFrom, dateTo, selectedProduct, customerOptions]);
+  }, [dateFrom, dateTo, products, customerOptions]);
 
   // Seluruh bagian yang dicentang di-fetch ULANG saat export, termasuk yang
   // sudah ada di state layar. Bukan formalitas: kalau sebagian diambil dari
   // state dan sebagian di-fetch baru, satu file bisa mencampur angka dari dua
   // waktu berbeda. Biayanya maksimal 5 panggilan RPC.
   const runExportSelected = useCallback(async (kind) => {
-    const chosen = EXPORT_SECTIONS.filter((sc) => picks[sc.key]);
+    // Laporan Per Barang butuh produk; kalau daftarnya gagal termuat, bagian itu
+    // dianggap tak dipilih daripada menghasilkan bagian kosong diam-diam.
+    const eff = { ...picks, report: picks.report && !!scope.productId };
+    const chosen = EXPORT_SECTIONS.filter((sc) => eff[sc.key]);
     if (!chosen.length) return;
 
     // Satu panggilan get_storbit_dashboard_stats melayani TIGA bagian sekaligus.
-    const needStats = picks.manifest || picks.attention || picks.stockHealth;
+    const needStats = eff.manifest || eff.attention || eff.stockHealth;
     const jobs = [];
     // Outstanding juga dibutuhkan saat HANYA Laporan Per Barang yang dipilih:
     // sheet Ringkasan-nya memuat blok Outstanding kalau bagian tersendirinya
     // tidak ikut, dan blok itu bagian dari "isi export yang sekarang".
-    if (picks.outstanding || picks.report) jobs.push({ id: 'outstanding', label: 'Nilai SP & Outstanding' });
+    if (eff.outstanding || eff.report) jobs.push({ id: 'outstanding', label: 'Nilai SP & Outstanding' });
     if (needStats)         jobs.push({ id: 'stats',       label: 'Angka kartu dashboard' });
-    if (picks.spList)      jobs.push({ id: 'spList',      label: 'Daftar SP kategori aktif' });
-    if (picks.stockList)   jobs.push({ id: 'stockList',   label: 'Daftar produk stok' });
-    if (picks.report)      jobs.push({ id: 'report',      label: 'Laporan Per Barang' });
+    if (eff.spList)        jobs.push({ id: 'spList',      label: 'Daftar SP' });
+    if (eff.stockList)     jobs.push({ id: 'stockList',   label: 'Daftar produk stok' });
+    if (eff.report)        jobs.push({ id: 'report',      label: 'Laporan Per Barang' });
 
     setExporting(kind);
     let done = 0;
@@ -1377,27 +1504,30 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
     setExportPhase({ kind, label: 'Mengambil data…', done: 0, total: jobs.length });
 
     const call = async (id) => {
+      // Seluruh cakupan diambil dari `scope`. Keadaan halaman TIDAK dibaca
+      // sama sekali di sini — itulah yang membuat panel bisa merakit file yang
+      // berbeda dari apa yang sedang tampil di layar.
       if (id === 'outstanding') {
         return getStorbitOutstandingSummary({
-          companyId: SOA_COMPANY_ID, customerId: customerId || null, priceCategory: spType || null,
+          companyId: SOA_COMPANY_ID, customerId: scope.customerId || null, priceCategory: scope.spType || null,
         });
       }
       if (id === 'stats') {
-        return getStorbitDashboardStats(customerId || null, spType || null, SOA_COMPANY_ID);
+        return getStorbitDashboardStats(scope.customerId || null, scope.spType || null, SOA_COMPANY_ID);
       }
       if (id === 'spList') {
-        return getStorbitSpDrilldown(spCat, {
-          customerId: customerId || null, priceCategory: spType || null,
+        return getStorbitSpDrilldown(scope.spCat, {
+          customerId: scope.customerId || null, priceCategory: scope.spType || null,
           companyId: SOA_COMPANY_ID, limit: EXPORT_ROW_LIMIT,
         });
       }
       if (id === 'stockList') {
-        return getStorbitStockDrilldown(whCat, { companyId: SOA_COMPANY_ID, limit: EXPORT_ROW_LIMIT });
+        return getStorbitStockDrilldown(scope.whCat, { companyId: SOA_COMPANY_ID, limit: EXPORT_ROW_LIMIT });
       }
       // report = dua panggilan; ringkasannya dan daftar SP-nya harus sepasang.
       const [rep, list] = await Promise.all([
-        getStorbitProductReport(productId, { companyId: SOA_COMPANY_ID, dateFrom: dateFrom || null, dateTo: dateTo || null }),
-        getStorbitProductSpList(productId, { companyId: SOA_COMPANY_ID, dateFrom: dateFrom || null, dateTo: dateTo || null, limit: EXPORT_ROW_LIMIT }),
+        getStorbitProductReport(scope.productId, { companyId: SOA_COMPANY_ID, dateFrom: dateFrom || null, dateTo: dateTo || null }),
+        getStorbitProductSpList(scope.productId, { companyId: SOA_COMPANY_ID, dateFrom: dateFrom || null, dateTo: dateTo || null, limit: EXPORT_ROW_LIMIT }),
       ]);
       if (rep.error)  return { data: null, error: rep.error };
       if (list.error) return { data: null, error: list.error };
@@ -1420,7 +1550,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       }
 
       const got = Object.fromEntries(settled.map((x) => [x.job.id, x.res.data]));
-      const payload = buildExportPayload(got);
+      const payload = buildExportPayload(got, eff, scope);
 
       if (payload.meta.truncatedNotes.length) {
         const lanjut = window.confirm(
@@ -1459,8 +1589,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       setExporting(null);
       setExportPhase(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [picks, customerId, spType, spCat, whCat, productId, dateFrom, dateTo, selectedProduct, customers, showToast]);
+  }, [picks, scope, dateFrom, dateTo, showToast, buildExportPayload]);
 
   const spCardValue = (key) => Number(m[key]) || 0;
   // Nilai rupiah per kartu (DPP). Mengembalikan null — BUKAN 0 — kalau kunci
@@ -1541,7 +1670,11 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         <ExportPanel
           picks={picks}
           setPicks={setPicks}
-          canReport={!!productId}
+          scope={scope}
+          setScope={setScope}
+          customerOptions={customerOptions}
+          products={products}
+          productsLoading={productsLoading}
           canExcel={canExportExcel}
           canPdf={canExportPdf}
           phase={exportPhase}
