@@ -4,7 +4,7 @@
 -- Depends:   20260818000002 (get_storbit_sp_drilldown — CASE kategorinya
 --            dicermin persis di sini), 20260907000002 (get_storbit_dashboard_stats
 --            — rumus nilai disalin dari CTE manifest_value-nya).
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
+-- Status:    LIVE — dieksekusi di produksi 7 Sep 2026.
 --
 -- SIFAT: 1 CREATE OR REPLACE fungsi BARU. Nol DDL tabel, nol perubahan RLS,
 --   nol sentuhan ke RPC mana pun yang sudah ada. MURNI BACA.
