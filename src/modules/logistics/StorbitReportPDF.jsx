@@ -27,6 +27,9 @@ const L_H = PAGE_W;   // 612
 
 // Rupiah tanpa desimal — seluruh nilai laporan ini bulat rupiah.
 const fmtIDR = (n) => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+// ⚠️ null DISENGAJA untuk tiga kategori rekap (basisnya belum ditetapkan —
+// migrasi 20260907000003). Harus tercetak '—', bukan 'Rp 0'.
+const fmtIDRn = (n) => (n === null || n === undefined ? '—' : fmtIDR(n));
 const fmtNum = (n) => Number(n || 0).toLocaleString('id-ID');
 // Qty + satuan produk, apa adanya dari master (products.unit -> uom).
 const fmtQtyU = (n, uom) => (uom ? `${fmtNum(n)} ${uom}` : fmtNum(n));
@@ -231,7 +234,7 @@ function BlockTable({ block }) {
 // Strip empat kartu, isi & label PERSIS seperti sebelumnya.
 function OutstandingSection({ outstanding = {} }) {
   return (
-    <Section title="Outstanding Storbit — seluruh entitas">
+    <Section title="Nilai SP & Outstanding">
       <View style={{ flexDirection: 'row', gap: px(8), marginTop: px(4) }}>
         {/* Paling kiri: penyebut dari tiga angka lain. Dua kartu BRUTO
             (Nilai Total SP, Piutang), dua DPP (Kirim, Tagih). */}
@@ -317,6 +320,65 @@ function ReportSections({ report = {}, spRows = [], product = {}, truncated = fa
   );
 }
 
+// ── Rekap per Customer — section BERLAPIS ──────────────────────────────────
+// customer (tebal) > SP > produk (indent, kecil). Memakai s.thRow/s.tr yang
+// sudah ada supaya sewarna dengan tabel lain, tapi barisnya tak seragam
+// sehingga tak bisa lewat BlockTable.
+function RekapSection({ sec }) {
+  const W = ['14%', '22%', '11%', '11%', '22%', '20%'];
+  const head = ['No SP', 'DC', 'Tgl SP', 'Tenggat', 'Status', 'Nilai (DPP)'];
+  return (
+    <Section title={sec.title}>
+      {sec.truncated ? (
+        <Text style={{ fontSize: px(9), color: PURPLE, marginBottom: px(4) }}>
+          {noLig('PERINGATAN: daftar menyentuh batas baris — isi di bawah TIDAK LENGKAP. Persempit filter.')}
+        </Text>
+      ) : null}
+      <View style={[s.thRow, { marginTop: px(4) }]}>
+        {head.map((h, i) => (
+          <Text key={h} style={[s.th, { width: W[i], textAlign: i === 5 ? 'right' : 'left', fontSize: px(8) }]}>{noLig(h)}</Text>
+        ))}
+      </View>
+      {sec.groups.map((g, gi) => (
+        <View key={gi}>
+          <View style={[s.tr, { paddingVertical: px(4), backgroundColor: '#efecf6' }]} wrap={false}>
+            <Text style={{ width: '80%', fontSize: px(9.5), fontWeight: 600 }}>
+              {noLig(`${g.customer_name} · ${g.jml_sp} SP`)}
+            </Text>
+            <Text style={{ width: '20%', textAlign: 'right', fontSize: px(9.5), fontWeight: 600 }}>
+              {noLig(fmtIDRn(g.nilai))}
+            </Text>
+          </View>
+          {g.sps.map((sp, si) => (
+            <View key={si}>
+              <View style={[s.tr, { paddingVertical: px(3) }]} wrap={false}>
+                <Text style={{ width: W[0], fontSize: px(9) }}>{noLig(sp.sp_no)}</Text>
+                <Text style={{ width: W[1], fontSize: px(9) }}>{noLig(sp.dc_nama)}</Text>
+                <Text style={{ width: W[2], fontSize: px(9) }}>{noLig(fmtDate(sp.sp_date))}</Text>
+                <Text style={{ width: W[3], fontSize: px(9) }}>{noLig(fmtDate(sp.expired_date))}</Text>
+                <Text style={{ width: W[4], fontSize: px(9) }}>{noLig(sp.status)}</Text>
+                <Text style={{ width: W[5], fontSize: px(9), textAlign: 'right' }}>{noLig(fmtIDRn(sp.nilai))}</Text>
+              </View>
+              <Text style={{ fontSize: px(8), color: ink(0.45), paddingLeft: px(14), paddingBottom: px(3) }}>
+                {noLig(sp.produk)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ))}
+      <View style={[s.tr, { paddingVertical: px(5) }]} wrap={false}>
+        <Text style={{ width: '80%', fontSize: px(10), fontWeight: 600 }}>{noLig('TOTAL')}</Text>
+        <Text style={{ width: '20%', textAlign: 'right', fontSize: px(10), fontWeight: 600 }}>
+          {noLig(fmtIDRn(sec.total))}
+        </Text>
+      </View>
+      {sec.note ? (
+        <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>{noLig(sec.note)}</Text>
+      ) : null}
+    </Section>
+  );
+}
+
 /**
  * @param {object} meta     blok konteks: dicetak, entitas, filter, isi laporan
  * @param {Array}  sections bagian terpilih, URUT. Entri 'outstanding' dan
@@ -350,14 +412,15 @@ export default function StorbitReportPDF({ meta = {}, sections = [] }) {
               </View>
               {/* Cakupan per-bagian, hanya dicetak kalau bagiannya ikut.
                   Nilainya dari pilihan panel, bukan filter layar. */}
-              {meta.spStatus || meta.stockCategory ? (
+              {meta.spStatus || meta.rekapStatus || meta.stockCategory ? (
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={s.metaLabel}>
-                    {meta.spStatus && meta.stockCategory ? 'Status SP · Kategori stok'
-                      : meta.spStatus ? 'Status SP' : 'Kategori stok'}
-                  </Text>
+                  <Text style={s.metaLabel}>Status · Kategori stok</Text>
                   <Text style={s.metaValue}>
-                    {noLig([meta.spStatus, meta.stockCategory].filter(Boolean).join(' · '))}
+                    {noLig([
+                      meta.spStatus     ? `Daftar SP: ${meta.spStatus}` : null,
+                      meta.rekapStatus  ? `Rekap: ${meta.rekapStatus}`  : null,
+                      meta.stockCategory,
+                    ].filter(Boolean).join(' · '))}
                   </Text>
                 </View>
               ) : null}
@@ -392,6 +455,9 @@ export default function StorbitReportPDF({ meta = {}, sections = [] }) {
         {sections.map((sec) => {
           if (sec.key === 'outstanding') {
             return <OutstandingSection key={sec.key} outstanding={sec.raw} />;
+          }
+          if (sec.key === 'rekap') {
+            return sec.groups.length ? <RekapSection key={sec.key} sec={sec} /> : null;
           }
           if (sec.key === 'report') {
             return (

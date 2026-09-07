@@ -64,6 +64,7 @@ function infoSheet(wb, meta) {
   ws.addRow(['Filter Customer', meta.filterCustomer]);
   ws.addRow(['Filter Tipe SP', meta.filterSpType]);
   if (meta.spStatus)      ws.addRow(['Status SP', meta.spStatus]);
+  if (meta.rekapStatus)   ws.addRow(['Status Rekap per Customer', meta.rekapStatus]);
   if (meta.stockCategory) ws.addRow(['Kategori stok', meta.stockCategory]);
   if (meta.product) {
     ws.addRow(['Produk', `${meta.product.product_name || '—'}${meta.product.code ? ` (${meta.product.code})` : ''}`]);
@@ -115,6 +116,61 @@ function sectionSheet(wb, sec) {
   if (sec.note) { ws.addRow([]); ws.addRow([sec.note]); }
 }
 
+// ── Rekap per Customer — sheet BERLAPIS ─────────────────────────────────────
+// Tiga tingkat baris: customer (tebal, latar tipis) > SP > daftar produk
+// (indent, teks kecil). Sengaja BUKAN lewat sectionSheet(): renderer generik
+// itu meratakan semuanya jadi satu tabel dan hierarkinya hilang.
+//
+// ⚠️ Nilai bisa null dan itu DISENGAJA (kategori terkirim_penuh /
+// pernah_risiko_pinalti / cancelled belum punya basis — migrasi
+// 20260907000003). Sel null ditulis '—', BUKAN 0, dan numFmt Rupiah hanya
+// dipasang pada sel yang benar-benar angka supaya sel '—' tak berubah jadi
+// "Rp 0" di layar Excel.
+const REKAP_WIDTHS = [16, 26, 12, 12, 24, 20];
+
+function rekapSheet(wb, sec) {
+  const ws = wb.addWorksheet(sec.sheet);
+  autoWidth(ws, REKAP_WIDTHS);
+  titleRow(ws, sec.title, 6);
+  if (sec.truncated) {
+    const w = ws.addRow(['PERINGATAN: menyentuh batas baris — isi TIDAK LENGKAP. Persempit filter.']);
+    w.font = { bold: true, color: { argb: PURPLE_ARGB } };
+  }
+  ws.addRow([]);
+  styleHeader(ws.addRow(['No SP', 'DC', 'Tgl SP', 'Tenggat', 'Status', 'Nilai (DPP)']));
+
+  const money = (row, cell, v) => {
+    if (typeof v === 'number') row.getCell(cell).numFmt = RP;
+  };
+
+  sec.groups.forEach((g) => {
+    const gr = ws.addRow([`${g.customer_name} · ${g.jml_sp} SP`, '', '', '', '', g.nilai === null ? '—' : g.nilai]);
+    gr.font = { bold: true };
+    gr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFECF6' } };
+    ws.mergeCells(gr.number, 1, gr.number, 5);
+    money(gr, 6, g.nilai);
+
+    g.sps.forEach((sp) => {
+      const r = ws.addRow([
+        sp.sp_no, sp.dc_nama, sp.sp_date, sp.expired_date, sp.status,
+        sp.nilai === null ? '—' : sp.nilai,
+      ]);
+      money(r, 6, sp.nilai);
+      const pr = ws.addRow(['', sp.produk]);
+      pr.font = { size: 9, italic: true, color: { argb: 'FF7A7A78' } };
+      ws.mergeCells(pr.number, 2, pr.number, 6);
+    });
+  });
+
+  const tr = ws.addRow(['TOTAL', '', '', '', '', sec.total === null ? '—' : sec.total]);
+  tr.font = { bold: true };
+  ws.mergeCells(tr.number, 1, tr.number, 5);
+  money(tr, 6, sec.total);
+
+  if (sec.note) { ws.addRow([]); ws.addRow([sec.note]); }
+  ws.views = [{ state: 'frozen', ySplit: sec.truncated ? 4 : 3 }];
+}
+
 /**
  * Rakit workbook export dan kembalikan Blob siap-unduh.
  *
@@ -133,6 +189,7 @@ export async function buildStorbitReportWorkbook({ meta, sections = [] }) {
   infoSheet(wb, meta);
   sections.forEach((sec) => {
     if (sec.key === 'report') { reportSheets(wb, sec); return; }
+    if (sec.key === 'rekap')  { if (sec.groups.length) rekapSheet(wb, sec); return; }
     // Bagian nol baris dilewati — jangan hasilkan sheet kosong.
     if (!sec.blocks.some((b) => b.rows.length)) return;
     sectionSheet(wb, sec);

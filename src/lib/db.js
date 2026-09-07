@@ -1434,6 +1434,30 @@ export async function getStorbitSpDrilldown(category, { customerId = null, price
 }
 
 /**
+ * Rekap SP per customer untuk SATU kategori status (get_storbit_rekap_per_customer).
+ * Satu baris per SP — produk sudah digabung di sisi RPC, jadi JANGAN dedup lagi
+ * di client.
+ *
+ * ⚠️ `nilai_outstanding` bisa NULL dan itu DISENGAJA: kategori terkirim_penuh,
+ * pernah_risiko_pinalti, dan cancelled belum punya basis pra/pasca-kirim yang
+ * ditetapkan. Jangan `|| 0` di konsumen — "belum didefinisikan" dan "nol" dua
+ * hal berbeda, dan mengoersinya menghasilkan "Rp 0" yang berbohong.
+ *
+ * @param {string} category - salah satu dari 10 kategori get_storbit_sp_drilldown
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getStorbitRekapPerCustomer(category, { customerId = null, priceCategory = null, companyId = null, limit = 500 } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_rekap_per_customer', {
+    p_category:       category,
+    p_customer_id:    customerId    || null,
+    p_price_category: priceCategory || null,
+    p_company_id:     companyId     || null,
+    p_limit:          limit,
+  });
+  return { data: data || [], error };
+}
+
+/**
  * Baris produk untuk satu kategori kartu Warehouse.
  * @param {string} category - 'danger_stock' | 'zero_stock' | 'rop_belum_diisi'
  * @returns {Promise<{data: Array, error: object|null}>}

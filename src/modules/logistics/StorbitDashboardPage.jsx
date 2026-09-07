@@ -17,7 +17,7 @@
 // — persentase "% dari total SP" karenanya tidak berjumlah 100%. Yang mutually
 // exclusive adalah donut (DONUT_STATUS_SLICES, 6 slice = persis total_sp).
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import {
   ClipboardList, Truck, PackageCheck, FileCheck2, Receipt, XCircle,
@@ -29,6 +29,7 @@ import {
   getStorbitDashboardStats, getStorbitSpDrilldown, getStorbitStockDrilldown,
   getStorbitProductReport, getStorbitProductSpList,
   getStorbitOutstandingSummary, getStorbitTopOutstandingProducts,
+  getStorbitRekapPerCustomer,
 } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import StorbitReportPDF from './StorbitReportPDF';
@@ -126,6 +127,9 @@ const OUTSTANDING_CARDS = [
 // tinggi supaya file tak terpotong diam-diam. Kalau hasilnya MENYENTUH angka
 // ini, user diperingatkan eksplisit SEBELUM file dibuat (lihat runExport).
 const EXPORT_ROW_LIMIT = 5000;
+// Batas tampilan rekap di layar — sama dengan drilldown lain. Export memakai
+// EXPORT_ROW_LIMIT seperti daftar lainnya.
+const REKAP_ROW_LIMIT = 500;
 
 // Label entitas untuk blok meta file. Halaman ini dipin ke SOA (lihat catatan
 // panjang di atas SOA_COMPANY_ID), jadi labelnya ikut konstan — bukan diambil
@@ -143,6 +147,7 @@ const EXPORT_SECTIONS = [
   { key: 'manifest',    sheet: 'Manifest',          label: 'Shipping Manifest — ringkasan',       hint: 'distribusi status + 6 kartu status',     def: true  },
   { key: 'attention',   sheet: 'Perlu Perhatian',   label: 'Shipping Manifest — perlu perhatian', hint: '2 kartu tenggat + kartu risiko pinalti', def: false },
   { key: 'spList',      sheet: 'Daftar SP Kategori',label: 'Daftar SP',                           hint: 'satu status per file',                   def: false, scope: 'spCat'    },
+  { key: 'rekap',       sheet: 'Rekap per Customer',label: 'Rekap per Customer',                  hint: 'SP + produk, dikelompokkan per customer', def: false, scope: 'rekapCat' },
   { key: 'stockHealth', sheet: 'Kesehatan Stok',    label: 'Gudang — kesehatan stok',             hint: 'donut + 3 kartu',                        def: false },
   { key: 'stockList',   sheet: 'Daftar Produk',     label: 'Gudang — daftar produk',              hint: 'satu kategori stok per file',            def: false, scope: 'whCat'    },
   { key: 'report',      sheet: null,                label: 'Laporan Per Barang',                  hint: 'Ringkasan · Per Customer · Daftar SP',   def: true,  scope: 'productId', needsProduct: true },
@@ -201,6 +206,51 @@ const qtyU = (n, uom) => (uom ? `${nf(n)} ${uom}` : nf(n));
 
 // Rupiah penuh (tabel & tooltip) dan ringkas (kartu, supaya tak membungkus).
 const rp = (n) => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+// ── Rekap per customer: penjumlahan yang MENGHORMATI NULL ──────────────────
+// ⚠️ INI BUKAN kehati-hatian berlebihan. `nilai_outstanding` SENGAJA null untuk
+// tiga kategori (terkirim_penuh, pernah_risiko_pinalti, cancelled — basisnya
+// belum ditetapkan, lihat migrasi 20260907000003). reduce() memperlakukan null
+// sebagai 0 tanpa bersuara, jadi tanpa penjagaan ini baris TOTAL akan mencetak
+// "Rp 0" — mengubah "belum didefinisikan" jadi "tidak ada nilainya".
+//
+// Mengembalikan null HANYA kalau SELURUH nilainya null; kalau sebagian terisi,
+// yang terisi tetap dijumlahkan.
+function sumNullable(values) {
+  let ada = false;
+  let acc = 0;
+  for (const v of values) {
+    if (v === null || v === undefined) continue;
+    ada = true;
+    acc += Number(v) || 0;
+  }
+  return ada ? acc : null;
+}
+
+// Baris datar dari RPC (SUDAH urut customer_name, lalu nilai DESC) dikelompokkan
+// per customer tanpa mengubah urutannya.
+function groupRekap(rows) {
+  const out = [];
+  const byKey = new Map();
+  for (const r of rows) {
+    const key = r.customer_id || r.customer_name || '—';
+    let g = byKey.get(key);
+    if (!g) {
+      g = { key, customer_id: r.customer_id, customer_name: r.customer_name || '—', sps: [] };
+      byKey.set(key, g);
+      out.push(g);
+    }
+    g.sps.push(r);
+  }
+  for (const g of out) {
+    g.jml_sp = g.sps.length;
+    g.nilai = sumNullable(g.sps.map((x) => x.nilai_outstanding));
+  }
+  return out;
+}
+
+// Rupiah yang menghormati null — "—", bukan "Rp 0".
+const rpNullable = (v) => (v === null || v === undefined ? '—' : rp(v));
+
 function rpShort(n) {
   const v = Math.round(Number(n) || 0);
   const abs = Math.abs(v);
@@ -733,6 +783,98 @@ function TabBar({ active, onSelect }) {
   );
 }
 
+// ── Tabel rekap per customer ────────────────────────────────────────────────
+// Komponen KETIGA, sengaja terpisah dari DrillTable DAN ReportTable — mengikuti
+// aturan yang sudah tertulis di kepala ReportTable: keduanya dipakai blok
+// existing, dan menyentuhnya berarti mempertaruhkan mereka untuk bentuk yang
+// tak mereka pakai (di sini: baris berlapis + lipat/buka). Gaya visualnya
+// ditiru, kodenya tidak dibagi.
+function RekapTable({ title, groups, total, loading, error, empty, footer }) {
+  // Default TERBUKA: yang disimpan adalah himpunan yang DILIPAT, bukan yang
+  // dibuka — jadi grup yang baru datang otomatis terbuka.
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const toggle = (key) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const td = { padding: '8px 14px', borderBottom: `1px solid ${C.divider}` };
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4, overflow: 'hidden' }}>
+      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.divider}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <div style={{ ...heading, fontWeight: 600, fontSize: 16 }}>{title}</div>
+        <div style={{ ...mono, fontSize: 11, color: C.faint, whiteSpace: 'nowrap' }}>
+          {loading ? 'Memuat…' : footer}
+        </div>
+      </div>
+      {error ? (
+        <div style={{ ...body, padding: '22px 16px', textAlign: 'center', color: C.orange, fontSize: 12.5 }}>{error}</div>
+      ) : loading ? (
+        <div style={{ ...body, padding: '28px 16px', textAlign: 'center', color: C.faint, fontSize: 13 }}>Memuat data…</div>
+      ) : groups.length === 0 ? (
+        <div style={{ ...body, padding: '28px 16px', textAlign: 'center', color: C.faint, fontSize: 13 }}>{empty}</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              {['No SP', 'DC', 'Tgl SP', 'Tenggat', 'Status', 'Nilai'].map((h, i) => (
+                <th key={h} style={{ ...body, textAlign: i === 5 ? 'right' : 'left', fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.faint, padding: '8px 14px', borderBottom: `1px solid ${C.divider}`, whiteSpace: 'nowrap' }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {groups.map((g) => {
+                const open = !collapsed.has(g.key);
+                return (
+                  <Fragment key={g.key}>
+                    <tr
+                      onClick={() => toggle(g.key)}
+                      style={{ background: C.purpleSoft, cursor: 'pointer' }}
+                    >
+                      <td colSpan={5} style={{ ...body, fontSize: 13, fontWeight: 600, color: C.ink, ...td, whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <ChevronRight size={12} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }} />
+                          {g.customer_name}
+                          <span style={{ ...mono, fontSize: 11, color: C.muted, fontWeight: 400 }}>· {nf(g.jml_sp)} SP</span>
+                        </span>
+                      </td>
+                      <td style={{ ...mono, fontSize: 12.5, fontWeight: 600, ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {rpNullable(g.nilai)}
+                      </td>
+                    </tr>
+                    {open && g.sps.map((r) => (
+                      <Fragment key={`${g.key}|${r.sp_no}`}>
+                        <tr>
+                          <td style={{ ...mono, fontSize: 12.5, ...td, color: C.purpleDeep, whiteSpace: 'nowrap' }}>{r.sp_no || '—'}</td>
+                          <td style={{ ...body, fontSize: 12.5, ...td, color: C.muted, whiteSpace: 'nowrap' }}>{r.dc_nama || '—'}</td>
+                          <td style={{ ...mono, fontSize: 12, ...td, whiteSpace: 'nowrap' }}>{fmtDate(r.sp_date)}</td>
+                          <td style={{ ...mono, fontSize: 12, ...td, whiteSpace: 'nowrap' }}>{fmtDate(r.expired_date)}</td>
+                          <td style={{ ...body, fontSize: 12.5, ...td, whiteSpace: 'nowrap' }}>{r.status || '—'}</td>
+                          <td style={{ ...mono, fontSize: 12.5, ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{rpNullable(r.nilai_outstanding)}</td>
+                        </tr>
+                        <tr>
+                          <td colSpan={6} style={{ ...body, fontSize: 11, color: C.faint, padding: '0 14px 8px 34px', borderBottom: `1px solid ${C.divider}` }}>
+                            {r.produk || '—'}
+                          </td>
+                        </tr>
+                      </Fragment>
+                    ))}
+                  </Fragment>
+                );
+              })}
+              <tr style={{ background: C.bg }}>
+                <td colSpan={5} style={{ ...body, fontSize: 12.5, fontWeight: 600, color: C.ink, padding: '10px 14px' }}>TOTAL</td>
+                <td style={{ ...mono, fontSize: 13, fontWeight: 600, color: C.ink, padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {rpNullable(total)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Panel pilih isi export ──────────────────────────────────────────────────
 // Bentuk modal, mengikuti pola overlay satu-satunya di modul ini
 // (SalesOrderDetailPage.jsx): backdrop fixed + panel ter-center, header sticky
@@ -778,11 +920,13 @@ function ExportPanel({
     value: pr.product_id, label: `${pr.code || '—'} · ${pr.product_name || ''}`,
   }));
   const scopeOptionsFor = (key) => {
-    if (key === 'spCat') return SP_DRILLDOWN_CATEGORIES.map((k) => ({ value: k, label: labelOf(k) }));
+    if (key === 'spCat' || key === 'rekapCat') return SP_DRILLDOWN_CATEGORIES.map((k) => ({ value: k, label: labelOf(k) }));
     if (key === 'whCat') return WAREHOUSE_CARDS.map((c) => ({ value: c.key, label: c.label }));
     return productOptions;
   };
-  const scopeLabelFor = (key) => (key === 'spCat' ? 'Status' : key === 'whCat' ? 'Kategori stok' : 'Produk');
+  const scopeLabelFor = (key) => (
+    key === 'spCat' || key === 'rekapCat' ? 'Status' : key === 'whCat' ? 'Kategori stok' : 'Produk'
+  );
   return (
     <>
       <div
@@ -942,6 +1086,11 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   const [spRows, setSpRows]             = useState([]);
   const [spRowsLoading, setSpRowsLoad]  = useState(false);
 
+  // Rekap per customer — mengikuti KATEGORI YANG SEDANG DIPILIH di tab ini,
+  // jadi ia berubah bersama tabel drilldown di atasnya.
+  const [rekapRows, setRekapRows]       = useState([]);
+  const [rekapLoading, setRekapLoad]    = useState(false);
+
   const [whCat, setWhCat]               = useState('danger_stock');
   const [whRows, setWhRows]             = useState([]);
   const [whRowsLoading, setWhRowsLoad]  = useState(false);
@@ -977,7 +1126,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   // kali panel dibuka, lalu hidup sendiri: tak satu pun setter halaman
   // (setCustomerId/setSpType/setSpCat/setWhCat/setProductId) dipanggil dari
   // panel, jadi menutup panel meninggalkan layar persis seperti semula.
-  const [scope, setScope] = useState({ customerId: '', spType: '', spCat: 'btb_terbit', whCat: 'danger_stock', productId: '' });
+  const [scope, setScope] = useState({ customerId: '', spType: '', spCat: 'btb_terbit', rekapCat: 'btb_terbit', whCat: 'danger_stock', productId: '' });
   const [exportPhase, setExportPhase]   = useState(null); // { kind, label, done, total }
 
   // Tab aktif — state lokal, tanpa URL param (sesuai permintaan). `tabLaporanDibuka`
@@ -1033,6 +1182,29 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         setSpRows(data);
       }
       setSpRowsLoad(false);
+    })();
+    return () => { alive = false; };
+  }, [spCat, customerId, spType, notifyError]);
+
+  // ── Rekap per customer — kategori + filter yang sama dgn drilldown SP ─────
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setRekapLoad(true);
+      const { data, error: err } = await getStorbitRekapPerCustomer(spCat, {
+        customerId: customerId || null,
+        priceCategory: spType || null,
+        companyId: SOA_COMPANY_ID,
+        limit: REKAP_ROW_LIMIT,
+      });
+      if (!alive) return;
+      if (err) {
+        setRekapRows([]);
+        notifyError('Gagal memuat rekap per customer: ' + (err.message || 'unknown'));
+      } else {
+        setRekapRows(data);
+      }
+      setRekapLoad(false);
     })();
     return () => { alive = false; };
   }, [spCat, customerId, spType, notifyError]);
@@ -1274,7 +1446,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
     setPicks(defaultPicks(true));
     // Kalau halaman belum memilih produk tapi daftarnya sudah termuat, ambil
     // yang pertama — dropdown tak boleh terbuka dalam keadaan tak sinkron.
-    setScope({ customerId, spType, spCat, whCat, productId: productId || products[0]?.product_id || '' });
+    setScope({ customerId, spType, spCat, rekapCat: spCat, whCat, productId: productId || products[0]?.product_id || '' });
     setExportPhase(null);
     setPanelOpen(true);
     ensureProducts();
@@ -1386,6 +1558,37 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       });
     }
 
+    if (picks.rekap) {
+      const rows = got.rekap || [];
+      if (rows.length >= EXPORT_ROW_LIMIT) truncatedNotes.push('Rekap per Customer');
+      const grup = groupRekap(rows);
+      sections.push({
+        key: 'rekap', sheet: 'Rekap per Customer',
+        title: `Rekap per Customer — ${labelOf(sc.rekapCat)}`,
+        truncated: rows.length >= EXPORT_ROW_LIMIT,
+        // ⚠️ sumNullable, BUKAN reduce(+). Tiga kategori sengaja bernilai null;
+        // total "Rp 0" akan berbohong. Lihat migrasi 20260907000003.
+        total: sumNullable(rows.map((r) => r.nilai_outstanding)),
+        // Bentuk BERLAPIS — sengaja bukan `blocks`: renderer generik meratakan
+        // semuanya jadi satu tabel dan hierarki customer > SP > produk hilang.
+        groups: grup.map((g) => ({
+          customer_name: g.customer_name,
+          jml_sp: g.jml_sp,
+          nilai: g.nilai,
+          sps: g.sps.map((r) => ({
+            sp_no: r.sp_no || '—',
+            dc_nama: r.dc_nama || '—',
+            sp_date: r.sp_date || '—',
+            expired_date: r.expired_date || '—',
+            status: r.status || '—',
+            nilai: r.nilai_outstanding,
+            produk: r.produk || '—',
+          })),
+        })),
+        note: 'Nilai: DPP, belum termasuk PPN. "—" berarti basis nilainya belum ditetapkan untuk kategori ini, bukan nol.',
+      });
+    }
+
     if (picks.stockHealth) {
       const totalProduk = Number(ww.total_produk) || 0;
       const kosong = Number(ww.zero_stock) || 0;
@@ -1461,6 +1664,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         filterCustomer: customerOptions.find((c) => c.value === sc.customerId)?.label || 'Semua customer',
         filterSpType: SP_TYPE_OPTIONS.find((t) => t.value === sc.spType)?.label || 'Semua tipe',
         spStatus: picks.spList ? labelOf(sc.spCat) : null,
+        rekapStatus: picks.rekap ? labelOf(sc.rekapCat) : null,
         stockCategory: picks.stockList
           ? (WAREHOUSE_CARDS.find((c) => c.key === sc.whCat)?.label || sc.whCat)
           : null,
@@ -1495,6 +1699,7 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
     if (eff.outstanding || eff.report) jobs.push({ id: 'outstanding', label: 'Nilai SP & Outstanding' });
     if (needStats)         jobs.push({ id: 'stats',       label: 'Angka kartu dashboard' });
     if (eff.spList)        jobs.push({ id: 'spList',      label: 'Daftar SP' });
+    if (eff.rekap)         jobs.push({ id: 'rekap',       label: 'Rekap per Customer' });
     if (eff.stockList)     jobs.push({ id: 'stockList',   label: 'Daftar produk stok' });
     if (eff.report)        jobs.push({ id: 'report',      label: 'Laporan Per Barang' });
 
@@ -1517,6 +1722,12 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       }
       if (id === 'spList') {
         return getStorbitSpDrilldown(scope.spCat, {
+          customerId: scope.customerId || null, priceCategory: scope.spType || null,
+          companyId: SOA_COMPANY_ID, limit: EXPORT_ROW_LIMIT,
+        });
+      }
+      if (id === 'rekap') {
+        return getStorbitRekapPerCustomer(scope.rekapCat, {
           customerId: scope.customerId || null, priceCategory: scope.spType || null,
           companyId: SOA_COMPANY_ID, limit: EXPORT_ROW_LIMIT,
         });
@@ -1590,6 +1801,15 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
       setExportPhase(null);
     }
   }, [picks, scope, dateFrom, dateTo, showToast, buildExportPayload]);
+
+  // Rekap dikelompokkan sekali di sini; RekapTable hanya merender.
+  const rekapGroups = useMemo(() => groupRekap(rekapRows), [rekapRows]);
+  // ⚠️ sumNullable, BUKAN reduce(+): tiga kategori sengaja bernilai null dan
+  // total "Rp 0" akan berbohong. Lihat migrasi 20260907000003.
+  const rekapTotal = useMemo(
+    () => sumNullable(rekapRows.map((r) => r.nilai_outstanding)),
+    [rekapRows],
+  );
 
   const spCardValue = (key) => Number(m[key]) || 0;
   // Nilai rupiah per kartu (DPP). Mengembalikan null — BUKAN 0 — kalau kunci
@@ -1786,13 +2006,25 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         </div>
 
         {/* 9 — Tabel drill-down SP */}
-        <div style={{ marginBottom: 34 }}>
+        <div style={{ marginBottom: 22 }}>
           <DrillTable
             title={labelOf(spCat)}
             rows={spRows}
             kind="sp"
             loading={spRowsLoading}
             onRowClick={onSelectSP}
+          />
+        </div>
+
+        {/* 9b — Rekap per customer, kategori yang sama dengan tabel di atas */}
+        <div style={{ marginBottom: 34 }}>
+          <RekapTable
+            title={`Rekap per Customer — ${labelOf(spCat)}`}
+            groups={rekapGroups}
+            total={rekapTotal}
+            loading={rekapLoading}
+            empty="Tidak ada SP dalam kategori ini."
+            footer={`${nf(rekapGroups.length)} customer · ${nf(rekapRows.length)} SP${rekapRows.length >= REKAP_ROW_LIMIT ? ' (menyentuh batas)' : ''}`}
           />
         </div>
         </>
