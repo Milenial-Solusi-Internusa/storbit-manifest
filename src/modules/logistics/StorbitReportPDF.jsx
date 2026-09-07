@@ -190,17 +190,81 @@ function Table({ cols, rows, empty }) {
   );
 }
 
-/**
- * @param {object}  report     hasil get_storbit_product_report ({summary, per_customer})
- * @param {Array}   spRows     hasil get_storbit_product_sp_list
- * @param {object}  outstanding hasil get_storbit_outstanding_summary
- * @param {object}  product    { code, product_name }
- * @param {object}  filters    { dateFrom, dateTo }
- * @param {boolean} truncated  daftar SP menyentuh limit -> dicetak sbg peringatan
- */
-export default function StorbitReportPDF({
-  report = {}, spRows = [], outstanding = {}, product = {}, filters = {}, truncated = false,
-}) {
+// Tabel generik bagian baru. Lebar kolom dibagi rata kecuali kolom pertama
+// (label kategori) yang dapat porsi lebih besar; kolom 'num'/'rp' rata kanan.
+function BlockTable({ block }) {
+  const n = block.columns.length;
+  const first = n <= 2 ? 60 : 34;
+  const rest = (100 - first) / (n - 1);
+  const w = (i) => `${i === 0 ? first : rest}%`;
+  const align = (i) => (block.fmt?.[i] === 'num' || block.fmt?.[i] === 'rp' ? 'right' : 'left');
+  const cell = (v, i) => {
+    if (v === null || v === undefined) return '—';
+    if (block.fmt?.[i] === 'rp')  return fmtIDR(v);
+    if (block.fmt?.[i] === 'num') return fmtNum(v);
+    return String(v);
+  };
+  return (
+    <View>
+      {block.subtitle ? (
+        <Text style={{ fontSize: px(10), color: ink(0.55), marginTop: px(6), marginBottom: px(2) }}>
+          {noLig(block.subtitle)}
+        </Text>
+      ) : null}
+      <View style={[s.thRow, { marginTop: px(4) }]}>
+        {block.columns.map((h, i) => (
+          <Text key={h} style={[s.th, { width: w(i), textAlign: align(i), fontSize: px(8) }]}>{noLig(h)}</Text>
+        ))}
+      </View>
+      {block.rows.map((row, ri) => (
+        <View key={ri} style={[s.tr, { paddingVertical: px(4) }]} wrap={false}>
+          {row.map((v, i) => (
+            <Text key={i} style={{ width: w(i), textAlign: align(i), fontSize: px(9) }}>{noLig(cell(v, i))}</Text>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ── Bagian "Nilai SP & Outstanding" ────────────────────────────────────────
+// Strip empat kartu, isi & label PERSIS seperti sebelumnya.
+function OutstandingSection({ outstanding = {} }) {
+  return (
+    <Section title="Outstanding Storbit — seluruh entitas">
+      <View style={{ flexDirection: 'row', gap: px(8), marginTop: px(4) }}>
+        {/* Paling kiri: penyebut dari tiga angka lain. Dua kartu BRUTO
+            (Nilai Total SP, Piutang), dua DPP (Kirim, Tagih). */}
+        <Stat
+          label="Nilai Total SP"
+          value={fmtIDR(outstanding?.total_sp?.nilai)}
+          sub={`${fmtNum(outstanding?.total_sp?.jml_sp)} SP · sudah termasuk PPN`}
+        />
+        <Stat
+          label="Outstanding Kirim"
+          value={fmtIDR(outstanding?.kirim?.nilai)}
+          sub={`${fmtNum(outstanding?.kirim?.jml_sp)} SP · belum termasuk PPN`}
+        />
+        <Stat
+          label="Outstanding Tagih"
+          value={fmtIDR(outstanding?.tagih?.nilai)}
+          sub={`${fmtNum(outstanding?.tagih?.jml_sp)} SP · belum termasuk PPN`}
+        />
+        <Stat
+          label="Outstanding Piutang"
+          value={fmtIDR(outstanding?.piutang?.nilai)}
+          sub={`${fmtNum(outstanding?.piutang?.jml_invoice)} invoice · sudah termasuk PPN`}
+        />
+      </View>
+    </Section>
+  );
+}
+
+// ── Bagian "Laporan Per Barang" ────────────────────────────────────────────
+// Tiga Section, judul/catatan/label PERSIS seperti sebelumnya — dipindah utuh
+// ke komponen sendiri supaya bagian ini bisa dipilih atau dilewati tanpa
+// menyentuh isinya.
+function ReportSections({ report = {}, spRows = [], product = {}, truncated = false }) {
   const sum = report.summary || {};
   const perCust = report.per_customer || [];
   const defisit = Number(sum.defisit) || 0;
@@ -208,10 +272,60 @@ export default function StorbitReportPDF({
   const prodName = clipName(product.product_name);
   const cuCols = makeCuCols(uom);
   const spCols = makeSpCols(uom);
-  const periode = filters.dateFrom || filters.dateTo
-    ? `${filters.dateFrom ? fmtDate(filters.dateFrom) : 'awal'} s/d ${filters.dateTo ? fmtDate(filters.dateTo) : 'sekarang'}`
-    : 'Seluruh periode';
+  return (
+    <>
+      <Section title="Ringkasan Produk">
+        <View style={{ flexDirection: 'row', gap: px(8), marginTop: px(4) }}>
+          <Stat
+            label="Total Dipesan"
+            value={fmtQtyU(sum.qty_ordered, uom)}
+            sub={`dari ${fmtNum(sum.jml_sp)} SP · ${fmtNum(sum.jml_customer)} customer`}
+          />
+          <Stat label="Terkirim"      value={fmtQtyU(sum.qty_shipped, uom)}      sub="sudah dikirim ke customer" />
+          <Stat label="Belum Dikirim" value={fmtQtyU(sum.qty_outstanding, uom)}  sub="sisa yang masih harus dikirim" />
+          <Stat label="Nilai Belum Dikirim" value={fmtIDR(sum.nilai_outstanding)} sub="belum termasuk PPN" />
+          <Stat
+            label="Stok Tersedia"
+            value={fmtQtyU(sum.stok_tersedia, uom)}
+            sub={defisit > 0 ? `defisit ${fmtQtyU(defisit, uom)}` : 'cukup untuk menutup sisa kirim'}
+            warn={defisit > 0}
+          />
+        </View>
+        <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>
+          {noLig('Stok adalah angka saat laporan dibuat dan tidak mengikuti filter periode.')}
+        </Text>
+      </Section>
 
+      <Section title={prodName ? `Rincian Per Customer untuk ${prodName}` : 'Rincian Per Customer'}>
+        <Table cols={cuCols} rows={perCust} empty="Tidak ada customer untuk produk ini." />
+      </Section>
+
+      <Section title={prodName
+        ? `Daftar SP yang memuat ${prodName} (${fmtNum(spRows.length)} baris)`
+        : `Daftar SP (${fmtNum(spRows.length)} baris)`}>
+        {truncated ? (
+          <Text style={{ fontSize: px(9), color: PURPLE, marginBottom: px(4) }}>
+            {noLig('PERINGATAN: daftar menyentuh batas baris — isi di bawah TIDAK LENGKAP. Persempit filter periode.')}
+          </Text>
+        ) : null}
+        <Table cols={spCols} rows={spRows} empty="Tidak ada SP untuk produk ini pada periode terpilih." />
+        <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>
+          {noLig('Angka di tabel ini hanya porsi produk tsb, bukan nilai SP secara utuh. Nilai SP utuh (seluruh produk, sudah termasuk PPN) ada di Detail SP.')}
+        </Text>
+      </Section>
+    </>
+  );
+}
+
+/**
+ * @param {object} meta     blok konteks: dicetak, entitas, filter, isi laporan
+ * @param {Array}  sections bagian terpilih, URUT. Entri 'outstanding' dan
+ *                          'report' punya renderer khusus (bentuknya sengaja
+ *                          dipertahankan); sisanya generik lewat BlockTable.
+ */
+export default function StorbitReportPDF({ meta = {}, sections = [] }) {
+  const reportSec = sections.find((x) => x.key === 'report');
+  const prodName = clipName(meta.product?.product_name);
   return (
     <Document>
       <Page size="LETTER" orientation="landscape" style={[s.page, { paddingHorizontal: px(44), paddingTop: px(20) }]}>
@@ -223,104 +337,83 @@ export default function StorbitReportPDF({
             <Image style={{ height: px(74), objectFit: 'contain', alignSelf: 'flex-start' }} src={LOGO_URL} />
           </View>
           <View style={s.headRight}>
-            <Text style={s.docTitle}>Laporan Per Barang</Text>
+            <Text style={s.docTitle}>Laporan Dashboard Storbit</Text>
             <Text style={s.docSubtitle}>Outstanding &amp; Stok Storbit</Text>
             <View style={s.metaStack}>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={s.metaLabel}>Produk</Text>
-                <Text style={s.metaValue}>{product.product_name || '—'}</Text>
+                <Text style={s.metaLabel}>Dicetak · Entitas</Text>
+                <Text style={s.metaValue}>{fmtDate(meta.printedAt)} · {meta.entity || '—'}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={s.metaLabel}>Kode · Satuan</Text>
-                <Text style={s.metaValue}>{product.code || '—'}{uom ? ` · ${uom}` : ''}</Text>
+                <Text style={s.metaLabel}>Customer · Tipe SP</Text>
+                <Text style={s.metaValue}>{noLig(`${meta.filterCustomer || '—'} · ${meta.filterSpType || '—'}`)}</Text>
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={s.metaLabel}>Periode SP</Text>
-                <Text style={s.metaValue}>{periode}</Text>
-              </View>
+              {/* Produk & periode hanya relevan kalau Laporan Per Barang ikut. */}
+              {meta.product ? (
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={s.metaLabel}>Produk · Periode SP</Text>
+                  <Text style={s.metaValue}>{noLig(`${meta.product.product_name || '—'} · ${meta.periode || '—'}`)}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </View>
 
         <View style={s.divider} />
 
-        {/* Strip outstanding — angka seluruh entitas, bukan per produk. */}
-        <Section title="Outstanding Storbit — seluruh entitas">
-          <View style={{ flexDirection: 'row', gap: px(8), marginTop: px(4) }}>
-            {/* Paling kiri: penyebut dari tiga angka lain. Dua kartu BRUTO
-                (Nilai Total SP, Piutang), dua DPP (Kirim, Tagih). */}
-            <Stat
-              label="Nilai Total SP"
-              value={fmtIDR(outstanding?.total_sp?.nilai)}
-              sub={`${fmtNum(outstanding?.total_sp?.jml_sp)} SP · sudah termasuk PPN`}
-            />
-            <Stat
-              label="Outstanding Kirim"
-              value={fmtIDR(outstanding?.kirim?.nilai)}
-              sub={`${fmtNum(outstanding?.kirim?.jml_sp)} SP · belum termasuk PPN`}
-            />
-            <Stat
-              label="Outstanding Tagih"
-              value={fmtIDR(outstanding?.tagih?.nilai)}
-              sub={`${fmtNum(outstanding?.tagih?.jml_sp)} SP · belum termasuk PPN`}
-            />
-            <Stat
-              label="Outstanding Piutang"
-              value={fmtIDR(outstanding?.piutang?.nilai)}
-              sub={`${fmtNum(outstanding?.piutang?.jml_invoice)} invoice · sudah termasuk PPN`}
-            />
-          </View>
-        </Section>
-
-        {/* Ringkasan produk */}
-        <Section title="Ringkasan Produk">
-          <View style={{ flexDirection: 'row', gap: px(8), marginTop: px(4) }}>
-            <Stat
-              label="Total Dipesan"
-              value={fmtQtyU(sum.qty_ordered, uom)}
-              sub={`dari ${fmtNum(sum.jml_sp)} SP · ${fmtNum(sum.jml_customer)} customer`}
-            />
-            <Stat label="Terkirim"      value={fmtQtyU(sum.qty_shipped, uom)}      sub="sudah dikirim ke customer" />
-            <Stat label="Belum Dikirim" value={fmtQtyU(sum.qty_outstanding, uom)}  sub="sisa yang masih harus dikirim" />
-            <Stat label="Nilai Belum Dikirim" value={fmtIDR(sum.nilai_outstanding)} sub="belum termasuk PPN" />
-            <Stat
-              label="Stok Tersedia"
-              value={fmtQtyU(sum.stok_tersedia, uom)}
-              sub={defisit > 0 ? `defisit ${fmtQtyU(defisit, uom)}` : 'cukup untuk menutup sisa kirim'}
-              warn={defisit > 0}
-            />
-          </View>
-          <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>
-            {noLig('Stok adalah angka saat laporan dibuat dan tidak mengikuti filter periode.')}
+        {/* Isi laporan — penerima harus tahu apa yang TIDAK ada di file ini. */}
+        <Section title="Isi Laporan Ini">
+          <Text style={{ fontSize: px(9), color: ink(0.55) }}>
+            {noLig((meta.sections || []).map((x, i) => `${i + 1}. ${x}`).join('   ·   '))}
           </Text>
-        </Section>
-
-        {/* Per customer */}
-        <Section title={prodName ? `Rincian Per Customer untuk ${prodName}` : 'Rincian Per Customer'}>
-          <Table cols={cuCols} rows={perCust} empty="Tidak ada customer untuk produk ini." />
-        </Section>
-
-        {/* Daftar SP */}
-        <Section title={prodName
-          ? `Daftar SP yang memuat ${prodName} (${fmtNum(spRows.length)} baris)`
-          : `Daftar SP (${fmtNum(spRows.length)} baris)`}>
-          {truncated ? (
-            <Text style={{ fontSize: px(9), color: PURPLE, marginBottom: px(4) }}>
-              {noLig('PERINGATAN: daftar menyentuh batas baris — isi di bawah TIDAK LENGKAP. Persempit filter periode.')}
+          {meta.truncatedNotes?.length ? (
+            <Text style={{ fontSize: px(9), color: PURPLE, marginTop: px(4) }}>
+              {noLig(`PERINGATAN — menyentuh batas baris, isi tidak lengkap: ${meta.truncatedNotes.join(', ')}.`)}
             </Text>
           ) : null}
-          <Table cols={spCols} rows={spRows} empty="Tidak ada SP untuk produk ini pada periode terpilih." />
-          <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>
-            {noLig('Angka di tabel ini hanya porsi produk tsb, bukan nilai SP secara utuh. Nilai SP utuh (seluruh produk, sudah termasuk PPN) ada di Detail SP.')}
+          <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(4) }}>
+            {noLig('Nilai rupiah kartu status: DPP, belum termasuk PPN. Jangan menjumlahkan angka lintas basis pajak.')}
           </Text>
         </Section>
+
+        {sections.map((sec) => {
+          if (sec.key === 'outstanding') {
+            return <OutstandingSection key={sec.key} outstanding={sec.raw} />;
+          }
+          if (sec.key === 'report') {
+            return (
+              <ReportSections
+                key={sec.key}
+                report={sec.report}
+                spRows={sec.spRows}
+                product={sec.product}
+                truncated={sec.truncated}
+              />
+            );
+          }
+          // Bagian nol baris dilewati — jangan cetak section kosong.
+          if (!sec.blocks?.some((b) => b.rows.length)) return null;
+          return (
+            <Section key={sec.key} title={sec.title}>
+              {sec.truncated ? (
+                <Text style={{ fontSize: px(9), color: PURPLE, marginBottom: px(4) }}>
+                  {noLig('PERINGATAN: daftar menyentuh batas baris — isi di bawah TIDAK LENGKAP. Persempit filter.')}
+                </Text>
+              ) : null}
+              {sec.blocks.map((b, i) => <BlockTable key={i} block={b} />)}
+              {sec.note ? (
+                <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>{noLig(sec.note)}</Text>
+              ) : null}
+            </Section>
+          );
+        })}
 
         {/* Kaki */}
         <Text
           style={{ position: 'absolute', bottom: px(18), left: px(44), fontSize: px(8), color: ink(0.45) }}
           fixed
           render={({ pageNumber, totalPages }) => noLig(
-            `Nexus by MSI · Dashboard Storbit${prodName ? ` · ${prodName}` : ''}`
+            `Nexus by MSI · Dashboard Storbit${reportSec && prodName ? ` · ${prodName}` : ''}`
             + ` · dicetak ${fmtDate(new Date().toISOString())} · hal. ${pageNumber}/${totalPages}`)}
         />
       </Page>

@@ -41,25 +41,109 @@ function autoWidth(ws, widths) {
   widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 }
 
+// Lebar kolom sheet generik — cukup untuk label kategori + keterangan.
+const GENERIC_WIDTHS = [34, 16, 20, 46];
+
+// Sheet "Info": konteks file. SELALU dibuat, tak peduli bagian apa yang
+// dicentang, dan TIDAK ikut aturan "lewati kalau nol baris" — ia bukan bagian.
+// Penerima membuka sheet mana saja langsung, bukan berurutan, jadi konteksnya
+// harus punya satu tempat tetap yang tak bergeser saat komposisi centang
+// berubah. Daftar "Bagian dalam file ini" ada di sini supaya penerima tahu apa
+// yang TIDAK ada — persis kekurangan yang bikin angka layar dikira tak sinkron.
+function infoSheet(wb, meta) {
+  const ws = wb.addWorksheet('Info');
+  autoWidth(ws, [30, 62]);
+  titleRow(ws, 'Dashboard Storbit — Export', 2);
+  ws.addRow([]);
+  ws.addRow(['Dicetak', new Date(meta.printedAt).toLocaleString('id-ID')]);
+  ws.addRow(['Entitas', meta.entity]);
+  ws.addRow(['Filter Customer', meta.filterCustomer]);
+  ws.addRow(['Filter Tipe SP', meta.filterSpType]);
+  if (meta.product) {
+    ws.addRow(['Produk', `${meta.product.product_name || '—'}${meta.product.code ? ` (${meta.product.code})` : ''}`]);
+    ws.addRow(['Periode SP', meta.periode || 'Seluruh periode']);
+  }
+  ws.addRow([]);
+  titleRow(ws, 'Bagian dalam file ini', 2);
+  meta.sections.forEach((label, i) => { ws.addRow([`${i + 1}.`, label]); });
+  if (meta.truncatedNotes?.length) {
+    ws.addRow([]);
+    const w = titleRow(ws, 'PERINGATAN — isi tidak lengkap', 2);
+    w.font = { bold: true, size: 12, color: { argb: PURPLE_ARGB } };
+    meta.truncatedNotes.forEach((t) => {
+      ws.addRow(['', `${t} menyentuh batas baris — persempit filter untuk hasil lengkap.`]);
+    });
+  }
+  ws.addRow([]);
+  ws.addRow(['', 'Nilai rupiah kartu status: DPP, belum termasuk PPN.']);
+  ws.addRow(['', 'Jangan menjumlahkan angka lintas basis pajak.']);
+}
+
+// Sheet generik satu-bagian: judul, catatan opsional, lalu tiap blok
+// (sub-judul + header + baris). `fmt` menentukan numFmt per kolom.
+function sectionSheet(wb, sec) {
+  const ws = wb.addWorksheet(sec.sheet);
+  const widest = Math.max(...sec.blocks.map((b) => b.columns.length));
+  autoWidth(ws, GENERIC_WIDTHS.slice(0, widest));
+  titleRow(ws, sec.title, widest);
+  if (sec.truncated) {
+    const w = ws.addRow(['PERINGATAN: menyentuh batas baris — isi TIDAK LENGKAP. Persempit filter.']);
+    w.font = { bold: true, color: { argb: PURPLE_ARGB } };
+  }
+  ws.addRow([]);
+  sec.blocks.forEach((b, bi) => {
+    if (bi > 0) ws.addRow([]);
+    if (b.subtitle) {
+      const r = ws.addRow([b.subtitle]);
+      r.font = { bold: true, size: 11 };
+    }
+    styleHeader(ws.addRow(b.columns));
+    b.rows.forEach((row) => {
+      const r = ws.addRow(row.map((v) => (v === null ? '—' : v)));
+      b.fmt.forEach((f, i) => {
+        if (f === 'num' && typeof row[i] === 'number') r.getCell(i + 1).numFmt = NUM;
+        if (f === 'rp'  && typeof row[i] === 'number') r.getCell(i + 1).numFmt = RP;
+      });
+    });
+  });
+  if (sec.note) { ws.addRow([]); ws.addRow([sec.note]); }
+}
+
 /**
- * Rakit workbook laporan dan kembalikan Blob siap-unduh.
+ * Rakit workbook export dan kembalikan Blob siap-unduh.
  *
- * @param {object}  report      hasil get_storbit_product_report
- * @param {Array}   spRows      hasil get_storbit_product_sp_list
- * @param {object}  outstanding hasil get_storbit_outstanding_summary
- * @param {object}  product     { code, product_name }
- * @param {object}  filters     { dateFrom, dateTo }
- * @param {boolean} truncated   daftar SP menyentuh limit
+ * @param {object} meta     blok konteks file (sheet "Info")
+ * @param {Array}  sections bagian terpilih, URUT; entri ber-key 'report'
+ *                          dirender oleh reportSheets() dgn bentuk 3 sheet
+ *                          yang sudah ada — sengaja TIDAK digabung jadi satu.
  * @returns {Promise<Blob>}
  */
-export async function buildStorbitReportWorkbook({
-  report = {}, spRows = [], outstanding = {}, product = {}, filters = {}, truncated = false,
-}) {
+export async function buildStorbitReportWorkbook({ meta, sections = [] }) {
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Nexus by MSI';
   wb.created = new Date();
 
+  infoSheet(wb, meta);
+  sections.forEach((sec) => {
+    if (sec.key === 'report') { reportSheets(wb, sec); return; }
+    // Bagian nol baris dilewati — jangan hasilkan sheet kosong.
+    if (!sec.blocks.some((b) => b.rows.length)) return;
+    sectionSheet(wb, sec);
+  });
+
+  const buf = await wb.xlsx.writeBuffer();
+  return new Blob([buf], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
+
+// ── Laporan Per Barang — TIGA sheet, bentuknya sengaja dipertahankan ────────
+// Ringkasan / Per Customer / Daftar SP punya kolom yang sama sekali berbeda;
+// menumpuknya dalam satu grid mematikan sort & filter per tabel di Excel, yang
+// justru cara file ini dipakai. Aturan "satu sheet per bagian" berlaku untuk
+// enam bagian lain — ini pengecualian yang disengaja.
+function reportSheets(wb, { report = {}, spRows = [], product = {}, filters = {}, truncated = false, outstanding = null }) {
   const sum = report.summary || {};
   const perCust = report.per_customer || [];
   const uom = sum.uom || '';
@@ -87,20 +171,28 @@ export async function buildStorbitReportWorkbook({
   ws1.addRow(['Dibuat', new Date().toLocaleString('id-ID')]);
   ws1.addRow([]);
 
-  titleRow(ws1, 'Outstanding Storbit — seluruh entitas');
-  styleHeader(ws1.addRow(['Metrik', 'Jumlah', 'Nilai', 'Basis pajak']));
-  // Nilai Total SP paling atas: ia penyebut dari tiga angka di bawahnya.
-  const oTotal = ws1.addRow(['Nilai Total SP',      Number(outstanding?.total_sp?.jml_sp) || 0,     Number(outstanding?.total_sp?.nilai) || 0,   'BRUTO — sudah termasuk PPN']);
-  const oKirim = ws1.addRow(['Outstanding Kirim',   Number(outstanding?.kirim?.jml_sp) || 0,        Number(outstanding?.kirim?.nilai) || 0,      'DPP — belum termasuk PPN']);
-  const oTagih = ws1.addRow(['Outstanding Tagih',   Number(outstanding?.tagih?.jml_sp) || 0,        Number(outstanding?.tagih?.nilai) || 0,      'DPP — belum termasuk PPN']);
-  const oPiut  = ws1.addRow(['Outstanding Piutang', Number(outstanding?.piutang?.jml_invoice) || 0, Number(outstanding?.piutang?.nilai) || 0,    'BRUTO — sudah termasuk PPN']);
-  [oTotal, oKirim, oTagih, oPiut].forEach((r) => {
-    r.getCell(2).numFmt = NUM;
-    r.getCell(3).numFmt = RP;
-  });
-  ws1.addRow(['DUA BRUTO (Nilai Total SP, Piutang) dan DUA DPP (Kirim, Tagih).']);
-  ws1.addRow(['Beda basis pajak — jangan dijumlahkan lintas basis.']);
-  ws1.addRow([]);
+  // Blok Outstanding hanya dicetak di sini kalau bagian "Nilai SP & Outstanding"
+  // TIDAK ikut sebagai sheet tersendiri. Keduanya default ON, jadi tanpa
+  // penjagaan ini empat angka yang sama muncul dua kali dalam satu file —
+  // persis jenis kebingungan "angka mana yang benar" yang sedang ditutup.
+  // Kalau Laporan Per Barang diekspor SENDIRIAN, sheet ini tetap identik
+  // dengan export lama.
+  if (outstanding) {
+    titleRow(ws1, 'Outstanding Storbit — seluruh entitas');
+    styleHeader(ws1.addRow(['Metrik', 'Jumlah', 'Nilai', 'Basis pajak']));
+    // Nilai Total SP paling atas: ia penyebut dari tiga angka di bawahnya.
+    const oTotal = ws1.addRow(['Nilai Total SP',      Number(outstanding?.total_sp?.jml_sp) || 0,     Number(outstanding?.total_sp?.nilai) || 0,   'BRUTO — sudah termasuk PPN']);
+    const oKirim = ws1.addRow(['Outstanding Kirim',   Number(outstanding?.kirim?.jml_sp) || 0,        Number(outstanding?.kirim?.nilai) || 0,      'DPP — belum termasuk PPN']);
+    const oTagih = ws1.addRow(['Outstanding Tagih',   Number(outstanding?.tagih?.jml_sp) || 0,        Number(outstanding?.tagih?.nilai) || 0,      'DPP — belum termasuk PPN']);
+    const oPiut  = ws1.addRow(['Outstanding Piutang', Number(outstanding?.piutang?.jml_invoice) || 0, Number(outstanding?.piutang?.nilai) || 0,    'BRUTO — sudah termasuk PPN']);
+    [oTotal, oKirim, oTagih, oPiut].forEach((r) => {
+      r.getCell(2).numFmt = NUM;
+      r.getCell(3).numFmt = RP;
+    });
+    ws1.addRow(['DUA BRUTO (Nilai Total SP, Piutang) dan DUA DPP (Kirim, Tagih).']);
+    ws1.addRow(['Beda basis pajak — jangan dijumlahkan lintas basis.']);
+    ws1.addRow([]);
+  }
 
   titleRow(ws1, 'Ringkasan Produk');
   styleHeader(ws1.addRow(['Metrik', 'Nilai', 'Satuan']));
@@ -175,9 +267,4 @@ export async function buildStorbitReportWorkbook({
   ws3.addRow(['Nilai SP utuh (seluruh produk, sudah termasuk PPN) ada di Detail SP.']);
   // +2 baris judul & baris kosong di atas header.
   ws3.views = [{ state: 'frozen', ySplit: truncated ? 4 : 3 }];
-
-  const buf = await wb.xlsx.writeBuffer();
-  return new Blob([buf], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
 }

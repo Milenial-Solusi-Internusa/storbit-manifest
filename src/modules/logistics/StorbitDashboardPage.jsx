@@ -127,6 +127,31 @@ const OUTSTANDING_CARDS = [
 // ini, user diperingatkan eksplisit SEBELUM file dibuat (lihat runExport).
 const EXPORT_ROW_LIMIT = 5000;
 
+// Label entitas untuk blok meta file. Halaman ini dipin ke SOA (lihat catatan
+// panjang di atas SOA_COMPANY_ID), jadi labelnya ikut konstan — bukan diambil
+// dari `companies`, supaya export tak menambah query yang tak dipakai layar.
+const SOA_COMPANY_LABEL = 'Storbit (SOA)';
+
+// Bagian yang bisa dipilih untuk diekspor. URUTAN DI SINI = urutan sheet Excel
+// dan urutan section PDF; jangan diacak tanpa alasan.
+//
+// `sheet` dipakai apa adanya sebagai nama worksheet — WAJIB unik dan <=31
+// karakter. "Daftar SP Kategori" sengaja TIDAK bernama "Daftar SP": nama itu
+// sudah dipakai sheet ketiga Laporan Per Barang, dan Excel menolak duplikat.
+const EXPORT_SECTIONS = [
+  { key: 'outstanding', sheet: 'Outstanding',       label: 'Nilai SP & Outstanding',              hint: '4 kartu strip',                          def: true  },
+  { key: 'manifest',    sheet: 'Manifest',          label: 'Shipping Manifest — ringkasan',       hint: 'distribusi status + 6 kartu status',     def: true  },
+  { key: 'attention',   sheet: 'Perlu Perhatian',   label: 'Shipping Manifest — perlu perhatian', hint: '2 kartu tenggat + kartu risiko pinalti', def: false },
+  { key: 'spList',      sheet: 'Daftar SP Kategori',label: 'Daftar SP kategori aktif',            hint: 'tabel drilldown yang sedang tampil',     def: false },
+  { key: 'stockHealth', sheet: 'Kesehatan Stok',    label: 'Gudang — kesehatan stok',             hint: 'donut + 3 kartu',                        def: false },
+  { key: 'stockList',   sheet: 'Daftar Produk',     label: 'Gudang — daftar produk',              hint: 'tabel drilldown stok yang sedang tampil',def: false },
+  { key: 'report',      sheet: null,                label: 'Laporan Per Barang',                  hint: 'Ringkasan · Per Customer · Daftar SP',   def: true, needsProduct: true },
+];
+
+const defaultPicks = (canReport) => Object.fromEntries(
+  EXPORT_SECTIONS.map((sc) => [sc.key, sc.def && (!sc.needsProduct || canReport)]),
+);
+
 // Satu panggilan get_storbit_top_outstanding_products melayani DUA kebutuhan:
 // isi combobox (seluruh produk yang pernah muncul di SP — 38 per 5 Sep 2026)
 // dan tabel Top 10 (10 baris pertama; RPC-nya sudah urut nilai DESC). Satu
@@ -693,6 +718,136 @@ function TabBar({ active, onSelect }) {
   );
 }
 
+// ── Panel pilih isi export ──────────────────────────────────────────────────
+// Bentuk modal, mengikuti pola overlay satu-satunya di modul ini
+// (SalesOrderDetailPage.jsx): backdrop fixed + panel ter-center, header sticky
+// ber-ikon & tombol X, body scroll, footer aksi. Palet SENGAJA tidak ikut dari
+// sana — file itu memakai token app shell (C.surface/C.line/C.accent),
+// sedangkan halaman ini punya `C` sendiri.
+//
+// Satu panel untuk DUA format: pilihan isinya identik, formatnya ditentukan
+// tombol di footer. Gate hasMenuPermission dievaluasi per tombol, jadi user
+// yang cuma punya 'print' hanya melihat PDF.
+function ExportPanel({
+  picks, setPicks, canReport, canExcel, canPdf, phase, onClose, onRun,
+}) {
+  const chosen = EXPORT_SECTIONS.filter((sc) => picks[sc.key]).length;
+  const busy = !!phase;
+  return (
+    <>
+      <div
+        onClick={busy ? undefined : onClose}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(32,31,29,0.42)', backdropFilter: 'blur(2px)', zIndex: 80 }}
+      />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+        zIndex: 81, width: 'calc(100% - 32px)', maxWidth: 560, maxHeight: '88vh',
+        background: C.card, border: `1px solid ${C.divider}`, borderRadius: 4,
+        boxShadow: '0 12px 34px rgba(32,31,29,0.18)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 18px 14px', borderBottom: `1px solid ${C.divider}`, flexShrink: 0 }}>
+          <span style={{ width: 32, height: 32, borderRadius: 4, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.purpleSoft, color: C.purple }}>
+            <FileSpreadsheet size={16} strokeWidth={1.75} />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ ...heading, fontWeight: 600, fontSize: 17, lineHeight: 1.2 }}>Pilih isi export</div>
+            <div style={{ ...body, fontSize: 11.5, color: C.muted, marginTop: 2 }}>
+              Bagian yang tidak dicentang tidak akan ada di file.
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Tutup"
+            style={{ width: 30, height: 30, borderRadius: 4, border: `1px solid ${C.divider}`, background: C.card, color: C.faint, cursor: busy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+          >
+            <X size={14} strokeWidth={2} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ overflowY: 'auto', padding: '8px 18px 12px', flex: 1 }}>
+          {EXPORT_SECTIONS.map((sc) => {
+            const blocked = sc.needsProduct && !canReport;
+            return (
+              <label
+                key={sc.key}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0',
+                  borderBottom: `1px solid ${C.divider}`,
+                  cursor: blocked || busy ? 'not-allowed' : 'pointer',
+                  opacity: blocked ? 0.55 : 1,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!picks[sc.key]}
+                  disabled={blocked || busy}
+                  onChange={(e) => setPicks((prev) => ({ ...prev, [sc.key]: e.target.checked }))}
+                  style={{ marginTop: 2, accentColor: C.purple, width: 15, height: 15, flexShrink: 0 }}
+                />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ ...body, fontSize: 13, color: C.ink, display: 'block' }}>{sc.label}</span>
+                  <span style={{ ...body, fontSize: 11, color: C.faint, display: 'block', marginTop: 1 }}>
+                    {blocked ? 'pilih produk dulu' : sc.hint}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '12px 18px 14px', borderTop: `1px solid ${C.divider}`, flexShrink: 0 }}>
+          {phase ? (
+            <div style={{ ...mono, fontSize: 11, color: C.muted, marginBottom: 10 }}>
+              {phase.label} — {phase.done}/{phase.total}
+            </div>
+          ) : (
+            <div style={{ ...mono, fontSize: 10.5, color: C.faint, marginBottom: 10 }}>
+              {chosen === 0 ? 'Centang minimal satu bagian.' : `${chosen} bagian dipilih · nilai rupiah belum termasuk PPN`}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            {canExcel && (
+              <button
+                onClick={() => onRun('xlsx')}
+                disabled={chosen === 0 || busy}
+                style={{
+                  ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
+                  background: C.card, color: chosen && !busy ? C.ink : C.faint,
+                  cursor: chosen && !busy ? 'pointer' : 'not-allowed',
+                }}
+              >
+                <FileSpreadsheet size={13} strokeWidth={1.75} />
+                {phase?.kind === 'xlsx' ? 'Menyiapkan…' : 'Excel'}
+              </button>
+            )}
+            {canPdf && (
+              <button
+                onClick={() => onRun('pdf')}
+                disabled={chosen === 0 || busy}
+                style={{
+                  ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
+                  background: C.card, color: chosen && !busy ? C.ink : C.faint,
+                  cursor: chosen && !busy ? 'pointer' : 'not-allowed',
+                }}
+              >
+                <FileText size={13} strokeWidth={1.75} />
+                {phase?.kind === 'pdf' ? 'Menyiapkan…' : 'PDF'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ---------- halaman ---------- */
 export default function StorbitDashboardPage({ customers = [], showToast, onSelectSP, onSelectProduct }) {
   const [customerId, setCustomerId] = useState('');
@@ -733,6 +888,11 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   const [spListError, setSpListError]   = useState(null);
 
   const [exporting, setExporting]       = useState(null);   // null | 'pdf' | 'xlsx'
+  // Panel pilih isi export. `picks` SENGAJA di-reset tiap kali panel dibuka
+  // (bukan disimpan) — permintaan eksplisit: pilihan tidak bertahan antar sesi.
+  const [panelOpen, setPanelOpen]       = useState(false);
+  const [picks, setPicks]               = useState(() => defaultPicks(false));
+  const [exportPhase, setExportPhase]   = useState(null); // { kind, label, done, total }
 
   // Tab aktif — state lokal, tanpa URL param (sesuai permintaan). `tabLaporanDibuka`
   // sekali berubah true TIDAK pernah kembali false; itulah yang membuat pindah
@@ -995,42 +1155,284 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
   const canExportExcel = hasMenuPermission('logistics_sp', 'export');
   const canExportPdf   = hasMenuPermission('logistics_sp', 'print');
 
-  // Export TIDAK BOLEH terpotong diam-diam: daftar SP ditembak ulang dengan
-  // limit jauh lebih tinggi dari yang dipakai layar. Kalau hasilnya MENYENTUH
-  // limit itu, user diperingatkan dan harus menyetujui SEBELUM file dibuat —
-  // dan peringatan yang sama ikut tercetak di dalam file, supaya penerima yang
-  // tak melihat dialog ini tetap tahu isinya tak lengkap.
-  const runExport = useCallback(async (kind) => {
-    if (!productId || !report) return;
-    setExporting(kind);
-    try {
-      const { data: rows, error: err } = await getStorbitProductSpList(productId, {
-        companyId: SOA_COMPANY_ID,
-        dateFrom: dateFrom || null,
-        dateTo:   dateTo   || null,
-        limit:    EXPORT_ROW_LIMIT,
+  // Export TIDAK BOLEH terpotong diam-diam: setiap daftar ditembak ulang dengan
+  // limit jauh lebih tinggi dari yang dipakai layar (200). Kalau hasilnya
+  // MENYENTUH limit itu, user diperingatkan dan harus menyetujui SEBELUM file
+  // dibuat — dan peringatan yang sama ikut tercetak di dalam file, supaya
+  // penerima yang tak melihat dialog ini tetap tahu isinya tak lengkap.
+  // Berlaku untuk KETIGA daftar: SP kategori aktif, produk stok, dan SP produk.
+  const openExportPanel = useCallback(() => {
+    setPicks(defaultPicks(!!productId));
+    setExportPhase(null);
+    setPanelOpen(true);
+  }, [productId]);
+
+  // Merakit payload yang dikonsumsi KEDUA builder (Excel & PDF). Halaman yang
+  // merakit — bukan builder — supaya konfigurasi kartu (MANIFEST_CARDS dkk)
+  // tetap satu sumber di sini dan tak perlu diduplikasi ke dua file lain.
+  //
+  // Bentuk tiap bagian: { key, sheet, title, note?, blocks: [{subtitle?,
+  // columns, fmt, rows}] }. `fmt` mengendalikan numFmt di Excel dan perataan
+  // di PDF: 'text' | 'num' | 'rp'.
+  const buildExportPayload = useCallback((got) => {
+    const truncatedNotes = [];
+    const sections = [];
+    const mm = got.stats?.manifest || {};
+    const ww = got.stats?.warehouse || {};
+    const valOf = (key) => {
+      const raw = mm[`${key}_value`];
+      return raw === undefined || raw === null ? null : Number(raw) || 0;
+    };
+
+    if (picks.outstanding) {
+      const oo = got.outstanding || {};
+      sections.push({
+        key: 'outstanding', sheet: 'Outstanding', title: 'Nilai SP & Outstanding',
+        // `raw` dipakai PDF: strip empat kartunya butuh objek bersarang apa
+        // adanya, bukan baris yang sudah diratakan untuk Excel.
+        raw: oo,
+        note: 'DUA BRUTO (Nilai Total SP, Piutang) dan DUA DPP (Kirim, Tagih). Beda basis pajak — jangan dijumlahkan lintas basis.',
+        blocks: [{
+          columns: ['Metrik', 'Jumlah', 'Nilai', 'Basis pajak'],
+          fmt: ['text', 'num', 'rp', 'text'],
+          rows: OUTSTANDING_CARDS.map((c) => [
+            c.label,
+            Number(oo?.[c.key]?.jml_sp ?? oo?.[c.key]?.jml_invoice) || 0,
+            Number(oo?.[c.key]?.nilai) || 0,
+            c.ppn ? 'BRUTO — sudah termasuk PPN' : 'DPP — belum termasuk PPN',
+          ]),
+        }],
       });
-      if (err) throw new Error(err.message || 'unknown');
+    }
 
-      const truncated = rows.length >= EXPORT_ROW_LIMIT;
-      if (truncated) {
-        const lanjut = window.confirm(
-          `Daftar SP menyentuh batas ${nf(EXPORT_ROW_LIMIT)} baris.\n\n`
-          + 'File yang dibuat TIDAK akan memuat seluruh data. Persempit filter '
-          + 'periode untuk hasil lengkap.\n\nTetap buat file yang terpotong?',
-        );
-        if (!lanjut) { setExporting(null); return; }
-      }
+    if (picks.manifest) {
+      sections.push({
+        key: 'manifest', sheet: 'Manifest', title: 'Shipping Manifest — Ringkasan',
+        note: 'Nilai rupiah: belum termasuk PPN. Kategori Dibatalkan sengaja tanpa nilai.',
+        blocks: [
+          {
+            subtitle: 'Distribusi Status SP',
+            columns: ['Status', 'Jumlah SP'], fmt: ['text', 'num'],
+            rows: DONUT_STATUS_SLICES.map((d) => [d.label, Number(mm[d.key]) || 0]),
+          },
+          {
+            subtitle: 'Kartu Status',
+            columns: ['Kategori', 'Jumlah SP', 'Nilai (DPP)', 'Keterangan'],
+            fmt: ['text', 'num', 'rp', 'text'],
+            rows: MANIFEST_CARDS.map((c) => [
+              labelOf(c.key), Number(mm[c.key]) || 0, valOf(c.key), c.desc,
+            ]),
+          },
+        ],
+      });
+    }
 
-      const payload = {
-        report,
+    if (picks.attention) {
+      sections.push({
+        key: 'attention', sheet: 'Perlu Perhatian', title: 'Shipping Manifest — Perlu Perhatian',
+        note: 'Nilai rupiah: belum termasuk PPN.',
+        blocks: [
+          {
+            subtitle: 'Tenggat',
+            columns: ['Kategori', 'Jumlah SP', 'Nilai (DPP)', 'Keterangan'],
+            fmt: ['text', 'num', 'rp', 'text'],
+            rows: EXPIRY_CARDS.map((c) => [
+              labelOf(c.key), Number(mm[c.key]) || 0, valOf(c.key), c.desc,
+            ]),
+          },
+          {
+            subtitle: 'Risiko Pinalti',
+            columns: ['Metrik', 'Jumlah SP'], fmt: ['text', 'num'],
+            rows: [
+              ['Pernah kena risiko pinalti', Number(mm.pernah_risiko_pinalti) || 0],
+              ['SP dengan data pengiriman',  Number(mm.dispatch_data_tersedia) || 0],
+              ['SP layak dinilai',           Number(mm.dispatch_eligible) || 0],
+            ],
+          },
+        ],
+      });
+    }
+
+    if (picks.spList) {
+      const rows = got.spList || [];
+      if (rows.length >= EXPORT_ROW_LIMIT) truncatedNotes.push('Daftar SP kategori aktif');
+      sections.push({
+        key: 'spList', sheet: 'Daftar SP Kategori',
+        title: `Daftar SP — ${labelOf(spCat)}`,
+        truncated: rows.length >= EXPORT_ROW_LIMIT,
+        blocks: [{
+          columns: ['No SP', 'Customer', 'DC', 'Tanggal', 'Status'],
+          fmt: ['text', 'text', 'text', 'text', 'text'],
+          rows: rows.map((r) => [
+            r.sp_no || '—', r.customer_name || '—', r.dc_nama || '—',
+            r.sp_date || '—', r.status || '—',
+          ]),
+        }],
+      });
+    }
+
+    if (picks.stockHealth) {
+      const totalProduk = Number(ww.total_produk) || 0;
+      const kosong = Number(ww.zero_stock) || 0;
+      sections.push({
+        key: 'stockHealth', sheet: 'Kesehatan Stok', title: 'Gudang — Kesehatan Stok',
+        note: 'Stok adalah angka saat laporan dibuat — tidak mengikuti filter periode.',
+        blocks: [
+          {
+            subtitle: 'Kesehatan Stok',
+            columns: ['Kategori', 'Jumlah Produk'], fmt: ['text', 'num'],
+            rows: [
+              ['Ada Stok', Math.max(totalProduk - kosong, 0)],
+              ['Stok Kosong', kosong],
+            ],
+          },
+          {
+            subtitle: 'Kartu Gudang',
+            columns: ['Kategori', 'Jumlah Produk', 'Keterangan'], fmt: ['text', 'num', 'text'],
+            rows: WAREHOUSE_CARDS.map((c) => [c.label, Number(ww[c.key]) || 0, c.desc]),
+          },
+        ],
+      });
+    }
+
+    if (picks.stockList) {
+      const rows = got.stockList || [];
+      if (rows.length >= EXPORT_ROW_LIMIT) truncatedNotes.push('Gudang — daftar produk');
+      const catLabel = WAREHOUSE_CARDS.find((c) => c.key === whCat)?.label || 'Produk';
+      sections.push({
+        key: 'stockList', sheet: 'Daftar Produk',
+        title: `Gudang — ${catLabel}`,
+        truncated: rows.length >= EXPORT_ROW_LIMIT,
+        blocks: [{
+          columns: ['SKU', 'Produk', 'Tersedia', 'ROP'],
+          fmt: ['text', 'text', 'num', 'text'],
+          rows: rows.map((r) => [
+            r.sku || '—', r.product_name || '—', Number(r.available) || 0,
+            r.reorder_point == null ? 'Belum diisi' : nf(r.reorder_point),
+          ]),
+        }],
+      });
+    }
+
+    if (picks.report && got.report) {
+      const rows = got.report.spRows || [];
+      if (rows.length >= EXPORT_ROW_LIMIT) truncatedNotes.push('Laporan Per Barang — Daftar SP');
+      sections.push({
+        key: 'report',
+        report: got.report.report,
         spRows: rows,
-        outstanding: outstanding || {},
         product: selectedProduct || {},
         filters: { dateFrom, dateTo },
-        truncated,
-      };
+        truncated: rows.length >= EXPORT_ROW_LIMIT,
+        // Blok Outstanding di dalam Laporan Per Barang hanya dicetak kalau
+        // bagian "Nilai SP & Outstanding" TIDAK dipilih. Keduanya default ON,
+        // jadi tanpa ini empat angka yang sama muncul dua kali dalam satu file.
+        // Kalau Laporan Per Barang diekspor sendirian, bentuknya tetap identik
+        // dengan export lama.
+        outstanding: picks.outstanding ? null : (got.outstanding || {}),
+      });
+    }
 
+    const chosenLabels = EXPORT_SECTIONS.filter((sc) => picks[sc.key]).map((sc) => sc.label);
+    return {
+      meta: {
+        printedAt: new Date().toISOString(),
+        entity: SOA_COMPANY_LABEL,
+        filterCustomer: customerOptions.find((c) => c.value === customerId)?.label || 'Semua customer',
+        filterSpType: SP_TYPE_OPTIONS.find((t) => t.value === spType)?.label || 'Semua tipe',
+        product: picks.report ? (selectedProduct || null) : null,
+        periode: picks.report
+          ? (dateFrom || dateTo ? `${dateFrom || 'awal'} s/d ${dateTo || 'sekarang'}` : 'Seluruh periode')
+          : null,
+        sections: chosenLabels,
+        truncatedNotes,
+      },
+      sections,
+    };
+  }, [picks, customerId, spType, spCat, whCat, dateFrom, dateTo, selectedProduct, customerOptions]);
+
+  // Seluruh bagian yang dicentang di-fetch ULANG saat export, termasuk yang
+  // sudah ada di state layar. Bukan formalitas: kalau sebagian diambil dari
+  // state dan sebagian di-fetch baru, satu file bisa mencampur angka dari dua
+  // waktu berbeda. Biayanya maksimal 5 panggilan RPC.
+  const runExportSelected = useCallback(async (kind) => {
+    const chosen = EXPORT_SECTIONS.filter((sc) => picks[sc.key]);
+    if (!chosen.length) return;
+
+    // Satu panggilan get_storbit_dashboard_stats melayani TIGA bagian sekaligus.
+    const needStats = picks.manifest || picks.attention || picks.stockHealth;
+    const jobs = [];
+    // Outstanding juga dibutuhkan saat HANYA Laporan Per Barang yang dipilih:
+    // sheet Ringkasan-nya memuat blok Outstanding kalau bagian tersendirinya
+    // tidak ikut, dan blok itu bagian dari "isi export yang sekarang".
+    if (picks.outstanding || picks.report) jobs.push({ id: 'outstanding', label: 'Nilai SP & Outstanding' });
+    if (needStats)         jobs.push({ id: 'stats',       label: 'Angka kartu dashboard' });
+    if (picks.spList)      jobs.push({ id: 'spList',      label: 'Daftar SP kategori aktif' });
+    if (picks.stockList)   jobs.push({ id: 'stockList',   label: 'Daftar produk stok' });
+    if (picks.report)      jobs.push({ id: 'report',      label: 'Laporan Per Barang' });
+
+    setExporting(kind);
+    let done = 0;
+    const bump = (label) => { done += 1; setExportPhase({ kind, label, done, total: jobs.length }); };
+    setExportPhase({ kind, label: 'Mengambil data…', done: 0, total: jobs.length });
+
+    const call = async (id) => {
+      if (id === 'outstanding') {
+        return getStorbitOutstandingSummary({
+          companyId: SOA_COMPANY_ID, customerId: customerId || null, priceCategory: spType || null,
+        });
+      }
+      if (id === 'stats') {
+        return getStorbitDashboardStats(customerId || null, spType || null, SOA_COMPANY_ID);
+      }
+      if (id === 'spList') {
+        return getStorbitSpDrilldown(spCat, {
+          customerId: customerId || null, priceCategory: spType || null,
+          companyId: SOA_COMPANY_ID, limit: EXPORT_ROW_LIMIT,
+        });
+      }
+      if (id === 'stockList') {
+        return getStorbitStockDrilldown(whCat, { companyId: SOA_COMPANY_ID, limit: EXPORT_ROW_LIMIT });
+      }
+      // report = dua panggilan; ringkasannya dan daftar SP-nya harus sepasang.
+      const [rep, list] = await Promise.all([
+        getStorbitProductReport(productId, { companyId: SOA_COMPANY_ID, dateFrom: dateFrom || null, dateTo: dateTo || null }),
+        getStorbitProductSpList(productId, { companyId: SOA_COMPANY_ID, dateFrom: dateFrom || null, dateTo: dateTo || null, limit: EXPORT_ROW_LIMIT }),
+      ]);
+      if (rep.error)  return { data: null, error: rep.error };
+      if (list.error) return { data: null, error: list.error };
+      return { data: { report: rep.data, spRows: list.data || [] }, error: null };
+    };
+
+    try {
+      const settled = await Promise.all(jobs.map(async (j) => {
+        const res = await call(j.id);
+        bump(j.label);
+        return { job: j, res };
+      }));
+
+      // Satu bagian gagal = SELURUH unduhan dibatalkan. File separuh lebih
+      // berbahaya daripada tak ada file: penerima tak punya cara tahu apa yang
+      // hilang, dan itu persis kesalahpahaman yang memicu pekerjaan ini.
+      const failed = settled.filter((x) => x.res.error);
+      if (failed.length) {
+        throw new Error('Gagal mengambil ' + failed.map((x) => x.job.label).join(', '));
+      }
+
+      const got = Object.fromEntries(settled.map((x) => [x.job.id, x.res.data]));
+      const payload = buildExportPayload(got);
+
+      if (payload.meta.truncatedNotes.length) {
+        const lanjut = window.confirm(
+          `Bagian berikut menyentuh batas ${nf(EXPORT_ROW_LIMIT)} baris:\n\n`
+          + payload.meta.truncatedNotes.map((t) => '· ' + t).join('\n')
+          + '\n\nFile yang dibuat TIDAK akan memuat seluruh data. Persempit '
+          + 'filter untuk hasil lengkap.\n\nTetap buat file yang terpotong?',
+        );
+        if (!lanjut) { setExporting(null); setExportPhase(null); return; }
+      }
+
+      setExportPhase({ kind, label: 'Membuat file…', done: jobs.length, total: jobs.length });
       let blob;
       let ext;
       if (kind === 'pdf') {
@@ -1043,20 +1445,22 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         ext = 'xlsx';
       }
 
-      const safe = (selectedProduct?.code || 'produk').replace(/[/\\]/g, '-');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `LaporanBarang-${safe}-${new Date().toISOString().slice(0, 10)}.${ext}`;
+      a.download = `DashboardStorbit-${new Date().toISOString().slice(0, 10)}.${ext}`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-      showToast?.(`Laporan ${ext.toUpperCase()} dibuat${truncated ? ' (terpotong)' : ''}.`);
+      setPanelOpen(false);
+      showToast?.(`File ${ext.toUpperCase()} dibuat${payload.meta.truncatedNotes.length ? ' (terpotong)' : ''}.`);
     } catch (e) {
       showToast?.('Gagal membuat file: ' + (e?.message || e), 'error');
     } finally {
       setExporting(null);
+      setExportPhase(null);
     }
-  }, [productId, report, outstanding, selectedProduct, dateFrom, dateTo, showToast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picks, customerId, spType, spCat, whCat, productId, dateFrom, dateTo, selectedProduct, customers, showToast]);
 
   const spCardValue = (key) => Number(m[key]) || 0;
   // Nilai rupiah per kartu (DPP). Mengembalikan null — BUKAN 0 — kalau kunci
@@ -1108,7 +1512,43 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
         }}>
           <RotateCcw size={13} strokeWidth={1.75} /> Reset
         </button>
+        {/* Export — di bar GLOBAL, bukan di dalam tab Laporan. Orang yang sedang
+            melihat Shipping Manifest (tab default) harus bisa mengekspor tanpa
+            pindah tab dan memilih produk yang tak ada hubungannya. Tidak lagi
+            disabled karena belum pilih produk: hanya SATU bagian yang butuh
+            produk, dan itu digerbang di dalam panel. Bar ini sudah flexWrap,
+            jadi di layar sempit tombolnya turun — bukan mengecil. */}
+        {(canExportExcel || canExportPdf) && (
+          <div style={{ flex: 1, minWidth: 140, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={openExportPanel}
+              disabled={!!exporting}
+              style={{
+                ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
+                background: C.card, color: exporting ? C.faint : C.ink,
+                cursor: exporting ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <FileSpreadsheet size={13} strokeWidth={1.75} />
+              {exporting ? 'Menyiapkan…' : 'Export'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {panelOpen && (
+        <ExportPanel
+          picks={picks}
+          setPicks={setPicks}
+          canReport={!!productId}
+          canExcel={canExportExcel}
+          canPdf={canExportPdf}
+          phase={exportPhase}
+          onClose={() => setPanelOpen(false)}
+          onRun={runExportSelected}
+        />
+      )}
 
       {error && (
         <div style={{ ...body, fontSize: 12.5, color: C.orange, background: C.orangeSoft, border: `1px solid ${C.orangeBorder}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18 }}>
@@ -1324,38 +1764,6 @@ export default function StorbitDashboardPage({ customers = [], showToast, onSele
             </button>
           )}
 
-          <div style={{ flex: 1, minWidth: 120, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            {canExportExcel && (
-              <button
-                onClick={() => runExport('xlsx')}
-                disabled={!productId || reportLoading || !!exporting}
-                style={{
-                  ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
-                  background: C.card, color: productId && !exporting ? C.ink : C.faint,
-                  cursor: productId && !exporting ? 'pointer' : 'not-allowed',
-                }}
-              >
-                <FileSpreadsheet size={13} strokeWidth={1.75} />
-                {exporting === 'xlsx' ? 'Menyiapkan…' : 'Excel'}
-              </button>
-            )}
-            {canExportPdf && (
-              <button
-                onClick={() => runExport('pdf')}
-                disabled={!productId || reportLoading || !!exporting}
-                style={{
-                  ...body, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '8px 13px', borderRadius: 4, border: `1px solid ${C.divider}`,
-                  background: C.card, color: productId && !exporting ? C.ink : C.faint,
-                  cursor: productId && !exporting ? 'pointer' : 'not-allowed',
-                }}
-              >
-                <FileText size={13} strokeWidth={1.75} />
-                {exporting === 'pdf' ? 'Menyiapkan…' : 'PDF'}
-              </button>
-            )}
-          </div>
         </div>
 
         {productsError && (
