@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2eMtDx4oFV0ApY2hE9X3mfQgwcL1hGSIVBJNU8MiTFj0PIHflPsIbBmctrSpebv
+\restrict 4IVKenIir7b74AC5BGnhUY480yZlBdcmPFDC9Nzw05LXyh8b7FE1Puz35lng2B4
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -1015,6 +1015,53 @@ manifest AS (
     COUNT(*)                                                                                    AS total_sp
   FROM sp_flag
 ),
+-- ── BARU ────────────────────────────────────────────────────────────────────
+-- Grain ITEM, sengaja beda dari `manifest` yang ber-grain SP.
+it AS (
+  SELECT
+    f.status,
+    f.expired_date,
+    f.has_btb,
+    si.qty,
+    si.shipped_qty,
+    si.unit_price
+  FROM sp_flag f
+  JOIN public.sp_items si
+    ON si.customer_id = f.customer_id
+   AND si.sp_no       = f.sp_no
+),
+-- FILTER tiap agregat WAJIB cermin persis pasangan hitungannya di `manifest`.
+-- Kalau salah satu diubah, ubah pasangannya — kalau tidak, angka dan rupiah
+-- pada kartu yang sama akan bercerita beda.
+manifest_value AS (
+  SELECT
+    -- PRA-KIRIM
+    COALESCE(SUM(GREATEST(qty - shipped_qty, 0) * unit_price)
+      FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')), 0)::numeric
+                                                                          AS pending_open_value,
+    COALESCE(SUM(GREATEST(qty - shipped_qty, 0) * unit_price)
+      FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
+                AND expired_date < CURRENT_DATE), 0)::numeric              AS expired_value,
+    COALESCE(SUM(GREATEST(qty - shipped_qty, 0) * unit_price)
+      FILTER (WHERE status IN ('DRAFT','CONFIRMED','MENUNGGU_STOK','PICKING','PACKED')
+                AND expired_date >= CURRENT_DATE
+                AND date_trunc('month', expired_date) = date_trunc('month', CURRENT_DATE)), 0)::numeric
+                                                                          AS mendekati_expired_value,
+    -- PASCA-KIRIM
+    COALESCE(SUM(shipped_qty * unit_price)
+      FILTER (WHERE status IN ('DIKIRIM','SAMPAI','MENUNGGU_KONFIRMASI_DC')), 0)::numeric
+                                                                          AS shipped_value,
+    COALESCE(SUM(shipped_qty * unit_price)
+      FILTER (WHERE status IN ('SAMPAI','TERKIRIM_PENUH') AND NOT has_btb), 0)::numeric
+                                                                          AS delivered_belum_btb_value,
+    COALESCE(SUM(shipped_qty * unit_price)
+      FILTER (WHERE status = 'BTB_TERBIT'), 0)::numeric                    AS btb_terbit_value,
+    COALESCE(SUM(shipped_qty * unit_price)
+      FILTER (WHERE status IN ('INVOICED','SUBMITTED','LUNAS')), 0)::numeric
+                                                                          AS finance_value
+  FROM it
+),
+-- ── AKHIR BAGIAN BARU ───────────────────────────────────────────────────────
 stock AS (
   SELECT
     p.reorder_point,
@@ -1049,7 +1096,19 @@ SELECT jsonb_build_object(
     'dispatch_eligible',      (SELECT dispatch_eligible      FROM manifest),
     'finance',             (SELECT finance             FROM manifest),
     'cancelled',           (SELECT cancelled           FROM manifest),
-    'total_sp',            (SELECT total_sp            FROM manifest)
+    'total_sp',            (SELECT total_sp            FROM manifest),
+    -- BARU — tujuh nilai DPP (tanpa PPN). Empat kunci lain SENGAJA tak punya
+    -- pasangan `_value`: cancelled (nol SP, definisi belum teruji),
+    -- dispatch_eligible & dispatch_data_tersedia (penyebut/pembilang rasio),
+    -- total_sp (sudah ada kartu strip BRUTO — beda basis, nama sama).
+    -- Jangan dilengkapi diam-diam.
+    'pending_open_value',        (SELECT pending_open_value        FROM manifest_value),
+    'shipped_value',             (SELECT shipped_value             FROM manifest_value),
+    'delivered_belum_btb_value', (SELECT delivered_belum_btb_value FROM manifest_value),
+    'btb_terbit_value',          (SELECT btb_terbit_value          FROM manifest_value),
+    'finance_value',             (SELECT finance_value             FROM manifest_value),
+    'expired_value',             (SELECT expired_value             FROM manifest_value),
+    'mendekati_expired_value',   (SELECT mendekati_expired_value   FROM manifest_value)
   ),
   'warehouse', jsonb_build_object(
     'danger_stock',    (SELECT danger_stock    FROM warehouse),
@@ -21139,5 +21198,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 2eMtDx4oFV0ApY2hE9X3mfQgwcL1hGSIVBJNU8MiTFj0PIHflPsIbBmctrSpebv
+\unrestrict 4IVKenIir7b74AC5BGnhUY480yZlBdcmPFDC9Nzw05LXyh8b7FE1Puz35lng2B4
 

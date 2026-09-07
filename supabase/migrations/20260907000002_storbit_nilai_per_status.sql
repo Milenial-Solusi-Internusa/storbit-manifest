@@ -3,7 +3,7 @@
 -- Phase:     Dashboard Storbit — nilai rupiah pada kartu status Shipping Manifest.
 -- Depends:   20260818000001 (get_storbit_dashboard_stats), 20260905000002
 --            (get_storbit_outstanding_summary — sumber pola rumus di sini).
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
+-- Status:    LIVE — dieksekusi di produksi 7 Sep 2026.
 --
 -- SIFAT: 1 CREATE OR REPLACE. Nol DDL tabel, nol perubahan RLS/policy, nol
 --   kolom baru, nol backfill. MURNI BACA.
