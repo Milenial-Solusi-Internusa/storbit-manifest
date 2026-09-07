@@ -28,9 +28,12 @@ function styleHeader(row) {
   row.height = 18;
 }
 
-function titleRow(ws, text) {
+function titleRow(ws, text, span) {
   const r = ws.addRow([text]);
   r.font = { bold: true, size: 12, color: { argb: PURPLE_ARGB } };
+  // span = jumlah kolom tabel di bawahnya; judul di-merge selebar itu supaya
+  // tak terpotong sel tetangga. Tanpa span, perilaku lama (sheet Ringkasan).
+  if (span > 1) ws.mergeCells(r.number, 1, r.number, span);
   return r;
 }
 
@@ -64,6 +67,10 @@ export async function buildStorbitReportWorkbook({
   // supaya bisa dijumlah ulang di Excel. Menempelkan "PCS" ke nilainya akan
   // mengubahnya jadi teks dan mematikan SUM.
   const qtyHdr = (label) => (uom ? `${label} (${uom})` : label);
+  // Judul kedua sheet tabel: pembaca yang lompat langsung ke sheet ini tak
+  // pernah melihat sheet Ringkasan, jadi produk yang sedang difilter harus
+  // ikut tercetak di sini. Tanpa ini angkanya terbaca sebagai nilai SP utuh.
+  const prodLabel = `${product.product_name || '—'}${product.code ? ` (${product.code})` : ''}`;
   const periode = filters.dateFrom || filters.dateTo
     ? `${filters.dateFrom || 'awal'} s/d ${filters.dateTo || 'sekarang'}`
     : 'Seluruh periode';
@@ -116,8 +123,10 @@ export async function buildStorbitReportWorkbook({
 
   // ── Sheet 2: Per Customer ─────────────────────────────────────────────────
   const ws2 = wb.addWorksheet('Per Customer');
-  autoWidth(ws2, [40, 10, 14, 20]);
-  styleHeader(ws2.addRow(['Customer', 'Jml SP', qtyHdr('Sisa Qty'), 'Nilai Sisa (DPP)']));
+  autoWidth(ws2, [40, 10, 22, 20]);
+  titleRow(ws2, `Per Customer untuk: ${prodLabel}`, 4);
+  ws2.addRow([]);
+  styleHeader(ws2.addRow(['Customer', 'Jml SP', qtyHdr('Sisa Qty Produk Ini'), 'Nilai Sisa (DPP)']));
   perCust.forEach((c) => {
     const r = ws2.addRow([
       c.customer_name || '—',
@@ -129,18 +138,21 @@ export async function buildStorbitReportWorkbook({
     r.getCell(3).numFmt = NUM;
     r.getCell(4).numFmt = RP;
   });
-  ws2.views = [{ state: 'frozen', ySplit: 1 }];
+  ws2.views = [{ state: 'frozen', ySplit: 3 }];
 
   // ── Sheet 3: Daftar SP ────────────────────────────────────────────────────
   const ws3 = wb.addWorksheet('Daftar SP');
-  autoWidth(ws3, [14, 32, 20, 12, 12, 22, 10, 10, 10, 18, 8]);
+  autoWidth(ws3, [14, 32, 20, 12, 12, 22, 18, 20, 18, 18, 8]);
+  titleRow(ws3, `Daftar SP yang memuat: ${prodLabel}`, 11);
+  ws3.addRow([]);
   if (truncated) {
     const w = ws3.addRow(['PERINGATAN: daftar menyentuh batas baris — isi TIDAK LENGKAP. Persempit filter periode.']);
     w.font = { bold: true, color: { argb: PURPLE_ARGB } };
   }
   styleHeader(ws3.addRow([
     'No SP', 'Customer', 'DC', 'Tgl SP', 'Tenggat', 'Status',
-    qtyHdr('Qty'), qtyHdr('Terkirim'), qtyHdr('Sisa'), 'Nilai Sisa (DPP)', 'Umur (hari)',
+    qtyHdr('Qty Produk Ini'), qtyHdr('Terkirim Produk Ini'), qtyHdr('Sisa Produk Ini'),
+    'Nilai Sisa (DPP)', 'Umur (hari)',
   ]));
   spRows.forEach((r) => {
     const row = ws3.addRow([
@@ -159,7 +171,10 @@ export async function buildStorbitReportWorkbook({
     [7, 8, 9, 11].forEach((i) => { row.getCell(i).numFmt = NUM; });
     row.getCell(10).numFmt = RP;
   });
-  ws3.views = [{ state: 'frozen', ySplit: truncated ? 2 : 1 }];
+  ws3.addRow(['Angka di tabel ini hanya porsi produk tsb, bukan nilai SP secara utuh.']);
+  ws3.addRow(['Nilai SP utuh (seluruh produk, sudah termasuk PPN) ada di Detail SP.']);
+  // +2 baris judul & baris kosong di atas header.
+  ws3.views = [{ state: 'frozen', ySplit: truncated ? 4 : 3 }];
 
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], {

@@ -68,6 +68,17 @@ function noLig(value) {
   return s.split(LIG_SPLIT).map((part, i) => (i === 0 ? part : <Text key={i}>{part}</Text>));
 }
 
+// Nama produk ikut ke judul section dan ke kaki halaman. Dipotong di 56
+// karakter supaya keduanya DIJAMIN tetap satu baris bahkan untuk nama
+// selebar "WWWW…" — diukur pada Lora: judul px(11) muat 61 karakter kasus
+// terburuk, kaki px(8) muat 80. Memotong, BUKAN mengecilkan font atau
+// mengubah lebar kolom. Nama nyata (~18-45 karakter) tak pernah kena.
+const NAME_MAX = 56;
+function clipName(value) {
+  const t = String(value ?? '').trim();
+  return t.length > NAME_MAX ? `${t.slice(0, NAME_MAX - 1).trimEnd()}…` : t;
+}
+
 // Ornamen sudut versi landscape — bentuk & fillOpacity identik PageChrome.
 function ReportChrome() {
   const topH = px(96);
@@ -194,6 +205,7 @@ export default function StorbitReportPDF({
   const perCust = report.per_customer || [];
   const defisit = Number(sum.defisit) || 0;
   const uom = sum.uom || '';
+  const prodName = clipName(product.product_name);
   const cuCols = makeCuCols(uom);
   const spCols = makeSpCols(uom);
   const periode = filters.dateFrom || filters.dateTo
@@ -284,26 +296,32 @@ export default function StorbitReportPDF({
         </Section>
 
         {/* Per customer */}
-        <Section title="Rincian Per Customer">
+        <Section title={prodName ? `Rincian Per Customer untuk ${prodName}` : 'Rincian Per Customer'}>
           <Table cols={cuCols} rows={perCust} empty="Tidak ada customer untuk produk ini." />
         </Section>
 
         {/* Daftar SP */}
-        <Section title={`Daftar SP (${fmtNum(spRows.length)} baris)`}>
+        <Section title={prodName
+          ? `Daftar SP yang memuat ${prodName} (${fmtNum(spRows.length)} baris)`
+          : `Daftar SP (${fmtNum(spRows.length)} baris)`}>
           {truncated ? (
             <Text style={{ fontSize: px(9), color: PURPLE, marginBottom: px(4) }}>
               {noLig('PERINGATAN: daftar menyentuh batas baris — isi di bawah TIDAK LENGKAP. Persempit filter periode.')}
             </Text>
           ) : null}
           <Table cols={spCols} rows={spRows} empty="Tidak ada SP untuk produk ini pada periode terpilih." />
+          <Text style={{ fontSize: px(8.5), color: ink(0.45), marginTop: px(5) }}>
+            {noLig('Angka di tabel ini hanya porsi produk tsb, bukan nilai SP secara utuh. Nilai SP utuh (seluruh produk, sudah termasuk PPN) ada di Detail SP.')}
+          </Text>
         </Section>
 
         {/* Kaki */}
         <Text
           style={{ position: 'absolute', bottom: px(18), left: px(44), fontSize: px(8), color: ink(0.45) }}
           fixed
-          render={({ pageNumber, totalPages }) =>
-            `Nexus by MSI · Dashboard Storbit · dicetak ${fmtDate(new Date().toISOString())} · hal. ${pageNumber}/${totalPages}`}
+          render={({ pageNumber, totalPages }) => noLig(
+            `Nexus by MSI · Dashboard Storbit${prodName ? ` · ${prodName}` : ''}`
+            + ` · dicetak ${fmtDate(new Date().toISOString())} · hal. ${pageNumber}/${totalPages}`)}
         />
       </Page>
     </Document>
