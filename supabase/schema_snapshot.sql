@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 3woiD72JOIOrITSz9owCfJJydeaRgnZE5b41SgztrxyVBLLq74hJESHzWPsasNu
+\restrict 2eMtDx4oFV0ApY2hE9X3mfQgwcL1hGSIVBJNU8MiTFj0PIHflPsIbBmctrSpebv
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2678,7 +2678,19 @@ BEGIN
     RAISE EXCEPTION 'PRF tidak ditemukan';
   END IF;
 
-  IF NOT (is_super_admin() OR (v_company = get_user_company_id() AND has_role('procurement'))) THEN
+  IF NOT (
+    is_super_admin()
+    OR EXISTS (
+         SELECT 1
+         FROM user_roles ur
+         JOIN roles r ON r.id = ur.role_id
+         WHERE ur.user_id    = v_uid
+           AND ur.company_id = v_company
+           AND ur.is_active
+           AND r.code        = 'procurement'
+           AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+       )
+  ) THEN
     RAISE EXCEPTION 'Tidak berhak mengambil PRF ini';
   END IF;
 
@@ -2723,7 +2735,7 @@ BEGIN
     RAISE EXCEPTION 'PRF tidak ditemukan';
   END IF;
 
-  IF NOT (is_super_admin() OR (v_company = get_user_company_id() AND v_ack = v_uid)) THEN
+  IF NOT (is_super_admin() OR (v_company IN (SELECT get_user_company_ids()) AND v_ack = v_uid)) THEN
     RAISE EXCEPTION 'Hanya pemegang PRF yang boleh menyatakan penawaran siap';
   END IF;
 
@@ -2781,7 +2793,17 @@ BEGIN
 
   IF NOT (
     is_super_admin()
-    OR (v_company = get_user_company_id() AND (v_ack = v_uid OR is_manager_or_above()))
+    OR v_ack = v_uid
+    OR EXISTS (
+         SELECT 1
+         FROM user_roles ur
+         JOIN roles r ON r.id = ur.role_id
+         WHERE ur.user_id    = v_uid
+           AND ur.company_id = v_company
+           AND ur.is_active
+           AND r.code IN ('super_admin','admin','ceo','gm','gm_bd','manager','supervisor')
+           AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+       )
   ) THEN
     RAISE EXCEPTION 'Hanya pemegang PRF atau manager yang boleh melepas';
   END IF;
@@ -2820,7 +2842,17 @@ BEGIN
 
   IF NOT (
     is_super_admin()
-    OR (v_company = get_user_company_id() AND (v_owner = v_uid OR is_manager_or_above()))
+    OR v_owner = v_uid
+    OR EXISTS (
+         SELECT 1
+         FROM user_roles ur
+         JOIN roles r ON r.id = ur.role_id
+         WHERE ur.user_id    = v_uid
+           AND ur.company_id = v_company
+           AND ur.is_active
+           AND r.code IN ('super_admin','admin','ceo','gm','gm_bd','manager','supervisor')
+           AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+       )
   ) THEN
     RAISE EXCEPTION 'Hanya sales pemilik PRF atau manager yang boleh memilih penawaran';
   END IF;
@@ -21107,5 +21139,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 3woiD72JOIOrITSz9owCfJJydeaRgnZE5b41SgztrxyVBLLq74hJESHzWPsasNu
+\unrestrict 2eMtDx4oFV0ApY2hE9X3mfQgwcL1hGSIVBJNU8MiTFj0PIHflPsIbBmctrSpebv
 
