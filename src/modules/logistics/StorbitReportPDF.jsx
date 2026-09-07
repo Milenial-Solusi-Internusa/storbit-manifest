@@ -83,6 +83,10 @@ function clipName(value) {
 }
 
 // Ornamen sudut versi landscape — bentuk & fillOpacity identik PageChrome.
+// `fixed`: tampil di SETIAP halaman. Tabrakannya dengan tabel TIDAK diselesaikan
+// dengan menyembunyikan ornamen di halaman lanjutan (itu meninggalkan halaman
+// polos putih), melainkan dengan memperbesar padding halaman sehingga area
+// konten berhenti sebelum ornamen dimulai — lihat catatan di <Page>.
 function ReportChrome() {
   const topH = px(96);
   const botH = px(84);
@@ -201,6 +205,8 @@ function BlockTable({ block }) {
   const rest = (100 - first) / (n - 1);
   const w = (i) => `${i === 0 ? first : rest}%`;
   const align = (i) => (block.fmt?.[i] === 'num' || block.fmt?.[i] === 'rp' ? 'right' : 'left');
+  // Jarak antar kolom. Kolom terakhir tak perlu — tak ada tetangga di kanannya.
+  const gap = (i) => (i === n - 1 ? 0 : px(10));
   const cell = (v, i) => {
     if (v === null || v === undefined) return '—';
     if (block.fmt?.[i] === 'rp')  return fmtIDR(v);
@@ -216,13 +222,13 @@ function BlockTable({ block }) {
       ) : null}
       <View style={[s.thRow, { marginTop: px(4) }]}>
         {block.columns.map((h, i) => (
-          <Text key={h} style={[s.th, { width: w(i), textAlign: align(i), fontSize: px(8) }]}>{noLig(h)}</Text>
+          <Text key={h} style={[s.th, { width: w(i), textAlign: align(i), fontSize: px(8), paddingRight: gap(i) }]}>{noLig(h)}</Text>
         ))}
       </View>
       {block.rows.map((row, ri) => (
         <View key={ri} style={[s.tr, { paddingVertical: px(4) }]} wrap={false}>
           {row.map((v, i) => (
-            <Text key={i} style={{ width: w(i), textAlign: align(i), fontSize: px(9) }}>{noLig(cell(v, i))}</Text>
+            <Text key={i} style={{ width: w(i), textAlign: align(i), fontSize: px(9), paddingRight: gap(i) }}>{noLig(cell(v, i))}</Text>
           ))}
         </View>
       ))}
@@ -390,7 +396,25 @@ export default function StorbitReportPDF({ meta = {}, sections = [] }) {
   const prodName = clipName(meta.product?.product_name);
   return (
     <Document>
-      <Page size="LETTER" orientation="landscape" style={[s.page, { paddingHorizontal: px(44), paddingTop: px(20) }]}>
+      {/* PADDING DIHITUNG DARI JANGKAUAN ORNAMEN, bukan ditebak.
+          Kanvas landscape 792x612. ReportChrome `fixed` di setiap halaman:
+            · pita atas + sudut kanan-atas turun sampai topH = px(96) = 72pt
+            · pita bawah + sudut kiri-bawah naik sampai botH = px(84) = 63pt
+          Area konten karenanya harus berhenti di luar kedua pita itu, kalau
+          tidak baris tabel halaman 2 ke atas akan tertimpa ornamen (halaman 1
+          aman hanya karena yang berada di sana header, bukan tabel).
+            paddingTop    px(104) = 78pt  -> 6pt di bawah pita atas
+            paddingBottom px(92)  = 69pt  -> 6pt di atas pita bawah
+          paddingBottom juga sekalian melampaui puncak kaki halaman (21,18pt =
+          bottom px(18) + tinggi baris 7,68), jadi perbaikan jarak footer tetap
+          terpenuhi dengan selisih jauh lebih longgar.
+          Konsekuensi yang disengaja: header halaman 1 ikut turun, dan jumlah
+          halaman bisa bertambah. Ruang aman didahulukan. */}
+      <Page
+        size="LETTER"
+        orientation="landscape"
+        style={[s.page, { paddingHorizontal: px(44), paddingTop: px(104), paddingBottom: px(92) }]}
+      >
         <ReportChrome />
 
         {/* Header */}
