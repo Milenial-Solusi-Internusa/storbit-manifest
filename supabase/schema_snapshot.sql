@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2QSySDrLXswlZcX17JIaeIy12ebu6aVsdq5a3E8jErfJYFQJPPt5vAp3s2b1kC2
+\restrict 4frairdAL497Ie5xC8Qe4FDpJaOl2G7rxyiieMXaBWEKnv9PIwhEbFIWSuumkaY
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -4062,7 +4062,7 @@ ALTER FUNCTION public.sync_lifecycle_columns() OWNER TO postgres;
 -- Name: FUNCTION sync_lifecycle_columns(); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.sync_lifecycle_columns() IS 'Menjaga accounts.account_status dan accounts.lifecycle_stage identik selama transisi jalur B. Sengaja tanpa tie-break: nol jalur tulis menyentuh keduanya (diukur 7 Sep 2026). Dicabut oleh migrasi 20260907000002.';
+COMMENT ON FUNCTION public.sync_lifecycle_columns() IS 'Menjaga accounts.account_status dan accounts.lifecycle_stage identik selama transisi jalur B. Sengaja tanpa tie-break: nol jalur tulis menyentuh keduanya (diukur 7 Sep 2026). Dicabut oleh migrasi 20260908000002.';
 
 
 --
@@ -4277,14 +4277,14 @@ ALTER TABLE public.accounts OWNER TO postgres;
 -- Name: COLUMN accounts.account_status; Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON COLUMN public.accounts.account_status IS 'DIPENSIUNKAN sejak 7 Sep 2026 — digantikan lifecycle_stage. Selama transisi keduanya disinkronkan otomatis: tulis ke salah satu, yang lain ikut. Di-drop di migrasi 20260907000002 setelah branch CRM v3 merge & stabil di produksi.';
+COMMENT ON COLUMN public.accounts.account_status IS 'DIPENSIUNKAN sejak 7 Sep 2026 — digantikan lifecycle_stage. Selama transisi keduanya disinkronkan otomatis: tulis ke salah satu, yang lain ikut. Di-drop di migrasi 20260908000002 setelah branch CRM v3 merge & stabil di produksi.';
 
 
 --
 -- Name: COLUMN accounts.lifecycle_stage; Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON COLUMN public.accounts.lifecycle_stage IS 'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang hidup: prospect lewat inquiry masuk, customer lewat WON. free_agent dan lost adalah exit manual. URUTAN TAHAP TIDAK DIKLAIM DI SINI — dua sumber bertentangan, lihat Keputusan Terbuka #37. Urutan nilai di CHECK/array BUKAN bukti urutan tahap. Berdampingan dengan account_status selama transisi jalur B; disinkronkan trg_a_sync_lifecycle_columns. TANPA default selama transisi. account_status di-drop di 20260907000002.';
+COMMENT ON COLUMN public.accounts.lifecycle_stage IS 'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang hidup: prospect lewat inquiry masuk, customer lewat WON. free_agent dan lost adalah exit manual. URUTAN TAHAP TIDAK DIKLAIM DI SINI — dua sumber bertentangan, lihat Keputusan Terbuka #37. Urutan nilai di CHECK/array BUKAN bukti urutan tahap. Berdampingan dengan account_status selama transisi jalur B; disinkronkan trg_a_sync_lifecycle_columns. TANPA default selama transisi. account_status di-drop di 20260908000002.';
 
 
 --
@@ -21322,5 +21322,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 2QSySDrLXswlZcX17JIaeIy12ebu6aVsdq5a3E8jErfJYFQJPPt5vAp3s2b1kC2
+\unrestrict 4frairdAL497Ie5xC8Qe4FDpJaOl2G7rxyiieMXaBWEKnv9PIwhEbFIWSuumkaY
 
