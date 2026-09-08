@@ -237,6 +237,69 @@ Node + pembacaan content stream + rasterisasi untuk pemeriksaan mata. Batas kop 
 nol pelanggaran). **Cetak percobaan di kertas kop sungguhan masih belum dilakukan** — itu
 yang menentukan apakah 119,39/133,56 perlu dikalibrasi ulang.
 
+### Cetak biru Finance & Accounting masuk repo + keputusan struktur modul dicatat ke governance
+
+Dokumentasi murni. **Nol perubahan kode, nol migrasi, nol perubahan DB.**
+
+**Berkas dipindah & dinamai ulang.** `BLUEPRINT_FINANCE_STORBIT.md` (dari Downloads, belum pernah masuk repo) →
+**`docs/Governance/11_FINANCE_ACCOUNTING_BLUEPRINT.md`**. Konvensi folder itu `NN_UPPER_SNAKE.md` dan sudah
+terpakai `00`–`10`, jadi `11_` nomor bebas berikutnya.
+
+**Enam koreksi saat isinya disisir terhadap repo** (semuanya ditandai `[koreksi 9 Sep 2026]` di tempatnya):
+
+| # | Yang basi / keliru | Menjadi |
+|---|---|---|
+| 1 | D-01: *"kolomnya ada sejak 8 Juli"* | Kolom `sp_btb.btb_date` lahir **6 Juli** (`20260706000001_sp_schema_mvp_fase0.sql:339`); yang lahir **8 Juli** adalah **parameter RPC**-nya (`20260708000001_sp_fase3_btb.sql:99`). Dua hal berbeda yang tergabung jadi satu kalimat |
+| 2 | D-07: *"Tombol Download tidak punya syarat status"* | Panel invoice kini punya **dua** tombol PDF (Download + Cetak Kop Surat), **keduanya tanpa syarat status** — cakupan D-07 bertambah, bukan berkurang |
+| 3 | §5 baris `status`: hanya menyebut "bertambah tahap approval" | ⚠️ Nilainya dijaga `CONSTRAINT sp_invoices_status_check` (`schema_snapshot.sql:8652`) yang **belum memuat `pending_approval`** — batch F4 wajib menyertakan `ALTER TABLE … DROP/ADD CONSTRAINT`, bukan cuma mengubah RPC. Ini bukan koreksi kosmetik: tanpa itu, F4 gagal saat dijalankan |
+| 4 | Lampiran A: `GROUP BY sp_no HAVING count(*) > 1` | ⚠️ **`sp_btb` tidak punya kolom `sp_no`** — query itu tidak akan jalan apa adanya. Diganti versi ber-`JOIN sp_orders ON o.id = b.sp_order_id` |
+| 5 | Lampiran B: `SalesOrderDetailPage.jsx:~2224` | **`~2259`** — bergeser karena penataan panel invoice hari yang sama. `db.js:1166` **tidak** bergeser |
+| 6 | Lampiran B: `InvoicePDF` | Klaim "nol import printKit" **masih benar** (satu-satunya kemunculan kata itu ada di komentar), tapi ditambahkan bahwa sejak 9 Sep ia menerima prop `variant` (`'download'`/`'print'`) |
+
+**Diverifikasi BENAR, tidak diubah** (dicatat supaya tidak disisir ulang): `create_invoice` guard `~389` · `current_date`
+`~408` · `submit_invoice` `3914` · `sp_issue_btb` `3760` — keempatnya cocok dengan `schema_snapshot.sql` hari ini ·
+`increment_document_sequence`, `stock_ledger`, `sp_items.unit_price` ada · form BTB memang hanya `btbInput` +
+`btbRemarks` · `db.js:1166` tepat · TD-217 ada · prioritas payment terms (Indomarco 30 hari / SOA NET14) cocok dengan
+`20260814000003_invoice_due_date.sql`.
+
+⚠️ **ANGKA PRODUKSINYA TIDAK BISA DIVERIFIKASI ULANG DARI REPO.** Seluruh hitungan baris di §2/§11/Lampiran A
+(456 BTB, 30 SP ber->1 BTB, 10 invoice, 273 `received_at` terisi) diukur langsung di produksi 8-9 Sep. `schema_snapshot.sql`
+**schema-only sejak 5 Sep 2026** — nol blok `COPY` (`grep -c "^COPY public\." = 0`), jadi tak ada data di repo untuk
+mengadunya. **Angkanya dibiarkan apa adanya**, dan keterbatasan ini ditulis eksplisit di kepala blueprint.
+
+⚠️ **Satu ketidaklengkapan yang SENGAJA TIDAK saya ubah, perlu keputusan Den.** §6 blueprint menyebut prioritas `N`
+tiga tingkat dan mengklaim "dipertahankan apa adanya", tapi tingkat kedua di RPC `submit_invoice` yang hidup punya
+**fallback keempat yang tak tertulis**: kalau `default_payment_term_id` NULL, ia jatuh ke kolom mentah
+`entity_finance_settings.default_payment_terms` sebelum akhirnya `COALESCE(…, 30)`. Bukan klaim yang basi — memang
+tak pernah ada. Dibiarkan karena mengubah deskripsi perilaku yang mau dipertahankan bukan koreksi rujukan, dan
+seseorang yang mengimplementasi ulang dari §6 saja akan **diam-diam menghilangkan fallback itu**.
+
+**Keputusan struktur modul dicatat ke governance, bukan cuma ke blueprint.** `09_ROADMAP.md` dapat section baru
+**§Struktur Modul Finance & Accounting** berisi M1-M5 beserta alasannya: **(M1)** Finance & Accounting **SATU modul** —
+org chart menempatkan Finance Jr. Manager dan Accounting & Tax Jr. Manager di bawah **satu** Finance Controller, Odoo
+mengelompokkan menu per **lawan transaksi** bukan finance-vs-accounting, dan invoice yang terbit **langsung menjadi
+jurnal AR** sehingga memisahkannya berarti mengoper jurnal antar modul · **(M2)** Job Costing turun ke kelompok
+**Laporan** karena ia menyandingkan biaya (dari Bank Disbursement) dengan pendapatan (dari Invoice) — laporan, bukan
+tempat entri · **(M3)** empat menu **terblokir modul Job Order yang belum dibangun**, dan itu **ketergantungan data**,
+bukan pilihan urutan · **(M4)** seluruh panel Invoice/Pembayaran/TTF **pindah ke modul Finance**, menyisakan **satu
+baris baca-saja nol tombol** di halaman SP (TTF ikut karena pengisinya Elvira, bukan orang lapangan; barisnya tetap ada
+supaya orang logistik bisa tahu status tagihan tanpa akses ke seluruh modul Finance) · **(M5)** TD-217 = **prasyarat**.
+
+⛔ **TD-217 dinaikkan jadi `HIGH ⛔ PRASYARAT`.** Ia kini **memblokir** batch F6 (pemindahan halaman ke modul Finance),
+bukan lagi sekadar bug akses yang dirasakan Finance: tanpa penutupannya, halaman **Piutang menampilkan nama customer
+KOSONG** — gejala yang sama yang sudah dirasakan Elvira hari ini, tapi di halaman yang justru jadi tempat kerja utamanya.
+⚠️ Ini **bukan** alasan menggarapnya sendirian di luar sisir RLS besar; pola perbaikannya tetap yang disepakati 5 Sep
+(ikut pola `operations`, dibatasi `account_status='customer'`). Yang berubah hanya **urutannya**.
+
+**+Keputusan Terbuka #43-#47:** Coretax diurus di mana (Odoo / DJP / vendor) · sumber `btb_date` untuk 456 BTB lama ·
+apakah BTB empat SP (2017320, 2234621, 2139772, 2154308) memang tak pernah ada · sumber nilai HPP untuk jurnal BTB ·
+apakah Storbit akan punya tim finance sendiri.
+
+⚠️ **#42 SENGAJA DILEWATI** — nomor itu sudah dipakai branch `feature/crm-v3-batch-persiapan`
+(`accounts.estimated_closing_date` salah sumbu, 8 Sep). Lompatan **41 → 43** di `09_ROADMAP.md` **bukan kekeliruan
+penomoran**; merapikannya jadi berurutan akan menabrak nomor yang sudah hidup di sisi lain — pola yang sama dengan
+tabrakan nomor migrasi 7-8 Sep. Nomor #43-#47 diverifikasi bebas di **kedua** sisi sebelum dipakai.
+
 ## 2026-09-07
 ### Rekonsiliasi Nexus × Finance — DUA catatan 5 Sep terbantahkan + temuan terbesar sesi ini
 
