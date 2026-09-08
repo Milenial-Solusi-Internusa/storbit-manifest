@@ -282,11 +282,11 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 
 ---
 
-## Utang Migrasi Produksi — CRM v3 (per 7 Sep 2026)
+## Utang Migrasi Produksi — CRM v3 (per 8 Sep 2026)
 
 > Sembilan migrasi CRM v3 ditulis di branch `feature/crm-v3-batch-persiapan`. **Filenya TIDAK ADA di `main`** — migrasi `main` melompat dari `20260826000003` ke `20260831000001`. Daftar ini ada di sini supaya status produksinya bisa dibaca dari `main` **tanpa membuka branch**, karena `main`-lah yang melayani produksi.
 
-**✅ SUDAH LIVE di produksi — JANGAN dijalankan ulang (5):**
+**✅ SUDAH LIVE di produksi — JANGAN dijalankan ulang (7):**
 
 | migrasi | naik | bukti |
 |---|---|---|
@@ -295,17 +295,17 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 | `20260828000001_inquiry_status_history` | **7 Sep 2026** | backfill **531 baris** = jumlah inquiry · nol durasi karangan |
 | `20260828000002_inquiries_closure_fields` | **7 Sep 2026** | **6 kolom** penutupan + 2 FK + index · **5 trigger** total di `inquiries` · sidik-jari rantai WON identik sebelum-sesudah |
 | `20260827000002_crm_v3_lifecycle` → **DIGANTIKAN** | — | ⛔ File aslinya (RENAME) **TIDAK PERNAH DIJALANKAN dan tidak akan pernah**. Digantikan **`20260908000001_accounts_lifecycle_dual_write`** (jalur B: tambah kolom + sinkron dua arah), **LIVE 7 Sep 2026** — 1.258 akun, kedua kolom identik (beda=0), backfill riwayat 1.258=1.258, 6 trigger dgn `trg_a_` di urutan pertama, `set_prospect_on_inquiry` tiga tahap utuh. Penutupnya `20260908000002_accounts_lifecycle_drop_legacy` **ber-⛔ STOP**, menunggu branch merge + stabil di produksi. |
+| `20260830000004_accounts_source_add_whatsapp` | **8 Sep 2026** | CHECK `prospects_source_check` **12 nilai** (11 lama + `whatsapp`) · pra-cek **0 baris** di luar daftar baru · uji gigit lolos **dua arah** — `'whatsapp'` diterima, `'telepati'` ditolak. ⚠️ Nol perubahan perilaku `main`: `SOURCES` di `ProspectFormPage` masih 11 nilai, pelebaran ini sengaja mendahului kodenya. |
+| `20260830000005_sales_targets` | **8 Sep 2026** | **9 constraint · 4 index · 3 policy · 1 trigger · RLS aktif · `GRANT ALL` ke `authenticated` menempel** · CHECK `sales_targets_metric_required` terbukti **menolak** baris tanpa `target_value` maupun `target_deals`. ⚠️ Nol pembaca di `src/` milik `main` — tabel ini belum dipakai apa pun di produksi sampai branch merge. ⚠️ Baris `GRANT … TO anon` **tidak ikut dijalankan**, dan `anon` tetap memegang TRUNCATE — bukti eksperimental untuk **TD-230**. |
 
-⚠️ **Header keempat file itu di branch masih menyatakan "PRODUKSI: belum dikonfirmasi" untuk sebagian di antaranya.** Yang berlaku adalah tabel ini. Koreksi header dikerjakan di branch secara terpisah.
+⚠️ **Header keempat file itu di branch masih menyatakan "PRODUKSI: belum dikonfirmasi" untuk sebagian di antaranya.** Yang berlaku adalah tabel ini. Koreksi header dikerjakan di branch secara terpisah. **[8 Sep 2026] Dua baris terbawah TIDAK termasuk** — header `_accounts_source_add_whatsapp` dan `_sales_targets` sudah ditandai `✅ LIVE DI PRODUKSI` di branch, lengkap dengan buktinya.
 
-**⏳ BELUM dijalankan — tersisa 4:**
+**⏳ BELUM dijalankan — tersisa 2:**
 
 | migrasi | status | catatan |
 |---|---|---|
 | `20260830000003_inquiries_rls_owner_based` | siap, menyusul | Menukar RLS `created_by = auth.uid()` → `owner_id = auth.uid()`. **Prasyaratnya sudah lunas** (backfill `owner_id` 531/531, 6 Sep). Efek samping disengaja: `WITH CHECK` ikut berbasis `owner_id`, sehingga **pengoperan deal jadi aksi manager-ke-atas**. |
-| `20260830000005_sales_targets` | siap, menyusul | Tabel target penjualan. **Nol pembaca di `src/` milik `main`** — aman kapan pun. |
-| `20260830000001_crm_menu_permissions_sales` | siap, menyusul | Seeding menu permission role `sales`. |
-| `20260830000004_accounts_source_add_whatsapp` | siap, **cek dulu** | Memperluas CHECK `accounts.source`. ⚠️ **Bandingkan CHECK barunya dengan nilai yang HIDUP di produksi sebelum dijalankan** (`cold_call`, `exhibition`, `existing_network`, `instagram`, `linkedin`, `other`, `referral`, `sales_visit`, `walk_in`, `website`, + NULL) — CHECK yang tak memuat salah satunya akan menolak baris lama. |
+| `20260830000001_crm_menu_permissions_sales` | **DITUNDA ke HARI MERGE** (keputusan Den 8 Sep 2026) | Seeding menu permission role `sales`. **Sudah diverifikasi siap** — keenam key punya halaman di `main` (nol menu yatim), ketiga `ON CONFLICT` punya constraint yang cocok. ⛔ **Ditunda bukan karena berisiko, tapi karena ia SATU-SATUNYA yang user rasakan:** 6 menu CRM muncul untuk role `sales` pada login berikutnya. Menjalankannya sekarang membuat sales menyesuaikan **dua kali** — sekali dapat akses CRM lama, sekali lagi saat tampilannya berubah jadi CRM v3. Jalankan **bersamaan dengan merge**. ⚠️ Sesudahnya **WAJIB logout–login** akun sales, bukan sekadar refresh: `roleMenuPermissions` dibaca **sekali** saat `AuthContext` memuat sesi. Blok + verifikasi + rollback: lihat §Pekerjaan Sinkron Branch. |
 
 ---
 
@@ -329,6 +329,18 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 > **`src/hooks/useCustomFields.js:33` HARUS memuat KEDUA nama kolom — `'account_status'` DAN `'lifecycle_stage'` — selama masa transisi dua-kolom.** Daftar itu adalah kolom sistem yang dikecualikan dari custom fields. `main` hari ini hanya mencantumkan `'account_status'`, branch hanya `'lifecycle_stage'`. **Sesudah merge, kolom yang tidak terdaftar akan muncul sebagai custom field di UI** — kelihatan user, bukan cuma kotor di kode.
 >
 > Satu baris, satu file, tapi ia **prasyarat merge**, bukan pekerjaan lanjutan: harus sudah benar pada commit merge-nya. Salah satu nama dicabut lagi nanti, saat `20260908000002_accounts_lifecycle_drop_legacy` men-drop `account_status`.
+
+### ⛔ DIJALANKAN PADA HARI MERGE — seed menu CRM untuk role `sales`
+
+> **`20260830000001_crm_menu_permissions_sales` sengaja DITAHAN sampai hari merge** (keputusan Den 8 Sep 2026). Dua migrasi kecil lain hari itu sudah LIVE; **yang ini satu-satunya yang USER RASAKAN** — 6 menu CRM muncul untuk setiap akun role `sales` pada login berikutnya. Menjalankannya lebih awal membuat sales **menyesuaikan dua kali**: sekali dapat akses CRM lama, sekali lagi saat tampilannya berubah jadi CRM v3. Jadi ia bukan utang yang tertinggal — ia **dijadwalkan**.
+>
+> ✅ **Sudah diverifikasi siap, tidak perlu diaudit ulang saat merge** (8 Sep 2026): keenam key punya halaman yang benar-benar dirender di `main` — `crm_dashboard`→`crm-dashboard` · `crm_pipeline`→`crm-pipeline` · `crm_prospects`→`crm-prospects` · `crm_inquiry`→`crm-inquiry` · **`crm_quotation`→`quotation-draft`** · `crm_customers`→`crm-customers` (+`customer-detail`). **Nol menu yatim.** ⚠️ Perhatikan `crm_quotation` id-nya **bukan** `crm-quotation` — kalau audit mencari id senama, di situlah "yatim" palsu muncul. Ketiga `ON CONFLICT` juga sudah dicocokkan ke constraint-nya (`module_menus_key_key`, `menu_actions_menu_id_action_key`, dan index **PARSIAL** `role_menu_permissions_role_menu_action_unique` — parsialnya itulah sebabnya `ON CONFLICT` harus menyebut predikat `WHERE`).
+>
+> ⚠️ **SESUDAH DIJALANKAN: WAJIB LOGOUT–LOGIN akun sales, bukan sekadar refresh halaman.** `roleMenuPermissions` dibaca **sekali** saat `AuthContext` memuat sesi, jadi tab yang sudah terbuka tidak akan melihat menunya walau seed-nya sudah masuk. Kalau langkah ini kelewat, gejalanya **persis seperti migrasinya gagal** — dan itu jebakan yang mahal di hari merge.
+>
+> ⚠️ **Jalankan PRA-CEK dulu** (`SELECT mm.key, ma.action FROM module_menus mm LEFT JOIN menu_actions ma ON ma.menu_id = mm.id WHERE mm.key IN (…6 key…)`). Snapshot kita schema-only, jadi **isi katalog `module_menus` tidak terekam di repo** — apakah BAGIAN A migrasi terpakai atau jadi no-op hanya bisa diketahui dari produksi. Kalau BAGIAN B menyisipkan **0 baris** padahal keenam key ada, periksa `roles.code='sales'` (`is_active`/`deleted_at`) — **jangan** tambahkan filter `company_id`, baris role sudah global sejak 21 Agu (gotcha #18).
+>
+> Blok SQL lengkap + verifikasi (**harapan: tepat 6 baris**) + rollback ada di badan file migrasinya. Rollback membalik BAGIAN B saja; baris katalog BAGIAN A sengaja tidak dihapus karena dipakai bersama role lain.
 
 ### ⛔ TABRAKAN NOMOR MIGRASI — `20260907000001` dan `20260907000002` DIPAKAI DUA KALI
 
