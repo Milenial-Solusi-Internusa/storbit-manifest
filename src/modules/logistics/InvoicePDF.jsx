@@ -323,7 +323,7 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
                 <View style={s.metaRow}>
                   <MetaLine s={s} label="Invoice Date" value={fmtDate(invoice.invoice_date)} />
                   <MetaLine s={s} label="Due Date" value={fmtDate(invoice.due_date)} />
-                  <MetaLine s={s} label="PO No." value={invoice.sp_no || '—'} />
+                  <MetaLine s={s} label="SP No." value={invoice.sp_no || '—'} />
                 </View>
               </View>
             </View>
@@ -354,9 +354,9 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
                 seperti data yang gagal dimuat. */}
             {invoice.dc_address ? <Text style={s.billMute}>{invoice.dc_address}</Text> : null}
             {/* Meta dokumen — HANYA varian cetak. Ketiganya hidup di blok kop yang
-                dicabut untuk kertas kop, tapi tanggal & nomor PO berbeda tiap
+                dicabut untuk kertas kop, tapi tanggal & nomor SP berbeda tiap
                 invoice sehingga kop tercetak mustahil memuatnya; tanpa ini
-                invoice cetak keluar tanpa tanggal dan tanpa nomor PO customer.
+                invoice cetak keluar tanpa tanggal dan tanpa nomor SP.
                 Ditaruh di kolom kanan di bawah Billed To, bukan dikembalikan ke
                 atas, supaya memanfaatkan ruang yang sudah ada alih-alih menambah
                 tinggi halaman — kolom kanan dipilih karena ia kolom yang LEBIH
@@ -378,7 +378,7 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
               <View style={[s.metaRow, { marginTop: 9 }]}>
                 <MetaLine s={s} label="Invoice Date" value={fmtDate(invoice.invoice_date)} />
                 <MetaLine s={s} label="Due Date" value={fmtDate(invoice.due_date)} />
-                <MetaLine s={s} label="PO No." value={invoice.sp_no || '—'} />
+                <MetaLine s={s} label="SP No." value={invoice.sp_no || '—'} />
               </View>
             )}
           </View>
