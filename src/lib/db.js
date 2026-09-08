@@ -1274,7 +1274,7 @@ export async function getInvoicePdfData(invoiceId) {
       ? supabase.from('accounts').select('name').eq('id', spOrder.customer_id).maybeSingle()
       : Promise.resolve({ data: null }),
     spOrder.dc_id
-      ? supabase.from('dc_master').select('nama').eq('id', spOrder.dc_id).maybeSingle()
+      ? supabase.from('dc_master').select('nama, alamat').eq('id', spOrder.dc_id).maybeSingle()
       : Promise.resolve({ data: null }),
     companyId
       ? supabase.from('companies').select('legal_name, address, address_2, city, province, postal_code, tax_id').eq('id', companyId).maybeSingle()
@@ -1303,6 +1303,13 @@ export async function getInvoicePdfData(invoiceId) {
       sp_no: spOrder.sp_no || '',
       customer_name: customerRes.data?.name || '',
       dc_name: dcRes.data?.nama || '',
+      // Alamat DC tujuan, BUKAN accounts.address (itu alamat HQ dan mayoritas
+      // NULL — audit 31 Agu 2026: dari 85 Surat Jalan, 67 NULL & 15 alamat HQ,
+      // NOL yang beralamat DC). Jalur ini sama persis dengan yang sudah dipakai
+      // Surat Jalan sejak migrasi 20260831000001: sp_orders.dc_id ->
+      // dc_master.alamat. NULLIF/btrim ditiru dari migrasi itu supaya alamat
+      // berisi spasi saja diperlakukan kosong, bukan dicetak sebagai baris hampa.
+      dc_address: (dcRes.data?.alamat || '').trim(),
       company: companyRes.data || {},
       bank: bankRes.data || null,
       lines: (linesRes.data || []).map((l) => ({

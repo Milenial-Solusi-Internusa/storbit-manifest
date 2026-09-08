@@ -322,6 +322,14 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
             <Text style={s.billLabel}>Billed To</Text>
             <Text style={s.billName}>{invoice.customer_name || '—'}</Text>
             <Text style={s.billSub}>{invoice.dc_name || '—'}</Text>
+            {/* Alamat DC tujuan. Baris ini DIHILANGKAN kalau alamatnya kosong,
+                bukan dicetak sebagai '—' — mengikuti `PartyBlock` di printKit.jsx
+                yang dipakai Surat Jalan (`{address ? … : null}`). Surat Jalan
+                punya dua perlakuan: PartyBlock menghilangkan barisnya, `Field`
+                "Alamat Tujuan" mencetak '—'; yang dipakai di sini yang pertama,
+                karena ini blok pihak dan baris hampa di bawah nama DC terbaca
+                seperti data yang gagal dimuat. */}
+            {invoice.dc_address ? <Text style={s.billMute}>{invoice.dc_address}</Text> : null}
           </View>
         </View>
 
