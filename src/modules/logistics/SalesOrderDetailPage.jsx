@@ -141,10 +141,25 @@ const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTar
 // Pilih seluruh isi saat focus → ketikan menimpa nilai default (0), tak ter-append.
 const selectOnFocus = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.select(); };
 const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
-// Tabel Baris Pesanan pakai 2 desimal, mengikuti rp()/qtyFmt di mockup.
+// UANG di Tabel Baris Pesanan pakai 2 desimal, mengikuti rp() di mockup.
 const DEC2 = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-const num2 = (n) => (Number(n) || 0).toLocaleString('id-ID', DEC2);
 const rp2  = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID', DEC2);
+// KUANTITAS selalu bilangan bulat — dua desimal SENGAJA tidak dipakai di sini.
+// Seluruh kolom kuantitas Storbit bertipe `integer` di DB (sp_items.qty &
+// shipped_qty, sp_order_items.qty & shipped_qty, sp_invoice_lines.qty,
+// delivery_note_items.qty, picking_list_items.qty_*, picking_list_materials.qty,
+// sp_btb.qty, stock_ledger.qty), jadi ",00" itu murni formatting — bukan data.
+// Dan ia merugikan: "2.172,00" bisa terbaca 2.172 ATAU 2,172 oleh pembaca
+// Indonesia, padahal barang satuan PCS tak punya pecahan.
+// Sepuluh permukaan lain (InvoicePDF, PickingListPDF, DeliveryNotePDF,
+// StorbitReportPDF, halaman Picking List/Surat Jalan/Input SP, tiga halaman
+// Inventory, dan App.jsx) SUDAH bilangan bulat — ini satu-satunya yang belum,
+// jadi perbaikannya menutup selisih, bukan menciptakannya.
+// ⚠️ Kolom yang MEMANG pecahan (inquiries.weight_kg/volume_cbm,
+// delivery_notes.total_weight, quotation_items.qty,
+// hrga_request_items.quantity, asset_specifications.weight_kg) TIDAK memakai
+// helper ini — jangan diseragamkan ke sini.
+const qtyFmt = (n) => (Number(n) || 0).toLocaleString('id-ID');
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -2352,7 +2367,7 @@ export default function SalesOrderDetailPage({
                         </div>
                         {/* Akun — belum ada sumber datanya (lihat laporan) */}
                         <div style={{ ...cell, color: C.inkSoft }}>—</div>
-                        <div style={{ ...cell, textAlign: 'right' }}>{num2(item.qty)}</div>
+                        <div style={{ ...cell, textAlign: 'right' }}>{qtyFmt(item.qty)}</div>
                         <div style={cell}>{prod?.unit || prod?.uom || '—'}</div>
                         <div style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>{rp2(item.unitPrice)}</div>
                         <div style={cell}>{Math.round(PPN_RATE * 100)}%</div>
