@@ -63,6 +63,8 @@
 - **`.limit(1000)`** — default PostgREST 10 row (lihat §3).
 - **GRANT setelah CREATE:** tabel yang dibuat via Supabase CLI **tidak** auto-grant ke role `authenticated`. Wajib `GRANT SELECT, INSERT, UPDATE ON <table> TO authenticated;` segera setelah `ENABLE ROW LEVEL SECURITY`, sebelum policy. (INSERT-only untuk tabel audit immutable.)
 - **Trigger naming untuk ordering:** trigger `BEFORE` di tabel yang sama jalan **alfabetis**. Untuk memaksa urutan, pakai prefix — mis. `trg_z_gen_customer_code_upd` sengaja diberi prefix `trg_z_` supaya fire **setelah** `trg_set_customer_on_won` (kalau gen-code jalan duluan, `account_status` belum jadi `customer` → code tak ter-generate).
+- **[7 Sep 2026] `CREATE TEMP TABLE` TIDAK bertahan lintas klik Run di Supabase SQL Editor** — tiap Run bisa membuka koneksi baru, dan temp table mati bersama koneksinya. Verifikasi sebelum-sesudah yang menyimpan keadaan awal ke temp table karenanya **gagal dengan cara yang menyesatkan**: tabelnya "hilang", bukan datanya salah. Dua jalan keluar: jalankan seluruh rangkaian **dalam satu Run**, **atau** — lebih baik — ganti dengan **perhitungan independen langsung dari tabel sumber**. Yang kedua lebih kuat secara logika: ia membuktikan angkanya **BENAR**, bukan sekadar **TIDAK BERUBAH** (sebelum-sesudah tetap lolos kalau kedua sisinya sama-sama salah).
+- **[7 Sep 2026] Rapikan header migrasi + refresh snapshot SEGERA setelah eksekusi SQL, BUKAN di akhir sesi.** Agen AI membaca **header file migrasi** (`Status: LIVE`) dan **`schema_snapshot.sql`** sebagai sumber kebenaran tentang apa yang hidup di produksi. Menundanya membuat sesi berikutnya **berangkat dari peta yang salah** — dan itu kelas kekeliruan yang paling mahal, karena keputusan dibangun di atasnya sebelum ketahuan. ⚠️ **Ini terjadi DUA KALI dalam satu hari (7 Sep 2026).** Urutan yang benar: jalankan SQL → **langsung** ubah header jadi `Status: LIVE` + `pg_dump` → baru lanjut kerja berikutnya.
 - **`auth.uid()` NULL di SQL Editor:** SQL Editor jalan sebagai service role, bukan user. `is_super_admin()`, `get_user_company_id()`, `auth.uid()` SELALU null/false di sana. **Test RLS hanya via sesi browser** (temporary `console.debug` di komponen page), bukan SQL Editor.
 - **Same-id migration pattern:** untuk konversi tabel (mis. `prospects`→`accounts`), pertahankan `id` row + nama constraint FK lama; embed PostgREST pakai alias (lihat §6 Known Issues di `03_DATA_MODEL.md`).
 - **RLS wajib:** tiap tabel business harus punya RLS company-scoped + role-aware. Super-admin bypass = top-level `OR is_super_admin()`, **JANGAN** nested di dalam filter `company_id`.
@@ -78,6 +80,12 @@
   ```
   (`pg_dump` langsung — `supabase db pull` butuh Docker yang belum terpasang.)
 
+  ⛔ **JANGAN `supabase db dump`.** [7 Sep 2026] CLI itu **membuang seluruh baris
+  komentar** dan **me-quote semua identifier**, sehingga hasilnya berbeda bentuk
+  dari seluruh riwayat snapshot: diff-nya menjadi **RAKSASA dan PALSU** — ribuan
+  baris berubah tanpa satu pun perubahan skema nyata, dan review-nya jadi mustahil.
+  Pakai `pg_dump` persis seperti di atas.
+
   ⚠️ **TANPA `--no-owner` maupun `--no-privileges`.** Snapshot yang berlaku
   memang ber-ACL. Kedua flag itu akan MENGHAPUS-nya diam-diam — bukan "refresh",
   melainkan regresi. ACL-nya bukan kebetulan: tanpa itu, gap GRANT (mis.
@@ -88,13 +96,24 @@
   dump ikut membawa ~35 tabel skema sistem (`auth`/`storage`/`realtime`/`vault`)
   yang bukan milik proyek ini.
 
+  ⚠️ **Snapshot SEBELUM 5 Sep 2026 dibuat tanpa `--schema=public`, jadi memuat
+  ke-35 tabel sistem itu. Jumlah tabel `public` TETAP SAMA sebelum dan sesudah —
+  NOL tabel bisnis hilang.** Dicatat eksplisit supaya orang yang membandingkan
+  jumlah tabel/ukuran file antar-commit tidak salah membacanya sebagai kehilangan.
+
+  ⚠️ **ALASAN UTAMA `--schema-only` adalah PRIVASI, bukan ukuran file.** Blok
+  `COPY` memuat **data pribadi produksi** — nama, email, telepon, alamat, tanggal
+  lahir, dan kontak darurat di `profiles` — yang begitu ter-commit **tersimpan
+  permanen di riwayat Git**. Itu argumen yang berdiri sendiri, terlepas dari
+  argumen ukuran/pemakaian di blok keputusan di bawah.
+
   Lewat `/tmp` lalu `mv` — supaya `schema_snapshot.sql` tidak pernah tertulis
   separuh kalau `pg_dump` gagal di tengah.
 
   **Verifikasi wajib sesudahnya.** Bandingkan dengan refresh SEBELUMNYA, bukan
   dengan angka mati. Kalau salah satu **TURUN** → JANGAN commit:
   ```bash
-  grep -c "^CREATE TABLE public\."      supabase/schema_snapshot.sql   # 133 per 6 Sep 2026
+  grep -c "^CREATE TABLE public\."      supabase/schema_snapshot.sql   # 138 per 7 Sep 2026
   grep -c "^GRANT .* TO authenticated;" supabase/schema_snapshot.sql   # tak boleh turun
   ```
   Angka kedua sengaja tanpa patokan tetap — ia tumbuh tiap kali ada tabel/RPC

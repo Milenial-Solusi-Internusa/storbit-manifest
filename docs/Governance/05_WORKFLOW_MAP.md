@@ -2,7 +2,9 @@
 
 > Alur bisnis per modul live. Sumber: `CLAUDE.md` (CRM Flow, phase notes), `docs/03_DATA_MODEL.md`. Notasi: **[role]** = pelaku, **⚙** = trigger/otomatis DB.
 >
-> **Diperbarui 2026-08-24 (CRM — notifikasi approver Lead Pool & roster salesperson lepas dari filter `roles.company_id` yang mati sejak globalisasi roles; FE-only 3 file, NOL perubahan DB/RLS):** §CRM Gate & Approval, bullet **"Lead Pool → Pipeline"** dapat catatan baru: notifikasi ke manager/supervisor adalah **langkah terpisah yang bisa gagal sendiri**, dan gagal senyap 21→24 Agu 2026 (sales tetap dapat toast sukses, request tetap masuk halaman Approval, approver tak pernah diberi tahu). Alur, gate, dan status **TIDAK berubah** — yang diperbaiki cuma resolusi penerima notifikasi. ⚠️ **NOL tes runtime.** Detail: `08_TECH_DEBT.md` **TD-207** + `03_DATA_MODEL.md` gotcha #18 + `PROGRESS.md` 2026-08-24.
+> **Diperbarui 2026-09-07 (PRF — siapa yang berhak mengambil/melepas/menutup PRF kini diikat ke ENTITAS PRF, bukan ke home company; migrasi `20260907000001_prf_multi_company_guard`, LIVE + terverifikasi runtime):** §Procurement Flow dapat catatan penjaga baru pada langkah `[Procurement] acknowledge` dan tiga transisi RPC di bawahnya. **Alurnya sendiri NOL perubahan** — urutan langkah, status, dan syarat bisnisnya identik; yang berubah **siapa yang lolos gerbangnya**. Sebelum ini, procurement dengan home company berbeda dari entitas PRF **ditolak keras** (`RAISE EXCEPTION`) — bukan gagal senyap. Detail: `03_DATA_MODEL.md` §5 (keempat `prf_*`) + **gotcha #26** · `PROGRESS.md` 2026-09-07.
+>
+> Sebelumnya **2026-08-24 (CRM — notifikasi approver Lead Pool & roster salesperson lepas dari filter `roles.company_id` yang mati sejak globalisasi roles; FE-only 3 file, NOL perubahan DB/RLS):** §CRM Gate & Approval, bullet **"Lead Pool → Pipeline"** dapat catatan baru: notifikasi ke manager/supervisor adalah **langkah terpisah yang bisa gagal sendiri**, dan gagal senyap 21→24 Agu 2026 (sales tetap dapat toast sukses, request tetap masuk halaman Approval, approver tak pernah diberi tahu). Alur, gate, dan status **TIDAK berubah** — yang diperbaiki cuma resolusi penerima notifikasi. ⚠️ **NOL tes runtime.** Detail: `08_TECH_DEBT.md` **TD-207** + `03_DATA_MODEL.md` gotcha #18 + `PROGRESS.md` 2026-08-24.
 >
 > Sebelumnya **2026-08-21 (Storbit — partial picking dibuka: input qty per item + guard idempotensi picking direvisi; 1 fungsi DB + 2 file FE):** §Logistics (Storbit SP) Flow dapat blok baru **"Partial picking"**. ⚠️ **Status jujur: kode FE selesai (build/lint bersih), SQL guard BELUM DIJALANKAN **[KOREKSI 24 Agu 2026: sudah dijalankan — header migrasi `Status: LIVE`, guard baru ada di `schema_snapshot.sql:795`]**, NOL tes runtime** — sampai SQL dijalankan, perilaku produksi masih yang LAMA (satu picking per SP, permanen). Konsekuensi yang DISENGAJA (picking `done` tanpa SJ = jalan buntu) → `08_TECH_DEBT.md` **TD-206** + Keputusan Terbuka **#31**.
 >
@@ -431,6 +433,11 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 
 [Procurement] lihat PRF submitted → acknowledge (status=ACKNOWLEDGED)   ← Fase 3a (list/inbox) BELUM
    → RLS prf_select (own OR procurement OR manager+); prf_update_status (procurement, saat SUBMITTED)
+   → [7 Sep 2026] JALUR RPC (prf_claim/prf_release/prf_mark_quoted/prf_select_offer) kini menguji role
+     DI ENTITAS PRF ITU (user_roles.company_id = prf.company_id), BUKAN home company (profiles.company_id).
+     Procurement lintas-entitas MEMANG by design; sebelum perbaikan, procurement ber-home SOA ditolak
+     KERAS (RAISE EXCEPTION) di seluruh 285 PRF milik MSI — 78 PRF SUBMITTED menunggu diambil.
+     ⚠️ alur & syarat bisnisnya TIDAK berubah; yang berubah hanya siapa yang lolos gerbangnya.
 
 [Procurement] isi JAWABAN HARGA (Pricing Answer, 20 Jul 2026 — PRFDetailPage)   ← dibuka dari list "Forwarding (MSI)" (baris klik-able)
    → [21 Jul 2026] panel dirombak jadi MULTI-VENDOR — SATU KARTU PER VENDOR (bukan lagi satu tabel datar):
