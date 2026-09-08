@@ -315,6 +315,8 @@ Detail granular: `PROGRESS.md` (2026-07-06…08) + `CLAUDE.md` Recent. Skema/alu
 > ⏳ **JANGAN DIKERJAKAN SEKARANG.** Diselesaikan **SEKALI saat sinkron/merge** branch `feature/crm-v3-batch-persiapan`, bukan dicicil. Menyentuh branch sekarang berarti mengerjakan hal yang sama **dua kali** — sekali sekarang, sekali lagi saat merge menabrakkan keduanya. Daftar ini ada supaya penyelarasannya tidak terlewat, bukan supaya dikerjakan lebih awal.
 >
 > Latar: `main` dan branch menomori Keputusan Terbuka dari merge-base yang sama tanpa saling tahu, lalu diselaraskan 6 Sep 2026 (branch #32/#33 → #35/#36). Sejak itu **`main` yang bergerak lebih jauh**; branch belum menyusul.
+>
+> ⚠️ **`schema_snapshot.sql` di branch MASIH VERSI 31 Agu 2026 (`0c736fb`) — JANGAN dipakai sebagai rujukan sampai sinkron.** Ia format **LAMA** sebelum keputusan schema-only 6 Sep: **133 tabel · 133 blok `COPY` · 0 baris `GRANT`**, sementara produksi hari ini **138 tabel · 0 `COPY` · 239 `GRANT .. TO authenticated`**. Ia **tidak mencerminkan lima migrasi yang sudah LIVE di produksi** (tally *5 LIVE / 4 tersisa*, `PROGRESS.md` 2026-09-06) — apalagi migrasi sisi `main` sepanjang September, yang tak pernah ada di sana sama sekali. **Rujukan yang benar sampai sinkron: `schema_snapshot.sql` di `main`.** ⏳ **Sengaja TIDAK disegarkan sekarang** (keputusan Den 8 Sep 2026): menyegarkannya hari ini = satu commit raksasa yang toh ditimpa lagi saat sinkron. **Bukan utang tersendiri, bukan TD** — ia tertutup otomatis oleh sinkron yang sudah dijadwalkan sebelum merge.
 
 | butir | keadaan di `main` | yang belum ada di branch |
 |---|---|---|
