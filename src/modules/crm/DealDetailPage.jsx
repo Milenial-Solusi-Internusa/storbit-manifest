@@ -15,27 +15,25 @@
 //
 // Data: inquiries + accounts (prospect) + quotations (WHERE inquiry_id) +
 // activities (WHERE account_id = inquiry.prospect_id) + profiles + payment_terms.
-// No DB schema change. Stage updates write accounts.pipeline_stage.
+// No DB schema change. Halaman ini READ-ONLY terhadap `accounts` sejak 8 Sep 2026 —
+// satu-satunya jalur tulisnya (Move Stage + Edit Deal) sudah dicabut.
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock, ArrowRight,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  CheckCircle2, Handshake, Ban, UserCog, Wallet, Download,
+  Handshake, Ban, UserCog, Download,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import {
-  C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card,
-  DealHeaderControls, EditDealModal,
-  PriceSummaryCard, fetchAssignees, saveDealUpdate,
+  C, HEAD, BODY, fmtDate, fmtRp, Card, PriceSummaryCard,
 } from './DealPanels';
 import StatusBar from './v3/StatusBar';
 import FormSheet from './v3/FormSheet';
 import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
-import { RADIUS } from './v3/tokens';
-import { bantQualifyGate } from './bant';
+import { RADIUS, SP, LINE, NAVY_SOFT, INK } from './v3/tokens';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
@@ -88,6 +86,43 @@ const DEAL_STAGE_SEGMENTS = [
   { id: 'NEGOTIATION', label: 'NEGOTIATION' },
 ];
 const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
+
+/* Penunjuk langkah berikutnya — pengganti INFORMASI dari tombol arah-maju yang
+   dicabut 8 Sep 2026 (blueprint §6: perpindahan status digerakkan DOKUMEN).
+   Tombolnya hilang, tapi pengetahuan "apa yang harus kulakukan supaya deal ini
+   maju" tidak boleh ikut hilang — itulah gunanya baris ini.
+   Nada NAVY_SOFT + INK, bukan warna peringatan: ini informasi, bukan error.
+   Status tertutup (WON/LOST/CANCELLED) sengaja NOL render — tak ada langkah
+   berikutnya untuk deal yang sudah selesai. */
+const NEXT_STEP_HINT = {
+  OPEN:        'Issue a PRF and submit it to pricing to advance to IN REVIEW.',
+  IN_REVIEW:   'Send the quotation to the customer to advance to QUOTED.',
+  QUOTED:      'Issue the next quotation version to enter NEGOTIATION, or send a Sales Order to close as WON.',
+  NEGOTIATION: 'Send a Sales Order to close the deal as WON.',
+};
+
+function NextStepHint({ status }) {
+  const text = NEXT_STEP_HINT[status];
+  if (!text) return null;
+  return (
+    <div
+      style={{
+        marginTop: SP.s2,
+        padding: `${SP.s2}px ${SP.s3}px`,
+        borderRadius: RADIUS.md,
+        background: NAVY_SOFT,
+        color: INK,
+        fontFamily: BODY,
+        fontSize: 12.5,
+        lineHeight: 1.5,
+      }}
+    >
+      <span style={{ fontWeight: 700 }}>Next step</span>
+      <span style={{ opacity: 0.55, margin: '0 8px' }}>·</span>
+      {text}
+    </div>
+  );
+}
 
 // Gaya dasar tombol baris aksi. Diangkat jadi konstanta karena dipakai tujuh kali
 // dengan hanya warna/border yang berbeda — sebelumnya style yang sama disalin
@@ -252,7 +287,8 @@ const FIELD_GROUPS = [
       { label: 'Deadline Quote', value: i.deadline_quote ? fmtDate(i.deadline_quote) : '' },
       { label: 'Created By', value: x.createdByName },
       // "Deal Owner" di sini = `inquiries.owner_id`, BEDA dari "Assigned To" di
-      // meta header yang membaca `accounts.assigned_profile`. Jangan disamakan.
+      // meta header yang membaca `accounts.assigned_to`. Jangan disamakan:
+      // yang satu pemilik DEAL, yang satu pemegang AKUN.
       { label: 'Deal Owner', value: x.ownerName },
       { label: 'Created Date', value: fmtDate(i.created_at) },
     ],
@@ -291,9 +327,9 @@ function Avatar({ name, size = 28 }) {
    milik FormSheet (breadcrumb → judul+docNo+meta → status), sehingga StatusBar
    yang sebelumnya terlanjur dirender DI ATAS breadcrumb otomatis turun ke
    tempat yang benar tanpa kode urutan di sini.
-   StageBadge (badge `accounts.pipeline_stage`) DIHAPUS 4 Sep 2026 — sumbu itu
-   digantikan StatusBar yang membaca `inquiries.status`. Kolom & jalur tulis
-   pipeline_stage TIDAK dicabut; itu Batch B3. */
+   StageBadge (badge sumbu stage lama di `accounts`) DIHAPUS 4 Sep 2026 — sumbu itu
+   digantikan StatusBar yang membaca `inquiries.status`. Jalur tulisnya menyusul
+   dicabut 8 Sep 2026; halaman ini kini nol menyentuh sumbu lama itu. */
 function Breadcrumb({ onBack }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -326,41 +362,59 @@ function DealTitle({ name, accountId, onViewCustomer }) {
 /* Baris meta di bawah judul: siapa yang memegang akun, kapan deal dibuat, dan
    perkiraan closing-nya.
    ⚠️ Label "Assigned To" SENGAJA bukan "Deal Owner": nilai di sini
-   `accounts.assigned_profile`, sedangkan "Deal Owner" di kartu badan adalah
-   `inquiries.owner_id` — dua kolom berbeda yang kebetulan sering berisi orang
-   yang sama. Memakai label yang sama untuk keduanya akan menyembunyikan
-   perpindahan kepemilikan deal. */
+   `accounts.assigned_to` (pemegang AKUN), sedangkan "Deal Owner" di kartu badan
+   adalah `inquiries.owner_id` (pemilik DEAL) — dua kolom berbeda yang kebetulan
+   sering berisi orang yang sama. Memakai label yang sama untuk keduanya akan
+   menyembunyikan perpindahan kepemilikan deal. */
+/* Pemisah hairline antar potongan meta. Di scope MODUL, bukan di dalam HeaderMeta:
+   komponen yang lahir saat render kehilangan state tiap render (react-hooks/static-components). */
+const MetaSep = () => <span aria-hidden="true" style={{ width: 1, height: 14, background: LINE, flexShrink: 0 }} />;
+
 function HeaderMeta({ assignedName, assignedProfileId, onViewProfile, createdAt, closeDate }) {
   const canViewProfile = !!(assignedProfileId && onViewProfile);
-  const item = { display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: BODY, fontSize: 13, color: C.textMute };
+  /* Tiga potongan info yang dulu berdempetan: jarak ANTAR-potong (16) hampir sama
+     dengan jarak label→nilai DI DALAM potongan (6), jadi ketiganya terbaca sebagai
+     satu rentetan. Tiga perubahan, NOL informasi ditambah/dikurangi:
+       (1) pemisah hairline vertikal antar potongan — pola yang sudah dipakai
+           StatusBar, jadi bukan bentuk baru;
+       (2) jarak antar-potong naik ke SP.s5 sementara label→nilai turun ke SP.s1,
+           sehingga jarak antar jadi 5x jarak dalam (dulu 2,7x);
+       (3) label jadi kecil-uppercase-renggang — bahasa visual yang persis dipakai
+           "DEAL VALUE" di DealHeaderControls yang baru dicabut, dipakai ulang di
+           tempat yang lebih pas. */
+  const item = { display: 'inline-flex', alignItems: 'center', gap: SP.s1, fontFamily: BODY, fontSize: 13, color: C.textMute };
+  const lbl = { fontFamily: BODY, fontSize: 11.5, fontWeight: 600, color: C.textFaint, textTransform: 'uppercase', letterSpacing: '0.04em' };
+  const val = { fontWeight: 600, color: C.text };
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: SP.s5, flexWrap: 'wrap' }}>
       {canViewProfile ? (
         <button
           type="button"
           onClick={() => onViewProfile(assignedProfileId)}
           title="View profile"
-          style={{ ...item, gap: 7, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+          style={{ ...item, gap: SP.s2, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
         >
           <Avatar name={assignedName} size={26} />
-          <span style={{ color: C.textFaint }}>Assigned To</span>
-          <span style={{ fontWeight: 600, color: C.text, textDecoration: 'underline', textDecorationColor: C.border, textUnderlineOffset: 3 }}>{assignedName}</span>
+          <span style={lbl}>Assigned To</span>
+          <span style={{ ...val, textDecoration: 'underline', textDecorationColor: C.border, textUnderlineOffset: 3 }}>{assignedName}</span>
         </button>
       ) : (
-        <span style={{ ...item, gap: 7 }}>
+        <span style={{ ...item, gap: SP.s2 }}>
           <Avatar name={assignedName} size={26} />
-          <span style={{ color: C.textFaint }}>Assigned To</span>
-          <span style={{ fontWeight: 600, color: C.text }}>{assignedName || 'Unassigned'}</span>
+          <span style={lbl}>Assigned To</span>
+          <span style={val}>{assignedName || 'Unassigned'}</span>
         </span>
       )}
+      <MetaSep />
       <span style={item}>
-        <span style={{ color: C.textFaint }}>Created</span>
-        <span style={{ fontWeight: 600, color: C.text }}>{fmtDate(createdAt)}</span>
+        <span style={lbl}>Created</span>
+        <span style={val}>{fmtDate(createdAt)}</span>
       </span>
-      <span style={item}>
+      <MetaSep />
+      <span style={{ ...item, gap: SP.s2 }}>
         <CalendarClock size={15} color={C.textFaint} />
-        <span style={{ color: C.textFaint }}>Est. Closing</span>
-        <span style={{ fontWeight: 600, color: C.text }}>{fmtDate(closeDate)}</span>
+        <span style={lbl}>Est. Closing</span>
+        <span style={val}>{fmtDate(closeDate)}</span>
       </span>
     </div>
   );
@@ -473,11 +527,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [notFound, setNotFound] = useState(false);
   const [inquiry, setInquiry] = useState(null);
   const [account, setAccount] = useState(null);
-  // Kunci in-flight tulis pipeline_stage — cegah updateAccount ditulis dobel
-  // (pickStage, gate BANT confirm, Edit Deal — ketiganya lewat fungsi ini)
-  // selagi tulisan sebelumnya masih berlangsung. Boolean cukup: halaman ini
-  // scope satu akun, bukan papan banyak kartu spt Kanban (lihat DRAG_STAGE_BUG_AUDIT.md).
-  const stageUpdateInFlight = useRef(false);
   const [quotations, setQuotations] = useState([]);
   // Rincian Harga (tab Quotation) — items HANYA untuk quotation terbaru (lihat
   // `latestQuotation` di bawah), bukan untuk semua quotation di daftar.
@@ -487,13 +536,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [activities, setActivities] = useState([]);
   const [profMap, setProfMap] = useState({});
   const [termMap, setTermMap] = useState({});
-  const [assignees, setAssignees] = useState([]);
-  const [editOpen, setEditOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [tab, setTab] = useState('aktivitas');
-  // Konfirmasi lunak gate BANT (skor 5–7 → QUALIFIED) — pola pending-action yang sama
-  // dengan stageGate di PipelineKanbanPage.
-  const [stageGate, setStageGate] = useState({ open: false, message: '', onYes: null });
   // Tandai inquiry KALAH (Task 4, di-upgrade B3) — alasan kini dari MASTER
   // loss_reasons, bukan teks bebas WinLossModal.
   const [lossOpen, setLossOpen] = useState(false);
@@ -510,17 +554,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [ownerDraft,  setOwnerDraft]  = useState('');
   const [ownerSaving, setOwnerSaving] = useState(false);
   const [salesOpts,   setSalesOpts]   = useState([]);
-  // Nilai estimasi deal — panel inline dengan pola yang sama seperti Ganti
-  // Pemilik. Draft disimpan sebagai STRING supaya kosong ('') bisa dibedakan
-  // dari nol; konversinya baru terjadi saat commit.
-  const [valueOpen,   setValueOpen]   = useState(false);
-  const [valueDraft,  setValueDraft]  = useState('');
-  const [valueSaving, setValueSaving] = useState(false);
-  // Tandai inquiry MENANG (jalur manual baru) — ConfirmModal polos (bukan
-  // WinLossModal, nol form alasan diminta), RPC mark_inquiry_won yang
-  // menegakkan izin sebenarnya.
-  const [wonOpen, setWonOpen] = useState(false);
-  const [wonSaving, setWonSaving] = useState(false);
   // Batch 3C — pilih/ganti penawaran vendor (prf_select_offer). Konfirmasi
   // HANYA dibutuhkan saat MENGGANTI pilihan yang sudah ada; pilihan pertama
   // langsung jalan tanpa dialog.
@@ -546,9 +579,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       if (inq.prospect_id) {
         const { data } = await supabase
           .from('accounts')
-          // bant_* dipakai gate QUALIFIED (aturan bersama bant.js) — ikut ditarik di
-          // sini supaya tidak perlu fetch kedua saat user memindahkan stage.
-          .select('id, name, pipeline_stage, estimated_value, assigned_profile, assigned_to, pic_name, estimated_closing_date, bant_budget, bant_authority, bant_need, bant_timeline')
+          .select('id, name, assigned_to, pic_name, estimated_closing_date')
           .eq('id', inq.prospect_id).maybeSingle();
         acc = data || null;
       }
@@ -618,8 +649,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         acts = data || [];
       }
 
-      // resolve profile names (assigned_profile, assigned_to, created_by, owner_id)
-      const pIds = [...new Set([acc?.assigned_profile, acc?.assigned_to, inq.created_by, inq.owner_id].filter(Boolean))];
+      // resolve profile names (assigned_to, created_by, owner_id)
+      const pIds = [...new Set([acc?.assigned_to, inq.created_by, inq.owner_id].filter(Boolean))];
       const pMap = {};
       if (pIds.length) {
         const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', pIds).limit(1000);
@@ -650,14 +681,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     });
     return () => { cancelled = true; };
   }, [inquiryId, reloadKey]);
-
-  // assignees for the Edit modal (company-scoped)
-  useEffect(() => {
-    if (!profile?.company_id) return undefined;
-    let cancelled = false;
-    fetchAssignees(profile.company_id).then((a) => { if (!cancelled) setAssignees(a); });
-    return () => { cancelled = true; };
-  }, [profile?.company_id]);
 
   // Quotation paling baru dibuat/diedit (updated_at, fallback created_at) — dipilih
   // dari `quotations` yang SUDAH difetch di atas (bukan query list baru). Satu inquiry
@@ -694,11 +717,8 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return () => { cancelled = true; };
   }, [latestQuotation?.id, showToast]);
 
-  const stageIdx = stageIndex(account?.pipeline_stage);
-  const estValue = Number(account?.estimated_value || 0);
-  // Sumbu deal untuk StatusBar. Dinormalkan sekali di sini supaya render dan gate
-  // penutupan membaca nilai yang sama. `stageIdx` di atas TETAP dipakai jalur lama
-  // (EditDealModal + saveEdit) yang menulis ke `accounts` — tidak dicabut batch ini.
+  // Sumbu deal untuk StatusBar. Dinormalkan sekali di sini supaya render, banner
+  // langkah berikutnya, dan gate penutupan membaca nilai yang sama.
   const dealStatus = String(inquiry?.status || 'OPEN').toUpperCase();
   // Badge angka di label tab PRF = PRF yang MENUNGGU TINDAKAN SALES saja.
   // "Not active" (CANCELLED/EXPIRED) dan "Awaiting procurement" sengaja tak
@@ -708,27 +728,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // User multi-role (mis. manager+sales) sebelumnya kehilangan tombol ini karena
   // role prioritas lebih tinggi menutupi 'sales' di erpRole. Cermin RLS prf_insert.
   const canCreatePRF = erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code));
-  const assignedName = profMap[account?.assigned_profile] || profMap[account?.assigned_to] || null;
-  // Id di balik assignedName — fallback SAMA PERSIS supaya id-nya konsisten dgn
-  // nama yang tampil. Dipakai utk buka mini profil (klik nama sales di Header).
-  const assignedProfileId = account?.assigned_profile || account?.assigned_to || null;
+  // Kolom penugasan KEDUA di `accounts` (kembaran `assigned_to`) DIPENSIUNKAN
+  // 8 Sep 2026. Diukur di produksi: dari 1.211 akun hidup, NOL yang hanya punya
+  // kolom kembar itu dan NOL yang isinya berbeda dari `assigned_to` — jadi
+  // mencabut fallback-nya nol mengubah tampilan. Sumbu penugasan akun kini
+  // `assigned_to` saja. DROP COLUMN menyusul batch terpisah.
+  const assignedName = profMap[account?.assigned_to] || null;
+  // Id di balik assignedName — dipakai utk buka mini profil (klik nama sales di Header).
+  const assignedProfileId = account?.assigned_to || null;
   const createdByName = profMap[inquiry?.created_by] || null;
   // Orang yang diprioritaskan di dropdown @mention Chatter — SAMA PERSIS logic
   // `pIds` di effect fetch utama (:393), tapi diturunkan ulang di scope render dari
   // state `account`/`inquiry` (effect itu pakai `acc`/`inq` lokal, tak bisa diakses
   // dari sini).
-  const priorityUserIds = [...new Set([account?.assigned_profile, account?.assigned_to, inquiry?.created_by].filter(Boolean))];
+  const priorityUserIds = [...new Set([account?.assigned_to, inquiry?.created_by].filter(Boolean))];
   // Aksi "Tandai Kalah" hanya untuk status yang belum terminal (default 'OPEN' bila
   // kolomnya kosong). WON / LOST / CANCELLED → tombolnya tidak dirender sama sekali.
   const canMarkLost = LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
-  // Aksi "Tandai sebagai WON" — gate UI murni UX (RPC mark_inquiry_won yang
-  // menegakkan izin sebenarnya): cuma pembuat inquiry atau super_admin, dan
-  // cuma kalau belum WON. Sengaja TIDAK ikut LOSABLE_INQUIRY_STATUS — inquiry
-  // yang sudah LOST/CANCELLED tetap boleh ditandai WON manual (mis. customer
-  // berubah pikiran), sesuai spesifikasi task.
-  const isInquiryCreator = !!(inquiry?.created_by && profile?.id && inquiry.created_by === profile.id);
-  const canMarkWon = (isInquiryCreator || erpRole === 'super_admin')
-    && String(inquiry?.status || 'OPEN').toUpperCase() !== 'WON';
   // B3 — gate dua aksi baru. Penegak izin sebenarnya tetap RLS inquiries_update;
   // ini murni lapis UI (fail-closed: status tak dikenal -> tombol tak dirender).
   const canCancel = CANCELLABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
@@ -754,122 +770,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     && MANAGER_OR_ABOVE.includes(erpRole);
   const ownerName = profMap[inquiry?.owner_id] || null;
 
-  /* Ubah nilai estimasi deal — status yang sama dengan gate reassign
-     (LOSABLE_INQUIRY_STATUS di-reuse, bukan daftar kelima), TAPI izinnya lebih
-     longgar: PEMILIK deal atau manager-ke-atas, bukan manager-only.
-     Alasannya sengaja beda dari "Ganti Pemilik": ini angka estimasi kerja yang
-     memang paling tahu orang yang menggarapnya, bukan perpindahan kepemilikan.
-     Cermin RLS `inquiries_update` sesudah migrasi 20260830000003
-     (is_manager_or_above() OR owner_id = auth.uid()), jadi tombol yang tampil
-     memang tombol yang tulisannya akan diterima DB.
-     ⚠️ TIDAK ada penguncian pasca-closed di DB untuk field ini (keputusan Den):
-     nilai resmi deal yang menang datang dari sales_order_items, sumber kebenaran
-     yang berbeda — jadi mengunci kolom estimasi ini tak menjawab kebutuhan nyata.
-     Gate di sini murni UI. */
-  const isInquiryOwner = !!(inquiry?.owner_id && profile?.id && inquiry.owner_id === profile.id);
-  const canEditValue =
-    LOSABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase())
-    && (isInquiryOwner || MANAGER_OR_ABOVE.includes(erpRole));
-
-  // Update accounts row (used by both Edit modal & Pindah Stage). Returns boolean.
-  // Single shared write path (saveDealUpdate) so the audit trail matches
-  // CustomerDetailPage's deal controls exactly.
-  async function updateAccount(patch, auditStageKey) {
-    if (!account?.id) { showToast?.('Prospect not found for this deal', 'error'); return false; }
-    // Tulisan lain untuk akun ini masih berlangsung — abaikan (bukan rate-limit:
-    // dilepas lagi begitu tulisan yang sedang jalan selesai).
-    if (stageUpdateInFlight.current) return false;
-    stageUpdateInFlight.current = true;
-    try {
-      const ok = await saveDealUpdate({
-        accountId: account.id, patch, auditStageKey,
-        prevStage: account.pipeline_stage, accountName: account.name,
-        actor: { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id },
-        showToast,
-      });
-      if (ok) refetch();
-      return ok;
-    } finally {
-      stageUpdateInFlight.current = false;
-    }
-  }
-
-  // onPickStage kini mengirim KEY stage (menu hanya menawarkan ACTIVE_STAGES).
-  function pickStage(key) {
-    if (key === (account?.pipeline_stage || 'NEW')) return;
-    if (!isActiveStage(key)) return;                     // sabuk pengaman jalur tulis
-    if (key === 'QUALIFIED') {
-      const gate = bantQualifyGate(account);
-      if (gate.verdict === 'block') { showToast?.(gate.message, 'error'); return; }
-      if (gate.verdict === 'confirm') {
-        setStageGate({ open: true, message: gate.message, onYes: () => updateAccount({ pipeline_stage: key }, key) });
-        return;
-      }
-    }
-    updateAccount({ pipeline_stage: key }, key);
-  }
-
-  async function saveEdit(draft) {
-    // PENJAGA stage tak dikenal — sama tujuannya dengan CustomerDetailPage.saveDealEdit.
-    // `draft.stage` diturunkan dari `stageIdx` (prop `initial` EditDealModal), dan
-    // `stageIdx = stageIndex(account?.pipeline_stage)`; stageIndex mengembalikan 0 (=NEW)
-    // untuk nilai di luar STAGES. Tanpa penjaga ini, menyimpan modal untuk akun
-    // ber-stage 'NURTURE' menimpanya jadi 'NEW', diam-diam dan tanpa audit.
-    //
-    // Di halaman INI penyemai draft memang state `account` itu sendiri — tidak ada fetch
-    // terpisah seperti `dealSeed` di CustomerDetailPage. Jadi membaca `account` di sini
-    // BUKAN memakai state halaman sebagai pengganti sumber, melainkan memang sumber yang
-    // sama dengan yang menyemai draft.stage.
-    const seedStage = account?.pipeline_stage;
-    const stageKnown = isKnownStage(seedStage);
-    const nextKey = STAGES[draft.stage]?.key;
-    // Stage ditulis HANYA bila seed-nya dikenal DAN nilai barunya masih boleh ditulis.
-    // Syarat kedua menutup kasus akun warisan (mis. PROPOSAL) yang dibuka lalu langsung
-    // disimpan tanpa menyentuh dropdown: tanpa itu, nilai lamanya akan DITULIS ULANG.
-    const stageWritable = stageKnown && isActiveStage(nextKey);
-
-    if (stageWritable && nextKey === 'QUALIFIED' && nextKey !== seedStage) {
-      const gate = bantQualifyGate(account);
-      if (gate.verdict === 'block') { showToast?.(gate.message, 'error'); return false; }
-      if (gate.verdict === 'confirm') {
-        // Modal Edit Deal dibiarkan terbuka (return false) sampai konfirmasi dijawab.
-        setStageGate({
-          open: true,
-          message: gate.message,
-          onYes: async () => { const done = await commitEdit(draft, nextKey); if (done) setEditOpen(false); },
-        });
-        return false;
-      }
-    }
-
-    const ok = await commitEdit(draft, stageWritable ? nextKey : null);
-    // Setelah updateAccount supaya pesan ini yang terakhir dilihat user. Tipe default,
-    // bukan 'error' — penyimpanannya memang berhasil.
-    if (ok && !stageWritable) {
-      showToast?.(stageKnown
-        ? `Stage "${seedStage}" now follows the inquiry status. Stage was not changed; other changes were saved.`
-        : `Stage "${seedStage || '(empty)'}" is not recognized. Stage was not changed; other changes were saved.`);
-    }
-    return ok;
-  }
-
-  // Jalur tulis Edit Deal — stageKey null berarti stage sengaja TIDAK ditulis.
-  async function commitEdit(draft, stageKey) {
-    const patch = {
-      assigned_profile: draft.assignedId || null,
-      estimated_value: draft.value === '' ? 0 : Number(draft.value),
-      estimated_closing_date: draft.closeDate || null,
-    };
-    if (stageKey) patch.pipeline_stage = stageKey;
-    return updateAccount(patch);
-  }
-
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
   // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
-  // Aksi "Tandai Menang" tandingannya kini ADA (markInquiryWon, di bawah) — jalur
-  // manual lewat RPC mark_inquiry_won, terpisah dari jalur SO/trigger resmi
-  // (set_inquiry_won_on_so → set_customer_on_inquiry_won, masih hidup berdampingan)
-  // dan terpisah dari pickStage/ACTIVE_STAGE_KEYS (tetap diblok, tak disentuh).
+  // ⚠️ Tandingan "Tandai Menang" SUDAH DICABUT 8 Sep 2026 (blueprint §6: arah maju
+  // digerakkan dokumen). WON kini hanya lahir dari trigger set_inquiry_won_on_so
+  // saat Sales Order berstatus SENT. RPC mark_inquiry_won sengaja DIBIARKAN HIDUP
+  // di DB — nol pemanggil dari FE, pencabutannya milik batch berikutnya.
   async function markInquiryLost(values) {
     if (!inquiry?.id) return;
     const prevStatus = inquiry.status || 'OPEN';
@@ -1029,63 +935,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
-  // ── Simpan nilai estimasi deal. Pola tulis SAMA dengan reassignOwner /
-  // startNegotiation: .select('id') + guard baris nol, supaya penyaringan RLS
-  // tak lolos sebagai sukses palsu (TD-161).
-  async function saveEstimatedValue() {
-    if (!inquiry?.id) return;
-    // Kosong → NULL, BUKAN 0 — `inquiries.estimated_value` sengaja nullable
-    // tanpa default supaya "belum diisi" bisa dibedakan dari "nol" (migrasi
-    // 20260722000007). Menulis 0 akan membuat deal tanpa taksiran ikut
-    // dihitung sebagai deal bernilai nol di total pipeline Dashboard.
-    const next = valueDraft === '' ? null : Number(valueDraft);
-    if (next !== null && !Number.isFinite(next)) {
-      showToast?.('Invalid value.', 'error');
-      return;
-    }
-    const prev = inquiry.estimated_value == null ? null : Number(inquiry.estimated_value);
-    if (next === prev) { setValueOpen(false); return; }
-
-    setValueSaving(true);
-    const { data, error } = await supabase
-      .from('inquiries')
-      .update({ estimated_value: next })
-      .eq('id', inquiry.id)
-      .select('id');
-    setValueSaving(false);
-    if (error) { showToast?.('Failed to save value: ' + error.message, 'error'); return; }
-    if (!data || data.length === 0) {
-      showToast?.('Failed to save value: you do not have permission to modify this deal.', 'error');
-      return;
-    }
-    logAudit(supabase, {
-      action: ACTION_TYPES.UPDATE_INQUIRY,
-      entityType: ENTITY_TYPES.INQUIRY,
-      entityId: inquiry.id,
-      entityLabel: inquiry.inquiry_no,
-      notes: `Estimated value: ${prev === null ? '(empty)' : fmtRp(prev)} → ${next === null ? '(empty)' : fmtRp(next)}`,
-    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-    setValueOpen(false);
-    showToast?.('Estimated value updated.', 'success');
-    refetch();
-  }
-
-  // ── Tandai INQUIRY menang secara manual. RPC mark_inquiry_won menegakkan izin
-  // sebenarnya (creator inquiry atau super_admin) + guard idempotency (sudah WON
-  // → ditolak) — gate `canMarkWon` di atas murni UX, bukan pengganti validasi RPC.
-  // Trigger set_customer_on_inquiry_won yang sudah ada mengurus accounts.lifecycle_stage
-  // + became_customer_at otomatis; RPC itu sendiri yang sekalian set
-  // accounts.pipeline_stage='WON'. Pesan error ditampilkan apa adanya dari RPC.
-  async function markInquiryWon() {
-    if (!inquiry?.id) return;
-    setWonSaving(true);
-    const { error } = await supabase.rpc('mark_inquiry_won', { p_inquiry_id: inquiry.id });
-    setWonSaving(false);
-    if (error) { showToast?.(error.message, 'error'); return; }
-    showToast?.('Deal marked as Won. The linked account is now a customer.', 'success');
-    refetch();
-  }
-
   // ── Batch 3C — pilih/ganti penawaran vendor terpilih (prf.selected_offer_id).
   // RPC prf_select_offer boleh dipanggil berulang untuk MENGGANTI pilihan (tidak
   // ada guard yang melarangnya) — konfirmasi di sini murni UX, bukan penegak izin. ──
@@ -1162,42 +1011,23 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         breadcrumb={<Breadcrumb onBack={onBack} />}
         title={<DealTitle name={account?.name} accountId={account?.id} onViewCustomer={onViewCustomer} />}
         docNo={inquiry.inquiry_no}
-        /* Slot `actions` diisi HANYA aksi yang menulis ke `accounts` — Deal Value,
-           Edit Deal, Move Stage. Tempatnya memang di sini: judul dokumen di slot
-           `title` adalah nama AKUN, jadi ketiganya sebaris dengan subjek yang
-           mereka ubah. Aksi yang menulis ke `inquiries` hidup di baris terpisah
-           di bawah StatusBar (lihat `children`) — pemisahan per tabel yang
-           ditulis, bukan per bentuk tombol. DealHeaderControls dipakai APA ADANYA
-           dari DealPanels; yang berpindah cuma tempat pemanggilannya. */
-        actions={(
-          <DealHeaderControls
-            value={estValue}
-            stageKey={account?.pipeline_stage || 'NEW'}
-            onEdit={() => setEditOpen(true)}
-            onPickStage={pickStage}
-          />
-        )}
-        /* Baris aksi INQUIRY — tujuh tombol yang menulis ke `inquiries`, dipisahkan
-           dari trio `accounts` di slot `actions`. Ditaruh di slot `toolbar` (selebar
-           dokumen) dan BUKAN di `children`: diukur di browser, baris ini butuh 986px
-           sementara kolom kiri cuma ~766px — di `children` ia pecah dua baris di
-           lebar layar mana pun. Blok destruktif (Mark as Lost + Cancel Deal) didorong
-           ke kanan lewat `marginLeft:auto`. */
-        toolbar={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canNegotiate || canReassignOwner || canEditValue) && (
+        /* Slot `actions` SENGAJA KOSONG sejak 8 Sep 2026. Isinya dulu
+           DealHeaderControls (angka DEAL VALUE + Edit Deal + Move Stage) — ketiganya
+           menulis ke `accounts`, dan ketiganya dicabut: perpindahan status kini
+           digerakkan DOKUMEN (blueprint §6), sehingga Move Stage & Edit Deal
+           kehilangan alasan keberadaannya. Komponennya TETAP HIDUP di DealPanels —
+           CustomerDetailPage masih memakainya; yang berhenti cuma pemanggilan dari
+           halaman ini.
+           Baris aksi INQUIRY — kini LIMA tombol — tetap di slot `toolbar` (selebar
+           dokumen) dan BUKAN di `children`: diukur di browser, baris ini butuh
+           ~986px saat masih tujuh tombol sementara kolom kiri cuma ~766px. Blok
+           destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
+           `marginLeft:auto`. */
+        toolbar={(onEditInquiry || canMarkLost || canCancel || canNegotiate || canReassignOwner) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {onEditInquiry && (
             <button onClick={onEditInquiry} style={ACT_BTN}>
               <Pencil size={14} />Edit Inquiry
-            </button>
-          )}
-          {canEditValue && (
-            <button
-              onClick={() => {
-                setValueDraft(inquiry.estimated_value == null ? '' : String(inquiry.estimated_value));
-                setValueOpen((v) => !v);
-              }}
-              style={{ ...ACT_BTN, background: valueOpen ? C.navySoft : '#fff' }}>
-              <Wallet size={14} />{inquiry.estimated_value == null ? 'Set Value' : 'Edit Value'}
             </button>
           )}
           {canReassignOwner && (
@@ -1205,12 +1035,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
               style={{ ...ACT_BTN, background: ownerOpen ? C.navySoft : '#fff' }}>
               <UserCog size={14} />Change Owner
-            </button>
-          )}
-          {canMarkWon && (
-            <button onClick={() => setWonOpen(true)} disabled={wonSaving}
-              style={{ ...ACT_BTN, border: `1px solid ${C.greenBd}`, color: C.green, cursor: wonSaving ? 'not-allowed' : 'pointer', opacity: wonSaving ? 0.6 : 1 }}>
-              <CheckCircle2 size={14} />{wonSaving ? 'Processing…' : 'Mark as Won'}
             </button>
           )}
           {canNegotiate && (
@@ -1244,19 +1068,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
             closeDate={account?.estimated_closing_date}
           />
         )}
-        /* Sumbu deal yang SAH = `inquiries.status`, bukan `accounts.pipeline_stage`
-           (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
+        /* Sumbu deal yang SAH = `inquiries.status`, bukan sumbu stage lama di
+           `accounts` (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
            oleh deal LOST/CANCELLED sengaja TIDAK ditebak: riwayatnya cuma ada di
            `inquiry_status_history` yang masih staging-only (TD-225), dan menyimpulkannya
            dari keberadaan quotation adalah jawaban separuh — keempat segmennya
            dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
            WON menutup dengan `done` sehingga keempatnya tercentang. */
         status={(
-          <StatusBar
-            stages={DEAL_STAGE_SEGMENTS}
-            current={dealStatus}
-            closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
-          />
+          <>
+            <StatusBar
+              stages={DEAL_STAGE_SEGMENTS}
+              current={dealStatus}
+              closed={DEAL_CLOSED_STATUS.includes(dealStatus) ? { stage: dealStatus, label: dealStatus } : null}
+            />
+            <NextStepHint status={dealStatus} />
+          </>
         )}
         aside={(
           <InquiryChatter
@@ -1277,42 +1104,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         title="Deal Detail"
         icon={<FileText size={17} />}
       >
-        {/* Panel nilai estimasi — bentuknya sengaja kembar dengan panel Ganti
-            Pemilik di bawahnya: satu dropdown/input, tombol Simpan + Batal. */}
-        {canEditValue && valueOpen && (
-          <div style={{ marginBottom: 16, padding: 14, borderRadius: 11, border: `1px solid ${C.border}`, background: C.navySoft }}>
-            <div style={{ fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
-              Deal Estimated Value
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ position: 'relative', flex: '1 1 220px' }}>
-                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.textMute }}>Rp</span>
-                <input
-                  value={valueDraft}
-                  onChange={(e) => setValueDraft(e.target.value.replace(/[^\d.]/g, ''))}
-                  placeholder="0"
-                  style={{ width: '100%', height: 34, padding: '0 10px 0 36px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, color: C.text }}
-                />
-              </div>
-              <button
-                onClick={saveEstimatedValue}
-                disabled={valueSaving}
-                style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.navy}`, background: C.navy, color: '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: valueSaving ? 'not-allowed' : 'pointer', opacity: valueSaving ? 0.6 : 1 }}>
-                {valueSaving ? 'Saving…' : 'Save'}
-              </button>
-              <button
-                onClick={() => setValueOpen(false)}
-                style={{ height: 34, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', color: C.textMute, fontFamily: HEAD, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-                Cancel
-              </button>
-            </div>
-            <div style={{ marginTop: 8, fontFamily: BODY, fontSize: 11.5, color: C.textMute, lineHeight: 1.5 }}>
-              {valueDraft !== '' ? <b>{fmtRp(Number(valueDraft))}</b> : 'Left empty = no estimate yet (not zero).'}
-              {' '}This figure feeds the pipeline value widget on the Dashboard.
-            </div>
-          </div>
-        )}
-
         {/* Panel ganti pemilik — inline, muncul tepat di bawah tombolnya. Aksi
             ini cuma satu dropdown, jadi modal penuh (pola Tandai Kalah/Batalkan)
             terlalu berat untuknya. */}
@@ -1555,27 +1346,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       />
       </div>
       </FormSheet>
-
-      <EditDealModal
-        open={editOpen}
-        initial={{ stage: stageIdx, assignedId: account?.assigned_profile || '', value: estValue, closeDate: account?.estimated_closing_date || '' }}
-        assignees={assignees}
-        onClose={() => setEditOpen(false)}
-        onSave={saveEdit}
-      />
-
-      {/* Gate BANT — konfirmasi lunak saat menaikkan stage ke QUALIFIED */}
-      <ConfirmModal
-        open={stageGate.open}
-        variant="warning"
-        title="Suboptimal BANT Score"
-        message={stageGate.message}
-        confirmLabel="Yes, Continue"
-        cancelLabel="Cancel"
-        onConfirm={() => { stageGate.onYes?.(); setStageGate({ open: false, message: '', onYes: null }); }}
-        onCancel={() => setStageGate({ open: false, message: '', onYes: null })}
-      />
-
       {/* Ganti penawaran vendor terpilih — konfirmasi HANYA saat mengganti pilihan lama */}
       <ConfirmModal
         open={offerSwitchConfirm.open}
@@ -1616,7 +1386,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
       />
 
       {/* Mulai Negosiasi — konfirmasi polos, nol form. Ditutup SEGERA saat
-          konfirmasi supaya tombol "Ya" tak bisa diklik dobel (pola sama wonOpen). */}
+          konfirmasi supaya tombol "Ya" tak bisa diklik dobel (pola sama
+          offerSwitchConfirm). ⚠️ Tombol ini SENGAJA DITAHAN saat "Tandai Menang"
+          dicabut 8 Sep 2026: trigger versi-v2 quotation → NEGOTIATION BELUM ADA di
+          DB, jadi mencabutnya sekarang akan mematikan satu lajur Pipeline demi
+          rancangan yang belum dibangun. Dicabut bersamaan dgn pembuatan trigger itu. */}
       <ConfirmModal
         open={negoOpen}
         variant="info"
@@ -1626,20 +1400,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         cancelLabel="Cancel"
         onConfirm={() => { setNegoOpen(false); startNegotiation(); }}
         onCancel={() => setNegoOpen(false)}
-      />
-
-      {/* Tandai inquiry MENANG — konfirmasi polos (nol form alasan), RPC yang
-          menegakkan izin. Modal ditutup SEGERA saat konfirmasi (pola sama
-          offerSwitchConfirm di atas) supaya tombol "Ya" tak bisa diklik dobel. */}
-      <ConfirmModal
-        open={wonOpen}
-        variant="info"
-        title="Mark as Won"
-        message="Mark this deal as Won? The linked account will automatically become a customer."
-        confirmLabel="Yes, Mark as Won"
-        cancelLabel="Cancel"
-        onConfirm={() => { setWonOpen(false); markInquiryWon(); }}
-        onCancel={() => setWonOpen(false)}
       />
     </div>
   );
