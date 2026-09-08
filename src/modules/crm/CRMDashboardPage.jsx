@@ -128,10 +128,15 @@ const LIFECYCLE_LABELS = {
 };
 
 /* ─── Rentang periode ──────────────────────────────────────────────────────
-   Satu sumber untuk SELURUH widget tim. Bucket trend adaptif supaya bentuk
-   grafiknya tetap masuk akal di ketiga periode: bulan = 4 minggu, kuartal =
-   3 bulan, tahun = 12 bulan. `prev*` = periode setara sebelumnya, dipakai
-   sebagai garis pembanding.
+   Satu sumber untuk lima widget yang mengikuti selektor: Total Inquiry, Total
+   Quotation, Win Rate, Loss Reason, Sales Performance.
+   ⚠️ Pipeline Trend TIDAK LAGI memakai rentang ini sejak 9 Sep 2026 — ia punya
+   jendela tetap 12 bulan berjalan (`trendStart`/`trendBuckets` di fetchDash).
+   Akibatnya `buckets`, `prevStart`, `prevEnd`, `curLabel`, `prevLabel` di bawah
+   kini NOL PEMBACA. Sengaja DIBIARKAN, bukan terlewat: kelimanya dibutuhkan
+   lagi begitu garis pembanding dihidupkan (butuh data tahun kedua), dan
+   mencabutnya sekarang berarti menulis ulang tiga cabang return untuk sesuatu
+   yang nol biayanya.
    ⚠️ KPI personal sales (Call/Visit Minggu Ini, Quotation Bulan Ini) SENGAJA
    TIDAK memakai rentang ini — lihat catatan di fetchDash. */
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -522,7 +527,7 @@ function KpiCard({ data }) {
 }
 
 /* ---------- pipeline prospect trend (recharts area — count per week) ---------- */
-function AreaTip({ active, payload, label, curLabel = 'This Month', prevLabel = 'Last Month' }) {
+function AreaTip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   const get = (k) => { const p = payload.find((x) => x.dataKey === k); return p ? p.value : 0; };
   return (
@@ -531,22 +536,19 @@ function AreaTip({ active, payload, label, curLabel = 'This Month', prevLabel = 
       <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 8, height: 8, borderRadius: 2, background: NAVY, flex: "0 0 8px" }} />
-          {curLabel} · <b style={{ color: "#fff", fontWeight: 700 }}>{get("current")} deal</b>
-        </div>
-        <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#CBD5E1", flex: "0 0 8px" }} />
-          {prevLabel} · <b style={{ color: "#fff", fontWeight: 700 }}>{get("previous")} deal</b>
+          <b style={{ color: "#fff", fontWeight: 700 }}>{get("current")} deal</b>
         </div>
       </div>
     </div>
   );
 }
 
-/* Sumbu = DEAL yang dibuat per bucket (inquiries.created_at), bukan akun baru.
-   Kartunya bernama "Pipeline Trend" dan pipeline diisi deal; sebelumnya judul
-   dan datanya berselisih. Field `current`/`previous` sengaja netral supaya
-   tetap benar di ketiga mode periode (minggu/bulan). */
-function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last Month', bucketNoun = 'week' }) {
+/* Sumbu = DEAL yang dibuat per BULAN (inquiries.created_at), bukan akun baru.
+   Kartunya bernama "Pipeline Trend" dan pipeline diisi deal.
+   ⚠️ Jendelanya TETAP 12 bulan dan SENGAJA tidak mengikuti selektor periode
+   global — lihat query [14] di fetchDash untuk alasannya. Karena itu komponen
+   ini tak lagi menerima prop label/bucket apa pun: tak ada yang bisa berubah. */
+function PipelineTrend({ data = [] }) {
   const [areaRef, areaW] = useWidth();
   const isEmpty = data.length === 0;
   return (
@@ -555,7 +557,7 @@ function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last M
         <div style={D.cardIco}><Icon name="trendup" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Pipeline Trend</div>
-          <div style={D.cardSub}>{`New deals per ${bucketNoun}, ${curLabel.toLowerCase()} vs ${prevLabel.toLowerCase()}`}</div>
+          <div style={D.cardSub}>New deals per month, last 12 months</div>
         </div>
       </div>
       <div style={{ padding: "16px 16px 4px" }}>
@@ -569,15 +571,12 @@ function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last M
                 {/* Gradasi 4-stop ungu→pink→biru DIHAPUS: warnanya lepas dari
                     brand, dan karena arahnya horizontal, nilai yang sama
                     terbaca beda warna tergantung posisi X — dekoratif tanpa
-                    makna data. Diganti navy solid; pembanding tetap abu
-                    putus-putus. Isian area tetap ada tapi turunan navy. */}
+                    makna data. Diganti navy solid; isian area turunan navy.
+                    Gradasi pembanding (`areaLalu`) ikut dibuang 9 Sep 2026
+                    bersama garis pembandingnya. */}
                 <linearGradient id="areaIni" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor={NAVY} stopOpacity={0.16} />
                   <stop offset="100%" stopColor={NAVY} stopOpacity={0.02} />
-                </linearGradient>
-                <linearGradient id="areaLalu" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#CBD5E1" stopOpacity={0.08} />
-                  <stop offset="100%" stopColor="#CBD5E1" stopOpacity={0.01} />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} stroke="#F1F2F5" />
@@ -585,25 +584,13 @@ function PipelineTrend({ data = [], curLabel = 'This Month', prevLabel = 'Last M
                 tick={{ fontSize: 11.5, fill: "#5A6270", fontWeight: 600 }} />
               <YAxis axisLine={false} tickLine={false} width={30} allowDecimals={false}
                 tick={{ fontSize: 11, fill: "#6B7280" }} />
-              <Tooltip content={<AreaTip curLabel={curLabel} prevLabel={prevLabel} />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
-              <Area type="monotone" dataKey="previous" stroke="#CBD5E1" strokeWidth={2} strokeDasharray="6 5"
-                fill="url(#areaLalu)" dot={{ r: 3, fill: "#CBD5E1", strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+              <Tooltip content={<AreaTip />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
               <Area type="monotone" dataKey="current" stroke={NAVY} strokeWidth={2.5}
                 fill="url(#areaIni)" dot={{ r: 3, fill: NAVY, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
             </AreaChart>
           )}
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "center", gap: 24, padding: "8px 0 14px" }}>
-          <span style={D.legItem}>
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: NAVY, flex: "0 0 11px" }} />
-            {curLabel}
-          </span>
-          <span style={D.legItem}>
-            <span style={{ width: 14, height: 0, borderTop: "2.5px dashed #CBD5E1", flex: "0 0 14px" }} />
-            {prevLabel}
-          </span>
-        </div>
       </div>
     </div>
   );
@@ -867,6 +854,14 @@ function MqlToSqlPie({ data }) {
   const pending   = data?.pending   ?? 0;
   const lost      = data?.lost      ?? 0;
   const pct       = data?.pct ?? null;
+  /* TIGA keadaan, bukan dua. Selain "kohort kosong" (isEmpty), ada keadaan
+     ketiga: kohortnya ADA tapi seluruh barisnya berasal dari backfill 7 Sep 2026
+     (`from_stage` NULL), jadi nol transisi nyata pernah terekam. Menampilkan
+     persentase di keadaan itu terbaca sebagai "sekian persen gagal naik" —
+     padahal yang benar adalah belum ada yang bisa diukur. Diukur di produksi
+     9 Sep 2026: kohort 166 akun, converted 0 → tanpa penjagaan ini kartunya
+     memberi tahu CEO "0%". */
+  const notEnoughHistory = !data?.hasRealTransition;
   const slices = [
     { name: 'Reached SQL', value: converted, color: MQL_COLOR.converted },
     // "Not yet" sengaja track terang ber-border, bukan warna penuh: ia ruang
@@ -886,6 +881,15 @@ function MqlToSqlPie({ data }) {
       {isEmpty ? (
         <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
           No account has been recorded reaching MQL yet
+        </div>
+      ) : notEnoughHistory ? (
+        <div style={{ padding: "28px 18px", textAlign: "center", color: "#6B7280", fontSize: 13, lineHeight: 1.6 }}>
+          Not enough history to measure conversion yet
+          <div style={{ marginTop: 6, fontSize: 12, color: "#9CA3AF" }}>
+            {converted + pending + lost} account(s) are on the MQL cohort, but every record comes from the
+            initial backfill. Lifecycle history only started being recorded on 7 September 2026 — a
+            percentage will appear once real stage transitions accumulate.
+          </div>
         </div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
@@ -2362,6 +2366,20 @@ function CRMDashboardPage() {
       const todayStr       = localDate(now);
       const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const startNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      /* Jendela Pipeline Trend — 12 bulan BERJALAN yang berakhir di bulan ini
+         (bukan tahun kalender), sengaja TERPISAH dari `P` supaya grafiknya tak
+         ikut berubah saat selektor periode global digeser. */
+      const TREND_MONTHS = 12;
+      const trendStart   = new Date(now.getFullYear(), now.getMonth() - (TREND_MONTHS - 1), 1);
+      const trendEnd     = startNextMonth;
+      const trendBuckets = Array.from({ length: TREND_MONTHS }, (_, i) => {
+        const bs = new Date(now.getFullYear(), now.getMonth() - (TREND_MONTHS - 1) + i, 1);
+        return {
+          name:  `${MONTH_SHORT[bs.getMonth()]} ${String(bs.getFullYear()).slice(2)}`,
+          start: bs,
+          end:   new Date(bs.getFullYear(), bs.getMonth() + 1, 1),
+        };
+      });
 
       /* Bulan-bulan yang dicakup periode aktif — dipakai query target sales.
          `sales_targets` tersimpan per (tahun, bulan), jadi untuk kuartal/tahun
@@ -2393,7 +2411,7 @@ function CRMDashboardPage() {
 
       const res = await Promise.all([
         // [0] accounts periode aktif — kini HANYA sumber donut Lead Source.
-        //     Grafik trend sudah pindah ke sumbu deal (lihat [15] dan [1]).
+        //     Grafik trend sudah pindah ke sumbu deal (lihat [14]).
         ownAccounts(byCompany(supabase
           .from('accounts')
           .select('id, created_at, source'))
@@ -2403,21 +2421,7 @@ function CRMDashboardPage() {
           .lt('created_at', P.end.toISOString())
           .limit(1000)),
 
-        /* [1] Deal periode SEBELUMNYA — garis pembanding Pipeline Trend.
-               Slot ini dulu menarik `accounts`; sesudah sumbu trend pindah ke
-               deal, query akun periode-sebelumnya tak punya pembaca lagi, jadi
-               slotnya DIPAKAI ULANG alih-alih menambah query ke-17 dan
-               meninggalkan fetch 1000 baris yang tak dipakai siapa pun.
-               Filter & alasan "tanpa status" sama dengan [15]. */
-        ownInquiries(byCompany(supabase
-          .from('inquiries')
-          .select('id, created_at'))
-          .is('deleted_at', null)
-          .gte('created_at', P.prevStart.toISOString())
-          .lt('created_at', P.prevEnd.toISOString())
-          .limit(1000)),
-
-        // [2] "Prospect Aktif" — server count, TANPA batas periode: ini keadaan
+        // [1] "Prospect Aktif" — server count, TANPA batas periode: ini keadaan
         //     saat ini, bukan kejadian dalam rentang waktu. Filter lama
         //     `pipeline_stage NOT IN (WON,LOST)` DILEPAS — whitelist
         //     lifecycle_stage di bawah sudah mengecualikan customer/lost/
@@ -2430,7 +2434,7 @@ function CRMDashboardPage() {
           .eq('is_in_lead_pool', false)
           .is('deleted_at', null)),
 
-        // [3] Inquiry lajur TERBUKA — tanpa batas periode, persis seperti papan
+        // [2] Inquiry lajur TERBUKA — tanpa batas periode, persis seperti papan
         //     Pipeline: deal terbuka tak punya tanggal tutup untuk disaring.
         // Kolom tambahan (inquiry_no, owner_id, company_id, nama akun) dipakai
         // widget Aging Per Tahap & Daftar Deal Stale. Embed dua FK akun ini
@@ -2445,7 +2449,7 @@ function CRMDashboardPage() {
           .is('deleted_at', null)
           .limit(1000)),
 
-        // [4] Inquiry lajur TERTUTUP di periode aktif — sumber Win Rate,
+        // [3] Inquiry lajur TERTUTUP di periode aktif — sumber Win Rate,
         //     hitungan CANCELLED, dan Sales Performance.
         ownInquiries(byCompany(supabase
           .from('inquiries')
@@ -2456,7 +2460,7 @@ function CRMDashboardPage() {
           .lt('closed_at', P.end.toISOString())
           .limit(1000)),
 
-        // [5] Total Inquiry periode aktif
+        // [4] Total Inquiry periode aktif
         ownInquiries(byCompany(supabase
           .from('inquiries')
           .select('id', { count: 'exact', head: true }))
@@ -2464,7 +2468,7 @@ function CRMDashboardPage() {
           .gte('created_at', P.start.toISOString())
           .lt('created_at', P.end.toISOString())),
 
-        // [6] Total Quotation periode aktif — `deleted_at` disamakan dengan
+        // [5] Total Quotation periode aktif — `deleted_at` disamakan dengan
         //     query inquiries; tanpa ini quotation yang sudah dibuang ikut
         //     terhitung.
         ownByCreator(byCompany(supabase
@@ -2474,7 +2478,7 @@ function CRMDashboardPage() {
           .gte('created_at', P.start.toISOString())
           .lt('created_at', P.end.toISOString())),
 
-        // [7] KPI personal — call minggu ini
+        // [6] KPI personal — call minggu ini
         ownBySales(byCompany(supabase
           .from('activities')
           .select('id, scheduled_for, assigned_to'))
@@ -2484,7 +2488,7 @@ function CRMDashboardPage() {
           .lte('scheduled_for', todayStr)
           .limit(1000)),
 
-        // [8] KPI personal — visit minggu ini
+        // [7] KPI personal — visit minggu ini
         ownBySales(byCompany(supabase
           .from('activities')
           .select('id, scheduled_for, assigned_to'))
@@ -2494,7 +2498,7 @@ function CRMDashboardPage() {
           .lte('scheduled_for', todayStr)
           .limit(1000)),
 
-        // [9] KPI personal — quotation bulan ini
+        // [8] KPI personal — quotation bulan ini
         ownByCreator(byCompany(supabase
           .from('quotations')
           .select('id, created_at, created_by'))
@@ -2503,7 +2507,7 @@ function CRMDashboardPage() {
           .lt('created_at', startNextMonth.toISOString())
           .limit(1000)),
 
-        // [10] "SQL Baru Bulan Ini" — dari riwayat lifecycle, BUKAN lagi tebakan
+        // [9] "SQL Baru Bulan Ini" — dari riwayat lifecycle, BUKAN lagi tebakan
         //      dari pipeline_stage. Ini menjawab "berapa yang BARU jadi SQL
         //      bulan ini", bukan "berapa yang kebetulan sekarang di tahap
         //      lanjut". Tanpa filter company_id: tabelnya tak punya kolom itu —
@@ -2516,7 +2520,7 @@ function CRMDashboardPage() {
           .gte('changed_at', startThisMonth.toISOString())
           .lt('changed_at', startNextMonth.toISOString()),
 
-        // [11] Distribusi lifecycle akun — SNAPSHOT keadaan sekarang, sengaja
+        // [10] Distribusi lifecycle akun — SNAPSHOT keadaan sekarang, sengaja
         //      TANPA filter periode: pertanyaannya "sekarang akun-akun itu ada
         //      di tahap mana", bukan "berapa yang masuk tahap X bulan ini".
         //      Menyaringnya per periode akan mengubah maknanya jadi cohort dan
@@ -2530,7 +2534,7 @@ function CRMDashboardPage() {
           .is('deleted_at', null)
           .limit(1000)),
 
-        // [12] Master alasan kalah — untuk memberi NAMA pada loss_reason_id.
+        // [11] Master alasan kalah — untuk memberi NAMA pada loss_reason_id.
         //      ⚠️ TANPA filter company_id: `loss_reasons` GLOBAL (company_id
         //      selalu NULL), memfilternya mengembalikan NOL BARIS tanpa error
         //      (gotcha #18) dan seluruh breakdown akan jatuh ke "Tanpa Alasan".
@@ -2540,7 +2544,7 @@ function CRMDashboardPage() {
           .is('deleted_at', null)
           .limit(1000),
 
-        // [13] Ambang aging dari master SLA. PER-ENTITAS, jadi ikut byCompany:
+        // [12] Ambang aging dari master SLA. PER-ENTITAS, jadi ikut byCompany:
         //      super_admin lintas entitas dapat semuanya dan dipetakan
         //      per (company_id, status); role lain terkunci ke entitasnya.
         byCompany(supabase
@@ -2551,7 +2555,7 @@ function CRMDashboardPage() {
           .is('deleted_at', null)
           .limit(1000),
 
-        /* [14] Target sales untuk periode aktif.
+        /* [13] Target sales untuk periode aktif.
            Filter (tahun, bulan) bisa sesederhana ini karena KETIGA mode periode
            selalu berada di dalam satu tahun kalender — This Month/Quarter/Year
            semuanya dibatasi Jan–Des tahun berjalan, jadi tak perlu penanganan
@@ -2567,23 +2571,30 @@ function CRMDashboardPage() {
           .is('deleted_at', null)
           .limit(1000),
 
-        /* [15] Deal yang DIBUAT di periode aktif — sumber grafik Pipeline
-           Trend. Pembandingnya ada di slot [1].
+        /* [14] Deal yang DIBUAT dalam 12 BULAN TERAKHIR — sumber grafik Pipeline
+           Trend.
+           ⚠️ SENGAJA LEPAS dari selektor periode global (keputusan Den 9 Sep 2026).
+           Mengikuti selektor membuat default "This Month" menghasilkan 4 titik
+           mingguan, dan dengan volume deal sekarang garisnya nyaris datar di nol —
+           grafik yang benar secara teknis tapi tak bermakna dibaca. Jendelanya
+           kini TETAP: 12 bulan berjalan, granularitas bulanan. Lima widget lain
+           (Total Inquiry, Total Quotation, Win Rate, Loss Reason, Sales
+           Performance) TETAP mengikuti selektor — jangan ikut dilepas.
            Sumbunya sengaja DEAL (inquiries), bukan akun: kartunya bernama
            "Pipeline Trend" dan pipeline diisi deal, bukan pendaftaran akun.
-           Query accounts [0]/[1] TETAP ADA karena donut Lead Source masih
+           Query accounts [0] TETAP ADA karena donut Lead Source masih
            membutuhkannya.
            ⚠️ TANPA filter status — DISENGAJA. Kalau disaring ke status terbuka,
-           deal yang dibuat minggu ke-1 lalu menang di minggu ke-3 akan HILANG
-           dari batang minggu ke-1, sehingga bentuk grafik masa lalu berubah
+           deal yang dibuat bulan ke-1 lalu menang di bulan ke-3 akan HILANG
+           dari titik bulan ke-1, sehingga bentuk grafik masa lalu berubah
            tiap kali ada deal closing. Menghitung semua deal yang dibuat
-           (termasuk CANCELLED) membuat batang historis stabil. Keputusan Den. */
+           (termasuk CANCELLED) membuat titik historis stabil. Keputusan Den. */
         ownInquiries(byCompany(supabase
           .from('inquiries')
           .select('id, created_at'))
           .is('deleted_at', null)
-          .gte('created_at', P.start.toISOString())
-          .lt('created_at', P.end.toISOString())
+          .gte('created_at', trendStart.toISOString())
+          .lt('created_at', trendEnd.toISOString())
           .limit(1000)),
 
       ]);
@@ -2594,9 +2605,9 @@ function CRMDashboardPage() {
          melempar; sisanya dikumpulkan dan dilaporkan lewat banner. */
       const ESSENTIAL = [
         ['prospect', res[0]],
-        ['active prospects', res[2]],
-        ['pipeline terbuka', res[3]],
-        ['deal tertutup', res[4]],
+        ['active prospects', res[1]],
+        ['pipeline terbuka', res[2]],
+        ['deal tertutup', res[3]],
       ];
       for (const [label, r] of ESSENTIAL) {
         if (r?.error) throw new Error(`${label} — ${r.error.message}`);
@@ -2604,35 +2615,34 @@ function CRMDashboardPage() {
 
       const failed = [
         ['previous-period trend', res[1]],
-        ['total inquiry', res[5]],
-        ['total quotation', res[6]],
-        ['calls this week', res[7]],
-        ['visits this week', res[8]],
-        ['quotations this month', res[9]],
-        ['new SQL this month', res[10]],
-        ['account lifecycle funnel', res[11]],
-        ['loss reason master', res[12]],
-        ['ambang SLA aging', res[13]],
-        ['sales targets', res[14]],
-        ['pipeline trend', res[15]],
+        ['total inquiry', res[4]],
+        ['total quotation', res[5]],
+        ['calls this week', res[6]],
+        ['visits this week', res[7]],
+        ['quotations this month', res[8]],
+        ['new SQL this month', res[9]],
+        ['account lifecycle funnel', res[10]],
+        ['loss reason master', res[11]],
+        ['ambang SLA aging', res[12]],
+        ['sales targets', res[13]],
+        ['pipeline trend', res[14]],
       ].filter(([, r]) => r?.error).map(([label]) => label);
 
       const accountsRows        = res[0].data  || [];
-      const prevDealRows        = res[1].data  || [];
-      const activeProspects     = res[2].count ?? 0;
-      const openInq             = res[3].data  || [];
-      const closedInq           = res[4].data  || [];
-      const totalInquiries      = res[5].count ?? 0;
-      const totalQuotations     = res[6].count ?? 0;
-      const callsThisWeek       = (res[7].data || []).length;
-      const visitsThisWeek      = (res[8].data || []).length;
-      const quotationsThisMonth = (res[9].data || []).length;
-      const sqlThisMonth        = res[10].count ?? 0;
-      const lifecycleRows       = res[11].data || [];
-      const lossReasonRows      = res[12].data || [];
-      const slaRows             = res[13].data || [];
-      const targetRows          = res[14].data || [];
-      const dealRows            = res[15].data || [];
+      const activeProspects     = res[1].count ?? 0;
+      const openInq             = res[2].data  || [];
+      const closedInq           = res[3].data  || [];
+      const totalInquiries      = res[4].count ?? 0;
+      const totalQuotations     = res[5].count ?? 0;
+      const callsThisWeek       = (res[6].data || []).length;
+      const visitsThisWeek      = (res[7].data || []).length;
+      const quotationsThisMonth = (res[8].data || []).length;
+      const sqlThisMonth        = res[9].count ?? 0;
+      const lifecycleRows       = res[10].data || [];
+      const lossReasonRows      = res[11].data || [];
+      const slaRows             = res[12].data || [];
+      const targetRows          = res[13].data || [];
+      const dealRows            = res[14].data || [];
 
       // Cap 1000 baris pada distribusi lifecycle: kalau kena, corongnya
       // memang terpotong — dikabarkan lewat banner, bukan ditampilkan
@@ -2646,7 +2656,6 @@ function CRMDashboardPage() {
          terlihat utuh. */
       if (accountsRows.length === 1000) failed.push('lead source (truncated at 1000 rows)');
       if (dealRows.length === 1000)     failed.push('pipeline trend (truncated at 1000 rows)');
-      if (prevDealRows.length === 1000) failed.push('pipeline trend comparison period (truncated at 1000 rows)');
       if (openInq.length === 1000)      failed.push('pipeline by stage — open deals (truncated at 1000 rows)');
       if (closedInq.length === 1000)    failed.push('sales performance & win rate — closed deals (truncated at 1000 rows)');
 
@@ -2905,8 +2914,12 @@ function CRMDashboardPage() {
          dan menghitung kohort dari tahap sekarang akan melebih-lebihkannya.
 
          ⚠️ KETERBATASAN CAKUPAN (sama kelasnya dengan konversi status inquiry):
-         backfill 27 Agu 2026 hanya menulis SATU baris per akun (tahap saat itu,
-         from_stage NULL), bukan riwayat penuh. Akun yang melewati mql SEBELUM
+         backfill `20260908000001_accounts_lifecycle_dual_write` (LIVE di produksi
+         7 Sep 2026) hanya menulis SATU baris per akun — tahap SAAT ITU, dengan
+         `from_stage` NULL — bukan riwayat penuh.
+         ⚠️ Tanggal ini SEMPAT SALAH TERTULIS "27 Agu 2026", merujuk migrasi
+         `20260827000002_crm_v3_lifecycle` yang TIDAK PERNAH dijalankan dan
+         digantikan jalur B. Dikoreksi 9 Sep 2026. Akun yang melewati mql SEBELUM
          tanggal itu lalu sudah bergerak lagi tidak punya jejak mql sama sekali,
          jadi kohort ini UNDER-REPORT untuk data lama dan makin lengkap seiring
          waktu. Ditulis apa adanya di UI, bukan disembunyikan. */
@@ -2914,10 +2927,18 @@ function CRMDashboardPage() {
       lifecycleRows.forEach((a) => { if (a.id) lcById[a.id] = a.lifecycle_stage; });
       const accIds = Object.keys(lcById);
       let mqlSql = 0, mqlPending = 0, mqlLost = 0;
+      /* Penjagaan KEDUA, di samping `mqlBase === 0` di bawah. Baris backfill
+         semuanya ber-`from_stage` NULL; baris transisi NYATA selalu punya tahap
+         asal. Kalau SELURUH kohort ternyata baris backfill, persentase apa pun
+         yang ditampilkan terbaca sebagai "sekian persen gagal naik" — padahal
+         yang sebenarnya terjadi adalah RIWAYATNYA BELUM ADA. `from_stage`
+         diikutkan ke select khusus untuk membedakan keduanya: satu kolom, nol
+         beban query. */
+      let mqlHasRealTransition = false;
       if (accIds.length) {
         const { data: mqlRows, error: mqlErr } = await supabase
           .from('account_lifecycle_history')
-          .select('account_id')
+          .select('account_id, from_stage')
           .eq('to_stage', 'mql')
           .in('account_id', accIds)
           .limit(1000);
@@ -2926,6 +2947,7 @@ function CRMDashboardPage() {
         } else {
           const rows = mqlRows || [];
           if (rows.length === 1000) failed.push('MQL to SQL conversion (cohort truncated at 1000 rows)');
+          mqlHasRealTransition = rows.some((r) => r.from_stage !== null);
           const cohort = new Set(rows.map((r) => r.account_id));
           // Klasifikasi EKSHAUSTIF — tiap anggota kohort masuk salah satu dari
           // tiga ember, tak ada yang jatuh diam-diam ke luar hitungan.
@@ -2945,10 +2967,12 @@ function CRMDashboardPage() {
         // Basis nol → null, BUKAN 0%. Nol persen mengklaim "tak satu pun lolos";
         // yang sebenarnya terjadi adalah belum ada yang bisa diukur.
         pct: mqlBase > 0 ? Math.round((mqlSql / mqlBase) * 100) : null,
+        // Kohort ada tapi SELURUHNYA baris backfill → angka apa pun menyesatkan.
+        hasRealTransition: mqlHasRealTransition,
       };
 
       /* ── Funnel lifecycle akun ───────────────────────────────────────────
-         Snapshot distribusi akun, bukan cohort periode (lihat query [11]). */
+         Snapshot distribusi akun, bukan cohort periode (lihat query [10]). */
       const lcCounts = {};
       lifecycleRows.forEach((a) => {
         const s = a.lifecycle_stage || '(empty)';
@@ -3007,16 +3031,25 @@ function CRMDashboardPage() {
         .map(([source, count]) => ({ source, count }))
         .sort((a, b) => b.count - a.count);
 
-      // ── Pipeline Trend — bucket adaptif + pembanding periode setara ─────
-      //    Sumbernya DEAL (res[15] aktif, res[1] pembanding), bukan lagi akun.
+      /* ── Pipeline Trend — 12 bulan berjalan, SATU garis ────────────────────
+         Sumbernya DEAL (res[14]), bucket-nya `trendBuckets` — bukan `P.buckets`,
+         supaya grafik ini tidak ikut bergeser saat selektor periode global diubah.
+         Nilai tiap titik = jumlah deal yang DIBUAT di bulan itu (per bulan,
+         naik-turun), BUKAN kumulatif.
+         ⚠️ GARIS PEMBANDING SENGAJA DIBUANG 9 Sep 2026, bukan kelalaian.
+         Pembanding yang benar untuk rentang 12 bulan adalah 12 bulan sebelumnya
+         — dan data 2025 NOL, Nexus baru jalan Januari 2026. Garis putus-putus
+         yang selalu menempel di nol hanya menambah kebingungan tanpa menambah
+         informasi. Hidupkan lagi begitu ada data tahun kedua: kembalikan query
+         pembanding (dulu slot [1]) + field `previous` di sini + Area kedua,
+         legend, dan baris `previous` di AreaTip. */
       const inBucket = (rows, from, to) => rows.filter((r) => {
         const d = new Date(r.created_at);
         return d >= from && d < to;
       }).length;
-      const trendData = P.buckets.map((b) => ({
-        name:     b.name,
-        current:  inBucket(dealRows, b.start, b.end),
-        previous: inBucket(prevDealRows, b.prevStart, b.prevEnd),
+      const trendData = trendBuckets.map((b) => ({
+        name:    b.name,
+        current: inBucket(dealRows, b.start, b.end),
       }));
 
       /* ── Sales performance — per PEMILIK DEAL (inquiries.owner_id) ───────
@@ -3133,8 +3166,6 @@ function CRMDashboardPage() {
         agingRows, ageUnknown, staleRows, staleTotal, staleCap: STALE_CAP,
         loadRows, openDealTotal,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
-        curLabel: P.curLabel, prevLabel: P.prevLabel,
-        bucketNoun: period === 'This Month' ? 'week' : 'month',
       });
     } catch (err) {
       console.error('[CRMDashboardPage] fetch error:', err);
@@ -3649,11 +3680,7 @@ function CRMDashboardPage() {
           {dashLoading ? <SkeletonBelow isSalesOnly={isSalesOnly} /> : (<>
           {/* row 2 — pipeline trend */}
           <div style={{ marginBottom: 16 }}>
-            <PipelineTrend
-              data={dashData?.trendData || []}
-              curLabel={dashData?.curLabel} prevLabel={dashData?.prevLabel}
-              bucketNoun={dashData?.bucketNoun}
-            />
+            <PipelineTrend data={dashData?.trendData || []} />
           </div>
 
           {/* row 3 — charts */}

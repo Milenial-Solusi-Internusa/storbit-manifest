@@ -1071,10 +1071,15 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         /* Sumbu deal yang SAH = `inquiries.status`, bukan sumbu stage lama di
            `accounts` (yang dulu dirender DealStepper di sini). Tahap terakhir yang pernah dicapai
            oleh deal LOST/CANCELLED sengaja TIDAK ditebak: riwayatnya cuma ada di
-           `inquiry_status_history` yang masih staging-only (TD-225), dan menyimpulkannya
+           `inquiry_status_history`, dan menyimpulkannya
            dari keberadaan quotation adalah jawaban separuh — keempat segmennya
            dibiarkan "belum", penanda penutupan di kanan yang membawa maknanya.
-           WON menutup dengan `done` sehingga keempatnya tercentang. */
+           WON menutup dengan `done` sehingga keempatnya tercentang.
+           ⚠️ Komentar ini SEMPAT menyebut `inquiry_status_history` "staging-only
+           (TD-225)". Sudah TIDAK BERLAKU: tabel + trigger `trg_z_log_inquiry_status_change`
+           LIVE di produksi sejak 7 Sep 2026 (migrasi `20260828000001`). Dikoreksi
+           9 Sep 2026. Yang masih berlaku: isinya baru terisi sejak tanggal itu,
+           jadi deal lama tetap tak punya jejak transisi. */
         status={(
           <>
             <StatusBar
