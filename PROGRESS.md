@@ -126,6 +126,117 @@ itu tidak dipungut dari transkrip sebagai temuan.
 belum pernah diklik di aplikasi nyata, dan **cetak percobaan di kertas kop sungguhan belum
 dilakukan** — itu yang menentukan apakah 119,39/133,56 perlu dikalibrasi ulang.
 
+### Invoice cetak — lima penataan lanjutan setelah verifikasi produksi
+
+FE-only. **Nol perubahan DB, nol migrasi.** `create_invoice` dan `submit_invoice`
+**sengaja tidak dijamah** — `invoice_date`/`due_date` menunggu blueprint terpisah.
+
+**1. Label vertikal nomor invoice naik 80 pt, di KEDUA varian.** Label `INVOICE #…`
+absolut relatif terhadap `itemsRow` dengan `justifyContent:'center'` di jendela 310 pt,
+jadi jaraknya ke header tabel **tetap berapa pun jumlah barisnya**. Diukur: pada `top:0`
+ia mulai **228,91 pt** di bawah header DESCRIPTION — dan **identik di kedua varian**, jadi
+ini penyeragaman tampilan, bukan perbaikan bug; yang berbeda cuma bacaan mata karena
+varian download punya blok kop di atasnya. ⚠️ Digeser lewat `top`, **bukan** dengan
+mengecilkan `height` atau menukar `justifyContent` ke `flex-start`: `height:310` adalah
+jendela clip yang harus ≥ `sideLabel.width`, dan `flex-start` memotong separuh teks karena
+react-pdf me-rotate di sekitar titik tengah box. Menggeser `top` memindahkan jendela **dan**
+isinya, jadi margin clip 78 pt di dua sisi tetap utuh.
+
+**2. Alamat DC tujuan masuk ke Billed To.** Invoice sebelumnya cuma menampilkan nama
+customer + nama DC, tanpa alamat sama sekali — bukan kosong, kolomnya memang tak pernah
+diambil. ⚠️ **Sumbernya per-DC, bukan per-customer**, dan skemanya sudah mendukung:
+`sp_orders.dc_id → dc_master.alamat`, dengan `dc_master.customer_id` menjamin satu customer
+bisa punya banyak DC beralamat berbeda. **Nol perubahan skema.** Jalur ini **sama persis**
+dengan yang sudah dipakai Surat Jalan sejak `20260831000001` — invoice mengulangi kesalahan
+yang sudah diperbaiki di sana (`accounts.address` = alamat HQ, mayoritas NULL; audit 31 Agu
+atas 85 SJ: 67 NULL, 15 alamat HQ, **nol** beralamat DC). Alamat kosong → **baris
+dihilangkan**, mengikuti `PartyBlock` di `printKit.jsx`, bukan `Field` yang mencetak `—`.
+Penambahan ini **nol biaya halaman**: kolom Billed To lebih pendek dari Billed By dan tinggi
+`billRow` = max(keduanya), jadi alamatnya masuk ke dalam selisih itu.
+
+**3. Invoice Date / Due Date / SP No. dikembalikan ke varian cetak.** Ketiganya ikut tercabut
+bersama blok kop, padahal tanggal dan nomor SP berbeda tiap invoice sehingga kop tercetak
+mustahil memuatnya — invoice cetak sempat keluar **tanpa tanggal, tanpa jatuh tempo, tanpa
+nomor SP**, tak bisa dikirim ke customer. Tiga bentuk diukur sebelum memilih: label-di-atas-
+nilai di kolom kanan (tabel turun 69,39 pt), satu baris mendatar penuh (**pecah di n=5 untuk
+semua panjang alamat** — jadi opsi cadangan itu justru lebih buruk), dan bentuk inline yang
+akhirnya dipakai (turun 36,21 pt). Posisinya kemudian dipindah lagi ke kanan **atas** (butir 5).
+
+**4. Kuantitas tab Items jadi bilangan bulat.** `2.172,00` untuk barang satuan PCS rancu bagi
+pembaca Indonesia — bisa terbaca 2.172 atau 2,172. Diaudit dulu: **seluruh kolom kuantitas
+Storbit bertipe `integer`** (`sp_items`, `sp_order_items`, `sp_invoice_lines`,
+`delivery_note_items`, `picking_list_items`, `picking_list_materials`, `sp_btb`,
+`stock_ledger`), jadi `,00` murni formatting — integer tak bisa menyimpan pecahan, tak ada
+yang perlu dihitung. Disisir juga **semua** titik tampil: sepuluh permukaan lain sudah
+bilangan bulat, `SalesOrderDetailPage` satu-satunya yang menyimpang — memperbaikinya
+**menutup** selisih yang sudah ada, bukan menciptakannya. `num2()` diganti `qtyFmt()`;
+`DEC2`/`rp2` tidak disentuh (uang memang butuh dua desimal). ⚠️ Kolom yang memang dirancang
+pecahan **tidak boleh** memakai helper ini: `inquiries.weight_kg`/`volume_cbm`,
+`delivery_notes.total_weight`, `quotation_items.qty`, `hrga_request_items.quantity`,
+`asset_specifications.weight_kg`.
+
+**5. Meta dokumen: format baru + pindah ke kanan atas.**
+
+⭐ **BATAS ANDAL VARIAN CETAK SEKARANG n≤4, SERAGAM untuk semua panjang alamat DC** —
+menggantikan n≤6 / n≤5 / n≤4 / n≤3 yang bergantung panjang alamat. Varian download justru
+**naik** ke n≤6 (format meta baru memadatkan blok kop ±27 pt).
+
+**Dasar keputusannya, data produksi 9 Sep 2026:**
+
+| sebaran SP (522) | 1 produk | 2 | 3 | 4 | 5 | 6+ |
+|---|---|---|---|---|---|---|
+| jumlah | 380 | 69 | 29 | 18 | 13 | 13 |
+
+Kumulatif ≤4 produk = **496 dari 522**. *(Brief menyebut 93,8%; dari sebaran di atas
+angkanya 95,0% — selisih kecil, dicatat supaya tidak ada yang menghitung ulang lalu mengira
+dokumen ini salah.)* Sebaran alamat: **49 DC beralamat — 5 satu baris, 30 dua baris, 14 tiga
+baris**, rata-rata 84 karakter.
+
+Ditimbang dengan kedua sebaran itu: tata letak baru membuat **26 dari 522 SP** pecah ke
+halaman kedua, **turun dari 30**. Ia kalah di kasus yang jarang (alamat kosong praktis nihil;
+satu baris cuma 5 dari 49 DC), seri di kasus terbanyak, dan menang satu baris di kolom
+tiga-baris yang mencakup **28,6%** DC.
+
+⚠️ **ALASAN STRUKTURAL — baca sebelum memindahkan blok meta lagi.** Di **kanan bawah** (di
+dalam kolom Billed To) blok meta hanya membayar **selisih antar-kolom**: tinggi `billRow` =
+max(kiri, kanan), dan kolom kanan lebih pendek dari kiri, jadi sebagian tingginya gratis. Di
+**kanan atas** (baris tersendiri) ia membayar **tinggi penuh**, karena tak ada kolom lain
+yang menyerapnya. Itu sebabnya perpindahan ini menurunkan batas di kasus alamat pendek —
+dan sekaligus menaikkannya di kasus alamat panjang, karena meta tak lagi ikut terdorong oleh
+alamat yang membungkus.
+
+⚠️ **TITIK DUA SEJAJAR DICAPAI DENGAN TIGA KOLOM, BUKAN SPASI.** `metaKey` lebar **tetap
+68 pt** · `metaColon` **8 pt** · nilai mengisi sisanya. Menyambung `label + ':' + nilai` jadi
+satu string lalu meratakan dengan spasi **tidak bisa rata** di font proporsional seperti Lora
+— lebar spasi tak ada hubungannya dengan lebar huruf yang mendahuluinya, dan "Invoice Date" /
+"Due Date" / "SP No." panjangnya berbeda. Diverifikasi **dari koordinat x di PDF hasil
+render**, bukan dari kode: **x=114 di ketiga baris varian download, x=392 di ketiga baris
+varian cetak** — identik, bukan mendekati. Label tebal berwarna `PURPLE`, konstanta yang
+**sama** dengan `billLabel` ("Billed By"/"Billed To"); nilai tetap tidak tebal. Style mati
+`metaItem` dan `metaLabel` dibersihkan.
+
+**"PO No." → "SP No.", dan hanya di `InvoicePDF.jsx`.** Nilainya memang `sp_orders.sp_no`,
+jadi labelnya salah sejak awal. Disisir dulu: label itu cuma ada di **dua baris, keduanya di
+file ini**. Semua permukaan lain **sudah** memakai istilah SP — `PickingListPDF` &
+`DeliveryNotePDF` (`Ref. No. SP`), `StorbitReportPDF` & `StorbitDashboardPage` (`No SP`),
+`DeliveryNoteDetailPage` & `PickingListDetailPage` (`SP: <nomor>`). Jadi ini **bukan**
+penyeragaman lintas modul. ⚠️ **Sengaja TIDAK diubah** karena "PO" di sana dokumen yang
+**berbeda**: `AssetDetailPage`/`AssetDetailITPage` ("Nomor PO / Faktur" =
+`purchase_invoice_no`, PO pengadaan aset), `PenerimaanBarangPage` ("Nomor PO dari supplier" +
+`refType 'PO'`), `ApprovalWorkflowsPage`/`EntitySettingsPage` ("PO" sebagai tipe dokumen
+tersendiri, terdaftar berdampingan dengan "SP").
+
+⚠️ **Koreksi pengukuran yang layak dicatat:** pass pertama pengukuran label vertikal sempat
+melaporkan teks di **736,94 pt** (menabrak kaki kop). **Itu salah** — parser hanya
+menjumlahkan translasi-Y dan salah membaca matriks rotasi label. Dengan komposisi matriks
+penuh label ada di 499–640 pt. **Tidak pernah ada tabrakan.**
+
+⚠️ **NOL tes runtime di browser.** Seluruh verifikasi lewat render `@react-pdf/renderer` di
+Node + pembacaan content stream + rasterisasi untuk pemeriksaan mata. Batas kop terjaga di
+**semua** halaman (diuji 4 panjang alamat × jumlah baris sampai n=14, hingga tiga halaman,
+nol pelanggaran). **Cetak percobaan di kertas kop sungguhan masih belum dilakukan** — itu
+yang menentukan apakah 119,39/133,56 perlu dikalibrasi ulang.
+
 ## 2026-09-07
 ### Rekonsiliasi Nexus × Finance — DUA catatan 5 Sep terbantahkan + temuan terbesar sesi ini
 
