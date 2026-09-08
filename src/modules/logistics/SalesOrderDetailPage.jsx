@@ -18,7 +18,7 @@ import { pdf } from '@react-pdf/renderer';
 import {
   ChevronLeft, Pencil, Trash2, Package,
   Receipt, FileText, Send, Truck, Wallet,
-  Check, X, History, Download,
+  Check, X, History, Download, Printer,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2, Eye, EyeOff,
 } from 'lucide-react';
 import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, setSpFinanceDocs, getSpFulfillmentDocs, getSpItemDeliveryBreakdown, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
@@ -1004,7 +1004,9 @@ export default function SalesOrderDetailPage({
   const [invoice,            setInvoice]            = useState(null);
   const [invoiceLoading,     setInvoiceLoading]     = useState(true);
   const [invoiceSaving,      setInvoiceSaving]      = useState(false);
-  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
+  // null | 'download' | 'print' — dipakai dua tombol PDF; keduanya dinonaktifkan
+  // selama salah satu berjalan, tapi hanya yang ditekan yang berubah labelnya.
+  const [invoicePdfBusy,     setInvoicePdfBusy]     = useState(null);
 
   // ── FASE 5: pembayaran & TTF ─────────────────────────────────────────────
   // Gate peran SENGAJA dari erpRoles (array seluruh role aktif), BUKAN prop
@@ -1314,26 +1316,32 @@ export default function SalesOrderDetailPage({
   // (join sp_invoice_lines/sp_order_items/companies/entity_bank_accounts/
   // entity_finance_settings) — bukan dari state `invoice` yang cuma punya
   // ringkasan header.
-  const handleDownloadInvoice = async () => {
+  //
+  // Satu handler untuk KEDUA tombol: jalur datanya sama persis, yang berbeda
+  // cuma `variant` yang diteruskan ke InvoicePDF dan nama file hasilnya.
+  // ⚠️ Nama file WAJIB beda — kalau sama, file kedua menimpa yang pertama di
+  // folder unduhan dan orang mengira tombolnya tidak bekerja.
+  const handleInvoicePdf = async (variant) => {
     if (!invoice?.id) return;
-    setInvoiceDownloading(true);
+    setInvoicePdfBusy(variant);
     try {
       const { data: pdfData, error } = await getInvoicePdfData(invoice.id);
       if (error || !pdfData) {
         showToast?.('Gagal menyiapkan data invoice: ' + (error?.message || 'unknown error'), 'error');
         return;
       }
-      const blob = await pdf(<InvoicePDF invoice={pdfData} />).toBlob();
+      const blob = await pdf(<InvoicePDF invoice={pdfData} variant={variant} />).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Invoice-${(pdfData.invoice_no || 'INV').replace(/\//g, '-')}.pdf`;
+      const baseName = `Invoice-${(pdfData.invoice_no || 'INV').replace(/\//g, '-')}`;
+      a.download = variant === 'print' ? `${baseName}-cetak.pdf` : `${baseName}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
       showToast?.('Gagal membuat PDF: ' + (e?.message || e), 'error');
     } finally {
-      setInvoiceDownloading(false);
+      setInvoicePdfBusy(null);
     }
   };
 
@@ -1995,11 +2003,22 @@ export default function SalesOrderDetailPage({
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <button
-                          onClick={handleDownloadInvoice}
-                          disabled={invoiceDownloading}
-                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: 'transparent', color: invoiceDownloading ? C.inkFaint : C.inkSoft, fontSize: 13, fontWeight: 600, cursor: invoiceDownloading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                          onClick={() => handleInvoicePdf('download')}
+                          disabled={!!invoicePdfBusy}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: 'transparent', color: invoicePdfBusy ? C.inkFaint : C.inkSoft, fontSize: 13, fontWeight: 600, cursor: invoicePdfBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
                         >
-                          <Download size={13}/> {invoiceDownloading ? 'Menyiapkan…' : 'Download'}
+                          <Download size={13}/> {invoicePdfBusy === 'download' ? 'Menyiapkan…' : 'Download'}
+                        </button>
+                        {/* Versi untuk KERTAS KOP: tanpa blok kop & tanpa latar krem,
+                            isinya dijauhkan dari kop/kaki yang sudah tercetak.
+                            Gate-nya SENGAJA identik dgn tombol Download di atas —
+                            tak ada syarat role yang ditambah maupun dikurangi. */}
+                        <button
+                          onClick={() => handleInvoicePdf('print')}
+                          disabled={!!invoicePdfBusy}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 14px', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: 'transparent', color: invoicePdfBusy ? C.inkFaint : C.inkSoft, fontSize: 13, fontWeight: 600, cursor: invoicePdfBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+                        >
+                          <Printer size={13}/> {invoicePdfBusy === 'print' ? 'Menyiapkan…' : 'Cetak (Kop Surat)'}
                         </button>
                         {invoice.status === 'issued' && (
                           <button

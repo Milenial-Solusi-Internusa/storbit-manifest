@@ -62,52 +62,77 @@ function fmtDate(input) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
-// ── Batas area cetak: kertas kop Storbit ────────────────────────────────────
-// Invoice ini dicetak di atas kertas yang SUDAH punya kop dan kaki TERCETAK,
-// jadi PDF-nya tidak perlu menggambar kop sendiri — ia cuma harus berhenti
-// sebelum area yang sudah terpakai tinta percetakan.
+// ── DUA VARIAN ──────────────────────────────────────────────────────────────
+// Komponen ini merender dua bentuk dokumen yang sama:
 //
+//   variant='download'  dikirim/diarsipkan sebagai PDF. Berdiri sendiri, jadi
+//                       kopnya harus digambar (logo, "Storbit Indonesia",
+//                       label Invoice, tiga baris meta) dan latar krem ikut.
+//   variant='print'     dicetak di atas KERTAS KOP yang kop & kakinya SUDAH
+//                       tercetak. Blok kop TIDAK digambar (kertas sudah
+//                       membawanya), latar krem dibuang (akan menutupi kop
+//                       yang tercetak), dan isinya dijauhkan dari kedua pita.
+//
+// Badan invoice — Billed By/To, tabel item, totals — IDENTIK di keduanya dan
+// hanya ditulis sekali. Yang bercabang cuma satu blok JSX (kop) dan nilai-
+// nilai style di bawah.
+//
+// ⚠️ Pemadatan jarak footBlock HANYA berlaku di varian cetak. Itu dijamin
+// STRUKTURAL, bukan oleh kehati-hatian: keduanya StyleSheet yang berbeda,
+// dibangun sekali saat modul dimuat. `hr` khususnya dipakai bersama blok di
+// luar footBlock, jadi kalau nilainya dibagi satu sheet ia PASTI bocor.
+//
+// ── Batas area cetak varian 'print' ─────────────────────────────────────────
 // ASALNYA: ukuran FISIK kertas kop, diukur Den 9 Sep 2026 —
 //   header 4 cm   dari tepi atas    -> 4   x 28,3465 = 113,39 pt
 //   footer 4,5 cm dari tepi bawah   -> 4,5 x 28,3465 = 127,56 pt
 // masing-masing ditambah jarak aman 6 pt supaya isi tidak menempel persis di
 // batas kop. Angka 6 pt itu BUKAN angka baru: sama dengan yang dipakai
-// StorbitReportPDF.jsx (paddingTop = topH + 6, paddingBottom = botH + 6),
-// jadi kedua dokumen memakai jarak aman yang sama.
+// StorbitReportPDF.jsx (paddingTop = topH + 6, paddingBottom = botH + 6).
 // Hasilnya = 119,39 pt (atas) dan 133,56 pt (bawah).
 //
 // ⚠️ Ini KALIBRASI, bukan konstanta abadi. Kalau cetak percobaan ternyata
 // masih menabrak kop atau kakinya, yang disetel adalah dua angka cm di bawah
-// — jangan menambal dengan menyisipkan angka lain di dalam `s.page`.
+// — jangan menambal dengan menyisipkan angka lain ke dalam `page`.
 //
-// paddingHorizontal SENGAJA tetap 46 pt (tidak diturunkan dari ukuran kop;
-// kop kertas hanya membatasi atas & bawah).
+// paddingHorizontal SENGAJA sama di kedua varian (kop kertas hanya membatasi
+// atas & bawah).
 const CM_TO_PT = 28.3465;
 const KOP_CLEARANCE_PT = 6;
 const KOP_HEADER_CM = 4;
 const KOP_FOOTER_CM = 4.5;
-const PAGE_PAD_TOP = KOP_HEADER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
-const PAGE_PAD_BOTTOM = KOP_FOOTER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
+const PRINT_PAD_TOP = KOP_HEADER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
+const PRINT_PAD_BOTTOM = KOP_FOOTER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
+// Varian download tak punya kop fisik yang harus dihindari — margin tipis asli.
+const SCREEN_PAD_TOP = 20;
+const SCREEN_PAD_BOTTOM = 24;
+const PAD_X = 46;
 
-const s = StyleSheet.create({
-  page: { backgroundColor: BG, color: INK, fontFamily: 'Lora', fontSize: 9.5, paddingTop: PAGE_PAD_TOP, paddingBottom: PAGE_PAD_BOTTOM, paddingHorizontal: 46 },
+// `print` = true menghasilkan sheet varian cetak. Dipanggil DUA KALI di bawah,
+// sekali per varian, lalu hasilnya dipakai apa adanya — tidak ada sheet yang
+// dirakit ulang per render.
+const makeStyles = (print) => StyleSheet.create({
+  page: {
+    color: INK, fontFamily: 'Lora', fontSize: 9.5,
+    paddingTop: print ? PRINT_PAD_TOP : SCREEN_PAD_TOP,
+    paddingBottom: print ? PRINT_PAD_BOTTOM : SCREEN_PAD_BOTTOM,
+    paddingHorizontal: PAD_X,
+    // Latar krem menutupi seluruh halaman — di kertas kop ia akan menimpa kop
+    // yang sudah tercetak, jadi varian cetak sengaja tanpa key ini.
+    ...(print ? {} : { backgroundColor: BG }),
+  },
 
   headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 18 },
   headName: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   logo: { height: 65, width: 65, objectFit: 'contain' },
   coName: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: 19.5, color: INK },
-  // Placeholder kosong — posisi/ukuran ikut desain (image-slot 96x96px≈72x72pt),
-  // isinya SENGAJA belum diisi (belum diputuskan QR itu bakal ngarah ke link
-  // verifikasi/pembayaran yang mana — nyusul task terpisah).
-  qrBox: { width: 72, height: 72, flexShrink: 0, borderWidth: 1, borderStyle: 'dashed', borderColor: RULE_20 },
-
   invLabel: { fontSize: 8.25, letterSpacing: 1, textTransform: 'uppercase', color: PURPLE, marginTop: 7.5, marginBottom: 4.5 },
   metaRow: { flexDirection: 'column', gap: 3 },
   metaItem: { flexDirection: 'column' },
   metaLabel: { fontSize: 8.25, color: MUTE_55 },
   metaVal: { fontSize: 9.75, color: INK },
 
-  hr: { height: 1, backgroundColor: RULE_16, marginVertical: 7.5 },
+  hr: { height: 1, backgroundColor: RULE_16, marginVertical: print ? 4 : 7.5 },
 
   billRow: { flexDirection: 'row', gap: 36 },
   billCol: { flex: 1 },
@@ -198,20 +223,27 @@ const s = StyleSheet.create({
   grandLabel: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: 11.25 },
   grandVal: { fontFamily: 'Lora', fontWeight: 600, fontSize: 14.25, color: PURPLE_DEEP },
 
-  footBlock: { marginTop: 'auto', paddingTop: 7.5 },
-  termsLabel: { fontSize: 8.25, letterSpacing: 0.66, textTransform: 'uppercase', color: PURPLE, marginBottom: 4.5 },
+  footBlock: { marginTop: 'auto', paddingTop: print ? 4 : 7.5 },
+  termsLabel: { fontSize: 8.25, letterSpacing: 0.66, textTransform: 'uppercase', color: PURPLE, marginBottom: print ? 3 : 4.5 },
   termsText: { fontSize: 9, color: MUTE_60 },
-  payBox: { borderWidth: 1, borderColor: RULE_20, borderRadius: 3, paddingVertical: 7.5, paddingHorizontal: 13, maxWidth: 260, marginTop: 6 },
-  payTitle: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: 12, marginBottom: 6 },
+  payBox: { borderWidth: 1, borderColor: RULE_20, borderRadius: 3, paddingVertical: print ? 5 : 7.5, paddingHorizontal: 13, maxWidth: 260, marginTop: print ? 4 : 6 },
+  payTitle: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: 12, marginBottom: print ? 3 : 6 },
   // Inline (bukan kolom rata) — persis desain: label + spasi kecil, lalu
   // value nyambung di baris yang sama, lebar organik ikut panjang teks.
-  payRow: { fontSize: 9.75, marginBottom: 3 },
+  payRow: { fontSize: 9.75, marginBottom: print ? 1.5 : 3 },
   payLabel: { color: MUTE_55 },
 
-  disclaimer: { fontSize: 8.25, color: MUTE_50, lineHeight: 1.6, marginTop: 10 },
+  disclaimer: { fontSize: print ? 7.5 : 8.25, color: MUTE_50, lineHeight: print ? 1.35 : 1.6, marginTop: print ? 6 : 10 },
 });
 
-export default function InvoicePDF({ invoice = {} }) {
+const S_DOWNLOAD = makeStyles(false);
+const S_PRINT = makeStyles(true);
+
+// `variant` default 'download' — pemanggil lama tetap mendapat bentuk yang
+// sama persis seperti sebelumnya tanpa perlu diubah.
+export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
+  const isPrint = variant === 'print';
+  const s = isPrint ? S_PRINT : S_DOWNLOAD;
   const lines = invoice.lines || [];
   const company = invoice.company || {};
   const bank = invoice.bank || null;
@@ -236,27 +268,32 @@ export default function InvoicePDF({ invoice = {} }) {
   return (
     <Document>
       <Page size="LETTER" style={s.page}>
-        {/* Header */}
-        <View style={s.headRow}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={s.headName}>
-              <Image style={s.logo} src={LOGO_URL} />
-              {/* "Storbit" = judul dokumen tetap, sama seperti "STORBIT" hardcode di
-                  PickingListPDF/DeliveryNotePDF — bukan kolom companies.name
-                  ("Storbit / SBI", dipakai internal, bukan buat tampilan customer). */}
-              <Text style={s.coName}>Storbit Indonesia</Text>
+        {/* Header — beserta garis pemisahnya, TIDAK dirender di varian cetak:
+            kertas kop sudah membawa keduanya, dan garis yang tak memisahkan
+            apa pun cuma jadi coretan di puncak halaman. */}
+        {!isPrint && (
+          <>
+            <View style={s.headRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={s.headName}>
+                  <Image style={s.logo} src={LOGO_URL} />
+                  {/* "Storbit" = judul dokumen tetap, sama seperti "STORBIT" hardcode di
+                      PickingListPDF/DeliveryNotePDF — bukan kolom companies.name
+                      ("Storbit / SBI", dipakai internal, bukan buat tampilan customer). */}
+                  <Text style={s.coName}>Storbit Indonesia</Text>
+                </View>
+                <Text style={s.invLabel}>Invoice</Text>
+                <View style={s.metaRow}>
+                  <View style={s.metaItem}><Text style={s.metaLabel}>Invoice Date</Text><Text style={s.metaVal}>{fmtDate(invoice.invoice_date)}</Text></View>
+                  <View style={s.metaItem}><Text style={s.metaLabel}>Due Date</Text><Text style={s.metaVal}>{fmtDate(invoice.due_date)}</Text></View>
+                  <View style={s.metaItem}><Text style={s.metaLabel}>PO No.</Text><Text style={s.metaVal}>{invoice.sp_no || '—'}</Text></View>
+                </View>
+              </View>
             </View>
-            <Text style={s.invLabel}>Invoice</Text>
-            <View style={s.metaRow}>
-              <View style={s.metaItem}><Text style={s.metaLabel}>Invoice Date</Text><Text style={s.metaVal}>{fmtDate(invoice.invoice_date)}</Text></View>
-              <View style={s.metaItem}><Text style={s.metaLabel}>Due Date</Text><Text style={s.metaVal}>{fmtDate(invoice.due_date)}</Text></View>
-              <View style={s.metaItem}><Text style={s.metaLabel}>PO No.</Text><Text style={s.metaVal}>{invoice.sp_no || '—'}</Text></View>
-            </View>
-          </View>
-          <View style={s.qrBox} />
-        </View>
 
-        <View style={s.hr} />
+            <View style={s.hr} />
+          </>
+        )}
 
         {/* Billed By / Billed To */}
         <View style={s.billRow}>
