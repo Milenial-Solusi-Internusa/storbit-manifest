@@ -332,6 +332,41 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
           </>
         )}
 
+        {/* Meta dokumen — HANYA varian cetak. Ketiganya hidup di blok kop yang
+            dicabut untuk kertas kop, tapi tanggal & nomor SP berbeda tiap
+            invoice sehingga kop tercetak mustahil memuatnya.
+            Duduk di KANAN ATAS dengan Billed By/To sejajar di bawahnya. Dibuat
+            sebagai baris berkolom dua dengan separuh kiri KOSONG, supaya meta
+            tetap sejajar kolom kanan dan tidak melebar ke kiri.
+            Label "INVOICE" sengaja tidak ikut: kop kertas dan label vertikal
+            nomor invoice sudah menandai jenis dokumennya.
+
+            ⚠️ YANG DIBAYAR OLEH POSISI INI — baca sebelum memindahkannya lagi.
+            Sebagai baris tersendiri, blok ini membayar TINGGI PENUH-nya, karena
+            tak ada kolom lain yang menyerapnya. Di posisi sebelumnya (di dalam
+            kolom Billed To) ia cuma membayar SELISIH antar-kolom: tinggi
+            `billRow` = max(kiri, kanan), dan kolom kanan lebih pendek dari kiri,
+            jadi sebagian tingginya gratis.
+            Konsekuensinya diukur (9 Sep 2026, varian cetak, batas satu halaman):
+              posisi lama (kanan bawah): n<=6 alamat kosong / n<=5 satu baris /
+                                         n<=4 dua baris / n<=3 tiga baris
+              posisi ini  (kanan atas):  n<=4 untuk SEMUA panjang alamat
+            Ditukar dengan sadar: pada sebaran produksi (522 SP, 49 DC beralamat
+            — 5 satu baris, 30 dua baris, 14 tiga baris) posisi ini membuat 26 SP
+            pecah ke halaman kedua, turun dari 30. Ia kalah di kasus yang jarang
+            dan menang di kolom tiga-baris yang mencakup 28,6% DC, sekaligus
+            membuat batasnya tidak lagi bergantung DC mana. */}
+        {isPrint && (
+          <View style={[s.billRow, { marginBottom: 3 }]}>
+            <View style={s.billCol} />
+            <View style={[s.billCol, s.metaRow]}>
+              <MetaLine s={s} label="Invoice Date" value={fmtDate(invoice.invoice_date)} />
+              <MetaLine s={s} label="Due Date" value={fmtDate(invoice.due_date)} />
+              <MetaLine s={s} label="SP No." value={invoice.sp_no || '—'} />
+            </View>
+          </View>
+        )}
+
         {/* Billed By / Billed To */}
         <View style={s.billRow}>
           <View style={s.billCol}>
@@ -353,34 +388,6 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
                 karena ini blok pihak dan baris hampa di bawah nama DC terbaca
                 seperti data yang gagal dimuat. */}
             {invoice.dc_address ? <Text style={s.billMute}>{invoice.dc_address}</Text> : null}
-            {/* Meta dokumen — HANYA varian cetak. Ketiganya hidup di blok kop yang
-                dicabut untuk kertas kop, tapi tanggal & nomor SP berbeda tiap
-                invoice sehingga kop tercetak mustahil memuatnya; tanpa ini
-                invoice cetak keluar tanpa tanggal dan tanpa nomor SP.
-                Ditaruh di kolom kanan di bawah Billed To, bukan dikembalikan ke
-                atas, supaya memanfaatkan ruang yang sudah ada alih-alih menambah
-                tinggi halaman — kolom kanan dipilih karena ia kolom yang LEBIH
-                PENDEK: tinggi `billRow` = max(kiri, kanan), jadi menambah di sini
-                cuma membayar selisihnya, bukan tinggi penuh.
-                Label "INVOICE" sengaja tidak ikut: kop kertas dan label vertikal
-                nomor invoice sudah menandai jenis dokumennya.
-
-                ⚠️ BENTUKNYA INLINE (label + nilai satu baris, gaya `payRow`/
-                `payLabel` yang sudah dipakai kotak Payment di file ini), BUKAN
-                label-di-atas-nilai seperti blok kop varian download. Itu dipaksa
-                ukuran, bukan selera — ketiga bentuk diukur pada varian cetak:
-                  label-di-atas-nilai, kolom kanan   -> tabel turun 69,39 pt, n=4 pecah
-                  satu baris mendatar penuh          -> n=5 pecah di SEMUA panjang alamat
-                  inline, kolom kanan (yang dipakai) -> tabel turun 36,21 pt, n=5
-                    aman selama alamat DC muat satu baris (<= ~48 karakter pada
-                    lebar kolom 242 pt); alamat dua baris menurunkannya ke n=4. */}
-            {isPrint && (
-              <View style={[s.metaRow, { marginTop: 9 }]}>
-                <MetaLine s={s} label="Invoice Date" value={fmtDate(invoice.invoice_date)} />
-                <MetaLine s={s} label="Due Date" value={fmtDate(invoice.due_date)} />
-                <MetaLine s={s} label="SP No." value={invoice.sp_no || '—'} />
-              </View>
-            )}
           </View>
         </View>
 
