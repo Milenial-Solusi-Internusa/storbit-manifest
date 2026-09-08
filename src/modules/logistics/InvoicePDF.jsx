@@ -330,6 +330,34 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
                 karena ini blok pihak dan baris hampa di bawah nama DC terbaca
                 seperti data yang gagal dimuat. */}
             {invoice.dc_address ? <Text style={s.billMute}>{invoice.dc_address}</Text> : null}
+            {/* Meta dokumen — HANYA varian cetak. Ketiganya hidup di blok kop yang
+                dicabut untuk kertas kop, tapi tanggal & nomor PO berbeda tiap
+                invoice sehingga kop tercetak mustahil memuatnya; tanpa ini
+                invoice cetak keluar tanpa tanggal dan tanpa nomor PO customer.
+                Ditaruh di kolom kanan di bawah Billed To, bukan dikembalikan ke
+                atas, supaya memanfaatkan ruang yang sudah ada alih-alih menambah
+                tinggi halaman — kolom kanan dipilih karena ia kolom yang LEBIH
+                PENDEK: tinggi `billRow` = max(kiri, kanan), jadi menambah di sini
+                cuma membayar selisihnya, bukan tinggi penuh.
+                Label "INVOICE" sengaja tidak ikut: kop kertas dan label vertikal
+                nomor invoice sudah menandai jenis dokumennya.
+
+                ⚠️ BENTUKNYA INLINE (label + nilai satu baris, gaya `payRow`/
+                `payLabel` yang sudah dipakai kotak Payment di file ini), BUKAN
+                label-di-atas-nilai seperti blok kop varian download. Itu dipaksa
+                ukuran, bukan selera — ketiga bentuk diukur pada varian cetak:
+                  label-di-atas-nilai, kolom kanan   -> tabel turun 69,39 pt, n=4 pecah
+                  satu baris mendatar penuh          -> n=5 pecah di SEMUA panjang alamat
+                  inline, kolom kanan (yang dipakai) -> tabel turun 36,21 pt, n=5
+                    aman selama alamat DC muat satu baris (<= ~48 karakter pada
+                    lebar kolom 242 pt); alamat dua baris menurunkannya ke n=4. */}
+            {isPrint && (
+              <View style={{ marginTop: 9 }}>
+                <Text style={s.payRow}><Text style={s.payLabel}>Invoice Date  </Text>{fmtDate(invoice.invoice_date)}</Text>
+                <Text style={s.payRow}><Text style={s.payLabel}>Due Date  </Text>{fmtDate(invoice.due_date)}</Text>
+                <Text style={s.payRow}><Text style={s.payLabel}>PO No.  </Text>{invoice.sp_no || '—'}</Text>
+              </View>
+            )}
           </View>
         </View>
 
