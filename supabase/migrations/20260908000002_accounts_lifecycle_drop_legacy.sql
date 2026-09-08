@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Migration: 20260908000002_accounts_lifecycle_drop_legacy
 -- Batch:     CRM v3 — penutup lifecycle JALUR B
--- Depends:   20260907000001_accounts_lifecycle_dual_write (WAJIB sudah LIVE)
+-- Depends:   20260908000001_accounts_lifecycle_dual_write (WAJIB sudah LIVE)
 --
 -- ⛔⛔⛔ JANGAN DIJALANKAN SEKARANG ⛔⛔⛔
 --
@@ -10,7 +10,7 @@
 --   risiko itu nyata; yang kedua lebih mahal.
 --
 --   PRASYARAT — KETIGANYA WAJIB, tanpa kecuali:
---     1. 20260907000001 sudah LIVE di produksi dan terverifikasi.
+--     1. 20260908000001 sudah LIVE di produksi dan terverifikasi.
 --     2. Branch feature/crm-v3-batch-persiapan sudah DI-MERGE ke `main`.
 --     3. Hasil merge itu sudah BERJALAN STABIL di produksi.
 --
@@ -51,7 +51,7 @@ DROP FUNCTION IF EXISTS public.sync_lifecycle_columns();
 -- 2. Sederhanakan keempat fungsi: satu kolom saja
 -- ═════════════════════════════════════════════════════════════════════════════
 -- ── 2a. set_customer_on_inquiry_won ──────────────────────────────────────────
--- Guard kembali ke SATU kolom. Kondisi ganda di 20260907000001 ada khusus untuk
+-- Guard kembali ke SATU kolom. Kondisi ganda di 20260908000001 ada khusus untuk
 -- masa transisi (menjaga idempotensi kalau invarian dua-kolom patah); sesudah
 -- account_status hilang, invarian itu tak punya arti lagi.
 CREATE OR REPLACE FUNCTION public.set_customer_on_inquiry_won() RETURNS trigger
@@ -156,13 +156,13 @@ ALTER TABLE public.accounts DROP COLUMN account_status;
 -- 4. Baru sekarang default dipasang
 -- ═════════════════════════════════════════════════════════════════════════════
 -- Selama transisi lifecycle_stage SENGAJA tanpa default — NULL adalah penanda
--- provenance yang dipakai trigger sinkron (lihat kepala 20260907000001).
+-- provenance yang dipakai trigger sinkron (lihat kepala 20260908000001).
 -- Triggernya sudah dicabut di langkah 1, jadi penanda itu tak dibutuhkan lagi
 -- dan bentuk akhirnya bisa disamakan dengan kolom lama: DEFAULT 'lead'.
 ALTER TABLE public.accounts ALTER COLUMN lifecycle_stage SET DEFAULT 'lead';
 
 -- ⚠️ COMMENT di bawah SENGAJA TIDAK MENYATAKAN URUTAN TAHAP, dan ia MENIMPA
---    COMMENT yang dipasang 20260907000001 — jadi keduanya harus tetap seragam.
+--    COMMENT yang dipasang 20260908000001 — jadi keduanya harus tetap seragam.
 --    Kalau di sini urutannya dituliskan, klaim yang sudah dicabut di migrasi
 --    pertama akan hidup kembali begitu file ini jalan.
 --    Sebabnya: urutan tahap masih PERTANYAAN TERBUKA, dua sumber bertentangan —
@@ -176,7 +176,7 @@ ALTER TABLE public.accounts ALTER COLUMN lifecycle_stage SET DEFAULT 'lead';
 --    Isi urutannya HANYA setelah pertanyaan terbukanya dijawab — dan kalau
 --    diisi, isi di KEDUA migrasi sekaligus.
 COMMENT ON COLUMN public.accounts.lifecycle_stage IS
-  'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang HIDUP: akun jadi prospect hanya bila ada inquiry masuk (trigger set_prospect_on_inquiry); jadi customer lewat WON. free_agent dan lost adalah exit manual dari tahap mana pun. ⚠️ URUTAN tahapnya masih PERTANYAAN TERBUKA (dua sumber bertentangan — lihat komentar di migrasi 20260907000001 dan 20260907000002); jangan simpulkan urutan dari daftar nilai di atas maupun dari urutan CHECK. Menggantikan account_status, yang di-drop 20260907000002 setelah masa transisi dua-kolom.';
+  'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang HIDUP: akun jadi prospect hanya bila ada inquiry masuk (trigger set_prospect_on_inquiry); jadi customer lewat WON. free_agent dan lost adalah exit manual dari tahap mana pun. ⚠️ URUTAN tahapnya masih PERTANYAAN TERBUKA (dua sumber bertentangan — lihat komentar di migrasi 20260908000001 dan 20260908000002); jangan simpulkan urutan dari daftar nilai di atas maupun dari urutan CHECK. Menggantikan account_status, yang di-drop 20260908000002 setelah masa transisi dua-kolom.';
 
 COMMIT;
 
@@ -241,5 +241,5 @@ COMMIT;
 --      ALTER TABLE public.accounts ADD CONSTRAINT accounts_account_status_check
 --        CHECK (((account_status)::text = ANY ((ARRAY['lead','mql','sql','prospect',
 --          'customer','free_agent','lost']::character varying[])::text[])));
---   2. Pasang ulang seluruh isi 20260907000001 STEP 2, 3, 4.
+--   2. Pasang ulang seluruh isi 20260908000001 STEP 2, 3, 4.
 --   3. ALTER TABLE public.accounts ALTER COLUMN lifecycle_stage DROP DEFAULT;

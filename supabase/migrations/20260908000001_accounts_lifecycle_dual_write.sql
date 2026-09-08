@@ -19,7 +19,7 @@
 --                lifecycle_stage TANPA default
 --            Snapshot: schema_snapshot.sql commit c8c67f6 (138 tabel public).
 --
---            ⏭️ Penutupnya 20260907000002_accounts_lifecycle_drop_legacy BELUM
+--            ⏭️ Penutupnya 20260908000002_accounts_lifecycle_drop_legacy BELUM
 --            dijalankan dan memang belum boleh — ia ber-⛔ STOP dan menunggu
 --            branch merge ke main + stabil di produksi. Sampai itu terjadi,
 --            account_status SENGAJA masih ada dan disinkronkan.
@@ -86,7 +86,7 @@
 --   Produksi patah SEBELUM branch di-merge. Keputusan Terbuka #35 dijawab
 --   JALUR B: tambah kolom + sinkron dua arah, drop kolom lama belakangan.
 --   Migrasi lama TIDAK akan pernah dijalankan; kepalanya sudah membawa ⛔ STOP.
---   Penutupnya: 20260907000002_accounts_lifecycle_drop_legacy.
+--   Penutupnya: 20260908000002_accounts_lifecycle_drop_legacy.
 --
 -- ⚠️ TIDAK ADA ATURAN TIE-BREAK DI TRIGGER SINKRON — DAN ITU DISENGAJA.
 --   Diukur 7 Sep 2026 (grep dua arah, kedua branch): NOL jalur tulis menyentuh
@@ -114,7 +114,7 @@
 --   membedakan "pemanggil tak mengisi kolom ini" dari "pemanggil menulis
 --   'lead'". Sinkronisasi INSERT jadi salah secara DIAM-DIAM.
 --   NULL adalah satu-satunya penanda provenance yang tersedia.
---   DEFAULT 'lead' dipasang pada lifecycle_stage di 20260907000002, saat
+--   DEFAULT 'lead' dipasang pada lifecycle_stage di 20260908000002, saat
 --   account_status di-drop — bentuk akhirnya sama dengan staging hari ini.
 --
 -- PRA-CEK (informatif, tidak memblokir):
@@ -164,10 +164,10 @@ ALTER TABLE public.accounts
 --    terbukanya dijawab. Urutan CHECK/array di skema maupun FE BUKAN bukti:
 --    itu daftar keanggotaan, bukan pernyataan urutan.
 COMMENT ON COLUMN public.accounts.lifecycle_stage IS
-  'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang HIDUP: akun jadi prospect hanya bila ada inquiry masuk (trigger set_prospect_on_inquiry); jadi customer lewat WON. free_agent dan lost adalah exit manual dari tahap mana pun. ⚠️ URUTAN tahapnya masih PERTANYAAN TERBUKA (dua sumber bertentangan — lihat komentar di migrasi 20260907000001); jangan simpulkan urutan dari daftar nilai di atas maupun dari urutan CHECK. Berdampingan dengan account_status selama transisi jalur B; disinkronkan trg_a_sync_lifecycle_columns. TANPA default selama transisi. account_status di-drop di 20260907000002.';
+  'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang HIDUP: akun jadi prospect hanya bila ada inquiry masuk (trigger set_prospect_on_inquiry); jadi customer lewat WON. free_agent dan lost adalah exit manual dari tahap mana pun. ⚠️ URUTAN tahapnya masih PERTANYAAN TERBUKA (dua sumber bertentangan — lihat komentar di migrasi 20260908000001); jangan simpulkan urutan dari daftar nilai di atas maupun dari urutan CHECK. Berdampingan dengan account_status selama transisi jalur B; disinkronkan trg_a_sync_lifecycle_columns. TANPA default selama transisi. account_status di-drop di 20260908000002.';
 
 COMMENT ON COLUMN public.accounts.account_status IS
-  'DIPENSIUNKAN sejak 7 Sep 2026 — digantikan lifecycle_stage. Selama transisi keduanya disinkronkan otomatis: tulis ke salah satu, yang lain ikut. Di-drop di migrasi 20260907000002 setelah branch CRM v3 merge & stabil di produksi.';
+  'DIPENSIUNKAN sejak 7 Sep 2026 — digantikan lifecycle_stage. Selama transisi keduanya disinkronkan otomatis: tulis ke salah satu, yang lain ikut. Di-drop di migrasi 20260908000002 setelah branch CRM v3 merge & stabil di produksi.';
 
 COMMIT;
 
@@ -237,7 +237,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.sync_lifecycle_columns() IS
-  'Menjaga accounts.account_status dan accounts.lifecycle_stage identik selama transisi jalur B. Sengaja tanpa tie-break: nol jalur tulis menyentuh keduanya (diukur 7 Sep 2026). Dicabut oleh migrasi 20260907000002.';
+  'Menjaga accounts.account_status dan accounts.lifecycle_stage identik selama transisi jalur B. Sengaja tanpa tie-break: nol jalur tulis menyentuh keduanya (diukur 7 Sep 2026). Dicabut oleh migrasi 20260908000002.';
 
 -- ⚠️ PREFIX trg_a_, BUKAN trg_z_ — SENGAJA, dan ini KEBALIKAN dari konvensi
 --    CLAUDE.md. Konvensi trg_z_ ada supaya trigger jalan TERAKHIR. Di sini
@@ -673,7 +673,7 @@ COMMIT;
 --    TIDAK perlu dibersihkan. Staging berakhir di keadaan TRANSISI (dua kolom,
 --    sinkron) — persis keadaan yang akan dialami produksi, dan yang memang
 --    dibutuhkan FE branch. Kalau ingin sekalian menguji penutupnya, jalankan
---    20260907000002 di staging SESUDAH seluruh uji di atas lolos.
+--    20260908000002 di staging SESUDAH seluruh uji di atas lolos.
 --
 -- ═════════════════════════════════════════════════════════════════════════════
 -- PEKERJAAN FE YANG MENYERTAI (bukan SQL — jangan lupa)
@@ -682,7 +682,7 @@ COMMIT;
 --   dari custom fields. `main` mencantumkan 'account_status', branch
 --   'lifecycle_stage'. SELAMA KEDUA KOLOM HIDUP daftar itu HARUS memuat
 --   KEDUANYA — kalau tidak, kolom seberang bisa muncul sebagai custom field di
---   UI. Satu baris, satu file. Salah satunya dicabut lagi di 20260907000002.
+--   UI. Satu baris, satu file. Salah satunya dicabut lagi di 20260908000002.
 --
 -- ═════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK
