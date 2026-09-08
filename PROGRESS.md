@@ -31,6 +31,101 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-09
+
+### Invoice Storbit — batas area kertas kop + dua varian PDF (download / cetak)
+
+FE-only. **Nol perubahan DB, nol migrasi, nol RPC disentuh.** `create_invoice` dan
+`submit_invoice` **sengaja tidak dijamah** — ada blueprint terpisah yang sedang disusun untuk
+`invoice_date`/`due_date`.
+
+**Masalah awal.** Invoice dicetak di atas kertas yang kop dan kakinya SUDAH tercetak, jadi isi
+PDF harus berhenti sebelum area itu. Ukuran fisik diukur Den: header **4 cm**, footer **4,5 cm**,
+plus jarak aman **6 pt** → `paddingTop` **119,39 pt**, `paddingBottom` **133,56 pt**,
+`paddingHorizontal` tetap 46. Ditulis sebagai konstanta dengan **cm sebagai sumber**, supaya
+rekalibrasi sesudah cetak percobaan menyetel angka yang memang diukur ulang. Jarak 6 pt itu bukan
+angka baru — sama dengan `StorbitReportPDF.jsx` (`paddingTop = topH + 6`).
+
+⚠️ **Akibat yang tidak diduga:** ruang isi turun 748 → 539 pt (−28%) dan **setiap** invoice jadi
+2 halaman, termasuk invoice 1 baris. Dua lembar kertas kop untuk satu baris produk.
+
+**Yang diukur sebelum memutuskan** (render nyata + pembacaan content stream, bukan taksiran):
+
+- **`footBlock` = 192,45 pt**, bukan ±175 seperti taksiran awal. Rinciannya, dari ablasi kumulatif
+  yang jumlahnya pas dengan totalnya: `paddingTop` 7,50 · `hr` atas 16,00 · "Terms & Instructions"
+  15,06 · kalimat "Payment must be made…" 11,52 · **kotak Payment 89,97 (46,7% — porsi terbesar)**
+  · `hr` bawah 16,00 · disclaimer 36,40.
+- **Defisit** pada padding kop: n=1 kurang **116,90 pt**, n=3 kurang 162,86, n=5 kurang 208,82.
+  Jadi jaraknya ratusan pt, bukan puluhan.
+- **Pemadatan `footBlock` saja tidak cukup** — hemat maksimal yang masih terbaca **60,78 pt**,
+  n=1..5 tetap 2 halaman. Bahkan **menghapus `footBlock` seluruhnya** tidak membuat n=5 muat
+  (masih kurang 16,37 pt).
+- Yang akhirnya menyelesaikan: **blok kop utuh = 178,68 pt** (logo + "Storbit Indonesia" + label
+  Invoice + tiga baris meta + garis `hr` sesudahnya) — melampaui defisit n=1 dan n=3.
+
+⚠️ **Aritmetika penghematannya 232,46 pt, BUKAN 239,46.** Penjumlahan naif 178,68 + 60,78 = 239,46
+**salah 7,00 pt**: angka 60,78 diukur saat ketiga `hr` masih ada, sedangkan mencabut blok kop ikut
+membuang `hr` di bawahnya — **penghematan `hr` itu tidak bisa dihitung dua kali**. Catat ini kalau
+kelak ada yang mengaudit ulang selisihnya dan mengira ada 7 pt yang hilang.
+
+**Hasilnya, dua varian dari satu komponen** (`variant='download' | 'print'`, default `download`):
+
+| | download | print |
+|---|---|---|
+| blok kop + garis pemisah | ada | **tidak dirender** |
+| slot QR (`qrBox`) | **dicabut** | **dicabut** |
+| latar krem `#f6f4f1` | ada | tidak (akan menimpa kop) |
+| jarak `footBlock` | longgar | dipadatkan |
+| paddingTop / Bottom | 20 / 24 | 119,39 / 133,56 |
+| badan invoice | identik — ditulis sekali | identik — ditulis sekali |
+
+**Batas halaman terukur: varian cetak 1 halaman s/d n=6, pecah di n=7; varian download s/d n=5,
+pecah di n=6.** ⚠️ **Yang boleh dijanjikan ke pengguna adalah n=5, bukan n=6** — n=6 muat dengan
+sisa **0,66 pt**, dan satu nama customer atau nama produk yang membungkus ke baris kedua sudah
+cukup mendorongnya ke halaman berikutnya. Invoice sangat panjang memang boleh pecah.
+
+**Keputusan bentuk: SATU komponen, bukan dua.** Perbedaannya bukan struktur melainkan satu blok
+JSX yang ada/tidak plus nilai-nilai style; dua komponen tetap butuh file ketiga untuk badan
+invoice. StyleSheet dibangun lewat `makeStyles(print)` yang dipanggil dua kali (`S_DOWNLOAD`,
+`S_PRINT`), sekali saat modul dimuat. ⚠️ **Pemisahan sheet ini bukan kerapian — ia yang menjaga
+pemadatan tidak bocor**: `hr` dipakai juga di luar `footBlock` (±7 pt dari penghematan datang dari
+`hr` di atas Billed By), jadi satu sheet bersama PASTI membocorkannya ke varian download.
+
+**`qrBox` dicabut dari KEDUA varian.** ⚠️ **Nol dampak paginasi** — diukur n=1…8 dengan-vs-tanpa,
+jumlah halamannya identik, karena tinggi `headRow` ditentukan kolom kiri, bukan oleh kotak 72 pt
+itu. Jadi pencabutannya murni kosmetik (di varian download kotak putus-putus kosong terbaca
+sebagai cacat cetak). Rencana isinya belum pernah diputuskan → **TD-242**.
+
+**Tombol.** `SalesOrderDetailPage.jsx` dapat tombol kedua **"Cetak (Kop Surat)"** di samping
+"Download". `handleDownloadInvoice` digeneralisasi jadi `handleInvoicePdf(variant)` — satu jalur
+data, dua bentuk dokumen. State `invoiceDownloading` jadi `invoicePdfBusy`
+(`null|'download'|'print'`). Nama file dibedakan (`-cetak.pdf`) supaya tidak saling menimpa di
+folder unduhan. ⚠️ **Gate kedua tombol IDENTIK dengan tombol lama** — tidak ada syarat role yang
+ditambah maupun dikurangi (tombol Download memang tidak pernah punya gate role; hanya
+`disabled` saat sibuk).
+
+**+TD-241 (LOW)** — `position:'absolute'` + `fixed` **lolos dari padding halaman**. Padding
+melindungi aliran normal di SEMUA halaman (dibuktikan dua cara: `splitPage` di
+`@react-pdf/layout@4.6.1` membawa `style` ke halaman lanjutan lewat
+`Object.assign({}, page, {props, box, children})`; dan pengukuran content stream 8 varian jumlah
+baris), **tapi elemen absolut+fixed tidak digeser sama sekali** — `top:0` mendarat di y≈0,
+`bottom:0` di y≈790,4. Nomor halaman yang ditambahkan dengan pola lazim akan mendarat **di dalam
+kaki kop yang tercetak**. ⚠️ Jangan "perbaiki" di `PickingListPDF`/`DeliveryNotePDF`/
+`StorbitReportPDF` — di sana perilaku itu memang yang diinginkan.
+
+**+TD-242 (LOW)** — slot QR yang dicabut; keputusan isinya masih tertunda.
+
+⚠️ **Koreksi pengukuran yang layak dicatat:** pass pertama sempat melaporkan teks di **736,94 pt**
+(55 pt dari tepi bawah, artinya menabrak kaki kop). **Itu salah** — parser hanya menjumlahkan
+translasi-Y dan salah membaca matriks rotasi label vertikal "INVOICE #…". Dengan komposisi matriks
+penuh label itu ada di 499–640 pt, aman. **Tidak pernah ada tabrakan.** Dicatat supaya angka salah
+itu tidak dipungut dari transkrip sebagai temuan.
+
+⚠️ **NOL tes runtime di browser** — seluruh verifikasi lewat render `@react-pdf/renderer` di Node
++ pembacaan content stream (jumlah halaman, posisi tinta, ada/tidaknya logo & latar). Kedua tombol
+belum pernah diklik di aplikasi nyata, dan **cetak percobaan di kertas kop sungguhan belum
+dilakukan** — itu yang menentukan apakah 119,39/133,56 perlu dikalibrasi ulang.
+
 ## 2026-09-07
 ### Rekonsiliasi Nexus × Finance — DUA catatan 5 Sep terbantahkan + temuan terbesar sesi ini
 
