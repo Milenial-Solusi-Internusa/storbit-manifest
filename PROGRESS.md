@@ -311,7 +311,7 @@ dilaporkan lolos**.
 
 ### Migrasi lifecycle JALUR B **LIVE di produksi** — blokir RENAME akhirnya hilang
 
-`20260907000001_accounts_lifecycle_dual_write` naik ke **produksi** (ref `untmpqceexwxzuhlmyrg`), dijalankan manual
+`20260908000001_accounts_lifecycle_dual_write` naik ke **produksi** (ref `untmpqceexwxzuhlmyrg`), dijalankan manual
 oleh Den, beberapa jam sesudah verifikasi staging hari yang sama. **Keputusan Terbuka #35 DITUTUP.**
 
 **Angka verifikasi produksi:**
@@ -339,7 +339,7 @@ dan snapshot produksi (`:12108` sebelum `:12402`). Tidak ada lagi bagian dari kl
 file RENAME aslinya tidak pernah dijalankan dan tidak akan pernah. Yang tersisa: `rls_owner_based`, `sales_targets`,
 `crm_menu_permissions_sales`, `accounts_source_add_whatsapp`.
 
-⏭️ **Yang tersisa dari untaian lifecycle hanya penutupnya** — `20260907000002_accounts_lifecycle_drop_legacy`,
+⏭️ **Yang tersisa dari untaian lifecycle hanya penutupnya** — `20260908000002_accounts_lifecycle_drop_legacy`,
 ber-⛔ STOP, menunggu branch merge + stabil di produksi. Itu **pekerjaan terjadwal, bukan blokir**. Sampai ia jalan,
 `account_status` **sengaja masih ada** dan disinkronkan; itu keadaan transisi yang diharapkan, bukan sisa yang lupa.
 
@@ -350,7 +350,7 @@ ini, supaya terbaca saat merge.
 
 ### Migrasi lifecycle JALUR B terverifikasi PENUH di staging (belum produksi)
 
-`20260907000001_accounts_lifecycle_dual_write` diuji **penuh di staging** (ref `oovmlhilhqzejnawqkvt`).
+`20260908000001_accounts_lifecycle_dual_write` diuji **penuh di staging** (ref `oovmlhilhqzejnawqkvt`).
 ⛔ **BELUM dijalankan di produksi** — jangan dibaca sebagai LIVE.
 
 **Jalan uji:** T0 rekam keadaan → T1 kembalikan staging ke bentuk produksi (drop `account_lifecycle_history` +
