@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration: 20260907000001_accounts_lifecycle_dual_write
+-- Migration: 20260908000001_accounts_lifecycle_dual_write
 -- Batch:     CRM v3 — lifecycle JALUR B (pengganti 20260827000002)
 -- Depends:   accounts · profiles · 20260827000001_crm_v3_master_data (LIVE 6 Sep 2026)
 -- Status:    ✅✅ LIVE DI PRODUKSI — 7 Sep 2026 (ref untmpqceexwxzuhlmyrg),

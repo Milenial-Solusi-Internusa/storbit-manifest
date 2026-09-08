@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration: 20260907000002_accounts_lifecycle_drop_legacy
+-- Migration: 20260908000002_accounts_lifecycle_drop_legacy
 -- Batch:     CRM v3 — penutup lifecycle JALUR B
 -- Depends:   20260907000001_accounts_lifecycle_dual_write (WAJIB sudah LIVE)
 --
