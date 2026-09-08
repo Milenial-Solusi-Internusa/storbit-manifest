@@ -108,6 +108,13 @@ export function customerFromDb(row) {
     picName:   row.pic_name   || '',
     picEmail:  row.pic_email  || '',
     active:    row.is_active !== false,   // accounts uses `is_active` (default true), not `active`
+    // Entitas pemilik record. HARUS dipetakan eksplisit di sini: loop
+    // pass-through di bawah hanya meneruskan kolom NON-standar, dan
+    // 'company_id' ada di CUSTOMER_STANDARD_DB_COLS — jadi tanpa baris ini
+    // ia hilang diam-diam dan setiap konsumen melihat `undefined`.
+    // Aditif & aman untuk arah tulis: customerToDb() membuang company_id
+    // (ada di standardAppKeys), jadi ia tak pernah ikut ke payload UPDATE.
+    company_id: row.company_id ?? null,
   };
   // Pass through all custom (non-standard) columns unchanged
   for (const [k, v] of Object.entries(row)) {
@@ -333,8 +340,27 @@ export async function updateSpItem(id, item) {
   return { data: spFromDb(data), error };
 }
 
+// Hapus SATU baris item SP via RPC delete_sp_item_dual (SECURITY DEFINER,
+// migrasi 20260902000002). Nama & signature ekspor SENGAJA tidak berubah supaya
+// useSpItems.removeRow tak perlu disentuh — pola sama seperti updateSpItem
+// yang dipindah ke RPC pada 25 Agu 2026.
+//
+// SENGAJA BUKAN .delete() langsung lagi. Dua alasan, keduanya nyata:
+//   1. OTORISASI — RLS sp_items_delete dulu USING(true) dan `authenticated`
+//      memang punya GRANT DELETE, jadi setiap user yang bisa login (sales,
+//      viewer, hrga, finance) bisa menghapus baris item SP. Migrasi itu
+//      mencabut GRANT-nya; .delete() langsung kini PASTI gagal.
+//   2. ORPHAN — .delete() hanya menghapus sp_items. Kembarannya di
+//      sp_order_items tertinggal (legacy_sp_item_id TANPA FK), dan
+//      create_invoice menghitung Σqty dari sp_order_items → baris hantu itu
+//      membuat Σshipped=Σqty mustahil tercapai → SP TAK BISA DIINVOICE
+//      SELAMANYA. RPC menghapus kedua tabel dalam satu transaksi.
+//
+// Guard di RPC: is_sp_item_writer() + status ∈ (DRAFT, CONFIRMED,
+// MENUNGGU_STOK) + tolak baris terakhir. Pesan RAISE-nya sudah manusiawi &
+// berbahasa Indonesia → teruskan apa adanya ke user, jangan dibungkus generik.
 export async function deleteSpItem(id) {
-  const { error } = await supabase.from('sp_items').delete().eq('id', id);
+  const { error } = await supabase.rpc('delete_sp_item_dual', { p_id: id });
   return { error };
 }
 
@@ -373,6 +399,34 @@ export async function setSpExpiredDate(customerId, spNo, expiredDate) {
     p_customer_id:  customerId,
     p_sp_no:        spNo,        // identitas komposit (customer_id, sp_no)
     p_expired_date: expiredDate || null,
+  });
+  return { error };
+}
+
+// Set status dokumen finance SP (inv/fp/submit/kirim/submit_date/email_status)
+// di level HEADER. Backed by RPC set_sp_finance_docs (SECURITY DEFINER,
+// migrasi 20260902000004): satu transaksi menulis sp_orders DAN semua baris
+// sp_items se-SP. Alasan RPC-nya sama persis dengan setSpExpiredDate di atas —
+// RLS sp_items_update = USING(true) sementara sp_orders_update role-gated,
+// jadi dua .update() terpisah bisa SUKSES SEPARUH.
+//
+// BUKAN partial patch: keenam nilai WAJIB dikirim tiap panggilan. UI mengirim
+// seluruh isi kartu tiap Simpan, jadi NULL pada submitDate/emailStatus berarti
+// BENAR-BENAR dikosongkan, bukan "jangan ubah".
+//
+// Guard di RPC = sumbu FINANCE (super_admin / finance_controller / finance),
+// SENGAJA tanpa is_manager_or_above() — matrix baris Finance menaruh manager
+// di R, bukan CRUD. Berbeda dari canWarehouseOps maupun canWriteSpItem.
+export async function setSpFinanceDocs(customerId, spNo, docs = {}) {
+  const { error } = await supabase.rpc('set_sp_finance_docs', {
+    p_customer_id:  customerId,
+    p_sp_no:        spNo,        // identitas komposit (customer_id, sp_no)
+    p_inv:          !!docs.inv,
+    p_fp:           !!docs.fp,
+    p_submit:       !!docs.submit,
+    p_kirim:        !!docs.kirim,
+    p_submit_date:  docs.submitDate || null,
+    p_email_status: docs.emailStatus || null,
   });
   return { error };
 }
@@ -643,10 +697,28 @@ export async function completePicking(pickingListId) {
 
 // FASE 1: status headline SP (sp_orders 12-tahap) + flag pernah picking dibatalkan,
 // untuk badge Detail SP. Kunci komposit (customer_id, sp_no). Read-only.
+//
+// `dc_id` + embed `dc_master(nama, alamat)` ikut di sini SENGAJA, bukan lewat
+// fungsi terpisah: DC adalah atribut HEADER sp_orders, sekelas status/
+// expired_date yang sudah diambil fungsi ini, jadi embed lewat FK
+// sp_orders_dc_id_fkey nol round-trip tambahan. Konsumennya TUNGGAL: kartu
+// "DC Tujuan" di tab Overview Detail SP. (EditItemModal sempat ikut memakainya
+// sebagai field read-only, lalu field itu DIHAPUS — DC atribut level SP, bukan
+// level item.) Pola resolusi DC-nya sama dengan getPrintIdentity di atas.
+// inv/fp/submit/kirim/submit_date/email_status ikut di sini sejak promosi
+// 2 Sep 2026 (migrasi 20260902000003): keenamnya kini atribut level SP, sumber
+// kebenarannya sp_orders. Konsumennya kartu "Finance & Dokumen" tab Overview.
+// Versi sp_items masih ada dan tetap disinkronkan turun oleh
+// set_sp_finance_docs() — itu yang menjaga groupBySP/financePct, KPI
+// FinancePage, chip OutstandingPage, dan export CSV tetap benar tanpa diubah.
+// ⚠️ dc_master_read = `is_super_admin() OR company_id = get_user_company_id()`
+// (varian TUNGGAL). User multi-entitas yang home-nya bukan SOA bisa dapat
+// embed null walau SP-nya terbaca — semua konsumen WAJIB degrade ke '—',
+// jangan asumsikan selalu terisi. Ini gejala TD-180, bukan bug fungsi ini.
 export async function getSpOrderStatus(customerId, spNo) {
   const { data, error } = await supabase
     .from('sp_orders')
-    .select('id, status, had_cancelled_picking, expired_date')
+    .select('id, status, had_cancelled_picking, expired_date, dc_id, dc_master(nama, alamat), inv, fp, submit, kirim, submit_date, email_status')
     .eq('customer_id', customerId)
     .eq('sp_no', spNo)
     .is('deleted_at', null)
@@ -1362,6 +1434,30 @@ export async function getStorbitSpDrilldown(category, { customerId = null, price
 }
 
 /**
+ * Rekap SP per customer untuk SATU kategori status (get_storbit_rekap_per_customer).
+ * Satu baris per SP — produk sudah digabung di sisi RPC, jadi JANGAN dedup lagi
+ * di client.
+ *
+ * ⚠️ `nilai_outstanding` bisa NULL dan itu DISENGAJA: kategori terkirim_penuh,
+ * pernah_risiko_pinalti, dan cancelled belum punya basis pra/pasca-kirim yang
+ * ditetapkan. Jangan `|| 0` di konsumen — "belum didefinisikan" dan "nol" dua
+ * hal berbeda, dan mengoersinya menghasilkan "Rp 0" yang berbohong.
+ *
+ * @param {string} category - salah satu dari 10 kategori get_storbit_sp_drilldown
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getStorbitRekapPerCustomer(category, { customerId = null, priceCategory = null, companyId = null, limit = 500 } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_rekap_per_customer', {
+    p_category:       category,
+    p_customer_id:    customerId    || null,
+    p_price_category: priceCategory || null,
+    p_company_id:     companyId     || null,
+    p_limit:          limit,
+  });
+  return { data: data || [], error };
+}
+
+/**
  * Baris produk untuk satu kategori kartu Warehouse.
  * @param {string} category - 'danger_stock' | 'zero_stock' | 'rop_belum_diisi'
  * @returns {Promise<{data: Array, error: object|null}>}
@@ -1369,6 +1465,87 @@ export async function getStorbitSpDrilldown(category, { customerId = null, price
 export async function getStorbitStockDrilldown(category, { companyId = null, limit = 200 } = {}) {
   const { data, error } = await supabase.rpc('get_storbit_stock_drilldown', {
     p_category:   category,
+    p_company_id: companyId || null,
+    p_limit:      limit,
+  });
+  return { data: data || [], error };
+}
+
+// ── Laporan Per Barang (Dashboard Storbit) ──────────────────────────────────
+// Empat RPC dari migrasi 20260905000001. Lingkup barisnya SAMA PERSIS di
+// keempatnya (sp_orders.deleted_at IS NULL AND status NOT IN
+// ('CANCELLED','DRAFT')) dan ditulis sebagai CTE bersama di SQL — jadi angka
+// kartu, tabel, dan file export mustahil drift satu sama lain.
+//
+// ⚠️ SELURUH nilai rupiah dari ketiganya (kecuali `piutang` di
+// getStorbitOutstandingSummary) adalah DPP — BELUM termasuk PPN. Label di UI
+// wajib menyatakan itu; lihat COMMENT ON FUNCTION di migrasinya.
+
+/**
+ * Laporan satu produk: ringkasan + rincian per customer.
+ * @param {string} productId
+ * @returns {Promise<{data: object|null, error: object|null}>}
+ *          data = { summary: {...}, per_customer: [...], generated_at }
+ */
+export async function getStorbitProductReport(productId, { companyId = null, dateFrom = null, dateTo = null } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_product_report', {
+    p_product_id: productId,
+    p_company_id: companyId || null,
+    p_date_from:  dateFrom  || null,
+    p_date_to:    dateTo    || null,
+  });
+  return { data: data || null, error };
+}
+
+/**
+ * Daftar SP yang memuat satu produk, satu baris per SP.
+ *
+ * `limit` sengaja dibuka sebagai parameter: layar memakai 200, export memakai
+ * angka jauh lebih tinggi supaya file tak terpotong diam-diam. Pemanggil WAJIB
+ * membandingkan panjang hasil dengan limit yang dikirim — kalau menyentuh
+ * limit, peringatkan user SEBELUM file dibuat.
+ *
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getStorbitProductSpList(productId, { companyId = null, dateFrom = null, dateTo = null, limit = 200 } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_product_sp_list', {
+    p_product_id: productId,
+    p_company_id: companyId || null,
+    p_date_from:  dateFrom  || null,
+    p_date_to:    dateTo    || null,
+    p_limit:      limit,
+  });
+  return { data: data || [], error };
+}
+
+/**
+ * Tiga angka outstanding: kirim / tagih / piutang.
+ * kirim & tagih DPP tanpa PPN; piutang BRUTO (total_amount sudah termasuk PPN).
+ * Ketiganya JANGAN dijumlahkan — beda basis pajak.
+ * @returns {Promise<{data: object|null, error: object|null}>}
+ */
+export async function getStorbitOutstandingSummary({ companyId = null, customerId = null, priceCategory = null } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_outstanding_summary', {
+    p_company_id:     companyId     || null,
+    p_customer_id:    customerId    || null,
+    p_price_category: priceCategory || null,
+  });
+  return { data: data || null, error };
+}
+
+/**
+ * Produk dengan nilai outstanding terbesar.
+ *
+ * RPC-nya SENGAJA tidak memfilter sisa > 0, jadi dengan `limit` tinggi fungsi
+ * ini sekaligus mengembalikan SELURUH produk yang pernah muncul di SP (38 per
+ * 5 Sep 2026). Halaman dashboard memakainya untuk DUA hal dari SATU panggilan:
+ * isi combobox produk (semua baris) dan tabel Top 10 (10 baris pertama, sudah
+ * urut nilai DESC). Satu sumber = mustahil drift antara dropdown dan tabel.
+ *
+ * @returns {Promise<{data: Array, error: object|null}>}
+ */
+export async function getStorbitTopOutstandingProducts({ companyId = null, limit = 10 } = {}) {
+  const { data, error } = await supabase.rpc('get_storbit_top_outstanding_products', {
     p_company_id: companyId || null,
     p_limit:      limit,
   });

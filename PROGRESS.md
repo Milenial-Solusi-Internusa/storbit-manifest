@@ -31,6 +31,568 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-07
+### Rekonsiliasi Nexus × Finance — DUA catatan 5 Sep terbantahkan + temuan terbesar sesi ini
+
+Dua file Finance dianalisis: **`Storbit_REKAP_SP.xlsx`** dan **`AR_STORBIT_.xlsx`** (15 sheet), diadu dengan
+query produksi 7 Sep 2026.
+
+**⛔ KOREKSI 1 — "bottleneck di penerbitan invoice" SALAH.** Catatan 5 Sep membaca Outstanding Tagih
+Rp 6,27 M sebagai "barang sudah dikirim, BTB terbit, belum satu pun diinvoice". Kenyataannya **416 dari
+421 SP `BTB_TERBIT` SUDAH ditagih** — invoicenya diterbitkan **di luar Nexus** dengan penomoran
+`JKT-xxxxxx`. Sheet `outstanding Indomaret` sendiri memuat **635 baris invoice, Rp 20,4 M ditagih,
+Rp 19,2 M dibayar**, sementara Nexus cuma punya **7 invoice**. Jadi Rp 6,27 M adalah **selisih
+PENCATATAN antar-sistem, BUKAN uang yang belum ditagih**. Catatan 5 Sep sendiri sudah menyebut kemungkinan
+ini sebagai salah satu hipotesis; kemungkinan itulah yang terbukti. Butir 6 entri 2026-09-05 sudah dicoret;
+`09_ROADMAP.md` **Keputusan Terbuka #33** sudah diganti isinya.
+
+**⛔ KOREKSI 2 — akun Azhar Malik AKTIF.** Catatan 5 Sep menulis "`is_active = false`". Query produksi
+7 Sep: akun **AKTIF** (`profiles.active` = true — nama kolomnya **`active`**, bukan `is_active`) dengan role
+**`super_admin` @ MSI**. Yang nonaktif cuma **baris role `ceo` di `user_roles`**, dan itu tak menghalangi
+apa pun karena `super_admin` mem-bypass seluruh gate menu dan RLS. **Tambahan:** role `ceo` sudah tercakup
+di `is_manager_or_above()` (`schema_snapshot.sql`, `CREATE FUNCTION public.is_manager_or_above` — daftarnya
+`super_admin/admin/ceo/gm/gm_bd/manager/supervisor`), jadi celah **TD-217 hanya mengenai Finance**, bukan
+level eksekutif. Butir 11 entri 2026-09-05 sudah dicoret; #34 difokuskan ulang ke bagian gate menu yang
+memang tetap benar.
+
+**⭐ TEMUAN TERBESAR SESI INI — Nexus dan laporan Finance MENGUKUR OBJEK YANG BERBEDA.**
+
+| | temuan | angka |
+|---|---|---|
+| **B1** | **Dua file Finance saling bertentangan** untuk customer yang SAMA (PT. Indomarco Prismatama, rentang 3 tahun) | `AR_STORBIT_`: 515 baris · ditagih **Rp 12,23 M** · OS **Rp 3,74 M** — `Storbit_REKAP_SP`: 635 baris · ditagih **Rp 20,40 M** · OS **Rp 1,16 M**. Selisih piutang **Rp 2,58 M** |
+| **B2** | **61% piutang Finance TIDAK lewat SP sama sekali** | dari OS **Rp 9,59 M**: **Rp 3,78 M** ber-nomor SP · **Rp 5,81 M** memakai **nomor PO customer** dan ordernya **TIDAK ADA di Nexus** |
+| **B3** | AR Finance 3 tahun vs layar Nexus | ditagih **Rp 19,10 M** · dibayar **Rp 9,51 M** · OS **Rp 9,59 M** — Nexus menampilkan piutang **Rp 73,1 jt**. Selisih **±130×** |
+
+**Customer jalur non-SP** (B2): PT. Mobilindo Armada Cemerlang ("Pak John") **Rp 2,26 M** · Greenfields
+**Rp 1,01 M** · Adi Sarana **Rp 640 jt** · Alfamart **Rp 570 jt** · EKB **Rp 471 jt** · Archroma (2 entitas)
+**Rp 432 jt** · Lima Tekno **Rp 179 jt** · Koperasi Kaula Unggul **Rp 122 jt** · Pak Indra **Rp 75 jt**.
+
+⚠️ **Konsekuensi yang paling penting dipahami:** **Nexus TIDAK AKAN PERNAH bisa align sepenuhnya dengan
+laporan Finance selama order non-SP tidak masuk sistem. Ini BUKAN sinkronisasi yang gagal — objeknya memang
+berbeda.** Jangan perlakukan selisihnya sebagai bug yang menunggu ditambal.
+
+⚠️ **Seluruh 42 invoice 2024 tercatat NOL pembayaran** (OS = 100% nilainya). **Belum diketahui** apakah
+memang belum dibayar atau kolom pembayarannya tidak diisi. → `09_ROADMAP.md` **Keputusan Terbuka #40**.
+
+**Anomali AR yang perlu konfirmasi Elvira** (B4 — dicatat supaya tak diselidiki ulang dari nol):
+
+- **SP `2117203` punya DUA nomor invoice berbeda dengan nilai IDENTIK** — `JKT-260665` dan `JKT-260734`,
+  masing-masing **Rp 5.925.180**, keduanya belum dibayar. **Kemungkinan tagihan ganda.**
+- **`JKT-260552` muncul dua baris identik** (Rp 1.805.712). **Kemungkinan duplikat.**
+- **SP `2086402`** (Rp 52,1 jt, 2 Mar 2026) dan **SP `2120505`** (Rp 487 rb) **TIDAK ditemukan di seluruh
+  15 sheet mana pun** — kemungkinan benar-benar **belum ditagih**.
+
+**B5 — pertanyaan untuk meeting Finance BERGESER.** Elvira **sudah menerbitkan invoice dari Nexus**:
+**4 dari 7 invoice hidup dibuatnya** (`SOA-INV-VIII-2026-0007`, `-0009` pada 20 Agu; `-0010`, `-0011` pada
+7 Sep). Jadi pertanyaannya bukan lagi *"maukah pindah ke Nexus"* melainkan **"apa yang menahan supaya tidak
+semuanya"**.
+
+⚠️ **Mana file Finance yang jadi acuan resmi BELUM DIKETAHUI** — itu pertanyaan **pertama** untuk meeting
+Finance. → `09_ROADMAP.md` **Keputusan Terbuka #38**, dan **#39** untuk order jalur non-SP.
+
+
+### Storbit — rekap SP per customer + nilai rupiah per kartu status + panel export (2 migrasi LIVE)
+
+Dua migrasi, **keduanya LIVE di produksi 7 Sep 2026**, **100% BACA** — nol DDL tabel, nol perubahan RLS,
+nol backfill.
+
+**`20260907000002_storbit_nilai_per_status`** — `CREATE OR REPLACE get_storbit_dashboard_stats`, **menambah
+7 kunci ber-sufiks `_value`** ke objek `manifest`. Pembagiannya:
+
+- **PRA-KIRIM** `GREATEST(qty - shipped_qty, 0) * unit_price` → `pending_open` · `expired` · `mendekati_expired`
+- **PASCA-KIRIM** `shipped_qty * unit_price` → `shipped` · `delivered_belum_btb` · `btb_terbit` · `finance`
+
+⚠️ **EMPAT kunci SENGAJA TIDAK diberi `_value`** — keputusan sadar Den, **bukan kelalaian**:
+`cancelled` (nol SP hari ini → definisi apa pun yang dipilih sekarang **tak punya satu baris pun untuk
+diuji**, dan "nilai SP batal" gampang terbaca sebagai **kerugian** padahal barangnya masih di gudang) ·
+`dispatch_eligible` & `dispatch_data_tersedia` (keduanya **penyebut/pembilang rasio**, bukan besaran uang) ·
+`total_sp` (sudah punya kartu strip **BRUTO** — beda basis pajak, nama sama → paling mudah salah dibaca).
+
+⚠️ **`btb_terbit_value` (Rp 6.200.109.098) TIDAK sama dengan kartu Outstanding Tagih (Rp 6.276.066.677).**
+Selisih **Rp 76 jt** adalah `shipping_price` yang **sengaja tidak diikutkan** (cermin Outstanding **Kirim**).
+**By design, bukan bug — jangan "diselaraskan"** tanpa lebih dulu memutuskan basis mana yang jadi acuan
+halaman ini.
+
+**`20260907000003_storbit_rekap_per_customer`** — **RPC BARU** `get_storbit_rekap_per_customer`, menjawab
+permintaan CEO: *total SP + nilai outstanding per customer, beserta daftar nomor SP dan produk tiap SP*.
+Satu baris per SP (`sp_items` di-`GROUP BY` per SP, produk `string_agg(DISTINCT …)`), nol dedup di client.
+Signature **berbaris PERSIS** dengan `get_storbit_sp_drilldown`:
+`(p_category, p_customer_id, p_price_category, p_company_id, p_limit)`.
+
+⚠️ **TIGA kategori sengaja mengembalikan `NULL`, BUKAN 0** — `terkirim_penuh` dan `pernah_risiko_pinalti`
+(basisnya belum pernah ditetapkan; `pernah_risiko_pinalti` bahkan **MEMBENTANG lintas status pra- dan
+pasca-kirim**, sehingga "basisnya apa" adalah pertanyaan **bisnis**, bukan teknis) dan `cancelled` (mengikuti
+keputusan migrasi `…000002` di atas). **Barisnya TETAP dikembalikan lengkap** — yang `NULL` hanya kolom
+nilainya. ⛔ **JANGAN dikoersi jadi 0 di mana pun**: `SUM()` di SQL dan `reduce()` di JS **dua-duanya
+diam-diam memperlakukan NULL sebagai nol** kalau tidak dijaga, dan begitu itu terjadi angkanya tak bisa
+dibedakan lagi dari "memang nol".
+
+**Verifikasi angka:**
+
+| cek | hasil |
+|---|---|
+| total `pending_open` lewat RPC baru | **44 SP / Rp 1.205.069.395** — **sama persis** dengan `pending_open_value` |
+| per customer | Indomarco **40 SP / Rp 1.129.019.395** · CK - Central Kitchen **4 SP / Rp 76.050.000** |
+| kesembilan kunci hitungan lama | diuji ulang lewat **perhitungan independen langsung dari tabel** (bukan sebelum-sesudah) — **semuanya sama** |
+
+**FE (tanpa migrasi):**
+
+- **Label konteks produk.** Judul produk di sheet *Daftar SP* & *Per Customer*, nama produk di footer PDF
+  ber-`fixed` (**terbaca di SETIAP halaman**), label kolom "Qty Produk Ini" dst, plus catatan bahwa angkanya
+  **porsi produk, bukan nilai SP utuh**. ⚠️ Lahir dari kejadian nyata: **CEO salah membaca Rp 43,58 jt**
+  (satu produk, **DPP**) **vs Rp 104,99 jt** (dua produk, **BRUTO**) — **keduanya BENAR, konteksnya yang
+  tak terbaca**.
+- **Panel pilih isi export** — checkbox per bagian; **sheet Info WAJIB memuat daftar bagian yang ikut**.
+  Blok Outstanding di sheet Ringkasan jadi **KONDISIONAL** supaya tidak tercetak dua kali dalam satu file.
+  Panel lahir dengan **7 bagian**; setelah rekap per customer masuk, `EXPORT_SECTIONS`
+  (`StorbitDashboardPage.jsx:145`) berisi **8**.
+- **Pilihan cakupan di panel** — dropdown Customer/Tipe SP di puncak + dropdown Status/Kategori stok/Produk
+  per bagian. **State panel TERISOLASI dari keadaan halaman.** Tombol export pindah ke **bar filter global**
+  supaya bisa diakses dari tab mana pun.
+  ⚠️ **Ketiga dropdown TANPA opsi "semua" — sengaja.** Kategori SP dan kategori stok **SALING TUMPANG
+  TINDIH** (mis. `shipped` ∩ `delivered_belum_btb` pada status SAMPAI), jadi menggabungkannya membuat
+  SP/produk yang sama muncul di dua tempat dan angkanya **tak bisa diadu dengan kartu mana pun**. Untuk
+  dropdown Produk alasannya **berbeda**: bentuk Laporan Per Barang memang per-produk.
+- **Fix dropdown customer kosong.** `customerFromDb()` (`db.js:99`) membuang `company_id` karena
+  `'company_id'` **ADA di `CUSTOMER_STANDARD_DB_COLS`** (`db.js:92`) dan loop pass-through hanya meneruskan
+  kolom **NON-standar**. Akibatnya filter `c.company_id === SOA_COMPANY_ID` **TIDAK PERNAH cocok sekali pun
+  — lahir mati, bukan regresi**; dropdown selalu cuma berisi "Semua customer". Fix = memetakan `company_id`
+  **eksplisit** di `base`. ⚠️ Komentar di `StorbitDashboardPage.jsx` menyebut alasan yang **PERSIS
+  TERBALIK**; **sudah dikoreksi** (`:1379-1384`) supaya tidak menyesatkan orang berikutnya.
+- **Tata letak PDF (`StorbitReportPDF.jsx`).** `paddingTop` **px(20) → px(104)**, `paddingBottom`
+  **px(26) → px(92)** — dihitung dari koordinat poligon ornamen (pita atas `topH = px(96)` = **72pt**, pita
+  bawah `botH = px(84)` = **63pt**), bukan ditebak. `ReportChrome` **TETAP `fixed`** — ornamen tetap tampil
+  di semua halaman, yang digeser **kontennya**. Diverifikasi lewat interpreter CTM: **nol run teks masuk
+  pita ornamen di keempat halaman**. Halaman **3 → 4**, diterima. ⚠️ Nilai `paddingBottom` lama **px(26)**
+  berasal dari `s.page` (`printTokens.js:100`), bukan dari override di `<Page>`; **px(44)** pada baris yang
+  sama adalah `paddingHorizontal` dan **tidak berubah**.
+
+
+### PRF — penjaga multi-company per-entitas di 4 RPC (TD-180 instance KEEMPAT, LIVE + terverifikasi runtime)
+
+**`20260907000001_prf_multi_company_guard`** — 4 `CREATE OR REPLACE` (`prf_claim`, `prf_release`,
+`prf_mark_quoted`, `prf_select_offer`). **LIVE di produksi 7 Sep 2026 + TERVERIFIKASI RUNTIME** (Camelia
+berhasil mengambil PRF milik MSI).
+
+**Masalahnya.** Keempat fungsi memakai `get_user_company_id()` **SINGULAR** (= `profiles.company_id`, home
+company). **Camelia Martina Sekar Widianti** dan **Dery Agung Prahasto** (Procurement Manager SOA) punya role
+`procurement` **aktif di ketiga entitas** tapi home company **SOA**, sementara **SELURUH 285 PRF** yang pernah
+ada bermilik **MSI**. Keduanya karenanya **DITOLAK di setiap PRF yang pernah ada**, di keempat fungsi.
+**78 PRF `SUBMITTED` menunggu diambil.**
+
+Ini **instance KEEMPAT TD-180** dan yang **PERTAMA memblokir keras** (`RAISE EXCEPTION`) — tiga instance
+sebelumnya gagal **senyap**.
+
+**⚠️⚠️ PELAJARAN YANG PALING LAYAK DIINGAT DARI SESI INI.**
+Migrasi **`20260821000004_crm_prf_jamak`** (21 Agu, LIVE) **SUDAH memperbaiki masalah ini untuk dua orang yang
+sama** — headernya bahkan **menyebut Dery & Camellia eksplisit**. Tapi ia hanya menyentuh **18 policy di 6
+tabel, NOL RPC**. Karena keempat fungsi ini `SECURITY DEFINER`, **mereka tidak ikut terbantu oleh perbaikan
+policy sama sekali**. **Bug bertahan 17 hari.**
+→ ***Memperbaiki policy TIDAK otomatis memperbaiki RPC `SECURITY DEFINER` yang menjaga hal yang sama.***
+
+**Bentuk perbaikannya BUKAN tukar singular → jamak.** `has_role()` **DAN** `is_manager_or_above()`
+**sama-sama mengabaikan company sepenuhnya**; selama sisi kiri masih `= get_user_company_id()`, kelonggaran
+itu tak terlihat karena home company yang mengikatnya. Menukar sisi kiri jadi jamak **tanpa menyentuh sisi
+kanan** membuat kedua syarat **tidak saling terkait** — orang dengan role X di entitas A dan role apa pun di
+entitas B akan lolos untuk PRF entitas B, padahal ia bukan X di sana. Untuk `prf_release`/`prf_select_offer`
+itu berarti **melepas PRF orang lain** dan **memilih penawaran vendor di PRF yang bukan miliknya**: menutup
+satu lubang sambil membuka dua yang lebih serius. Karena itu **ketiga cabang role diganti pengujian role DI
+ENTITAS PRF ITU** (`user_roles ur JOIN roles r … WHERE ur.company_id = v_company AND ur.is_active AND
+r.code = …`). Di `prf_release`/`prf_select_offer` struktur penjaganya ikut berubah: **cek identitas naik jadi
+cabang `OR` sejajar**.
+
+**Blast radius diukur SEBELUM eksekusi: NOL orang terdampak.** Kesembilan pemegang role manajerial (Ayun,
+Azhar, Den, Denyt, Endang, Gigih, Faris, Rini, Vendi) punya role di **satu entitas saja**, dan entitas itu
+**selalu sama** dengan home company-nya. Pengetatan ini murni menutup celah ke depan.
+
+⚠️ **Konsekuensi yang harus diingat:** daftar role manajerial kini hidup di **EMPAT tempat** —
+`is_manager_or_above()`, `mark_delivery_delivered`, `prf_release`, `prf_select_offer`. **Harus bergerak
+bersama.** → **TD-233**.
+
+
+### Perbaikan & pengembalian data manual — 5 SP harga nol + 2 invoice uji
+
+⚠️ **Keduanya UPDATE/DELETE manual di SQL Editor.** ✅ **[8 Sep 2026] Sudah DIREKAM sebagai migrasi
+retroaktif** — `20260908000003_fix_harga_nol_5_sp` dan `20260908000004_void_2_invoice_uji`, keduanya
+ber-`Status: LIVE (retroaktif)` + banner "REKAMAN, BUKAN untuk dijalankan lagi". Alasannya khusus untuk
+D1: ia **mengubah nilai uang yang masuk ke laporan CEO**, jadi jejaknya harus ada di tempat orang
+mencari (`supabase/migrations/`), bukan cuma di dev log ini. ⚠️ Isi kedua file itu **rekonstruksi setia,
+BUKAN salinan byte-exact** dari yang dijalankan — sumber kebenarannya tetap produksi + entri ini.
+
+**D1 — 5 SP berharga nol diperbaiki jadi Rp 5.148/unit.** Berasal dari impor **2 Juli 2026** (batch 690
+baris / 405 SP, 99,3% berhasil). Harganya **dipastikan dari invoice Finance yang SUDAH LUNAS**:
+`JKT-260119` / `-260120` / `-260123` / `-260134` / `-260135`, masing-masing **Rp 5.714.280** =
+**1.000 × 5.148 × 1,11**. Diperbaiki di **`sp_items` DAN `sp_order_items`** dalam **satu `BEGIN`/`COMMIT`**;
+divergensi antar-tabel **diverifikasi tetap 0** sesudahnya. SP: **2016828, 2016880, 2016895, 2016989,
+2017000**. **Dampak: Outstanding Tagih +Rp 25.740.000.**
+
+**D2 — 2 invoice uji dikembalikan.** `SOA-INV-IX-2026-0012` (SP 2280686) dan `-0013` (SP 2273234)
+di-**VOID** (**bukan dihapus** — mengikuti praktik yang sudah ada), **jurnal AR-nya dihapus permanen**
+(`journal_entries` **tidak punya `deleted_at`**), lalu `sp_recompute_status` dipanggil — keduanya
+**kembali ke `BTB_TERBIT` dengan sendirinya**. ⚠️ **Nomor 0012 dan 0013 terpakai PERMANEN; invoice
+berikutnya mulai 0014.**
+
+
+### Temuan data 7 Sep — sudah diselidiki, JANGAN diselidiki ulang
+
+- **E1 · 33 SP `BTB_TERBIT` dengan `shipped_qty` = 0.** Harga dan qty normal, `sp_status` = `confirmed`.
+  **BTB terbit TANPA melewati dispatch Surat Jalan di Nexus.** ⚠️ **BELUM DIPASTIKAN apakah by design —
+  pertanyaan untuk Koh Deny** (→ `09_ROADMAP.md` **Keputusan Terbuka #41**). Kalau ternyata by design,
+  **rumus Outstanding Tagih perlu disesuaikan**, karena ia mengasumsikan BTB **selalu** didahului dispatch.
+  Bukti pendukung: **SP `2254302` ditagih Finance Rp 1.268.730** padahal Nexus mencatat nilainya **nol** —
+  **Finance menagih berdasarkan qty PESANAN**, bukan qty terkirim.
+- **E2 · 21 SP `MENUNGGU_KONFIRMASI_DC` dengan `shipped_qty` = qty ternyata BENAR by design** — surat
+  jalannya masih `in_transit`, belum `delivered`, dan `sp_recompute_status` memang bekerja begitu. **Sempat
+  dicurigai bug; penelusuran membuktikan TIDAK.** Seluruh SJ aktif berangkat **2 Sep**, umur **2 hari** —
+  **bukan tunggakan.** (Menegaskan ulang catatan 5 Sep butir 10.)
+- **E3 · Status `CANCELLED` dan `DRAFT` TIDAK ADA** di kosakata `sp_orders` (0 baris), jadi filter
+  `NOT IN ('CANCELLED','DRAFT')` di seluruh RPC saat ini **INERT**. **Tetap dipertahankan sebagai penjaga.**
+- **E4 · SP `SOA-0001` (customer "General Order") BUKAN data uji** — ada sheet `SP GENERAL ORDER` di
+  spreadsheet Gudang, DC Jombang, status Closed. ⛔ **Jangan dihapus.** Yang benar-benar data uji:
+  **`ZZZTEST-DUEDATE-001`** (Rp 147.000, ikut terhitung di angka piutang).
+- **E5 · Rekap Gudang 53 SP vs Nexus 44 SP — bukan salah satu keliru, CARA MEMOTONGNYA yang berbeda.**
+  Rekap Gudang **mencampur** pengelompokan **per customer** (Indomarco, Indogrosir) dengan **per produk**
+  (Trolly, Loyang) — dan **Trolly maupun Loyang adalah nama BARANG, bukan customer**. Spreadsheet Gudang
+  memang punya sheet terpisah `SP INDOMARCO-TROLLY` dan `SP INDOMARCO-LOYANG`, **keduanya milik Indomarco**.
+  **Sisa yang perlu ditelusuri:** selisih **1 SP Indomarco**, dan posisi **SP Indogrosir** (Nexus: 0 pending,
+  8 BTB, 1 finance). Nexus juga punya **4 SP CK - Central Kitchen (Rp 76 jt)** yang **tidak ada** di rekap
+  Gudang.
+
+
+### Pola operasional yang dicatat permanen (→ `02_RULES_GOVERNANCE.md` §4)
+
+- **G1 · Refresh `schema_snapshot` WAJIB pakai `pg_dump --schema-only --schema=public`.** ⛔ **JANGAN
+  `supabase db dump`** — CLI itu **membuang seluruh baris komentar** dan **me-quote semua identifier**,
+  menghasilkan **diff raksasa PALSU** yang tak bisa direview.
+- **G2 · Snapshot sebelum 5 Sep dibuat TANPA `--schema=public`** sehingga ikut membawa **35 tabel skema
+  sistem** (`auth`/`storage`/`realtime`/`vault`). **Jumlah tabel `public` TETAP SAMA sebelum dan sesudah —
+  nol yang hilang.** Dicatat supaya orang yang membandingkan jumlah tabel antar-commit tidak salah paham.
+  ⚠️ **Alasan utama schema-only: blok `COPY` memuat DATA PRIBADI PRODUKSI** (nama, email, telepon, alamat,
+  tanggal lahir, kontak darurat di `profiles`) **di dalam git**. **Langkah verifikasi lama "pastikan blok
+  `COPY` tetap 133" sudah TIDAK BERLAKU** dan sudah dihapus dari §4.
+- **G3 · `CREATE TEMP TABLE` TIDAK bertahan lintas klik Run** di Supabase SQL Editor — tiap Run bisa membuka
+  koneksi baru. Verifikasi sebelum-sesudah yang bergantung temp table harus dijalankan **dalam satu sesi**,
+  atau **diganti dengan perhitungan independen langsung dari tabel** — yang justru **lebih kuat**: ia
+  membuktikan angkanya **BENAR**, bukan sekadar **TIDAK BERUBAH**. (Itulah yang dipakai memverifikasi
+  `20260907000002`.)
+- **G4 · Header migrasi dan snapshot harus dirapikan SEGERA setelah eksekusi SQL, bukan di akhir sesi.**
+  Claude Code memakai **keduanya** sebagai sumber kebenaran soal apa yang hidup di produksi; menundanya
+  membuat sesi berikutnya **berangkat dari peta yang salah**. ⚠️ **Ini terjadi DUA KALI hari ini.**
+
+
+### Tech debt sesi ini (detail: `08_TECH_DEBT.md`)
+
+- **TD-231 (MEDIUM, baru)** — `is_bnf_authorized()` adalah **guard singular sejati**
+  (`bnf_authorized_users.company_id = get_user_company_id()`) **dan satu-satunya guard TANPA
+  `SET search_path`**. Kerabat sekelas keempat RPC PRF; diverifikasi doc-keeper langsung ke
+  `schema_snapshot.sql` (`CREATE FUNCTION public.is_bnf_authorized`).
+- **TD-232 (LOW, baru)** — keempat fungsi PRF **tidak punya `REVOKE ALL … FROM PUBLIC`** (18 fungsi lain
+  punya; dihitung doc-keeper: `grep -c "REVOKE ALL ON FUNCTION public\."` = **18**, nol di antaranya `prf_*`).
+  **Tidak eksploitatif** (`auth.uid()` NULL untuk `anon` → guard tetap menolak), tapi **gap ACL nyata**.
+- **TD-233 (MEDIUM, baru)** — daftar role manajerial hidup di **4 tempat** (`is_manager_or_above()`,
+  `mark_delivery_delivered`, `prf_release`, `prf_select_offer`) dan **harus bergerak bersama**.
+- **TD-234 (MEDIUM, baru)** — laporan **lintas-produk** yang sesungguhnya butuh **RPC AGREGAT tersendiri**,
+  **bukan** pengulangan RPC per-produk **38 kali** (76 panggilan, 114 sheet). Kalau Top 10 di tab 3 dirasa
+  kurang, **naikkan batasnya** — jangan diulang per produk.
+- **TD-235 (LOW, baru)** — di `RekapSection` (`StorbitReportPDF.jsx:359-371`) baris SP dan baris produknya
+  adalah **dua elemen bersaudara tanpa `wrap={false}` bersama** → bisa terpisah di pergantian halaman.
+  **Belum terjadi di tes, sengaja tidak ditambal** (membungkusnya bisa memaksa halaman baru).
+- **F5 — SELESAI, bukan utang.** Kolom NILAI dan KETERANGAN di tabel Kartu Status PDF **sudah diberi jarak**
+  (`gap()` per kolom, commit `6292007`). Tidak pernah tercatat sebagai TD, jadi tak ada baris yang perlu
+  ditutup.
+- **F6 — angka tabel di `CLAUDE.md` dikoreksi:** ~~133 tabel `public`~~ → **138** (dihitung doc-keeper:
+  `grep -c "^CREATE TABLE public\." supabase/schema_snapshot.sql` = **138**). Kenaikan berasal dari migrasi
+  CRM v3, bukan dari sesi ini.
+
+**Status verifikasi doc-keeper (7 Sep):** `schema_snapshot.sql` **SEGAR** — ketiga objek sesi ini ADA di
+snapshot (`get_storbit_rekap_per_customer` beserta ACL-nya · kunci `*_value` di `get_storbit_dashboard_stats` ·
+badan baru keempat `prf_*` yang sudah menguji role per-entitas). Hitungan: `CREATE TABLE public.` = **138** ·
+`GRANT … TO authenticated` = **239** · `CREATE POLICY` = **367** · `COPY public.` = **0**.
+⚠️ **Belum ada laporan tes runtime** untuk FE sesi ini selain **konfirmasi runtime PRF** (Camelia mengambil
+PRF MSI); panel export, rekap per customer, dan tata letak PDF baru **belum ada checklist manual yang
+dilaporkan lolos**.
+
+
+### Migrasi lifecycle JALUR B **LIVE di produksi** — blokir RENAME akhirnya hilang
+
+`20260908000001_accounts_lifecycle_dual_write` naik ke **produksi** (ref `untmpqceexwxzuhlmyrg`), dijalankan manual
+oleh Den, beberapa jam sesudah verifikasi staging hari yang sama. **Keputusan Terbuka #35 DITUTUP.**
+
+**Angka verifikasi produksi:**
+
+| cek | hasil |
+|---|---|
+| akun | **1.258**, kedua kolom **IDENTIK** (beda = 0) |
+| backfill riwayat | **1.258 = 1.258** akun, nol akun ber-stage NULL |
+| trigger di `accounts` | **6**, `trg_a_sync_lifecycle_columns` di urutan **PERTAMA** — sebelum `trg_set_customer_on_won` yang membacanya |
+| `set_prospect_on_inquiry` | **tiga tahap utuh** `('lead','mql','sql')` di **kedua** kolom |
+| default asimetris | `account_status` DEFAULT `'lead'` · `lifecycle_stage` **tanpa** default |
+
+Snapshot di-refresh (`c8c67f6`): `CREATE TABLE public.` 137 → **138**, `GRANT … TO authenticated` 237 → **238**,
+`CREATE POLICY` 366 → **367**, `COPY public.` tetap **0**. Tujuh baris `-` pada diff semuanya terjelaskan — 2 token
+sesi `pg_dump` + 5 baris badan fungsi versi satu-kolom yang memang digantikan; kelima penggantinya diverifikasi ada.
+
+**⭐ Yang paling layak dicatat:** cek `set_prospect_on_inquiry` lolos **di produksi**, bukan cuma di staging. Ini
+titik paling mudah bocor di seluruh untaian — siapa pun yang menyalin dari migrasi lama akan membawa penyempitan
+`('lead','mql')` tanpa sadar. Ia bersih di ketiga tempat: file migrasi, staging, dan sekarang snapshot produksi.
+
+**Alasan prefix `trg_a_` kini terbukti dari tiga sisi** — penalaran urutan alfabetis (saat ditulis), uji staging,
+dan snapshot produksi (`:12108` sebelum `:12402`). Tidak ada lagi bagian dari klaim itu yang bersandar pada asumsi.
+
+**Utang migrasi produksi: 5 LIVE / 4 tersisa.** `crm_v3_lifecycle` pindah ke kolom LIVE sebagai **DIGANTIKAN** —
+file RENAME aslinya tidak pernah dijalankan dan tidak akan pernah. Yang tersisa: `rls_owner_based`, `sales_targets`,
+`crm_menu_permissions_sales`, `accounts_source_add_whatsapp`.
+
+⏭️ **Yang tersisa dari untaian lifecycle hanya penutupnya** — `20260908000002_accounts_lifecycle_drop_legacy`,
+ber-⛔ STOP, menunggu branch merge + stabil di produksi. Itu **pekerjaan terjadwal, bukan blokir**. Sampai ia jalan,
+`account_status` **sengaja masih ada** dan disinkronkan; itu keadaan transisi yang diharapkan, bukan sisa yang lupa.
+
+⚠️ **Prasyarat merge yang tidak boleh kelewat:** `src/hooks/useCustomFields.js:33` harus memuat **kedua** nama kolom
+selama transisi. Dicatat di `09_ROADMAP.md` §Pekerjaan Sinkron Branch — sengaja **di sana**, bukan terkubur di jurnal
+ini, supaya terbaca saat merge.
+
+
+### Migrasi lifecycle JALUR B terverifikasi PENUH di staging (belum produksi)
+
+`20260908000001_accounts_lifecycle_dual_write` diuji **penuh di staging** (ref `oovmlhilhqzejnawqkvt`).
+⛔ **BELUM dijalankan di produksi** — jangan dibaca sebagai LIVE.
+
+**Jalan uji:** T0 rekam keadaan → T1 kembalikan staging ke bentuk produksi (drop `account_lifecycle_history` +
+rename `lifecycle_stage` balik jadi `account_status`) → T1b kembalikan empat fungsi ke badan produksi → T2
+jalankan kelima STEP **verbatim** → 11 uji perilaku. **Seluruhnya lolos.**
+
+**Struktur:** 7 akun, kedua kolom identik, nol NULL · 6 trigger di `accounts` · backfill riwayat 7 = 7 akun ·
+default **asimetris** terpasang benar (`account_status` DEFAULT `'lead'`, `lifecycle_stage` DEFAULT NULL).
+
+**Dua klaim yang naik status dari penalaran jadi bukti:**
+- ⭐ **`trg_a_sync_lifecycle_columns` TERBUKTI di urutan PERTAMA**, sebelum `trg_set_customer_on_won` yang
+  membacanya. Alasan prefix `trg_a_` tadinya cuma penalaran urutan alfabetis di atas kertas.
+- ⭐ **uji 8** — akun ber-tahap `sql` + inquiry baru → kedua kolom jadi `prospect`. **Penyempitan Keputusan
+  Terbuka #36 terbukti TIDAK terbawa.** Ini uji terpenting di seluruh rangkaian.
+
+**Sisanya:** uji 0 (tulis nilai SAMA ke kolom lama → nol riwayat; jaring `IS DISTINCT FROM` bekerja) · uji 1/2
+(sinkron dua arah) · uji 3 (UPDATE `name` → nol perubahan, nol riwayat) · uji 4/5/6 (INSERT lewat kolom lama /
+kolom baru / tanpa keduanya → sekaligus membuktikan default asimetris benar, sinkron INSERT dua arah benar, dan
+`generate_customer_code` ber-`COALESCE` menyala di kedua jalur) · uji 7 & 9 (kedua jalur WON) · uji 10 (backfill).
+Seluruh uji ber-ROLLBACK bersih, termasuk `code_counters` kembali ke `last_number=1`; nol akun `ZZZTEST` dan nol
+inquiry uji tersisa.
+
+**⚠️ Jebakan yang dicatat supaya tak diulang:** md5 keempat fungsi yang direkam **T0.3/T0.4 TIDAK bisa dipakai
+sebagai target pemulihan T1b** — itu versi **pasca-rename** milik staging, formatnya sudah beda dari produksi,
+jadi mencocokkan T1b kepadanya **selalu gagal dan gagalnya PALSU**. Patokan yang benar: badan fungsi di
+`schema_snapshot.sql` **produksi**, dicocokkan **baris per baris** — dan pencocokan itu dilakukan, hasilnya cocok.
+T0.3 tetap berguna untuk satu hal: bukti bahwa T1b benar-benar mengubah keempat fungsi. Catatan ini juga ditaruh
+di blok PENGUJIAN file migrasinya, di T0.3, supaya terbaca oleh yang menjalankan T0 berikutnya.
+
+**Dua keadaan akhir yang SENGAJA dibiarkan — jangan "dirapikan":**
+- Staging berakhir di **keadaan transisi** (dua kolom, sinkron). Itu persis keadaan yang akan dialami produksi
+  dan yang dibutuhkan FE branch. Tidak dibersihkan.
+- **4 baris riwayat transisi NYATA di staging hilang permanen** saat T1 men-drop `account_lifecycle_history`
+  (8 baris → 7 sesudah backfill ulang). Isinya terekam lebih dulu di T0.2. Konsekuensi yang diterima; ini staging.
+  ⚠️ Di **produksi** T1 tidak berlaku sama sekali — produksi belum pernah punya tabel itu.
+
+**Status utang migrasi:** tetap **5 tersisa**, tapi `crm_v3_lifecycle` kini ditandai **digantikan** oleh
+`20260907000001` yang sudah terverifikasi staging dan **menunggu eksekusi produksi**. ⚠️ **Keputusan Terbuka #35
+BELUM ditutup** — jalan keluarnya terbukti, tapi blokirnya baru hilang setelah migrasinya benar-benar jalan di
+produksi. Butir #35 sendiri hidup di branch, bukan di `main`; faktanya disalin ke penanda #35 di `09_ROADMAP.md`
+supaya terbaca dari sini.
+
+
+### Migrasi B3 CRM v3 LIVE di produksi — riwayat status inquiry + kolom penutupan
+
+**Dua migrasi naik ke produksi hari ini, dijalankan manual oleh Den di SQL Editor**, urutan mengikat dipatuhi
+(`20260828000001` dulu, baru `20260828000002` — yang kedua meng-`CREATE OR REPLACE` fungsi milik yang pertama).
+Seluruh verifikasi lolos.
+
+| bukti | hasil |
+|---|---|
+| backfill `inquiry_status_history` | **531 baris** = jumlah inquiry, nol durasi karangan |
+| kolom penutupan `inquiries` | **6 kolom** + 2 FK + `idx_inquiries_closed_at` |
+| trigger di `inquiries` | **5 total** (`trg_set_customer_on_inquiry_won`, `trg_set_prospect_on_inquiry`, `trg_z_lock_inquiry_owner`, `trg_z_log_inquiry_status_change`, `trg_z_stamp_inquiry_closure`) |
+| sidik-jari rantai WON | `set_customer_on_inquiry_won` **a75c5da6…** · `set_inquiry_won_on_so` **f8dbf22a…** — **identik sebelum & sesudah**, bukti keempat trigger terlarang tak tersentuh |
+
+**⭐ Penyimpangan urutan eksekusi — dicatat apa adanya, dan konsekuensinya POSITIF.** Rencananya fungsi
+`log_inquiry_status_change()` lahir dulu dalam versi antara yang `reason`-nya sengaja NULL (karena kolom sumbernya belum
+ada), baru diganti versi final di migrasi kedua. Di produksi, yang hidup **langsung versi final** — versi antara itu
+**tidak pernah menyala**. Akibatnya **nol baris riwayat lahir tanpa alasan**: setiap transisi LOST/CANCELLED yang
+tercatat sejak menit pertama sudah membawa `reason`. Ini fakta, bukan masalah, dan bukan alasan mengubah urutan
+migrasinya — urutan itu tetap mengikat bagi environment lain yang belum menjalankannya.
+
+**⚠️ Perilaku produksi BERUBAH, walau nol kode di-deploy.** Kode `main` tak menyentuh objek baru mana pun
+(`inquiry_status_history` nol rujukan di `src/`; keenam kolom penutupan juga nol). Tapi kedua trigger dipasang pada
+tabel `inquiries`, bukan pada jalur pemanggilnya, jadi **empat jalur tulis status** ikut menyala: manual LOST
+(`DealDetailPage.jsx:608`), dan tiga otomatis (`prf`→IN_REVIEW, `quotations`→QUOTED, `sales_orders`→WON). Sejak hari
+ini setiap perubahan status menulis baris riwayat, dan transisi ke WON/LOST/CANCELLED menstempel `closed_at`/`closed_by`
+— termasuk WON otomatis dari `sales_orders`, tanpa ada yang mengklik apa pun. Jalur LOST lama tetap benar karena fungsi
+final punya `COALESCE(nama loss_reason, NEW.lost_reason)`; tanpa fallback itu seluruh riwayat LOST dari `main` akan
+kosong.
+
+**+TD-229 (MEDIUM, baru)** — insert riwayat kini ada di **jalur kritis** setiap perubahan status; triggernya AFTER,
+jadi kegagalan insert = kegagalan UPDATE status. Penyangganya tunggal: `SECURITY DEFINER` milik `postgres` lolos RLS
+karena `FORCE ROW LEVEL SECURITY` tak dipasang. Pencegahan lengkap ada di TD-nya. ⚠️ Nomornya **TD-229, bukan TD-222**:
+TD-222…228 sudah dipakai branch, memakai 222 akan mengulang tabrakan penomoran yang dibereskan 6 Sep.
+
+**Daftar utang migrasi produksi dibuat di `09_ROADMAP.md`** (baru; `main` belum pernah punya). Dari sembilan migrasi
+CRM v3: **4 LIVE**, **5 tersisa** — `crm_v3_lifecycle` (tertahan Keputusan Terbuka #35), `rls_owner_based`,
+`sales_targets`, `crm_menu_permissions_sales`, `accounts_source_add_whatsapp`.
+
+⚠️ **Snapshot BELUM di-refresh** untuk kedua migrasi ini — Den menjalankan `pg_dump` manual terpisah. Sampai itu jalan,
+`schema_snapshot.sql` (`229671b`, 136 tabel) **belum memuat** `inquiry_status_history` maupun keenam kolom penutupan.
+
+⚠️ **Header kedua file migrasi di branch masih menyatakan "PRODUKSI: belum dikonfirmasi"** dan memuat tiga klaim yang
+sudah basi. Dikoreksi di branch lewat commit terpisah — filenya memang tidak ada di `main`.
+
+
+## 2026-09-06
+> ⚠️ **PERINGATAN AUDIT — jangan menyisir tanggal ini lewat tanggal commit saja.** Sesi jalur B menembus tengah malam: lima commit-nya bertanggal commit **6 Sep** (`3ac8b7e` 22:42 → `9abc617` 23:54), tapi `9abc617` **menyatakan peristiwa 7 Sep** — judulnya *"jalur B LIVE di produksi 7 Sep 2026"*. Penyisiran `git log --since/--until` per tanggal karenanya **salah di kedua arah**: audit 7 Sep tidak menemukannya, audit 6 Sep menghitungnya sebagai pekerjaan 6 Sep. ⚠️ **Dan kelimanya TIDAK ADA di `main`** — semuanya hidup di branch `feature/crm-v3-batch-persiapan`, jadi `git log main` tak memuatnya sama sekali. Saat merekonstruksi kapan sesuatu benar-benar terjadi, pakai **isi commit**, bukan tanggalnya, dan sisir **semua branch aktif**, bukan `main` saja. (Ditambahkan 8 Sep 2026.)
+
+### Keputusan: `schema_snapshot.sql` TETAP schema-only — kontradiksi §4 ditutup
+
+**Keputusan Den:** perintah baku refresh jadi `pg_dump --schema-only --schema=public`. `--no-owner` dan
+`--no-privileges` **tetap DILARANG** — ACL harus ikut. Kontradiksi yang tercatat 5 Sep antara aturan tertulis dan
+praktik nyata **selesai**, bukan lagi keadaan berjalan.
+
+**Dasarnya audit jejak read-only (nol file diubah saat auditnya):**
+- Snapshot **lahir schema-only** (`74b0c1b`, 17 Jun 2026) dan bertahan begitu **119 commit refresh**.
+- Data baru ikut **31 Agu 2026** (`0c736fb`) **tanpa keputusan tertulis** — pesan commit-nya cuma "refresh dari
+  production".
+- Aturan yang mewajibkan data ditulis **2 Sep** (`83a6c26`), **dua hari sesudahnya**, dan alasannya **hanya soal ACL**.
+- Dari **680 rujukan** `schema_snapshot` di dokumentasi, **NOL** memakai bagian datanya; dua dokumen justru
+  menyatakan datanya di luar jangkauan lalu pergi ke SQL Editor.
+- Versi berdata memuat **385 email unik**, 1.246 baris `accounts`, 1.004 `contacts`, kolom `npwp`/`ktp_direktur`/`nib`
+  — permanen di riwayat Git, tanpa pemakaian yang pernah tercatat. **9,62 MB vs 704 KB.**
+
+**Perubahan dokumen:** `02_RULES_GOVERNANCE.md` §4 (perintah baku + verifikasi baru + alasan keputusan; blok
+"KONTRADIKSI TERCATAT" dihapus) · verifikasi `grep -c "^COPY public\." ~133` **DICABUT**, diganti `CREATE TABLE
+public.` = 133 dan `GRANT … TO authenticated` **tidak boleh turun** dibanding refresh sebelumnya · Keputusan Terbuka
+**#32 DITUTUP** · `03_DATA_MODEL.md` gotcha #23 & `CLAUDE.md` disesuaikan · **+TD-221 (LOW, baru)**.
+
+**✅ Langkah manual itu SUDAH DIJALANKAN (hari yang sama).** Migrasi **B1**
+(`20260827000001_crm_v3_master_data` + `20260830000002_inquiry_owner_backfill_and_lock`) naik ke produksi, lalu
+`schema_snapshot.sql` di-refresh **manual oleh Den di Terminal** dengan perintah §4 yang baru
+(`--schema-only --schema=public`, pola `-f /tmp/snap.sql && mv`; tanpa `--no-owner`/`--no-privileges`). Snapshot
+ter-commit **terpisah** dari dokumentasi (`229671b`). Refresh **pertama** di bawah §4 hasil koreksi hari ini.
+
+**Hasil verifikasi §4 — seluruhnya lolos terhadap baseline:**
+
+| metrik | sebelum | sesudah |
+|---|---|---|
+| `CREATE TABLE public.` | 133 | **136** (+3 tabel master B1) |
+| `GRANT … TO authenticated;` | 233 | **236** (tidak turun) |
+| `CREATE POLICY` | 353 | **365** (+12 = 4 policy × 3 tabel) |
+| `COPY public.` | 0 | **0** (schema-only, sesuai keputusan) |
+| ukuran | 703.833 byte | **719.988 byte** |
+| baris | 20.263 | 20.672 |
+
+**Kedelapan objek B1 terverifikasi ADA di snapshot:** `channel_types` `:5523` · `loss_reasons` `:6861` ·
+`sla_policies` `:7981` · `inquiries.owner_id` `:6769` · `idx_inquiries_owner_id` `:11058` ·
+`lock_inquiry_owner_when_closed()` `:2304` · `trg_z_lock_inquiry_owner` `:12143` · keempat `accounts_bant_*_check`
+`:3896-3899`. Header dump: database **17.6**, pg_dump **18.4** — versi pg_dump identik dengan snapshot sebelumnya,
+jadi nol noise diff akibat beda versi. Dua baris yang hilang di diff **hanya** token sesi `\restrict`/`\unrestrict`;
+nol SQL substantif hilang. ⚠️ `crm_v3_lifecycle` dan `inquiries_rls_owner_based` **sengaja belum dijalankan**, jadi
+belum tercermin.
+
+**Yang TIDAK berubah:** keputusan ini menghentikan penambahan data, **tidak menghapus** data di commit
+`0c736fb`…`d10e09a` (31 Agu–5 Sep) yang sudah permanen di riwayat Git. Larangan `--no-owner`/`--no-privileges`
+beserta alasan ACL-nya dipertahankan apa adanya.
+
+### Keputusan kedua: `set_prospect_on_inquiry` — isinya disetujui, eksekusinya dipisah
+
+Penyempitan daftar tahap yang dinaikkan ke `prospect` dari `('lead','mql','sql')` jadi `('lead','mql')` **DISETUJUI
+secara isi** (lifecycle harus monoton naik, `sql` ada DI ATAS `prospect` sehingga perilaku sekarang menurunkan akun;
+status `sql` mahal didapat lewat BANT; sinyalnya terbalik — inquiry masuk itu kabar baik tapi malah menghukum), **TAPI
+DIPISAH** dari migrasi `crm_v3_lifecycle`. Alasan pemisahan bukan soal isi melainkan soal jalur: perubahan perilaku
+bisnis tak boleh menumpang di migrasi yang judulnya rename kolom — kalau hari ini lolos karena isinya kebetulan benar,
+besok yang isinya salah lolos dengan cara yang sama.
+
+Bentuk akhirnya **dua migrasi**: **(a)** migrasi lifecycle jalur B menyalin fungsi itu **apa adanya dari produksi**,
+daftar tahap **tetap bertiga**, nol perubahan perilaku — **mengikat**, jangan dibawa serta walau header migrasi lama
+mengklaim sudah disetujui; **(b)** migrasi perilaku berdiri sendiri, dijalankan **setelah branch
+`feature/crm-v3-batch-persiapan` di-merge ke `main` DAN stabil di produksi**, bukan di hari H, dengan judul/deskripsi
+yang menyebut eksplisit bahwa jumlah akun `sql` naik dan `prospect` turun untuk inquiry baru.
+
+⚠️ **Utang yang menempel pada (b), sengaja BUKAN TD lepas:** (b) menghentikan kejadian baru tapi tak memperbaiki akun
+yang sudah terlanjur turun. Hitung dulu berapa banyak sebelum (b) jalan, lalu Den memutuskan dikoreksi atau dibiarkan
+— itu keputusan bisnis karena mengubah angka historis. Detail lengkap + instruksi mengikatnya: `09_ROADMAP.md`
+**Keputusan Terbuka #36 (TERJAWAB)**. ⚠️ Branch masih menyimpan butir yang sama dalam keadaan TERBUKA (juga #36);
+**branch sengaja tidak disentuh** — diselaraskan saat sinkron.
+
+
+## 2026-09-05
+
+### Dashboard Storbit — Laporan Per Barang + strip Nilai/Outstanding + export Excel/PDF + pecah jadi 3 tab
+
+> **Sifat: 2 migrasi DB (100% BACA) + FE Storbit + 1 dependency baru.** Kedua migrasi dijalankan manual di SQL Editor dan **SUDAH LIVE di produksi 5 Sep 2026** — headernya sudah bertanda `Status: LIVE`, dan keempat RPC + ACL-nya terbaca langsung di `schema_snapshot.sql` (`:1070`/`:1191`/`:1313`/`:1508`, blok ACL `:18477`+). **Nol utang `pg_dump`, nol utang rekam-migrasi.** ⚠️ Tapi **cara `pg_dump`-nya berubah** dan itu memunculkan kontradiksi dengan aturan tertulis — lihat butir 7.
+
+**1. Empat RPC baru + satu index** (migrasi `20260905000001`). `get_storbit_product_report` (ringkasan + rincian per customer, `jsonb`) · `get_storbit_product_sp_list` (satu baris per SP) · `get_storbit_outstanding_summary` (angka strip) · `get_storbit_top_outstanding_products` (Top N) · index `idx_sp_items_product_id` (`sp_items` sebelumnya cuma ber-index `customer_id`/`sp_date`/`sp_no`, sementara keempat fungsi memfilter atau mengelompokkan `product_id`).
+
+- Keempatnya **`LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public`** — read-only, RLS pemanggil tetap berlaku. ACL pola FASE 5 (`REVOKE ALL … FROM PUBLIC` + `GRANT EXECUTE … TO authenticated`, **nol baris `anon`**). ⚠️ REVOKE-nya **bukan formalitas**: default privileges Supabase meng-GRANT fungsi baru ke `anon` otomatis, dan **DROP menghapus GRANT**, jadi ACL wajib dijalankan ulang setiap kali fungsi di-DROP+CREATE.
+- **Lingkup baris ditulis sebagai CTE bernama `sp` yang teksnya IDENTIK di keempatnya** (`sp_orders.deleted_at IS NULL AND status NOT IN ('CANCELLED','DRAFT')` + filter periode) — pelajaran TD-168. Kalau lingkupnya berubah, ubah **di empat tempat sekaligus**.
+- **NOL DDL tabel, NOL perubahan RLS, NOL backfill, nol sentuhan** ke `get_storbit_dashboard_stats`/`get_storbit_sp_drilldown`/`get_storbit_stock_drilldown` (18 Agu).
+
+**2. Satuan produk + kartu Nilai Total SP** (migrasi `20260905000002`). Menyentuh **3 dari 4** fungsi di atas: 2 lewat `CREATE OR REPLACE` (signature tetap) dan 1 lewat DROP+CREATE (`get_storbit_outstanding_summary`, karena bentuk baliknya berubah). `get_storbit_product_sp_list` sengaja tak disentuh.
+
+**3. Keputusan desain yang harus ikut dijaga** (rincian di `03_DATA_MODEL.md` gotcha #21/#22 + kepala kedua file migrasi):
+
+- **Sumber angka = `sp_items`, BUKAN `sp_order_items`.** ⚠️ Konsekuensi **DISADARI**: `update_sp_item_dual` tidak meneruskan `unit_price`/`shipped_qty` ke `sp_order_items`, sementara `create_invoice` justru membaca `sp_order_items`. **Divergensi diukur di produksi 5 Sep 2026 = 0 baris**, jadi risikonya masih **TEORETIS**. ⚠️ **JANGAN "diperbaiki" sebagai bagian dari laporan** — menyinkronkan dua tabel itu pekerjaan tersendiri.
+- **Syarat "invoice hidup" di kartu Outstanding Tagih SENGAJA hanya `status <> 'void'`, TANPA `deleted_at`** — supaya **identik dengan guard `create_invoice`**. Kalau `deleted_at` ditambahkan, kartu akan menjanjikan SP yang justru **ditolak `create_invoice`** saat tombolnya ditekan. **Jangan diubah tanpa mengubah `create_invoice` bersamaan.**
+- **Satuan: `products.unit` PRIMER, `products.uom` FALLBACK, WAJIB `NULLIF(btrim(…),'')`.** Dua produk (`FG.GFP.TRY.0001`, `FG.GFP.TRY.0002`) punya `unit` berisi **STRING KOSONG, bukan NULL** — `COALESCE` polos akan mengembalikan string kosong dan satuannya hilang tanpa penjelasan. Keterisian: `unit` 78/80 (97,5%), `uom` 38/80 (47,5%), **nol konflik nilai asli** (yang dua-duanya terisi selalu sepakat: PCS/PCS 30 produk, SET/SET 6 produk).
+- **PPN ditulis `1.11` LITERAL**, mencerminkan `0.11` literal di `create_invoice`. **Dua tempat ini harus bergerak bersama** kalau rate PPN berubah.
+- **`GREATEST(qty - shipped_qty, 0)` dipakai di KEEMPAT RPC** supaya angka `get_storbit_product_report` dan `get_storbit_outstanding_summary` tak bisa berbeda seandainya suatu saat muncul baris over-ship. Diukur 5 Sep: `shipped_qty > qty` = 0 baris — murni jaga-jaga.
+
+**4. FE — dashboard dipecah jadi 3 tab + export.** Tab: Shipping Manifest / Gudang / Laporan Per Barang. **Strip 4 kartu nilai berada DI ATAS tab bar**, selalu tampil di ketiganya. **Lazy-fetch:** `get_storbit_top_outstanding_products` baru dipanggil saat tab 3 pertama kali dibuka; state `tabLaporanDibuka` sekali `true` **tak pernah kembali `false`**, itulah yang membuat pindah tab bolak-balik tak memicu fetch ulang. Satu panggilan RPC itu melayani **DUA** kebutuhan sekaligus (isi combobox produk + tabel Top 10), jadi dropdown & tabel mustahil drift.
+
+- **Export Excel** — dependency BARU **`exceljs ^4.4.0`**, dipanggil lewat **dynamic import** supaya nol beban di chunk utama. Terbukti: chunk `exceljs` **929,92 kB** terpisah, chunk halaman tetap **~41 kB**.
+- **Export PDF** — `StorbitReportPDF.jsx`, palet ungu/krem lewat `printTokens.js` (nol token baru), **orientasi landscape**. Landscape-nya alasan isi bukan selera: tabel daftar SP punya 11 kolom dan di portrait (516pt setelah margin) kolom "Nilai Sisa" pasti terpotong, sementara definition of done menuntut isi PDF **sama persis** dengan layar.
+- Batas baris export = **5.000** (layar 200). Kalau hasil **menyentuh** batas itu, user diperingatkan eksplisit lewat `window.confirm` **sebelum** file dibuat — supaya file tak pernah terpotong diam-diam.
+
+**5. Angka acuan terverifikasi di produksi 5 Sep 2026** (patokan anti-drift — kalau salah satu bergeser setelah perubahan, ada yang salah):
+
+| Kartu | Angka | Basis |
+|---|---|---|
+| Nilai Total SP | 514 SP / **Rp 9.612.991.488,46** | BRUTO (sudah PPN) |
+| Outstanding Kirim | 86 SP / **Rp 1.887.625.632** | DPP |
+| Outstanding Tagih | 422 SP / **Rp 6.273.578.117,31** | DPP |
+| Outstanding Piutang | 5 invoice / **Rp 47.293.798** | BRUTO |
+
+⚠️ **DUA BRUTO dan DUA DPP — jangan dijumlahkan lintas basis pajak.** Produk unik yang pernah muncul di SP = **38**.
+
+⚠️ **[KOREKSI 7 Sep 2026] Baris "Outstanding Tagih" di atas SUDAH BERGESER** — perbaikan 5 SP berharga nol (entri 2026-09-07 §Perbaikan data manual) menaikkannya **+Rp 25.740.000**. Pergeseran itu **DISENGAJA dan benar**; jangan dibaca sebagai drift. Angka lain di tabel belum diukur ulang.
+
+**6. ~~⭐ TEMUAN BISNIS — ~65% nilai kontrak nyangkut di tahap PENERBITAN INVOICE.~~ ⛔ TERBANTAHKAN 7 Sep 2026 — JANGAN DIPAKAI LAGI.** Bacaan di bawah **SALAH**: 416 dari 421 SP `BTB_TERBIT` ternyata **SUDAH ditagih**, invoicenya diterbitkan **di luar Nexus** dengan penomoran `JKT-xxxxxx`. Rp 6,27 M itu **selisih pencatatan antar-sistem, BUKAN uang yang belum ditagih**. Kemungkinan itu sudah disebut sendiri di kalimat di bawah ("atau justru sebagian sudah ditagih di luar Nexus") — itulah yang terbukti. Bukti + keputusan terbuka penggantinya: entri **2026-09-07 §Rekonsiliasi Nexus × Finance** + `09_ROADMAP.md` **Keputusan Terbuka #33** (isinya sudah diganti). Teks asli dipertahankan di bawah sebagai jejak, **bukan sebagai fakta yang berlaku**:
+
+> ~~⭐ TEMUAN BISNIS — ~65% nilai kontrak nyangkut di tahap PENERBITAN INVOICE.~~ **Outstanding Tagih = 422 SP / Rp 6.273.578.117**: barang **sudah dikirim** dan **BTB sudah terbit**, tapi **belum satu pun diinvoice**. Bandingkan piutang yang sudah ditagih (**Rp 47,3 jt**) terhadap nilai kontrak seluruh SP (**Rp 9,61 M**) — artinya **bottleneck-nya di penerbitan invoice, BUKAN di pembayaran customer**. ⚠️ **Ini temuan bisnis, bukan temuan kode** — sistemnya bekerja sesuai desain; yang belum diketahui adalah **kenapa** invoice tak terbit. **PERLU DIKONFIRMASI ke Elvira SEBELUM dibawa ke Pak Adam** → dicatat sbg pertanyaan terbuka (`09_ROADMAP.md` **Keputusan Terbuka #33**). *— akhir kutipan yang sudah terbantahkan; #33 kini berisi pertanyaan yang berbeda.*
+
+**7. ⚠️ Cara `pg_dump` snapshot BERUBAH — dan sekarang bertentangan dengan aturan tertulis.** Refresh 5 Sep memakai `--schema-only --schema=public`; sebelumnya tanpa `--schema=public` sama sekali.
+
+- **Yang jelas perbaikan:** dump lama ikut membawa **35 tabel skema sistem** (`auth`, `storage`, `realtime`, `vault`). **Jumlah tabel `public` TETAP 133 ↔ 133 — NOL tabel bisnis hilang.** File menyusut ~44.000 baris; **itu bukan tabel terhapus**, dan perlu dicatat eksplisit supaya orang yang membandingkan antar-commit tak salah paham.
+- **Yang belum diputuskan:** `--schema-only` menghapus seluruh **133 blok `COPY`** (`grep -c "^COPY public\."` = **133 → 0**), padahal `02_RULES_GOVERNANCE.md` §4 — ditulis 2 Sep 2026 — **melarang flag itu eksplisit** dan mewajibkan verifikasi *"kalau `COPY` jatuh ke 0 → JANGAN commit"*. **Aturannya sengaja TIDAK diubah**; kontradiksinya direkam apa adanya di §4 + `09_ROADMAP.md` **Keputusan Terbuka #32**. **[→ DIJAWAB 6 Sep 2026: tetap schema-only. §4 sudah diselaraskan, verifikasi `COPY ~133` dicabut, Keputusan Terbuka #32 ditutup. Lihat entri 2026-09-06. Kalimat di atas dibiarkan apa adanya karena merekam keadaan yang berlaku pada 5 Sep.]**
+- **ACL selamat:** `GRANT` tabel `public` ke `anon` identik **105 ↔ 105**, jadi auditabilitas **TD-24** tak hilang. Penurunan `GRANT` total 931 → 482 hampir seluruhnya milik fungsi ekstensi `pg_trgm`/`pgcrypto`.
+- ⚠️ **Satu GRANT non-ekstensi benar-benar hilang: `GRANT ALL ON FUNCTION public.get_table_columns(p_table text) TO anon`.** Fungsinya masih ada beserta ACL `service_role`/`authenticated` (`:18480-18482`), jadi ini **perubahan DB nyata — anon dicabut — bukan artefak flag**. **Tak ada migrasi yang merekamnya dan tak ada catatan siapa/kapan.** Kebetulan itu persis objek yang **TD-24** sebut "paling layak dicabut duluan". **TD-24 dikoreksi** (RPC ber-`anon` 3 → 2), **tapi perlu konfirmasi Den.**
+
+**8. Koreksi dokumentasi yang basi.** Klaim palet PDF di `03_DATA_MODEL.md` **TERBALIK**: dokumen menulis `InvoicePDF` ungu/krem "sengaja beda dari Picking List/Delivery Note navy/orange". Kondisi kode hari ini — **`PickingListPDF`, `DeliveryNotePDF`, DAN `InvoicePDF` SATU KELUARGA** ungu `#5b3fa0` / krem `#f6f4f1` / Lora + Cormorant, seluruhnya lewat `printTokens.js`. Navy `#144682` / orange `#E85A1E` adalah **brand cetak modul CRM** (`InquiryPDF`/`QuotationPDF`), **BUKAN Storbit**. Kalimat lama benar saat ditulis 8 Agu, berhenti benar **31 Agu** saat kedua dokumen gudang bermigrasi. `StorbitReportPDF.jsx` mengikuti keluarga ungu/krem. Sumber kebenaran: komentar kepala `printTokens.js:9-12`.
+
+**9. Empat tech debt baru — dua di antaranya bug akses yang SEDANG dirasakan user** (detail: `08_TECH_DEBT.md`):
+
+- **TD-217 (HIGH)** — RLS `prospects_read` (`accounts`) tak memuat `finance` maupun `finance_controller` → **Finance tidak bisa membaca nama customer sama sekali**, kolom CUSTOMER kosong di **seluruh** tabel Storbit termasuk tabel lama. Terkonfirmasi lewat akun **Elvira Nurhuda**. **KELUPAAN, bukan by-design** (sudah dikonfirmasi ke Den). Usulan: ikut pola role `operations`, dibatasi `account_status = 'customer'`.
+- **TD-218 (HIGH)** — `sp_invoices_read` masih `get_user_company_id()` **singular**. Elvira punya role aktif di **SOA** tapi home **MSI**, jadi kartu Outstanding Piutang tampil **Rp 0** untuknya sementara Super Admin melihat Rp 47,3 jt. **Instance konkret ketiga dari TD-180** — dan **lagi-lagi ketahuan dari keluhan user, bukan audit** (18 Agu → 2 Sep → 5 Sep).
+- **TD-219 (LOW, sudah dimitigasi)** — ligature `fi` di `@react-pdf/renderer` 4.5.1. `getFragments` (`@react-pdf/layout`) merakit atribut textkit eksplisit dan **tidak pernah mengisi `features`**, jadi **tak ada style prop** yang bisa mematikan ligature. Glyph `fi` di Lora & Cormorant memang **dirancang tanpa titik i**, sehingga di `px(8.5)`–`px(9)` terbaca "defsit"/"flter". **PDF-nya sendiri BENAR** — `ToUnicode` memetakan ke `<0066 0069>`, copy-paste tetap "defisit"; ini murni keterbacaan, bukan bug embedding. Solusi terpakai: **memecah run shaping lewat `<Text>` bersarang** (helper `noLig`). ⚠️ **ZWNJ (U+200C) TIDAK aman** — di ketiga font memetakan ke glyph `space` (advanceWidth 263/234), hasilnya "def isit".
+- **TD-220 (LOW)** — `exceljs ^4.4.0` membawa 2 advisory `moderate` lewat `uuid <11.1.1` (GHSA-w5hq-g745-h8pq). **`npm audit fix --force` TIDAK dijalankan** karena men-downgrade ke `exceljs@3.4.0` (breaking). Jalur rentannya menuntut caller mengoper argumen `buf`, yang tidak dilakukan `exceljs`.
+
+**10. Catatan data — tiga hal yang sengaja direkam agar tak diselidiki ulang dari nol:**
+
+- **Status `CANCELLED` dan `DRAFT` TIDAK ADA** di kosakata `sp_orders` yang terpakai (0 baris per 5 Sep 2026), jadi filter `NOT IN ('CANCELLED','DRAFT')` di keempat RPC saat ini **INERT**. **Tetap dipertahankan sebagai penjaga — jangan dicabut dengan alasan "tidak ada gunanya".**
+- **21 SP berstatus `MENUNGGU_KONFIRMASI_DC` dengan `shipped_qty = qty` ternyata BENAR BY DESIGN** — surat jalannya masih `in_transit`, belum `delivered`, dan `sp_recompute_status` memang menurunkan status itu untuk kondisi tersebut. **Sempat dicurigai bug; penelusuran membuktikan TIDAK.**
+- **SP `ZZZTEST-DUEDATE-001` (data uji) ikut terhitung** di angka piutang sebesar **Rp 163.170** dari total Rp 47.293.798. Kecil nominalnya, tapi ini **data uji yang bocor ke laporan berorientasi CEO** → masuk `09_ROADMAP.md` #2e.
+
+**11. Audiens laporan — ~~dua fakta yang bertabrakan~~ SATU fakta (klaim Den, di-relay).** ~~Akun **Azhar Malik**, satu-satunya pemegang role `ceo`, **`is_active = false`** — audiens utama laporan ini belum punya akun hidup.~~ **⛔ SALAH — dikoreksi 7 Sep 2026 dari query produksi:** akun Azhar Malik **AKTIF** (`profiles.active` = true; nama kolomnya **`active`**, BUKAN `is_active` — lihat `02_RULES_GOVERNANCE.md` §4), dengan role **`super_admin` @ MSI**. Yang nonaktif hanya **baris role `ceo` di `user_roles`**, dan itu tidak menghalangi apa pun: `super_admin` mem-bypass seluruh gate menu **dan** RLS. Jadi audiens laporan **sudah punya akun hidup**. Yang tetap berlaku di butir ini hanya bagian gate-nya: Gate export/print bersandar pada menu key **`logistics_sp`** (diverifikasi doc-keeper: `MENU_KEY_MAP` `App.jsx:1278`, Dashboard Storbit sengaja memakai ulang key ini), dan aksesnya dipegang **super_admin + Elvira Nurhuda + Gigih Rizky Cahaya** saja — `role_menu_permissions` untuk `logistics_sp` = **0 baris**, seluruh grant bersifat **user-level**. → `09_ROADMAP.md` **Keputusan Terbuka #34**.
+
+**Status tes:** ✅ Checklist manual tab + lazy-fetch + PDF **LOLOS** (dikonfirmasi Den). ✅ Build clean **2623 modules**; `npm run lint` **170 problems (148 errors, 22 warnings)** = net-zero terhadap baseline hari itu (diukur ulang doc-keeper sendiri). ⚠️ **Tiga perbaikan kosmetik terakhir BELUM ditest runtime:** hapus 3 kicker, pindah kotak cari SP ke tab 1, ratakan margin puncak tab 3.
+
+**Catatan angka lint — koreksi terhadap dugaan awal:** angka **"42 pre-existing errors"** di `AGENTS.md:676` dan di `docs/operations/stability-and-tech-debt-audit.md` **BUKAN baseline hidup yang jadi basi** — keduanya **catatan historis bertanggal** ("Result at Phase 0.5A audit time", output fase 0.5A), dan dokumen audit itu sendiri menunjukkan angkanya kemudian **turun sampai 6 errors** di fase 0.5D. Mengubahnya jadi 170 justru akan **memalsukan riwayat**, jadi **tidak diubah**. Baseline HIDUP ada di `02_RULES_GOVERNANCE.md` §2 dan memang **sengaja tanpa angka** ("target tiap task = net-zero, bukan nol absolut") — itu sudah benar. Angka terukur per tanggal tetap dicatat di sini, di `PROGRESS.md`, tempatnya memang.
+
+---
+
 ## 2026-09-04
 
 ### CRM v3 — Detail Deal jadi halaman KEDUA yang migrasi penuh ke design kit v3 (Batch A + B) + dua audit kesiapan produksi (FE-only, NOL migrasi baru, NOL SQL dijalankan)
@@ -142,6 +704,75 @@
 ---
 ## 2026-09-02
 
+### Item SP Security (Fase 0) + status dokumen Finance naik ke level SP (Fase 1) + TD-180 batch 2 & 3
+
+> **Sifat: 7 migrasi DB + FE Storbit + audit read-only.** Seluruh SQL dijalankan manual di SQL Editor dan **SEMUANYA SUDAH LIVE di produksi** (terverifikasi). ✅ **`schema_snapshot.sql` sudah di-refresh** (`2f55c6d` pasca-Fase 0, lalu `d10e09a` untuk Fase 1 + TD-180) dan terverifikasi mencerminkan ketujuh migrasi — termasuk memastikan blok `COPY` tetap **133**, tidak hilang. Dua migrasi terakhir (`…000006`/`…000007`) **ditulis retroaktif**: SQL-nya dijalankan lebih dulu, file migrasinya menyusul.
+
+**0. Konteks awal — dari 5 nomor SP jadi rantai temuan sepanjang hari.** Berawal dari cek 5 nomor SP Indomarco yang ternyata belum ada di database (**backlog input manual, bukan bug**). Dari situ ketemu masalah kedua: field **Expired Date** di form Input SP Baru memblokir input SP historis (tanggal sudah lewat). Investigasi itu yang membuka semua temuan berikutnya.
+
+**1. DC Tujuan pindah ke level SP + tenggat SP boleh backdate** (dikerjakan di branch `fix/sp-dc-readonly-expired-warning`; `d38c55f`, `c654837` — FE-only, nol migrasi). Dua temuan dari audit read-only:
+- **`min: getTodayWIB()` di Input SP Baru adalah FOSIL** dari saat field itu masih bernama "Deadline" — bukan aturan bisnis, dan bertentangan dengan komentar eksplisit di halaman Detail SP yang menyatakan tenggat harus bisa di-backdate. Dicabut, diganti **banner peringatan (bukan blok keras)** kalau tanggalnya sudah lewat (`InputSPPage.jsx:228` `expiredIsPast`).
+- **Field DC di `EditItemModal` & `ShipmentModal` masih terikat kolom LAMA `sp_items.dc`** (text bebas), BUKAN `sp_orders.dc_id` (FK ke `dc_master`) yang dipakai form baru & Surat Jalan. Akibatnya mengubah DC di modal itu **tampak tersimpan tapi TIDAK PERNAH menyentuh alamat pengiriman sebenarnya**. ⚠️ **Satu kasus divergensi NYATA ditemukan di produksi:** SP `2262797` — item bilang DC GRESIK, header menunjuk DC PALEMBANG; **sudah dikoreksi manual ke GRESIK** sesuai konfirmasi Den.
+- Fix: field DC dikunci read-only, lalu direvisi lagi jadi **prefill dari `dc_master` via `dc_id`** (bukan sekadar "freeze nilai lama"). Kartu **"DC Tujuan"** baru ditambahkan di tab Overview Detail SP (nama & alamat masing-masing dibungkus box terpisah). Akhirnya field DC **dihapus total dari `EditItemModal`** karena duplikat kartu itu — field di `ShipmentModal` **sengaja dipertahankan** (masih relevan sbg konteks pengiriman).
+
+**2. Audit besar Edit Item Modal** (dikerjakan di branch `feat/edit-item-inline-redesign`). Dipicu laporan konkret: **Elvira (Finance) tidak bisa membuka Edit Item di Detail SP** (ikon pensil tak muncul), padahal semestinya bisa mengedit bagian Finance & Dokumen.
+
+*Temuan Bagian A (kritis):*
+- **`EditItemModal` sendiri NOL role check.** Gate-nya seluruhnya di luar: tombol pensil digate `canWarehouseOps` (tak termasuk `finance`), DAN RPC `update_sp_item_dual` juga menolak `finance` di guard-nya.
+- **Ada modal KEDUA** (`FinanceModal`, halaman Finance/Outstanding) yang memang **didesain untuk Finance** mengisi 6 field dokumen (INV/FP/SUBMIT/KIRIM/Submit Date/Email Status) — tapi memanggil **RPC yang SAMA**. Jadi Finance bisa membuka & men-toggle, **tapi Save PASTI gagal server-side**. Bug ini **baru aktif efektif sejak 25 Agustus**, efek samping tak sengaja dari migrasi security yang niatnya cuma mengunci qty/harga.
+- **CRITICAL terpisah: tombol Hapus item di sebelah pensil TANPA GATE SAMA SEKALI** — hard-delete langsung, RLS `sp_items` `USING(true)`. **Siapa pun yang login bisa menghapus baris item SP.** Lebih jauh, hapus itu meninggalkan **baris orphan di `sp_order_items`** (karena `legacy_sp_item_id` tanpa FK) yang membuat SP tersebut **tak bisa di-invoice selamanya** — guard `Σshipped = Σqty` jadi mustahil terpenuhi.
+- **Divergensi role:** `ceo` & `gm_bd` lolos `is_manager_or_above()` untuk edit item SP, padahal matrix menyatakan `ceo` = Read-only dan `gm_bd` = tanpa akses Logistics sama sekali.
+
+*Temuan Bagian B (peta jangka panjang — BELUM dikerjakan):* rekomendasi memindah form modal jadi **inline** di halaman Detail SP, **BERTAHAP per section** (bukan sekaligus) karena tiga risiko HIGH kalau digabung: **whole-row overwrite**, **`shipped_qty` bisa ter-rollback diam-diam**, dan **RLS `sp_items` masih longgar di 4 operasi**. Disepakati: **Finance = paket PERTAMA** (datanya memang seragam se-SP). **Item/Qty/Pricing/Tanggal = paket KEDUA, terpisah, belum dikerjakan** — tetap di modal untuk sekarang (`09_ROADMAP.md` Next Up #2d).
+
+**3. FASE 0 — keamanan tulis & hapus item SP** (migrasi `20260902000001` + `20260902000002`, FE `91dc380`).
+
+*Keputusan Den:*
+- **Manager & Operations tetap full CRUD** di item SP (tidak berubah). **Super Admin tidak berubah.**
+- **CEO, GM (`gm`), dan GM Business Development (`gm_bd`) diturunkan jadi VIEW-ONLY** untuk edit item SP. **Blast radius nyata: 1 user** (ber-role `gm_bd`) — **nol user aktif** ber-role `ceo`/`gm`.
+- Role **`supervisor` sengaja TIDAK dimasukkan** ke guard baru: role itu **tak eksis di tabel `roles`** (TD-106), jadi memasukkannya = izin nganggur yang otomatis menyala kalau role itu suatu hari dibuat.
+- **`is_manager_or_above()` (fungsi global) SENGAJA TIDAK diubah** — dipakai banyak gate lain di luar Logistics. Dibuat fungsi baru khusus konteks ini.
+
+*Isi migrasi:* **`is_sp_item_writer()`** (true hanya untuk `super_admin`/`admin`/`manager`/`operations`), menggantikan `is_manager_or_above()` di guard `update_sp_item_dual` · **`delete_sp_item_dual(p_id)`** — hapus `sp_items` DAN kembarannya `sp_order_items` dalam satu transaksi, plus guard status (hanya DRAFT/CONFIRMED/MENUNGGU_STOK) dan guard baris-terakhir (baris terakhir SP tak boleh dihapus lewat sini) · **`REVOKE DELETE ON sp_items FROM authenticated`** + policy `sp_items_delete` dipersempit ke `is_super_admin() OR is_sp_item_writer()`. **Tetap hard-delete** — soft-delete `sp_items` **ditunda ke M13** karena terlalu banyak titik baca (7 FE + ~15 fungsi DB) yang harus disisir serentak.
+
+*Sisi FE:* tombol pensil & tombol Hapus di `SalesOrderDetailPage.jsx` digate `canWriteSpItem` (cermin `is_sp_item_writer()`, `:1040`); `deleteSpItem()` (`db.js:355-358`) memanggil RPC baru, bukan `.delete()` langsung.
+
+**4. FASE 1 — promosi 6 field Finance ke level SP** (migrasi `20260902000003`/`…000004`/`…000005`, FE `2ce6d1f`).
+
+*Keputusan Den:*
+- **INV/FP/SUBMIT/KIRIM/Submit Date/Email Status naik jadi atribut level SP** (header `sp_orders`), bukan per-item lagi — praktiknya memang selalu seragam se-SP (satu invoice menutup semua item).
+- **Backfill `bool_and`** (konservatif — header `true` HANYA kalau SEMUA item `true`). **13 SP divergen**; dicek manual, **hanya 4 yang benar-benar konflik nilai**: `2172914`, `2173356`, `2204884`, `2204886` (sisanya cuma beda `submit_date`/`email_status`). Keempatnya sudah punya BTB valid, dugaan kuat cuma **kelewat toggle manual** — ⚠️ **Finance disarankan cek ulang 4 SP itu**, belum dilakukan.
+- **`financePct` yang tadinya bisa granular per-item (mis. 60%) kini biner per-SP** (0/25/50/75/100%) — **disetujui Den** sebagai efek samping yang wajar.
+- **`FinanceModal` di-repoint ke RPC baru, BUKAN dihapus** — supaya Finance tetap bisa kerja dari daftar seperti biasa.
+
+*Isi migrasi (urutan penting):* **`…000003`** — 6 kolom baru di `sp_orders` (4 boolean `NOT NULL DEFAULT false`, `submit_date date` nullable, `email_status text` nullable tanpa CHECK) + backfill `bool_and` + normalisasi 13 SP divergen turun balik ke semua item-nya (supaya `groupBySP` konsisten) · **`…000004`** — RPC **`set_sp_finance_docs(...)`**, satu-satunya penulis sah keenam kolom itu; guard `is_super_admin() OR has_role('finance_controller') OR has_role('finance')`, **SENGAJA tanpa `is_manager_or_above()`** (matrix menaruh manager di **R** untuk modul Finance) · **`…000005`** — **dijalankan PALING TERAKHIR, setelah FE live**: cabut 6 kolom finance dari daftar `SET` `update_sp_item_dual`, **menutup jendela race dua-penulis**. Terverifikasi pasca-eksekusi: fungsi itu kini nol referensi ke `v_rec.inv` dkk, tapi tetap menulis `qty` dan guard `is_sp_item_writer()` tetap utuh.
+
+*Sisi FE:* kartu baru **"Finance & Dokumen"** di tab Overview Detail SP (sibling kartu DC Tujuan), pola inline edit (pensil → toggle/form → Simpan/Batal), gate `canEditFinanceDocs` (`:1049`), freeze kalau status `CANCELLED` · section "Finance & Dokumen" **dan** "SP Information" (yang cuma duplikat readonly) **dicabut total** dari `EditItemModal` · `FinanceModal` (`App.jsx:4684`) memanggil `setSpFinanceDocs()`. Dua penyesuaian menyusul: field **"Notes" dicabut** dari modal itu (atribut per-item, finance tak berhak menulisnya) dan **"Email Status" diubah dari input tanggal jadi dropdown** — memperbaiki bug lama, kolomnya memang enum-ish 3 nilai (⚠️ domainnya **tidak** dikunci CHECK di DB).
+
+**5. TD-180 batch 2 & 3 — RLS multi-company salah scope** (migrasi `20260902000006_td180_sp_btb_dc_master.sql` + `20260902000007_td180_batch3_dc_master_write.sql`, keduanya LIVE, **ditulis retroaktif**). Ditemukan saat testing dengan akun **Elvira Nurhuda** (Finance MSI, aktif juga di SOA lewat `user_roles`, tapi home `profiles.company_id` = MSI): kartu **BTB Numbers** menampilkan *"0 nomor BTB"* padahal datanya ADA, dan kartu **DC Tujuan** menampilkan *"—"* padahal `dc_id`-nya valid. **Root cause:** 4 policy (`sp_btb_read`, `sp_btb_insert`, `sp_btb_update`, `dc_master_read`) masih memakai `company_id = get_user_company_id()` (fungsi TUNGGAL, cuma membaca `profiles.company_id`), bukan varian **JAMAK** `get_user_company_ids()` (membaca semua `user_roles` aktif). Data `sp_btb`/`dc_master` 100% milik SOA sementara home Elvira MSI → selalu `false` → **RLS menyaring habis, gagal senyap (HTTP 200 kosong, bukan error)**. Batch 3 menambal `dc_master_insert`/`dc_master_update` dengan cacat identik — ditemukan sekaligus, **preventif** (belum menimbulkan gejala yang terlihat). Bentuknya **menambah** (`OR (company_id IN (SELECT get_user_company_ids()))`); **syarat role di policy tulis TIDAK diubah**. **NOL perubahan FE dibutuhkan** — kartu-kartunya sudah query data yang benar; begitu policy diperluas, langsung terisi tanpa deploy apa pun. ⛔ **TD-180 TETAP PARTIAL** — sisir ulang snapshot baru: **198 policy** masih varian tunggal di **76 tabel**, `payment_terms_*` tetap OPEN.
+
+**3 bug nyata yang tertutup hari ini:**
+1. **Finance tidak pernah bisa menyimpan status dokumen SP sejak 25 Agustus** — Save selalu gagal server-side, UI tak memberi tahu kenapa.
+2. **Siapa pun yang login bisa hard-delete baris item SP tanpa gate**, dan hapus itu meninggalkan baris hantu yang membuat SP tersebut **tak bisa di-invoice selamanya**.
+3. **User multi-company (spt Elvira) ter-blokir senyap** dari data BTB dan DC master milik company lain tempat dia legitimate aktif.
+
+**Status tes runtime:** ✅ **Fase 1 — smoke test di produksi LOLOS** (dikonfirmasi Den). ⚠️ **Fase 0 — belum ada laporan smoke test eksplisit**; jalur hapus item lewat RPC baru (termasuk kedua guard-nya) **belum terbukti dijalankan di browser**.
+
+**Yang SENGAJA belum dikerjakan (7 item, semuanya keputusan sadar — bukan pekerjaan tertinggal):**
+1. **Paket kedua** — redesain Item/Qty/Pricing/Tanggal jadi inline di tabel Items. Peta lengkap sudah ada dari audit butir 2; tinggal dieksekusi bertahap. (`09_ROADMAP.md` #2d)
+2. **TD-180 di tabel lain** — baru disisir untuk `sp_btb` & `dc_master`. `payment_terms_read` sudah lama tercatat OPEN, belum ditambal.
+3. **Soft-delete `sp_items`** — ditunda ke **M13** (bareng drop kolom mati `exp_date`, `btb_no_deprecated`). Terlalu banyak titik baca (7 FE + ~15 fungsi DB) untuk disisir serentak sebagai "prasyarat urgent".
+4. **`GRANT ALL` ke role `anon`** di 11 tabel bisnis (`app_settings`, `audit_logs`, `prf`, `rate_sheets`, dkk) + RPC `indomarco_dashboard_stats`/`storbit_sp_customers`. **Tertahan RLS aktif di semua tabel itu (bukan lubang terbuka)**, tapi lebih longgar dari seharusnya. Dicatat ke **TD-24** (angka pastinya kini ada di sana), layak jadi item audit terpisah.
+5. **`02_RULES_GOVERNANCE.md` blok `pg_dump`** — dulu menuliskan `--schema-only --no-privileges`, padahal praktik nyata selama ini **data-inclusive + ikut ACL**. ✅ **Sudah dikoreksi hari ini** (lengkap dgn peringatan + langkah verifikasi wajib).
+6. **Konsekuensi lanjutan promosi Finance** — `FinancePage`/`OutstandingPage` kini menampilkan baris berulang per-item dengan nilai identik (karena semua item satu SP dijamin seragam). Merapikannya jadi baris per-SP = task terpisah → **TD-215**.
+7. **Field DC di `ShipmentModal`** — subtext alamatnya masih teks polos, belum dibungkus box seperti kartu DC Tujuan. Konsistensi visual minor → **TD-216**.
+
+**Housekeeping dokumentasi (3 koreksi bookkeeping, diverifikasi ulang doc-keeper):** **TD-201** kolom status masih `OPEN` padahal severity & deskripsinya sudah menyatakan RESOLVED sejak 26 Agu — **kontradiksi internal, diperbaiki** · **TD-20** (drop `profiles.role` + enum `user_role_legacy`) **terbukti sudah selesai** dari snapshot baru: `CREATE TABLE public.profiles` = 27 baris **tanpa** kolom `role`, dan **nol** `CREATE TYPE public.user_role_legacy` (3 sisa hit cuma COMMENT + 2 baris riwayat `schema_migrations`) → status jadi RESOLVED, ⚠️ **kapan persisnya dieksekusi tidak diketahui** · **TD-12** angka baris `App.jsx` basi di TIGA tempat (`08_TECH_DEBT.md` memuat 4.667/5.274/5.421 dalam satu baris, `CLAUDE.md` 5.421, `AGENTS.md` 5.435) — **diseragamkan ke 5.530** per `wc -l`. ⚠️ **Ditemukan menyusul: TD-49 keliru** — klaim "Gated super_admin-only" tidak pernah benar; tombol Hapus itu tak punya gate sama sekali (dikonfirmasi dari diff `91dc380`: hanya SATU pembungkus `canWarehouseOps` yang diganti, tapi DUA pembungkus baru ditambahkan). TD-49 kini **RESOLVED** sekaligus dikoreksi.
+
+---
+
+## 2026-09-02
+
 ### CRM v3 — `InquiryListPage` jadi halaman PERTAMA yang migrasi PENUH ke design kit v3 + cleanup kode mati + investigasi trigger (FE-only, NOL migrasi baru)
 
 > **⚠️ BACA DULU — CRM v3 BELUM SELESAI.** Entri ini mencatat SATU halaman dari banyak yang direncanakan blueprint CRM v3 (Batch B1–B6). **Account, Approval Lead Pool, Quotation, Customer, dan Aktivitas belum tersentuh redesign v3 sama sekali.** Jangan membaca entri ini sebagai "CRM v3 tuntas".
@@ -198,6 +829,33 @@
 
 ---
 
+## 2026-08-31
+
+> ⚠️ **Entri ini ditulis SUSULAN pada 2 Sep 2026.** Sesi 31 Agu 2026 sempat **nol jejak dokumentasi** — ditemukan saat audit doc-keeper (grep `2026-08-31` / `20260831` / `delivery_destination` di `PROGRESS.md`, `CLAUDE.md`, dan seluruh `docs/Governance/` = **nol hit**), padahal ada 3 commit + **2 migrasi yang sudah LIVE di produksi**. Isi di bawah direkonstruksi dari `git show` ketiga commit, bukan dari ingatan. **Tanggal entri sengaja 31 Agu, bukan tanggal penulisan** — supaya kronologinya tetap akurat.
+
+**1. Format cetak baru Surat Jalan & Picking List — mengikuti Claude Design.** Tampilan dua dokumen gudang diganti mengikuti `Storbit Surat Jalan.dc.html` + `Storbit Picking List.dc.html`, satu keluarga dengan `Storbit Invoice.dc.html` yang sudah dipakai `InvoicePDF.jsx` (ungu `#5b3fa0` / krem `#f6f4f1` / Lora + Cormorant — font sudah ter-bundle, **nol aset baru**). **Logika bisnis nol perubahan**; tetap `@react-pdf/renderer`.
+
+- **Dua file baru dipisah karena lint, bukan selera:** `printTokens.js` (token/style/util) + `printKit.jsx` (komponen). `react-refresh/only-export-components` melarang satu file mengekspor komponen DAN konstanta sekaligus. Menghapus duplikasi palet, `fmtDate`, dan style header/tabel/footer yang selama ini kembar di dua PDF.
+- Ukuran halaman **A4 → LETTER** (mengikuti `doc-page size="letter"` di desain). Semua angka desain dilewatkan `px()` (rasio 96dpi→pt = 0.75) supaya bisa diadu langsung dengan file desainnya.
+- Ornamen 4 sudut: `clip-path` desain digambar ulang sebagai SVG `Polygon` (react-pdf tak mengenal `clip-path`), `fixed` agar ikut di halaman lanjutan.
+- **`getPrintIdentity()` baru di `db.js`** — entitas dari `companies` by `company_id` BARIS-nya (bukan hardcode SOA; pola `getInvoicePdfData`) + nama DC lewat `sp_order_id` → `sp_orders.dc_id` → `dc_master.nama`. Dipakai dua loader. Header entitas berhenti hardcode "Milenial Solusi Internusa Group · SOA"; judul kini tetap "Storbit Indonesia" + `companies.legal_name`. Blok Penerima memakai **nama DC**, bukan alamat customer.
+- **Keputusan yang perlu diketahui:** (a) tanda tangan (Picker/Checker/Pengirim/Sopir/Penerima) **SEMUA dikosongkan** — `picking_lists.assigned_to` tak pernah ditulis siapa pun (nol INSERT/UPDATE di FE maupun RPC), jadi tak ada sumber nama yang bisa dipercaya; pre-fill nama sopir yang lama ikut dilepas (sudah tercetak di blok Armada, dan mengisinya membuat garis kotak Sopir tak sejajar). (b) Kotak Catatan tampil sebagai area bergaris + teks bantu — kolom `notes` di kedua tabel memang **kolom mati** (nol penulis), dan task itu sengaja tidak menambah UI pengisinya. (c) **Tabel Material Packing DIPERTAHANKAN** di Picking List walau tak ada di desain: satu-satunya permukaan cetak bahan kemas, dan ia memotong `stock_ledger` lewat `add_picking_material`. Aturan tampil/sembunyi tak diubah. (d) Nama gudang tak lagi tampil di Picking List — blok "Gudang" di desain berisi identitas entitas, bukan gudang fisik.
+- **Dua jebakan react-pdf yang ditambal (bukan preferensi):** `rgba()` **DIABAIKAN** pada `border*Color` dan digambar MERAH — hanya `color`/`backgroundColor` yang menerimanya; garis kini dihitung solid lewat `inkLine()` (`#201f1d` dicampur ke latar `#f6f4f1` pada alpha yang sama seperti desain). Hyphenation default memenggal nama produk (`"(SAY-BREAD)"`) → dimatikan lewat `registerHyphenationCallback` identitas.
+- Verifikasi saat itu: `npm run build` clean · `npm run lint` 170 problems (148 errors, 22 warnings) = net-zero. PDF kedua dokumen di-render & dibandingkan visual ke desain, termasuk kasus picking tanpa material untuk memastikan section-nya benar-benar hilang.
+
+**2. Alamat tujuan Surat Jalan pindah ke `dc_master.alamat` — 2 migrasi, SUDAH LIVE.** `delivery_notes.destination_address` selama ini di-seed dari `accounts.address` — **alamat kantor pusat customer, bukan tujuan kiriman**. Untuk pengiriman ke DC yang benar adalah `dc_master.alamat`, ditempuh lewat `sp_order_id` → `sp_orders.dc_id`.
+
+- **Audit produksi 31 Agu 2026 (85 Surat Jalan) sebelum perubahan:** **67 (79%) `destination_address` NULL** — `accounts.address` memang mayoritas kosong, jadi masalahnya bukan sekadar "alamat salah" tapi **Alamat Tujuan praktis tak pernah tercetak**; 15 berisi alamat HQ; 3 pernah diedit manual; **0 berisi alamat DC**. 85/85 punya `sp_order_id` (jalur join aman), 46/47 DC sudah punya alamat.
+- **`20260831000001_delivery_destination_from_dc.sql`** — `CREATE OR REPLACE generate_delivery_from_picking`. `accounts` tinggal dipakai untuk nama; alamat dari `dc_master` lewat `sp_orders`, dibaca **SETELAH** `v_sp_order_id` dipastikan terisi karena `dc_id` cuma hidup di `sp_orders`. ⚠️ **DC tanpa alamat dibiarkan NULL — sengaja TIDAK jatuh balik ke `accounts.address`**, itu justru bug yang sedang dihapus.
+- **`20260831000002_backfill_delivery_destination_active.sql`** — backfill **5 Surat Jalan aktif** (`in_transit`) yang alamatnya NULL atau persis sama dengan `accounts.address`. Dry-run `SELECT` dipisah dari `UPDATE` supaya bisa direview dulu. **SENGAJA tidak menyentuh:** 1 draft yang alamatnya pernah diedit tangan (bisa jadi sudah benar, jangan ditimpa mesin) dan **79 `delivered`** (kertasnya sudah dicetak dan barang sudah jalan; menulis ulang membuat DB tak lagi cocok dengan dokumen yang beredar).
+- **FE (`DeliveryNoteDetailPage.jsx`):** textarea Alamat Tujuan **dihapus**; kolomnya keluar dari patch `updateDeliveryArmada` dan dari state form. Nilainya kini dibaca langsung dari `detail.destination_address`. Sebelumnya field ini bebas diketik di status `draft` MAUPUN `in_transit`. Ditampilkan read-only di KEDUA cabang; cabang editable dapat empty-state *"Belum ada alamat DC — lengkapi di Master DC."*, karena hanya di sanalah ajakan memperbaiki masih relevan.
+- Nilainya tetap **SNAPSHOT** saat surat jalan dibuat (bukan lookup hidup) — konsisten dgn `customer_name`/`product_name` di skema ini dan menjaga akurasi historis. Detail RPC: `03_DATA_MODEL.md` §RPC `generate_delivery_from_picking`.
+- **Di luar scope, sengaja belum dikerjakan:** pengetatan GRANT/RLS `delivery_notes` — menghapus textarea menutup UI, tapi kolom ini **masih bisa ditulis langsung lewat PostgREST** (kerabat TD-176).
+- Verifikasi saat itu: `npm run build` clean · `npm run lint` net-zero. Tiga kondisi tampilan (`in_transit` beralamat, `in_transit` kosong, `delivered`) dicek dengan me-mount komponen aslinya di preview sementara.
+
+**3. Refresh `schema_snapshot.sql` dari produksi.** Merekam kedua migrasi di atas. Ini refresh yang **pertama kali membawa ACL** (`GRANT`/`REVOKE`) masuk ke snapshot — fakta yang baru disadari 2 Sep 2026 dan memicu koreksi perintah `pg_dump` di `02_RULES_GOVERNANCE.md`.
+
+⚠️ **Status tes runtime:** kedua migrasi **sudah dijalankan manual & diverifikasi di produksi** (dinyatakan di commit message-nya). Verifikasi FE bersifat visual/preview, **bukan** smoke test end-to-end dengan login peran nyata.
 ## 2026-08-26
 
 ### Environment staging lahir + 3 migrasi Storbit (semua LIVE staging→produksi) + tab Shipment/Dokumen Detail SP

@@ -18,7 +18,7 @@
 | DB pooler | `aws-1-ap-northeast-2.pooler.supabase.com:5432` (region Seoul) |
 | Storage bucket publik | `assets` (logo MSI), `avatars` (foto profil) |
 
-**Migrasi vs snapshot:** file di `supabase/migrations/` **berhenti 3 Jun 2026** (`...026_assets_kendaraan.sql`). Sumber kebenaran struktur DB terkini = **`supabase/schema_snapshot.sql`** (`pg_dump` full, 73 tabel). Banyak perubahan dilakukan via **SQL Editor** dan belum jadi migrasi formal.
+**Migrasi vs snapshot:** file di `supabase/migrations/` **berhenti 3 Jun 2026** (`...026_assets_kendaraan.sql`). Sumber kebenaran struktur DB terkini = **`supabase/schema_snapshot.sql`** (~~`pg_dump` full, 73 tabel~~ **[koreksi 5 Sep 2026, dihitung ulang doc-keeper via `grep -c "^CREATE TABLE public\."`]** **133 tabel `public`** = 123 tabel bisnis + 10 tabel backup menunggu drop-sekaligus). Banyak perubahan dilakukan via **SQL Editor** dan belum jadi migrasi formal.
 
 ---
 
@@ -63,6 +63,9 @@
 - **`.limit(1000)`** — default PostgREST 10 row (lihat §3).
 - **GRANT setelah CREATE:** tabel yang dibuat via Supabase CLI **tidak** auto-grant ke role `authenticated`. Wajib `GRANT SELECT, INSERT, UPDATE ON <table> TO authenticated;` segera setelah `ENABLE ROW LEVEL SECURITY`, sebelum policy. (INSERT-only untuk tabel audit immutable.)
 - **Trigger naming untuk ordering:** trigger `BEFORE` di tabel yang sama jalan **alfabetis**. Untuk memaksa urutan, pakai prefix — mis. `trg_z_gen_customer_code_upd` sengaja diberi prefix `trg_z_` supaya fire **setelah** `trg_set_customer_on_won` (kalau gen-code jalan duluan, `account_status` belum jadi `customer` → code tak ter-generate).
+- **[7 Sep 2026] `CREATE TEMP TABLE` TIDAK bertahan lintas klik Run di Supabase SQL Editor** — tiap Run bisa membuka koneksi baru, dan temp table mati bersama koneksinya. Verifikasi sebelum-sesudah yang menyimpan keadaan awal ke temp table karenanya **gagal dengan cara yang menyesatkan**: tabelnya "hilang", bukan datanya salah. Dua jalan keluar: jalankan seluruh rangkaian **dalam satu Run**, **atau** — lebih baik — ganti dengan **perhitungan independen langsung dari tabel sumber**. Yang kedua lebih kuat secara logika: ia membuktikan angkanya **BENAR**, bukan sekadar **TIDAK BERUBAH** (sebelum-sesudah tetap lolos kalau kedua sisinya sama-sama salah).
+- **[8 Sep 2026] Eksekusi produksi WAJIB memakai teks yang ADA di file migrasi — jangan pernah menyusun SQL di chat lalu menjalankannya.** Kalau saat eksekusi ada yang perlu diubah (kalimat COMMENT diperbaiki, klaim dicabut, angka dikoreksi): **ubah FILE-nya dulu, baru jalankan dari file itu.** Menyusunnya langsung di chat membuat **file berhenti jadi rekaman apa yang benar-benar jalan** — dan itu memutus asumsi yang dipakai SELURUH alur kerja ini, karena agen AI membaca file migrasi + `schema_snapshot.sql` sebagai sumber kebenaran (lihat butir 7 Sep di atas). ⚠️ **Gagalnya SENYAP dan LAMBAT:** tak ada yang error, tak ada yang kelihatan salah, dan divergensinya baru ketahuan **berhari-hari kemudian secara kebetulan** — saat seseorang membandingkan file dengan snapshot untuk urusan lain. Preseden nyata: TD-236 (COMMENT `accounts.lifecycle_stage`, ditulis di chat 7 Sep, ketahuan 8 Sep). Berlaku juga untuk `COMMENT ON` yang "cuma komentar" — komentar kolom adalah **rujukan permanen di skema produksi**, dan menimpanya butuh migrasi manual tersendiri.
+- **[7 Sep 2026] Rapikan header migrasi + refresh snapshot SEGERA setelah eksekusi SQL, BUKAN di akhir sesi.** Agen AI membaca **header file migrasi** (`Status: LIVE`) dan **`schema_snapshot.sql`** sebagai sumber kebenaran tentang apa yang hidup di produksi. Menundanya membuat sesi berikutnya **berangkat dari peta yang salah** — dan itu kelas kekeliruan yang paling mahal, karena keputusan dibangun di atasnya sebelum ketahuan. ⚠️ **Ini terjadi DUA KALI dalam satu hari (7 Sep 2026).** Urutan yang benar: jalankan SQL → **langsung** ubah header jadi `Status: LIVE` + `pg_dump` → baru lanjut kerja berikutnya.
 - **`auth.uid()` NULL di SQL Editor:** SQL Editor jalan sebagai service role, bukan user. `is_super_admin()`, `get_user_company_id()`, `auth.uid()` SELALU null/false di sana. **Test RLS hanya via sesi browser** (temporary `console.debug` di komponen page), bukan SQL Editor.
 - **Same-id migration pattern:** untuk konversi tabel (mis. `prospects`→`accounts`), pertahankan `id` row + nama constraint FK lama; embed PostgREST pakai alias (lihat §6 Known Issues di `03_DATA_MODEL.md`).
 - **RLS wajib:** tiap tabel business harus punya RLS company-scoped + role-aware. Super-admin bypass = top-level `OR is_super_admin()`, **JANGAN** nested di dalam filter `company_id`.
@@ -73,9 +76,82 @@
 - **Refresh snapshot** setelah perubahan SQL Editor:
   ```bash
   pg_dump "postgresql://postgres.untmpqceexwxzuhlmyrg@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres" \
-    --schema-only --schema=public --no-owner --no-privileges > supabase/schema_snapshot.sql
+    --schema-only --schema=public \
+    -f /tmp/snap.sql && mv /tmp/snap.sql supabase/schema_snapshot.sql
   ```
   (`pg_dump` langsung — `supabase db pull` butuh Docker yang belum terpasang.)
+
+  ⛔ **JANGAN `supabase db dump`.** [7 Sep 2026] CLI itu **membuang seluruh baris
+  komentar** dan **me-quote semua identifier**, sehingga hasilnya berbeda bentuk
+  dari seluruh riwayat snapshot: diff-nya menjadi **RAKSASA dan PALSU** — ribuan
+  baris berubah tanpa satu pun perubahan skema nyata, dan review-nya jadi mustahil.
+  Pakai `pg_dump` persis seperti di atas.
+
+  ⚠️ **TANPA `--no-owner` maupun `--no-privileges`.** Snapshot yang berlaku
+  memang ber-ACL. Kedua flag itu akan MENGHAPUS-nya diam-diam — bukan "refresh",
+  melainkan regresi. ACL-nya bukan kebetulan: tanpa itu, gap GRANT (mis.
+  `DELETE ON sp_items` untuk `authenticated`) tak bisa diaudit dari repo sama
+  sekali.
+
+  `--schema=public` menjaga isinya tetap skema aplikasi saja; tanpa flag itu
+  dump ikut membawa ~35 tabel skema sistem (`auth`/`storage`/`realtime`/`vault`)
+  yang bukan milik proyek ini.
+
+  ⚠️ **Snapshot SEBELUM 5 Sep 2026 dibuat tanpa `--schema=public`, jadi memuat
+  ke-35 tabel sistem itu. Jumlah tabel `public` TETAP SAMA sebelum dan sesudah —
+  NOL tabel bisnis hilang.** Dicatat eksplisit supaya orang yang membandingkan
+  jumlah tabel/ukuran file antar-commit tidak salah membacanya sebagai kehilangan.
+
+  ⚠️ **ALASAN UTAMA `--schema-only` adalah PRIVASI, bukan ukuran file.** Blok
+  `COPY` memuat **data pribadi produksi** — nama, email, telepon, alamat, tanggal
+  lahir, dan kontak darurat di `profiles` — yang begitu ter-commit **tersimpan
+  permanen di riwayat Git**. Itu argumen yang berdiri sendiri, terlepas dari
+  argumen ukuran/pemakaian di blok keputusan di bawah.
+
+  Lewat `/tmp` lalu `mv` — supaya `schema_snapshot.sql` tidak pernah tertulis
+  separuh kalau `pg_dump` gagal di tengah.
+
+  **Verifikasi wajib sesudahnya.** Bandingkan dengan refresh SEBELUMNYA, bukan
+  dengan angka mati. Kalau salah satu **TURUN** → JANGAN commit:
+  ```bash
+  grep -c "^CREATE TABLE public\."      supabase/schema_snapshot.sql   # 138 per 7 Sep 2026
+  grep -c "^GRANT .* TO authenticated;" supabase/schema_snapshot.sql   # tak boleh turun
+  ```
+  Angka kedua sengaja tanpa patokan tetap — ia tumbuh tiap kali ada tabel/RPC
+  baru. Yang dijaga adalah **tidak menyusut**: penyusutan berarti ACL raib, dan
+  itu persis kegagalan senyap yang pernah jadi insiden produksi nyata (5 Agu
+  2026 — GRANT tabel BNF kelewat, berujung 403 berulang).
+
+  ⚠️ `grep -c "^COPY public\."` **BUKAN lagi verifikasi.** Snapshot ini
+  schema-only, jadi angkanya memang **0**. Baris verifikasi lama yang mewajibkan
+  `~133` sudah **DICABUT** — jangan dihidupkan lagi tanpa membaca keputusan di
+  bawah.
+
+  **[KEPUTUSAN 6 Sep 2026 — `schema_snapshot.sql` TETAP schema-only.]** Ditutup
+  sesudah audit jejak read-only. Ringkasan alasannya dicatat di sini supaya tak
+  perlu dibuka ulang dari nol:
+  - **Snapshot lahir schema-only** (`74b0c1b`, 17 Jun 2026 — pesan commit-nya
+    menyebut sendiri "pg_dump schema-only") dan bertahan begitu **119 commit
+    refresh**.
+  - **Data baru ikut 31 Agu 2026** (`0c736fb`) **tanpa keputusan tertulis**:
+    pesan commit-nya cuma "refresh dari production", nol penyebutan data.
+  - **Aturan yang mewajibkan data ditulis 2 Sep** (`83a6c26`) — **dua hari
+    SESUDAHNYA**. Ia mendeskripsikan keadaan yang sudah terjadi, dan **alasan
+    yang diberikannya hanya soal ACL, bukan data**. Bagian ACL itu benar dan
+    **DIPERTAHANKAN** di atas; bagian datanya tak pernah punya alasan tertulis.
+  - **Nol pemakaian.** Dari **680 rujukan** `schema_snapshot` di seluruh
+    dokumentasi, **NOL** memakai bagian datanya. Dua dokumen malah menyatakan
+    datanya di luar jangkauan lalu pergi ke SQL Editor: `03_DATA_MODEL.md:131`
+    (`chart_of_accounts`) dan `docs/archive/audits/16_SP_TABLES_SYNC_AUDIT.md:107`
+    (`sp_order_items`).
+  - **Biayanya nyata.** Versi berdata memuat **385 alamat email unik**, **1.246
+    baris `accounts`**, **1.004 `contacts`**, plus kolom `npwp`/`ktp_direktur`/
+    `nib` — data pelanggan yang **tersimpan permanen di riwayat Git** tanpa satu
+    pun pemakaian yang pernah tercatat. Ukuran **9,62 MB vs 704 KB**.
+
+  ⚠️ Keputusan ini menghentikan PENAMBAHAN data, **tidak menghapus yang lampau**:
+  commit `0c736fb`…`d10e09a` (31 Agu–5 Sep 2026) tetap memuat data itu di
+  riwayat Git.
 
 ---
 

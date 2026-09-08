@@ -21,7 +21,7 @@ import {
   Check, X, History, Download,
   AlertTriangle, Plus, ClipboardList, ExternalLink, Link2, Eye, EyeOff,
 } from 'lucide-react';
-import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, getSpFulfillmentDocs, getSpItemDeliveryBreakdown, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
+import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, setSpFinanceDocs, getSpFulfillmentDocs, getSpItemDeliveryBreakdown, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
 import { calcItem, deriveItemShipStatus } from '../../lib/spCalc';
 import { getTodayWIB } from '../../lib/dateUtils';
@@ -274,7 +274,21 @@ const FIN_STAGES = [
 ];
 
 // ─── Edit Item Modal helpers (defined outside to avoid re-render issues) ────
+// Dipakai kartu "Finance & Dokumen" (tab Overview). Dulu hidup di
+// EditItemModal; ikut pindah saat keenam kolom dipromosikan ke level SP.
+// Nilai '' (kosong) TETAP SAH — sp_orders.email_status nullable dan sengaja
+// tanpa CHECK, jadi dropdown-nya punya opsi "belum ditentukan" tersendiri.
 const EMAIL_OPTIONS = ['Belum dikirim', 'Terkirim ke customer', 'Dibalas customer'];
+
+// Empat flag dokumen level SP. Urutannya = urutan proses nyata
+// (invoice → faktur pajak → submit ke customer → kirim dokumen), jadi jangan
+// diacak; kartu membacanya berurutan sebagai rangkaian tahap.
+const FINANCE_DOC_FLAGS = [
+  { key: 'inv',    label: 'INV'    },
+  { key: 'fp',     label: 'FP'     },
+  { key: 'submit', label: 'SUBMIT' },
+  { key: 'kirim',  label: 'KIRIM'  },
+];
 
 function ModalField({ label, req, children }) {
   return (
@@ -320,14 +334,22 @@ function ModalGrid({ cols, children }) {
   );
 }
 
-function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, onSave }) {
+// spDate/spNo/customer DICABUT dari signature 2 Sep 2026 — ketiganya hanya
+// dipakai section "SP Information" yang dihapus (duplikat murni dari header
+// halaman + kartu Overview). Jangan ditambahkan kembali tanpa konsumen nyata.
+function EditItemModal({ item, spExpiredDate, onClose, onSave }) {
   // Katalog produk (dropdown-only) di-pin ke Storbit/SOA.
   const { products } = useProducts({ companyId: SOA_COMPANY_ID });
   const [draft, setDraft] = useState({
     productId:    item.productId   ?? null,
     productName: item.productName || '',
     sku:          item.sku         || '',
-    dc:           item.dc          || '',
+    // `dc` SENGAJA TIDAK ADA di draft. DC tujuan adalah atribut HEADER
+    // (sp_orders.dc_id → dc_master), ditampilkan di kartu "DC Tujuan" tab
+    // Overview — bukan di modal ini, dan bukan per baris item.
+    // Dulu di sini ada teks bebas yang menulis sp_items.dc — kolom LEGACY yang
+    // tak pernah dibaca Surat Jalan, sehingga mengubahnya terasa seperti
+    // memperbaiki alamat kirim padahal tidak. Lihat catatan di handleSave.
     qty:          item.qty         ?? 0,
     shippedQty:   item.shippedQty  ?? 0,
     expDate:      item.expDate     || '',
@@ -345,12 +367,12 @@ function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, o
     arrival_date:           item.arrival_date           || '',
     unitPrice:              item.unitPrice             ?? 0,
     shippingPrice:item.shippingPrice?? 0,
-    inv:          !!item.inv,
-    fp:           !!item.fp,
-    submit:       !!item.submit,
-    kirim:        !!item.kirim,
-    submitDate:   item.submitDate  || '',
-    emailStatus:  item.emailStatus || EMAIL_OPTIONS[0],
+    // inv/fp/submit/kirim/submitDate/emailStatus SENGAJA TIDAK ADA di draft.
+    // Keenamnya atribut level SP sejak 2 Sep 2026 — diedit di kartu
+    // "Finance & Dokumen" tab Overview lewat set_sp_finance_docs, bukan per
+    // baris item. Nilainya tetap ikut terkirim ke update_sp_item_dual lewat
+    // spread `...item` (echo-back, sama seperti `dc`) sampai migrasi
+    // 20260902000005 mencabutnya dari daftar SET RPC itu. Lihat handleSave.
     notes:        item.notes       || '',
   });
   const [saving, setSaving] = useState(false);
@@ -385,6 +407,21 @@ function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, o
     return                         { ...TAG_NEUTRAL, label: 'Open'      };
   }
 
+  // `dc` masih ikut terkirim ke update_sp_item_dual lewat spread `...item` —
+  // ECHO-BACK yang DISENGAJA, bukan kelalaian. Alasannya berlapis:
+  //   1. spToDb() (db.js) SELALU memancarkan key `dc` dan dipakai bersama jalur
+  //      create (bulkInsertSpItems) yang memang wajib menulis kolom itu.
+  //   2. sp_items.dc = NOT NULL DEFAULT ''. Menghapus key-nya dari payload
+  //      membuat jsonb_populate_record mengisi NULL → not_null_violation →
+  //      SELURUH Save di modal ini gagal. Mengirim '' juga bukan jalan keluar:
+  //      itu MENGHAPUS DC legacy yang masih memasok kolom/filter DC SP Manifest,
+  //      grouping byDC, Dashboard, dan peta region Indomarco Dashboard.
+  // Karena `dc` sudah dicabut dari draft, nilai yang dikirim SELALU sama persis
+  // dengan yang ada di DB → RPC menulis balik nilai identik (no-op). Efek nyata:
+  // modal ini TIDAK BISA LAGI mengubah sp_items.dc.
+  // ⚠️ JANGAN "membersihkan" ini dengan menghapus `dc` dari payload — itu
+  // memecahkan Save. Pencabutan sejati harus di RPC (preseden expired_date,
+  // migrasi 20260825000001) dan itu perubahan DB, task terpisah.
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -431,13 +468,12 @@ function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, o
 
         {/* Scrollable body */}
         <div style={{ overflowY: 'auto', padding: '0 22px 8px', flex: 1 }}>
-          {/* SP Info */}
-          <ModalSect>SP Information</ModalSect>
-          <ModalGrid cols={3}>
-            <ModalField label="SP Date"><ModalInp value={fmtDate(spDate)} readOnly/></ModalField>
-            <ModalField label="SP No"><ModalInp value={spNo} readOnly mono/></ModalField>
-            <ModalField label="Customer"><ModalInp value={customer || '—'} readOnly/></ModalField>
-          </ModalGrid>
+          {/* Section "SP Information" (SP Date / SP No / Customer) DIHAPUS
+              2 Sep 2026. Ketiganya read-only dan duplikat murni dari header
+              halaman + kartu Overview yang sudah menampilkannya lebih jelas —
+              nol risiko data, murni kebisingan di modal per-item. Prop
+              spDate/spNo/customer ikut dicabut dari signature komponen ini
+              karena jadi nol pemakaian. JANGAN dikembalikan. */}
 
           {/* Produk */}
           <ModalSect>Produk</ModalSect>
@@ -456,9 +492,10 @@ function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, o
               />
             </ModalField>
             <ModalField label="SKU"><ModalInp value={draft.sku} readOnly mono/></ModalField>
-            <ModalField label="DC" req>
-              <input value={draft.dc} onChange={e => set('dc', e.target.value)} style={{ height: 38, padding: '0 11px', border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface, fontSize: 13, color: C.ink, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' }}/>
-            </ModalField>
+            {/* Field "DC Tujuan" DIHAPUS di sini — DC adalah atribut level SP,
+                bukan level item, jadi menampilkannya per baris item duplikatif
+                dan membingungkan. Satu-satunya tempatnya sekarang: kartu
+                "DC Tujuan" di tab Overview halaman ini. JANGAN dikembalikan. */}
           </ModalGrid>
 
           {/* Quantity */}
@@ -543,39 +580,17 @@ function EditItemModal({ item, spExpiredDate, spDate, spNo, customer, onClose, o
             ))}
           </div>
 
-          {/* Finance */}
-          <ModalSect>Finance &amp; Dokumen</ModalSect>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            {[
-              { key: 'inv',    label: 'INV'    },
-              { key: 'fp',     label: 'FP'     },
-              { key: 'submit', label: 'SUBMIT' },
-              { key: 'kirim',  label: 'KIRIM'  },
-            ].map(({ key, label }) => (
-              <label key={key} onClick={() => set(key, !draft[key])} style={{
-                flex: 1, minWidth: 110, display: 'flex', alignItems: 'center', gap: 9,
-                padding: '11px 13px', border: `1px solid ${draft[key] ? C.okBd : C.line}`,
-                borderRadius: 10, background: draft[key] ? C.okBg : C.surface,
-                cursor: 'pointer', userSelect: 'none', transition: '.12s',
-              }}>
-                <div style={{ width: 34, height: 20, borderRadius: 11, background: draft[key] ? C.accent : C.line, position: 'relative', flexShrink: 0, transition: '.15s' }}>
-                  <div style={{ position: 'absolute', top: 2, left: draft[key] ? 16 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: '.15s', boxShadow: '0 1px 2px rgba(0,0,0,.2)' }}/>
-                </div>
-                <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.3px' }}>{label}</span>
-              </label>
-            ))}
-          </div>
-          <div className="nx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
-            <ModalField label="Submit Date">
-              <ModalInp type="date" value={draft.submitDate} onChange={e => set('submitDate', e.target.value)}/>
-            </ModalField>
-            <ModalField label="Email Status">
-              <select value={draft.emailStatus} onChange={e => set('emailStatus', e.target.value)}
-                style={{ height: 38, padding: '0 11px', border: `1px solid ${C.line}`, borderRadius: 8, background: C.surface, fontSize: 13, color: C.ink, outline: 'none', fontFamily: 'inherit', width: '100%' }}>
-                {EMAIL_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </ModalField>
-          </div>
+          {/* Section "Finance & Dokumen" (INV/FP/SUBMIT/KIRIM, Submit Date,
+              Email Status) DIHAPUS 2 Sep 2026. Keenamnya DIPROMOSIKAN jadi
+              atribut level SP (migrasi 20260902000003/4): satu nilai per SP,
+              bukan per item — satu invoice memang menutup seluruh baris SP.
+              Rumah barunya: kartu "Finance & Dokumen" di tab Overview halaman
+              ini, ditulis lewat RPC set_sp_finance_docs yang guard-nya sumbu
+              FINANCE (finance/finance_controller), bukan sumbu gudang.
+              Itu sekaligus memperbaiki bug lama: Finance tak pernah bisa
+              menyimpan status dokumen dari modal ini karena guard
+              update_sp_item_dual tak punya cabang finance.
+              Keenam key juga dicabut dari `draft`. JANGAN dikembalikan. */}
 
           {/* Notes */}
           <ModalSect>Notes</ModalSect>
@@ -924,6 +939,15 @@ export default function SalesOrderDetailPage({
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineDraft,   setDeadlineDraft]   = useState('');
   const [deadlineSaving,  setDeadlineSaving]  = useState(false);
+  // Status dokumen finance (inv/fp/submit/kirim/submit_date/email_status) —
+  // atribut level SP sejak promosi 2 Sep 2026, diedit inline di kartu
+  // "Finance & Dokumen" tab Overview. Pola state identik editingDeadline.
+  const [editingFinance,  setEditingFinance]  = useState(false);
+  const [financeSaving,   setFinanceSaving]   = useState(false);
+  const [financeDraft,    setFinanceDraft]    = useState({
+    inv: false, fp: false, submit: false, kirim: false,
+    submitDate: '', emailStatus: '',
+  });
   // Fase 1 — stok tersedia (company-level) untuk cek sebelum Generate Picking.
   const [stockMap,     setStockMap]     = useState({});
   const productIdsKey = useMemo(
@@ -1003,6 +1027,26 @@ export default function SalesOrderDetailPage({
   // Sisi company sudah ditegakkan server; FE hanya mencerminkan sisi PERAN,
   // supaya tombol tidak menawarkan aksi yang pasti ditolak RPC.
   const canWarehouseOps = isSuperAdmin || isManagerAbove || roleCodes.includes('operations');
+  // CERMIN guard server is_sp_item_writer() (migrasi 20260902000001), dipakai
+  // update_sp_item_dual DAN delete_sp_item_dual + policy sp_items_delete.
+  // SENGAJA LEBIH SEMPIT dari canWarehouseOps: ceo/gm/gm_bd VIEW-ONLY untuk
+  // TULIS baris item SP (keputusan Den 2 Sep 2026, sejalan
+  // 04_ROLE_PERMISSION_MATRIX baris Logistics: ceo=R, gm_bd=tanpa akses).
+  // 'supervisor' tidak ada di daftar karena role itu tak ada di tabel roles
+  // (TD-106) — jangan ditambahkan "supaya lengkap".
+  // ⚠️ canWarehouseOps di atas TETAP DIPAKAI untuk konteks lain (BTB, generate
+  // picking, tenggat SP, TTF) yang keputusan itu TIDAK sentuh. Jangan
+  // digabungkan jadi satu flag.
+  const canWriteSpItem = isSuperAdmin
+    || roleCodes.some(c => ['admin', 'manager', 'operations'].includes(c));
+  // CERMIN guard RPC set_sp_finance_docs (migrasi 20260902000004):
+  //   is_super_admin() OR has_role('finance_controller') OR has_role('finance')
+  // Sumbu FINANCE, BUKAN sumbu gudang — is_manager_or_above() sengaja tidak
+  // dipakai karena 04_ROLE_PERMISSION_MATRIX baris "Finance" menaruh manager
+  // di R, bukan CRUD. Jadi ini bukan superset maupun subset canWarehouseOps /
+  // canWriteSpItem; ketiganya tiga sumbu berbeda yang kebetulan bertemu di
+  // halaman yang sama. Jangan digabung.
+  const canEditFinanceDocs = isSuperAdmin || isFinanceCtl || roleCodes.includes('finance');
 
   const [payments,    setPayments]    = useState([]);
   const [ttf,         setTtf]         = useState(null);
@@ -1133,6 +1177,28 @@ export default function SalesOrderDetailPage({
     setSpOrder(data || null);
     await onRefresh?.();
     showToast?.('Tenggat SP diperbarui.');
+  };
+
+  // ── Ubah status dokumen finance — level HEADER ────────────────────────────
+  // Satu RPC menulis sp_orders DAN semua baris sp_items se-SP dalam satu
+  // transaksi (lihat setSpFinanceDocs di db.js — sengaja bukan dua .update()).
+  // Otorisasi + freeze CANCELLED ditegakkan di dalam RPC; gate UI di kartu
+  // hanya cermin dari itu.
+  // DUA refetch sesudahnya, alasan sama persis handleSaveDeadline: `spOrder`
+  // memasok kartu di halaman ini, `onRefresh` memasok `rows` App.jsx yang jadi
+  // sumber financePct, KPI FinancePage, dan chip OutstandingPage.
+  const handleSaveFinanceDocs = async () => {
+    const cust = group?.customerId;
+    if (!cust || financeSaving) return;
+    setFinanceSaving(true);
+    const { error } = await setSpFinanceDocs(cust, spNo, financeDraft);
+    setFinanceSaving(false);
+    if (error) { showToast?.('Gagal ubah status dokumen: ' + (error.message || 'unknown error'), 'error'); return; }
+    setEditingFinance(false);
+    const { data } = await getSpOrderStatus(cust, spNo);
+    setSpOrder(data || null);
+    await onRefresh?.();
+    showToast?.('Status dokumen SP diperbarui.');
   };
 
   const handleAddBtb = async () => {
@@ -1335,6 +1401,18 @@ export default function SalesOrderDetailPage({
   // item pernah berbeda). Nama `firstDeadline` DIPERTAHANKAN: dipakai di
   // beberapa titik lain di file ini.
   const spExpiredDate = spOrder?.expired_date || items.find(i => i.expired_date)?.expired_date || null;
+
+  // ── DC tujuan (level HEADER) ───────────────────────────────────────────
+  // Sumber kebenaran: sp_orders.dc_id → dc_master, ikut terbawa embed di
+  // getSpOrderStatus. SENGAJA TANPA fallback ke sp_items.dc: kolom legacy itu
+  // teks bebas yang bisa menyimpang dari header (kasus nyata pernah terjadi),
+  // jadi menjadikannya cadangan justru mengembalikan angka yang salah dengan
+  // tampilan meyakinkan. Kalau embed null (SP lama tanpa dc_id, atau RLS
+  // dc_master menolak — lihat catatan di db.js), konsumen tampilkan '—'.
+  // Konsumen tunggal: kartu "DC Tujuan" di tab Overview. Field DC di
+  // EditItemModal sudah DIHAPUS (duplikat — DC atribut level SP, bukan item),
+  // jadi jangan tambah konsumen baru di level item.
+  const spDc = spOrder?.dc_master || null;
   const firstDeadline = spExpiredDate;
   const days = daysUntil(firstDeadline);
   const deadlineSub = days == null ? '—' : days < 0 ? `${Math.abs(days)} hari lalu · overdue` : days === 0 ? 'Hari ini · urgent' : `${days} hari lagi · on track`;
@@ -1670,6 +1748,154 @@ export default function SalesOrderDetailPage({
                 <div style={{ color: C.inkSoft }}>Finance Progress</div>
                 <div>{finOverallPct}%</div>
               </div>
+            </div>
+
+            {/* DC Tujuan — kartu baru, struktur menyalin "SP Date & Expired" di
+                atas (grid label/nilai 2 kolom). Sumbernya sp_orders.dc_id →
+                dc_master, satu-satunya sumber yang juga dipakai Surat Jalan &
+                Picking List. Sebelum ini, DC hanya terlihat lewat sp_items.dc
+                (legacy, teks bebas) di subtitle baris Items — dua nilai yang
+                bisa menyimpang tanpa penanda apa pun. READ-ONLY tanpa tombol
+                edit: dc_id hari ini write-once (cuma create_sp_order_dual yang
+                menulisnya), jadi jangan pasang affordance yang tak ada jalurnya. */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3 }}>
+              <div style={{ ...kickerStyle }}>DC Tujuan</div>
+              {/* Kedua nilai dibungkus box read-only — pola boxed panel yang
+                  sudah hidup di file ini (card "Dokumen Terkait"/"Danger Zone"):
+                  border C.line + background C.surface2 + RADIUS.md. Bukan token
+                  baru, dan sengaja BUKAN salinan ModalInp: box modal itu pakai
+                  height 38 + radius 8 (skala modal), yang akan memotong alamat
+                  3-4 baris dan bentrok dgn radius kartu di halaman ini.
+                  Box alamat karena itu tanpa tinggi tetap → teks membungkus.
+                  Row-gap SP.s1 → SP.s2 supaya dua box terbaca sebagai dua baris
+                  info berurutan dalam satu kartu, bukan menyatu. Label diberi
+                  padding vertikal 8px (= 1px border + 7px padding box) supaya
+                  baris pertamanya sebaris dgn teks di dalam box. */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s2}px ${SP.s3}px`, fontSize: 13, marginTop: SP.s2, alignItems: 'start', alignContent: 'start' }}>
+                <div style={{ color: C.inkSoft, padding: '8px 0' }}>Nama</div>
+                <div style={{ border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface2, padding: '7px 10px', minWidth: 0 }}>
+                  {spDc?.nama || '—'}
+                </div>
+                <div style={{ color: C.inkSoft, padding: '8px 0' }}>Alamat</div>
+                <div style={{ border: `1px solid ${C.line}`, borderRadius: RADIUS.md, background: C.surface2, padding: '7px 10px', minWidth: 0, fontSize: 12.5, lineHeight: 1.45 }}>
+                  {spDc?.alamat || '—'}
+                </div>
+              </div>
+            </div>
+
+            {/* Finance & Dokumen — kartu BARU (2 Sep 2026). Rumah baru keenam
+                kolom yang sebelumnya per-item di EditItemModal; sejak migrasi
+                20260902000003/4 mereka atribut level SP, sumber kebenarannya
+                sp_orders dan ditulis HANYA lewat set_sp_finance_docs.
+                Pola edit inline meniru TTF (pensil -> form -> Simpan/Batal),
+                bukan modal baru. Gate = canEditFinanceDocs (sumbu FINANCE),
+                sengaja BEDA dari pensil tenggat di kartu "SP Date & Expired"
+                yang memakai canWarehouseOps. */}
+            <div style={{ border: `1px solid ${C.lineSoft}`, borderRadius: RADIUS.md, padding: SP.s3 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SP.s2 }}>
+                <div style={{ ...kickerStyle }}>Finance &amp; Dokumen</div>
+                {/* Gate = cermin guard RPC: HANYA CANCELLED yang mengunci.
+                    SP LUNAS SENGAJA masih bisa dikoreksi (rekonsiliasi dokumen
+                    historis) — jangan tambahkan LUNAS tanpa mengubah RPC juga. */}
+                {!editingFinance && canEditFinanceDocs && spOrder?.status !== 'CANCELLED' && (
+                  <button
+                    onClick={() => {
+                      setFinanceDraft({
+                        inv:         !!spOrder?.inv,
+                        fp:          !!spOrder?.fp,
+                        submit:      !!spOrder?.submit,
+                        kirim:       !!spOrder?.kirim,
+                        submitDate:  spOrder?.submit_date  || '',
+                        emailStatus: spOrder?.email_status || '',
+                      });
+                      setEditingFinance(true);
+                    }}
+                    aria-label="Ubah status dokumen SP"
+                    title="Ubah status dokumen SP"
+                    style={{ width: 22, height: 22, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.sm, color: C.accent, cursor: 'pointer' }}
+                  >
+                    <Pencil size={12}/>
+                  </button>
+                )}
+              </div>
+
+              {editingFinance ? (
+                <div style={{ marginTop: SP.s2, display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: SP.s2 }}>
+                    {FINANCE_DOC_FLAGS.map(({ key, label }) => (
+                      <label
+                        key={key}
+                        onClick={() => setFinanceDraft(d => ({ ...d, [key]: !d[key] }))}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                          border: `1px solid ${financeDraft[key] ? C.okBd : C.line}`,
+                          borderRadius: RADIUS.md, background: financeDraft[key] ? C.okBg : C.surface,
+                          cursor: financeSaving ? 'not-allowed' : 'pointer', userSelect: 'none',
+                          fontSize: 12.5, opacity: financeSaving ? 0.6 : 1,
+                        }}
+                      >
+                        <div style={{ width: 30, height: 18, borderRadius: 9, background: financeDraft[key] ? C.accent : C.line, position: 'relative', flexShrink: 0, transition: '.15s' }}>
+                          <div style={{ position: 'absolute', top: 2, left: financeDraft[key] ? 14 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: '.15s' }}/>
+                        </div>
+                        <span style={{ fontWeight: 700, letterSpacing: '.3px' }}>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s2}px ${SP.s3}px`, fontSize: 13, alignItems: 'center' }}>
+                    <div style={{ color: C.inkSoft }}>Submit Date</div>
+                    <input
+                      type="date"
+                      value={financeDraft.submitDate}
+                      disabled={financeSaving}
+                      onChange={e => setFinanceDraft(d => ({ ...d, submitDate: e.target.value }))}
+                      style={{ height: 30, padding: '0 8px', borderRadius: RADIUS.sm, border: `1px solid ${C.line}`, background: C.surface, fontSize: 12.5, color: C.ink, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', width: '100%' }}
+                    />
+                    <div style={{ color: C.inkSoft }}>Email Status</div>
+                    <select
+                      value={financeDraft.emailStatus}
+                      disabled={financeSaving}
+                      onChange={e => setFinanceDraft(d => ({ ...d, emailStatus: e.target.value }))}
+                      style={{ height: 30, padding: '0 8px', borderRadius: RADIUS.sm, border: `1px solid ${C.line}`, background: C.surface, fontSize: 12.5, color: C.ink, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', width: '100%' }}
+                    >
+                      <option value="">— Belum ditentukan —</option>
+                      {EMAIL_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      onClick={handleSaveFinanceDocs}
+                      disabled={financeSaving}
+                      style={{ height: 30, padding: '0 10px', borderRadius: RADIUS.sm, border: `1px solid ${C.accent}`, background: 'transparent', color: C.accent, fontSize: 12, fontWeight: 700, cursor: financeSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: financeSaving ? 0.6 : 1 }}
+                    >
+                      {financeSaving ? 'Menyimpan…' : 'Simpan'}
+                    </button>
+                    <button
+                      onClick={() => setEditingFinance(false)}
+                      disabled={financeSaving}
+                      style={{ height: 30, padding: '0 10px', borderRadius: RADIUS.sm, border: `1px solid ${C.line}`, background: 'transparent', color: C.inkSoft, fontSize: 12, fontWeight: 600, cursor: financeSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                    >
+                      Batal
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: C.inkSoft, lineHeight: 1.45 }}>
+                    Berlaku untuk <b>seluruh item</b> SP ini — status dokumen adalah atribut level SP.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: SP.s2, display: 'flex', flexDirection: 'column', gap: SP.s2 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {FINANCE_DOC_FLAGS.map(({ key, label }) => (
+                      <Badge key={key} {...(spOrder?.[key] ? TAG_PALE : TAG_NEUTRAL)}>{label}</Badge>
+                    ))}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: `${SP.s1}px ${SP.s3}px`, fontSize: 13, alignContent: 'start' }}>
+                    <div style={{ color: C.inkSoft }}>Submit Date</div>
+                    <div>{spOrder?.submit_date ? fmtDate(spOrder.submit_date) : '—'}</div>
+                    <div style={{ color: C.inkSoft }}>Email Status</div>
+                    <div>{spOrder?.email_status || '—'}</div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Progress Pengiriman — kicker + card-title + bar + body, pola mockup. */}
@@ -2118,8 +2344,14 @@ export default function SalesOrderDetailPage({
                         {/* Mockup cuma punya ikon Edit di kolom Aksi. Tombol Hapus
                             DIPERTAHANKAN — aksi nyata yang sudah ada; membuangnya
                             demi kemiripan = menghilangkan fungsi, bukan restyle. */}
+                        {/* Kedua tombol digate canWriteSpItem — cermin
+                            is_sp_item_writer() di update_sp_item_dual DAN
+                            delete_sp_item_dual. Tombol Hapus dulu TANPA GATE
+                            SAMA SEKALI sementara Edit digate: siapa pun yang
+                            login bisa menghapus baris item SP. JANGAN
+                            dilepas lagi. */}
                         <div style={{ ...cell, display: 'flex', gap: 4 }}>
-                          {canWarehouseOps && (
+                          {canWriteSpItem && (
                           <button
                             onClick={() => setEditingItem(item)}
                             aria-label="Edit baris"
@@ -2129,6 +2361,7 @@ export default function SalesOrderDetailPage({
                             <Pencil size={14}/>
                           </button>
                           )}
+                          {canWriteSpItem && (
                           <button
                             onClick={() => handleDeleteItem(item.id)}
                             aria-label="Hapus baris"
@@ -2137,6 +2370,7 @@ export default function SalesOrderDetailPage({
                           >
                             <Trash2 size={14}/>
                           </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -2418,9 +2652,6 @@ export default function SalesOrderDetailPage({
         <EditItemModal
           item={editingItem}
           spExpiredDate={spExpiredDate}
-          spDate={spDate}
-          spNo={spNo}
-          customer={customer}
           onClose={() => setEditingItem(null)}
           onSave={handleSaveItem}
         />
