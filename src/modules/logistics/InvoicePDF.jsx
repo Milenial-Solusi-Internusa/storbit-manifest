@@ -191,7 +191,21 @@ const makeStyles = (print) => StyleSheet.create({
   // box pre-rotate 220pt lebar → titik tengah pas di tengah 230pt → hasil
   // rotasi [5,225], simetris muat dengan margin kecil di dua sisi — SATU-
   // SATUNYA opsi yang aman untuk elemen yang di-rotate 90°.
-  sideLabelWrap: { position: 'absolute', top: 0, left: 0, width: 24, height: 310, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  // `top: -80` — SATU nilai untuk KEDUA varian (keputusan Den: tampilannya
+  // harus seragam). Label ini absolut relatif terhadap `itemsRow`, dan
+  // `justifyContent:'center'` menaruhnya di TENGAH jendela 310pt — artinya
+  // jaraknya ke header tabel TETAP, tak peduli tabelnya berapa baris. Pada
+  // `top:0` label mulai 228,91pt di bawah header DESCRIPTION (diukur, dan
+  // IDENTIK di kedua varian — perbedaannya cuma bacaan mata, bukan geometri);
+  // -80 membawa tepi atasnya ke garis header itu.
+  //
+  // Digeser lewat `top`, BUKAN dengan mengecilkan `height` atau menukar
+  // `justifyContent` ke 'flex-start' — dua-duanya merusak. `height:310` adalah
+  // jendela clip yang geometrinya harus >= `sideLabel.width` (lihat catatan
+  // panjang di atas), dan 'flex-start' memotong separuh teks karena react-pdf
+  // me-rotate di sekitar titik tengah box. Menggeser `top` memindahkan jendela
+  // DAN isinya bersama-sama, jadi margin clip-nya tetap utuh (78pt di dua sisi).
+  sideLabelWrap: { position: 'absolute', top: -80, left: 0, width: 24, height: 310, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   sideLabel: { fontFamily: 'Lora', fontWeight: 600, fontSize: 12.75, width: 300, textAlign: 'center', transform: 'rotate(-90deg)', color: MUTE_50 },
   sideLabelAccent: { color: PURPLE_DEEP },
 
