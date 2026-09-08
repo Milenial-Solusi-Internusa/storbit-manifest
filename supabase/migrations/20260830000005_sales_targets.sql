@@ -3,8 +3,18 @@
 -- Batch:     CRM v3 — Bagian 4 (target sales + halaman AdminHub)
 -- Depends:   companies · profiles · get_user_company_ids() · is_super_admin()
 --            · is_manager_or_above() · set_updated_at()
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
---            ⚠️ Dijalankan MANUAL di Supabase SQL Editor oleh Den.
+-- Status:    ✅ LIVE DI PRODUKSI — 8 Sep 2026 (ref untmpqceexwxzuhlmyrg),
+--            dijalankan manual di SQL Editor oleh Den. REKAMAN — JANGAN dijalankan ulang.
+--            Bukti: 9 constraint · 4 index · 3 policy · 1 trigger · RLS aktif ·
+--            GRANT ALL ke authenticated menempel · CHECK sales_targets_metric_required
+--            terbukti MENOLAK baris tanpa target_value maupun target_deals.
+--            ⚠️ NOL pembaca di `src/` milik `main` — tabel ini belum dipakai apa pun di
+--            produksi sampai branch CRM v3 merge.
+--            ⚠️ BARIS `GRANT ... TO anon` DI BAWAH TIDAK DIJALANKAN — sengaja dihapus dari
+--            blok sebelum Run. Hasilnya `anon` TETAP memegang REFERENCES/TRIGGER/TRUNCATE
+--            di tabel ini, membuktikan sumbernya ALTER DEFAULT PRIVILEGES di schema public,
+--            BUKAN baris GRANT ini. Baris itu DIBIARKAN di file sebagai rekaman apa adanya;
+--            menghapusnya dari file tidak akan mengubah apa pun di produksi (TD-230).
 --
 -- ISI
 --   1. Tabel sales_targets + constraint + index

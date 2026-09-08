@@ -2,8 +2,14 @@
 -- Migration: 20260830000004_accounts_source_add_whatsapp
 -- Batch:     CRM v3 — tambahan kecil, opsi sumber lead
 -- Depends:   accounts (kolom source + constraint prospects_source_check)
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
---            ⚠️ Dijalankan MANUAL di Supabase SQL Editor oleh Den.
+-- Status:    ✅ LIVE DI PRODUKSI — 8 Sep 2026 (ref untmpqceexwxzuhlmyrg),
+--            dijalankan manual di SQL Editor oleh Den. REKAMAN — JANGAN dijalankan ulang.
+--            Bukti: pra-cek NOL baris di luar daftar baru · CHECK prospects_source_check
+--            kini 12 nilai (11 lama + 'whatsapp') · uji gigit LOLOS dua arah —
+--            'whatsapp' DITERIMA, 'telepati' DITOLAK.
+--            ⚠️ FE `main` belum menawarkan 'whatsapp' (SOURCES di ProspectFormPage masih
+--            11 nilai) — pelebaran ini SENGAJA mendahului kodenya, nol perubahan perilaku
+--            sampai branch CRM v3 merge.
 --
 -- ISI
 --   Melebarkan CHECK constraint `prospects_source_check` pada tabel
