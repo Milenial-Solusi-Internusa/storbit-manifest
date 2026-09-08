@@ -127,9 +127,19 @@ const makeStyles = (print) => StyleSheet.create({
   logo: { height: 65, width: 65, objectFit: 'contain' },
   coName: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: 19.5, color: INK },
   invLabel: { fontSize: 8.25, letterSpacing: 1, textTransform: 'uppercase', color: PURPLE, marginTop: 7.5, marginBottom: 4.5 },
-  metaRow: { flexDirection: 'column', gap: 3 },
-  metaItem: { flexDirection: 'column' },
-  metaLabel: { fontSize: 8.25, color: MUTE_55 },
+  // Meta dokumen = TIGA KOLOM: label | titik dua | nilai. Bentuk ini dipilih
+  // supaya titik duanya SEJAJAR VERTIKAL walau panjang labelnya beda-beda
+  // ("Invoice Date" vs "Due Date" vs "SP No."). Menyambung label+':'+nilai jadi
+  // satu string dan meratakannya dengan spasi TIDAK bisa rata di font
+  // proporsional seperti Lora — lebarnya bergantung huruf, bukan jumlah spasi.
+  // `metaKey` karena itu berlebar TETAP, bukan mengikuti panjang teks.
+  metaRow: { flexDirection: 'column' },
+  metaLine: { flexDirection: 'row', marginBottom: print ? 1.5 : 3 },
+  // Ungu + tebal, warna diambil dari konstanta PURPLE yang sama dengan label
+  // "Billed By"/"Billed To" (`billLabel`) — bukan hex baru.
+  metaKey: { width: 68, fontWeight: 600, fontSize: 9.75, color: PURPLE },
+  metaColon: { width: 8, fontWeight: 600, fontSize: 9.75, color: PURPLE },
+  // Nilai sengaja gaya biasa: tidak tebal, warna tinta normal.
   metaVal: { fontSize: 9.75, color: INK },
 
   hr: { height: 1, backgroundColor: RULE_16, marginVertical: print ? 4 : 7.5 },
@@ -255,6 +265,19 @@ const S_PRINT = makeStyles(true);
 
 // `variant` default 'download' — pemanggil lama tetap mendapat bentuk yang
 // sama persis seperti sebelumnya tanpa perlu diubah.
+// Satu baris meta dokumen. Sengaja tiga <Text> bersaudara di dalam View
+// ber-flexDirection row — BUKAN satu <Text> yang disambung — karena hanya
+// dengan kolom terpisah titik duanya bisa dijamin sejajar.
+function MetaLine({ s, label, value }) {
+  return (
+    <View style={s.metaLine}>
+      <Text style={s.metaKey}>{label}</Text>
+      <Text style={s.metaColon}>:</Text>
+      <Text style={s.metaVal}>{value}</Text>
+    </View>
+  );
+}
+
 export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
   const isPrint = variant === 'print';
   const s = isPrint ? S_PRINT : S_DOWNLOAD;
@@ -298,9 +321,9 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
                 </View>
                 <Text style={s.invLabel}>Invoice</Text>
                 <View style={s.metaRow}>
-                  <View style={s.metaItem}><Text style={s.metaLabel}>Invoice Date</Text><Text style={s.metaVal}>{fmtDate(invoice.invoice_date)}</Text></View>
-                  <View style={s.metaItem}><Text style={s.metaLabel}>Due Date</Text><Text style={s.metaVal}>{fmtDate(invoice.due_date)}</Text></View>
-                  <View style={s.metaItem}><Text style={s.metaLabel}>PO No.</Text><Text style={s.metaVal}>{invoice.sp_no || '—'}</Text></View>
+                  <MetaLine s={s} label="Invoice Date" value={fmtDate(invoice.invoice_date)} />
+                  <MetaLine s={s} label="Due Date" value={fmtDate(invoice.due_date)} />
+                  <MetaLine s={s} label="PO No." value={invoice.sp_no || '—'} />
                 </View>
               </View>
             </View>
@@ -352,10 +375,10 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
                     aman selama alamat DC muat satu baris (<= ~48 karakter pada
                     lebar kolom 242 pt); alamat dua baris menurunkannya ke n=4. */}
             {isPrint && (
-              <View style={{ marginTop: 9 }}>
-                <Text style={s.payRow}><Text style={s.payLabel}>Invoice Date  </Text>{fmtDate(invoice.invoice_date)}</Text>
-                <Text style={s.payRow}><Text style={s.payLabel}>Due Date  </Text>{fmtDate(invoice.due_date)}</Text>
-                <Text style={s.payRow}><Text style={s.payLabel}>PO No.  </Text>{invoice.sp_no || '—'}</Text>
+              <View style={[s.metaRow, { marginTop: 9 }]}>
+                <MetaLine s={s} label="Invoice Date" value={fmtDate(invoice.invoice_date)} />
+                <MetaLine s={s} label="Due Date" value={fmtDate(invoice.due_date)} />
+                <MetaLine s={s} label="PO No." value={invoice.sp_no || '—'} />
               </View>
             )}
           </View>
