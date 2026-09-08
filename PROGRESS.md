@@ -31,6 +31,97 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-08
+### Dua sprint UI CRM — Detail Deal lepas dari sumbu `accounts`, Pipeline Trend lepas dari selektor periode
+
+FE-only, dua commit (`a6586f6`, `024a474`), **NOL perubahan DB, nol migrasi**. Keduanya sudah
+diverifikasi di staging.
+
+> ⚠️ **Tanggal entri ini DIKOREKSI dari brief.** Brief sesi menyebut pengukuran produksi terjadi
+> "9 Sep 2026" (5×), dan tujuh komentar kode sprint 2 sempat ikut menulis tanggal itu. Harness dan
+> `git author date` kedua commit sama-sama menyatakan **8 Sep 2026** — dua sumber mesin melawan satu
+> asumsi. Seluruhnya diseragamkan ke **8 Sep 2026**, termasuk 7 kemunculan di
+> `CRMDashboardPage.jsx` (6) dan `DealDetailPage.jsx` (1). Dicatat di sini supaya rujukan lama ke
+> "9 Sep" masih bisa ditelusuri. Alasan memilih tanggal mesin: dokumen bertanggal beda dari commit
+> adalah persis jebakan `9abc617` yang peringatannya baru dipasang di entri 2026-09-06.
+
+---
+
+#### SPRINT 1 — pencabutan tiga kontrol Detail Deal (`a6586f6`)
+
+`DealHeaderControls` berhenti dipanggil (angka **DEAL VALUE**, tombol **Edit Deal**, dropdown
+**Move Stage** hilang; slot `actions` FormSheet jadi kosong) · panel inline **Edit Value** dicabut ·
+**Mark as Won** dicabut · toolbar **7 → 5** tombol (Edit Inquiry · Change Owner · Start Negotiation ·
+Mark as Lost · Cancel Deal) · banner **"Next step"** baru di bawah StatusBar · baris meta dirapikan
+(pemisah hairline, label kecil-uppercase-renggang mewarisi bahasa visual "DEAL VALUE" yang dicabut).
+
+**Dasar tiap keputusan — semuanya terukur, bukan selera:**
+
+| keputusan | dasarnya |
+|---|---|
+| Move Stage + Edit Deal dicabut | Blueprint §6: perpindahan status deal **digerakkan DOKUMEN**, nol tombol manual untuk arah maju. Keduanya kehilangan alasan keberadaannya |
+| `accounts.assigned_profile` dipensiunkan | **Terukur duplikat.** 1.211 akun hidup: 32 punya `assigned_profile`, 1.206 punya `assigned_to`, **NOL** yang hanya punya `assigned_profile`, **NOL** yang isinya berbeda → mencabut fallback nol mengubah tampilan |
+| `accounts.estimated_value` dipensiunkan | **Trigger pengisinya nol pernah jalan.** `sync_deal_value_on_quotation_accept` menyala saat `quotations.status='ACCEPTED'`; produksi punya **384 quotation, NOL** berstatus ACCEPTED. Kolomnya bernilai 0 di **1.178 dari 1.211** akun — yang tampil di header selama ini Rp 0 untuk 97% deal |
+| `accounts.estimated_closing_date` **DIPERTAHANKAN** | **Hidup dan dipakai.** 118 akun terisi oleh **8 orang berbeda**, proporsinya **NAIK** 6,5% (Jun) → 26,3% (Agu), aktivitas terakhir 7 Sep. Rossy Siregar 61 akun, F Ayumurni Hartanti 38 |
+| **Start Negotiation DITAHAN** | Blueprint menyebut NEGOTIATION dipicu "versi v2 terbit", tapi **triggernya BELUM ADA di DB** — disisir di `schema_snapshot`: hanya 3 trigger penulis status (→IN_REVIEW, →QUOTED, →WON), nol yang menghasilkan NEGOTIATION. Mencabutnya sekarang membuat lajur itu **tidak terjangkau sama sekali** |
+
+`EditDealModal`, `DealHeaderControls`, `bantQualifyGate` **tetap hidup** di file aslinya —
+`CustomerDetailPage` dan `ProspectFormPage` masih memakainya. Yang berhenti cuma pemanggilan dari
+Detail Deal.
+
+#### SPRINT 2 — Pipeline Trend 12 bulan + penjagaan MQL→SQL (`024a474`)
+
+Pipeline Trend jadi **12 bulan tetap, granularitas bulanan**, **LEPAS** dari selektor periode global ·
+garis pembanding dibuang · query pembanding slot `[1]` dicabut · penjagaan ketiga di MQL to SQL ·
+dua komentar basi dikoreksi.
+
+**Dasar:**
+
+- **Trend 4 minggu tidak bermakna.** Default `This Month` menghasilkan 4 titik mingguan dan dengan
+  volume deal sekarang garisnya nyaris datar di nol. Ia **satu-satunya grafik deret waktu** di
+  dashboard dan **bebas dari batas umur tabel riwayat** (sumbernya `inquiries.created_at` murni),
+  jadi aman diperpanjang. **Enam** widget lain — Total Inquiry, Total Quotation, Win Rate, Loss
+  Reason, Sales Performance, **dan Lead Source** — tetap mengikuti selektor, default tetap
+  `This Month`.
+- **Pembanding dibuang** karena data 2025 **NOL** — Nexus baru jalan Januari 2026. Garis
+  putus-putus yang selalu menempel di nol menambah kebingungan tanpa menambah informasi.
+  Dihidupkan lagi begitu ada data tahun kedua; caranya ditulis di komentar. `periodRange()`
+  **dibiarkan utuh** walau `buckets`/`prevStart`/`prevEnd`/`curLabel`/`prevLabel` kini nol pembaca —
+  kelimanya dibutuhkan lagi saat itu, dan mencabutnya berarti menulis ulang tiga cabang `return`
+  untuk sesuatu yang nol biaya runtime.
+- **MQL to SQL akan menampilkan 0% di produksi.** Terukur 8 Sep: kohort **166 akun, converted 0,
+  lost 0**. Itu **MENYESATKAN** — artinya "belum ada yang bisa diukur", bukan "nol konversi".
+  Sebabnya backfill hanya mencatat tahap **SAAT ITU**, sehingga **103 akun `sql` dan 66 `customer`**
+  yang sudah ada semuanya **di LUAR kohort**. ⚠️ Penjagaan lama (`mqlBase === 0 → null`) **tidak
+  menyala** karena penyebutnya 166, bukan nol — **yang nol adalah pembilangnya**. Karena itu
+  penjagaan kedua dipasang: kalau seluruh baris kohort ber-`from_stage` NULL (murni backfill),
+  kartu menampilkan pesan, bukan persentase.
+
+#### Verifikasi staging
+
+Seluruh checklist kedua sprint **LOLOS**, dengan **satu pengecualian yang belum bisa diuji**: cabang
+baru MQL to SQL belum terbukti karena **kohort staging NOL** (5 customer, 2 prospect, nol mql). Ia
+baru menyala di produksi — **verifikasi ulang setelah merge**.
+
+#### ⚠️ Tiga koreksi atas premis brief — dicatat supaya tidak diulang
+
+1. **`failed.push` untuk truncation Pipeline Trend SUDAH ADA** sejak sebelum sprint 2
+   (`if (dealRows.length === 1000) failed.push('pipeline trend (truncated at 1000 rows)')`).
+   Menambah deteksi kedua akan menghasilkan **dua banner untuk satu kejadian**. Tidak ditambah.
+2. **ENAM widget mengikuti selektor periode, bukan lima** — **Lead Source** ikut (query `[0]`,
+   `accounts.created_at` dalam `P`).
+3. **Mencabut query slot `[1]` menggeser 34 rujukan `res[]`** + 15 label komentar + 3 rujukan prosa
+   (renomori `[2..15] → [1..14]`). Itu bukan pencabutan satu baris.
+
+#### ⭐ Pelajaran yang paling layak dibawa keluar
+
+> **Komentar desain di kode menjelaskan KENAPA sesuatu dibuat, bukan APAKAH ia masih dipakai.**
+> Ketiga kolom `accounts` yang diaudit sprint ini — `assigned_profile`, `estimated_value`,
+> `estimated_closing_date` — **semuanya punya komentar desain yang meyakinkan**, sebagian bahkan
+> menjelaskan secara eksplisit kenapa ia berbeda dari kembarannya di `inquiries`. Dua ternyata
+> **mati**, satu **hidup**. Perbedaannya baru ketahuan setelah **dihitung di produksi**, bukan
+> setelah dibaca. Komentar bagus justru membuat kolom mati terlihat hidup lebih lama.
+
 ## 2026-09-07
 ### Rekonsiliasi Nexus × Finance — DUA catatan 5 Sep terbantahkan + temuan terbesar sesi ini
 

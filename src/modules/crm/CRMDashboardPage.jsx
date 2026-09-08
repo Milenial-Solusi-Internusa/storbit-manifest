@@ -130,7 +130,7 @@ const LIFECYCLE_LABELS = {
 /* ─── Rentang periode ──────────────────────────────────────────────────────
    Satu sumber untuk lima widget yang mengikuti selektor: Total Inquiry, Total
    Quotation, Win Rate, Loss Reason, Sales Performance.
-   ⚠️ Pipeline Trend TIDAK LAGI memakai rentang ini sejak 9 Sep 2026 — ia punya
+   ⚠️ Pipeline Trend TIDAK LAGI memakai rentang ini sejak 8 Sep 2026 — ia punya
    jendela tetap 12 bulan berjalan (`trendStart`/`trendBuckets` di fetchDash).
    Akibatnya `buckets`, `prevStart`, `prevEnd`, `curLabel`, `prevLabel` di bawah
    kini NOL PEMBACA. Sengaja DIBIARKAN, bukan terlewat: kelimanya dibutuhkan
@@ -572,7 +572,7 @@ function PipelineTrend({ data = [] }) {
                     brand, dan karena arahnya horizontal, nilai yang sama
                     terbaca beda warna tergantung posisi X — dekoratif tanpa
                     makna data. Diganti navy solid; isian area turunan navy.
-                    Gradasi pembanding (`areaLalu`) ikut dibuang 9 Sep 2026
+                    Gradasi pembanding (`areaLalu`) ikut dibuang 8 Sep 2026
                     bersama garis pembandingnya. */}
                 <linearGradient id="areaIni" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%"   stopColor={NAVY} stopOpacity={0.16} />
@@ -859,7 +859,7 @@ function MqlToSqlPie({ data }) {
      (`from_stage` NULL), jadi nol transisi nyata pernah terekam. Menampilkan
      persentase di keadaan itu terbaca sebagai "sekian persen gagal naik" —
      padahal yang benar adalah belum ada yang bisa diukur. Diukur di produksi
-     9 Sep 2026: kohort 166 akun, converted 0 → tanpa penjagaan ini kartunya
+     8 Sep 2026: kohort 166 akun, converted 0 → tanpa penjagaan ini kartunya
      memberi tahu CEO "0%". */
   const notEnoughHistory = !data?.hasRealTransition;
   const slices = [
@@ -2573,7 +2573,7 @@ function CRMDashboardPage() {
 
         /* [14] Deal yang DIBUAT dalam 12 BULAN TERAKHIR — sumber grafik Pipeline
            Trend.
-           ⚠️ SENGAJA LEPAS dari selektor periode global (keputusan Den 9 Sep 2026).
+           ⚠️ SENGAJA LEPAS dari selektor periode global (keputusan Den 8 Sep 2026).
            Mengikuti selektor membuat default "This Month" menghasilkan 4 titik
            mingguan, dan dengan volume deal sekarang garisnya nyaris datar di nol —
            grafik yang benar secara teknis tapi tak bermakna dibaca. Jendelanya
@@ -2919,7 +2919,7 @@ function CRMDashboardPage() {
          `from_stage` NULL — bukan riwayat penuh.
          ⚠️ Tanggal ini SEMPAT SALAH TERTULIS "27 Agu 2026", merujuk migrasi
          `20260827000002_crm_v3_lifecycle` yang TIDAK PERNAH dijalankan dan
-         digantikan jalur B. Dikoreksi 9 Sep 2026. Akun yang melewati mql SEBELUM
+         digantikan jalur B. Dikoreksi 8 Sep 2026. Akun yang melewati mql SEBELUM
          tanggal itu lalu sudah bergerak lagi tidak punya jejak mql sama sekali,
          jadi kohort ini UNDER-REPORT untuk data lama dan makin lengkap seiring
          waktu. Ditulis apa adanya di UI, bukan disembunyikan. */
@@ -3036,7 +3036,7 @@ function CRMDashboardPage() {
          supaya grafik ini tidak ikut bergeser saat selektor periode global diubah.
          Nilai tiap titik = jumlah deal yang DIBUAT di bulan itu (per bulan,
          naik-turun), BUKAN kumulatif.
-         ⚠️ GARIS PEMBANDING SENGAJA DIBUANG 9 Sep 2026, bukan kelalaian.
+         ⚠️ GARIS PEMBANDING SENGAJA DIBUANG 8 Sep 2026, bukan kelalaian.
          Pembanding yang benar untuk rentang 12 bulan adalah 12 bulan sebelumnya
          — dan data 2025 NOL, Nexus baru jalan Januari 2026. Garis putus-putus
          yang selalu menempel di nol hanya menambah kebingungan tanpa menambah

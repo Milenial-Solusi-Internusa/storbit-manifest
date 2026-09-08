@@ -1078,7 +1078,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            ⚠️ Komentar ini SEMPAT menyebut `inquiry_status_history` "staging-only
            (TD-225)". Sudah TIDAK BERLAKU: tabel + trigger `trg_z_log_inquiry_status_change`
            LIVE di produksi sejak 7 Sep 2026 (migrasi `20260828000001`). Dikoreksi
-           9 Sep 2026. Yang masih berlaku: isinya baru terisi sejak tanggal itu,
+           8 Sep 2026. Yang masih berlaku: isinya baru terisi sejak tanggal itu,
            jadi deal lama tetap tak punya jejak transisi. */
         status={(
           <>
