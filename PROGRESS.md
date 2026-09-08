@@ -444,6 +444,8 @@ sudah basi. Dikoreksi di branch lewat commit terpisah — filenya memang tidak a
 
 
 ## 2026-09-06
+> ⚠️ **PERINGATAN AUDIT — jangan menyisir tanggal ini lewat tanggal commit saja.** Sesi jalur B menembus tengah malam: lima commit-nya bertanggal commit **6 Sep** (`3ac8b7e` 22:42 → `9abc617` 23:54), tapi `9abc617` **menyatakan peristiwa 7 Sep** — judulnya *"jalur B LIVE di produksi 7 Sep 2026"*. Penyisiran `git log --since/--until` per tanggal karenanya **salah di kedua arah**: audit 7 Sep tidak menemukannya, audit 6 Sep menghitungnya sebagai pekerjaan 6 Sep. ⚠️ **Dan kelimanya TIDAK ADA di `main`** — semuanya hidup di branch `feature/crm-v3-batch-persiapan`, jadi `git log main` tak memuatnya sama sekali. Saat merekonstruksi kapan sesuatu benar-benar terjadi, pakai **isi commit**, bukan tanggalnya, dan sisir **semua branch aktif**, bukan `main` saja. (Ditambahkan 8 Sep 2026.)
+
 ### Keputusan: `schema_snapshot.sql` TETAP schema-only — kontradiksi §4 ditutup
 
 **Keputusan Den:** perintah baku refresh jadi `pg_dump --schema-only --schema=public`. `--no-owner` dan
