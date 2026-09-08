@@ -212,8 +212,12 @@ bersama.** → **TD-233**.
 
 ### Perbaikan & pengembalian data manual — 5 SP harga nol + 2 invoice uji
 
-⚠️ **Keduanya UPDATE/DELETE manual di SQL Editor, BUKAN file migrasi.** Dicatat di sini karena tak ada
-tempat lain yang merekamnya.
+⚠️ **Keduanya UPDATE/DELETE manual di SQL Editor.** ✅ **[8 Sep 2026] Sudah DIREKAM sebagai migrasi
+retroaktif** — `20260908000003_fix_harga_nol_5_sp` dan `20260908000004_void_2_invoice_uji`, keduanya
+ber-`Status: LIVE (retroaktif)` + banner "REKAMAN, BUKAN untuk dijalankan lagi". Alasannya khusus untuk
+D1: ia **mengubah nilai uang yang masuk ke laporan CEO**, jadi jejaknya harus ada di tempat orang
+mencari (`supabase/migrations/`), bukan cuma di dev log ini. ⚠️ Isi kedua file itu **rekonstruksi setia,
+BUKAN salinan byte-exact** dari yang dijalankan — sumber kebenarannya tetap produksi + entri ini.
 
 **D1 — 5 SP berharga nol diperbaiki jadi Rp 5.148/unit.** Berasal dari impor **2 Juli 2026** (batch 690
 baris / 405 SP, 99,3% berhasil). Harganya **dipastikan dari invoice Finance yang SUDAH LUNAS**:
