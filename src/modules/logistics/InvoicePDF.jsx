@@ -62,8 +62,35 @@ function fmtDate(input) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+// ── Batas area cetak: kertas kop Storbit ────────────────────────────────────
+// Invoice ini dicetak di atas kertas yang SUDAH punya kop dan kaki TERCETAK,
+// jadi PDF-nya tidak perlu menggambar kop sendiri — ia cuma harus berhenti
+// sebelum area yang sudah terpakai tinta percetakan.
+//
+// ASALNYA: ukuran FISIK kertas kop, diukur Den 9 Sep 2026 —
+//   header 4 cm   dari tepi atas    -> 4   x 28,3465 = 113,39 pt
+//   footer 4,5 cm dari tepi bawah   -> 4,5 x 28,3465 = 127,56 pt
+// masing-masing ditambah jarak aman 6 pt supaya isi tidak menempel persis di
+// batas kop. Angka 6 pt itu BUKAN angka baru: sama dengan yang dipakai
+// StorbitReportPDF.jsx (paddingTop = topH + 6, paddingBottom = botH + 6),
+// jadi kedua dokumen memakai jarak aman yang sama.
+// Hasilnya = 119,39 pt (atas) dan 133,56 pt (bawah).
+//
+// ⚠️ Ini KALIBRASI, bukan konstanta abadi. Kalau cetak percobaan ternyata
+// masih menabrak kop atau kakinya, yang disetel adalah dua angka cm di bawah
+// — jangan menambal dengan menyisipkan angka lain di dalam `s.page`.
+//
+// paddingHorizontal SENGAJA tetap 46 pt (tidak diturunkan dari ukuran kop;
+// kop kertas hanya membatasi atas & bawah).
+const CM_TO_PT = 28.3465;
+const KOP_CLEARANCE_PT = 6;
+const KOP_HEADER_CM = 4;
+const KOP_FOOTER_CM = 4.5;
+const PAGE_PAD_TOP = KOP_HEADER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
+const PAGE_PAD_BOTTOM = KOP_FOOTER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
+
 const s = StyleSheet.create({
-  page: { backgroundColor: BG, color: INK, fontFamily: 'Lora', fontSize: 9.5, paddingTop: 20, paddingBottom: 24, paddingHorizontal: 46 },
+  page: { backgroundColor: BG, color: INK, fontFamily: 'Lora', fontSize: 9.5, paddingTop: PAGE_PAD_TOP, paddingBottom: PAGE_PAD_BOTTOM, paddingHorizontal: 46 },
 
   headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 18 },
   headName: { flexDirection: 'row', alignItems: 'center', gap: 12 },
