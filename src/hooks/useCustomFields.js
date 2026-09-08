@@ -32,6 +32,10 @@ export const STANDARD_COLUMNS = {
     // accounts model columns (rename batch)
     'lifecycle_stage', 'owner_company_id', 'tier', 'code', 'nomor_kontrak',
     'default_dc', 'last_activity_at', 'became_customer_at',
+    // transisi jalur B — `account_status` (lama) masih hidup berdampingan dgn
+    // `lifecycle_stage` & disinkronkan otomatis; cabut baris ini saat migrasi
+    // 20260908000002_accounts_lifecycle_drop_legacy men-drop kolomnya.
+    'account_status',
     // aging pipeline + lead pool (system columns)
     'stage_changed_at', 'is_in_lead_pool', 'lead_pool_reason', 'lead_pool_at',
     'pull_justification', 'pull_requested_at', 'pull_approved_by', 'pull_approved_at', 'pull_status',
