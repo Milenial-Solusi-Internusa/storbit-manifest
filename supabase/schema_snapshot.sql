@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 4frairdAL497Ie5xC8Qe4FDpJaOl2G7rxyiieMXaBWEKnv9PIwhEbFIWSuumkaY
+\restrict PYuAmZGo6HMXneeZt3VN96KEjeBfwi99Zw5FWZ6nxHVCXMzgPFtjRwyGWZGKdOF
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -4267,7 +4267,7 @@ CREATE TABLE public.accounts (
     CONSTRAINT accounts_bant_timeline_check CHECK (((bant_timeline IS NULL) OR ((bant_timeline >= 0) AND (bant_timeline <= 3)))),
     CONSTRAINT accounts_lifecycle_stage_check CHECK (((lifecycle_stage)::text = ANY (ARRAY[('lead'::character varying)::text, ('mql'::character varying)::text, ('sql'::character varying)::text, ('prospect'::character varying)::text, ('customer'::character varying)::text, ('free_agent'::character varying)::text, ('lost'::character varying)::text]))),
     CONSTRAINT accounts_pull_status_check CHECK ((pull_status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text]))),
-    CONSTRAINT prospects_source_check CHECK (((source)::text = ANY (ARRAY['sales_visit'::text, 'cold_call'::text, 'referral'::text, 'existing_network'::text, 'exhibition'::text, 'instagram'::text, 'linkedin'::text, 'tiktok'::text, 'website'::text, 'walk_in'::text, 'other'::text])))
+    CONSTRAINT prospects_source_check CHECK (((source)::text = ANY (ARRAY['sales_visit'::text, 'cold_call'::text, 'referral'::text, 'existing_network'::text, 'exhibition'::text, 'instagram'::text, 'linkedin'::text, 'tiktok'::text, 'website'::text, 'walk_in'::text, 'other'::text, 'whatsapp'::text])))
 );
 
 
@@ -8417,6 +8417,55 @@ COMMENT ON COLUMN public.sales_orders.booking_no IS 'Nomor booking ke carrier. N
 
 
 --
+-- Name: sales_targets; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.sales_targets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    period_year integer NOT NULL,
+    period_month integer NOT NULL,
+    target_value numeric,
+    target_deals integer,
+    notes text,
+    is_active boolean DEFAULT true NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT sales_targets_deals_check CHECK (((target_deals IS NULL) OR (target_deals >= 0))),
+    CONSTRAINT sales_targets_metric_required CHECK (((target_value IS NOT NULL) OR (target_deals IS NOT NULL))),
+    CONSTRAINT sales_targets_month_check CHECK (((period_month >= 1) AND (period_month <= 12))),
+    CONSTRAINT sales_targets_value_check CHECK (((target_value IS NULL) OR (target_value >= (0)::numeric))),
+    CONSTRAINT sales_targets_year_check CHECK (((period_year >= 2020) AND (period_year <= 2100)))
+);
+
+
+ALTER TABLE public.sales_targets OWNER TO postgres;
+
+--
+-- Name: TABLE sales_targets; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.sales_targets IS 'Target penjualan per salesperson per bulan. Dipakai Dashboard CRM untuk menghitung quota attainment. Granularity per-orang (keputusan Den 30 Agu 2026) — tak ada baris tingkat entitas.';
+
+
+--
+-- Name: COLUMN sales_targets.target_value; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.sales_targets.target_value IS 'Kuota nilai (rupiah). NULL = belum ditetapkan, BUKAN nol — attainment atas target NULL harus tampil "—", bukan dibagi nol.';
+
+
+--
+-- Name: COLUMN sales_targets.target_deals; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.sales_targets.target_deals IS 'Kuota jumlah deal WON. NULL = belum ditetapkan, BUKAN nol. Metrik ini tidak bergantung pada inquiries.estimated_value, jadi sudah bermakna sejak hari pertama.';
+
+
+--
 -- Name: sales_visit_logs; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -10466,6 +10515,14 @@ ALTER TABLE ONLY public.sales_orders
 
 
 --
+-- Name: sales_targets sales_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sales_targets
+    ADD CONSTRAINT sales_targets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sales_visit_logs sales_visit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -12008,6 +12065,20 @@ CREATE INDEX idx_sales_orders_company_created ON public.sales_orders USING btree
 
 
 --
+-- Name: idx_sales_targets_period; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_sales_targets_period ON public.sales_targets USING btree (company_id, period_year, period_month) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_sales_targets_user; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_sales_targets_user ON public.sales_targets USING btree (user_id) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: idx_sp_btb_sp_order_live; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -12211,6 +12282,13 @@ CREATE UNIQUE INDEX sales_orders_inquiry_unique_live ON public.sales_orders USIN
 
 
 --
+-- Name: sales_targets_unique_active; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX sales_targets_unique_active ON public.sales_targets USING btree (company_id, user_id, period_year, period_month) WHERE (deleted_at IS NULL);
+
+
+--
 -- Name: sla_policies_company_code_uidx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -12306,6 +12384,13 @@ CREATE TRIGGER set_prf_updated_at BEFORE UPDATE ON public.prf FOR EACH ROW EXECU
 --
 
 CREATE TRIGGER set_sales_orders_updated_at BEFORE UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: sales_targets set_sales_targets_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER set_sales_targets_updated_at BEFORE UPDATE ON public.sales_targets FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -15214,6 +15299,30 @@ ALTER TABLE ONLY public.sales_orders
 
 ALTER TABLE ONLY public.sales_orders
     ADD CONSTRAINT sales_orders_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: sales_targets sales_targets_company_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sales_targets
+    ADD CONSTRAINT sales_targets_company_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: sales_targets sales_targets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sales_targets
+    ADD CONSTRAINT sales_targets_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+
+--
+-- Name: sales_targets sales_targets_user_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.sales_targets
+    ADD CONSTRAINT sales_targets_user_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);
 
 
 --
@@ -18648,6 +18757,33 @@ CREATE POLICY sales_orders_update ON public.sales_orders FOR UPDATE TO authentic
 
 
 --
+-- Name: sales_targets; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.sales_targets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sales_targets sales_targets_insert; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY sales_targets_insert ON public.sales_targets FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_manager_or_above())));
+
+
+--
+-- Name: sales_targets sales_targets_read; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY sales_targets_read ON public.sales_targets FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (user_id = auth.uid())))));
+
+
+--
+-- Name: sales_targets sales_targets_update; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY sales_targets_update ON public.sales_targets FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_manager_or_above()))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_manager_or_above())));
+
+
+--
 -- Name: sales_visit_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -20791,6 +20927,15 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_orders TO servi
 
 
 --
+-- Name: TABLE sales_targets; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_targets TO anon;
+GRANT ALL ON TABLE public.sales_targets TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_targets TO service_role;
+
+
+--
 -- Name: TABLE sales_visit_logs; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -21322,5 +21467,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 4frairdAL497Ie5xC8Qe4FDpJaOl2G7rxyiieMXaBWEKnv9PIwhEbFIWSuumkaY
+\unrestrict PYuAmZGo6HMXneeZt3VN96KEjeBfwi99Zw5FWZ6nxHVCXMzgPFtjRwyGWZGKdOF
 
