@@ -164,7 +164,7 @@ ALTER TABLE public.accounts
 --    terbukanya dijawab. Urutan CHECK/array di skema maupun FE BUKAN bukti:
 --    itu daftar keanggotaan, bukan pernyataan urutan.
 COMMENT ON COLUMN public.accounts.lifecycle_stage IS
-  'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang HIDUP: akun jadi prospect hanya bila ada inquiry masuk (trigger set_prospect_on_inquiry); jadi customer lewat WON. free_agent dan lost adalah exit manual dari tahap mana pun. ⚠️ URUTAN tahapnya masih PERTANYAAN TERBUKA (dua sumber bertentangan — lihat komentar di migrasi 20260908000001); jangan simpulkan urutan dari daftar nilai di atas maupun dari urutan CHECK. Berdampingan dengan account_status selama transisi jalur B; disinkronkan trg_a_sync_lifecycle_columns. TANPA default selama transisi. account_status di-drop di 20260908000002.';
+  'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang hidup: prospect lewat inquiry masuk, customer lewat WON. free_agent dan lost adalah exit manual. URUTAN TAHAP TIDAK DIKLAIM DI SINI — dua sumber bertentangan, lihat Keputusan Terbuka #37. Urutan nilai di CHECK/array BUKAN bukti urutan tahap. Berdampingan dengan account_status selama transisi jalur B; disinkronkan trg_a_sync_lifecycle_columns. TANPA default selama transisi. account_status di-drop di 20260908000002.';
 
 COMMENT ON COLUMN public.accounts.account_status IS
   'DIPENSIUNKAN sejak 7 Sep 2026 — digantikan lifecycle_stage. Selama transisi keduanya disinkronkan otomatis: tulis ke salah satu, yang lain ikut. Di-drop di migrasi 20260908000002 setelah branch CRM v3 merge & stabil di produksi.';
