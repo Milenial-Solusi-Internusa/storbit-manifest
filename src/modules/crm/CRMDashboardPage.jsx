@@ -2294,7 +2294,7 @@ function ActivitySaya({ data }) {
 }
 
 function CRMDashboardPage() {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, activeCompanyId } = useAuth();
   // Sales/operations may cancel their OWN visits (the visit list is already scoped
   // to assigned_to/created_by = self, and RLS only permits the owner to UPDATE).
   const canCancel = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'sales', 'operations'].includes(erpRole);
@@ -2361,12 +2361,25 @@ function CRMDashboardPage() {
 
   // ── fetch dashboard data from Supabase ───────────────────────────────────
   const fetchDash = useCallback(async () => {
-    if (!profile?.company_id) return;
+    // Gerbangnya kini activeCompanyId, sumbu yang benar-benar dipakai di bawah.
+    // `profile?.company_id` ikut dijaga karena `uid`/profil lain masih dibaca
+    // dari sana — keduanya berasal dari muatan yang sama, jadi ini bukan dua
+    // syarat yang bisa lepas satu sama lain.
+    if (!activeCompanyId || !profile?.company_id) return;
     setDashLoading(true);
     setDashError(null);
     setPartialFail([]);
     try {
-      const cid = profile.company_id;
+      /* Entitas AKTIF (yang sedang dipilih di CompanySwitcher), BUKAN entitas
+         RUMAH. Sebelumnya `profile.company_id`, sehingga user multi-entitas yang
+         mengganti entitas di switcher tetap melihat angka entitas rumahnya —
+         switcher-nya bergerak, dashboard-nya tidak.
+         `erpRole` di file ini SUDAH activeCompanyId-aware (pickPrimaryErpRole,
+         AuthContext:23), jadi `isSalesOnly`/`isAllEntities` sudah mengikuti
+         switcher; hanya sumbu company yang tertinggal. Kini keduanya sejalan.
+         AuthContext:96 sudah menjatuhkan activeCompanyId ke profile.company_id
+         saat belum ada override, jadi user satu-entitas nol perubahan. */
+      const cid = activeCompanyId;
       const uid = profile.id;
       const now = new Date();
       const P   = periodRange(period, now);
@@ -2453,16 +2466,18 @@ function CRMDashboardPage() {
       });
 
       const res = await Promise.all([
-        // [0] accounts periode aktif — kini HANYA sumber donut Lead Source.
-        //     Grafik trend sudah pindah ke sumbu deal (lihat [14]).
-        ownAccounts(byCompany(supabase
-          .from('accounts')
-          .select('id, created_at, source'))
-          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
-          .is('deleted_at', null)
-          .gte('created_at', P.start.toISOString())
-          .lt('created_at', P.end.toISOString())
-          .limit(1000)),
+        /* [0] Donut Lead Source — AGREGAT DI DB (Gelombang 2).
+           Dulu menarik baris akun lalu menghitung `sourceCounts` di JS, dan
+           berplafon 1000. Ini widget PERSENTASE: kalau 1000 baris pertama tak
+           representatif, SELURUH proporsi salah sambil tetap terlihat utuh —
+           kelas kesalahan paling buruk di halaman ini. Whitelist
+           lifecycle_stage & sentinel '__none__' hidup di dalam RPC sekarang. */
+        supabase.rpc('crm_lead_source_distribution', {
+          p_company_id: isAllEntities ? null : cid,
+          p_scope_own:  isSalesOnly,
+          p_start:      P.start.toISOString(),
+          p_end:        P.end.toISOString(),
+        }),
 
         // [1] "Prospect Aktif" — server count, TANPA batas periode: ini keadaan
         //     saat ini, bukan kejadian dalam rentang waktu. Filter lama
@@ -2572,11 +2587,10 @@ function CRMDashboardPage() {
         // `id` ikut diambil karena widget Konversi MQL→SQL butuh memetakan
         // kohort riwayat ke tahap akun SEKARANG. Nol dampak ke funnel lifecycle
         // yang hanya membaca lifecycle_stage.
-        ownAccounts(byCompany(supabase
-          .from('accounts')
-          .select('id, lifecycle_stage'))
-          .is('deleted_at', null)
-          .limit(1000)),
+        supabase.rpc('crm_lifecycle_funnel', {
+          p_company_id: isAllEntities ? null : cid,
+          p_scope_own:  isSalesOnly,
+        }),
 
         // [11] Master alasan kalah — untuk memberi NAMA pada loss_reason_id.
         //      ⚠️ TANPA filter company_id: `loss_reasons` GLOBAL (company_id
@@ -2641,21 +2655,12 @@ function CRMDashboardPage() {
           .lt('created_at', trendEnd.toISOString())
           .limit(1000)),
 
-        /* [15] TOTAL akun — COUNT SERVER, pasangan dari [10].
-           Ini TIDAK menggantikan [10]: funnel per-tahap dan kohort MQL tetap
-           butuh barisnya. Yang ditutup di sini cuma angka "Total accounts" di
-           kaki kartu funnel, yang dulu dihitung dengan menjumlahkan baris [10]
-           dan karena itu BERHENTI DI 1000 — memajang "1000" dengan percaya diri
-           padahal produksi punya lebih.
-           Filternya WAJIB sama persis dengan [10] (ownAccounts + byCompany +
-           deleted_at null); begitu keduanya melenceng, totalnya berhenti cocok
-           dengan rincian yang ada di atasnya.
-           SENGAJA di-append di ekor array: menyisipkannya di tengah akan
-           menggeser SELURUH indeks res[...] di bawah. */
-        ownAccounts(byCompany(supabase
-          .from('accounts')
-          .select('id', { count: 'exact', head: true }))
-          .is('deleted_at', null)),
+        /* [15] DICABUT di Gelombang 2. Total akun kini = SUM(cnt) dari
+           crm_lifecycle_funnel [10]. Count terpisah ini lahir HANYA karena
+           plafon memaksa total dan rincian datang dari dua query berbeda;
+           begitu rinciannya diagregasi di DB, dua sumbu itu melebur jadi satu
+           dan mustahil melenceng. Indeks [15] sengaja dibiarkan kosong — tak
+           ada res[15] lagi. */
 
       ]);
 
@@ -2675,6 +2680,7 @@ function CRMDashboardPage() {
 
       const failed = [
         ['previous-period trend', res[1]],
+        ['lead source', res[0]],
         ['total inquiry', res[4]],
         ['total quotation', res[5]],
         ['calls this week', res[6]],
@@ -2686,7 +2692,6 @@ function CRMDashboardPage() {
         ['ambang SLA aging', res[12]],
         ['sales targets', res[13]],
         ['pipeline trend', res[14]],
-        ['total account count', res[15]],
       ].filter(([, r]) => r?.error).map(([label]) => label);
 
       /* PENANDA PER-WIDGET, pendamping `failed`.
@@ -2698,7 +2703,9 @@ function CRMDashboardPage() {
          satu tanpa yang lain. */
       const degraded = {};
 
-      const accountsRows        = res[0].data  || [];
+      /* RPC mengembalikan BARIS AGREGAT, bukan baris mentah — `.data` di sini
+         sudah berupa [{source, cnt}] / [{stage, cnt}], bukan daftar akun. */
+      const leadSourceRows      = res[0].data  || [];
       const activeProspects     = res[1].count ?? 0;
       const openInq             = res[2].data  || [];
       const closedInq           = res[3].data  || [];
@@ -2708,26 +2715,28 @@ function CRMDashboardPage() {
       const visitsThisWeek      = res[7].count ?? 0;
       const quotationsThisMonth = res[8].count ?? 0;
       const sqlThisMonth        = res[9].count ?? 0;
-      const lifecycleRows       = res[10].data || [];
+      const lifecycleRows       = res[10].data || [];   // [{stage, cnt}]
       const lossReasonRows      = res[11].data || [];
       const slaRows             = res[12].data || [];
       const targetRows          = res[13].data || [];
       const dealRows            = res[14].data || [];
-      /* null, BUKAN 0, saat count gagal. Nol adalah pernyataan ("tidak ada
-         akun"); null adalah ketiadaan jawaban, dan kartunya menampilkan '—'. */
-      const totalAccounts       = res[15].error ? null : (res[15].count ?? 0);
+      /* Total akun = SUM(cnt) funnel. Satu sumber dengan rinciannya, jadi
+         "Total accounts" dan batang di atasnya MUSTAHIL melenceng — beda dari
+         Gelombang 1 yang memakai count terpisah karena plafon memaksanya.
+         null (bukan 0) saat RPC-nya gagal: nol adalah pernyataan ("tidak ada
+         akun"), null adalah ketiadaan jawaban, dan kartunya menampilkan '—'. */
+      const totalAccounts = res[10].error
+        ? null
+        : lifecycleRows.reduce((a, r) => a + Number(r.cnt || 0), 0);
 
-      // Cap 1000 baris pada distribusi lifecycle: kalau kena, corongnya
-      // memang terpotong — dikabarkan lewat banner, bukan ditampilkan
-      // seolah-olah itu seluruh populasi akun.
-      if (lifecycleRows.length === 1000) { failed.push('account lifecycle funnel (truncated at 1000 rows)'); degraded.lifecycleFunnel = true; }
-      /* Empat guard di bawah menutup lubang yang sebelumnya membuat query
-         berikut memotong data DIAM-DIAM di 1000 baris, padahal tiga query lain
-         di fungsi yang sama sudah punya guard. Yang paling berbahaya
-         `accountsRows`: Lead Source adalah PERSENTASE, jadi kalau 1000 baris
-         pertama tak representatif seluruh proporsinya salah sambil tetap
-         terlihat utuh. */
-      if (accountsRows.length === 1000) { failed.push('lead source (truncated at 1000 rows)'); degraded.leadSource = true; }
+      /* ⚠️ GUARD TRUNCATION untuk funnel & lead source DICABUT di Gelombang 2 —
+         plafonnya hilang secara STRUKTURAL, jadi `length === 1000` bukan lagi
+         sinyal apa pun (kedua RPC mengembalikan ~7 baris agregat, bukan ribuan).
+         Yang TETAP HIDUP adalah cabang ERROR di bawah: RLS, jaringan, dan
+         timeout masih bisa menjatuhkannya, dan kartu yang diam-diam menampilkan
+         0 saat itu terjadi adalah persis bug yang ditutup Gelombang 1. */
+      if (res[10].error) degraded.lifecycleFunnel = true;
+      if (res[0].error)  degraded.leadSource = true;
       if (dealRows.length === 1000)     { failed.push('pipeline trend (truncated at 1000 rows)'); degraded.pipelineTrend = true; }
       if (openInq.length === 1000)      { failed.push('pipeline by stage — open deals (truncated at 1000 rows)'); degraded.pipelineByStage = true; }
       if (closedInq.length === 1000)    { failed.push('sales performance & win rate — closed deals (truncated at 1000 rows)'); degraded.salesPerf = true; }
@@ -2785,36 +2794,44 @@ function CRMDashboardPage() {
          UNDER-REPORT untuk data lama dan makin akurat seiring waktu. Alternatif
          satu-satunya — menyimpulkan dari urutan status sekarang — justru buta
          terhadap deal LOST/CANCELLED, yang persis kebocoran yang dicari. */
-      const cohortIds = [...openInq, ...closedInq].map((r) => r.id);
+      /* Konversi antar-tahap & umur tahap kini DUA RPC, bukan satu fetch riwayat.
+         Yang digantikan: .in('inquiry_id', cohortIds) dengan cohortIds sampai
+         2.000 UUID (openInq 1000 + closedInq 1000) — URL ~74 KB, dua kali lipat
+         kasus MQL, dan belum meledak hanya karena volume inquiry belum sampai.
+         Plafon 1000-nya juga paling cepat kena di sini: riwayat tumbuh per
+         TRANSISI, bukan per inquiry.
+
+         ⚠️ Kohortnya kini dibentuk DI DALAM SQL dengan syarat yang sama
+         (terbuka + tertutup dalam periode). Konsekuensi yang disadari: batang
+         "Pipeline by Stage" di sebelahnya MASIH dari openInq/closedInq yang
+         berplafon, jadi saat plafon itu benar-benar kena, angka konversi (yang
+         sudah benar) tak lagi rekonsiliasi dengan batangnya (yang terpotong).
+         Batang itu punya guard `degraded.pipelineByStage` sendiri yang menyala
+         di keadaan itu — jadi ketidakcocokannya berbunyi, tidak diam-diam. */
       const reached = {};
-      // Peta inquiry_id -> kapan ia masuk status yang SEKARANG. Diturunkan dari
-      // query riwayat yang sama (diurut menurun, jadi baris pertama tiap inquiry
-      // = transisi terakhirnya) — dipakai widget Aging Per Tahap & Deal Stale.
       const stageSince = {};
-      if (cohortIds.length) {
-        const { data: hist, error: histErr } = await supabase
-          .from('inquiry_status_history')
-          .select('inquiry_id, to_status, changed_at')
-          .in('inquiry_id', cohortIds)
-          .order('changed_at', { ascending: false })
-          .limit(1000);
-        if (histErr) {
-          failed.push('stage-to-stage conversion & stage age');
-          degraded.stageHistory = true;
-        } else {
-          const rows = hist || [];
-          // Cap 1000: riwayat tumbuh per TRANSISI, bukan per inquiry, jadi cap
-          // ini lebih cepat kena daripada query lain. Dikabarkan, tidak dipotong
-          // diam-diam jadi persentase yang terlihat sah.
-          if (rows.length === 1000) { failed.push('status history truncated at 1000 rows (conversion & age)'); degraded.stageHistory = true; }
-          const seen = {};
-          for (const r of rows) {
-            const s = String(r.to_status || '').toUpperCase();
-            (seen[s] || (seen[s] = new Set())).add(r.inquiry_id);
-            if (!(r.inquiry_id in stageSince)) stageSince[r.inquiry_id] = r.changed_at;
-          }
-          for (const s of INQ_STAGE_ORDER) reached[s] = seen[s] ? seen[s].size : 0;
-        }
+      const rpcScope = {
+        p_company_id: isAllEntities ? null : cid,
+        p_scope_own:  isSalesOnly,
+        p_start:      P.start.toISOString(),
+        p_end:        P.end.toISOString(),
+      };
+      const [convRes, ageRes] = await Promise.all([
+        supabase.rpc('crm_stage_conversion', rpcScope),
+        supabase.rpc('crm_stage_age', rpcScope),
+      ]);
+      if (convRes.error || ageRes.error) {
+        /* ⚠️ JANGAN dicabut. Plafon sudah hilang, tapi RLS/jaringan/timeout
+           belum — dan persentase konversi yang dihitung dari data yang gagal
+           dimuat adalah persis jenis angka yang Gelombang 1 tutup. */
+        failed.push('stage-to-stage conversion & stage age');
+        degraded.stageHistory = true;
+      } else {
+        for (const s of INQ_STAGE_ORDER) reached[s] = 0;
+        (convRes.data || []).forEach((r) => {
+          reached[String(r.to_status || '').toUpperCase()] = Number(r.inquiries || 0);
+        });
+        (ageRes.data || []).forEach((r) => { stageSince[r.inquiry_id] = r.stage_since; });
       }
       /* Rantai konversi menyusuri lajur terbuka + WON saja. LOST/CANCELLED
          SENGAJA di luar rantai: keduanya exit yang bisa terjadi dari tahap mana
@@ -2997,46 +3014,32 @@ function CRMDashboardPage() {
          tanggal itu lalu sudah bergerak lagi tidak punya jejak mql sama sekali,
          jadi kohort ini UNDER-REPORT untuk data lama dan makin lengkap seiring
          waktu. Ditulis apa adanya di UI, bukan disembunyikan. */
-      const lcById = {};
-      lifecycleRows.forEach((a) => { if (a.id) lcById[a.id] = a.lifecycle_stage; });
-      const accIds = Object.keys(lcById);
+      /* Kohort + klasifikasinya kini dihitung DI DB (crm_mql_conversion).
+         Dua cacat sekaligus hilang: filter .in('account_id', <=1000 UUID) yang
+         menghasilkan URL ~37 KB dan ditolak sebelum menyentuh Postgres — sebab
+         sebenarnya kartu ini menampilkan "No account has been recorded reaching
+         MQL yet" — DAN rantai dua tingkat, di mana kohortnya cuma bisa diambil
+         dari 1000 akun yang lolos plafon query [10]. */
+      const { data: mqlAgg, error: mqlErr } = await supabase.rpc('crm_mql_conversion', {
+        p_company_id: isAllEntities ? null : cid,
+        p_scope_own:  isSalesOnly,
+      });
       let mqlSql = 0, mqlPending = 0, mqlLost = 0;
-      /* Penjagaan KEDUA, di samping `mqlBase === 0` di bawah. Baris backfill
-         semuanya ber-`from_stage` NULL; baris transisi NYATA selalu punya tahap
-         asal. Kalau SELURUH kohort ternyata baris backfill, persentase apa pun
-         yang ditampilkan terbaca sebagai "sekian persen gagal naik" — padahal
-         yang sebenarnya terjadi adalah RIWAYATNYA BELUM ADA. `from_stage`
-         diikutkan ke select khusus untuk membedakan keduanya: satu kolom, nol
-         beban query. */
       let mqlHasRealTransition = false;
-      if (accIds.length) {
-        const { data: mqlRows, error: mqlErr } = await supabase
-          .from('account_lifecycle_history')
-          .select('account_id, from_stage')
-          .eq('to_stage', 'mql')
-          .in('account_id', accIds)
-          .limit(1000);
-        if (mqlErr) {
-          /* Kegagalan di sini BUKAN "nol akun MQL". Tanpa penanda ini kartunya
-             jatuh ke empty-state dan menuliskan "No account has been recorded
-             reaching MQL yet" — sebuah KLAIM BISNIS, padahal yang terjadi cuma
-             request-nya tak pernah berhasil. */
-          failed.push('MQL to SQL conversion');
-          degraded.mql = true;
-        } else {
-          const rows = mqlRows || [];
-          if (rows.length === 1000) { failed.push('MQL to SQL conversion (cohort truncated at 1000 rows)'); degraded.mql = true; }
-          mqlHasRealTransition = rows.some((r) => r.from_stage !== null);
-          const cohort = new Set(rows.map((r) => r.account_id));
-          // Klasifikasi EKSHAUSTIF — tiap anggota kohort masuk salah satu dari
-          // tiga ember, tak ada yang jatuh diam-diam ke luar hitungan.
-          for (const id of cohort) {
-            const st = lcById[id];
-            if (st === 'lost') mqlLost++;
-            else if (st === 'sql' || st === 'customer') mqlSql++;
-            else mqlPending++;
-          }
-        }
+      if (mqlErr) {
+        /* ⚠️ JANGAN dicabut. Kegagalan di sini BUKAN "nol akun MQL". Tanpa
+           penanda ini kartunya jatuh ke empty-state dan menuliskan "No account
+           has been recorded reaching MQL yet" — sebuah KLAIM BISNIS, padahal
+           yang terjadi cuma request-nya tak pernah berhasil. Plafon memang sudah
+           hilang, tapi RLS/jaringan/timeout belum. */
+        failed.push('MQL to SQL conversion');
+        degraded.mql = true;
+      } else {
+        const agg = (mqlAgg && mqlAgg[0]) || {};
+        mqlSql               = Number(agg.converted || 0);
+        mqlPending           = Number(agg.pending   || 0);
+        mqlLost              = Number(agg.lost      || 0);
+        mqlHasRealTransition = !!agg.has_real_transition;
       }
       const mqlBase = mqlSql + mqlPending;
       const mqlData = {
@@ -3052,11 +3055,10 @@ function CRMDashboardPage() {
 
       /* ── Funnel lifecycle akun ───────────────────────────────────────────
          Snapshot distribusi akun, bukan cohort periode (lihat query [10]). */
+      // RPC sudah mengelompokkan; JS tinggal memetakannya ke bentuk kartu.
+      // '(empty)' dibentuk di dalam SQL (COALESCE), bukan di sini.
       const lcCounts = {};
-      lifecycleRows.forEach((a) => {
-        const s = a.lifecycle_stage || '(empty)';
-        lcCounts[s] = (lcCounts[s] || 0) + 1;
-      });
+      lifecycleRows.forEach((r) => { lcCounts[r.stage] = Number(r.cnt || 0); });
       const lifecycleFunnel = LIFECYCLE_FUNNEL.map((id) => ({
         id, name: LIFECYCLE_LABELS[id], count: lcCounts[id] || 0,
       }));
@@ -3096,18 +3098,14 @@ function CRMDashboardPage() {
         // "Tanpa Alasan" selalu paling bawah — ia keranjang sisa, bukan alasan.
         .sort((a, b) => (a.unknown - b.unknown) || (b.count - a.count));
 
-      // ── Lead source (periode aktif) ─────────────────────────────────────
-      const sourceCounts = {};
-      accountsRows.forEach((a) => {
-        // '__none__', BUKAN 'Other': `other` adalah nilai source yang SAH dan
-        // punya 109 baris sendiri di produksi. Meleburkan NULL ke situ membuat
-        // dua hal berbeda tak bisa dipisahkan lagi. Pola sentinel ini sama
-        // dengan `loss_reason_id || '__none__'` di atas.
-        const s = a.source || '__none__';
-        sourceCounts[s] = (sourceCounts[s] || 0) + 1;
-      });
-      const leadSourceData = Object.entries(sourceCounts)
-        .map(([source, count]) => ({ source, count }))
+      /* ── Lead source (periode aktif) ─────────────────────────────────────
+         Agregat datang JADI dari crm_lead_source_distribution. Sentinel
+         '__none__' untuk source kosong kini dibentuk di dalam SQL — SENGAJA
+         bukan 'other', karena `other` nilai source yang SAH dan punya ratusan
+         baris sendiri; meleburkannya membuat dua hal berbeda tak terpisahkan.
+         Pola sentinel yang sama dipakai `loss_reason_id || '__none__'` di atas. */
+      const leadSourceData = leadSourceRows
+        .map((r) => ({ source: r.source, count: Number(r.cnt || 0) }))
         .sort((a, b) => b.count - a.count);
 
       /* ── Pipeline Trend — 12 bulan berjalan, SATU garis ────────────────────
@@ -3253,7 +3251,7 @@ function CRMDashboardPage() {
     } finally {
       setDashLoading(false);
     }
-  }, [profile?.company_id, profile?.id, isSalesOnly, isAllEntities, period]);
+  }, [activeCompanyId, profile?.company_id, profile?.id, isSalesOnly, isAllEntities, period]);
 
   useEffect(() => { fetchDash(); }, [fetchDash]);
 
