@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict PYuAmZGo6HMXneeZt3VN96KEjeBfwi99Zw5FWZ6nxHVCXMzgPFtjRwyGWZGKdOF
+\restrict T9PFEJ3XouDfwx1IScvcUXX4xzcm5AJtV5ae1nr8jOgkr7VUdGehdAqTRYDxBX4
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -485,6 +485,105 @@ END; $$;
 
 
 ALTER FUNCTION public.create_invoice(p_sp_order_id uuid) OWNER TO postgres;
+
+--
+-- Name: create_quotation_revision(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.create_quotation_revision(p_quotation_id uuid) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_src     public.quotations%ROWTYPE;
+  v_max_rev integer;
+  v_new_id  uuid;
+  v_count   integer;
+BEGIN
+  SELECT * INTO v_src
+  FROM public.quotations
+  WHERE id = p_quotation_id AND deleted_at IS NULL
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Quotation tidak ditemukan atau tidak ada izin baca (RLS).';
+  END IF;
+
+  IF v_src.status NOT IN ('SENT','REJECTED') THEN
+    RAISE EXCEPTION
+      'Hanya quotation berstatus SENT atau REJECTED yang bisa direvisi (status sekarang: %).',
+      v_src.status;
+  END IF;
+
+  SELECT MAX(revision) INTO v_max_rev
+  FROM public.quotations
+  WHERE quotation_no = v_src.quotation_no;
+
+  IF v_src.revision < v_max_rev THEN
+    RAISE EXCEPTION
+      'Revisi hanya boleh dibuat dari versi terakhir (versi ini %, terakhir %).',
+      v_src.revision, v_max_rev;
+  END IF;
+
+  INSERT INTO public.quotations (
+    company_id, quotation_no, revision, inquiry_id, prospect_id, customer_id,
+    service_type, valid_until, payment_terms_id, currency_code, notes, terms,
+    subtotal, tax_amount, total_amount, status,
+    usd_rate, route, pricing_done_at, discount_pct, margin_floor,
+    internal_notes, quote_date, vat_rate, attention_to,
+    pickup_address, delivery_address, cargo_mode,
+    gw, dimension, cw, cbm, container_type, container_qty,
+    exchange_rates, prf_id,
+    created_by, created_at, updated_at
+  )
+  VALUES (
+    v_src.company_id, v_src.quotation_no, v_max_rev + 1, v_src.inquiry_id,
+    v_src.prospect_id, v_src.customer_id,
+    v_src.service_type, v_src.valid_until, v_src.payment_terms_id,
+    v_src.currency_code, v_src.notes, v_src.terms,
+    v_src.subtotal, v_src.tax_amount, v_src.total_amount, 'DRAFT',
+    v_src.usd_rate, v_src.route, v_src.pricing_done_at, v_src.discount_pct,
+    v_src.margin_floor, v_src.internal_notes, CURRENT_DATE, v_src.vat_rate,
+    v_src.attention_to, v_src.pickup_address, v_src.delivery_address,
+    v_src.cargo_mode, v_src.gw, v_src.dimension, v_src.cw, v_src.cbm,
+    v_src.container_type, v_src.container_qty,
+    v_src.exchange_rates, v_src.prf_id,
+    auth.uid(), now(), now()
+  )
+  RETURNING id INTO v_new_id;
+
+  INSERT INTO public.quotation_items (
+    quotation_id, sort_order, description, qty, unit, unit_price, notes,
+    group_name, currency, unit_label, exchange_rate, total, cost_price, if_any
+  )
+  SELECT v_new_id, sort_order, description, qty, unit, unit_price, notes,
+         group_name, currency, unit_label, exchange_rate, total, cost_price, if_any
+  FROM public.quotation_items
+  WHERE quotation_id = p_quotation_id
+  ORDER BY sort_order;
+
+  UPDATE public.quotations
+  SET    status = 'SUPERSEDED', updated_at = now(), updated_by = auth.uid()
+  WHERE  id = p_quotation_id;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF v_count = 0 THEN
+    RAISE EXCEPTION 'Tidak ada izin mengubah quotation ini (RLS).';
+  END IF;
+
+  RETURN v_new_id;
+END;
+$$;
+
+
+ALTER FUNCTION public.create_quotation_revision(p_quotation_id uuid) OWNER TO postgres;
+
+--
+-- Name: FUNCTION create_quotation_revision(p_quotation_id uuid); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.create_quotation_revision(p_quotation_id uuid) IS 'Lahirkan revisi berikutnya: sumber -> SUPERSEDED, baris baru revision=MAX+1 nomor SAMA status DRAFT, items disalin. Satu transaksi. SECURITY INVOKER: gate = RLS quotations_update/insert.';
+
 
 --
 -- Name: create_sp_order_dual(uuid, uuid, text, date, uuid, text, date, text, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
@@ -2418,6 +2517,36 @@ $$;
 ALTER FUNCTION public.is_manager_or_above() OWNER TO postgres;
 
 --
+-- Name: is_manager_or_above_in(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.is_manager_or_above_in(p_company_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM user_roles ur
+    JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id    = auth.uid()
+      AND ur.company_id = p_company_id
+      AND ur.is_active  = true
+      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND r.code IN ('super_admin','admin','ceo','gm','gm_bd','manager','supervisor')
+  );
+$$;
+
+
+ALTER FUNCTION public.is_manager_or_above_in(p_company_id uuid) OWNER TO postgres;
+
+--
+-- Name: FUNCTION is_manager_or_above_in(p_company_id uuid); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) IS 'Kembaran is_manager_or_above() yang MENGIKAT role ke entitas baris. Dipakai policy quotations/quotation_items agar TD-180 tertutup tanpa memutus keterkaitan dua syarat (gotcha #26). Daftar role WAJIB bergerak bersama TD-233 (lima tempat).';
+
+
+--
 -- Name: is_sp_item_writer(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -3426,6 +3555,40 @@ $$;
 ALTER FUNCTION public.set_daily_report_items_defaults() OWNER TO postgres;
 
 --
+-- Name: set_inquiry_negotiation_on_quotation_revision(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.set_inquiry_negotiation_on_quotation_revision() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.status = 'SENT'
+     AND (OLD.status IS DISTINCT FROM 'SENT')
+     AND NEW.revision >= 2
+     AND NEW.inquiry_id IS NOT NULL THEN
+
+    UPDATE public.inquiries
+    SET    status = 'NEGOTIATION', updated_at = now()
+    WHERE  id = NEW.inquiry_id
+      AND  deleted_at IS NULL
+      AND  status = 'QUOTED';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.set_inquiry_negotiation_on_quotation_revision() OWNER TO postgres;
+
+--
+-- Name: FUNCTION set_inquiry_negotiation_on_quotation_revision(); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.set_inquiry_negotiation_on_quotation_revision() IS 'Revisi ke-2+ DIKIRIM (transisi ke SENT) => inquiry QUOTED naik ke NEGOTIATION. Pengganti tombol manual "Start Negotiation" yang dicabut bersamaan dengan migrasi ini. Revisi yang masih DRAFT sengaja TIDAK memicu apa pun.';
+
+
+--
 -- Name: set_inquiry_quoted_on_quotation_sent(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -3565,6 +3728,77 @@ $$;
 
 
 ALTER FUNCTION public.set_prospect_on_inquiry() OWNER TO postgres;
+
+--
+-- Name: set_quotation_outcome(uuid, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text DEFAULT NULL::text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_src     public.quotations%ROWTYPE;
+  v_max_rev integer;
+  v_count   integer;
+BEGIN
+  IF p_outcome NOT IN ('ACCEPTED','REJECTED') THEN
+    RAISE EXCEPTION 'Outcome harus ACCEPTED atau REJECTED (diterima: %).', p_outcome;
+  END IF;
+
+  IF p_outcome = 'REJECTED' AND COALESCE(btrim(p_reason),'') = '' THEN
+    RAISE EXCEPTION 'Alasan penolakan wajib diisi.';
+  END IF;
+
+  SELECT * INTO v_src
+  FROM public.quotations
+  WHERE id = p_quotation_id AND deleted_at IS NULL
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Quotation tidak ditemukan atau tidak ada izin baca (RLS).';
+  END IF;
+
+  IF v_src.status <> 'SENT' THEN
+    RAISE EXCEPTION
+      'Hanya quotation berstatus SENT yang bisa dicatat hasilnya (status sekarang: %).',
+      v_src.status;
+  END IF;
+
+  SELECT MAX(revision) INTO v_max_rev
+  FROM public.quotations
+  WHERE quotation_no = v_src.quotation_no;
+
+  IF v_src.revision < v_max_rev THEN
+    RAISE EXCEPTION
+      'Versi ini sudah digantikan revisi yang lebih baru — catat hasilnya di versi terakhir.';
+  END IF;
+
+  UPDATE public.quotations
+  SET    status           = p_outcome,
+         accepted_at      = CASE WHEN p_outcome = 'ACCEPTED' THEN now()          ELSE NULL END,
+         accepted_by      = CASE WHEN p_outcome = 'ACCEPTED' THEN auth.uid()     ELSE NULL END,
+         rejection_reason = CASE WHEN p_outcome = 'REJECTED' THEN btrim(p_reason) ELSE NULL END,
+         updated_at       = now(),
+         updated_by       = auth.uid()
+  WHERE  id = p_quotation_id;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  IF v_count = 0 THEN
+    RAISE EXCEPTION 'Tidak ada izin mengubah quotation ini (RLS).';
+  END IF;
+END;
+$$;
+
+
+ALTER FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text) OWNER TO postgres;
+
+--
+-- Name: FUNCTION set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text) IS 'Catat jawaban customer (ACCEPTED/REJECTED) atas quotation SENT versi terakhir. Satu-satunya penulis accepted_at/accepted_by/rejection_reason.';
+
 
 --
 -- Name: set_sp_expired_date(uuid, text, date); Type: FUNCTION; Schema: public; Owner: postgres
@@ -3959,39 +4193,6 @@ END; $$;
 
 
 ALTER FUNCTION public.submit_invoice(p_invoice_id uuid) OWNER TO postgres;
-
---
--- Name: sync_deal_value_on_quotation_accept(); Type: FUNCTION; Schema: public; Owner: postgres
---
-
-CREATE FUNCTION public.sync_deal_value_on_quotation_accept() RETURNS trigger
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$
-BEGIN
-  -- Hanya trigger kalau status berubah jadi 'ACCEPTED'
-  IF NEW.status = 'ACCEPTED' AND (OLD.status IS DISTINCT FROM 'ACCEPTED') THEN
-    -- Update estimated_value di accounts via prospect_id
-    IF NEW.prospect_id IS NOT NULL THEN
-      UPDATE public.accounts
-      SET estimated_value = NEW.total_amount,
-          updated_at = now()
-      WHERE id = NEW.prospect_id;
-    END IF;
-    -- Update juga via customer_id kalau prospect_id null
-    IF NEW.prospect_id IS NULL AND NEW.customer_id IS NOT NULL THEN
-      UPDATE public.accounts
-      SET estimated_value = NEW.total_amount,
-          updated_at = now()
-      WHERE id = NEW.customer_id;
-    END IF;
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-
-ALTER FUNCTION public.sync_deal_value_on_quotation_accept() OWNER TO postgres;
 
 --
 -- Name: sync_last_activity_on_account(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -8203,7 +8404,10 @@ CREATE TABLE public.quotations (
     container_type text,
     container_qty integer,
     exchange_rates jsonb DEFAULT '{}'::jsonb NOT NULL,
-    prf_id uuid
+    prf_id uuid,
+    accepted_at timestamp with time zone,
+    accepted_by uuid,
+    rejection_reason text
 );
 
 
@@ -8221,6 +8425,27 @@ COMMENT ON COLUMN public.quotations.exchange_rates IS 'Tabel kurs manual per-quo
 --
 
 COMMENT ON COLUMN public.quotations.prf_id IS 'PRF yang jadi dasar harga quotation ini. Boleh null untuk quotation yang dibuat manual tanpa PRF.';
+
+
+--
+-- Name: COLUMN quotations.accepted_at; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.quotations.accepted_at IS 'Kapan customer menyetujui quotation ini. HANYA ditulis set_quotation_outcome().';
+
+
+--
+-- Name: COLUMN quotations.accepted_by; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.quotations.accepted_by IS 'Siapa (user Nexus) yang MENCATAT persetujuan customer — bukan customer-nya. HANYA ditulis set_quotation_outcome().';
+
+
+--
+-- Name: COLUMN quotations.rejection_reason; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.quotations.rejection_reason IS 'Alasan customer menolak. WAJIB terisi saat status REJECTED. HANYA ditulis set_quotation_outcome().';
 
 
 --
@@ -11981,6 +12206,13 @@ CREATE INDEX idx_quotations_company_id ON public.quotations USING btree (company
 
 
 --
+-- Name: idx_quotations_inquiry_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_quotations_inquiry_id ON public.quotations USING btree (inquiry_id) WHERE (inquiry_id IS NOT NULL);
+
+
+--
 -- Name: idx_quotations_prf_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -12751,6 +12983,13 @@ CREATE TRIGGER trg_z_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR 
 
 
 --
+-- Name: quotations trg_z_inquiry_negotiation_on_revision; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER trg_z_inquiry_negotiation_on_revision AFTER UPDATE OF status ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.set_inquiry_negotiation_on_quotation_revision();
+
+
+--
 -- Name: inquiries trg_z_lock_inquiry_owner; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -12783,13 +13022,6 @@ CREATE TRIGGER trg_z_products_price_history AFTER UPDATE OF default_price ON pub
 --
 
 CREATE TRIGGER trg_z_stamp_inquiry_closure BEFORE UPDATE ON public.inquiries FOR EACH ROW WHEN ((((new.status)::text = ANY ((ARRAY['WON'::character varying, 'LOST'::character varying, 'CANCELLED'::character varying])::text[])) AND ((old.status)::text IS DISTINCT FROM (new.status)::text))) EXECUTE FUNCTION public.stamp_inquiry_closure();
-
-
---
--- Name: quotations trg_z_sync_deal_value_on_quotation_accept; Type: TRIGGER; Schema: public; Owner: postgres
---
-
-CREATE TRIGGER trg_z_sync_deal_value_on_quotation_accept AFTER UPDATE ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.sync_deal_value_on_quotation_accept();
 
 
 --
@@ -15059,6 +15291,14 @@ ALTER TABLE ONLY public.product_warehouse_location
 
 ALTER TABLE ONLY public.quotation_items
     ADD CONSTRAINT quotation_items_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: quotations quotations_accepted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.quotations
+    ADD CONSTRAINT quotations_accepted_by_fkey FOREIGN KEY (accepted_by) REFERENCES public.profiles(id);
 
 
 --
@@ -18486,7 +18726,7 @@ ALTER TABLE public.quotation_items ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY quotation_items_delete ON public.quotation_items FOR DELETE USING ((EXISTS ( SELECT 1
    FROM public.quotations q
-  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id = public.get_user_company_id()) OR public.is_super_admin())))));
+  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin())))));
 
 
 --
@@ -18495,7 +18735,7 @@ CREATE POLICY quotation_items_delete ON public.quotation_items FOR DELETE USING 
 
 CREATE POLICY quotation_items_insert ON public.quotation_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
    FROM public.quotations q
-  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id = public.get_user_company_id()) OR public.is_super_admin())))));
+  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin())))));
 
 
 --
@@ -18504,7 +18744,7 @@ CREATE POLICY quotation_items_insert ON public.quotation_items FOR INSERT TO aut
 
 CREATE POLICY quotation_items_read ON public.quotation_items FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.quotations q
-  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id = public.get_user_company_id()) OR public.is_super_admin())))));
+  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin())))));
 
 
 --
@@ -18513,9 +18753,9 @@ CREATE POLICY quotation_items_read ON public.quotation_items FOR SELECT USING ((
 
 CREATE POLICY quotation_items_update ON public.quotation_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.quotations q
-  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id = public.get_user_company_id()) OR public.is_super_admin()))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin()))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.quotations q
-  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id = public.get_user_company_id()) OR public.is_super_admin())))));
+  WHERE ((q.id = quotation_items.quotation_id) AND ((q.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin())))));
 
 
 --
@@ -18528,21 +18768,21 @@ ALTER TABLE public.quotations ENABLE ROW LEVEL SECURITY;
 -- Name: quotations quotations_insert; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY quotations_insert ON public.quotations FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
+CREATE POLICY quotations_insert ON public.quotations FOR INSERT TO authenticated WITH CHECK (((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin()));
 
 
 --
 -- Name: quotations quotations_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY quotations_read ON public.quotations FOR SELECT USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
+CREATE POLICY quotations_read ON public.quotations FOR SELECT USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above_in(company_id) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
 -- Name: quotations quotations_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY quotations_update ON public.quotations FOR UPDATE USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
+CREATE POLICY quotations_update ON public.quotations FOR UPDATE USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above_in(company_id) OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above_in(company_id) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
@@ -19506,6 +19746,14 @@ GRANT ALL ON FUNCTION public.create_invoice(p_sp_order_id uuid) TO authenticated
 
 
 --
+-- Name: FUNCTION create_quotation_revision(p_quotation_id uuid); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.create_quotation_revision(p_quotation_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_quotation_revision(p_quotation_id uuid) TO authenticated;
+
+
+--
 -- Name: FUNCTION create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -19661,6 +19909,14 @@ GRANT ALL ON FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) TO se
 
 
 --
+-- Name: FUNCTION is_manager_or_above_in(p_company_id uuid); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) TO authenticated;
+
+
+--
 -- Name: FUNCTION is_sp_item_writer(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -19745,6 +20001,14 @@ GRANT ALL ON FUNCTION public.save_quotation(p_quotation_id uuid, p_header jsonb,
 --
 
 GRANT ALL ON FUNCTION public.set_product_category_prices(p_product_id uuid, p_semester numeric, p_tahunan numeric, p_project numeric) TO authenticated;
+
+
+--
+-- Name: FUNCTION set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text) TO authenticated;
 
 
 --
@@ -21467,5 +21731,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict PYuAmZGo6HMXneeZt3VN96KEjeBfwi99Zw5FWZ6nxHVCXMzgPFtjRwyGWZGKdOF
+\unrestrict T9PFEJ3XouDfwx1IScvcUXX4xzcm5AJtV5ae1nr8jOgkr7VUdGehdAqTRYDxBX4
 
