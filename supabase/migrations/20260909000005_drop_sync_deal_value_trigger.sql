@@ -1,0 +1,99 @@
+-- =============================================================================
+-- Migration: 20260909000005_drop_sync_deal_value_trigger
+-- Phase:     TD-238 langkah 1 dari 2 — CABUT TRIGGER DULU.
+-- Depends:   —
+-- Status:    LIVE — staging 9 Sep 2026, produksi 9 Sep 2026.
+--
+-- ⛔⛔ URUTAN MENGIKAT (TD-238). INI LANGKAH PERTAMA.
+--     `DROP COLUMN accounts.estimated_value` adalah langkah KEDUA, migrasi
+--     TERPISAH, dan hari ini MASIH TERBLOKIR (lihat PRASYARAT di bawah).
+--     Menjalankan DROP COLUMN tanpa mencabut trigger ini lebih dulu membuat
+--     SETIAP update quotation ke ACCEPTED GAGAL KERAS (exception).
+--
+-- ⚠️ FILE TERPISAH, SENGAJA. Keputusan Den #8: pencabutan estimated_value
+--    TIDAK BOLEH digabung ke migrasi pekerjaan approval (20260909000001-4).
+--    Dua urusan berbeda yang kebetulan bertemu di kolom yang sama.
+--
+-- KENAPA SEKARANG, BUKAN NANTI
+--   Sampai detik ini NOL quotation pernah ACCEPTED — sebab jalur tulisnya
+--   memang belum pernah ada (diverifikasi: satu-satunya penulis status adalah
+--   QuotationFormPage -> DRAFT/SUBMITTED dan QuotationDetailPage -> SENT).
+--   Begitu 20260909000003 hidup, jalur ACCEPTED LAHIR. Mencabut trigger ini
+--   SEBELUM approval dipakai orang = ranjaunya hilang sebelum sempat aktif.
+--   Sesudah itu tidak ada lagi urutan yang bisa keliru.
+--
+-- DAMPAK PERILAKU
+--   Quotation ACCEPTED tidak lagi menyalin total_amount ke
+--   accounts.estimated_value. DISENGAJA — kolom itu sedang dipensiunkan, dan
+--   sumbu nilai deal sudah pindah ke inquiries.estimated_value (kolom BERBEDA,
+--   tetap hidup, dibaca PipelineKanbanPage & CRMDashboardPage — jangan
+--   tertukar).
+--   NOL baris data berubah: triggernya belum pernah sekali pun menyala.
+--
+-- ⛔ PRASYARAT LANGKAH KEDUA — BELUM TERPENUHI, JANGAN DIJALANKAN DULU
+--   `DROP COLUMN accounts.estimated_value` akan MEMATIKAN halaman yang masih
+--   membacanya. Pembaca yang MASIH HIDUP di branch feature/crm-v3-batch-persiapan:
+--     CustomerDetailPage.jsx:1029  .select('... estimated_value ...')
+--     CustomerDetailPage.jsx:1039  menulis estimated_value
+--     CustomerDetailPage.jsx:1297  Number(customer.estimated_value || 0)
+--     CustomerDetailPage.jsx:1867  seed EditDealModal
+--   Di `main` lebih luas lagi (PipelineKanbanPage + DealDetailPage ikut).
+--   PostgREST membalas 42703 dan SELURUH query gagal — bukan cuma kolomnya.
+--   Urutan aman: CustomerDetailPage berhenti membaca -> deploy -> verifikasi
+--   produksi -> BARU DROP COLUMN. TD-237/TD-238/TD-239 satu batch.
+-- =============================================================================
+
+DROP TRIGGER  IF EXISTS trg_z_sync_deal_value_on_quotation_accept ON public.quotations;
+DROP FUNCTION IF EXISTS public.sync_deal_value_on_quotation_accept();
+
+-- ─── VERIFIKASI ──────────────────────────────────────────────────────────────
+--   -- a. Trigger & fungsi benar-benar hilang:
+--   SELECT tgname FROM pg_trigger
+--   WHERE tgrelid='public.quotations'::regclass AND NOT tgisinternal
+--   ORDER BY tgname;
+--   -- HARUS tersisa TIGA: trg_inquiry_quoted · trg_quotation_prf_consistency
+--   --                     · trg_z_inquiry_negotiation_on_revision
+--   -- TIDAK BOLEH ada trg_z_sync_deal_value_on_quotation_accept.
+--
+--   SELECT proname FROM pg_proc WHERE proname='sync_deal_value_on_quotation_accept';
+--   -- HARUS 0 baris.
+--
+--   -- b. ⭐ UJI LEDAKAN — inti migrasi ini:
+--   --    catat dulu nilainya, lalu ACCEPT, lalu bandingkan.
+--   SELECT id, estimated_value FROM public.accounts WHERE id='<ACCOUNT_ID>'::uuid;
+--   BEGIN;
+--     SELECT public.set_quotation_outcome('<QUOTATION_ID>'::uuid, 'ACCEPTED');
+--     -- HARUS SUKSES, NOL exception.
+--     SELECT id, estimated_value FROM public.accounts WHERE id='<ACCOUNT_ID>'::uuid;
+--     -- HARUS PERSIS SAMA dengan sebelum ACCEPT (bukti trigger benar-benar mati).
+--   ROLLBACK;
+--
+--   -- c. Nol regresi halaman:
+--   --    Detail Customer (CustomerDetailPage) -> MASIH NORMAL.
+--   --    Itu sekaligus bukti kolomnya memang belum di-drop, dan memang
+--   --    belum boleh di-drop.
+--   --    Pipeline Kanban + CRM Dashboard -> nilai deal tak terpengaruh
+--   --    (sumbernya inquiries.estimated_value, kolom lain).
+--
+-- ─── ROLLBACK ────────────────────────────────────────────────────────────────
+--   Definisi lengkap fungsi + trigger ada di schema_snapshot.sql:3967-3992
+--   dan :12792. Salin apa adanya untuk memulihkan:
+--
+--   CREATE FUNCTION public.sync_deal_value_on_quotation_accept() RETURNS trigger
+--       LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $fn$
+--   BEGIN
+--     IF NEW.status = 'ACCEPTED' AND (OLD.status IS DISTINCT FROM 'ACCEPTED') THEN
+--       IF NEW.prospect_id IS NOT NULL THEN
+--         UPDATE public.accounts SET estimated_value = NEW.total_amount,
+--                updated_at = now() WHERE id = NEW.prospect_id;
+--       END IF;
+--       IF NEW.prospect_id IS NULL AND NEW.customer_id IS NOT NULL THEN
+--         UPDATE public.accounts SET estimated_value = NEW.total_amount,
+--                updated_at = now() WHERE id = NEW.customer_id;
+--       END IF;
+--     END IF;
+--     RETURN NEW;
+--   END; $fn$;
+--   CREATE TRIGGER trg_z_sync_deal_value_on_quotation_accept
+--     AFTER UPDATE ON public.quotations FOR EACH ROW
+--     EXECUTE FUNCTION public.sync_deal_value_on_quotation_accept();
