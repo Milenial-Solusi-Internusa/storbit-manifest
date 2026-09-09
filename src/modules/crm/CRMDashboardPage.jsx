@@ -548,7 +548,7 @@ function AreaTip({ active, payload, label }) {
    ⚠️ Jendelanya TETAP 12 bulan dan SENGAJA tidak mengikuti selektor periode
    global — lihat query [14] di fetchDash untuk alasannya. Karena itu komponen
    ini tak lagi menerima prop label/bucket apa pun: tak ada yang bisa berubah. */
-function PipelineTrend({ data = [] }) {
+function PipelineTrend({ data = [], degraded = false }) {
   const [areaRef, areaW] = useWidth();
   const isEmpty = data.length === 0;
   return (
@@ -561,7 +561,7 @@ function PipelineTrend({ data = [] }) {
         </div>
       </div>
       <div style={{ padding: "16px 16px 4px" }}>
-        {isEmpty ? (
+        {degraded ? <DegradedNotice what="Pipeline trend" /> : isEmpty ? (
           <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280", fontSize: 13 }}>No pipeline data yet</div>
         ) : (
           <div ref={areaRef} className="bar-in">
@@ -612,7 +612,7 @@ function BarTip({ active, payload }) {
   );
 }
 
-function PipelineByStage({ stages = STAGES, conversion = [] }) {
+function PipelineByStage({ stages = STAGES, conversion = [], degraded = false }) {
   const [barRef, barW] = useWidth();
   const totalVal   = stages.reduce((a, s) => a + (s.value || 0), 0);
   /* Tanpa ini, `stages` default (STAGES) yang seluruh count-nya 0 tetap
@@ -628,7 +628,7 @@ function PipelineByStage({ stages = STAGES, conversion = [] }) {
           <div style={D.cardSub}>Inquiry count by status, using the same axis as the Pipeline board</div>
         </div>
       </div>
-      {isEmpty ? (
+      {degraded ? <DegradedNotice what="Pipeline by stage" /> : isEmpty ? (
         <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No pipeline data yet</div>
       ) : (
       <div style={{ padding: "14px 14px 4px" }}>
@@ -701,7 +701,7 @@ function PieTip({ active, payload, total }) {
   );
 }
 
-function LeadSourceDonut({ data = [] }) {
+function LeadSourceDonut({ data = [], degraded = false }) {
   // Normalise: data has { source, count } — add name + color for chart
   // Label & warna dari SOURCE_META — legenda menampilkan "Cold Call", bukan
   // kode mentah "cold_call". Pengelompokan datanya TIDAK diubah: setiap
@@ -725,7 +725,7 @@ function LeadSourceDonut({ data = [] }) {
           <div style={D.cardSub}>Lead origin across the period</div>
         </div>
       </div>
-      {isEmpty ? (
+      {degraded ? <DegradedNotice what="Lead source mix" /> : isEmpty ? (
         <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No lead source data yet</div>
       ) : (
         <div style={D.donutBody}>
@@ -791,8 +791,34 @@ function FunnelRow({ label, count, max, muted = false, barColor, numColor }) {
   );
 }
 
+/* ---------- penanda data tak lengkap (dipakai lintas kartu) ----------
+   Dipasang di dalam KARTU, bukan cuma banner di puncak halaman. Banner
+   memberi tahu "ada yang salah"; ia tidak memberi tahu ANGKA MANA. Selama
+   kartunya sendiri tetap memajang angka, pembaca yang melewatkan banner
+   tidak punya petunjuk apa pun bahwa yang dilihatnya tidak utuh.
+
+   Nadanya sengaja netral (abu, bukan merah): data terpotong itu keterbatasan
+   pengambilan, bukan kondisi darurat. */
+function DegradedNotice({ what = 'This figure', reason = 'truncated' }) {
+  return (
+    <div style={{ padding: "28px 18px", textAlign: "center", color: "#6B7280", fontSize: 13, lineHeight: 1.6 }}>
+      {what} is not shown
+      <div style={{ marginTop: 6, fontSize: 12, color: "#9CA3AF" }}>
+        {reason === 'error'
+          ? 'The underlying query failed, so any number here would be a guess. Reload the page; if it keeps happening, report it.'
+          : 'The underlying query hit its 1,000-row ceiling, so the figures would be computed from partial data.'}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- funnel lifecycle akun ---------- */
-function LifecycleFunnel({ funnel = [], exits = [] }) {
+/* `total` datang dari COUNT SERVER (query [15]), TERPISAH dari baris yang
+   membentuk rinciannya. Itu disengaja: rincian per-tahap bisa terpotong di
+   1000 sementara totalnya tetap bisa dipertanggungjawabkan. Kalau `total`
+   tak tersedia (null), kaki kartu menampilkan '—' — bukan menjumlahkan
+   baris yang sudah diketahui tidak lengkap. */
+function LifecycleFunnel({ funnel = [], exits = [], total = null, degraded = false }) {
   const max        = funnel.reduce((a, s) => Math.max(a, s.count), 0);
   const totalFun   = funnel.reduce((a, s) => a + s.count, 0);
   const totalExit  = exits.reduce((a, s) => a + s.count, 0);
@@ -806,7 +832,17 @@ function LifecycleFunnel({ funnel = [], exits = [] }) {
           <div style={D.cardSub}>Current account distribution (does not follow the period filter)</div>
         </div>
       </div>
-      {isEmpty ? (
+      {degraded ? (
+        <>
+          <DegradedNotice what="The per-stage breakdown" />
+          {/* Total TETAP tampil: ia datang dari count server, bukan dari baris
+              yang terpotong. Menyembunyikannya juga akan membuang satu-satunya
+              angka yang justru masih benar di kartu ini. */}
+          <div style={{ borderTop: "1px solid #ECEDF1", padding: "10px 16px 14px", textAlign: "right", fontSize: 11.5, color: "#6B7280" }}>
+            Total accounts <b style={{ color: "#16243A" }}>{total == null ? '—' : total}</b>
+          </div>
+        </>
+      ) : isEmpty ? (
         <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No accounts yet</div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
@@ -821,7 +857,7 @@ function LifecycleFunnel({ funnel = [], exits = [] }) {
               </span>
             ))}
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#6B7280" }}>
-              Total accounts <b style={{ color: "#16243A" }}>{totalFun + totalExit}</b>
+              Total accounts <b style={{ color: "#16243A" }}>{total == null ? '—' : total}</b>
             </span>
           </div>
         </div>
@@ -849,7 +885,7 @@ function MqlTip({ active, payload, total }) {
   );
 }
 
-function MqlToSqlPie({ data }) {
+function MqlToSqlPie({ data, degraded = false }) {
   const converted = data?.converted ?? 0;
   const pending   = data?.pending   ?? 0;
   const lost      = data?.lost      ?? 0;
@@ -878,7 +914,14 @@ function MqlToSqlPie({ data }) {
           <div style={D.cardSub}>Accounts that have ever reached MQL</div>
         </div>
       </div>
-      {isEmpty ? (
+      {/* `degraded` HARUS diperiksa SEBELUM isEmpty. Saat query-nya gagal,
+          ketiga penghitung tetap 0 sehingga isEmpty ikut true — dan kartunya
+          akan menuliskan "No account has been recorded reaching MQL yet",
+          sebuah KLAIM BISNIS, padahal yang terjadi cuma request-nya tak pernah
+          berhasil. Urutan dua cabang ini yang membedakan keduanya. */}
+      {degraded ? (
+        <DegradedNotice what="MQL to SQL conversion" reason="error" />
+      ) : isEmpty ? (
         <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
           No account has been recorded reaching MQL yet
         </div>
@@ -947,7 +990,7 @@ function MqlToSqlPie({ data }) {
 }
 
 /* ---------- breakdown alasan kalah ---------- */
-function LossReasonBreakdown({ data = [], total = 0 }) {
+function LossReasonBreakdown({ data = [], total = 0, degraded = false }) {
   const max = data.reduce((a, s) => Math.max(a, s.count), 0);
   return (
     <div className="om-card" style={D.card}>
@@ -958,7 +1001,7 @@ function LossReasonBreakdown({ data = [], total = 0 }) {
           <div style={D.cardSub}>Deals marked Lost that closed in the active period</div>
         </div>
       </div>
-      {data.length === 0 ? (
+      {degraded ? <DegradedNotice what="Loss reason breakdown" /> : data.length === 0 ? (
         <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No lost deals in this period</div>
       ) : (
         <div style={{ padding: "14px 16px 16px" }}>
@@ -1047,7 +1090,7 @@ function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
 }
 
 /* ---------- aging per tahap ---------- */
-function AgingPerStage({ rows = [], unknown = 0 }) {
+function AgingPerStage({ rows = [], unknown = 0, degraded = false }) {
   const isEmpty = rows.every((r) => r.count === 0);
   return (
     <div className="om-card" style={D.card}>
@@ -1058,7 +1101,7 @@ function AgingPerStage({ rows = [], unknown = 0 }) {
           <div style={D.cardSub}>Median days at the current stage (does not follow the period filter)</div>
         </div>
       </div>
-      {isEmpty ? (
+      {degraded ? <DegradedNotice what="Stage aging" /> : isEmpty ? (
         <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No open deals yet</div>
       ) : (
         <>
@@ -1108,7 +1151,7 @@ function AgingPerStage({ rows = [], unknown = 0 }) {
 }
 
 /* ---------- daftar deal stale ---------- */
-function StaleDeals({ rows = [], total = 0, cap = 30 }) {
+function StaleDeals({ rows = [], total = 0, cap = 30, degraded = false }) {
   const [hover, setHover] = useState(-1);
   return (
     <div className="om-card" style={D.card}>
@@ -1119,7 +1162,7 @@ function StaleDeals({ rows = [], total = 0, cap = 30 }) {
           <div style={D.cardSub}>Past the SLA threshold for their stage, worst first</div>
         </div>
       </div>
-      {rows.length === 0 ? (
+      {degraded ? <DegradedNotice what="Stale deals" /> : rows.length === 0 ? (
         <div style={{ padding: "32px 16px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
           Tidak ada deal yang melewati ambang
         </div>
@@ -1246,7 +1289,7 @@ function salesStatus(pct) {
   return "At Risk";
 }
 
-function SalesPerformance({ data = [] }) {
+function SalesPerformance({ data = [], degraded = false }) {
   const [hover, setHover] = useState(-1);
   const maxConv = data.length > 0 ? Math.max(...data.map((s) => s.convRate || 0)) : 100;
   const isEmpty = data.length === 0;
@@ -1259,7 +1302,7 @@ function SalesPerformance({ data = [] }) {
           <div style={D.cardSub}>Won deals per salesperson, from deals closed in the active period</div>
         </div>
       </div>
-      {isEmpty ? (
+      {degraded ? <DegradedNotice what="Sales performance" /> : isEmpty ? (
         <div style={{ padding: "32px 16px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
           No deals closed in this period yet
         </div>
@@ -2478,34 +2521,35 @@ function CRMDashboardPage() {
           .gte('created_at', P.start.toISOString())
           .lt('created_at', P.end.toISOString())),
 
-        // [6] KPI personal — call minggu ini
+        /* [6] KPI personal — call minggu ini. COUNT SERVER, bukan baris.
+              Sebelumnya mengambil baris lalu memakai `.length`, sehingga angkanya
+              BERHENTI di 1000 tanpa tanda apa pun — dan tak ada satu pun guard
+              truncation yang menjaganya. Barisnya sendiri tak pernah dipakai:
+              KPI ini cuma butuh angka. */
         ownBySales(byCompany(supabase
           .from('activities')
-          .select('id, scheduled_for, assigned_to'))
+          .select('id', { count: 'exact', head: true }))
           .eq('type', 'call')
           .is('deleted_at', null)
           .gte('scheduled_for', startOfWeek)
-          .lte('scheduled_for', todayStr)
-          .limit(1000)),
+          .lte('scheduled_for', todayStr)),
 
-        // [7] KPI personal — visit minggu ini
+        // [7] KPI personal — visit minggu ini. COUNT SERVER (alasan sama [6]).
         ownBySales(byCompany(supabase
           .from('activities')
-          .select('id, scheduled_for, assigned_to'))
+          .select('id', { count: 'exact', head: true }))
           .eq('type', 'visit')
           .is('deleted_at', null)
           .gte('scheduled_for', startOfWeek)
-          .lte('scheduled_for', todayStr)
-          .limit(1000)),
+          .lte('scheduled_for', todayStr)),
 
-        // [8] KPI personal — quotation bulan ini
+        // [8] KPI personal — quotation bulan ini. COUNT SERVER (alasan sama [6]).
         ownByCreator(byCompany(supabase
           .from('quotations')
-          .select('id, created_at, created_by'))
+          .select('id', { count: 'exact', head: true }))
           .is('deleted_at', null)
           .gte('created_at', startThisMonth.toISOString())
-          .lt('created_at', startNextMonth.toISOString())
-          .limit(1000)),
+          .lt('created_at', startNextMonth.toISOString())),
 
         // [9] "SQL Baru Bulan Ini" — dari riwayat lifecycle, BUKAN lagi tebakan
         //      dari pipeline_stage. Ini menjawab "berapa yang BARU jadi SQL
@@ -2597,6 +2641,22 @@ function CRMDashboardPage() {
           .lt('created_at', trendEnd.toISOString())
           .limit(1000)),
 
+        /* [15] TOTAL akun — COUNT SERVER, pasangan dari [10].
+           Ini TIDAK menggantikan [10]: funnel per-tahap dan kohort MQL tetap
+           butuh barisnya. Yang ditutup di sini cuma angka "Total accounts" di
+           kaki kartu funnel, yang dulu dihitung dengan menjumlahkan baris [10]
+           dan karena itu BERHENTI DI 1000 — memajang "1000" dengan percaya diri
+           padahal produksi punya lebih.
+           Filternya WAJIB sama persis dengan [10] (ownAccounts + byCompany +
+           deleted_at null); begitu keduanya melenceng, totalnya berhenti cocok
+           dengan rincian yang ada di atasnya.
+           SENGAJA di-append di ekor array: menyisipkannya di tengah akan
+           menggeser SELURUH indeks res[...] di bawah. */
+        ownAccounts(byCompany(supabase
+          .from('accounts')
+          .select('id', { count: 'exact', head: true }))
+          .is('deleted_at', null)),
+
       ]);
 
       /* Pemeriksaan error MENYELURUH. Sebelumnya hanya hasil [0] yang diperiksa
@@ -2626,7 +2686,17 @@ function CRMDashboardPage() {
         ['ambang SLA aging', res[12]],
         ['sales targets', res[13]],
         ['pipeline trend', res[14]],
+        ['total account count', res[15]],
       ].filter(([, r]) => r?.error).map(([label]) => label);
+
+      /* PENANDA PER-WIDGET, pendamping `failed`.
+         `failed` hanya menghasilkan BANNER — kalimat di puncak halaman yang
+         mudah terlewat dan tidak memberi tahu angka mana yang salah. `degraded`
+         membawa informasi yang sama TURUN KE KARTUNYA, supaya widget yang
+         datanya terpotong/gagal berhenti memajang angka seolah-olah sah.
+         Keduanya di-set berpasangan di tiap titik guard; jangan menambah salah
+         satu tanpa yang lain. */
+      const degraded = {};
 
       const accountsRows        = res[0].data  || [];
       const activeProspects     = res[1].count ?? 0;
@@ -2634,30 +2704,33 @@ function CRMDashboardPage() {
       const closedInq           = res[3].data  || [];
       const totalInquiries      = res[4].count ?? 0;
       const totalQuotations     = res[5].count ?? 0;
-      const callsThisWeek       = (res[6].data || []).length;
-      const visitsThisWeek      = (res[7].data || []).length;
-      const quotationsThisMonth = (res[8].data || []).length;
+      const callsThisWeek       = res[6].count ?? 0;
+      const visitsThisWeek      = res[7].count ?? 0;
+      const quotationsThisMonth = res[8].count ?? 0;
       const sqlThisMonth        = res[9].count ?? 0;
       const lifecycleRows       = res[10].data || [];
       const lossReasonRows      = res[11].data || [];
       const slaRows             = res[12].data || [];
       const targetRows          = res[13].data || [];
       const dealRows            = res[14].data || [];
+      /* null, BUKAN 0, saat count gagal. Nol adalah pernyataan ("tidak ada
+         akun"); null adalah ketiadaan jawaban, dan kartunya menampilkan '—'. */
+      const totalAccounts       = res[15].error ? null : (res[15].count ?? 0);
 
       // Cap 1000 baris pada distribusi lifecycle: kalau kena, corongnya
       // memang terpotong — dikabarkan lewat banner, bukan ditampilkan
       // seolah-olah itu seluruh populasi akun.
-      if (lifecycleRows.length === 1000) failed.push('account lifecycle funnel (truncated at 1000 rows)');
+      if (lifecycleRows.length === 1000) { failed.push('account lifecycle funnel (truncated at 1000 rows)'); degraded.lifecycleFunnel = true; }
       /* Empat guard di bawah menutup lubang yang sebelumnya membuat query
          berikut memotong data DIAM-DIAM di 1000 baris, padahal tiga query lain
          di fungsi yang sama sudah punya guard. Yang paling berbahaya
          `accountsRows`: Lead Source adalah PERSENTASE, jadi kalau 1000 baris
          pertama tak representatif seluruh proporsinya salah sambil tetap
          terlihat utuh. */
-      if (accountsRows.length === 1000) failed.push('lead source (truncated at 1000 rows)');
-      if (dealRows.length === 1000)     failed.push('pipeline trend (truncated at 1000 rows)');
-      if (openInq.length === 1000)      failed.push('pipeline by stage — open deals (truncated at 1000 rows)');
-      if (closedInq.length === 1000)    failed.push('sales performance & win rate — closed deals (truncated at 1000 rows)');
+      if (accountsRows.length === 1000) { failed.push('lead source (truncated at 1000 rows)'); degraded.leadSource = true; }
+      if (dealRows.length === 1000)     { failed.push('pipeline trend (truncated at 1000 rows)'); degraded.pipelineTrend = true; }
+      if (openInq.length === 1000)      { failed.push('pipeline by stage — open deals (truncated at 1000 rows)'); degraded.pipelineByStage = true; }
+      if (closedInq.length === 1000)    { failed.push('sales performance & win rate — closed deals (truncated at 1000 rows)'); degraded.salesPerf = true; }
 
       /* Nama pemilik deal lewat query TERPISAH, bukan embed FK — pola yang
          sudah dipakai di file ini (feed aktivitas & kalender). Satu query untuk
@@ -2727,12 +2800,13 @@ function CRMDashboardPage() {
           .limit(1000);
         if (histErr) {
           failed.push('stage-to-stage conversion & stage age');
+          degraded.stageHistory = true;
         } else {
           const rows = hist || [];
           // Cap 1000: riwayat tumbuh per TRANSISI, bukan per inquiry, jadi cap
           // ini lebih cepat kena daripada query lain. Dikabarkan, tidak dipotong
           // diam-diam jadi persentase yang terlihat sah.
-          if (rows.length === 1000) failed.push('status history truncated at 1000 rows (conversion & age)');
+          if (rows.length === 1000) { failed.push('status history truncated at 1000 rows (conversion & age)'); degraded.stageHistory = true; }
           const seen = {};
           for (const r of rows) {
             const s = String(r.to_status || '').toUpperCase();
@@ -2943,10 +3017,15 @@ function CRMDashboardPage() {
           .in('account_id', accIds)
           .limit(1000);
         if (mqlErr) {
+          /* Kegagalan di sini BUKAN "nol akun MQL". Tanpa penanda ini kartunya
+             jatuh ke empty-state dan menuliskan "No account has been recorded
+             reaching MQL yet" — sebuah KLAIM BISNIS, padahal yang terjadi cuma
+             request-nya tak pernah berhasil. */
           failed.push('MQL to SQL conversion');
+          degraded.mql = true;
         } else {
           const rows = mqlRows || [];
-          if (rows.length === 1000) failed.push('MQL to SQL conversion (cohort truncated at 1000 rows)');
+          if (rows.length === 1000) { failed.push('MQL to SQL conversion (cohort truncated at 1000 rows)'); degraded.mql = true; }
           mqlHasRealTransition = rows.some((r) => r.from_stage !== null);
           const cohort = new Set(rows.map((r) => r.account_id));
           // Klasifikasi EKSHAUSTIF — tiap anggota kohort masuk salah satu dari
@@ -3166,6 +3245,7 @@ function CRMDashboardPage() {
         agingRows, ageUnknown, staleRows, staleTotal, staleCap: STALE_CAP,
         loadRows, openDealTotal,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
+        totalAccounts, degraded,
       });
     } catch (err) {
       console.error('[CRMDashboardPage] fetch error:', err);
@@ -3360,11 +3440,19 @@ function CRMDashboardPage() {
     { label: "Total Quotation", icon: "receipt",     value: String(dashData.totalQuotations),unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
     // CANCELLED tidak masuk rumus Win Rate, tapi ikut ditampilkan di subtitle —
     // dikeluarkan dari hitungan, bukan disembunyikan dari pembaca.
-    { label: "Win Rate",        icon: "kpiWinRate", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
-      subtitle: `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled (not counted)` },
+    { label: "Win Rate",        icon: "kpiWinRate", value: winRateDegraded ? '—' : String(dashData.winRate), unit: "%", accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
+      subtitle: winRateDegraded
+        ? 'Closed deals hit the 1,000-row ceiling — the rate would be computed from partial data'
+        : `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled (not counted)` },
   ] : KPIS;
 
   // ── S2 — personal KPI cards (sales/operations view) ──────────────────────
+  /* Win Rate & Loss Reason keduanya diturunkan dari `closedInq`, jadi guard
+     yang sama (salesPerf) ikut menjatuhkan keduanya. Guard itu memang sudah
+     menyebut "win rate" di teksnya — tanpa penanda ini, banner mengatakan win
+     rate mungkin salah sementara kartunya tetap memajang persentase. */
+  const winRateDegraded = !!dashData?.degraded?.salesPerf;
+
   const progColor = (v, green, yellow) => v >= green ? '#22C55E' : v >= yellow ? '#F59E0B' : '#EF4444';
   const kpisSales = dashData ? [
     { label: "Calls This Week",     icon: "target",      value: String(dashData.callsThisWeek),       unit: "call",      accent: NAVY,      accentBg: "#EAF0F8", trend: null,
@@ -3373,8 +3461,10 @@ function CRMDashboardPage() {
       subtitle: `${dashData.visitsThisWeek} / 5 target this week`,        progress: { pct: Math.min(dashData.visitsThisWeek / 5 * 100, 100),       color: progColor(dashData.visitsThisWeek, 5, 3) } },
     { label: "Quotations This Month", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
       subtitle: `${dashData.quotationsThisMonth} / 20 target this month`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
-    { label: "Win Rate Personal",   icon: "kpiWinRate", value: String(dashData.winRate),             unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
-      subtitle: `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled` },
+    { label: "Win Rate Personal",   icon: "kpiWinRate", value: winRateDegraded ? '—' : String(dashData.winRate), unit: "%", accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
+      subtitle: winRateDegraded
+        ? 'Closed deals hit the 1,000-row ceiling — the rate would be computed from partial data'
+        : `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled` },
   ] : KPIS;
 
   const kpiCards = isSalesOnly ? kpisSales : kpisReal;
@@ -3680,13 +3770,14 @@ function CRMDashboardPage() {
           {dashLoading ? <SkeletonBelow isSalesOnly={isSalesOnly} /> : (<>
           {/* row 2 — pipeline trend */}
           <div style={{ marginBottom: 16 }}>
-            <PipelineTrend data={dashData?.trendData || []} />
+            <PipelineTrend data={dashData?.trendData || []} degraded={!!dashData?.degraded?.pipelineTrend} />
           </div>
 
           {/* row 3 — charts */}
           <div className="nx-grid-2" style={D.chartsRow}>
-            <PipelineByStage stages={dashData?.stagesData} conversion={dashData?.conversionData || []} />
-            <LeadSourceDonut data={dashData?.leadSourceData || []} />
+            <PipelineByStage stages={dashData?.stagesData} conversion={dashData?.conversionData || []}
+              degraded={!!dashData?.degraded?.pipelineByStage || !!dashData?.degraded?.stageHistory} />
+            <LeadSourceDonut data={dashData?.leadSourceData || []} degraded={!!dashData?.degraded?.leadSource} />
           </div>
 
           {/* row 3b — dua funnel baru. Lifecycle akun (sumbu AKUN) sengaja
@@ -3696,14 +3787,17 @@ function CRMDashboardPage() {
             <LifecycleFunnel
               funnel={dashData?.lifecycleFunnel || []}
               exits={dashData?.lifecycleExits || []}
+              total={dashData?.totalAccounts ?? null}
+              degraded={!!dashData?.degraded?.lifecycleFunnel}
             />
             {/* Pie MQL→SQL duduk tepat di samping funnel lifecycle: keduanya
                 sumbu AKUN dan membaca kohort yang sama, jadi angkanya saling
                 menjelaskan. */}
-            <MqlToSqlPie data={dashData?.mqlData} />
+            <MqlToSqlPie data={dashData?.mqlData} degraded={!!dashData?.degraded?.mql} />
             <LossReasonBreakdown
               data={dashData?.lossReasonData || []}
               total={dashData?.lostCount || 0}
+              degraded={!!dashData?.degraded?.salesPerf}
             />
           </div>
 
@@ -3725,11 +3819,13 @@ function CRMDashboardPage() {
             <AgingPerStage
               rows={dashData?.agingRows || []}
               unknown={dashData?.ageUnknown || 0}
+              degraded={!!dashData?.degraded?.stageHistory}
             />
             <StaleDeals
               rows={dashData?.staleRows || []}
               total={dashData?.staleTotal || 0}
               cap={dashData?.staleCap || 30}
+              degraded={!!dashData?.degraded?.stageHistory}
             />
           </div>
 
@@ -3738,7 +3834,7 @@ function CRMDashboardPage() {
               karena sumber datanya sama persis. */}
           {!isSalesOnly && (
             <div style={{ marginBottom: 16 }}>
-              <SalesPerformance data={dashData?.salesPerfData || []} />
+              <SalesPerformance data={dashData?.salesPerfData || []} degraded={!!dashData?.degraded?.salesPerf} />
             </div>
           )}
 
