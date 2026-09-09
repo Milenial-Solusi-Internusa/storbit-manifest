@@ -4,6 +4,7 @@
 // IMPORTANT: customer-facing only — NEVER render cost_price, margin/gross profit,
 // or internal_notes here.
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
+import { formatQuotationNo } from './quotationVersion';
 
 const NAVY = '#144682';
 const ORANGE = '#E85A1E';
@@ -175,7 +176,12 @@ export default function QuotationPDF({ quot, items = [], sections = [], creatorP
           </View>
           <View style={styles.hRight}>
             <Text style={styles.quoTitle}>QUOTATION</Text>
-            <Text style={styles.hNo}>{quot.quotation_no}{quot.revision ? ` Rev.${quot.revision}` : ''}</Text>
+            {/* Nomor + sufiks versi lewat helper bersama, supaya kertas dan
+                layar TIDAK PERNAH menampilkan nomor berbeda untuk quotation
+                yang sama. Bentuk lama (` Rev.${revision}`) mencetak "Rev.1" di
+                SETIAP PDF — seluruh baris produksi ber-revision 1 — jadi
+                sufiks itu tak pernah membedakan apa pun. */}
+            <Text style={styles.hNo}>{formatQuotationNo(quot.quotation_no, quot.revision)}</Text>
             <Text style={styles.hLine}>Tanggal: {dateStr}</Text>
             <Text style={styles.hLine}>Valid: {validStr}</Text>
           </View>
