@@ -22,7 +22,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock, ArrowRight,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  Handshake, Ban, UserCog,
+  Ban, UserCog,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -52,11 +52,6 @@ const LOSABLE_INQUIRY_STATUS = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
 // B3 — "Batalkan" memakai gate yang SAMA PERSIS dengan "Tandai Kalah": keduanya
 // jalur penutupan manual, jadi tak ada alasan salah satunya lebih longgar.
 const CANCELLABLE_INQUIRY_STATUS = LOSABLE_INQUIRY_STATUS;
-
-// B3 — "Mulai Negosiasi" HANYA dari QUOTED (keputusan Den, ditegaskan ulang saat
-// approval plan): negosiasi cuma masuk akal kalau sudah ada penawaran yang bisa
-// dinegosiasikan. JANGAN diperlonggar ke IN_REVIEW.
-const NEGOTIABLE_INQUIRY_STATUS = ['QUOTED'];
 
 // Batch 3C — gate tombol "Pakai/Ganti Penawaran Ini" (RPC prf_select_offer
 // menegakkan izin sebenarnya). Mirrors DB is_manager_or_above() — sama persis
@@ -98,7 +93,11 @@ const DEAL_CLOSED_STATUS = ['WON', 'LOST', 'CANCELLED'];
 const NEXT_STEP_HINT = {
   OPEN:        'Issue a PRF and submit it to pricing to advance to IN REVIEW.',
   IN_REVIEW:   'Send the quotation to the customer to advance to QUOTED.',
-  QUOTED:      'Issue the next quotation version to enter NEGOTIATION, or send a Sales Order to close as WON.',
+  /* "Send", bukan "Issue". Trigger trg_z_inquiry_negotiation_on_revision
+     menyala saat revisi ke-2+ BERPINDAH ke SENT — membuat revisi lalu
+     membiarkannya DRAFT tidak memindahkan apa pun. "Issue" bisa dibaca
+     "buat", dan itu janji yang tidak ditepati sistem. */
+  QUOTED:      'Send the next quotation version to enter NEGOTIATION, or send a Sales Order to close as WON.',
   NEGOTIATION: 'Send a Sales Order to close the deal as WON.',
 };
 
@@ -566,8 +565,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // B3 — Batalkan deal (alasan teks bebas) + Mulai Negosiasi (tanpa form).
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelSaving, setCancelSaving] = useState(false);
-  const [negoOpen, setNegoOpen] = useState(false);
-  const [negoSaving, setNegoSaving] = useState(false);
   // Ganti pemilik deal (owner_id). Panel inline, bukan modal: aksi ini tak punya
   // form alasan seperti Tandai Kalah/Batalkan — cuma satu dropdown.
   const [ownerOpen,   setOwnerOpen]   = useState(false);
@@ -767,7 +764,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // B3 — gate dua aksi baru. Penegak izin sebenarnya tetap RLS inquiries_update;
   // ini murni lapis UI (fail-closed: status tak dikenal -> tombol tak dirender).
   const canCancel = CANCELLABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
-  const canNegotiate = NEGOTIABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
 
   /* Ganti pemilik deal — DUA syarat.
      (1) Status masih di Pipeline. Sengaja memakai ulang LOSABLE_INQUIRY_STATUS:
@@ -914,39 +910,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     refetch();
   }
 
-  // ── B3: Mulai Negosiasi (QUOTED → NEGOTIATION). Ini SATU-SATUNYA jalur tulis
-  // NEGOTIATION di seluruh sistem — sebelum batch ini status itu ada di CHECK
-  // constraint tapi nol penulis, jadi lajurnya mustahil terisi. Bukan status
-  // terminal: closed_at/closed_by TIDAK ikut terstempel (trigger penutupan
-  // hanya menyala untuk WON/LOST/CANCELLED).
-  async function startNegotiation() {
-    if (!inquiry?.id) return;
-    const prevStatus = inquiry.status || 'OPEN';
-    setNegoSaving(true);
-    const { data, error } = await supabase
-      .from('inquiries')
-      .update({ status: 'NEGOTIATION' })
-      .eq('id', inquiry.id)
-      .select('id');
-    setNegoSaving(false);
-    if (error) { showToast?.('Failed to start negotiation: ' + error.message, 'error'); return; }
-    // RLS bisa menyaring baris tanpa error → 0 baris = gagal senyap (TD-161).
-    if (!data || data.length === 0) {
-      showToast?.('Failed to start negotiation: you do not have permission to modify this deal.', 'error');
-      return;
-    }
-    logAudit(supabase, {
-      action: ACTION_TYPES.UPDATE_INQUIRY,
-      entityType: ENTITY_TYPES.INQUIRY,
-      entityId: inquiry.id,
-      entityLabel: inquiry.inquiry_no,
-      notes: `${prevStatus} → NEGOTIATION`,
-    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-    setNegoOpen(false);
-    showToast?.('Deal moved to negotiation.', 'success');
-    refetch();
-  }
-
   // ── Ganti pemilik deal (owner_id). Hanya selama status masih di Pipeline;
   // sesudah closed, trigger DB `trg_z_lock_inquiry_owner` menolak perubahan
   // dengan exception — gate di sini murni lapis UI, bukan penggantinya.
@@ -1068,7 +1031,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            ~986px saat masih tujuh tombol sementara kolom kiri cuma ~766px. Blok
            destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
            `marginLeft:auto`. */
-        toolbar={(onEditInquiry || canMarkLost || canCancel || canNegotiate || canReassignOwner) && (
+        toolbar={(onEditInquiry || canMarkLost || canCancel || canReassignOwner) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {onEditInquiry && (
             <button onClick={onEditInquiry} style={ACT_BTN}>
@@ -1080,12 +1043,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
               style={{ ...ACT_BTN, background: ownerOpen ? C.navySoft : '#fff' }}>
               <UserCog size={14} />Change Owner
-            </button>
-          )}
-          {canNegotiate && (
-            <button onClick={() => setNegoOpen(true)} disabled={negoSaving}
-              style={{ ...ACT_BTN, color: C.orange, cursor: negoSaving ? 'not-allowed' : 'pointer', opacity: negoSaving ? 0.6 : 1 }}>
-              <Handshake size={14} />{negoSaving ? 'Processing…' : 'Start Negotiation'}
             </button>
           )}
           {(canMarkLost || canCancel) && (
@@ -1463,23 +1420,6 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         cancelLabel="Cancel"
         onConfirm={createRevision}
         onCancel={() => setReviseOpen(false)}
-      />
-
-      {/* Mulai Negosiasi — konfirmasi polos, nol form. Ditutup SEGERA saat
-          konfirmasi supaya tombol "Ya" tak bisa diklik dobel (pola sama
-          offerSwitchConfirm). ⚠️ Tombol ini SENGAJA DITAHAN saat "Tandai Menang"
-          dicabut 8 Sep 2026: trigger versi-v2 quotation → NEGOTIATION BELUM ADA di
-          DB, jadi mencabutnya sekarang akan mematikan satu lajur Pipeline demi
-          rancangan yang belum dibangun. Dicabut bersamaan dgn pembuatan trigger itu. */}
-      <ConfirmModal
-        open={negoOpen}
-        variant="info"
-        title="Start Negotiation"
-        message="Move this deal to the NEGOTIATION stage? The offer has been sent and is being negotiated with the customer."
-        confirmLabel="Yes, Start Negotiation"
-        cancelLabel="Cancel"
-        onConfirm={() => { setNegoOpen(false); startNegotiation(); }}
-        onCancel={() => setNegoOpen(false)}
       />
     </div>
   );
