@@ -207,10 +207,22 @@ async function fetchWindow({ start, end }) {
       .limit(1000),
   ]);
   if (actRes.error) throw actRes.error;
+
+  /* Guard truncation — pola yang SAMA dengan CRMDashboardPage: kalau baris yang
+     kembali persis menyentuh plafon 1000, anggap terpotong dan kabarkan.
+     Sebelum ini ketiga query di atas memotong data DIAM-DIAM: laporan tetap
+     tampil rapi dengan angka yang salah, nol tanda apa pun. Dashboard setidaknya
+     memasang banner; halaman ini bahkan tidak. */
+  const truncated = [];
+  if ((actRes.data   || []).length === 1000) truncated.push('activities');
+  if ((prospRes.data || []).length === 1000) truncated.push('new accounts');
+  if ((quoRes.data   || []).length === 1000) truncated.push('quotations');
+
   return {
     activities: actRes.data || [],
     prospects: prospRes.data || [],
     quotations: quoRes.data || [],
+    truncated,
   };
 }
 
@@ -264,8 +276,8 @@ export default function CRMReportPage() {
 
   // ── live data ──
   const [salesList, setSalesList] = useState([]);
-  const [rawCur, setRawCur] = useState({ activities: [], prospects: [], quotations: [] });
-  const [rawPrev, setRawPrev] = useState({ activities: [], prospects: [], quotations: [] });
+  const [rawCur, setRawCur] = useState({ activities: [], prospects: [], quotations: [], truncated: [] });
+  const [rawPrev, setRawPrev] = useState({ activities: [], prospects: [], quotations: [], truncated: [] });
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   const selInit = useRef(false);
@@ -439,6 +451,16 @@ export default function CRMReportPage() {
     if (!prev) return cur ? 100 : 0;
     return Math.round(((cur - prev) / prev) * 100);
   };
+
+  /* Gabungan truncation kedua jendela. Jendela SEBELUMNYA ikut dihitung karena
+     setiap KPI di bawah memajang delta "vs previous period" — kalau pembanding
+     yang terpotong, panah naik/turunnya sama menyesatkannya dengan angka
+     utamanya. */
+  const truncated = useMemo(() => {
+    const all = [...(rawCur.truncated || []), ...(rawPrev.truncated || [])];
+    return [...new Set(all)];
+  }, [rawCur.truncated, rawPrev.truncated]);
+  const isTruncated = truncated.length > 0;
 
   const KPI_DEFS = [
     { key: "total", name: "Total Aktivitas", color: C.navy, Icon: Ic.Activity, val: k.total, prev: kPrev.total },
@@ -646,6 +668,19 @@ export default function CRMReportPage() {
         </div>
       ) : (
       <div style={st.body}>
+        {/* Banner truncation — ATM pola CRMDashboardPage secara LOKAL (dashboard
+            tidak punya komponen yang bisa dipinjam, dan me-refactornya di luar
+            scope). Nadanya netral: data terpotong itu keterbatasan pengambilan,
+            bukan kondisi darurat. */}
+        {isTruncated && (
+          <div style={{ margin: "0 0 16px", padding: "11px 14px", borderRadius: 10, background: tint(C.amber, 0.12), border: `1px solid ${tint(C.amber, 0.4)}`, color: C.ink, fontSize: 12.5, lineHeight: 1.6 }}>
+            <b>This report is incomplete.</b>{" "}
+            {truncated.join(", ")} hit the 1,000-row ceiling for this period, so every
+            figure below would be computed from partial data. Narrow the date range to
+            bring the result under the ceiling.
+          </div>
+        )}
+
         {/* KPI ROW */}
         <div style={st.kpiGrid}>
           {KPI_DEFS.map((d) => {
@@ -660,12 +695,19 @@ export default function CRMReportPage() {
                     <d.Icon style={{ ...iconBase, width: 20, height: 20, stroke: d.color }} />
                   </span>
                 </div>
-                <div style={st.kpiNum}>{d.val.toLocaleString("id-ID")}</div>
+                {/* Terpotong -> angka DAN deltanya sama-sama diganti penanda.
+                    Menyisakan salah satunya justru lebih buruk: pembaca akan
+                    mengira yang tersisa itu sah. */}
+                <div style={st.kpiNum}>{isTruncated ? "—" : d.val.toLocaleString("id-ID")}</div>
                 <div style={st.kpiTrendRow}>
-                  <span style={st.trendChip}>
-                    {up ? "▲" : "▼"} {Math.abs(change)}%
-                  </span>
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>vs previous period</span>
+                  {isTruncated ? (
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>data incomplete</span>
+                  ) : (<>
+                    <span style={st.trendChip}>
+                      {up ? "▲" : "▼"} {Math.abs(change)}%
+                    </span>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>vs previous period</span>
+                  </>)}
                 </div>
               </div>
             );
