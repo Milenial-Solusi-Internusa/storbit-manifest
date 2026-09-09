@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 
 export const HEAD = "'Montserrat', system-ui, sans-serif";
 export const BODY = "'Inter', system-ui, sans-serif";
@@ -636,10 +637,21 @@ function OfferMiniCard({ offer, isSelected, hasSelection, canSelect, busy, onSel
   );
 }
 
-/* ---------- PriceSummaryCard (derives best/min/max from quotations) ---------- */
+/* ---------- PriceSummaryCard (derives best/min/max from quotations) ----------
+   DUA SUMBU BERBEDA DI SATU KARTU — sengaja, jangan diseragamkan:
+
+   "Best Quote" = quotation ACCEPTED, kalau belum ada jatuh ke VERSI AKTIF
+   (ujung rantai revisi). BUKAN lagi nilai tertinggi historis. Sejak SUPERSEDED
+   ada, "tertinggi" hampir selalu berarti versi PERTAMA — negosiasi menurunkan
+   harga — sehingga kartu paling menonjol di halaman ini akan memajang angka
+   yang sudah tidak berlaku, lengkap dengan nomornya.
+
+   "Offer Range" TETAP menghitung SELURUH baris, termasuk SUPERSEDED. Di sinilah
+   sejarah negosiasi justru yang ingin dilihat: dari berapa turun ke berapa.
+   Ia sudah begitu sejak dulu (nol filter status) — tidak diubah. */
 export function PriceSummaryCard({ quotations, termMap }) {
   const accepted = quotations.find((q) => String(q.status).toUpperCase() === 'ACCEPTED');
-  const best = accepted || [...quotations].sort((a, b) => Number(b.total_amount || 0) - Number(a.total_amount || 0))[0] || null;
+  const best = accepted || pickActiveQuotation(quotations);
   const totals = quotations.map((q) => Number(q.total_amount || 0));
   const minT = totals.length ? Math.min(...totals) : null;
   const maxT = totals.length ? Math.max(...totals) : null;
@@ -652,7 +664,7 @@ export function PriceSummaryCard({ quotations, termMap }) {
           <div style={{ background: C.navy, borderRadius: 12, padding: '14px 16px', color: '#fff' }}>
             <div style={{ fontFamily: BODY, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Best Quote</div>
             <div style={{ fontFamily: HEAD, fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: '2px 0' }}>{fmtRp(best.total_amount)}</div>
-            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, opacity: 0.85 }}>{best.quotation_no}</div>
+            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, opacity: 0.85 }}>{formatQuotationNo(best.quotation_no, best.revision)}</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
             <InfoRow label="Valid Until" value={fmtDate(best.valid_until)} />
