@@ -11,6 +11,7 @@ import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { useProducts } from '../../hooks/useProducts';
 import { PPN_RATE, PPN_RATE_FREIGHT_FORWARDING } from '../../lib/taxConstants';
 import { getTodayWIB } from '../../lib/dateUtils';
+import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 
 // Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
 const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
@@ -183,20 +184,34 @@ function Field({ label, req, children, full }) {
 }
 
 // ─── Document number generator ────────────────────────────────────────────
-async function generateQuotationNo(companyId, companyCode) {
-  const year = new Date().getFullYear();
-  const { data, error } = await supabase.rpc('increment_document_sequence', {
-    p_company_id:     companyId,
-    p_document_type:  'QUO',
-    p_department_code:'CRM',
-    p_year:           year,
-    p_month:          0,
-  });
-  // No silent fallback: a non-sequential number (e.g. timestamp) risks duplicate /
-  // garbage document numbers. Surface the failure so the caller's try/catch aborts
-  // the save and shows an error instead of generating a bad number.
-  if (error) throw new Error('Failed to generate the document number, please try again.');
-  return `QUO/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
+// Nomor quotation DITURUNKAN dari nomor inquiry-nya: INQ/MSI/2026/007 menjadi
+// QUO/MSI/2026/007. Sebelumnya ia mengambil deret sendiri lewat
+// increment_document_sequence('QUO'), sehingga INQ/.../007 bisa melahirkan
+// QUO/.../031 — dua nomor yang tak bisa dihubungkan tanpa membuka datanya.
+//
+// Konsekuensi struktural yang DISENGAJA: satu inquiry = satu quotation_no.
+// Quotation KEDUA dari inquiry yang sama akan menabrak UNIQUE (quotation_no,
+// revision) — itu memang jalur yang benar, karena yang kedua seharusnya
+// REVISI, bukan quotation baru. Guard di `dupActiveQuotation` mencegah user
+// sampai ke sana, dan handler 23505 di handleSave menangkap sisanya.
+//
+// Efek samping: baris 'QUO' di document_sequences jadi dorman. Tidak di-drop
+// (tak berbahaya), tapi jangan dikira rusak.
+//
+// Segmen dipecah per '/' — BUKAN .replace('INQ','QUO'), karena nama customer
+// pun bisa memuat "INQ".
+function quotationNoFromInquiry(inquiryNo) {
+  const parts = String(inquiryNo || '').split('/');
+  // No silent fallback: nomor karangan jauh lebih berbahaya daripada simpan
+  // yang gagal. Caller's try/catch yang menampilkan pesannya.
+  if (parts.length < 2 || parts[0] !== 'INQ') {
+    throw new Error(
+      `Inquiry number "${inquiryNo || '(empty)'}" does not follow the INQ/... format, `
+      + 'so the quotation number cannot be derived from it. Fix the inquiry number first.',
+    );
+  }
+  parts[0] = 'QUO';
+  return parts.join('/');
 }
 
 // ─── Section component ────────────────────────────────────────────────────
@@ -415,6 +430,13 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   const [rateWarnings, setRateWarnings] = useState([]);
   const [saving,       setSaving]       = useState(false);
   const [errors,       setErrors]       = useState({});
+  // Hasil probe "inquiry ini sudah punya quotation?" (mode CREATE saja).
+  // Menyimpan inquiryId-nya sekalian supaya hasil basi tak pernah menempel di
+  // inquiry lain — lihat derivasi `dupActive` di bawah. Terisi → simpan
+  // diblokir, karena nomor quotation kini diturunkan dari nomor inquiry: yang
+  // kedua pasti menabrak UNIQUE (quotation_no, revision). Jalan keluarnya bukan
+  // "coba lagi" melainkan REVISI dari quotation yang sudah ada.
+  const [dupProbe, setDupProbe] = useState({ inquiryId: null, active: null });
 
   // ── DB-driven dropdowns (fallback to hardcoded const on error/empty) ──────
   const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
@@ -458,6 +480,48 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       });
     return () => { cancelled = true; };
   }, [profile?.company_id]);
+
+  /* Pratinjau nomor untuk header form (mode CREATE). Sengaja memakai try/catch:
+     `quotationNoFromInquiry` MELEMPAR untuk format tak sah — itu perilaku yang
+     benar saat menyimpan, tapi di pratinjau ia cukup diam supaya form tetap
+     bisa dibuka. Penolakan sesungguhnya tetap terjadi di handleSave. */
+  const previewQuotationNo = useMemo(() => {
+    const inq = inquiries.find(i => i.id === header.inquiry_id);
+    if (!inq?.inquiry_no) return '';
+    try { return quotationNoFromInquiry(inq.inquiry_no); } catch { return ''; }
+  }, [inquiries, header.inquiry_id]);
+
+  /* ── Guard duplikat: inquiry terpilih sudah punya quotation? ──────────────
+     Hanya di mode CREATE (termasuk duplicate & prefill-dari-PRF) — mode EDIT
+     memang menulis ulang baris yang sudah ada, jadi tak mungkin bentrok.
+
+     Ini diperiksa DI DEPAN, bukan cuma diandalkan handler 23505, supaya user
+     tidak mengisi form panjang lalu ditolak di detik terakhir. Handler 23505
+     tetap dipasang sebagai jaring: dua orang bisa menyimpan bersamaan. */
+  useEffect(() => {
+    if (isEdit || !header.inquiry_id) return undefined;
+    let cancelled = false;
+    supabase
+      .from('quotations')
+      .select('id, quotation_no, revision, status, created_at, deleted_at')
+      .eq('inquiry_id', header.inquiry_id)
+      .is('deleted_at', null)
+      .limit(1000)
+      .then(({ data }) => {
+        if (!cancelled) setDupProbe({ inquiryId: header.inquiry_id, active: pickActiveQuotation(data || []) });
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, header.inquiry_id]);
+
+  /* Hasil probe DITURUNKAN saat render, bukan di-reset lewat setState sinkron di
+     dalam effect. Dua alasan: (1) lint react-hooks/set-state-in-effect memang
+     melarangnya; (2) lebih benar — hasil probe hanya berlaku untuk inquiry yang
+     SEDANG dipilih, jadi pindah inquiry langsung membatalkannya tanpa menunggu
+     fetch berikutnya selesai. Tanpa perbandingan id ini ada jendela sempit di
+     mana peringatan milik inquiry lama menempel di inquiry baru. */
+  const dupActive = (!isEdit && header.inquiry_id && dupProbe.inquiryId === header.inquiry_id)
+    ? dupProbe.active
+    : null;
 
   // Load dropdowns
   useEffect(() => {
@@ -1060,10 +1124,10 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         showToast?.(submitNow ? 'Quotation di-submit' : 'Quotation updated');
       } else {
         // ── CREATE new quotation (insert; verify a row came back) ───────
-        const { data: companyRow } = await supabase
-          .from('companies').select('code').eq('id', profile.company_id).maybeSingle();
-        const companyCode  = companyRow?.code || 'MSI';
-        const quotation_no = await generateQuotationNo(profile.company_id, companyCode);
+        // Nomor diturunkan dari inquiry yang dipilih — nol round-trip tambahan,
+        // `inquiries` state sudah membawa inquiry_no di ketiga jalur fetch-nya.
+        const selectedInquiry = inquiries.find(i => i.id === header.inquiry_id);
+        const quotation_no = quotationNoFromInquiry(selectedInquiry?.inquiry_no);
 
         const insertPayload = {
           quotation_no,
@@ -1127,7 +1191,21 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
       onBack();
     } catch (err) {
-      showToast?.(err.message, 'error');
+      // 23505 = unique_violation. Kode SAJA TIDAK CUKUP: quotations juga punya
+      // quotations_pkey — tanpa cek nama constraint, bentrok id akan salah
+      // dilaporkan sebagai bentrok nomor. Pola identik dengan tiga jalur create
+      // lain (ProspectFormPage / CustomerListPage / App.jsx).
+      const isDupNo = err?.code === '23505'
+        && /quotations_quotation_no_revision_key/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
+      if (isDupNo) {
+        showToast?.(
+          'This inquiry already has a quotation with that number. '
+          + 'Open the existing quotation and create a revision instead.',
+          'error',
+        );
+      } else {
+        showToast?.(err.message, 'error');
+      }
     } finally {
       setSaving(false);
     }
@@ -1160,8 +1238,14 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>
               {isEdit ? 'Edit Quotation' : 'Create Quotation'}
             </h1>
+            {/* Pratinjau nomor NYATA begitu inquiry dipilih — nomornya kini
+                diturunkan dari nomor inquiry, jadi ia sudah bisa diketahui
+                sebelum disimpan. Placeholder lama menjanjikan deret 'QUO'
+                sendiri yang sudah tidak dipakai lagi. */}
             <p style={{ margin: 0, fontSize: 12.5, color: C.inkSoft }}>
-              {isEdit ? quotation.quotation_no : `QUO/${profile?.company_id ? 'MSI' : '…'}/${new Date().getFullYear()}/… • auto-generate`}
+              {isEdit
+                ? formatQuotationNo(quotation.quotation_no, quotation.revision)
+                : (previewQuotationNo || 'Select an inquiry — the quotation number follows it')}
             </p>
           </div>
         </div>
@@ -1489,13 +1573,30 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
               </div>
             </div>
 
+            {/* Inquiry ini sudah punya quotation → kedua tombol simpan mati.
+                Nomor quotation kini diturunkan dari nomor inquiry, jadi yang
+                kedua PASTI menabrak UNIQUE (quotation_no, revision). Jalan
+                keluarnya revisi dari quotation yang sudah ada, bukan mencoba
+                menyimpan ulang di sini. */}
+            {dupActive && (
+              <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 9, padding: '11px 13px', marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.accent, marginBottom: 4 }}>
+                  This inquiry already has a quotation
+                </div>
+                <div style={{ fontSize: 12, color: C.inkSoft, lineHeight: 1.5 }}>
+                  {formatQuotationNo(dupActive.quotation_no, dupActive.revision)} is already linked to
+                  this inquiry. Open it and create a revision instead of starting a new quotation.
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button onClick={() => handleSave(false)} disabled={saving}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13.5, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .7 : 1 }}>
+              <button onClick={() => handleSave(false)} disabled={saving || !!dupActive}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13.5, fontWeight: 700, cursor: (saving || dupActive) ? 'not-allowed' : 'pointer', opacity: (saving || dupActive) ? .7 : 1 }}>
                 <Save size={15} /> Save Draft
               </button>
-              <button onClick={() => handleSave(true)} disabled={saving || !header.inquiry_id}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: 'none', background: !header.inquiry_id ? C.line : C.accent, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: (saving || !header.inquiry_id) ? 'not-allowed' : 'pointer', boxShadow: header.inquiry_id ? '0 2px 8px rgba(47,107,63,.25)' : 'none', opacity: saving ? .7 : 1, transition: 'background .14s' }}>
+              <button onClick={() => handleSave(true)} disabled={saving || !header.inquiry_id || !!dupActive}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: 'none', background: (!header.inquiry_id || dupActive) ? C.line : C.accent, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: (saving || !header.inquiry_id || dupActive) ? 'not-allowed' : 'pointer', boxShadow: (header.inquiry_id && !dupActive) ? '0 2px 8px rgba(47,107,63,.25)' : 'none', opacity: saving ? .7 : 1, transition: 'background .14s' }}>
                 <Check size={15} /> Submit Quotation
               </button>
             </div>
