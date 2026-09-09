@@ -22,7 +22,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock, ArrowRight,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  Handshake, Ban, UserCog, Download,
+  Handshake, Ban, UserCog,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -33,7 +33,7 @@ import StatusBar from './v3/StatusBar';
 import FormSheet from './v3/FormSheet';
 import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
-import { RADIUS, SP, LINE, NAVY_SOFT, INK } from './v3/tokens';
+import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2 } from './v3/tokens';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
@@ -189,7 +189,7 @@ function TintBadge({ meta }) {
 const QUOTATION_COLUMNS = [
   { key: 'no', label: 'No', render: (r, i) => i + 1 },
   { key: 'quotation_no', label: 'Quotation No', render: (r) => (
-    <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy }}>{r.quotation_no}</span>
+    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{r.quotation_no}</span>
   ) },
   { key: 'created_at', label: 'Date', render: (r) => fmtDate(r.created_at) },
   { key: 'total_amount', label: 'Value', align: 'right', render: (r) => (
@@ -199,13 +199,18 @@ const QUOTATION_COLUMNS = [
     const m = QUO_STATUS[String(r.status || '').toUpperCase()] || QUO_STATUS.DRAFT;
     return <TintBadge meta={m} />;
   } },
-  /* Ikon Download SENGAJA dipertahankan disabled — ia menandai pekerjaan yang
-     belum jadi, dan menghapusnya menghilangkan penanda itu. Tombol "View"
-     duplikat tak ditambahkan: nomor quotation sudah membuka detailnya. */
+  /* Ikon Download disabled diganti tombol teks "View". Penanda "pekerjaan belum
+     jadi" yang dulu jadi alasan ikon itu bertahan sudah tidak sepadan harganya:
+     satu-satunya kontrol di kolom Actions berupa tombol mati membuat kolomnya
+     terbaca rusak, bukan terbaca "segera hadir".
+
+     Tak ada onClick sendiri — <tr> ListView sudah memegang onRowClick, dan klik
+     di sini menggelembung ke sana. Menduplikasi handler-nya justru membuka
+     peluang dua jalur navigasi yang bisa melenceng. */
   { key: 'actions', label: 'Actions', render: () => (
-    <button title="Download (coming soon)" disabled
-      style={{ background: 'none', border: 'none', cursor: 'not-allowed', color: C.textFaint, padding: 4, opacity: 0.5 }}>
-      <Download size={15} />
+    <button type="button"
+      style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: RADIUS.sm, cursor: 'pointer', color: C.navy, fontFamily: BODY, fontSize: 12, fontWeight: 600, padding: '4px 10px' }}>
+      View
     </button>
   ) },
 ];
@@ -213,7 +218,7 @@ const QUOTATION_COLUMNS = [
 const PRF_COLUMNS = [
   { key: 'no', label: 'No', render: (r, i) => i + 1 },
   { key: 'prf_no', label: 'PRF No', render: (r) => (
-    <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy }}>{r.prf_no}</span>
+    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{r.prf_no}</span>
   ) },
   { key: 'created_at', label: 'Date', render: (r) => fmtDate(r.created_at) },
   { key: 'service_type', label: 'Service Type', render: (r) => PRF_SERVICE_LABEL[r.service_type] || r.service_type || '—' },
@@ -446,7 +451,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
   return (
     <Card title="Price Breakdown" icon={<FileText size={17} />}>
       <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, marginBottom: 14 }}>
-        — <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: C.navy }}>{quotation.quotation_no}</span>
+        — <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{quotation.quotation_no}</span>
         {' '}· last edited {fmtDate(quotation.updated_at || quotation.created_at)}
       </div>
       {loading ? (
@@ -468,13 +473,13 @@ function QuotationItemsCard({ quotation, items, loading }) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <thead>
                       <tr>
-                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Description</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Cost Price</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Currency</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Sell Price</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Unit Label</th>
-                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>QTY</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#1B4D8A', background: '#F08C7D' }}>Total IDR</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'left',   fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Description</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Cost Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Currency</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Sell Price</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Unit Label</th>
+                        <th style={{ padding: '8px 8px',  textAlign: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>QTY</th>
+                        <th style={{ padding: '8px 12px', textAlign: 'right',  fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: MUTED, background: SURFACE_2 }}>Total IDR</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -496,7 +501,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
                             {fmtRp(row.total)}
                             {row.currency !== 'IDR' && (
                               <div style={{ fontSize: 10, color: C.textFaint, fontWeight: 400 }}>
-                                × kurs {(Number(row.exchange_rate) || 1).toLocaleString('id-ID')}
+                                × rate {(Number(row.exchange_rate) || 1).toLocaleString('id-ID')}
                               </div>
                             )}
                           </td>
@@ -1182,7 +1187,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
                         ))}
                     </div>
                   ) : (
-                    <span style={{ fontFamily: f.mono ? 'ui-monospace, monospace' : BODY, fontSize: 13, fontWeight: 600, color: C.text, textAlign: 'right', flex: 1 }}>
+                    <span style={{ fontFamily: f.mono ? FONT_MONO : BODY, fontSize: 13, fontWeight: 600, color: C.text, textAlign: 'right', flex: 1 }}>
                       {f.value == null || f.value === '' ? '—' : f.value}
                     </span>
                   )}
