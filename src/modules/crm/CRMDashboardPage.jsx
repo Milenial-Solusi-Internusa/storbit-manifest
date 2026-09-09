@@ -3431,6 +3431,20 @@ function CRMDashboardPage() {
     }
   }, [visitDraft, editVisitId, calVisits, profile, fetchDash, fetchCalVisits]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* Win Rate & Loss Reason keduanya diturunkan dari `closedInq`, jadi guard
+     yang sama (salesPerf) ikut menjatuhkan keduanya. Guard itu memang sudah
+     menyebut "win rate" di teksnya — tanpa penanda ini, banner mengatakan win
+     rate mungkin salah sementara kartunya tetap memajang persentase.
+
+     ⚠️ HARUS tetap DI ATAS `kpisReal`. `const` tidak ter-hoist nilainya (TDZ),
+     dan KEDUA array KPI di bawah membacanya — dulu ia terjepit di antara
+     keduanya, sehingga `kpisReal` menyentuhnya sebelum ia ada:
+     "ReferenceError: Cannot access 'winRateDegraded' before initialization",
+     white-screen yang LOLOS dari `npm run build` karena hanya muncul saat
+     dieksekusi. Kelas bug yang sama dengan insiden `handleNotifClick` vs
+     `navigateTo` (22 Jun 2026) — jangan dipindah ke bawah lagi. */
+  const winRateDegraded = !!dashData?.degraded?.salesPerf;
+
   // ── KPI cards from real data ─────────────────────────────────────────────
   const kpisReal = dashData ? [
     { label: "Active Prospects", icon: "users",       value: String(dashData.activeProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
@@ -3445,12 +3459,6 @@ function CRMDashboardPage() {
   ] : KPIS;
 
   // ── S2 — personal KPI cards (sales/operations view) ──────────────────────
-  /* Win Rate & Loss Reason keduanya diturunkan dari `closedInq`, jadi guard
-     yang sama (salesPerf) ikut menjatuhkan keduanya. Guard itu memang sudah
-     menyebut "win rate" di teksnya — tanpa penanda ini, banner mengatakan win
-     rate mungkin salah sementara kartunya tetap memajang persentase. */
-  const winRateDegraded = !!dashData?.degraded?.salesPerf;
-
   const progColor = (v, green, yellow) => v >= green ? '#22C55E' : v >= yellow ? '#F59E0B' : '#EF4444';
   const kpisSales = dashData ? [
     { label: "Calls This Week",     icon: "target",      value: String(dashData.callsThisWeek),       unit: "call",      accent: NAVY,      accentBg: "#EAF0F8", trend: null,
