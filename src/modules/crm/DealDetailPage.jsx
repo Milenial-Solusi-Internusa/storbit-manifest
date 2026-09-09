@@ -35,6 +35,7 @@ import Notebook from './v3/Notebook';
 import ListView from './v3/ListView';
 import { RADIUS, SP, LINE, NAVY_SOFT, INK, FONT_MONO, MUTED, SURFACE_2 } from './v3/tokens';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
+import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 import ConfirmModal from '../../components/ConfirmModal';
 import { LostReasonModal, CancelReasonModal } from './DealCloseModals';
 import { fetchOperationalRoster } from './salesRoster';
@@ -189,7 +190,7 @@ function TintBadge({ meta }) {
 const QUOTATION_COLUMNS = [
   { key: 'no', label: 'No', render: (r, i) => i + 1 },
   { key: 'quotation_no', label: 'Quotation No', render: (r) => (
-    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{r.quotation_no}</span>
+    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{formatQuotationNo(r.quotation_no, r.revision)}</span>
   ) },
   { key: 'created_at', label: 'Date', render: (r) => fmtDate(r.created_at) },
   { key: 'total_amount', label: 'Value', align: 'right', render: (r) => (
@@ -226,16 +227,28 @@ const PRF_COLUMNS = [
   { key: 'readiness', label: 'Readiness', render: (r) => <TintBadge meta={PRF_READINESS[prfReadinessKey(r)]} /> },
 ];
 
-/* Status quotation yang BENAR-BENAR dipakai sistem ini: DRAFT/SENT/SUBMITTED
-   terbukti ada di data produksi, ACCEPTED/REJECTED dirujuk kode (QuotationListPage,
-   PriceSummaryCard) walau baris-nya belum ada. Tak ada CHECK constraint di DB,
-   jadi kelimanya konvensi kode — nilai tak dikenal jatuh ke DRAFT, bukan dikarang. */
+/* Status quotation yang dipakai sistem ini. Tak ada CHECK constraint di DB,
+   jadi keenamnya konvensi kode — nilai tak dikenal jatuh ke DRAFT, bukan
+   dikarang.
+
+   SUPERSEDED lahir bersama RPC create_quotation_revision (migrasi
+   20260909000003). Tanpa entri di sini, fallback `|| QUO_STATUS.DRAFT` membuat
+   baris SUPERSEDED BERBOHONG tertulis "Draft" — dan itu bohong yang mahal,
+   karena "Draft" berarti belum pernah dikirim sementara SUPERSEDED berarti
+   sudah dikirim LALU digantikan.
+
+   Peta ini salah satu dari TIGA (dua lainnya di QuotationListPage dan
+   QuotationDetailPage). Sengaja belum disatukan — tapi ketiganya wajib
+   bergerak bersama.
+
+   SENT berlabel "Awaiting Customer Approval": nilai DB tetap 'SENT'. */
 const QUO_STATUS = {
-  DRAFT:     { label: 'Draft',     bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
-  SUBMITTED: { label: 'Submitted', bg: '#FBF0DD', color: '#916312', bd: '#E6D4B4' },
-  SENT:      { label: 'Sent',      bg: '#E4EEF7', color: '#1D5A96', bd: '#BCD0E4' },
-  ACCEPTED:  { label: 'Accepted',  bg: '#E1E9F2', color: '#144682', bd: '#B8C8DC' },
-  REJECTED:  { label: 'Rejected',  bg: '#FBE7E5', color: '#B33A2E', bd: '#EDC4C0' },
+  DRAFT:      { label: 'Draft',                      bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
+  SUBMITTED:  { label: 'Submitted',                  bg: '#FBF0DD', color: '#916312', bd: '#E6D4B4' },
+  SENT:       { label: 'Awaiting Customer Approval', bg: '#E4EEF7', color: '#1D5A96', bd: '#BCD0E4' },
+  ACCEPTED:   { label: 'Accepted',                   bg: '#E1E9F2', color: '#144682', bd: '#B8C8DC' },
+  REJECTED:   { label: 'Rejected',                   bg: '#FBE7E5', color: '#B33A2E', bd: '#EDC4C0' },
+  SUPERSEDED: { label: 'Superseded',                 bg: '#EDEBE7', color: '#6B6459', bd: '#D3D0CB' },
 };
 
 /* Subjudul kelompok + label mikro baris rute. Diangkat jadi konstanta karena
@@ -451,7 +464,7 @@ function QuotationItemsCard({ quotation, items, loading }) {
   return (
     <Card title="Price Breakdown" icon={<FileText size={17} />}>
       <div style={{ fontFamily: BODY, fontSize: 12.5, color: C.textMute, marginBottom: 14 }}>
-        — <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{quotation.quotation_no}</span>
+        — <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.navy }}>{formatQuotationNo(quotation.quotation_no, quotation.revision)}</span>
         {' '}· last edited {fmtDate(quotation.updated_at || quotation.created_at)}
       </div>
       {loading ? (
@@ -534,9 +547,11 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   const [account, setAccount] = useState(null);
   const [quotations, setQuotations] = useState([]);
   // Rincian Harga (tab Quotation) — items HANYA untuk quotation terbaru (lihat
-  // `latestQuotation` di bawah), bukan untuk semua quotation di daftar.
-  const [latestQuotationItems, setLatestQuotationItems] = useState([]);
-  const [latestItemsLoading, setLatestItemsLoading] = useState(false);
+  // `activeQuotation` di bawah), bukan untuk semua quotation di daftar.
+  const [activeQuotationItems, setActiveQuotationItems] = useState([]);
+  const [activeItemsLoading, setActiveItemsLoading] = useState(false);
+  const [reviseOpen, setReviseOpen] = useState(false);
+  const [revising,   setRevising]   = useState(false);
   const [prfs, setPrfs] = useState([]);
   const [activities, setActivities] = useState([]);
   const [profMap, setProfMap] = useState({});
@@ -591,7 +606,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
       const { data: quos } = await supabase
         .from('quotations')
-        .select('id, quotation_no, total_amount, status, valid_until, created_at, updated_at, payment_terms_id')
+        .select('id, quotation_no, revision, total_amount, status, valid_until, created_at, updated_at, payment_terms_id, deleted_at')
         .eq('inquiry_id', inq.id).is('deleted_at', null)
         .order('created_at', { ascending: false }).limit(1000);
 
@@ -687,17 +702,16 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     return () => { cancelled = true; };
   }, [inquiryId, reloadKey]);
 
-  // Quotation paling baru dibuat/diedit (updated_at, fallback created_at) — dipilih
-  // dari `quotations` yang SUDAH difetch di atas (bukan query list baru). Satu inquiry
-  // bisa punya banyak quotation/revisi; section "Rincian Harga" hanya menampilkan SATU.
-  const latestQuotation = useMemo(() => {
-    if (!quotations.length) return null;
-    return quotations.reduce((latest, q) => {
-      const qTime = new Date(q.updated_at || q.created_at).getTime();
-      const latestTime = new Date(latest.updated_at || latest.created_at).getTime();
-      return qTime > latestTime ? q : latest;
-    }, quotations[0]);
-  }, [quotations]);
+  /* Quotation AKTIF milik inquiry ini — ujung rantai versi, lewat helper bersama.
+     Menggantikan sumbu `updated_at` yang dipakai sebelumnya. Sumbu itu kini
+     SALAH: create_quotation_revision menyentuh `updated_at` baris LAMA (saat
+     menandainya SUPERSEDED), sehingga versi yang sudah digantikan bisa terlihat
+     "paling baru" dan justru versi aktifnya yang tersembunyi.
+
+     Definisinya sengaja SATU dengan yang dipakai QuotationDetailPage dan
+     QuotationFormPage — tiga tempat menghitung "aktif" sendiri-sendiri adalah
+     cara paling pasti untuk melenceng. */
+  const activeQuotation = useMemo(() => pickActiveQuotation(quotations), [quotations]);
 
   // Rincian Harga — SATU query tambahan setelah identitas quotation-terbaru diketahui
   // (bukan N+1: tidak fetch item untuk quotation lain di daftar). Di-key ke id saja,
@@ -705,22 +719,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // Pindah Stage / aksi lain di halaman ini).
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!latestQuotation?.id) { setLatestQuotationItems([]); return undefined; }
+    if (!activeQuotation?.id) { setActiveQuotationItems([]); return undefined; }
     let cancelled = false;
-    setLatestItemsLoading(true);
+    setActiveItemsLoading(true);
     supabase
       .from('quotation_items')
       .select('id, sort_order, group_name, description, currency, cost_price, unit_price, unit_label, qty, exchange_rate, total, notes, if_any')
-      .eq('quotation_id', latestQuotation.id)
+      .eq('quotation_id', activeQuotation.id)
       .order('sort_order', { ascending: true })
       .then(({ data, error }) => {
         if (cancelled) return;
         if (error) showToast?.('Failed to load price breakdown: ' + error.message, 'error');
-        setLatestQuotationItems(data || []);
-        setLatestItemsLoading(false);
+        setActiveQuotationItems(data || []);
+        setActiveItemsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [latestQuotation?.id, showToast]);
+  }, [activeQuotation?.id, showToast]);
 
   // Sumbu deal untuk StatusBar. Dinormalkan sekali di sini supaya render, banner
   // langkah berikutnya, dan gate penutupan membaca nilai yang sama.
@@ -871,6 +885,32 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setCancelOpen(false);
     showToast?.('Deal cancelled.', 'success');
+    refetch();
+  }
+
+  /* ── Revisi quotation dari tab ini ────────────────────────────────────────
+     Sesudah sukses: DIAM di tab, refetch, toast. TIDAK melempar user ke form
+     edit — itu menuntut prop baru dari App.jsx, dan halaman ini sengaja
+     dipertahankan lepas dari perubahan routing.
+
+     Guard status ada di RPC (hanya SENT/REJECTED yang boleh direvisi), jadi
+     penolakannya sampai sebagai toast berisi pesan RPC apa adanya — bukan
+     ditebak ulang di sini dengan aturan yang bisa melenceng dari DB. */
+  async function createRevision() {
+    if (!activeQuotation?.id) return;
+    setRevising(true);
+    const { error } = await supabase.rpc('create_quotation_revision', { p_quotation_id: activeQuotation.id });
+    setRevising(false);
+    setReviseOpen(false);
+    if (error) { showToast?.('Failed to create revision: ' + error.message, 'error'); return; }
+    logAudit(supabase, {
+      action: ACTION_TYPES.UPDATE_INQUIRY,
+      entityType: ENTITY_TYPES.QUOTATION,
+      entityId: activeQuotation.id,
+      entityLabel: formatQuotationNo(activeQuotation.quotation_no, activeQuotation.revision),
+      notes: 'Revisi quotation dibuat dari Detail Deal',
+    }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
+    showToast?.('Revision created as a new draft.', 'success');
     refetch();
   }
 
@@ -1250,22 +1290,34 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {/* `onSearch` sengaja TIDAK dioper: daftar quotation satu deal
                     isinya sedikit, dan sejak guard baru di ListView, kotak
-                    pencarian memang tak dirender kalau tak disediakan. */}
+                    pencarian memang tak dirender kalau tak disediakan.
+
+                    Tombol di slot `right` BERUBAH BENTUK, bukan bertambah.
+                    Sejak nomor quotation diturunkan dari nomor inquiry, inquiry
+                    yang sudah punya quotation TIDAK BISA lagi melahirkan
+                    quotation kedua (UNIQUE quotation_no+revision) — yang kedua
+                    memang seharusnya REVISI. Menyodorkan "Create Quotation" di
+                    sana berarti menawarkan jalan buntu. */}
                 <ListView
                   mode="table"
                   rows={quotations}
                   onRowClick={onViewQuotation}
                   emptyTitle="No quotations yet"
                   emptySub="Quotations created from this deal will appear here."
-                  right={(
+                  right={activeQuotation ? (
+                    <button onClick={() => setReviseOpen(true)} disabled={revising}
+                      style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff', cursor: revising ? 'not-allowed' : 'pointer', opacity: revising ? 0.6 : 1 }}>
+                      <FileText size={14} />{revising ? 'Working…' : 'Create Revision'}
+                    </button>
+                  ) : (
                     <button onClick={() => onCreateQuotation(inquiryId)} style={{ ...ACT_BTN, background: C.orange, border: `1px solid ${C.orange}`, color: '#fff' }}>
                       <FileText size={14} />Create Quotation
                     </button>
                   )}
                   columns={QUOTATION_COLUMNS}
                 />
-                {latestQuotation && (
-                  <QuotationItemsCard quotation={latestQuotation} items={latestQuotationItems} loading={latestItemsLoading} />
+                {activeQuotation && (
+                  <QuotationItemsCard quotation={activeQuotation} items={activeQuotationItems} loading={activeItemsLoading} />
                 )}
                 <PriceSummaryCard quotations={quotations} termMap={termMap} />
               </div>
@@ -1393,6 +1445,24 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         saving={cancelSaving}
         onSave={markInquiryCancel}
         onCancel={() => setCancelOpen(false)}
+      />
+
+      {/* Revisi quotation — konfirmasi polos. Perlu konfirmasi karena akibatnya
+          menyentuh DUA baris sekaligus: versi lama jadi SUPERSEDED dan versi
+          baru lahir. Ditutup di dalam handler supaya tombol "Ya" tak bisa
+          diklik dobel. */}
+      <ConfirmModal
+        open={reviseOpen}
+        variant="info"
+        title="Create Revision"
+        message={activeQuotation
+          ? `Create the next version of ${formatQuotationNo(activeQuotation.quotation_no, activeQuotation.revision)}? `
+            + 'The current version will be marked SUPERSEDED and a new draft will be created with the same items.'
+          : ''}
+        confirmLabel={revising ? 'Working…' : 'Yes, Create Revision'}
+        cancelLabel="Cancel"
+        onConfirm={createRevision}
+        onCancel={() => setReviseOpen(false)}
       />
 
       {/* Mulai Negosiasi — konfirmasi polos, nol form. Ditutup SEGERA saat
