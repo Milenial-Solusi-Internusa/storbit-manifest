@@ -1,12 +1,20 @@
 // src/modules/crm/QuotationDetailPage.jsx
 // Read-only detail view — sectioned table, internal cost/profit (no-print), PDF via @react-pdf/renderer (QuotationPDF)
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, Edit2, Download, Receipt, Send, Copy } from 'lucide-react';
+import { ChevronLeft, Edit2, Download, Receipt, Send, Copy, GitBranch, CheckCircle2, XCircle } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import ConfirmModal from '../../components/ConfirmModal';
 import QuotationPDF from './QuotationPDF';
+import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
+
+/* Gate FE untuk revisi & pencatatan hasil. CERMIN dari RLS quotations_update
+   (pemilik ATAU manager-ke-atas) — RPC di DB yang menegakkan izin sebenarnya,
+   ini murni supaya tombol tak muncul untuk orang yang pasti ditolak.
+   Daftar rolenya disalin dari DealDetailPage.jsx; pola mirror-per-file ini
+   sudah berulang di codebase (lihat catatan di file itu). */
+const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -86,12 +94,21 @@ function SlaCard({ quot }) {
     `Quote sent in ${fmtDur(dur)} — over the ${targetH}-hour target (SLA missed)`);
 }
 
+/* Peta status KETIGA di codebase ini (dua lainnya: QuotationListPage.STATUS_META
+   dan DealDetailPage.QUO_STATUS). Sengaja TIDAK disatukan — penyatuannya di luar
+   scope batch ini — tapi ketiganya WAJIB bergerak bersama: fallback di bawah
+   jatuh ke DRAFT, jadi status yang tak terdaftar akan BERBOHONG tertulis "Draft".
+
+   SENT berlabel "Awaiting Customer Approval": nilai DB-nya tetap 'SENT'
+   (SUPERSEDED satu-satunya nilai baru). "Sent" cuma bercerita soal aksi kita
+   sendiri; yang ingin diketahui pembaca adalah bola ada di siapa. */
 const STATUS_META = {
-  DRAFT:     { label: 'Draft',     bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
-  SENT:      { label: 'Sent',      bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
-  ACCEPTED:  { label: 'Accepted',  bg: C.okBg,      color: C.ok,      bd: C.okBd      },
-  REJECTED:  { label: 'Rejected',  bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
-  SUBMITTED: { label: 'Submitted', bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  DRAFT:      { label: 'Draft',                      bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
+  SENT:       { label: 'Awaiting Customer Approval', bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  ACCEPTED:   { label: 'Accepted',                   bg: C.okBg,      color: C.ok,      bd: C.okBd      },
+  REJECTED:   { label: 'Rejected',                   bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
+  SUBMITTED:  { label: 'Submitted',                  bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  SUPERSEDED: { label: 'Superseded',                 bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
 };
 
 const SERVICE_TYPE_LABELS = {
@@ -139,9 +156,71 @@ function InfoRow({ label, value }) {
   );
 }
 
+/* ── RejectReasonModal — LOKAL, sengaja tidak dipindah ke DealCloseModals ───
+   File itu khusus penutupan DEAL (LostReasonModal/CancelReasonModal); menolak
+   quotation bukan menutup deal, dan memindahkannya ke sana berarti menyentuh
+   file di luar scope. Bentuknya sengaja MENIRU CancelReasonModal: state lokal,
+   trim() wajib, error inline — supaya dua dialog beralasan di produk ini terasa
+   sama.
+
+   Alasan WAJIB karena set_quotation_outcome() menolak REJECTED tanpa alasan
+   dengan exception. Memvalidasi di sini membuat penolakannya terbaca sebagai
+   pesan form, bukan sebagai error server. */
+function RejectReasonModal({ open, quotationNo, saving, onSave, onCancel }) {
+  const [reason, setReason] = useState('');
+  const [err, setErr] = useState('');
+
+  if (!open) return null;
+
+  const submit = () => {
+    if (!reason.trim()) { setErr('A rejection reason is required.'); return; }
+    setErr('');
+    onSave?.(reason.trim());
+  };
+
+  const field = {
+    width: '100%', boxSizing: 'border-box', borderRadius: 8, padding: '9px 11px',
+    border: `1px solid ${C.line}`, background: C.surface, fontSize: 13,
+    color: C.ink, fontFamily: 'inherit', outline: 'none', resize: 'vertical',
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,18,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+      <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: '22px 24px', width: 460, maxWidth: '100%', boxShadow: '0 12px 40px rgba(0,0,0,.18)' }}>
+        <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 6 }}>Record customer rejection</div>
+        <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>
+          {quotationNo} will be marked REJECTED. Record why the customer turned it down —
+          this is the only place that reason is kept.
+        </div>
+
+        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.inkFaint, marginBottom: 5 }} htmlFor="quo-reject-reason">
+          Rejection reason
+        </label>
+        <textarea
+          id="quo-reject-reason" rows={4} style={field} value={reason} autoFocus
+          onChange={(e) => { setReason(e.target.value); if (err) setErr(''); }}
+          placeholder="e.g. price above competitor, schedule did not fit, budget postponed"
+        />
+        {err && <div style={{ marginTop: 7, fontSize: 12, color: C.danger, fontWeight: 600 }}>{err}</div>}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, marginTop: 18 }}>
+          <button onClick={onCancel} disabled={saving}
+            style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={submit} disabled={saving}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.danger, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .7 : 1 }}>
+            {saving ? 'Saving…' : 'Mark Rejected'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────
 export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDuplicate, showToast }) {
-  const { profile, user } = useAuth();
+  const { profile, user, erpRoles } = useAuth();
   const [quot,           setQuot]           = useState(null);
   const [items,          setItems]          = useState([]);
   const [paymentTermName,setPaymentTermName]= useState('');
@@ -155,6 +234,14 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
   // = satu detail view, jadi query tambahan tunggal ini aman (bukan risiko N+1
   // list). Tidak ada fallback ke pic_* — kosong tampil apa adanya ('-').
   const [primaryContact, setPrimaryContact] = useState(null);
+  /* Saudara se-quotation_no. Dibutuhkan HANYA untuk menjawab "ini revisi
+     terakhir atau bukan" — kedua RPC memang menolak revisi lama, tapi tombol
+     yang muncul-lalu-ditolak adalah UX yang buruk: user tak punya cara tahu
+     kenapa. Satu query kecil per buka halaman, bukan risiko N+1 (ini detail
+     view, bukan list). */
+  const [siblings,   setSiblings]   = useState([]);
+  const [actionSaving, setActionSaving] = useState(false);
+  const [rejectOpen,   setRejectOpen]   = useState(false);
 
   // ── Effect 1: fetch quotation + items (only re-runs when quotationId changes) ──
   useEffect(() => {
@@ -167,6 +254,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
         .from('quotations')
         .select(`
           id, quotation_no, revision, status, service_type, route,
+          created_by, accepted_at, accepted_by, rejection_reason,
           valid_until, created_at, notes, terms, usd_rate,
           subtotal, tax_amount, total_amount, payment_terms_id,
           pricing_done_at, quote_sent_at, discount_pct,
@@ -176,7 +264,8 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
           gw, dimension, cw, cbm, container_type, container_qty,
           prospect:accounts!quotations_prospect_id_fkey(name, address, city),
           customer:accounts!quotations_customer_id_fkey(name, address, city, email, phone),
-          inquiry:inquiries!quotations_inquiry_id_fkey(inquiry_no)
+          inquiry:inquiries!quotations_inquiry_id_fkey(inquiry_no),
+          accepted_by_profile:profiles!quotations_accepted_by_fkey(full_name)
         `)
         .eq('id', quotationId)
         .maybeSingle(),
@@ -269,6 +358,74 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
 
   const clientName = quot?.prospect?.name || quot?.customer?.name || '—';
 
+  /* ── Saudara se-nomor: dipakai untuk gate "revisi terakhir" ──────────────── */
+  useEffect(() => {
+    if (!quot?.quotation_no) return undefined;
+    let cancelled = false;
+    supabase
+      .from('quotations')
+      .select('id, quotation_no, revision, status, created_at, deleted_at')
+      .eq('quotation_no', quot.quotation_no)
+      .is('deleted_at', null)
+      .limit(1000)
+      .then(({ data }) => { if (!cancelled) setSiblings(data || []); });
+    return () => { cancelled = true; };
+  }, [quot?.quotation_no, quot?.status, quot?.revision]);
+
+  /* Cermin RLS quotations_update: pemilik ATAU manager-ke-atas. Seluruh role
+     aktif diperiksa (bukan erpRole primer) karena is_manager_or_above() di DB
+     juga EXISTS lintas role — role prioritas lebih tinggi bisa menutupi yang
+     lain di erpRole. */
+  const isManagerOrAbove = erpRoles?.some((r) => MANAGER_OR_ABOVE.includes(r.roles?.code));
+  const canAct = !!quot && (quot.created_by === profile?.id || !!isManagerOrAbove);
+
+  /* Revisi terakhir = ujung rantai versi. pickActiveQuotation dipakai supaya
+     definisinya SATU dengan yang dipakai Detail Deal & form — kalau di sini
+     dihitung sendiri, dua tempat pasti melenceng suatu hari. */
+  const isLatestRevision = useMemo(() => {
+    if (!quot) return false;
+    if (siblings.length === 0) return true; // saudara belum termuat: jangan sembunyikan apa pun
+    return pickActiveQuotation(siblings)?.id === quot.id;
+  }, [siblings, quot]);
+
+  const canRevise = canAct && isLatestRevision && ['SENT', 'REJECTED'].includes(quot?.status);
+  const canRecordOutcome = canAct && isLatestRevision && quot?.status === 'SENT';
+
+  // ── Revisi baru: RPC menyalin header+item, sumber jadi SUPERSEDED ─────────
+  const handleCreateRevision = async () => {
+    setActionSaving(true);
+    try {
+      const { error } = await supabase.rpc('create_quotation_revision', { p_quotation_id: quotationId });
+      if (error) throw error;
+      showToast?.('Revision created as a new draft');
+      onBack();
+    } catch (err) {
+      showToast?.('Failed to create revision: ' + err.message, 'error');
+    } finally {
+      setActionSaving(false);
+    }
+  };
+
+  // ── Catat jawaban customer (ACCEPTED / REJECTED) ─────────────────────────
+  const handleOutcome = async (outcome, reason = null) => {
+    setActionSaving(true);
+    try {
+      const { error } = await supabase.rpc('set_quotation_outcome', {
+        p_quotation_id: quotationId,
+        p_outcome:      outcome,
+        p_reason:       reason,
+      });
+      if (error) throw error;
+      setRejectOpen(false);
+      showToast?.(outcome === 'ACCEPTED' ? 'Quotation marked as accepted' : 'Quotation marked as rejected');
+      onBack();
+    } catch (err) {
+      showToast?.('Failed to record the outcome: ' + err.message, 'error');
+    } finally {
+      setActionSaving(false);
+    }
+  };
+
   // ── Kirim ke Customer (BD-05) — set status SENT + quote_sent_at ──────────
   const handleSendToCustomer = async () => {
     setSending(true);
@@ -301,7 +458,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${quot?.quotation_no || 'quotation'}_rev${quot?.revision ?? 1}.pdf`;
+      a.download = `${formatQuotationNo(quot?.quotation_no, quot?.revision).replace(/\//g, '-')}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
       showToast?.('PDF downloaded');
@@ -345,7 +502,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               <Receipt size={17} color={C.accent} />
             </div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'monospace', color: C.accent }}>{quot.quotation_no}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'monospace', color: C.accent }}>{formatQuotationNo(quot.quotation_no, quot.revision)}</div>
               <div style={{ fontSize: 12, color: C.inkSoft }}>{clientName}</div>
             </div>
           </div>
@@ -357,7 +514,40 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               onClick={() => setConfirmSend(true)}
               style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1B4D8A', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(20,70,130,.22)' }}
             >
-              <Send size={14} /> Kirim ke Customer
+              <Send size={14} /> Send to Customer
+            </button>
+          )}
+
+          {/* Tiga tombol versi/approval. Sengaja HILANG (bukan disabled) saat
+              tak relevan: tombol mati tanpa penjelasan memaksa user menebak,
+              sementara gate-nya di sini punya tiga sebab berbeda (bukan
+              pemilik/manager · bukan revisi terakhir · status tak cocok).
+              RPC di DB tetap yang menegakkan izin sebenarnya. */}
+          {canRecordOutcome && (
+            <>
+              <button
+                onClick={() => handleOutcome('ACCEPTED')}
+                disabled={actionSaving}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: C.ok, color: '#fff', fontSize: 13, fontWeight: 700, cursor: actionSaving ? 'not-allowed' : 'pointer', opacity: actionSaving ? .7 : 1 }}
+              >
+                <CheckCircle2 size={14} /> Mark Accepted
+              </button>
+              <button
+                onClick={() => setRejectOpen(true)}
+                disabled={actionSaving}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.dangerBd}`, background: C.dangerBg, color: C.danger, fontSize: 13, fontWeight: 700, cursor: actionSaving ? 'not-allowed' : 'pointer', opacity: actionSaving ? .7 : 1 }}
+              >
+                <XCircle size={14} /> Mark Rejected
+              </button>
+            </>
+          )}
+          {canRevise && (
+            <button
+              onClick={handleCreateRevision}
+              disabled={actionSaving}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13, fontWeight: 600, cursor: actionSaving ? 'not-allowed' : 'pointer', opacity: actionSaving ? .7 : 1 }}
+            >
+              <GitBranch size={14} /> {actionSaving ? 'Working…' : 'Create Revision'}
             </button>
           )}
           <button
@@ -399,13 +589,30 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
               <InfoRow label="Prospect / Customer" value={clientName} />
               <InfoRow label="Service Type" value={SERVICE_TYPE_LABELS[quot.service_type] || quot.service_type} />
               <InfoRow label="Routing" value={quot.route} />
-              <InfoRow label="Quotation No" value={<span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>{quot.quotation_no}</span>} />
+              <InfoRow label="Quotation No" value={<span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>{formatQuotationNo(quot.quotation_no, quot.revision)}</span>} />
               <InfoRow label="Inquiry No" value={quot.inquiry?.inquiry_no ? <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1B4D8A' }}>{quot.inquiry.inquiry_no}</span> : '—'} />
               <InfoRow label="Date" value={fmtDate(quot.created_at)} />
               <InfoRow label="Valid Until" value={fmtDate(quot.valid_until)} />
               <InfoRow label="Payment Terms" value={paymentTermName} />
               <InfoRow label="Diskon" value={`${discountPct}%`} />
               <InfoRow label="Status" value={<StatusBadge status={quot.status} />} />
+
+              {/* Jejak jawaban customer. "Recorded by" — BUKAN "Approved by":
+                  yang menyetujui itu CUSTOMER, yang tercatat di sini adalah
+                  staff internal yang memasukkan jawabannya. Label yang keliru di
+                  sini akan terbaca sebagai persetujuan internal. */}
+              {quot.accepted_at && (
+                <InfoRow label="Accepted On" value={fmtDate(quot.accepted_at)} />
+              )}
+              {quot.accepted_at && (
+                <InfoRow label="Recorded By" value={quot.accepted_by_profile?.full_name} />
+              )}
+              {quot.rejection_reason && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <InfoRow label="Rejection Reason" value={quot.rejection_reason} />
+                </div>
+              )}
+
               {quot.notes && <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Notes" value={quot.notes} /></div>}
             </div>
             {/* Sales-only internal notes — never in the customer PDF (no-print + excluded from #quotation-print-area) */}
@@ -580,7 +787,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '22px', fontWeight: 'bold', letterSpacing: '3px', color: '#1B4D8A' }}>QUOTATION</div>
-              <div style={{ fontSize: '12px', marginTop: '6px', color: '#333' }}>{quot.quotation_no}{quot.revision ? ` rev.${quot.revision}` : ''}</div>
+              <div style={{ fontSize: '12px', marginTop: '6px', color: '#333' }}>{formatQuotationNo(quot.quotation_no, quot.revision)}</div>
               <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>Tanggal: {fmtDateShort(quot.created_at)}</div>
               <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>Valid Until: {fmtDateShort(quot.valid_until)}</div>
             </div>
@@ -598,7 +805,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
             const rows = [
               ['TO',         clientName,         'SALES REP', marketingName           ],
               ['ADDRESS',    custAddr,           'EMAIL',     picEmail                ],
-              ['QUO. NO.',   quot.quotation_no,  'MOBILE',    picPhone                ],
+              ['QUO. NO.',   formatQuotationNo(quot.quotation_no, quot.revision), 'MOBILE', picPhone ],
               ['INQUIRY NO.', inquiryNo,         'OFFICE',    '+62 21-3970-7558/9'    ],
               ['DATE',     fmtDateShort(quot.created_at), 'VALIDITY', fmtDateShort(quot.valid_until)],
             ];
@@ -798,12 +1005,24 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
       <ConfirmModal
         open={confirmSend}
         title="Send to Customer?"
-        message={`Quotation ${quot.quotation_no} will be marked SENT and the send time recorded for SLA calculation. Continue?`}
-        confirmLabel={sending ? 'Mengirim…' : 'Yes, Send'}
+        message={`Quotation ${formatQuotationNo(quot.quotation_no, quot.revision)} will be marked SENT and the send time recorded for SLA calculation. Continue?`}
+        confirmLabel={sending ? 'Sending…' : 'Yes, Send'}
         cancelLabel="Cancel"
         variant="info"
         onConfirm={handleSendToCustomer}
         onCancel={() => setConfirmSend(false)}
+      />
+
+      {/* `key` mengikutkan `rejectOpen` supaya state lokal modal (isi textarea +
+          pesan error) lahir bersih tiap kali dibuka — pola sama dengan
+          CancelReasonModal di DealDetailPage. */}
+      <RejectReasonModal
+        key={`reject-${quotationId}-${rejectOpen}`}
+        open={rejectOpen}
+        quotationNo={formatQuotationNo(quot.quotation_no, quot.revision)}
+        saving={actionSaving}
+        onSave={(reason) => handleOutcome('REJECTED', reason)}
+        onCancel={() => setRejectOpen(false)}
       />
     </div>
   );
