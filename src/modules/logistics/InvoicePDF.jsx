@@ -118,6 +118,12 @@ const KOP_HEADER_CM = 3;    // SEMENTARA, dari foto cetak percobaan 9 Sep 2026 (
 const KOP_FOOTER_CM = 4.5;
 const PRINT_PAD_TOP = KOP_HEADER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
 const PRINT_PAD_BOTTOM = KOP_FOOTER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
+// Ruang yang dibebaskan waktu batas atas dikecilkan dari 4 cm — dipakai HABIS
+// oleh blok meta dokumen, dan bukan oleh isi yang lain. Ditulis sebagai
+// turunan KOP_HEADER_CM, bukan angka mati, supaya kalibrasi ulang batas kop
+// otomatis membawa serta blok meta tanpa ada yang perlu ingat menyetel dua
+// tempat. Lihat pemakaiannya di blok meta varian cetak di bawah.
+const META_LIFT_PT = (4 - KOP_HEADER_CM) * CM_TO_PT;
 // Varian download tak punya kop fisik yang harus dihindari — margin tipis asli.
 const SCREEN_PAD_TOP = 20;
 const SCREEN_PAD_BOTTOM = 24;
@@ -382,6 +388,27 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
           </>
         )}
 
+        {/* ⚠️ NAIK 1 CM (10 Sep 2026) — dan cara naiknya penting. Blok ini tidak
+            digeser sendiri; yang terjadi adalah batas atas kertas kop
+            dikecilkan 4 cm -> 3 cm (commit sebelumnya), lalu ruang 1 cm yang
+            terbebas itu DISERAP KEMBALI oleh `marginBottom` di bawah sini
+            (3 + META_LIFT_PT). Hasil bersihnya: cuma blok meta yang naik,
+            Billed By/To dan segala yang di bawahnya TETAP di koordinat semula
+            (diverifikasi: BILLED BY tetap y=172,63 — identik dengan sebelum
+            kedua commit itu), dan paginasi TIDAK berubah sama sekali.
+
+            ⚠️ Konsekuensi yang harus diingat kalau batas kop dikalibrasi ulang:
+            kenaikan blok meta SAMA PERSIS dengan pengurangan KOP_HEADER_CM.
+            Menyetel batas ke 3,5 cm otomatis menurunkan kenaikan meta jadi
+            0,5 cm — bukan bug, itu memang definisi META_LIFT_PT. Kalau yang
+            diinginkan meta naik 1 cm sementara batasnya 3,5 cm, marginBottom
+            inilah yang harus dilepas dari META_LIFT_PT, dan konsekuensinya
+            SELURUH isi ikut naik 0,5 cm.
+
+            ⚠️ JANGAN diganti dengan marginTop negatif pada blok ini. Itu
+            menaruh meta di atas padding halaman — di luar batas kop, persis
+            hal yang padding itu jaga — dan tak ada yang menahannya waktu
+            KOP_HEADER_CM dikecilkan lagi kelak. */}
         {/* Meta dokumen — HANYA varian cetak. Ketiganya hidup di blok kop yang
             dicabut untuk kertas kop, tapi tanggal & nomor SP berbeda tiap
             invoice sehingga kop tercetak mustahil memuatnya.
@@ -407,7 +434,7 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
             dan menang di kolom tiga-baris yang mencakup 28,6% DC, sekaligus
             membuat batasnya tidak lagi bergantung DC mana. */}
         {isPrint && (
-          <View style={[s.billRow, { marginBottom: 3 }]}>
+          <View style={[s.billRow, { marginBottom: 3 + META_LIFT_PT }]}>
             <View style={s.billCol} />
             <View style={[s.billCol, s.metaRow]}>
               <MetaLine s={s} label="Invoice Date" value={fmtDate(invoice.invoice_date)} />
