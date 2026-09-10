@@ -140,7 +140,24 @@ const makeStyles = (print) => StyleSheet.create({
   metaKey: { width: 68, fontWeight: 600, fontSize: 9.75, color: PURPLE },
   metaColon: { width: 8, fontWeight: 600, fontSize: 9.75, color: PURPLE },
   // Nilai sengaja gaya biasa: tidak tebal, warna tinta normal.
-  metaVal: { fontSize: 9.75, color: INK },
+  //
+  // Rata KANAN hanya di varian cetak. `flex:1` membuat kolom nilai memakan
+  // sisa lebar kolom kanan billRow (324..566), lalu `textAlign:'right'`
+  // mendorong isinya ke tepi 566 — tepi yang SAMA dengan kolom SUBTOTAL tabel
+  // dan tepi kanan kotak Grand Total, jadi ketiga blok itu segaris.
+  //
+  // ⚠️ FORK-nya WAJIB, bukan kerapian. Di varian download blok meta duduk di
+  // kolom kiri kop yang selebar halaman, jadi rata kanan akan melempar
+  // nilainya ke x=478 sementara titik duanya tetap di x=114 — terukur, bukan
+  // dugaan. Ini kelas kebocoran yang sama dengan yang sudah diperingatkan
+  // untuk `hr` di catatan DUA VARIAN di atas: satu nilai style yang dipakai
+  // bersama PASTI bocor ke varian yang tidak memintanya.
+  //
+  // Titik dua tetap sejajar sesudah perubahan ini — diverifikasi dari
+  // koordinat x di PDF hasil render: x=392 di ketiga baris varian cetak,
+  // x=114 di ketiga baris varian download. Rata kanan hanya menyentuh kolom
+  // nilai; `metaKey` 68pt dan `metaColon` 8pt tidak berubah sama sekali.
+  metaVal: { ...(print ? { flex: 1, textAlign: 'right' } : {}), fontSize: 9.75, color: INK },
 
   hr: { height: 1, backgroundColor: RULE_16, marginVertical: print ? 4 : 7.5 },
 
