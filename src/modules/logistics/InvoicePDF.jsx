@@ -89,7 +89,22 @@ function fmtDate(input) {
 // masing-masing ditambah jarak aman 6 pt supaya isi tidak menempel persis di
 // batas kop. Angka 6 pt itu BUKAN angka baru: sama dengan yang dipakai
 // StorbitReportPDF.jsx (paddingTop = topH + 6, paddingBottom = botH + 6).
-// Hasilnya = 119,39 pt (atas) dan 133,56 pt (bawah).
+//
+// ⚠️⚠️ KEDUANYA SUDAH DISETEL ULANG 10 Sep 2026 — 4 -> 3 (atas) dan
+// 4,5 -> 3,5 (bawah). Cetak percobaan di kertas kop sungguhan menunjukkan isi
+// mulai TERLALU JAUH di bawah logo: batas atas yang benar adalah tepi BAWAH
+// LOGO Storbit, bukan tinggi pita kop 4 cm yang ikut membawa ruang kosong di
+// bawah logo. Batas bawah dikecilkan atas alasan yang sejenis (ruang terbuang
+// di atas kaki kop), sekaligus SATU-SATUNYA cara menurunkan blok Terms &
+// Payment 1 cm — ia pakai marginTop:'auto' dan sudah menempel batas lama
+// (diukur: baseline disclaimer 655,86, batas 658,44, sisa 2,58 pt).
+//
+// ⚠️ KEDUA ANGKA BARU ITU SEMENTARA. Keduanya diturunkan dari PEMBACAAN FOTO
+// cetak percobaan 9 Sep 2026, BUKAN dari pengukuran penggaris langsung di
+// kertas — bedanya nyata, dan angka lamanya (4 dan 4,5) justru berasal dari
+// pengukuran langsung. Disetel ulang sesudah cetak percobaan berikutnya kalau
+// masih meleset. Angka lama sengaja tetap tertulis di atas supaya
+// perubahannya terlacak.
 //
 // ⚠️ Ini KALIBRASI, bukan konstanta abadi. Kalau cetak percobaan ternyata
 // masih menabrak kop atau kakinya, yang disetel adalah dua angka cm di bawah
@@ -99,7 +114,7 @@ function fmtDate(input) {
 // atas & bawah).
 const CM_TO_PT = 28.3465;
 const KOP_CLEARANCE_PT = 6;
-const KOP_HEADER_CM = 4;
+const KOP_HEADER_CM = 3;    // SEMENTARA, dari foto cetak percobaan 9 Sep 2026 (sebelumnya 4)
 const KOP_FOOTER_CM = 4.5;
 const PRINT_PAD_TOP = KOP_HEADER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
 const PRINT_PAD_BOTTOM = KOP_FOOTER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
