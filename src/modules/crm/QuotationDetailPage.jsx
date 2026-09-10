@@ -495,7 +495,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
             onClick={onBack}
             style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${C.line}`, borderRadius: 8, padding: '7px 14px', fontSize: 13, color: C.inkSoft, cursor: 'pointer' }}
           >
-            <ChevronLeft size={15} /> Kembali
+            <ChevronLeft size={15} /> Back
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 9, background: C.accentSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
