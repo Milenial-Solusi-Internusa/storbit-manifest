@@ -115,7 +115,7 @@ function fmtDate(input) {
 const CM_TO_PT = 28.3465;
 const KOP_CLEARANCE_PT = 6;
 const KOP_HEADER_CM = 3;    // SEMENTARA, dari foto cetak percobaan 9 Sep 2026 (sebelumnya 4)
-const KOP_FOOTER_CM = 4.5;
+const KOP_FOOTER_CM = 3.5;  // SEMENTARA, dari foto cetak percobaan 9 Sep 2026 (sebelumnya 4,5)
 const PRINT_PAD_TOP = KOP_HEADER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
 const PRINT_PAD_BOTTOM = KOP_FOOTER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
 // Ruang yang dibebaskan waktu batas atas dikecilkan dari 4 cm — dipakai HABIS
@@ -303,6 +303,15 @@ const makeStyles = (print) => StyleSheet.create({
   grandLabel: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: print ? 10.5 : 11.25 },
   grandVal: { fontFamily: 'Lora', fontWeight: 600, fontSize: print ? 13 : 14.25, color: PURPLE_DEEP },
 
+  // ⚠️ `marginTop:'auto'` = blok ini SELALU menempel batas bawah halaman, tak
+  // peduli isinya berapa baris (diukur: baseline disclaimer 655,86 identik di
+  // n=1 maupun n=4). Konsekuensinya, MENURUNKAN blok ini tidak bisa dilakukan
+  // dari sini — tak ada nilai style di blok ini yang menggerakkannya ke bawah,
+  // ruang yang tersedia cuma 2,58 pt sampai batas. Satu-satunya tuas yang
+  // bekerja adalah KOP_FOOTER_CM, dan itulah yang dipakai waktu blok ini
+  // diturunkan 1 cm pada 10 Sep 2026 (4,5 -> 3,5 cm). Jangan mencoba
+  // menambalnya dengan marginBottom negatif atau paddingTop — yang pertama
+  // menembus batas kop tanpa penjaga, yang kedua justru memakan ruang tabel.
   footBlock: { marginTop: 'auto', paddingTop: print ? 4 : 7.5 },
   termsLabel: { fontSize: 8.25, letterSpacing: 0.66, textTransform: 'uppercase', color: PURPLE, marginBottom: print ? 3 : 4.5 },
   termsText: { fontSize: 9, color: MUTE_60 },
