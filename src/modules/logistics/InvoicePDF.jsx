@@ -379,15 +379,23 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
           <View style={s.billCol}>
             <Text style={s.billLabel}>Billed To</Text>
             <Text style={s.billName}>{invoice.customer_name || '—'}</Text>
-            <Text style={s.billSub}>{invoice.dc_name || '—'}</Text>
-            {/* Alamat DC tujuan. Baris ini DIHILANGKAN kalau alamatnya kosong,
-                bukan dicetak sebagai '—' — mengikuti `PartyBlock` di printKit.jsx
-                yang dipakai Surat Jalan (`{address ? … : null}`). Surat Jalan
-                punya dua perlakuan: PartyBlock menghilangkan barisnya, `Field`
-                "Alamat Tujuan" mencetak '—'; yang dipakai di sini yang pertama,
-                karena ini blok pihak dan baris hampa di bawah nama DC terbaca
-                seperti data yang gagal dimuat. */}
-            {invoice.dc_address ? <Text style={s.billMute}>{invoice.dc_address}</Text> : null}
+            {/* Alamat CUSTOMER (accounts.address). ⚠️ NOL informasi DC di
+                invoice — nama maupun alamatnya (keputusan Den 10 Sep 2026
+                sesudah cetak percobaan): dokumen ini ditagihkan ke customer,
+                bukan ke gudang tujuan. Baris `billSub` berisi nama DC dicabut
+                bersamaan, jadi kolom ini sekarang nama + alamat saja.
+
+                Alamat kosong dicetak '—', BUKAN barisnya dihilangkan — kebalikan
+                dari perlakuan sebelumnya yang meniru `PartyBlock` printKit.jsx.
+                Alasannya berubah karena sumbernya berubah: alamat DC memang
+                boleh tak ada (tak semua SP punya DC), sedangkan alamat customer
+                SEHARUSNYA selalu ada dan kosongnya adalah master data yang
+                belum diisi — '—' membuat kekosongan itu terlihat dan tertagih,
+                baris yang hilang menyembunyikannya. Diukur 10 Sep 2026: dari
+                empat customer Storbit yang punya SP, cuma Indomarco yang
+                alamatnya terisi. Sengaja TIDAK dicadangkan ke dc_master.alamat
+                — lihat catatan di getInvoicePdfData (db.js). */}
+            <Text style={s.billMute}>{invoice.customer_address || '—'}</Text>
           </View>
         </View>
 

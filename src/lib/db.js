@@ -1256,7 +1256,7 @@ export async function getCompanyHeader(companyId) {
 export async function getInvoicePdfData(invoiceId) {
   const { data: inv, error: invErr } = await supabase
     .from('sp_invoices')
-    .select('id, invoice_no, invoice_date, due_date, faktur_no, status, total_dpp, total_ppn, total_amount, sp_order_id, sp_orders(sp_no, customer_id, dc_id, company_id)')
+    .select('id, invoice_no, invoice_date, due_date, faktur_no, status, total_dpp, total_ppn, total_amount, sp_order_id, sp_orders(sp_no, customer_id, company_id)')
     .eq('id', invoiceId)
     .single();
   if (invErr) return { data: null, error: invErr };
@@ -1264,17 +1264,14 @@ export async function getInvoicePdfData(invoiceId) {
   const spOrder = inv.sp_orders || {};
   const companyId = spOrder.company_id || null;
 
-  const [linesRes, customerRes, dcRes, companyRes, bankRes, shippingRes] = await Promise.all([
+  const [linesRes, customerRes, companyRes, bankRes, shippingRes] = await Promise.all([
     supabase
       .from('sp_invoice_lines')
       .select('id, dpp, ppn, qty, position, sp_order_items(product_name, sku, unit_price)')
       .eq('invoice_id', invoiceId)
       .order('position', { ascending: true }),
     spOrder.customer_id
-      ? supabase.from('accounts').select('name').eq('id', spOrder.customer_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    spOrder.dc_id
-      ? supabase.from('dc_master').select('nama, alamat').eq('id', spOrder.dc_id).maybeSingle()
+      ? supabase.from('accounts').select('name, address').eq('id', spOrder.customer_id).maybeSingle()
       : Promise.resolve({ data: null }),
     companyId
       ? supabase.from('companies').select('legal_name, address, address_2, city, province, postal_code, tax_id').eq('id', companyId).maybeSingle()
@@ -1285,7 +1282,7 @@ export async function getInvoicePdfData(invoiceId) {
     supabase.from('sp_order_items').select('shipping_price').eq('sp_order_id', inv.sp_order_id),
   ]);
 
-  const firstError = linesRes.error || customerRes.error || dcRes.error || companyRes.error || bankRes.error || shippingRes.error || null;
+  const firstError = linesRes.error || customerRes.error || companyRes.error || bankRes.error || shippingRes.error || null;
   const totalShipping = (shippingRes.data || []).reduce((sum, r) => sum + (Number(r.shipping_price) || 0), 0);
 
   return {
@@ -1302,14 +1299,24 @@ export async function getInvoicePdfData(invoiceId) {
       total_shipping: totalShipping,
       sp_no: spOrder.sp_no || '',
       customer_name: customerRes.data?.name || '',
-      dc_name: dcRes.data?.nama || '',
-      // Alamat DC tujuan, BUKAN accounts.address (itu alamat HQ dan mayoritas
-      // NULL — audit 31 Agu 2026: dari 85 Surat Jalan, 67 NULL & 15 alamat HQ,
-      // NOL yang beralamat DC). Jalur ini sama persis dengan yang sudah dipakai
-      // Surat Jalan sejak migrasi 20260831000001: sp_orders.dc_id ->
-      // dc_master.alamat. NULLIF/btrim ditiru dari migrasi itu supaya alamat
-      // berisi spasi saja diperlakukan kosong, bukan dicetak sebagai baris hampa.
-      dc_address: (dcRes.data?.alamat || '').trim(),
+      // Alamat CUSTOMER (accounts.address) — bukan alamat DC. Invoice sengaja
+      // tidak memuat informasi DC sama sekali, nama maupun alamat (keputusan
+      // Den 10 Sep 2026 sesudah cetak percobaan): dokumen ini ditagihkan ke
+      // customer, bukan ke gudang tujuan. Beda dari Surat Jalan/Picking List,
+      // yang memang butuh alamat DC dan tetap memakai jalur
+      // sp_orders.dc_id -> dc_master.alamat lewat getPrintIdentity().
+      //
+      // ⚠️ NOL CADANGAN ke dc_master.alamat kalau kolom ini kosong. Diukur
+      // 10 Sep 2026: dari empat customer Storbit yang punya SP, hanya Indomarco
+      // yang address-nya terisi (127 karakter) — Indogrosir, CK - Central
+      // Kitchen, dan General Order kosong. Itu diterima: alamatnya diisi di
+      // master data, BUKAN diakali di PDF. Mencadangkan ke alamat DC membuat
+      // invoice tampak konsisten padahal isinya campur dua sumber, dan itu
+      // menyulitkan penelusuran waktu ada yang salah alamat.
+      //
+      // .trim() supaya alamat berisi spasi saja diperlakukan kosong — PDF yang
+      // memutuskan menampilkan '—', bukan baris hampa.
+      customer_address: (customerRes.data?.address || '').trim(),
       company: companyRes.data || {},
       bank: bankRes.data || null,
       lines: (linesRes.data || []).map((l) => ({
