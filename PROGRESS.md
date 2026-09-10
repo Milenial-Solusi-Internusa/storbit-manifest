@@ -31,6 +31,535 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-10
+### Restore tombol "Mark as Won" — satu asumsi yang tak pernah diukur, dibantah audit produksi
+
+FE-only, dua commit (`4bc4e16`, `51d6965`), **NOL perubahan DB, nol migrasi, nol SQL dijalankan**
+(dikerjakan di branch `feature/crm-v3-batch-persiapan`).
+
+---
+
+#### Yang dikembalikan, dan kenapa restore-nya sengaja MURNI
+
+Pencabutan "Mark as Won" pada `a6586f6` (8 Sep) **dibatalkan**. Kelima blok — state, gate, handler,
+tombol, ConfirmModal — dikembalikan **BYTE-IDENTIK** dengan versi sebelum dicabut, diverifikasi diff
+per-blok terhadap `a6586f6^`. **Nol syarat baru ditambahkan.**
+
+Kemurnian itu disengaja: begitu restore dicampur perbaikan lain, diff-nya berhenti bisa diverifikasi
+sebagai restore dan mulai harus dinilai sebagai desain baru.
+
+**Gate tombolnya (sama persis seperti sebelum dicabut):**
+
+```
+(pembuat inquiry ATAU super_admin) DAN status != 'WON'
+```
+
+Sengaja **TIDAK** terikat `LOSABLE_INQUIRY_STATUS` — inquiry `LOST`/`CANCELLED` tetap boleh ditandai
+WON manual (mis. customer berubah pikiran). FE tidak menduplikasi guard RPC (`created_by`/`super_admin`
++ tolak-kalau-sudah-WON); **RPC tetap penegaknya**.
+
+---
+
+#### ⭐ ALASANNYA — audit produksi 10 Sep 2026 membantah premis pencabutan
+
+`a6586f6` mencabut tombol itu atas **satu asumsi yang tak pernah diukur**: *"trigger
+`set_inquiry_won_on_so` sudah menutup jalur itu"*. Angkanya berkata lain:
+
+| yang diukur | hasil |
+|---|---|
+| inquiry berstatus WON | **38** (37 hidup + 1 soft-deleted) |
+| WON hidup yang lahir dari RPC `mark_inquiry_won` | **37 dari 37** (jejak `audit_logs` `action='MARK_INQUIRY_WON'`), **SELURUHNYA milik MSI** |
+| WON yang lahir dari trigger `set_inquiry_won_on_so` | **0** |
+| isi seluruh tabel `sales_orders` | **1 baris**, status **DRAFT**, dibuat 23 Jul, **tak pernah SENT** |
+| kapan trigger SO terakhir menyala | **belum pernah, sekali pun, sejak dibuat 22 Jul 2026** |
+| inquiry milik SO satu-satunya itu | `INQ/MSI/2026/209` — sampai kini masih **QUOTED** |
+| pemakaian jalur manual | **25 kali di September, 7 user berbeda, terakhir 10 Sep 2026** (hari audit itu sendiri) |
+| WON tanpa jejak di keduanya | 1 — `INQ/MSI/2026/210`, soft-deleted 22 Jul |
+
+⭐ **Pelajaran yang berlaku di luar sesi ini: *trigger yang ADA di skema tidak sama dengan trigger yang
+PERNAH MENYALA*.** Pencabutan 8 Sep menyimpulkan penggantian sudah terjadi dari **keberadaan** trigger,
+bukan dari **pemakaiannya** — kelas kekeliruan yang sama persis dengan pelajaran sprint 8 Sep sendiri
+(*"komentar desain menjelaskan KENAPA sesuatu dibuat, bukan APAKAH ia masih dipakai"*), kali ini menimpa
+objek DB alih-alih kolom.
+
+**Akarnya bukan bug melainkan kenyataan bisnis:** Sales Order yang sebenarnya (invoicing dsb) masih
+diproses **di Odoo, bukan Nexus** — konsisten dengan keputusan Finance tetap di Odoo. Kolom
+`sales_orders.external_ref` (*"nomor referensi SO ini di sistem operasional (Odoo)"*) terisi di **0 dari 1**
+baris; sambungannya disiapkan di skema, **belum pernah dibangun**. Jadi pengganti jalur manual hari ini
+menuntut sales membuat **dokumen SO KEDUA di Nexus** yang menduplikasi SO Odoo, lalu menekan tombol
+berlabel **"Kirim ke Procurement"** untuk memberi arti *"customer sudah deal"*.
+
+**Keputusan Den: kembalikan tombolnya dulu; nasib jalur SO diputuskan terpisah.** Trigger
+`set_inquiry_won_on_so`, tabel `sales_orders`, dan modul Sales Order **SENGAJA TIDAK DISENTUH** —
+keduanya hidup berdampingan seperti sebelum 8 Sep. → **Keputusan Terbuka #48**.
+
+---
+
+#### Ikut dikoreksi & satu perubahan kata
+
+- Komentar yang dibuat basi oleh `a6586f6` (klaim *"WON kini hanya lahir dari trigger"*) dan header file
+  yang menyatakan halaman ini READ-ONLY terhadap `accounts` — kini presisi: **tak ada tulis LANGSUNG**,
+  perubahan `accounts.pipeline_stage` datang **server-side lewat RPC**.
+- **`51d6965`** — tombol "Kembali" Detail Quotation jadi **"Back"**. Satu kata, nol perubahan perilaku
+  (handler `onBack` tak disentuh); action bar halaman itu sudah seluruhnya Inggris dan ini sisa terakhirnya.
+
+**TIDAK disentuh:** Quotation versioning, pencabutan Start Negotiation, dan seluruh perubahan lain
+sesudah `a6586f6`.
+
+---
+
+#### Temuan yang DICATAT, bukan diperbaiki
+
+**Gate "Mark as Won" memakai `erpRole` (role PRIMER), bukan `erpRoles` (seluruh role aktif).** Akibatnya
+user yang **punya** role `super_admin` tapi role primernya bukan itu **tidak melihat tombolnya**, walau RPC
+akan meloloskannya. ⭐ **Kontras yang bikin ini layak dicatat: file yang SAMA sudah tahu jawabannya** —
+gate "Cetak PRF" di file itu memakai `erpRoles?.some(...)` dengan komentar eksplisit *"cek SELURUH role
+aktif (erpRoles), bukan erpRole (role primer) … role prioritas lebih tinggi menutupi 'sales' di erpRole"*.
+**[verifikasi doc-keeper 10 Sep 2026]** `canReassignOwner` di file yang sama punya bentuk yang sama, jadi
+ini **kelas, bukan satu baris**. **Sengaja dipertahankan apa adanya** supaya restore tetap murni.
+→ **TD-248**.
+
+---
+
+#### Verifikasi
+
+`npm run build` clean · `npm run lint` **162 problems (141 errors, 21 warnings) = IDENTIK dengan baseline
+branch** (diukur ulang via stash) · `git diff --stat` = 1 file untuk `4bc4e16`, 1 file / 1 baris untuk
+`51d6965`. ⚠️ **TES RUNTIME BELUM DIJALANKAN** — dinyatakan eksplisit di pesan commit-nya, jangan
+digeneralisasi dari tes staging pekerjaan 9 Sep.
+
+---
+
+## 2026-09-09
+### Quotation versioning & approval (5 migrasi) + dua gelombang mencabut plafon 1000 baris CRM
+
+17 commit, **6 migrasi ditulis** (dikerjakan di branch `feature/crm-v3-batch-persiapan`).
+⚠️ **Kelima migrasi quotation ber-header `LIVE — staging 9 Sep 2026, produksi 9 Sep 2026`; migrasi keenam
+TIDAK — headernya `BELUM DIJALANKAN`.** Perbedaan itu penting dan dibahas tersendiri di bawah.
+
+> ⚠️ **JANGAN dibaca sebagai "CRM v3 sudah live".** Yang LIVE adalah **objek DB**-nya (kolom, policy, RPC,
+> trigger), bukan halaman-halamannya. CRM v3 secara keseluruhan tetap **BELUM SELESAI** dan **belum berjalan
+> di produksi**; gerbang rilisnya kini **TIGA** — lihat bagian terakhir entri ini.
+
+---
+
+#### ⚠️ DEVIASI URUTAN BATCH — keputusan sadar Den, BUKAN kelupaan
+
+Sebagian isi **Batch B4 (quotation versioning)** dieksekusi **sebelum Batch B3 tertutup penuh**. B3 memang
+belum tutup — diverifikasi doc-keeper 10 Sep 2026, `accounts.pipeline_stage` masih punya **TIGA penulis FE
+langsung**: `CustomerDetailPage.jsx:1003` · `LeadPoolApprovalPage.jsx:129` · `ProspectFormPage.jsx` (payload
+`accounts` insert/update — `pipeline_stage` hanya **dilepas** kalau stage-nya di luar NEW/CONTACTED/QUALIFIED lewat
+guard `isActiveStage` di `:271`; untuk tiga nilai aktif ia **tetap menulis**), **plus jalur server-side lewat RPC
+`mark_inquiry_won`**.
+
+> ⚠️ **KOREKSI doc-keeper atas `09_ROADMAP.md`, arahnya KEBALIKAN dari koreksi 2 Sep.** Roadmap masih menyatakan
+> *"penulisnya EMPAT, bukan tiga"* dengan `DealDetailPage.jsx:608` di daftarnya. **Itu kini stale:** satu-satunya
+> `from('accounts')` yang tersisa di file itu (`:604`) adalah **`.select()`**, dan header filenya sendiri kini
+> menyatakan tak ada tulis LANGSUNG. Penulis langsungnya hilang lewat sprint 8 Sep; restore 10 Sep **tidak**
+> mengembalikannya. ⚠️ **Tapi B3 tidak jadi lebih ringan** — `mark_inquiry_won` juga menulis kolom itu, jadi yang
+> terjadi **satu penulis PINDAH dari FE ke server-side, bukan hilang**. Koreksinya sudah ditempel di roadmap.
+
+Dicatat di sini supaya **urutan blueprint tidak dibaca sebagai urutan eksekusi nyata**, dan supaya sesi
+berikutnya tidak menyimpulkan B3 sudah selesai hanya karena B4 sudah berjalan.
+
+---
+
+#### 1. Lima migrasi quotation — dan utang jejak yang dilunasi
+
+Kelimanya **ditulis sebelum eksekusi, SQL-nya dijalankan manual di staging lalu produksi, tapi filenya
+sendiri tidak pernah ikut terekam** — jadi selama beberapa hari objek yang hidup di produksi **tidak punya
+jejak sama sekali di repo**. Perekamannya (`51e3e4e`) tidak menyentuh isi SQL sebaris pun (diverifikasi ulang
+byte-per-byte); yang berubah hanya **satu baris header `Status:` per file**.
+
+| migrasi | isi |
+|---|---|
+| `20260909000001_quotation_approval_columns` | kolom `accepted_at` / `accepted_by` / `rejection_reason` + FK ke `profiles` + **`idx_quotations_inquiry_id`** (index yang selama ini absen) |
+| `…000002_td180_quotations_plural` | **TD-180 instance KELIMA** — fungsi baru `is_manager_or_above_in(uuid)` + 7 policy `quotations`/`quotation_items` lepas dari `get_user_company_id()` singular |
+| `…000003_quotation_revision_rpcs` | `create_quotation_revision` + `set_quotation_outcome`, **`SECURITY INVOKER`** + ACL FASE 5 |
+| `…000004_inquiry_negotiation_on_revision` | trigger `trg_z_inquiry_negotiation_on_revision` — revisi ke-2+ **DIKIRIM** menaikkan inquiry `QUOTED` → `NEGOTIATION` |
+| `…000005_drop_sync_deal_value_trigger` | cabut `trg_z_sync_deal_value_on_quotation_accept` + fungsinya (**TD-238 langkah 1 dari 2**) |
+
+**Refresh snapshot (`d1108a2`) — `pg_dump --schema-only --schema=public` dari PRODUKSI, dijalankan manual
+oleh Den** (sesi agen tak punya kredensial DB). Ketujuh penanda lolos: `accepted_at` 0→5 · `rejection_reason`
+0→5 · `is_manager_or_above_in` 0→10 · `create_quotation_revision` 0→8 · `set_quotation_outcome` 0→11 ·
+`trg_z_inquiry_negotiation_on_revision` 0→2 · `sync_deal_value_on_quotation_accept` **5→0** (sudah dicabut).
+
+Angka pembanding wajib (`02_RULES_GOVERNANCE` §4), tak ada yang turun: `CREATE TABLE public.` **139 → 139**
+(nol tabel baru, sesuai) · `^GRANT .* TO authenticated;` **240 → 243** (+3 = persis tiga fungsi baru).
+
+> ⚠️ **Catatan pola grep yang layak dibawa ke sesi berikutnya:** angka GRANT **247** yang sempat beredar
+> berasal dari pola **TANPA anchor `^`**. Pola yang dipakai governance **memakai anchor** dan menghasilkan
+> **243** — pakai yang ber-anchor sebagai baseline berikutnya supaya tidak melenceng.
+
+---
+
+#### 2. TD-180 instance KELIMA — ditutup, tapi instance KEENAM langsung lahir
+
+Ketujuh policy `quotations`/`quotation_items` memakai `get_user_company_id()` **singular** (membaca
+`profiles.company_id`, alias entitas HOME saja). User berpola Elvira (home MSI, role aktif di SOA) ter-blokir
+**SENYAP: nol baris, bukan error**.
+
+Yang membuatnya lebih tajam dari empat instance sebelumnya: **alur revisi menyentuh KETUJUHNYA sekaligus** —
+`create_quotation_revision` → INSERT `quotations` + INSERT items + UPDATE sumber; `save_quotation` →
+DELETE+INSERT item. **Memperbaiki satu policy saja = alur revisi tetap patah senyap.**
+
+⛔ **Perbaikannya BUKAN tukar singular → jamak.** `is_manager_or_above()` **mengabaikan company**; menukar
+sisi kiri saja membuat dua syarat yang tadinya terikat jadi lepas — user yang `manager` di SOA tapi cuma
+`sales` di MSI akan mendapat **hak manager penuh atas quotation MSI**. Itu memperbaiki TD-180 sambil membuka
+celah baru (gotcha #26). Bentuk yang benar = **uji role DI ENTITAS BARIS ITU** → **`is_manager_or_above_in()`**.
+
+⚠️ **TD-233 naik 4 → 5 tempat.** Daftar role manajerial kini hidup di `is_manager_or_above()` ·
+`mark_delivery_delivered` · `prf_release` · `prf_select_offer` · **`is_manager_or_above_in()`**.
+⭐ Bentuk fungsi baru itu **persis** yang diusulkan di kolom "catatan" TD-233 sejak 7 Sep — **tapi ia lahir
+sebagai tempat KELIMA, bukan sebagai penyatu keempat yang lama.** Duplikasinya tetap **DISENGAJA**; **JANGAN
+"perbaiki" dengan mengembalikan panggilan ke `is_manager_or_above()`**, itu membatalkan alasannya.
+
+⚠️ **Instance KEENAM ditemukan di sesi yang sama dan BELUM diperbaiki:** `activities_select` masih
+`get_user_company_id()` singular (`schema_snapshot.sql:16099`), dan `CRMReportPage` membacanya **tanpa filter
+FE apa pun** → **TD-245**. Karena itu **TD-180 tetap PARTIAL** — menutup satu instance tidak memajukan sisir
+sistematis 198 policy / 76 tabel.
+
+---
+
+#### 3. Alur revisi & pencatatan hasil quotation
+
+`create_quotation_revision` — **satu transaksi, tiga akibat**: baris sumber → `SUPERSEDED` · baris baru
+ber-`quotation_no` **SAMA**, `revision = MAX+1`, status `DRAFT` · seluruh `quotation_items` **disalin**.
+Tiga UPDATE/INSERT dari FE bisa sukses separuh; satu fungsi = **mustahil separuh** (alasan yang sama persis
+dengan `set_sp_finance_docs`).
+
+**`SECURITY INVOKER`, bukan DEFINER — disengaja.** Keputusan Den: *"gate yang SAMA kayak `quotations_update`,
+jangan bikin gate baru yang lebih ketat"*. Cara paling jujur memenuhinya adalah membiarkan **RLS itu sendiri**
+yang menjaga, bukan menyalin daftar role ke dalam fungsi — TD-233 sudah mencatat daftar itu hidup di lima
+tempat, **jangan jadi enam**. Preseden se-modul: `save_quotation` juga INVOKER.
+⚠️ Ini **sengaja BERBEDA** dari pola FASE 5 Storbit (`create_invoice`/`record_payment`/`set_sp_finance_docs`)
+yang semuanya DEFINER karena harus **menembus** RLS tabel lain — dua kebutuhan berbeda, **jangan diseragamkan
+tanpa keputusan baru**.
+
+**⛔ KONSEKUENSI YANG DITERIMA SADAR — dan ini tech debt baru:** karena INVOKER, `GRANT ALL ON TABLE quotations
+TO authenticated` **tidak dipersempit**, jadi PostgREST tetap bisa **PATCH `status='ACCEPTED'` langsung**,
+melewati kedua fungsi ini — `accepted_at`/`accepted_by` kosong, seluruh guard terlewati. **Kerabat TD-176.**
+**SENGAJA belum ditutup**; menutupnya menuntut DEFINER + GRANT kolom (preseden `sp_payments`) = keputusan
+terpisah. → **TD-244**.
+
+**Tiga tombol baru di Detail Quotation, gate berlapis:** Mark Accepted / Mark Rejected (status `SENT` + revisi
+terakhir + berhak) · Create Revision (status `SENT`|`REJECTED` + revisi terakhir + berhak). **Ketiganya HILANG
+saat tak relevan, bukan disabled** — gate-nya punya **tiga sebab berbeda**, dan tombol mati tanpa penjelasan
+memaksa user menebak yang mana. Gate FE = **cermin RLS `quotations_update`**, memakai **`erpRoles`** (seluruh
+role aktif), bukan `erpRole` primer.
+
+`RejectReasonModal` sengaja **LOKAL**, meniru `CancelReasonModal`, **tidak** dipindah ke `DealCloseModals`:
+file itu khusus penutupan deal, dan **menolak quotation bukan menutup deal**.
+
+Jejak hasil tampil sebagai **"Accepted On" + "Recorded By" + "Rejection Reason"**. ⭐ **"Recorded By", BUKAN
+"Approved by"** — yang menyetujui itu **CUSTOMER**; yang tercatat adalah staff yang memasukkan jawabannya.
+
+---
+
+#### 4. Penomoran quotation diturunkan dari nomor inquiry
+
+`generateQuotationNo` → **`quotationNoFromInquiry`**. `INQ/MSI/2026/007` jadi `QUO/MSI/2026/007`. Sebelumnya
+`INQ/.../007` bisa melahirkan `QUO/.../031` — **dua nomor yang tak bisa dihubungkan tanpa membuka datanya**.
+
+- Segmen dipecah **per `/`**, BUKAN `.replace('INQ','QUO')` — **nama customer pun bisa memuat "INQ"**.
+- Format tak sah → **throw**, nol silent fallback: **nomor karangan jauh lebih berbahaya daripada simpan yang gagal**.
+- Efek samping: baris `QUO` di `document_sequences` jadi **dorman**. Tidak di-drop, **tapi jangan dikira rusak**.
+
+**Konsekuensi struktural: satu inquiry = satu `quotation_no`.** Quotation kedua dari inquiry yang sama
+**PASTI** menabrak `UNIQUE (quotation_no, revision)` — dan itu memang benar, karena yang kedua seharusnya
+**REVISI**. Guard memeriksanya **DI DEPAN** (kedua tombol simpan mati + panel mengarahkan ke jalur revisi)
+supaya user tidak mengisi form panjang lalu ditolak di detik terakhir. Hasil probe **diturunkan saat render**,
+bukan di-reset lewat `setState` sinkron di dalam effect — selain lint melarangnya, bentuk ini menutup jendela
+sempit di mana peringatan milik inquiry lama sempat menempel di inquiry baru.
+
+Handler **23505** tetap dipasang sebagai jaring (dua orang bisa menyimpan bersamaan). ⚠️ **Kode saja TIDAK
+cukup** — `quotations` juga punya `quotations_pkey`, jadi nama constraint `quotations_quotation_no_revision_key`
+ikut diuji.
+
+---
+
+#### 5. Helper bersama `quotationVersion.js` — satu sumber kebenaran, BUKAN cermin
+
+File `.js` tersendiri mengikuti pola `bant.js`/`salesRoster.js`/`inquiryOptions.js` (lint
+`react-refresh/only-export-components` melarang file ber-komponen meng-export helper). **Lima permukaan**
+membacanya: QuotationListPage · QuotationDetailPage · QuotationPDF · DealDetailPage · DealPanels — sebelumnya
+logika nomor tersebar sebagai **empat salinan yang pasti melenceng suatu hari**.
+
+**`formatQuotationNo(no, revision)`** — sufiks huruf **MURNI TAMPILAN**; `quotation_no` di DB tetap bersih,
+yang membedakan versi adalah kolom `revision`. **Huruf mulai di revisi KE-2, bukan ke-1** — nomor yang sudah
+beredar di tangan customer tidak boleh berubah tampilannya hanya karena fitur ini lahir. Di atas revisi 27
+huruf habis; jatuh ke `-R28` alih-alih meneruskan charCode ke `[`, `\`, `]` **yang tampak seperti nomor sah**.
+
+**`pickActiveQuotation(rows)`** — dua lapis, karena data lama dan baru beda bentuk: kelompokkan per
+`quotation_no` lalu ambil `revision` tertinggi (ujung rantai), antar-ujung ambil `created_at` terbaru. **Lapis
+kedua itulah yang melayani 29 inquiry warisan** yang punya beberapa `quotation_no` independen — tanpa itu
+mereka tak punya jawaban sama sekali. Tiebreak berlapis (`created_at`, `revision`, `id`) supaya pilihan tidak
+berayun antar-render.
+
+⛔ **Sumbu "quotation yang ditampilkan" pindah dari `updated_at` ke `pickActiveQuotation`. Sumbu lama kini
+SALAH, bukan sekadar kurang tepat:** `create_quotation_revision` menyentuh `updated_at` baris **LAMA** saat
+menandainya SUPERSEDED, sehingga versi yang sudah digantikan justru terlihat "paling baru" dan versi aktifnya
+tersembunyi.
+
+⚠️ **`revision` WAJIB ikut di-`select()`.** Kalau lupa: nilainya `undefined` → semua baris dianggap revisi 1 →
+seluruh nomor tampil tanpa sufiks dan pemilihan versi jatuh ke tanggal saja. **Gagalnya SENYAP** — nol error,
+hasilnya cuma diam-diam salah. (`03_DATA_MODEL.md` **gotcha #29**.)
+
+**`STATUS_META` += `SUPERSEDED`, tone NETRAL (bukan danger)** — versi yang digantikan itu **fakta
+administratif, bukan kegagalan**. ⚠️ Peta status quotation hidup di **TIGA file** (QuotationListPage,
+QuotationDetailPage, DealDetailPage), **sengaja tidak disatukan tapi WAJIB bergerak bersama**: fallback
+ketiganya jatuh ke `DRAFT`, jadi status tak terdaftar akan **berbohong tertulis "Draft"** — bohong yang mahal,
+karena "Draft" berarti belum pernah dikirim sementara SUPERSEDED berarti sudah dikirim **lalu** digantikan.
+
+**Label `SENT` → "Awaiting Customer Approval"** (nilai DB tetap `'SENT'`). *"Sent" cuma bercerita soal aksi kita
+sendiri; yang ingin diketahui pembaca adalah **bola ada di siapa**.* `SlaBadge` ikut menghitung `SUPERSEDED`
+sebagai "pernah terkirim" — tanpa itu badge-nya berubah jadi `—` begitu revisi lahir, **seolah pengirimannya
+tak pernah terjadi**.
+
+**PDF ikut helper yang sama.** Sebelumnya PDF mencetak sufiksnya sendiri (`` Rev.${revision}``) sementara layar
+tidak mencetak apa-apa — **dua bentuk berbeda untuk quotation yang sama, tanpa apa pun yang menjaga keduanya
+sejalan**. Karena seluruh baris produksi ber-`revision` 1, bentuk lama mencetak **"Rev.1" di SETIAP PDF** tanpa
+pernah membedakan apa pun.
+
+---
+
+#### 6. `Start Negotiation` dicabut — syaratnya akhirnya terpenuhi
+
+Tombol itu **stopgap sejak 8 Sep**: saat "Tandai Menang" dicabut, ia **sengaja ditahan** karena trigger
+versi-v2 → NEGOTIATION belum ada, dan mencabutnya waktu itu membuat lajur NEGOTIATION **tidak terjangkau sama
+sekali** (nol penulis otomatis). Syaratnya kini terpenuhi: `trg_z_inquiry_negotiation_on_revision` LIVE.
+
+Dicabut **SELURUHNYA** — konstanta `NEGOTIABLE_INQUIRY_STATUS`, derived `canNegotiate`, handler
+`startNegotiation()`, state `negoOpen`/`negoSaving`, tombolnya, ConfirmModal-nya, guard toolbar, dan import
+`Handshake` yang jadi yatim. Grep verifikasi: **0 hit untuk ketujuh penanda**.
+
+⭐ **Urutan deploy-nya MENGIKAT dan KEBALIKAN dari pola drop-kolom:** (1) migrasi LIVE + diverifikasi,
+(2) **BARU** FE yang mencabut tombolnya. Kalau dibalik, ada jendela waktu di mana lajur NEGOTIATION tak
+terjangkau sama sekali.
+
+⚠️ **PEMICUNYA revisi ke-2+ BERPINDAH ke `SENT`, bukan revisi DIBUAT.** Revisi lahir `DRAFT`; draft yang batal
+dikirim **tidak boleh** memindahkan deal ke tahap yang tak pernah benar-benar terjadi, dan tak ada jalan mundur
+otomatis untuk itu. Karena itu `NEXT_STEP_HINT.QUOTED` ikut diubah **'Issue' → 'Send'** — *"Issue" bisa dibaca
+"buat", dan itu janji yang tidak ditepati sistem.* Tiga baris hint lainnya diperiksa ulang, sudah akurat.
+
+⚠️ **JANGAN ganti nama triggernya.** Saat revisi ke-2 dikirim, `trg_inquiry_quoted` (→QUOTED) dan
+`trg_z_inquiry_negotiation_on_revision` (QUOTED→NEGOTIATION) menyala pada statement yang sama; PostgreSQL
+menjalankan AFTER trigger **alfabetis by name**, dan `trg_i…` < `trg_z…` yang menjamin QUOTED mendarat lebih
+dulu. Mengganti nama salah satunya bisa **membalik urutan dan mematikan lajur NEGOTIATION secara senyap**.
+
+---
+
+#### 7. "Best Quote" ikut versi aktif, bukan nilai tertinggi historis
+
+**Dua sumbu berbeda di satu kartu, sengaja** — dan sekarang ditulis eksplisit di komentarnya supaya tidak
+diseragamkan orang berikutnya:
+
+- **"Best Quote"** = quotation `ACCEPTED`; kalau belum ada, jatuh ke **versi aktif** lewat `pickActiveQuotation`.
+  Sebelumnya ia mengambil nilai **TERTINGGI**. ⛔ Sejak SUPERSEDED ada, "tertinggi" hampir selalu berarti versi
+  **PERTAMA** — **negosiasi menurunkan harga** — sehingga kartu paling menonjol di halaman ini akan memajang
+  angka yang **sudah tidak berlaku**, lengkap dengan nomornya.
+- **"Offer Range" TIDAK diubah sebaris pun.** Ia sudah menghitung SELURUH baris tanpa filter status sejak dulu,
+  jadi SUPERSEDED otomatis ikut — **dan di sinilah sejarah negosiasi memang yang ingin dilihat**: dari berapa
+  turun ke berapa.
+
+---
+
+#### 8. TD-238 langkah 1 dari 2 — trigger dicabut SEBELUM ranjaunya sempat aktif
+
+`20260909000005` mencabut `trg_z_sync_deal_value_on_quotation_accept` + fungsinya. **File TERPISAH, sengaja**
+(keputusan Den): pencabutan `estimated_value` **tidak boleh** digabung ke migrasi pekerjaan approval — dua
+urusan berbeda yang kebetulan bertemu di kolom yang sama.
+
+⭐ **Kenapa SEKARANG, bukan nanti:** sampai detik itu **nol** quotation pernah ACCEPTED, sebab jalur tulisnya
+memang belum pernah ada. **Begitu `20260909000003` hidup, jalur ACCEPTED LAHIR.** Mencabut trigger ini sebelum
+approval dipakai orang = **ranjaunya hilang sebelum sempat aktif**. Sesudah itu tidak ada lagi urutan yang bisa
+keliru. **Nol baris data berubah** — triggernya belum pernah sekali pun menyala.
+
+⛔ **KOREKSI PENTING — `DROP COLUMN` MASIH TERBLOKIR, dan penghalangnya BUKAN lagi trigger melainkan FE.**
+Catatan 8 Sep menyebut `CustomerDetailPage` sebagai pembaca tersisa tanpa merincinya, sehingga mudah dibaca
+seolah `assigned_profile` (TD-237) satu-satunya sisa. **Tidak.** `CustomerDetailPage.jsx` membaca **dan
+menulis** `accounts.estimated_value` di **EMPAT titik** — `:1029` (select) · **`:1039` (MENULIS — kini
+satu-satunya penulis yang tersisa sesudah triggernya dicabut)** · `:1297` (`dealValue`) · `:1867` (seed
+`EditDealModal`). Angka yang sama tertulis di badan migrasi `20260909000005` sendiri. **Jangan baca "trigger
+sudah dicabut" sebagai "aman untuk DROP"** — kegagalannya cuma pindah dari DB ke halaman Detail Customer.
+→ **TD-238 (kini PARTIAL)**.
+
+Sumbu nilai deal sudah pindah ke **`inquiries.estimated_value`** — kolom **BERBEDA**, tetap hidup, dibaca
+`PipelineKanbanPage` & `CRMDashboardPage`. **Jangan tertukar.**
+
+---
+
+#### 9. GELOMBANG 1 — kegagalan dibuat KELIHATAN (belum mencabut akarnya)
+
+**Dashboard (`dfc0265`), tiga kelas masalah:**
+
+1. **"Total accounts" akurat lewat COUNT SERVER.** Query baru dengan filter **sama persis** dengan query funnel,
+   di-append di **ekor array** supaya **nol indeks `res[...]` yang bergeser**. Query funnel **TIDAK diganggu** —
+   ini penambahan, bukan penggantian. ⭐ **Count gagal → `null`, BUKAN 0**: *nol adalah pernyataan ("tidak ada
+   akun"), null adalah ketiadaan jawaban* dan kartunya menulis `—`.
+2. **Tiga KPI tanpa guard jadi COUNT SERVER** (`calls`, `visits`, `quotations`). Sebelumnya mengambil baris lalu
+   memakai `.length`, jadi angkanya **BERHENTI di 1000 tanpa tanda apa pun** — dan ketiganya **tak punya guard
+   truncation sama sekali**. Barisnya tak pernah dipakai untuk apa pun.
+3. **Guard turun ke KARTUNYA, bukan berhenti di banner.** Objek `degraded` mendampingi `failed` di **ketujuh**
+   titik guard. *`failed` hanya menghasilkan banner — kalimat di puncak halaman yang mudah terlewat dan tidak
+   memberi tahu ANGKA MANA yang salah.* **10 widget** kini menampilkan `DegradedNotice` saat guard-nya menyala.
+
+   **Dua penanganan khusus:** **Lifecycle Funnel** — rincian per-tahap yang di-fallback, **TOTAL tetap tampil**
+   (ia dari count server, bukan baris terpotong); menyembunyikannya membuang satu-satunya angka yang masih benar.
+   **MQL to SQL** — `degraded` diperiksa **SEBELUM** `isEmpty`, karena saat query gagal ketiga penghitung tetap 0
+   sehingga `isEmpty` ikut true dan kartunya akan menuliskan *"No account has been recorded reaching MQL yet"* —
+   **sebuah KLAIM BISNIS**, padahal request-nya cuma tak pernah berhasil.
+
+**Laporan (`09b47d8`):** tiga query `fetchWindow` sama-sama `.limit(1000)` dan diagregasi di JS **tanpa guard
+sama sekali** — *dashboard setidaknya memasang banner; halaman ini bahkan tidak; laporannya tampil rapi dengan
+angka yang salah, nol tanda apa pun.* ⚠️ **Jendela SEBELUMNYA ikut dihitung**, bukan hanya jendela aktif: tiap
+KPI memajang delta "vs previous period", jadi **pembanding yang terpotong sama menyesatkannya** dengan angka
+utamanya. Saat menyala, **angka KPI DAN delta persentasenya sama-sama jadi penanda** — menyisakan salah satunya
+justru lebih buruk, pembaca akan mengira yang tersisa itu sah.
+
+**⚠️ Bug white-screen turunan Gelombang 1 (`7b7504e`) — dan KOREKSI atas laporan Gelombang 1 sendiri.**
+`ReferenceError: Cannot access 'winRateDegraded' before initialization`. `const` tidak ter-hoist **nilainya**, dan
+deklarasinya terjepit **di antara** dua array KPI yang sama-sama membacanya. **Lolos dari `npm run build`** karena
+murni kesalahan **urutan eksekusi**, bukan sintaks — kelas yang sama dengan insiden `handleNotifClick` vs
+`navigateTo` (22 Jun 2026) yang juga white-screen di produksi.
+
+> ⚠️⚠️ **KOREKSI yang layak dibaca ulang:** di sesi Gelombang 1, lint turun **163 → 161** dan itu disimpulkan
+> sebagai *"perbaikan insidental dari restrukturisasi"*. **Itu SALAH.** Ketiga diagnostik React Compiler yang
+> hilang (`Compilation Skipped: Existing memoization could not be preserved` · `Calling setState synchronously
+> within an effect` · `Cannot create components during render`) hilang karena **TDZ ini membuat compiler BAIL OUT**
+> pada komponennya, **bukan karena kodenya membaik**. Begitu bug-nya diperbaiki, ketiganya kembali.
+> ⭐ **Angka lint yang lebih rendah itu GEJALA bug, bukan tanda sehat.**
+
+---
+
+#### 10. GELOMBANG 2 — akar plafon 1000 baris dicabut (6 RPC agregat)
+
+*Menaikkan `.limit()` **MEMINDAHKAN tebing, tidak menghapusnya** — dan tebing berikutnya datang **tanpa
+peringatan**, karena guard `rows.length === 1000` berhenti akurat begitu plafonnya bukan 1000 lagi.*
+
+| RPC | menggantikan |
+|---|---|
+| `crm_lifecycle_funnel` | query baris funnel + count total terpisah; **total = `SUM(cnt)`, satu sumber, mustahil melenceng** |
+| `crm_mql_conversion` | kohort dibentuk di DB; menutup URL **~37 KB** dari `.in(<=1000 UUID)` **dan** rantai dua tingkatnya |
+| `crm_lead_source_distribution` | widget **PERSENTASE** — terpotongnya paling menyesatkan karena **proporsinya salah sambil tetap terlihat utuh** |
+| `crm_stage_conversion` | jumlah inquiry DISTINCT per status yang pernah dicapai |
+| `crm_stage_age` | satu baris per inquiry + kapan masuk status sekarang; menggantikan `.in(<=2000 UUID)`, **~74 KB** |
+| `crm_report_window` | agregat per-salesperson satu jendela tanggal |
+
+**100% BACA:** nol DDL tabel, nol perubahan RLS, nol backfill, nol trigger.
+
+**`SECURITY INVOKER`, bukan DEFINER.** Audit Task 0 membandingkan penyaringan FE dengan RLS **di setiap tabel**:
+hasilnya hanya pernah **REDUNDAN** atau **LEBIH KETAT**, **nol kasus** di mana FE menegakkan sesuatu yang RLS
+biarkan terbuka — jadi tak ada celah yang wajib direplikasi. ⛔ **Kalau kelak diubah ke DEFINER, SELURUH isi
+`prospects_read`/`inquiries_read`/`alh_read`/`activities_select`/`quotations_read` WAJIB disalin ke badan fungsi**
+— mengubah klausanya saja = **kebocoran lintas entitas seketika, dan gejalanya angka yang TERLIHAT WAJAR**.
+
+**Parameter = PENYEMPIT, bukan gerbang.** Kepemilikan diturunkan dari `auth.uid()` **DI DALAM** fungsi, sengaja
+bukan parameter — tak ada jalan menyodorkan uid orang lain, dan RLS tetap lapis keduanya.
+
+**Satu penyimpangan dari draf plan, disengaja:** cabang `pending` di `crm_mql_conversion` diberi guard
+`IS NULL OR`. Tanpa itu `NOT IN (...)` bernilai **NULL** saat `lifecycle_stage` NULL dan akun bertahap kosong
+jatuh ke **LUAR ketiga ember** — melanggar "klasifikasi EKSHAUSTIF" yang dijaga komentar FE.
+
+**ACL FASE 5 di keenamnya:** `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE authenticated`. **Supabase auto-GRANT ke
+`anon`, jadi REVOKE bukan formalitas.**
+
+**Sentinel `'__none__'`** untuk source kosong pindah ke SQL, tetap **SENGAJA bukan `'other'`** — `other` adalah
+nilai `source` yang **sah** dengan ratusan baris sendiri.
+
+**⛔⛔ KOORDINASI WAJIB — `p_scope_own` memakai `created_by`, BUKAN `owner_id`.** RLS `inquiries_read` di
+**produksi** hari ini masih `created_by`; migrasi `20260830000003` yang memindahkannya ke `owner_id` **sengaja
+ditunda ke hari merge**. Memakai `owner_id` sekarang menghasilkan **IRISAN keduanya — sales kehilangan deal yang
+DIOPER kepadanya, SENYAP.** **WAJIB diganti ke `owner_id` BERSAMAAN saat `20260830000003` akhirnya dijalankan —
+JANGAN salah satu duluan.** Peringatannya ditempel di badan kedua fungsi **dan** di `COMMENT ON FUNCTION`-nya.
+→ **TD-249**, bersambung ke gerbang **TD-225**.
+
+**CompanySwitcher akhirnya menggerakkan dua halaman.** `cid` berpindah dari `profile.company_id` (entitas RUMAH)
+ke `activeCompanyId`, berikut deps `useCallback`/`useEffect` — tanpa itu fetch tak pernah diulang saat switcher
+diganti. *Sebelumnya switchernya bergerak, datanya tidak.* `erpRole` di file itu **sudah** `activeCompanyId`-aware,
+jadi hanya sumbu company yang tertinggal; kini keduanya sejalan. User satu-entitas **nol perubahan**.
+⚠️ **Tapi baru DUA halaman** — 18 halaman CRM lain masih `profile.company_id`, jadi switcher-nya kini
+**PARSIAL**: user ganti entitas, Dashboard & Laporan ikut, **halaman lain tidak**. ⚠️ **[verifikasi doc-keeper
+10 Sep 2026] Parsialnya bahkan masuk KE DALAM salah satu halaman yang "sudah pindah":** `CRMReportPage` memang
+bersih, tapi **`CRMDashboardPage` hanya pindah di jalur fetch utamanya** — panel kalender & Add/Edit Visit di file
+yang sama masih `profile.company_id` di **5 titik**, termasuk **`:3400` yang MENULIS `company_id` pada INSERT
+`activities`**. Artinya halaman itu bisa **menampilkan entitas A sambil menulis ke entitas B**. Ini **mempertajam TD-208** yang
+sudah ada (yang dulu berbunyi "NOL file CRM"), dan sisanya jadi **kandidat batch tersendiri, bukan tambalan
+per-file**.
+
+**Laporan — dua perlakuan berbeda, sengaja.** KPI + tabel per-sales → `crm_report_window` (nol plafon);
+`effSalesIds` tetap disaring **di klien** karena ia **pilihan TAMPILAN, bukan batas keamanan**. **RPC gagal → JATUH
+BALIK ke hitungan dari baris + KPI menampilkan `—`** — *diam-diam menampilkan nol jauh lebih buruk daripada angka
+yang ditandai.* **Ekspor PDF → loop paginasi `.range()` sampai habis**, karena PDF satu-satunya permukaan yang
+menuntut baris LENGKAP (layar cuma 40 teratas) dan ia hanya diklik sesekali — menaruh loop yang sama di jalur muat
+halaman membuat **setiap kali buka halaman ikut membayarnya**. `SAFETY_PAGES` menjaga dari loop tak berujung, dan
+kalau tersentuh **user diberi tahu SEBELUM memakai PDF-nya**. `mapRows` diangkat ke `useCallback` supaya ekspor
+memakai **pemeta yang SAMA PERSIS** dengan layar.
+
+⚠️ **Guard truncation laporan TIDAK dicabut, tapi MAKNANYA DIPERSEMPIT** — tren & daftar detail masih memakai
+baris berplafon. Bannernya diperbarui supaya **berhenti mengklaim "every figure below"**: KPI dan tabel per-sales
+kini justru **tidak** terpengaruh, dan mengatakan sebaliknya membuat **banner itu sendiri jadi salah**.
+
+**⚠️ Konsekuensi yang DITERIMA:** batang **"Pipeline by Stage"** masih dari `openInq`/`closedInq` yang berplafon,
+jadi saat plafon itu kena, angka **"Stage Conversion"** (sudah benar) **tak lagi rekonsiliasi** dengan batangnya
+(terpotong). ✅ **Batang itu punya guard `degraded.pipelineByStage` sendiri yang menyala di keadaan itu —
+ketidakcocokannya BERBUNYI, tidak diam-diam.** → **TD-250**.
+
+---
+
+#### 11. Kosmetik tab Quotation di Detail Deal (`3254783`) — nol perubahan logika
+
+Dipisah dari perubahan versioning **supaya diff-nya bisa dibaca sekali lihat dan di-revert sendirian kalau perlu**.
+(1) Header tabel Price Breakdown: **coral `#F08C7D` → abu netral** — *coral itu salah pasang, bukan keputusan;
+desain sumbernya memakai abu, dan coral membuat satu-satunya tabel di halaman ini berteriak lebih keras dari
+isinya.* (2) Empat titik mono generik → `FONT_MONO` dari `v3/tokens`. ⚠️ **Halaman non-v3 (QuotationList /
+QuotationDetail / DealPanels) SENGAJA tidak ikut — mengimpor token v3 ke sana = memulai migrasi halaman itu
+diam-diam.** (3) `'× kurs'` → `'× rate'`. (4) Kolom Actions: ikon Download disabled → tombol teks **"View"** —
+*satu-satunya kontrol di kolom Actions berupa tombol mati membuat kolomnya terbaca RUSAK, bukan terbaca "segera
+hadir".* Tombolnya **sengaja tanpa `onClick` sendiri** (klik menggelembung ke `onRowClick` `<tr>`; menduplikasi
+handler membuka dua jalur navigasi yang bisa melenceng).
+
+---
+
+#### ⛔ GERBANG RILIS — TETAP DUA (kandidat ketiga muncul lalu gugur di hari yang sama)
+
+1. **TD-225** — `inquiries.owner_id` belum ada di produksi (gerbang lama).
+2. **TD-249** — `p_scope_own` `created_by` ↔ `owner_id` harus berpindah **serempak** dengan `20260830000003`.
+3. **✅ TD-243 — lahir dan tertutup di hari yang sama (10 Sep 2026).** Doc-keeper menemukan migrasi
+   **`20260909000006_crm_dashboard_aggregate_rpc` ber-header `BELUM DIJALANKAN`** — satu-satunya dari enam
+   migrasi 9 Sep yang tidak bertanda LIVE — sementara FE **sudah memanggil keenam RPC-nya**, dan keenam fungsi
+   **0 hit di `schema_snapshot.sql`**. Sempat dicatat sebagai **gerbang rilis ketiga**.
+   ⛔ **Ternyata BUKAN.** Den menjalankan query `pg_proc` **langsung ke staging DAN produksi**: keenam fungsi
+   **sudah ada di kedua environment sejak 9 Sep** (`prosecdef=false`, `search_path=public`, nol akses `anon`).
+   Yang basi **headernya**, bukan migrasinya — sudah dikoreksi jadi `LIVE — staging 9 Sep 2026, produksi
+   9 Sep 2026`, sehingga keenam header 9 Sep kini seragam. **TD-243 RESOLVED, gerbang rilis tetap DUA.**
+   ⭐ **Pelajaran yang tetap berlaku sesudah TD-nya tutup:** `schema_snapshot.sql` hanya memotret **produksi
+   pada saat di-dump**, jadi nol hit **tidak** berkata apa pun soal staging; dan header `Status:` adalah catatan
+   manusia yang bisa tertinggal — di sesi 9 Sep itu terjadi pada **keenam** file, lima sempat diperbaiki dan satu
+   terlewat. Bukti yang mengikat hanya **query ke environment yang ditanya**.
+
+---
+
+#### Temuan lain yang DICATAT, bukan dikerjakan
+
+- **`prospects_read` masih memakai kolom LAMA `account_status`** untuk cabang `operations`, sementara funnel &
+  dashboard sudah memakai `lifecycle_stage`. Dua kolom hidup berdampingan pasca dual-write `20260908000001`.
+  ⚠️ **Ini PRASYARAT `20260908000002_accounts_lifecycle_drop_legacy`** — begitu `account_status` dibuang, policy-nya
+  patah dan `operations` kehilangan akses ke seluruh customer **senyap**. → **TD-246**.
+- **Cabang `operations` di `prospects_read` SENGAJA tidak diperluas** di RPC — RPC **meniru penyaringan FE hari
+  ini**. **Pelestarian perilaku, bukan perbaikan**; header migrasinya menandainya supaya tak "diperbaiki" diam-diam.
+- **`roles.code` punya DUPLIKAT** — ditemukan saat mencari role `operations` untuk tes staging. ⚠️ **Akar
+  penyebabnya BELUM diinvestigasi; dicatat sebagai temuan MENTAH, tanpa spekulasi.** → **TD-247**.
+
+---
+
+#### Status tes runtime
+
+⚠️ **Jangan digeneralisasi ke dua arah.** Pekerjaan quotation versioning **diuji di staging**. Cabang MQL→SQL
+**tetap belum bisa diuji di staging** (kohort NOL) — verifikasi di produksi. Keenam RPC agregat **sudah terkonfirmasi live di staging dan produksi** (TD-243 RESOLVED, lihat butir 3 di atas).
+
+---
+
 ## 2026-09-08
 ### Dua sprint UI CRM — Detail Deal lepas dari sumbu `accounts`, Pipeline Trend lepas dari selektor periode
 
