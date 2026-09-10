@@ -254,15 +254,33 @@ const makeStyles = (print) => StyleSheet.create({
   td: { fontSize: 9.75, paddingVertical: 5 },
   tdMute: { color: MUTE_65 },
 
-  totalsWrap: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10.5 },
-  totalsBox: { width: 240, flexDirection: 'column', gap: 5 },
+  // Blok totals dikecilkan HANYA di varian cetak — font, jarak, dan padding
+  // sekaligus, karena mengecilkan salah satunya saja membuat blok terlihat
+  // renggang alih-alih ringkas. Penghematannya 22,41 pt (diukur lewat spacer
+  // biner, bukan dijumlah dari nilai style), dan itu MELAMPAUI tinggi satu
+  // baris tabel 22,94 pt di ambang batasnya — ini satu-satunya penataan sesi
+  // 10 Sep 2026 yang benar-benar menaikkan batas halaman varian cetak.
+  //
+  // ⚠️ Grand Total TIDAK ikut kehilangan penekanan, dan itu dijaga oleh rasio,
+  // bukan oleh kehati-hatian: ia tetap satu-satunya kotak berbingkai, tetap
+  // tipe terbesar di blok, dan rasionya ke baris biasa cuma bergeser dari
+  // 14,25/9,75 = 1,46 jadi 13/9 = 1,44. Kalau kelak angkanya disetel lagi,
+  // jaga rasio itu — bukan selisih absolutnya.
+  //
+  // SENGAJA tidak diterapkan ke varian download (keputusan Den 10 Sep 2026):
+  // download adalah varian yang setia pada desain sumber (lihat catatan kepala
+  // file), dan ia tidak sedang tertekan paginasi. Mengubahnya berarti
+  // menyimpang dari desain sumber untuk masalah yang tidak ia punya. Kalau
+  // kelak diputuskan sebaliknya, terukur: batas download naik n<=6 -> n<=7.
+  totalsWrap: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: print ? 9 : 10.5 },
+  totalsBox: { width: 240, flexDirection: 'column', gap: print ? 3.5 : 5 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  totalLabel: { fontSize: 9.75, color: MUTE_60 },
-  totalVal: { fontSize: 9.75, color: INK },
-  totalHr: { height: 1, backgroundColor: RULE_20, marginVertical: 4.5 },
-  grandBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: PURPLE, borderRadius: 3, paddingVertical: 7.5, paddingHorizontal: 12, marginTop: 3 },
-  grandLabel: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: 11.25 },
-  grandVal: { fontFamily: 'Lora', fontWeight: 600, fontSize: 14.25, color: PURPLE_DEEP },
+  totalLabel: { fontSize: print ? 9 : 9.75, color: MUTE_60 },
+  totalVal: { fontSize: print ? 9 : 9.75, color: INK },
+  totalHr: { height: 1, backgroundColor: RULE_20, marginVertical: print ? 3 : 4.5 },
+  grandBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: PURPLE, borderRadius: 3, paddingVertical: print ? 5.5 : 7.5, paddingHorizontal: print ? 11 : 12, marginTop: print ? 2 : 3 },
+  grandLabel: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: print ? 10.5 : 11.25 },
+  grandVal: { fontFamily: 'Lora', fontWeight: 600, fontSize: print ? 13 : 14.25, color: PURPLE_DEEP },
 
   footBlock: { marginTop: 'auto', paddingTop: print ? 4 : 7.5 },
   termsLabel: { fontSize: 8.25, letterSpacing: 0.66, textTransform: 'uppercase', color: PURPLE, marginBottom: print ? 3 : 4.5 },
