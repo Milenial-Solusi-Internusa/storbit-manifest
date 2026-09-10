@@ -6,7 +6,7 @@
 --            · inquiry_status_history · activities · quotations
 --            · RLS prospects_read / alh_read / inquiries_read / activities_select
 --              / quotations_read — SEMUANYA TIDAK DIUBAH oleh migrasi ini.
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
+-- Status:    LIVE — staging 9 Sep 2026, produksi 9 Sep 2026.
 --
 -- SIFAT: 100% BACA. Nol DDL tabel, nol perubahan RLS, nol backfill, nol trigger.
 --
