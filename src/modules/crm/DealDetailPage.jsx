@@ -15,14 +15,16 @@
 //
 // Data: inquiries + accounts (prospect) + quotations (WHERE inquiry_id) +
 // activities (WHERE account_id = inquiry.prospect_id) + profiles + payment_terms.
-// No DB schema change. Halaman ini READ-ONLY terhadap `accounts` sejak 8 Sep 2026 —
-// satu-satunya jalur tulisnya (Move Stage + Edit Deal) sudah dicabut.
+// No DB schema change. Halaman ini tak pernah menulis `accounts` LANGSUNG sejak
+// 8 Sep 2026 — dua jalur tulis langsungnya (Move Stage + Edit Deal) sudah dicabut.
+// Satu-satunya perubahan `accounts` yang masih berasal dari sini datang lewat RPC
+// mark_inquiry_won (server-side: pipeline_stage='WON'), bukan lewat PostgREST.
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, ChevronLeft, ChevronRight, Pencil, CalendarClock, ArrowRight,
   Loader2, AlertCircle, Phone, MessageCircle, MapPin, Users, Mail, ListChecks, XCircle,
-  Ban, UserCog,
+  Ban, UserCog, CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -565,6 +567,10 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // B3 — Batalkan deal (alasan teks bebas) + Mulai Negosiasi (tanpa form).
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelSaving, setCancelSaving] = useState(false);
+  // Tandai inquiry MENANG (jalur manual) — ConfirmModal polos (nol form alasan
+  // diminta), RPC mark_inquiry_won yang menegakkan izin sebenarnya.
+  const [wonOpen, setWonOpen] = useState(false);
+  const [wonSaving, setWonSaving] = useState(false);
   // Ganti pemilik deal (owner_id). Panel inline, bukan modal: aksi ini tak punya
   // form alasan seperti Tandai Kalah/Batalkan — cuma satu dropdown.
   const [ownerOpen,   setOwnerOpen]   = useState(false);
@@ -764,6 +770,13 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
   // B3 — gate dua aksi baru. Penegak izin sebenarnya tetap RLS inquiries_update;
   // ini murni lapis UI (fail-closed: status tak dikenal -> tombol tak dirender).
   const canCancel = CANCELLABLE_INQUIRY_STATUS.includes(String(inquiry?.status || 'OPEN').toUpperCase());
+  // Aksi "Mark as Won" — gate UI murni UX (RPC mark_inquiry_won yang menegakkan
+  // izin sebenarnya): cuma pembuat inquiry atau super_admin, dan cuma kalau belum
+  // WON. Sengaja TIDAK ikut LOSABLE_INQUIRY_STATUS — inquiry yang sudah
+  // LOST/CANCELLED tetap boleh ditandai WON manual (mis. customer berubah pikiran).
+  const isInquiryCreator = !!(inquiry?.created_by && profile?.id && inquiry.created_by === profile.id);
+  const canMarkWon = (isInquiryCreator || erpRole === 'super_admin')
+    && String(inquiry?.status || 'OPEN').toUpperCase() !== 'WON';
 
   /* Ganti pemilik deal — DUA syarat.
      (1) Status masih di Pipeline. Sengaja memakai ulang LOSABLE_INQUIRY_STATUS:
@@ -787,10 +800,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
 
   // ── Task 4 — tandai INQUIRY kalah. Menulis inquiries.status + lost_reason SAJA;
   // accounts TIDAK disentuh sama sekali (lifecycle akun hanya naik, tak pernah turun).
-  // ⚠️ Tandingan "Tandai Menang" SUDAH DICABUT 8 Sep 2026 (blueprint §6: arah maju
-  // digerakkan dokumen). WON kini hanya lahir dari trigger set_inquiry_won_on_so
-  // saat Sales Order berstatus SENT. RPC mark_inquiry_won sengaja DIBIARKAN HIDUP
-  // di DB — nol pemanggil dari FE, pencabutannya milik batch berikutnya.
+  // Tandingannya "Mark as Won" (markInquiryWon, di bawah) sempat dicabut 8 Sep 2026
+  // atas asumsi trigger set_inquiry_won_on_so sudah menggantikannya, lalu
+  // DIKEMBALIKAN 10 Sep 2026: audit produksi menemukan 37 dari 37 WON lahir dari
+  // jalur manual ini, sementara trigger SO belum pernah menyala sekali pun (seluruh
+  // tabel sales_orders = 1 baris DRAFT, nol SENT). Jalur SO baru layak jadi
+  // pengganti setelah keputusan SO/Odoo — sampai itu, keduanya hidup berdampingan.
   async function markInquiryLost(values) {
     if (!inquiry?.id) return;
     const prevStatus = inquiry.status || 'OPEN';
@@ -881,6 +896,22 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
     setCancelOpen(false);
     showToast?.('Deal cancelled.', 'success');
+    refetch();
+  }
+
+  // ── Tandai INQUIRY menang secara manual. RPC mark_inquiry_won menegakkan izin
+  // sebenarnya (creator inquiry atau super_admin) + guard idempotency (sudah WON
+  // → ditolak) — gate `canMarkWon` di atas murni UX, bukan pengganti validasi RPC.
+  // Trigger set_customer_on_inquiry_won yang sudah ada mengurus accounts.lifecycle_stage
+  // + became_customer_at otomatis; RPC itu sendiri yang sekalian set
+  // accounts.pipeline_stage='WON'. Pesan error ditampilkan apa adanya dari RPC.
+  async function markInquiryWon() {
+    if (!inquiry?.id) return;
+    setWonSaving(true);
+    const { error } = await supabase.rpc('mark_inquiry_won', { p_inquiry_id: inquiry.id });
+    setWonSaving(false);
+    if (error) { showToast?.(error.message, 'error'); return; }
+    showToast?.('Deal marked as Won. The linked account is now a customer.', 'success');
     refetch();
   }
 
@@ -1031,7 +1062,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
            ~986px saat masih tujuh tombol sementara kolom kiri cuma ~766px. Blok
            destruktif (Mark as Lost + Cancel Deal) didorong ke kanan lewat
            `marginLeft:auto`. */
-        toolbar={(onEditInquiry || canMarkLost || canCancel || canReassignOwner) && (
+        toolbar={(onEditInquiry || canMarkLost || canMarkWon || canCancel || canReassignOwner) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {onEditInquiry && (
             <button onClick={onEditInquiry} style={ACT_BTN}>
@@ -1043,6 +1074,12 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
               onClick={() => { setOwnerDraft(inquiry.owner_id || ''); setOwnerOpen((v) => !v); }}
               style={{ ...ACT_BTN, background: ownerOpen ? C.navySoft : '#fff' }}>
               <UserCog size={14} />Change Owner
+            </button>
+          )}
+          {canMarkWon && (
+            <button onClick={() => setWonOpen(true)} disabled={wonSaving}
+              style={{ ...ACT_BTN, border: `1px solid ${C.greenBd}`, color: C.green, cursor: wonSaving ? 'not-allowed' : 'pointer', opacity: wonSaving ? 0.6 : 1 }}>
+              <CheckCircle2 size={14} />{wonSaving ? 'Processing…' : 'Mark as Won'}
             </button>
           )}
           {(canMarkLost || canCancel) && (
@@ -1420,6 +1457,20 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
         cancelLabel="Cancel"
         onConfirm={createRevision}
         onCancel={() => setReviseOpen(false)}
+      />
+
+      {/* Tandai inquiry MENANG — konfirmasi polos (nol form alasan), RPC yang
+          menegakkan izin. Modal ditutup SEGERA saat konfirmasi (pola sama
+          offerSwitchConfirm di atas) supaya tombol "Ya" tak bisa diklik dobel. */}
+      <ConfirmModal
+        open={wonOpen}
+        variant="info"
+        title="Mark as Won"
+        message="Mark this deal as Won? The linked account will automatically become a customer."
+        confirmLabel="Yes, Mark as Won"
+        cancelLabel="Cancel"
+        onConfirm={() => { setWonOpen(false); markInquiryWon(); }}
+        onCancel={() => setWonOpen(false)}
       />
     </div>
   );
