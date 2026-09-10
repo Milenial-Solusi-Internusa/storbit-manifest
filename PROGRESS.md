@@ -31,6 +31,158 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-10
+
+### Invoice cetak — delapan penataan dari cetak percobaan di kertas kop sungguhan
+
+FE-only. **Nol perubahan DB, nol migrasi, nol RPC disentuh.** Satu perubahan query di
+`db.js` (pencabutan, bukan penambahan). Cetak percobaan 9 Sep di kertas kop sungguhan —
+yang di sesi itu belum pernah dilakukan — akhirnya jadi sumber kalibrasi.
+
+**Harness pengukur dibangun ulang.** Skrip sesi 9 Sep tidak tersisa di scratchpad, jadi
+dibuat lagi dari nol: sucrase (transform JSX) → render `@react-pdf/renderer` di Node →
+parser content stream dengan **komposisi matriks penuh** (CTM × Tm, bukan penjumlahan
+translasi — kesalahan yang sudah dicatat 9 Sep dan sengaja tidak diulang) → rasterisasi
+`qlmanage` untuk pemeriksaan mata. Ditambah **pengukur slack**: spacer yang dicari biner
+tepat sebelum blok Totals, jadi sisa ruang halaman-1 terbaca langsung dalam pt alih-alih
+disimpulkan dari jumlah halaman.
+
+⚠️ **Harness diverifikasi dulu terhadap baseline terdokumentasi sebelum dipakai memutuskan
+apa pun** — ia mereproduksi persis angka 9 Sep: cetak `n≤4` seragam empat panjang alamat,
+download `n≤6`, titik dua `x=392` (cetak) / `x=114` (download). Tanpa langkah ini, angka
+before/after di bawah tak akan sebanding dengan catatan lama.
+
+**Dua ukuran dasar yang dipakai berulang:** satu baris tabel = **22,94 pt**; slack cetak di
+`n=4` sebelum sesi ini cuma **2,69 pt**.
+
+**1. Billed To pakai alamat customer, nol informasi DC (kedua varian).** Blok itu dulu nama
+customer → nama DC → alamat DC; sekarang nama customer → `accounts.address`. Nama DC ikut
+dicabut: invoice ditagihkan ke customer, bukan ke gudang tujuan. ⚠️ **Alamat kosong dicetak
+`—`, NOL cadangan ke `dc_master.alamat`** — keputusan sadar Den: mencadangkan membuat
+invoice tampak konsisten padahal isinya campur dua sumber, dan itu menyulitkan penelusuran
+waktu ada yang salah alamat. Diukur 10 Sep: **dari empat customer Storbit yang punya SP,
+cuma Indomarco yang `address`-nya terisi** (127 karakter); Indogrosir, CK - Central Kitchen,
+General Order kosong — alamatnya diisi di master data, bukan diakali di PDF.
+
+⚠️ **Perlakuan kosong sengaja DIBALIK** dari 9 Sep (dulu barisnya dihilangkan meniru
+`PartyBlock` `printKit.jsx`). Alasannya berubah karena sumbernya berubah: alamat DC memang
+boleh tak ada, alamat customer **seharusnya** ada dan kosongnya adalah master data yang
+belum diisi — `—` membuatnya terlihat, baris yang hilang menyembunyikannya.
+
+`db.js`: query `dc_master` di `getInvoicePdfData` dicabut seluruhnya (satu round-trip lebih
+sedikit), begitu juga `dc_id` dari embed `sp_orders`. Disisir dulu: `dc_name`/`dc_address`
+dari fungsi itu **cuma dikonsumsi `InvoicePDF`** — `dc_name` yang dipakai
+`PickingListPDF`/`DeliveryNotePDF` datang dari `getPrintIdentity()`, fungsi lain, tidak
+disentuh. **Nol dampak paginasi (terukur 0 pt)**: Billed To masih kolom yang lebih pendek,
+terserap `max()` tinggi `billRow`.
+
+⚠️ **TD-217 bertambah gejala.** Finance tak bisa membaca `accounts` sama sekali, jadi untuk
+akun Finance invoice kini menampilkan **nama customer kosong DAN alamat `—`**. Sesi ini
+tidak menciptakannya, tapi memindahkan gejalanya ke dokumen yang dikirim ke customer.
+
+**2. Nilai meta dokumen rata kanan (cetak saja).** `flex:1` + `textAlign:'right'` mendorong
+nilai ke tepi **566** — tepi yang sama dengan kolom SUBTOTAL dan kotak Grand Total, jadi
+tiga blok itu segaris. ⚠️ **Titik dua tetap sejajar, diverifikasi dari koordinat x hasil
+render: `x=392` di ketiga baris**, identik dengan sebelum perubahan; rata kanan cuma
+menyentuh kolom nilai, `metaKey` 68pt dan `metaColon` 8pt tak berubah.
+
+⚠️ **Fork print-only-nya WAJIB, bukan kerapian.** `metaVal` satu style bersama; tanpa fork,
+rata kanan bocor ke download — di sana blok meta duduk di kolom kop selebar halaman, jadi
+nilainya terlempar ke `x=478` sementara titik duanya tetap di `x=114`. **Terukur, bukan
+dugaan.** Ini kelas kebocoran yang persis sudah diperingatkan untuk `hr` di catatan DUA
+VARIAN — peringatan itu terbukti berlaku untuk key lain juga.
+
+**3. Blok totals dikecilkan (cetak saja).** Font, jarak, dan padding sekaligus — mengecilkan
+salah satunya saja membuat blok terlihat renggang alih-alih ringkas: `totalsWrap` 10,5→9 ·
+`gap` 5→3,5 · label/nilai 9,75→**9** · `totalHr` 4,5→3 · `grandBox` padV 7,5→5,5 padH 12→11
+marginTop 3→2 · `grandLabel` 11,25→**10,5** · `grandVal` 14,25→**13**. Hemat **22,41 pt**
+(diukur lewat spacer biner, bukan dijumlah dari nilai style) — melampaui 22,94 pt tinggi
+satu baris di ambang batasnya. **Ini satu-satunya penataan sesi ini yang benar-benar
+menaikkan batas halaman lewat pemadatan isi.**
+
+⚠️ **Penekanan Grand Total dijaga oleh RASIO, bukan kehati-hatian:** tetap satu-satunya
+kotak berbingkai, tetap tipe terbesar di blok, rasionya ke baris biasa cuma bergeser
+14,25/9,75 = 1,46 → 13/9 = **1,44**. Kalau kelak disetel lagi, jaga rasio itu, bukan selisih
+absolutnya.
+
+**SENGAJA tidak diterapkan ke download** (keputusan Den): download adalah varian yang setia
+pada desain sumber, dan ia tidak sedang tertekan paginasi — mengubahnya berarti menyimpang
+dari desain sumber untuk masalah yang tidak ia punya. Argumen "customer melihat dua ukuran
+berbeda" ditimbang dan ditolak: kedua varian memang sudah berbeda (satu berkop, satu tidak),
+ukuran totals bukan yang membuat bedanya terasa. Kalau kelak dibalik, **terukur: download
+naik `n≤6` → `n≤7`**.
+
+**4. Batas atas kertas kop 4 cm → 3 cm, batas bawah 4,5 cm → 3,5 cm.** Cetak percobaan
+menunjukkan isi mulai terlalu jauh di bawah logo: batas atas yang benar adalah **tepi bawah
+logo**, bukan tinggi pita kop yang ikut membawa ruang kosong di bawahnya.
+
+⚠️⚠️ **KEDUA ANGKA BARU ITU SEMENTARA, dan status epistemiknya LEBIH LEMAH dari angka lama.**
+4 dan 4,5 berasal dari **pengukuran penggaris langsung** di kertas (9 Sep); 3 dan 3,5
+diturunkan dari **pembacaan foto** cetak percobaan. Keduanya disetel ulang sesudah cetak
+percobaan berikutnya kalau masih meleset, dan angka lamanya sengaja tetap tertulis di
+komentar kode supaya perubahannya terlacak. Keduanya dipasang bersamaan justru supaya satu
+cetak percobaan berikutnya menguji dua-duanya — memasang yang atas sekarang dan menunggu
+kalibrasi untuk yang bawah akan membuat cetak berikutnya cuma menjawab separuh.
+
+**3 cm dipilih, bukan 3,25 atau 3,5**, karena ia satu-satunya yang memberi blok meta
+kenaikan **1 cm penuh** seperti diminta — kenaikan meta sama persis dengan pengurangan batas
+ini (lihat butir 5); 3,5 cm hanya memberi 0,5 cm.
+
+**5. Blok meta naik 1 cm — dan cara naiknya yang penting.** Blok itu tidak digeser sendiri.
+Batas atas dikecilkan 1 cm, lalu ruang yang terbebas **diserap kembali** oleh `marginBottom`
+blok meta (`3 + META_LIFT_PT`). Hasil bersihnya: cuma blok meta yang naik (baseline
+129,19 → **100,85**), sementara **Billed By/To dan segala yang di bawahnya tetap di
+koordinat semula** — diverifikasi, bukan diasumsikan: `BILLED BY` kembali ke **y=172,63**
+dan `DESCRIPTION` ke **y=283,58**, identik dengan sebelum sesi ini.
+
+⚠️ **Konsekuensi yang wajib diingat saat kalibrasi ulang:** kenaikan blok meta **sama persis
+dengan pengurangan `KOP_HEADER_CM`** — menyetel batas ke 3,5 cm otomatis menurunkan kenaikan
+meta jadi 0,5 cm. Itu definisi `META_LIFT_PT`, bukan bug. Kalau yang diinginkan meta naik
+1 cm sementara batasnya 3,5 cm, `marginBottom` itulah yang harus dilepas dari `META_LIFT_PT`
+— dan konsekuensinya seluruh isi ikut naik 0,5 cm.
+
+⚠️ **JANGAN diganti `marginTop` negatif**: itu menaruh meta di luar padding halaman — di luar
+batas kop, persis hal yang padding itu jaga — dan tak ada yang menahannya waktu
+`KOP_HEADER_CM` dikecilkan lagi kelak.
+
+**6. Blok Terms & Payment turun 1 cm — dan itu HANYA bisa lewat batas bawah.** `footBlock`
+pakai `marginTop:'auto'`, jadi ia **selalu menempel batas bawah** berapa pun jumlah barisnya:
+diukur, baseline disclaimer **655,86 identik di `n=1` maupun `n=4`**, sisa ke batas cuma
+**2,58 pt**. Yang tersedia 2,58 pt, yang diminta 28,35 pt — **tak ada nilai style di blok itu
+yang bisa menurunkannya**, satu-satunya tuas adalah `KOP_FOOTER_CM`. Catatan mekanisme ini
+ditulis di dekat `footBlock` supaya tidak dicari ulang. Jangan ditambal `marginBottom`
+negatif (menembus batas kop tanpa penjaga) atau `paddingTop` (justru memakan ruang tabel).
+
+**Blok Billed By/To: nol perubahan posisi**, diverifikasi ulang sesudah tiap commit.
+
+⭐ **BATAS HALAMAN VARIAN CETAK NAIK `n≤4` → `n≤6`, seragam untuk keempat panjang alamat.**
+Rinciannya, supaya tidak salah dikreditkan: blok totals **+22,41 pt** (`n≤4`→`n≤5`) dan batas
+bawah **+28,35 pt** (`n≤5`→`n≤6`). **Batas atas + blok meta menyumbang 0 pt** — itu memang
+rancangannya, ruangnya diperuntukkan blok meta, bukan tabel. Alamat customer juga 0 pt.
+Varian download tetap `n≤6`.
+
+⚠️ **Yang boleh dijanjikan ke pengguna tetap `n≤5`, bukan `n≤6`:** slack halaman-1 di `n=6`
+cuma **7,47 pt** sementara di `n=5` ada **30,47 pt**. Satu nama produk yang membungkus ke
+baris kedua sudah cukup mendorong `n=6` ke halaman berikutnya. Pola peringatan yang sama
+dipakai 9 Sep waktu `n=6` muat dengan sisa 0,66 pt.
+
+Terhadap sebaran produksi 522 SP (380 satu produk · 69 dua · 29 tiga · 18 empat · 13 lima ·
+13 enam+), `n≤5` mencakup **509 dari 522**.
+
+**Verifikasi.** Build clean; lint tetap **170 problems (148 errors, 22 warnings)** — dicek
+sesudah tiap commit, bukan sekali di akhir. Titik dua meta diukur dari koordinat x PDF
+(`x=392` cetak / `x=114` download, ketiga baris). **Batas kop terjaga di SEMUA halaman**,
+disapu 4 panjang alamat × `n=1..14` sampai tiga halaman: tinta teratas **91,10** vs batas
+**91,04**, terbawah **684,21** vs batas **686,79**. Kedua varian dirender dan diperiksa
+mata lewat rasterisasi.
+
+⚠️ **NOL tes runtime di browser.** Seluruh verifikasi lewat render di Node — kedua tombol
+belum diklik di aplikasi nyata. **Dan cetak percobaan di kertas kop untuk angka BARU
+(3 / 3,5) belum dilakukan** — itu yang menentukan apakah keduanya perlu disetel lagi.
+Lembar kalibrasi ber-skala 0,25 cm sudah dibuat dan dikirim ke Den untuk keperluan itu
+(dicetak 100%, bukan "Fit to page"), tapi **tidak dimasukkan ke repo** — ia alat sekali
+pakai, bukan bagian aplikasi.
+
 ## 2026-09-09
 
 ### Invoice Storbit — batas area kertas kop + dua varian PDF (download / cetak)
