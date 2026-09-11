@@ -7,13 +7,16 @@
 --            is_bnf_authorized (konsep BNF, sengaja tak disentuh).
 -- Depends:   20260911000004 (roles.level) — LIVE di staging & produksi.
 --
--- Status:    LIVE SEBAGIAN — kedua CREATE OR REPLACE dieksekusi manual oleh Den
---            11 Sep 2026 di STAGING dan PRODUKSI, diverifikasi baca-saja hari
---            yang sama (V1: sisa 'gm_bd' hanya is_bnf_authorized; V2: kedua RPC
+-- Status:    LIVE — kedua CREATE OR REPLACE dieksekusi manual oleh Den 11 Sep
+--            2026 di STAGING dan PRODUKSI, diverifikasi baca-saja hari yang
+--            sama (V1: sisa 'gm_bd' hanya is_bnf_authorized; V2: kedua RPC
 --            pakai_level = t, guard_entitas = t, SECURITY DEFINER, search_path;
---            snapshot sudah memuat body barunya). ⚠️ COMMENT ON FUNCTION
---            is_manager_or_above_in di bawah BELUM DIJALANKAN di kedua DB (V4
---            masih false) — sisa itu dipindah ke blok "SISA" tersendiri.
+--            snapshot 23:44 sudah memuat body barunya). COMMENT ON FUNCTION
+--            is_manager_or_above_in sempat tertinggal, lalu diperbarui Den
+--            sendiri di kedua DB malam itu juga dengan TEKS BERBEDA dari draf
+--            di file ini — teks yang berlaku ada di blok "SISA" (sudah
+--            selesai). Snapshot BELUM memuat COMMENT baru itu (refresh 23:44
+--            mendahuluinya) — diff kecil yang akan muncul di refresh berikut.
 --
 -- ── KENAPA TERLEWAT ────────────────────────────────────────────────────────
 --   Saat 20260911000004 dieksekusi, keduanya dilewati dengan alasan "cuma
@@ -156,17 +159,15 @@ COMMIT;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
--- SISA — BELUM DIJALANKAN (kedua DB, per 11 Sep 2026): COMMENT yang basi.
--- Jalankan sendiri (satu statement, tanpa efek perilaku), lalu ubah catatan ini.
+-- SISA — SELESAI (Den, 11 Sep 2026 malam, kedua DB): COMMENT yang basi diganti.
+-- Teks di bawah adalah yang SUNGGUH terpasang (dibaca ulang dari produksi &
+-- staging, identik) — bukan draf semula yang menyebut TD-233/gotcha #26; Den
+-- memilih deskripsi netral. Statement ini idempoten kalau dijalankan lagi.
 -- ═════════════════════════════════════════════════════════════════════════════
 
--- COMMENT lama masih berbunyi "Daftar role WAJIB bergerak bersama TD-233 (lima
--- tempat)" — tidak berlaku lagi: kelima tempat kini membaca roles.level.
 COMMENT ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) IS
-  'Kembaran is_manager_or_above() yang MENGIKAT role ke entitas baris. Dipakai policy '
-  'quotations/quotation_items agar TD-180 tertutup tanpa memutus keterkaitan dua syarat '
-  '(gotcha #26). Sejak 20260911000004 "manager ke atas" = roles.level <= 6 — bukan '
-  'daftar nama; TD-233 (daftar di lima tempat) selesai bersama 20260911000005.';
+  'Cek apakah user punya role level<=6 (manager ke atas) di company_id tertentu. '
+  'Kini level-driven (roles.level), bukan daftar nama role.';
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -200,8 +201,8 @@ WHERE  n.nspname = 'public'
                      'prf_release','prf_select_offer')
 ORDER  BY 1;
 
--- V4 — COMMENT mendarat. DIHARAPKAN: berisi '20260911000005'.
---      HASIL 11 Sep 2026: BELUM (kedua DB) — lihat blok SISA di atas.
+-- V4 — COMMENT mendarat. DIHARAPKAN: berisi 'level-driven', TIDAK lagi 'lima tempat'.
+--      HASIL 11 Sep 2026 malam: LOLOS di kedua DB (teks di blok SISA).
 SELECT obj_description(p.oid, 'pg_proc')
 FROM   pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE  n.nspname = 'public' AND p.proname = 'is_manager_or_above_in';
@@ -217,10 +218,10 @@ WHERE  n.nspname = 'public' AND p.proname = 'is_manager_or_above_in';
 
 -- =============================================================================
 -- CATATAN SESUDAH EKSEKUSI
---   1. ✅ Header sudah LIVE SEBAGIAN (fungsi); naikkan jadi LIVE penuh sesudah
---      blok SISA dijalankan.
---   2. ✅ Snapshot di-refresh 11 Sep 2026 bersama 20260911000004 — body kedua
---      RPC sudah termuat. COMMENT tidak (memang belum jalan).
+--   1. ✅ LIVE penuh (fungsi + COMMENT), kedua DB.
+--   2. ✅ Snapshot di-refresh 11 Sep 2026 23:44 bersama 20260911000004 — body
+--      kedua RPC termuat; COMMENT baru belum (dijalankan sesudah refresh) →
+--      muncul sebagai diff kecil di refresh berikutnya, bukan kejutan.
 -- =============================================================================
 
 

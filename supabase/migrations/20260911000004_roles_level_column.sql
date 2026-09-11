@@ -268,9 +268,8 @@ WHERE  schemaname = 'public'
 -- CATATAN SESUDAH EKSEKUSI
 --   1. ✅ Snapshot di-refresh 11 Sep 2026 (diff: kolom + constraint + COMMENT +
 --      5 body fungsi). ⚠️ Diff-nya juga membawa `roles_code_unique UNIQUE (code)`
---      — constraint yang ADA di produksi & staging tapi TIDAK berasal dari
---      migrasi mana pun di repo (bukan dari file ini). Perlu dikonfirmasi
---      asal-usulnya dan direkam retroaktif.
+--      — bukan dari file ini: beres-beres TD-247 pagi 11 Sep 2026 (Den, tanpa
+--      file saat itu), kini direkam retroaktif di 20260911000006.
 --   2. ✅ 20260911000005 (bagian fungsi) LIVE di produksi & staging — TD-233
 --      tertutup di kelima tempat. Bagian COMMENT-nya masih terutang (lihat
 --      file itu).
