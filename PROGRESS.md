@@ -31,6 +31,96 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-11
+
+### Invoice — enam penataan: empat dipasang, dua diselidiki dulu (nama PT & rekening)
+
+FE-only untuk yang dipasang. **Nol migrasi baru** di sesi ini; `20260910000001` (kemarin)
+tetap BELUM DIJALANKAN saat sesi ini ditulis.
+
+⚠️ **Baseline paginasi yang benar hari ini: cetak `n≤6`, download `n≤6`** — brief masih
+menyebut "cetak n≤4 seragam", itu angka sebelum 10 Sep. Slack di `n=6` cuma **7,47 pt**
+(cetak) / **6,84 pt** (download), jadi blok tanda tangan (TASK 6) praktis tak punya ruang
+kalau tidak ada yang dibebaskan dulu. Yang membebaskannya TASK 1.
+
+**1. Baris "Storbit" di Billed By dicabut; nama PT naik jadi nama pihak.** "Storbit" adalah
+literal judul dokumen — di kertas kop sudah tercetak, di download sudah ada di kop atas.
+Nama PT dinaikkan ke `billName` (Cormorant 14,25 tebal), style yang **sama** dengan nama
+customer di Billed To, supaya dua blok pihak sejajar bentuknya; `billSub` nol pemakai dan
+ikut dicabut. **Terukur: slack `n=6` naik 7,47 → 22,95 pt (cetak), 6,84 → 22,27 pt
+(download)** — ruang inilah yang nanti menampung tanda tangan.
+
+**2. Nama PT salah — DISELIDIKI, belum diperbaiki.** Sumbernya **DATA**:
+`companies.legal_name` entitas SOA, dibaca `getInvoicePdfData()` → `company.legal_name`.
+Isinya "PT Storbit Indonesia", seharusnya "PT. Stuja Orbit Abadi". Permukaan yang membaca
+kolom itu untuk SOA: **PDF Invoice (dua varian)** · **PDF Picking List** (`PartyBlock`
+Pengirim) · **PDF Surat Jalan** (idem) · **preview Surat Pesanan** (`SalesOrderDetailPage`
+— ⚠️ dengan *fallback* literal `'PT Stuja Orbit Abadi'`, jadi nama yang benar sudah
+tertulis di kode sebagai cadangan yang tak pernah terpakai) · **blok tanda tangan baru**
+(TASK 6, sumber yang sama). Nama yang benar juga sudah hidup di **lima literal** kode
+(`ProductsPage`, `ProductDetailPage`, `PositionsPage`, `tokens.js`, fallback di atas —
+semuanya **tanpa titik** "PT Stuja Orbit Abadi") dan di `entity_bank_accounts.
+account_holder` ("PT. Stuja Orbit Abadi", dengan titik). Memperbaiki **datanya** menutup
+kelima permukaan sekaligus; ada UI-nya (`EntitySettingsPage`, Foundation → Entity) selain
+SQL. Query & UPDATE-nya ada di laporan sesi; **belum dijalankan** saat ini ditulis.
+⚠️ **Keputusan terbuka kecil:** bentuk resmi "PT." (dengan titik, seperti rekening) atau
+"PT" (seperti lima literal kode) — harus satu bentuk supaya tak ada dua ejaan di satu
+dokumen.
+
+**3. SKU → UOM, urutan DESC · QTY · UNIT PRICE · UOM · SUBTOTAL.** ⚠️ **Satuan BUKAN data
+yang ada di baris invoice** — `sp_order_items`, `sp_items`, `sp_invoice_lines` tak punya
+kolom unit/uom sama sekali. Sumbernya cuma `products.unit` (primer) / `products.uom`
+(cadangan) via `sp_order_items.product_id` (NOT NULL, FK ada), embed bersarang
+`sp_order_items(product_name, unit_price, products(unit, uom))`. **Konsekuensi yang harus
+disadari: satuan di invoice = satuan produk SAAT INI, bukan saat terbit** — beda dari
+`product_name`/`unit_price` yang di-snapshot. Membekukannya per-invoice butuh kolom baru +
+migrasi + `create_sp_order_dual` — **belum diputuskan**, dicatat di komentar
+`getInvoicePdfData`. Pemilihan unit/uom meniru RPC laporan Storbit
+(`COALESCE(NULLIF(btrim(unit),''), NULLIF(btrim(uom),''))`) karena ada produk ber-`unit`
+string kosong. 92 pt bekas SKU jatuh ke DESCRIPTION. **Nol dampak paginasi.**
+
+**4. Label "VAT (11%)" → "VAT (12%)", nominal NOL perubahan.** Diperiksa dulu: angka 11 di
+label adalah **literal** JSX, bukan turunan `PPN_RATE`; `total_ppn` datang dari
+`create_invoice` (literal `0.11` di SQL) dan `InvoicePDF` tak pernah menghitung PPN. Tetap
+dibuat konstanta label terpisah **`PPN_LABEL_PCT = 12`** di `taxConstants.js`, persis di
+bawah `PPN_RATE = 0.11`, dengan penjelasan: tarif statutori 12% dikenakan atas DPP Nilai
+Lain (11/12 × DPP) → 12% × 11/12 = **11% efektif**; nominal sudah benar, Faktur Pajak
+menuliskan 12%, invoice mengikuti faktur. ⚠️ **Jangan "disamakan" ke salah satu arah.**
+Diverifikasi dari render: nilai baris VAT identik sebelum/sesudah.
+
+**5. Rekening pembayaran "belum diatur" — DISELIDIKI, belum diperbaiki.** Sumber:
+`entity_bank_accounts` (`bank_name`, `account_number`, `account_holder`, `branch`) difilter
+`company_id = sp_orders.company_id` + `is_default` + `is_active` — jadi **rekening memang
+bergantung entitas SP, bukan entitas login** (jawaban TASK 5d). Penyebab yang paling
+mungkin **bukan data hilang, melainkan policy**: `entity_bank_accounts_access` adalah policy
+`FOR ALL` ber-`USING ((company_id = get_user_company_id() AND is_admin_or_above()) OR
+is_super_admin())` — untuk **membaca** pun harus `admin`/`super_admin` **di home
+company-nya**. `finance_controller`/`finance` **tidak pernah lolos**, bahkan di entitasnya
+sendiri. Itu sebabnya rekening tampil benar saat dilihat Super Admin dan hilang saat
+dilihat akun Finance. Migrasi `20260910000001` **tidak menyentuh** tabel ini. Pesan
+"belum diatur" **menyesatkan** — kelas yang sama dengan **TD-253** (nol baris karena RLS
+tak terbedakan dari belum ada). Query pembuktian + usulan policy `FOR SELECT` aditif ada
+di laporan sesi; **belum dijalankan/dibuat** saat ini ditulis.
+
+**6. Blok tanda tangan kanan bawah, sejajar Terms & Instructions.** Baris kaki jadi dua
+kolom (`footRow`): kiri Terms + kotak Payment (tak diubah), kanan `signBox` 180 pt
+menempel tepi 566. Isi: nama PT (`legal_name` di-uppercase — **sumber yang sama dengan
+Billed By**, bukan literal) → ruang **80 pt = 2,82 cm** (`SIGN_SPACE_PT`) → "Account Dept"
+bergaris bawah → "Authorized Signature". ⚠️ 80 pt cukup untuk materai ditempel
+**melintang** (2,2 cm) + tanda tangan; materai **tegak** (3,2 cm) melewati batas. Angka
+itu batas **terbesar yang tidak menambah tinggi halaman** — dihitung: kolom kiri 100,55 pt
+(cetak) / 116,55 pt (download), blok kanan 80 + ~39,5 pt teks, selisihnya diserap slack
+TASK 1. **Paginasi TIDAK turun: cetak `n≤6` tetap (slack `n=6` 22,95 → 6,45 pt), download
+`n≤6` tetap (22,27 → 20,80 pt)**, seragam empat panjang alamat, nol pelanggaran kop
+`n=1..14`. Menaikkan ruang ke 3,5 cm menurunkan cetak jadi `n≤5`.
+
+⚠️ **Slack cetak di `n=6` kembali tipis (6,45 pt) — yang boleh dijanjikan tetap `n≤5`.**
+
+**Verifikasi.** Build clean; lint tetap **170 (148+22)** dicek per-commit. Titik dua meta
+tetap `x=392` (cetak). Kedua varian dirender + dirasterisasi. ⚠️ **NOL tes runtime
+browser**; embed bersarang `products(unit, uom)` belum pernah dieksekusi PostgREST sungguhan
+— kalau gagal, gejalanya kolom UOM `—` di semua baris, bukan error.
+
 ## 2026-09-10
 
 ### Invoice cetak — delapan penataan dari cetak percobaan di kertas kop sungguhan
