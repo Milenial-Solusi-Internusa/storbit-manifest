@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict RfdyZao6ktQKbbSzLwwmfd5bLadoQN7ZJCr7aLjxLpHwdYRZamONytxnvjn8V7i
+\restrict Ok9hwvGHBnkoE3DWbNAGD69C6qZO8g3aitNiXJE5fV011JebBIgwq0vVanZrhuF
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -2740,13 +2740,11 @@ CREATE FUNCTION public.is_manager_or_above() RETURNS boolean
     SET search_path TO 'public'
     AS $$
   SELECT EXISTS (
-    SELECT 1 FROM user_roles ur
-    JOIN roles r ON r.id = ur.role_id
+    SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
     WHERE ur.user_id = auth.uid()
-      AND r.code IN ('super_admin','admin','ceo','gm','gm_bd','manager','supervisor')
+      AND r.level <= 6
       AND ur.is_active = true
-      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
-  );
+      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE));
 $$;
 
 
@@ -2768,7 +2766,7 @@ CREATE FUNCTION public.is_manager_or_above_in(p_company_id uuid) RETURNS boolean
       AND ur.company_id = p_company_id
       AND ur.is_active  = true
       AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
-      AND r.code IN ('super_admin','admin','ceo','gm','gm_bd','manager','supervisor')
+      AND r.level <= 6
   );
 $$;
 
@@ -2975,10 +2973,9 @@ BEGIN
     WHERE  ur.user_id  = auth.uid()
       AND  ur.is_active = true
       AND  (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
-      AND  r.code = ANY (ARRAY['super_admin','admin','ceo','gm','gm_bd',
-                               'manager','supervisor','operations'])
+      AND  (r.level <= 6 OR r.code = 'operations')
   ) THEN
-    RAISE EXCEPTION 'Tidak berhak menandai surat jalan sebagai terkirim. Butuh salah satu role: super_admin, admin, ceo, gm, gm_bd, manager, supervisor, atau operations.';
+    RAISE EXCEPTION 'Tidak berhak menandai surat jalan sebagai terkirim. Butuh level manager ke atas atau role operations.';
   END IF;
   UPDATE delivery_notes SET status='delivered', delivered_at=now() WHERE id=p_delivery_note_id;
   PERFORM sp_recompute_status(v_cust, v_sp);
@@ -3341,7 +3338,7 @@ BEGIN
          WHERE ur.user_id    = v_uid
            AND ur.company_id = v_company
            AND ur.is_active
-           AND r.code IN ('super_admin','admin','ceo','gm','gm_bd','manager','supervisor')
+           AND r.level <= 6
            AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
        )
   ) THEN
@@ -3390,7 +3387,7 @@ BEGIN
          WHERE ur.user_id    = v_uid
            AND ur.company_id = v_company
            AND ur.is_active
-           AND r.code IN ('super_admin','admin','ceo','gm','gm_bd','manager','supervisor')
+           AND r.level <= 6
            AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
        )
   ) THEN
@@ -8774,7 +8771,9 @@ CREATE TABLE public.roles (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    deleted_at timestamp with time zone
+    deleted_at timestamp with time zone,
+    level integer NOT NULL,
+    CONSTRAINT roles_level_check CHECK ((level = ANY (ARRAY[0, 1, 2, 4, 6, 7, 99])))
 );
 
 
@@ -8806,6 +8805,13 @@ COMMENT ON COLUMN public.roles.is_system_role IS 'True = seeded by platform, can
 --
 
 COMMENT ON COLUMN public.roles.deleted_at IS 'Soft delete. Custom roles only — system roles may not be deleted.';
+
+
+--
+-- Name: COLUMN roles.level; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.roles.level IS 'Tingkat wewenang lintas modul (bukan katalog nama): 0 super_admin/admin · 1 ceo · 2 gm/gm_bd · 4 manager · 6 supervisor · 7 staf (sales/finance/finance_controller/operations/procurement/hrga/it) · 99 viewer (di luar hierarki). "Manager ke atas" = level <= 6 — dipakai is_manager_or_above(), is_manager_or_above_in(), prf_release, prf_select_offer, mark_delivery_delivered dan src/lib/roles.js. finance_controller SENGAJA 7, bukan 4 seperti hierarki org di 04_ROLE_PERMISSION_MATRIX: guard-guard itu tidak pernah memasukkannya (regression check 11 Sep 2026). Migrasi 20260911000004.';
 
 
 --
@@ -10941,6 +10947,14 @@ ALTER TABLE ONLY public.role_permissions
 
 ALTER TABLE ONLY public.role_permissions
     ADD CONSTRAINT role_permissions_unique UNIQUE (role_id, permission_id);
+
+
+--
+-- Name: roles roles_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.roles
+    ADD CONSTRAINT roles_code_unique UNIQUE (code);
 
 
 --
@@ -22029,5 +22043,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict RfdyZao6ktQKbbSzLwwmfd5bLadoQN7ZJCr7aLjxLpHwdYRZamONytxnvjn8V7i
+\unrestrict Ok9hwvGHBnkoE3DWbNAGD69C6qZO8g3aitNiXJE5fV011JebBIgwq0vVanZrhuF
 
