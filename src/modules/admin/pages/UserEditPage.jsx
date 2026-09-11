@@ -656,7 +656,7 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
             {rowMeta?.email || userId}
           </div>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <RoleBadge erpRole={primaryErpRole} legacyRole={null} />
+            <RoleBadge erpRole={primaryErpRole} />
             <StatusBadge active={draft?.active !== false} />
             {rowMeta?.companies && (
               <span

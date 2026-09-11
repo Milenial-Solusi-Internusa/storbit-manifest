@@ -293,8 +293,12 @@ const ROLES = [
   { id: 'hrga',               label: 'HRGA'                },
   { id: 'it',                 label: 'IT'                  },
   { id: 'viewer',             label: 'Viewer'              },
-  // Legacy values — fallback for users not yet migrated to user_roles
-  { id: 'super',              label: 'Super Admin (legacy)' },
+  // 'management' BUKAN role di tabel roles (0 baris, dicek 11 Sep 2026). Ia
+  // dipertahankan HANYA karena masih dipakai sebagai fallback
+  // `const role = authRole || 'management'` untuk user tanpa role di entitas
+  // aktif — mencabutnya di sini tanpa mengganti fallback itu membuat label
+  // role tampil sebagai string mentah. 'super' (legacy profiles.role, kolom
+  // sudah di-drop) sudah dicabut.
   { id: 'management',         label: 'Management (legacy)'  },
 ];
 
@@ -313,8 +317,8 @@ const PERMISSIONS = {
   hrga:               ['view','create','edit','export'],
   it:                 ['view','create','edit','export','master'],
   viewer:             ['view','export'],
-  // Legacy fallbacks — coexist during migration period
-  super:              ['view','create','edit','delete','shipment','finance','export','import','master'],
+  // 'management' = fallback role user tanpa role (lihat catatan di ROLES);
+  // 'super' sudah dicabut (11 Sep 2026).
   management:         ['view','export'],
 };
 
@@ -1452,7 +1456,7 @@ function moduleContainsMenu(m, activeMenu) {
 // old sidebar that never gated children); a GATED child uses canSeeMenuItem.
 // ─────────────────────────────────────────────────────────────────────────────
 function navHasGate(item) {
-  return !!(item && (item.public === true || MENU_KEY_MAP[item.id] || item.module || item.role));
+  return !!(item && (item.public === true || MENU_KEY_MAP[item.id] || item.role));
 }
 // tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
 function navChildGate(c, role, hasMenuPermission, isBnfAuthorized) {
@@ -1469,8 +1473,7 @@ function navChildGate(c, role, hasMenuPermission, isBnfAuthorized) {
 }
 function navModuleVisible(m, role, hasMenuPermission, isBnfAuthorized) {
   if (m.soon) return true;             // roadmap skeleton — shown, disabled
-  if (m.target) {                      // direct-navigate leaf (Beranda / Users & Access)
-    if (m.role) return m.role.includes(role);
+  if (m.target) {                      // direct-navigate leaf (Beranda)
     const real = findMenuItemById(m.target);
     if (!real || !navHasGate(real)) return true;
     return canSeeMenuItem(real, role, hasMenuPermission, isBnfAuthorized);
@@ -2705,7 +2708,7 @@ export default function StorbitManifest() {
   // Plain const (not useMemo) because it sits after the `if (loading) return`
   // early-return and depends on visibleMenuGroups computed just above.
   const canAccessActiveMenu = (() => {
-    if (role === 'super_admin' || role === 'super') return true;
+    if (role === 'super_admin') return true;
     // Synthetic / detail menus are navigated to programmatically from pages that
     // are themselves already gated — always allow.
     const SYNTHETIC = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];

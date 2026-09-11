@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Check, X, RefreshCw as Spinner } from 'lucide-react';
-import { PASTEL, NAVY, ORANGE, RED, LEGACY_ROLES, LEGACY_ROLE_COLOR } from './userAccessTokens';
+import { PASTEL, NAVY, ORANGE, RED } from './userAccessTokens';
 
 // ─────────────────────────────────────────────────────────────
 // Small display components
@@ -40,7 +40,10 @@ export function Avatar({ name, size = 32, avatarUrl }) {
   );
 }
 
-export function RoleBadge({ erpRole, legacyRole }) {
+// Prop `legacyRole` (label "(legacy)" dari profiles.role) dicabut 11 Sep 2026:
+// kolom profiles.role sudah di-drop (TD-20), jadi nilainya selalu
+// undefined/null dan cabang legacy tak pernah merender apa pun selain "—".
+export function RoleBadge({ erpRole }) {
   if (erpRole?.roles) {
     return (
       <div>
@@ -53,15 +56,12 @@ export function RoleBadge({ erpRole, legacyRole }) {
       </div>
     );
   }
-  const color = LEGACY_ROLE_COLOR[legacyRole] || PASTEL.inkMute;
-  const baseLabel = LEGACY_ROLES.find((r) => r.value === legacyRole)?.label || legacyRole;
-  const label = legacyRole ? `${baseLabel} (legacy)` : '—';
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-semibold whitespace-nowrap"
-      style={{ background: `${color}22`, color }}
+      style={{ background: `${PASTEL.inkMute}22`, color: PASTEL.inkMute }}
     >
-      {label}
+      —
     </span>
   );
 }

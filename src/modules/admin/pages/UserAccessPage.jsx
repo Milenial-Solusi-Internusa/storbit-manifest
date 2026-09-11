@@ -386,7 +386,7 @@ export default function UserAccessPage({ showToast, onEditUser }) {
                 {/* Role — badge = role utama di HOME company; chip = role aktif
                     lain per entitas (kode entitas · kode role). */}
                 <div className="min-w-0 pr-2">
-                  <RoleBadge erpRole={primaryErpRole} legacyRole={row.role} />
+                  <RoleBadge erpRole={primaryErpRole} />
                   {otherRoles.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
                       {otherRoles.map((r) => (
