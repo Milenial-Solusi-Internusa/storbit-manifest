@@ -215,6 +215,52 @@ browser**; embed bersarang `products(unit, uom)` belum pernah dieksekusi PostgRE
   `02_RULES_GOVERNANCE.md` §6. ⚠️ Gotcha #27-#31 sudah dipakai branch CRM v3 — lompatan 26→32
   bukan kekeliruan.
 
+### Fix `saveUserAccess` — pencabutan role di-scope ke company yang diedit (branch `fix/save-user-access-scope-company`)
+
+Satu file, `src/hooks/useUserAccess.js` (`saveUserAccess()`), murni query — UI form tidak disentuh.
+**Bug:** Step 2 mencabut SEMUA role aktif user (`.eq('user_id').eq('is_active')`, tanpa filter
+`company_id`) sebelum memasang satu role. Komentar lama menyerahkan scope ke RLS — itu hanya benar
+untuk editor `admin` (`user_roles_update`: `company_id = get_user_company_id()`); untuk editor
+`super_admin` policy yang sama dimulai `is_super_admin() OR …` (`schema_snapshot.sql:19835`), jadi
+**tidak membatasi company sama sekali** → satu klik Save di User Edit pada user multi-entitas
+mencabut seluruh role-nya di semua entitas tanpa peringatan, dengan `revoked_at`/`revoked_by`
+terisi seolah keputusan sadar. Ditemukan 11 Sep 2026 saat audit penugasan role (kasus konkret:
+Elvira Nurhuda, 4 role di MSI & SOA — Save di halamannya = 3 role tercabut; angka dari query
+produksi, tak bisa diverifikasi ulang dari snapshot schema-only).
+
+**Perbaikan (`5abacef`):** (1) pencabutan `.eq('company_id', companyId)` — company yang sedang
+diedit di form (`draft.company_id`, `UserEditPage.jsx:254`); role di company lain tak pernah
+disentuh · (2) `.neq('role_id', newErpRoleId)` — role yang sedang dipasang tidak dicabut lalu
+dipasang ulang · (3) SELECT satu triple (user, role, company) — tunggal dijamin `user_roles_unique`
+(`schema_snapshot.sql:11175`) — kalau sudah aktif: selesai, `granted_at`/`granted_by` asli tetap ·
+(4) `companyId` kosong → ditolak dengan error eksplisit, bukan jatuh ke "cabut di mana-mana" ·
+(5) reaktivasi lewat upsert membersihkan `revoked_at`/`revoked_by`.
+
+**Tiga keputusan Den (11 Sep 2026):** (a) role LAIN di company yang sama TETAP dicabut — semantik
+form single-role-per-company dipertahankan; (b) `companyId` kosong ditolak, bukan diam;
+(c) pembersihan `revoked_at`/`revoked_by` masuk. Editor `admin` tetap dibatasi RLS ke home
+company-nya seperti sebelumnya — tidak ada pelonggaran.
+
+**Sengaja TIDAK disentuh:** `UserEditPage.jsx` (single-select tetap), Step 1 `profiles.update`,
+`logAudit`, `UserAccessPage` Add user (jalurnya Edge Function `create-user` dengan service role —
+bukan `saveUserAccess`), RLS `user_roles`. `saveUserAccess` adalah **satu-satunya penulis
+`user_roles` dari FE lewat PostgREST** (grep `from('user_roles')` di `src/`: sisanya pembaca).
+
+⚠️ **NOL tes runtime.** Checklist manual BELUM dijalankan (user ber-role di 2+ company: ubah role
+di satu company → role company lain tetap; user role tunggal: ganti role tetap jalan) — akan diuji
+Den di Vercel preview branch ini. Yang ada: build clean, lint 170 (148+22), file yang disentuh
+0 finding (pesan commit `5abacef`).
+
+**+TD-257 (MEDIUM — rencana terpisah Den "beres-beres role utama ganda", sengaja tidak ikut commit
+ini):** dua definisi "role utama" — `pickPrimaryErpRole` (`AuthContext.jsx:23`, prioritas
+`ERP_ROLE_PRIORITY` + filter entitas aktif; sumber `erpRole`/`role` untuk seluruh gate) vs
+`getPrimaryErpRole` (`userAccessTokens.js:54`, baris aktif PERTAMA company mana pun; dipakai
+`UserAccessPage.jsx:321/363` + `UserEditPage.jsx:52/62/542/648`). Dampak ke tes fix ini: select
+role bisa tampak "salah" untuk user multi-entitas, tapi yang ditulis selalu di-scope
+`draft.company_id` — kosmetik untuk penguji, bukan bug tulis. Pelajaran umum ("RLS bukan pengganti
+filter di query untuk editor super_admin") → `03_DATA_MODEL.md` gotcha **#34**; Known Gaps **#11**
+`04_ROLE_PERMISSION_MATRIX.md`; catatan silang di TD-170 (status TD-170 tidak berubah).
+
 ## 2026-09-10
 
 ### Invoice cetak — delapan penataan dari cetak percobaan di kertas kop sungguhan
