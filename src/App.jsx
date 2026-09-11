@@ -25,6 +25,11 @@ import { useUrlState } from './hooks/useUrlState';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
 import CompanySwitcher from './components/CompanySwitcher';
+// Logo Nexus (hexagon N) untuk brand mark sidebar — sumber: Supabase Storage
+// assets/Nexus Logo.png (1254², 888 KB), di-crop ke konten, dipusatkan di kanvas
+// persegi, diperkecil ke 160² (≈4× slot 38 px) dan dioptimalkan (23 KB). Favicon
+// 16/32/180 di public/ dibuat dari sumber yang sama.
+import nexusLogo from './assets/nexus-logo.png';
 import { calcItem } from './lib/spCalc';
 import { getTodayWIB } from './lib/dateUtils';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
@@ -1629,7 +1634,11 @@ function NexusSidebar({
     <aside className={asideClass} style={asideStyle}>
       {/* Brand */}
       <div className="flex items-center gap-3" style={{ padding: '18px 16px 16px' }}>
-        <div style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 17, flexShrink: 0 }}>N</div>
+        {/* Logo Nexus menggantikan kotak navy ber-huruf "N" (11 Sep 2026).
+            Tanpa kotak/latar: logonya berwarna dengan alpha, dan di atas navy
+            segmen birunya tenggelam — di atas putih sidebar ia tajam. Slot
+            tetap 38×38 supaya posisi teks "Nexus / BY MSI" tidak bergeser. */}
+        <img src={nexusLogo} alt="Nexus" width={38} height={38} style={{ width: 38, height: 38, objectFit: 'contain', flexShrink: 0, display: 'block' }} />
         <div style={{ lineHeight: 1.1 }}>
           <div style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 16, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Nexus</div>
           <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--faint)', letterSpacing: '1.5px' }}>BY MSI</div>
