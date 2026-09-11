@@ -258,17 +258,22 @@ const makeStyles = (print) => StyleSheet.create({
 
   // Lebar kolom organik (bukan persen tetap) — DESCRIPTION flex:1 ambil sisa
   // ruang & boleh wrap multi-baris, kolom lain lebar tetap secukupnya buat
-  // konten realistis (SKU/qty/harga) supaya tidak ikut ketarik menyempit.
+  // konten realistis (qty/harga/satuan) supaya tidak ikut ketarik menyempit.
   // marginLeft (24+10.5) gantiin offset yang dulu didapat gratis dari
   // sideLabelWrap+gap sewaktu masih flex sibling — flex:1 tetap jalan normal
   // karena `table` masih satu-satunya anak in-flow dari itemsRow (row-flex).
   table: { flex: 1, marginLeft: 34.5 },
   thRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: RULE_22 },
   th: { fontSize: 7, letterSpacing: 0.54, textTransform: 'uppercase', color: MUTE_55, paddingBottom: 5 },
+  // Urutan kolom (11 Sep 2026): DESCRIPTION · QTY · UNIT PRICE · UOM · SUBTOTAL.
+  // SKU dicabut sepenuhnya dari invoice; 92 pt lebarnya jatuh ke DESCRIPTION
+  // (flex:1), jadi nama produk panjang lebih jarang membungkus. UOM sengaja
+  // rata KIRI dan diapit dua kolom angka — ia label satuan, bukan angka, dan
+  // meratakannya ke kanan akan membuatnya terbaca menempel pada harga.
   cDesc: { flex: 1, paddingRight: 9 },
-  cSku: { width: 92, paddingRight: 9, flexShrink: 0 },
   cQty: { width: 34, textAlign: 'right', paddingRight: 9, flexShrink: 0 },
   cPrice: { width: 66, textAlign: 'right', paddingRight: 9, flexShrink: 0 },
+  cUom: { width: 40, paddingLeft: 3, paddingRight: 9, flexShrink: 0 },
   cSub: { width: 72, textAlign: 'right', flexShrink: 0 },
   tr: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: RULE_14 },
   td: { fontSize: 9.75, paddingVertical: 5 },
@@ -500,17 +505,20 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
           <View style={s.table}>
             <View style={s.thRow}>
               <Text style={[s.th, s.cDesc]}>Description</Text>
-              <Text style={[s.th, s.cSku]}>SKU</Text>
               <Text style={[s.th, s.cQty]}>Qty</Text>
               <Text style={[s.th, s.cPrice]}>Unit Price</Text>
+              <Text style={[s.th, s.cUom]}>UOM</Text>
               <Text style={[s.th, s.cSub]}>Subtotal</Text>
             </View>
             {lines.map((l, i) => (
               <View style={s.tr} key={l.id || i}>
                 <Text style={[s.td, s.cDesc]}>{l.product_name || '—'}</Text>
-                <Text style={[s.td, s.cSku, s.tdMute]}>{l.sku || '—'}</Text>
                 <Text style={[s.td, s.cQty]}>{Number(l.qty || 0).toLocaleString('id-ID')}</Text>
                 <Text style={[s.td, s.cPrice]}>{rp(l.unit_price)}</Text>
+                {/* Satuan dari products.unit/uom lewat getInvoicePdfData —
+                    bukan snapshot per-invoice (lihat catatan di db.js). Kosong
+                    dicetak '—' seperti kolom lain, bukan dibiarkan hampa. */}
+                <Text style={[s.td, s.cUom, s.tdMute]}>{l.uom || '—'}</Text>
                 <Text style={[s.td, s.cSub]}>{rp(l.dpp)}</Text>
               </View>
             ))}

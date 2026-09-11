@@ -1267,7 +1267,15 @@ export async function getInvoicePdfData(invoiceId) {
   const [linesRes, customerRes, companyRes, bankRes, shippingRes] = await Promise.all([
     supabase
       .from('sp_invoice_lines')
-      .select('id, dpp, ppn, qty, position, sp_order_items(product_name, sku, unit_price)')
+      // Satuan (UOM) TIDAK di-snapshot di sp_order_items / sp_invoice_lines —
+      // kedua tabel itu tak punya kolom unit/uom sama sekali (diperiksa 11 Sep
+      // 2026). Yang ada hanya di products.unit / products.uom, jadi ditempuh
+      // lewat sp_order_items.product_id -> products. ⚠️ Konsekuensinya: satuan
+      // di invoice adalah satuan produk SAAT INI, bukan saat invoice terbit —
+      // kalau master produk diubah, invoice lama ikut berubah waktu dicetak
+      // ulang. Berbeda dari product_name/unit_price yang memang di-snapshot.
+      // Membekukannya per-invoice butuh kolom baru + migrasi (belum diputuskan).
+      .select('id, dpp, ppn, qty, position, sp_order_items(product_name, unit_price, products(unit, uom))')
       .eq('invoice_id', invoiceId)
       .order('position', { ascending: true }),
     spOrder.customer_id
@@ -1322,7 +1330,13 @@ export async function getInvoicePdfData(invoiceId) {
       lines: (linesRes.data || []).map((l) => ({
         id: l.id,
         product_name: l.sp_order_items?.product_name || '',
-        sku: l.sp_order_items?.sku || '',
+        // `unit` primer, `uom` cadangan — dan keduanya di-trim dulu, karena
+        // ada produk ber-`unit` string KOSONG (bukan NULL). Pola yang sama
+        // dengan RPC laporan Storbit: COALESCE(NULLIF(btrim(unit),''),
+        // NULLIF(btrim(uom),'')). SKU sudah tidak dibawa: invoice tak lagi
+        // menampilkannya (11 Sep 2026).
+        uom: ((l.sp_order_items?.products?.unit || '').trim()
+           || (l.sp_order_items?.products?.uom  || '').trim()),
         unit_price: Number(l.sp_order_items?.unit_price) || 0,
         qty: l.qty,
         dpp: Number(l.dpp) || 0,
