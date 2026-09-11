@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove } from '../../lib/roles';
 import {
   C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card, InfoRow, Tab,
   DealStepper, DealHeaderControls, EditDealModal, QuotationListCard,
@@ -36,12 +37,6 @@ import InquiryChatter from './InquiryChatter';
 // Status inquiry yang masih boleh ditandai KALAH. WON / LOST / CANCELLED terminal →
 // aksinya tidak dirender sama sekali (bukan disabled).
 const LOSABLE_INQUIRY_STATUS = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
-
-// Batch 3C — gate tombol "Pakai/Ganti Penawaran Ini" (RPC prf_select_offer
-// menegakkan izin sebenarnya). Mirrors DB is_manager_or_above() — sama persis
-// daftar di PRFDetailPage.jsx (tidak diekspor dari sana, jadi disalin di sini;
-// pola mirror-per-file ini sudah berulang di codebase).
-const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
 
 const SERVICE_LABEL = {
   freight_forwarding: 'Freight Forwarding',
@@ -853,7 +848,9 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           canCreate={erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code))}
           onCreate={onCreatePRF}
           onView={onViewPRF}
-          canSelectOffer={(p) => p.created_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole)}
+          // Batch 3C — gate tombol "Pakai/Ganti Penawaran Ini"; RPC prf_select_offer
+          // menegakkan izin sebenarnya. isManagerOrAbove = src/lib/roles.js.
+          canSelectOffer={(p) => p.created_by === profile?.id || isManagerOrAbove(erpRoles)}
           onSelectOffer={handleSelectOffer}
           offerActionBusy={offerActionBusy}
         />

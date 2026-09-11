@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, ChevronRight, Receipt } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
 
 const C = {
   bg:        '#F6EFE3',
@@ -82,13 +83,13 @@ function StatusBadge({ status }) {
 }
 
 export default function QuotationListPage({ onAddQuotation, onSelectQuotation, showToast }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, erpRoles } = useAuth();
   // Visibility scope by role (mirrors RLS on `quotations`):
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only quotations they created
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin'].includes(erpRole);
-  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
+  const isAllEntities = isAllEntitiesRole(erpRoles);
+  const isSalesOnly   = isSalesOnlyRole(erpRole);
   const [quotations, setQuotations] = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState('');

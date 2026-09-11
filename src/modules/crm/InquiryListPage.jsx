@@ -5,6 +5,7 @@ import { PDFDownloadLink } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
 import InquiryPDF from './InquiryPDF';
 
 const C = {
@@ -218,13 +219,13 @@ function InquiryDetailModal({ inquiry, onClose }) {
 }
 
 export default function InquiryListPage({ onAddInquiry, onSelectInquiry, showToast }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, erpRoles } = useAuth();
   // Visibility scope by role (mirrors RLS on `inquiries`):
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only inquiries they created
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin'].includes(erpRole);
-  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
+  const isAllEntities = isAllEntitiesRole(erpRoles);
+  const isSalesOnly   = isSalesOnlyRole(erpRole);
   const [inquiries, setInquiries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

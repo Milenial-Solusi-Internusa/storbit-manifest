@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, Archive, ArrowRight, Loader2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
 import { prevActiveStage } from './DealPanels';
 
 const C = {
@@ -95,9 +96,9 @@ function PullModal({ account, onClose, onSubmit }) {
 }
 
 export default function LeadPoolPage({ showToast }) {
-  const { profile, erpRole, user } = useAuth();
-  const isAllEntities = ['super_admin'].includes(erpRole);
-  const isSalesOnly = ['sales', 'operations'].includes(erpRole);
+  const { profile, erpRole, user, erpRoles } = useAuth();
+  const isAllEntities = isAllEntitiesRole(erpRoles);
+  const isSalesOnly = isSalesOnlyRole(erpRole);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

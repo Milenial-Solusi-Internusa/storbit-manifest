@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Sunrise, ChevronDown, ClipboardList, Activity, AlertTriangle, CheckCircle2, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 import CodeNamePicker from '../../components/CodeNamePicker';
 
 const NAVY = '#0F3A66';
@@ -350,8 +351,8 @@ function OverviewTab({ isAuthorized, checkingAuth, todayEntries, pendingWithAge,
 // Root
 // ============================================================================
 export default function BriefingHarianPage({ showToast }) {
-  const { profile, erpRole } = useAuth();
-  const isAllEntities = ['super_admin'].includes(erpRole);
+  const { profile, erpRoles } = useAuth();
+  const isAllEntities = isAllEntitiesRole(erpRoles);
   const today = todayStr();
 
   const [tab, setTab] = useState('isi'); // isi | overview

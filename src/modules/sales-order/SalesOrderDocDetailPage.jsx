@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { ChevronLeft, Send, BadgeCheck, ExternalLink } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove } from '../../lib/roles';
 
 const C = {
   navy: '#144682', navyDark: '#0E3260', orange: '#E85A1E', orangeSoft: '#FBEDE4',
@@ -17,9 +18,6 @@ const C = {
 const HEAD = "'Montserrat', system-ui, sans-serif";
 const BODY = "'Inter', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', ui-monospace, monospace";
-
-// Peran yang RLS beri hak baca company-wide (untuk membedakan "kosong" vs "tak boleh lihat").
-const MGR_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
 
 // Label service_type (map lokal modul — belum ada helper bersama yang ter-export).
 const SERVICE_LABEL = { freight_forwarding: 'Freight Forwarding', customs: 'Customs', trading: 'Trading' };
@@ -74,7 +72,7 @@ function MiniTable({ head, rows, empty }) {
 const isUrl = (s) => /^https?:\/\/\S+/i.test(String(s || '').trim());
 
 export default function SalesOrderDocDetailPage({ soId, onBack, showToast }) {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, erpRoles } = useAuth();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [so, setSo] = useState(null);
@@ -116,7 +114,8 @@ export default function SalesOrderDocDetailPage({ soId, onBack, showToast }) {
 
   const isCreator = so && profile?.id && so.created_by === profile.id;
   const canEdit = isCreator || erpRole === 'super_admin';
-  const quotationsDefinitive = MGR_OR_ABOVE.includes(erpRole);
+  // Manager ke atas = RLS beri hak baca company-wide (membedakan "kosong" vs "tak boleh lihat").
+  const quotationsDefinitive = isManagerOrAbove(erpRoles);
   const prfDefinitive = quotationsDefinitive || erpRole === 'procurement';
 
   async function sendToProcurement() {

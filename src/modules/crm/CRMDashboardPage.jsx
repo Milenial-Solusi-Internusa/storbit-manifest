@@ -3,6 +3,7 @@ import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pi
 import { supabase } from '../../lib/supabase';
 import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
 import { fetchActivityFeed } from './activityFeed';
 import { STAGES as SHARED_STAGES, STAGE_IDS } from './DealPanels';
 
@@ -1782,12 +1783,14 @@ function ActivitySaya({ data }) {
 }
 
 function CRMDashboardPage() {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, erpRoles } = useAuth();
   // Sales/operations may cancel their OWN visits (the visit list is already scoped
   // to assigned_to/created_by = self, and RLS only permits the owner to UPDATE).
-  const canCancel = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'sales', 'operations'].includes(erpRole);
+  // = manager ke atas (semua role aktif, kini termasuk gm_bd & supervisor —
+  // dulu hilang: bug) ATAU sales/ops untuk visit miliknya sendiri.
+  const canCancel = isManagerOrAbove(erpRoles) || isSalesOnlyRole(erpRole);
   // S2 — sales/operations see a personal dashboard; everyone else sees team-wide.
-  const isSalesOnly = ['sales', 'operations'].includes(erpRole);
+  const isSalesOnly = isSalesOnlyRole(erpRole);
   const [period, setPeriod] = useState("This Month");
   const [tab, setTab]       = useState("summary");
   const [toast, setToast]   = useState({ msg: "", icon: "check", show: false });

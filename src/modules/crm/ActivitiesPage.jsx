@@ -8,6 +8,7 @@ import { Search, Plus, Eye, Check, Activity, X, Pencil, UserPlus, Trash2 } from 
 import { supabase } from '../../lib/supabase';
 import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove as isManagerOrAboveRole, isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 
@@ -477,16 +478,17 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
 }
 
 export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspectForm, setEditingProspect }) {
-  const { profile, erpRole, user } = useAuth();
+  const { profile, erpRole, user, erpRoles } = useAuth();
   // Visibility scope by role (mirrors RLS on `activities`):
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only activities assigned to or created by them
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin'].includes(erpRole);
-  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
-  // Mirrors DB is_manager_or_above() (incl. supervisor). Edit allowed for
-  // manager+ or the activity's own assignee.
-  const isManagerOrAbove = ['super_admin', 'admin', 'ceo', 'gm', 'manager', 'supervisor'].includes(erpRole);
+  const isAllEntities = isAllEntitiesRole(erpRoles);
+  const isSalesOnly   = isSalesOnlyRole(erpRole);
+  // Cermin DB is_manager_or_above() lewat src/lib/roles.js — kini TERMASUK gm_bd
+  // (dulu hilang di sini: bug, keputusan Den 11 Sep 2026). Edit untuk manager+
+  // atau assignee aktivitasnya sendiri.
+  const isManagerOrAbove = isManagerOrAboveRole(erpRoles);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

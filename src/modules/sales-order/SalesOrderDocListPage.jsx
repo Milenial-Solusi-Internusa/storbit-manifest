@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ClipboardList, BadgeCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 
 const C = {
   bg:        '#F6EFE3',
@@ -46,8 +47,8 @@ function StatusBadge({ status }) {
 }
 
 export default function SalesOrderDocListPage({ variant = 'crm', onCreate, onSelect, showToast }) {
-  const { profile, erpRole } = useAuth();
-  const isAllEntities = ['super_admin'].includes(erpRole);
+  const { profile, erpRoles } = useAuth();
+  const isAllEntities = isAllEntitiesRole(erpRoles);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

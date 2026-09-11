@@ -18,6 +18,7 @@ import ConfirmModal from '../../components/ConfirmModal';
 import ProductPicker from '../../components/ProductPicker';
 import DeliveryNotePDF from './DeliveryNotePDF';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove, hasAnyRole } from '../../lib/roles';
 
 const C = {
   navy: '#1B4D8A', ink: '#212A37', mute: '#7E8899', faint: '#A6AEBD',
@@ -77,9 +78,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
   // Halaman ini sebelumnya NOL referensi peran — siapa pun yang bisa membukanya
   // dapat memberangkatkan/membatalkan SJ (yang memindahkan stok & shipped_qty).
   // Dibaca dari erpRoles (SELURUH role aktif), bukan role primer.
-  const canWarehouseOps = (erpRoles || [])
-    .map(r => r.roles?.code)
-    .some(c => ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor', 'operations'].includes(c));
+  const canWarehouseOps = isManagerOrAbove(erpRoles) || hasAnyRole(erpRoles, ['operations']);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);

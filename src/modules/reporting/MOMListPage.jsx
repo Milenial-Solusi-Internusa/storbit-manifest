@@ -5,11 +5,11 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Search, Eye, Pencil, Download, Trash2, Loader2, BookOpen } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove } from '../../lib/roles';
 import ConfirmModal from '../../components/ConfirmModal';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { C, MOM_TYPES, MOM_STATUS_META, momTypeLabel, fmtDate } from './momConstants';
 
-const SEE_ALL_ROLES = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
 const PAGE_SIZE = 25;
 
 function StatusBadge({ status }) {
@@ -18,8 +18,8 @@ function StatusBadge({ status }) {
 }
 
 export default function MOMListPage({ onCreateMom, onViewMom, onEditMom, showToast }) {
-  const { profile, erpRole, user } = useAuth();
-  const seeAll = SEE_ALL_ROLES.includes(erpRole);
+  const { profile, erpRole, user, erpRoles } = useAuth();
+  const seeAll = isManagerOrAbove(erpRoles);
   const isSuperAdmin = erpRole === 'super_admin';
 
   const [rows, setRows] = useState([]);

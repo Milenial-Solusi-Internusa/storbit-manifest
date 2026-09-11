@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { UsersRound, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 import ProfilePicker from '../../components/ProfilePicker';
 
 const NAVY = '#0F3A66';
@@ -216,8 +217,8 @@ function GrantAccessForm({ people, companies, saving, onSubmit, onCancel }) {
 }
 
 export default function BNFOrgRolesPage({ showToast }) {
-  const { profile, erpRole } = useAuth();
-  const isAllEntities = erpRole === 'super_admin';
+  const { profile, erpRole, erpRoles } = useAuth();
+  const isAllEntities = isAllEntitiesRole(erpRoles);
   // Separate from isAllEntities on purpose despite the identical predicate
   // today: isAllEntities is the project-wide convention for fetch/data-scope
   // branching (CLAUDE.md "Aturan Wajib"), isSuperAdmin (same pattern as

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
 import { fetchActivityFeed, feedTimeAgo, feedFmtDate } from './activityFeed';
 
 // Roster operasional (sales + gm_bd) → helper bersama `./salesRoster`.
@@ -68,9 +69,9 @@ function weekBounds() {
 }
 
 export default function ActivityLogPage({ showToast }) {
-  const { profile, erpRole } = useAuth();
-  const isAllEntities = erpRole === 'super_admin';
-  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
+  const { profile, erpRole, erpRoles } = useAuth();
+  const isAllEntities = isAllEntitiesRole(erpRoles);
+  const isSalesOnly   = isSalesOnlyRole(erpRole);
 
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);

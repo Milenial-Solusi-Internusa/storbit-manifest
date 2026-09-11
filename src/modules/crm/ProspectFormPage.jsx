@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, ChevronDown, Save, UserPlus, X, DollarSign, Users, Target, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove, isSalesOnly } from '../../lib/roles';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
@@ -74,10 +75,12 @@ function SelectChevron() {
 }
 
 export default function ProspectFormPage({ prospect, onBack, showToast }) {
-  const { profile, erpRole, user } = useAuth();
+  const { profile, erpRole, user, erpRoles } = useAuth();
   const isEdit = !!prospect?.id;
-  const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
-  const isSalesCreator = ['sales', 'operations'].includes(erpRole);
+  // Manager ke atas (src/lib/roles.js) — kini termasuk gm_bd & supervisor;
+  // daftar lokal lama tanpa keduanya adalah bug (keputusan Den 11 Sep 2026).
+  const canDelete = isManagerOrAbove(erpRoles);
+  const isSalesCreator = isSalesOnly(erpRole);
   const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
   // Konfirmasi lunak gate BANT (skor 5–7 saat memilih QUALIFIED) — pola pending-action
   // yang sama dengan stageGate di PipelineKanbanPage.

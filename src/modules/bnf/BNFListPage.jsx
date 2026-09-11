@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AlertTriangle, ChevronDown, Send, Mail, ArrowUpRight, FileText, AlertCircle, Wrench, Target, X, Search, Pencil, Trash2, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { resolveMyDeptScope as resolveMyDeptScopeShared } from '../../lib/bnfOrgScope';
 import CodeNamePicker from '../../components/CodeNamePicker';
@@ -1056,8 +1057,8 @@ function DetailPanel({ report, logs, logsLoading, saving, error, reminderSending
 // Root
 // ============================================================================
 export default function BNFListPage({ showToast }) {
-  const { profile, erpRole, user } = useAuth();
-  const isAllEntities = ['super_admin'].includes(erpRole);
+  const { profile, erpRole, user, erpRoles } = useAuth();
+  const isAllEntities = isAllEntitiesRole(erpRoles);
 
   const [tab, setTab] = useState('form'); // form | insiden | overview
 

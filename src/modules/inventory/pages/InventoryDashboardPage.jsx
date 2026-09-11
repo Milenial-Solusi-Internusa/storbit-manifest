@@ -10,6 +10,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/useAuth";
+import { isAllEntities as isAllEntitiesRole } from "../../../lib/roles";
 
 /* ---------- brand + module tokens ---------- */
 const TEAL    = "#0D9488";   /* module accent */
@@ -448,10 +449,15 @@ function LowStockTable({ rows = [] }) {
 
 /* ========================================================================= */
 export default function InventoryDashboardPage() {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRoles } = useAuth();
   // Role-aware scope (mirror CRMDashboard): super_admin/admin → all entities,
   // everyone else → their own company (RLS scopes the rest).
-  const isAllEntities = ["super_admin", "admin"].includes(erpRole);
+  // PERUBAHAN PERILAKU 11 Sep 2026 (keputusan Den): dulu ["super_admin","admin"]
+  // — satu-satunya tempat di app yang memberi `admin` tampilan lintas entitas,
+  // padahal RLS stock_summary/stock_ledger USING(true) sehingga itu sungguh
+  // membuka stok semua entitas ke admin, sementara di seluruh tabel ber-role
+  // lain admin di-scope ke home company. Kini seragam: super_admin saja.
+  const isAllEntities = isAllEntitiesRole(erpRoles);
 
   const [period, setPeriod] = useState("This Month");
   const [toast, setToast] = useState({ msg: "", icon: "info", show: false });

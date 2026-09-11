@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, ChevronRight, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove, isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
 import ConfirmModal from '../../components/ConfirmModal';
 
 const C = {
@@ -85,14 +86,16 @@ function SourceBadge({ source }) {
 }
 
 export default function ProspectListPage({ onAddProspect, onSelectProspect, showToast }) {
-  const { profile, erpRole } = useAuth();
-  const canDelete = ['super_admin', 'admin', 'ceo', 'gm', 'manager'].includes(erpRole);
+  const { profile, erpRole, erpRoles } = useAuth();
+  // Manager ke atas (src/lib/roles.js) — kini termasuk gm_bd & supervisor;
+  // daftar lokal lama tanpa keduanya adalah bug (keputusan Den 11 Sep 2026).
+  const canDelete = isManagerOrAbove(erpRoles);
   // Visibility scope by role (mirrors RLS on `accounts` + CRMDashboard):
   //  • super_admin / admin → all entities (no company filter)
   //  • sales / operations  → only prospects assigned to / created by them
   //  • everyone else (manager, ceo, gm, …) → their own entity
-  const isAllEntities = ['super_admin'].includes(erpRole);
-  const isSalesOnly   = ['sales', 'operations'].includes(erpRole);
+  const isAllEntities = isAllEntitiesRole(erpRoles);
+  const isSalesOnly   = isSalesOnlyRole(erpRole);
   const [confirmState, setConfirmState] = useState({ open: false, title: '', message: '', onConfirm: null });
   const showConfirm = (title, message, onConfirm) => setConfirmState({ open: true, title, message, onConfirm });
   const closeConfirm = () => setConfirmState(s => ({ ...s, open: false, onConfirm: null }));

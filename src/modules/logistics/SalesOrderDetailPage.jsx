@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { issueSpBtb, deleteSpBtbNew, listSpBtbNew, setSpExternalUrl, getStockForProducts, getSpOrderStatus, setSpStatus, setSpExpiredDate, setSpFinanceDocs, getSpFulfillmentDocs, getSpItemDeliveryBreakdown, getSpInvoice, createInvoiceRpc, submitInvoiceRpc, getInvoicePdfData, getCompanyHeader, recordPayment, markTtfReceived, getPaymentHistory, getTtfStatus } from '../../lib/db';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove, canWriteSpItem as canWriteSpItemRole } from '../../lib/roles';
 import { calcItem, deriveItemShipStatus } from '../../lib/spCalc';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { PPN_RATE } from '../../lib/taxConstants';
@@ -1029,13 +1030,12 @@ export default function SalesOrderDetailPage({
   // tertinggi saja, dan finance_controller berada DI BAWAH manager di daftar
   // prioritas — jadi user manager+finance_controller akan ter-resolve jadi
   // 'manager' dan kehilangan akses form, padahal RPC-nya (has_role) meloloskan.
-  // Daftar di bawah menyalin persis body is_manager_or_above() di SQL.
+  // Daftar rolenya hidup di src/lib/roles.js (cermin is_manager_or_above()).
   const { erpRoles } = useAuth();
   const roleCodes    = (erpRoles || []).map(r => r.roles?.code).filter(Boolean);
   const isSuperAdmin   = roleCodes.includes('super_admin');
   const isFinanceCtl   = roleCodes.includes('finance_controller');
-  const isManagerAbove = roleCodes.some(c =>
-    ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'].includes(c));
+  const isManagerAbove = isManagerOrAbove(erpRoles);   // src/lib/roles.js, cermin is_manager_or_above()
   const canRecordPayment = isFinanceCtl || isSuperAdmin;
   const canMarkTtf       = isManagerAbove || isFinanceCtl || isSuperAdmin;
   // CERMIN guard server pada RPC gudang/SP (migrasi 20260821000003/4/6):
@@ -1049,13 +1049,12 @@ export default function SalesOrderDetailPage({
   // SENGAJA LEBIH SEMPIT dari canWarehouseOps: ceo/gm/gm_bd VIEW-ONLY untuk
   // TULIS baris item SP (keputusan Den 2 Sep 2026, sejalan
   // 04_ROLE_PERMISSION_MATRIX baris Logistics: ceo=R, gm_bd=tanpa akses).
-  // 'supervisor' tidak ada di daftar karena role itu tak ada di tabel roles
-  // (TD-106) — jangan ditambahkan "supaya lengkap".
+  // Daftarnya SP_ITEM_WRITER_ROLES di src/lib/roles.js — tanpa 'supervisor'
+  // (role itu tak ada di tabel roles, TD-106; jangan ditambahkan "supaya lengkap").
   // ⚠️ canWarehouseOps di atas TETAP DIPAKAI untuk konteks lain (BTB, generate
   // picking, tenggat SP, TTF) yang keputusan itu TIDAK sentuh. Jangan
   // digabungkan jadi satu flag.
-  const canWriteSpItem = isSuperAdmin
-    || roleCodes.some(c => ['admin', 'manager', 'operations'].includes(c));
+  const canWriteSpItem = canWriteSpItemRole(erpRoles);   // src/lib/roles.js, cermin is_sp_item_writer()
   // CERMIN guard RPC set_sp_finance_docs (migrasi 20260902000004):
   //   is_super_admin() OR has_role('finance_controller') OR has_role('finance')
   // Sumbu FINANCE, BUKAN sumbu gudang — is_manager_or_above() sengaja tidak

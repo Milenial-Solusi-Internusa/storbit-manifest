@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CheckCircle2, XCircle, Loader2, ClipboardCheck, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 import { prevActiveStage } from './DealPanels';
 
 const C = {
@@ -64,8 +65,8 @@ function RejectModal({ account, onClose, onSubmit }) {
 }
 
 export default function LeadPoolApprovalPage({ showToast }) {
-  const { profile, erpRole } = useAuth();
-  const isAllEntities = ['super_admin'].includes(erpRole);
+  const { profile, erpRoles } = useAuth();
+  const isAllEntities = isAllEntitiesRole(erpRoles);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

@@ -24,6 +24,7 @@ import {
 } from '../../lib/db';
 import useProducts from '../../hooks/useProducts';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove, hasAnyRole } from '../../lib/roles';
 import ProductPicker from '../../components/ProductPicker';
 import ConfirmModal from '../../components/ConfirmModal';
 import PickingListPDF from './PickingListPDF';
@@ -174,9 +175,7 @@ export default function PickingListDetailPage({ pickingListId, onBack, showToast
   // Halaman ini sebelumnya NOL referensi peran — siapa pun yang bisa membukanya
   // dapat memulai/menyelesaikan/membatalkan picking (yang mereservasi &
   // melepas stok). Dibaca dari erpRoles (SELURUH role aktif), bukan role primer.
-  const canWarehouseOps = (erpRoles || [])
-    .map(r => r.roles?.code)
-    .some(c => ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor', 'operations'].includes(c));
+  const canWarehouseOps = isManagerOrAbove(erpRoles) || hasAnyRole(erpRoles, ['operations']);
   // Input qty ikut mati kalau tak berhak — tanpa ini tombolnya hilang tapi
   // kolom qty masih bisa diketik lalu ditolak server.
   const readOnly = locked || !canWarehouseOps;

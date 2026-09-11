@@ -19,6 +19,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Plus, Trash2, FileText, Check, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove } from '../../lib/roles';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 import PRFVendorOfferModal from './PRFVendorOfferModal';
@@ -40,9 +41,6 @@ const ORANGE_DARK = '#C94D18';
 
 // Kategori biaya = daftar tetap (kolom item_group). Aturan bisnis, bukan CHECK di DB.
 const ITEM_GROUPS = ['Origin Charges', 'Freight Charges', 'Destination Charges'];
-// Mirrors DB is_manager_or_above() (schema_snapshot.sql, fungsi is_manager_or_above).
-// Dipakai HANYA untuk gate tombol render (RPC prf_release menegakkan izin sebenarnya).
-const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
 // Blok "Detail Layanan" (Section 03) — label tampilan, mirror kosakata PRFFormPage.jsx.
 const SEA_FREIGHT_LABEL = { fcl: 'FCL', lcl: 'LCL' };
 const CONTAINER_LABEL = { '20': "20'", '40': "40'", '40HC': "40' HC", '20RF': "20' Reefer", '40RF': "40' Reefer" };
@@ -73,7 +71,7 @@ const PRF_SELECT = 'id, prf_no, status, created_at, created_by, submitted_at, cu
 const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, notes, vendor_id, item_group, is_awarded, exchange_rate, offer_id';
 
 export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation, onEditDraft }) {
-  const { profile, erpRole, hasMenuPermission, user } = useAuth();
+  const { profile, erpRole, hasMenuPermission, user, erpRoles } = useAuth();
   const canEdit = ['procurement', 'super_admin'].includes(erpRole);
   const canSeeQuotations = hasMenuPermission('crm_quotation', 'view');
   const companyId = profile?.company_id || null;
@@ -621,7 +619,8 @@ export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotat
   // Klaim/lepas — gate TOMBOL saja; RPC prf_claim/prf_release menegakkan izin
   // sebenarnya (SECURITY DEFINER, guard sudah di dalamnya).
   const canClaim = canEdit && prf.status === 'SUBMITTED' && !prf.acknowledged_by;
-  const canRelease = prf.status === 'ACKNOWLEDGED' && (prf.acknowledged_by === profile?.id || MANAGER_OR_ABOVE.includes(erpRole));
+  // isManagerOrAbove = cermin is_manager_or_above() (src/lib/roles.js); gate TOMBOL saja.
+  const canRelease = prf.status === 'ACKNOWLEDGED' && (prf.acknowledged_by === profile?.id || isManagerOrAbove(erpRoles));
 
   // Tambah/edit/hapus penawaran vendor (batch 3B) — gate TOMBOL saja, cermin
   // PERSIS syarat RLS prf_vendor_offers_insert/update: acknowledged_by HARUS

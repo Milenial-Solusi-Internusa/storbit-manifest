@@ -25,6 +25,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Presentation, ClipboardList, CheckCircle2, AlertTriangle, ArrowUpRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 import { resolveMyDeptScope } from '../../lib/bnfOrgScope';
 import CodeNamePicker from '../../components/CodeNamePicker';
 import BnfActionItemsChecklist from '../../components/BnfActionItemsChecklist';
@@ -792,8 +793,8 @@ function RiwayatMeetingTab({ departmentId, showToast }) {
 // Root
 // ============================================================================
 export default function MeetingMingguanPage({ showToast }) {
-  const { profile, erpRole } = useAuth();
-  const isAllEntities = ['super_admin'].includes(erpRole);
+  const { profile, erpRoles } = useAuth();
+  const isAllEntities = isAllEntitiesRole(erpRoles);
 
   const [tab, setTab] = useState('susun'); // susun | riwayat
   const [allDepartments, setAllDepartments] = useState([]);
