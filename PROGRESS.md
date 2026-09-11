@@ -176,7 +176,7 @@ browser**; embed bersarang `products(unit, uom)` belum pernah dieksekusi PostgRE
 - **Status TD:** **TD-217 → RESOLVED** · **TD-218 → RESOLVED** (keduanya lewat `20260910000001`) ·
   TD-253 gejala kasus Elvira tertutup, POLA tetap OPEN · TD-254 "1 dari 11 ditutup" kini LIVE ·
   **TD-180 tetap PARTIAL** (tiga policy invoice + satu policy rekening ditutup; sisir 198 policy /
-  76 tabel belum). **Nol TD baru** — TD-256 belum terpakai.
+  76 tabel belum). **+TD-256 (LOW)** — 17 file migrasi ber-header `BELUM DIJALANKAN` padahal dokumen bilang LIVE; sengaja TIDAK dikoreksi massal (keputusan Den), verifikasi per-file ke produksi dulu.
 - ✅ **DATA dikoreksi (bukan tampilan): `companies.legal_name` SOA "PT Storbit Indonesia" →
   "PT Stuja Orbit Abadi"** (tanpa titik — mengikuti lima literal kode dan
   `entity_bank_accounts.account_holder` di produksi). Dijalankan Den 11 Sep via UPDATE ber-guard,
