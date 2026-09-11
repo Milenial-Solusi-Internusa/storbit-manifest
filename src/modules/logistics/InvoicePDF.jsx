@@ -16,7 +16,7 @@ import { Document, Page, View, Text, Image, Font, StyleSheet } from '@react-pdf/
 import cormorantSemiBold from '../../assets/fonts/CormorantGaramond-SemiBold.ttf';
 import loraRegular from '../../assets/fonts/Lora-Regular.ttf';
 import loraSemiBold from '../../assets/fonts/Lora-SemiBold.ttf';
-import { DPP_NILAI_LAIN_RATIO } from '../../lib/taxConstants';
+import { DPP_NILAI_LAIN_RATIO, PPN_LABEL_PCT } from '../../lib/taxConstants';
 
 Font.register({
   family: 'Cormorant Garamond',
@@ -534,7 +534,13 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
             <View style={s.totalRow}><Text style={s.totalLabel}>Subtotal</Text><Text style={s.totalVal}>{rp(invoice.total_dpp)}</Text></View>
             <View style={s.totalRow}><Text style={s.totalLabel}>Shipping</Text><Text style={s.totalVal}>{rp(invoice.total_shipping)}</Text></View>
             <View style={s.totalRow}><Text style={s.totalLabel}>DPP (Nilai Lain)</Text><Text style={s.totalVal}>{rp(dppNilaiLain)}</Text></View>
-            <View style={s.totalRow}><Text style={s.totalLabel}>VAT (11%)</Text><Text style={s.totalVal}>{rp(invoice.total_ppn)}</Text></View>
+            {/* Label 12% padahal nominalnya 11% dari DPP — DISENGAJA, keduanya
+                benar. PPN dikenakan atas DPP Nilai Lain (11/12 x DPP), jadi
+                12% x 11/12 = 11% efektif; Faktur Pajak menuliskan 12%, invoice
+                mengikutinya. Nominal `total_ppn` datang dari create_invoice dan
+                TIDAK disentuh. Penjelasan lengkap: PPN_LABEL_PCT di
+                taxConstants.js. Jangan "diperbaiki" kembali ke 11. */}
+            <View style={s.totalRow}><Text style={s.totalLabel}>{`VAT (${PPN_LABEL_PCT}%)`}</Text><Text style={s.totalVal}>{rp(invoice.total_ppn)}</Text></View>
             <View style={s.totalHr} />
             <View style={s.grandBox}>
               <Text style={s.grandLabel}>Grand Total</Text>
