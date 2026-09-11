@@ -25,7 +25,7 @@ import { useUrlState } from './hooks/useUrlState';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
 import CompanySwitcher from './components/CompanySwitcher';
-import { MANAGER_OR_ABOVE, SP_ITEM_WRITER_ROLES, NO_ROLE_LABEL, hasAnyRole, isAdminSettings, isSuperAdmin } from './lib/roles';
+import { SP_ITEM_WRITER_ROLES, NO_ROLE_LABEL, hasAnyRole, isAdminSettings, isSuperAdmin } from './lib/roles';
 // Logo Nexus (hexagon N) untuk brand mark sidebar — sumber: Supabase Storage
 // assets/Nexus Logo.png (1254², 888 KB). Di-crop ke BENTUK YANG TERLIHAT
 // (bbox alpha>128 + 4 px tepi anti-alias), bukan ke bbox alpha>0 — yang
@@ -494,12 +494,12 @@ const CRM_MENU_ITEMS = [
     id: 'crm-account', label: 'Account', icon: Users,
     children: [
       { id: 'crm-prospects',          label: 'Prospects',          icon: Users },
-      { id: 'crm-lead-pool',          label: 'Lead Pool',          icon: Archive, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
+      { id: 'crm-lead-pool',          label: 'Lead Pool',          icon: Archive },
     ],
   },
   { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
-  { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList, role: ['sales','gm_bd','manager','ceo','admin','super_admin'] },
+  { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList },
   // Rate List dipindah keluar dari grup CRM (batch restrukturisasi menu CRM #1) —
   // sekarang grup top-level tersendiri 'Shared Reference' di ERP_MENU_GROUPS,
   // dirender sbg leaf 'nav-rate-list' di NEXUS_NAV 'Shared Services'.
@@ -516,17 +516,18 @@ const CRM_MENU_ITEMS = [
   {
     id: 'crm-aktivitas', label: 'Aktivitas', icon: Activity,
     children: [
-      { id: 'crm-calls',        label: 'Jadwal & Tugas', icon: Activity, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-      { id: 'crm-activity-log', label: 'Log Aktivitas',  icon: History,  role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales'] },
-      { id: 'riwayat-visit',    label: 'Riwayat Visit', icon: History,  role: ['super_admin','ceo','gm_bd'] },
+      { id: 'crm-calls',        label: 'Jadwal & Tugas', icon: Activity },
+      { id: 'crm-activity-log', label: 'Log Aktivitas',  icon: History  },
+      { id: 'riwayat-visit',    label: 'Riwayat Visit', icon: History  },
     ],
   },
   // Batch restrukturisasi menu CRM #2 (26 Jul 2026): ditarik keluar dari tab
-  // 'crm-account' jadi menu top-level sendiri, paling bawah. Id/gate role
-  // (sales sengaja TIDAK termasuk)/komponen TIDAK berubah. Keputusan bisnis
-  // "diganti alur tarik-langsung" BELUM dikonfirmasi/dieksekusi — menu ini
-  // dipertahankan apa adanya.
-  { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck, role: ['ceo','gm','gm_bd','manager','supervisor','admin','super_admin'] },
+  // 'crm-account' jadi menu top-level sendiri, paling bawah. Gate role-nya
+  // (sales sengaja TIDAK termasuk) kini hidup di role_menu_permissions
+  // (key crm_lead_pool_approval, migrasi 20260911000003), isinya tak berubah.
+  // Keputusan bisnis "diganti alur tarik-langsung" BELUM dikonfirmasi/
+  // dieksekusi — menu ini dipertahankan apa adanya.
+  { id: 'crm-lead-pool-approval', label: 'Approval Lead Pool', icon: ClipboardCheck },
 ];
 
 // Tahap 2b: tabs inside the merged "Account" menu. activeMenu stays one of these
@@ -608,13 +609,14 @@ const ERP_MENU_GROUPS = [
   // Standalone group for cross-team reference data that isn't a daily CRM
   // working tool (Rate List moved out of Commercial & CRM). Deliberately its
   // own group, not nested under Procurement & Vendor — crm-rate-list's role
-  // gate excludes 'procurement', and this is meant to be the future home of
+  // gate (key crm_rate_list di role_menu_permissions) excludes 'procurement',
+  // and this is meant to be the future home of
   // other pricing references (e.g. per-customer rate agreements), not
   // procurement-owned data.
   {
     label: 'Shared Reference',
     items: [
-      { id: 'crm-rate-list', label: 'Rate List', icon: Tag, role: ['super_admin','admin','ceo','gm','gm_bd','manager','sales'] },
+      { id: 'crm-rate-list', label: 'Rate List', icon: Tag },
     ],
   },
   // ── LOGISTICS ─────────────────────────────────────────────────────────────
@@ -634,8 +636,8 @@ const ERP_MENU_GROUPS = [
       // ('logistics_picking' / 'logistics_surat_jalan') sejak 9 Agu 2026. Properti
       // `role: [...]` yang dulu ada di sini SUDAH DIHAPUS karena tak pernah
       // dievaluasi: canSeeMenuItem memeriksa MENU_KEY_MAP lebih dulu dan langsung
-      // return, persis kasus 'admin-settings'. Jangan dikembalikan — menambah
-      // `role` di sini tidak akan berpengaruh apa pun.
+      // return, persis kasus 'admin-settings'. Sejak 11 Sep 2026 fallback
+      // `role: [...]` sudah tidak ada sama sekali — semua gate lewat MENU_KEY_MAP.
       { id: 'picking', label: 'Picking List', icon: ClipboardList },
       { id: 'surat-jalan', label: 'Surat Jalan', icon: Truck },
       {
@@ -711,14 +713,18 @@ const ERP_MENU_GROUPS = [
     label: 'Procurement & Vendor',
     items: [
       { section: 'Direct Procurement' },
-      { id: 'prf', label: 'PRF', icon: FileText, role: ['sales','gm_bd','procurement','manager','ceo','admin','super_admin'] },
-      // Gate registry for the active Procurement nav node (Inquiry/RFQ → Direct → Forwarding MSI).
-      { id: 'proc-inquiry-fwd-msi', label: 'Forwarding (MSI)', icon: Ship, role: ['sales','gm_bd','procurement','manager','ceo','admin','super_admin'] },
-      // Gate registry untuk node SO sisi Procurement (read-only inbox — terima dari Sales).
-      { id: 'proc-sales-order', label: 'Sales Order', icon: ClipboardList, role: ['procurement','manager','ceo','admin','super_admin'] },
-      // Gate registry Master Vendor. Role list = cermin RLS `vendors_*` (21 Jul):
-      // has_role('procurement') + tujuh kode is_manager_or_above(). Sales dikecualikan.
-      { id: 'proc-vendor-list', label: 'Vendor List', icon: Users, role: ['procurement','manager','supervisor','gm','gm_bd','ceo','admin','super_admin'] },
+      // Gate keempat item di bawah = role_menu_permissions (key proc_prf /
+      // proc_inquiry_fwd_msi / proc_sales_order / proc_vendor_list, migrasi
+      // 20260911000003) lewat MENU_KEY_MAP; item-nya sendiri jadi gate registry
+      // untuk node NEXUS_NAV yang aktif.
+      { id: 'prf', label: 'PRF', icon: FileText },
+      // Inquiry/RFQ → Direct → Forwarding MSI.
+      { id: 'proc-inquiry-fwd-msi', label: 'Forwarding (MSI)', icon: Ship },
+      // SO sisi Procurement (read-only inbox — terima dari Sales).
+      { id: 'proc-sales-order', label: 'Sales Order', icon: ClipboardList },
+      // Master Vendor. Default role di DB = cermin RLS `vendors_*` (21 Jul):
+      // has_role('procurement') + is_manager_or_above(). Sales dikecualikan.
+      { id: 'proc-vendor-list', label: 'Vendor List', icon: Users },
       {
         id: 'procRequest', label: 'Procurement Request', icon: ClipboardCheck,
         children: [
@@ -800,8 +806,8 @@ const ERP_MENU_GROUPS = [
           { id: 'hrga',                  label: 'My Requests',      icon: ClipboardList, public: true },
           { id: 'hrga-buat-request',     label: 'Buat Request',     icon: Plus, public: true },
           { section: 'Management' },
-          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList, role: ['super_admin','admin','finance','it','hrga','supervisor'] },
-          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock,    badge: '', role: ['super_admin','admin','finance','it','hrga','supervisor'] },
+          { id: 'hrga-semua-request',    label: 'Semua Request',    icon: LayoutList },
+          { id: 'hrga-pending-approval', label: 'Pending Approval', icon: Clock,    badge: '' },
           { id: 'hrga-arsip',            label: 'Arsip',            icon: Archive, public: true },
         ],
       },
@@ -931,11 +937,14 @@ const ERP_MENU_GROUPS = [
           { id: 'reports-custom',      label: 'Custom Report',       icon: FileText        },
         ],
       },
-      { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, role: MANAGER_OR_ABOVE },
+      // Sales Report & Indomarco = manager ke atas; MOM = manager ke atas +
+      // sales + operations. Keduanya kini default role di role_menu_permissions
+      // (report_sales / report_indomarco_dashboard / report_mom).
+      { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2 },
       // Tahap 2c: riwayat-visit dipindah ke grup CRM (tab di menu "Aktivitas").
-      { id: 'indomarco-dashboard',   label: 'Indomarco Dashboard', icon: Building2, role: MANAGER_OR_ABOVE },
+      { id: 'indomarco-dashboard',   label: 'Indomarco Dashboard', icon: Building2 },
       { id: 'reporting-form-report', label: 'Form Report',  icon: FileText, planned: true },
-      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, role: [...MANAGER_OR_ABOVE, 'sales', 'operations'] },
+      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen },
       {
         id: 'performance', label: 'Performance & Cache', icon: Zap,
         children: [
@@ -1277,6 +1286,17 @@ const MENU_KEY_MAP = {
   'quotation-draft': 'crm_quotation',
   'crm-customers':       'crm_customers',
   'customer-detail':     'crm_customers',
+  // 11 Sep 2026 — 7 menu CRM yang dulu ber-array `role: [...]` (rezim gate
+  // kedua, hanya role UTAMA). Default izinnya kini baris role_menu_permissions
+  // (migrasi 20260911000003, array disalin verbatim) — jadi dinilai atas SEMUA
+  // role aktif user di entitas aktif dan bisa di-override per user.
+  'crm-lead-pool':          'crm_lead_pool',
+  'crm-sales-order':        'crm_sales_order',
+  'crm-calls':              'crm_calls',
+  'crm-activity-log':       'crm_activity_log',
+  'riwayat-visit':          'crm_riwayat_visit',
+  'crm-lead-pool-approval': 'crm_lead_pool_approval',
+  'crm-rate-list':          'crm_rate_list',   // grup Shared Reference; katalog modul crm
   // Logistics
   // Dashboard Storbit SENGAJA memakai ulang menu key 'logistics_sp' (bukan key
   // baru): hasMenuPermission default-deny, jadi key baru butuh seeding katalog
@@ -1304,6 +1324,12 @@ const MENU_KEY_MAP = {
   'procRequest':   'proc_request',
   'purchaseOrder': 'proc_po',
   'vendors':       'proc_vendor',
+  // 11 Sep 2026 (migrasi 20260911000003). proc_vendor_list (Master Vendor)
+  // SENGAJA terpisah dari proc_vendor ('vendors', Vendor Management).
+  'prf':                  'proc_prf',
+  'proc-inquiry-fwd-msi': 'proc_inquiry_fwd_msi',
+  'proc-sales-order':     'proc_sales_order',
+  'proc-vendor-list':     'proc_vendor_list',
   // Inventory
   'inventory-dashboard':  'inv_dashboard',
   'inventory-stok':       'inv_stok',
@@ -1325,6 +1351,10 @@ const MENU_KEY_MAP = {
   // HRGA / Service Management
   'hrga': 'hrga_request',
   'it':   'hrga_it',
+  // 11 Sep 2026 (migrasi 20260911000003). Prefix svc_ mengikuti katalog:
+  // HRGA/IT hidup di modul `service`, tidak ada modul `hrga`.
+  'hrga-semua-request':    'svc_hrga_semua_request',
+  'hrga-pending-approval': 'svc_hrga_pending_approval',
   // Workflow
   'approvals': 'wf_pending',
   'docMgmt':   'wf_docs',
@@ -1337,6 +1367,11 @@ const MENU_KEY_MAP = {
   'reports':     'report_executive',
   'performance': 'report_performance',
   'audit':       'report_audit',
+  // 11 Sep 2026 (migrasi 20260911000003). report_mom = manager ke atas +
+  // sales + operations, dipertahankan persis di DB.
+  'reporting-sales':     'report_sales',
+  'indomarco-dashboard': 'report_indomarco_dashboard',
+  'reporting-mom':       'report_mom',
   // Foundation
   'masterData':    'foundation_master',
   'admin':         'foundation_master',
@@ -1356,9 +1391,13 @@ const MENU_KEY_MAP = {
 // content-gate. Dulu daftar ini disalin di dua tempat (bug audit R5).
 const SYNTHETIC_MENU_IDS = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
 
-// canSeeMenuItem — priority: public → hasMenuPermission (per-user) → item.role
-// array → DEFAULT-DENY.
-// Item tanpa gate apa pun (tanpa public/menuKey/role) disembunyikan.
+// canSeeMenuItem — priority: public → hasMenuPermission (MENU_KEY_MAP) →
+// DEFAULT-DENY. SATU rezim gate sejak 11 Sep 2026: fallback `item.role`
+// (array hardcode, hanya role UTAMA) sudah dicabut — 16 menu terakhir yang
+// memakainya dipindah ke MENU_KEY_MAP + role_menu_permissions (migrasi
+// 20260911000003). Jangan tambahkan properti `role` pada item menu lagi;
+// ia tidak akan dievaluasi.
+// Item tanpa gate apa pun (tanpa public/menuKey) disembunyikan.
 const canSeeMenuItem = (item, role, hasMenuPermission, isBnfAuthorized) => {
   if (item.section) return true;
   // BNF (2026-08-11) + Meeting Mingguan (2026-08-12): public:true alone is
@@ -1374,7 +1413,6 @@ const canSeeMenuItem = (item, role, hasMenuPermission, isBnfAuthorized) => {
     const menuKey = MENU_KEY_MAP[item.id];
     if (menuKey) return hasMenuPermission(menuKey, 'view');
   }
-  if (item.role) return item.role.includes(role);
   // Default-deny.
   return false;
 };
@@ -1458,7 +1496,7 @@ function moduleContainsMenu(m, activeMenu) {
 // old sidebar that never gated children); a GATED child uses canSeeMenuItem.
 // ─────────────────────────────────────────────────────────────────────────────
 function navHasGate(item) {
-  return !!(item && (item.public === true || MENU_KEY_MAP[item.id] || item.role));
+  return !!(item && (item.public === true || MENU_KEY_MAP[item.id]));
 }
 // tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
 function navChildGate(c, role, hasMenuPermission, isBnfAuthorized) {
@@ -1851,8 +1889,9 @@ export default function StorbitManifest() {
   // `role` = role UTAMA di entitas aktif, atau NULL kalau user tak punya role
   // di sana — state eksplisit (11 Sep 2026), menggantikan fallback lama
   // `|| 'management'` yang berpura-pura jadi role bernama 'management'. Semua
-  // konsumen sudah null-safe: can(null,…) → false, item.role.includes(null) →
-  // false, role === 'super_admin' → false; label lewat NO_ROLE_LABEL.
+  // konsumen sudah null-safe: can(null,…) → false, role === 'super_admin' →
+  // false; label lewat NO_ROLE_LABEL. (Gate menu tidak membaca `role` lagi
+  // sejak 11 Sep 2026 — seluruhnya lewat hasMenuPermission/erpRoles.)
   const role = authRole ?? null;
 
   // canRenderPage — centralized route-guard (defense-in-depth). Reuses the same
