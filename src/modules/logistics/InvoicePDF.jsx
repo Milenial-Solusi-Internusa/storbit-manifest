@@ -348,11 +348,34 @@ const makeStyles = (print) => StyleSheet.create({
   // dalamnya rata kiri mengikuti contoh yang diminta (tumpukan baris, bukan
   // rata tengah). Ukuran font SAMA di kedua varian; yang beda hanya jarak
   // kecil, mengikuti pola pemadatan varian cetak di blok kaki lainnya.
+  // Ketiga baris teks RATA TENGAH terhadap lebar kotak yang sama (180 pt):
+  // tiap <Text> adalah anak kolom flex selebar penuh, jadi textAlign:'center'
+  // memusatkan glyph-nya terhadap 180 pt itu — bukan alignItems:'center' pada
+  // kotaknya, yang akan mengecilkan tiap Text ke lebar isinya dan membuat
+  // underline "Account Dept" tak lagi punya acuan lebar yang sama.
+  // Diukur 11 Sep 2026 sesudah diratakan: pusat ketiga baris jatuh di x=476
+  // (386 + 90) dengan selisih < 0,3 pt; underline di react-pdf digambar
+  // selebar run teksnya sendiri dan ikut terpusat, jadi ia TIDAK membuat baris
+  // itu tampak bergeser.
   signBox: { width: 180, flexShrink: 0 },
-  signCompany: { fontFamily: 'Lora', fontWeight: 600, fontSize: 9.75, textTransform: 'uppercase', letterSpacing: 0.4, color: INK },
-  signSpace: { height: SIGN_SPACE_PT },
-  signName: { fontSize: 9.75, color: INK, textDecoration: 'underline' },
-  signRole: { fontSize: 8.25, color: MUTE_55, marginTop: print ? 1.5 : 2.5 },
+  // Ungu = konstanta PURPLE yang SAMA dengan label "Billed By"/"Billed To"
+  // (`billLabel`), bukan hex baru.
+  signCompany: { fontFamily: 'Lora', fontWeight: 600, fontSize: 9.75, textTransform: 'uppercase', letterSpacing: 0.4, color: PURPLE, textAlign: 'center' },
+  // Ruang materai: tinggi TETAP SIGN_SPACE_PT — placeholder di dalamnya
+  // dipusatkan lewat justify/align, bukan dengan margin, supaya teks itu tidak
+  // pernah menambah tinggi kotak (slack cetak di n=6 cuma 6,45 pt).
+  signSpace: { height: SIGN_SPACE_PT, justifyContent: 'center', alignItems: 'center' },
+  // Penanda tempat materai, SENGAJA samar: warna RULE_20 (= tinta 20%, konstanta
+  // yang sudah dipakai garis pemisah totals) — tingkat paling redup yang ada
+  // di palet ini tanpa hex baru; MUTE_50 (disclaimer) masih terbaca sebagai
+  // isi dokumen. Ukuran 7 pt, uppercase + letterSpacing mengikuti bahasa
+  // label dokumen (th/billLabel). TIDAK italic: tak ada muka italic yang
+  // terdaftar, dan react-pdf tidak mensintesisnya — fontStyle:'italic' hanya
+  // akan diam-diam jatuh ke Lora tegak. Kalau italic memang diinginkan,
+  // Lora-Italic.ttf harus di-bundle & di-register lebih dulu.
+  signPlaceholder: { fontSize: 7, letterSpacing: 0.7, textTransform: 'uppercase', color: RULE_20, textAlign: 'center' },
+  signName: { fontSize: 9.75, color: INK, textDecoration: 'underline', textAlign: 'center' },
+  signRole: { fontSize: 8.25, color: MUTE_55, marginTop: print ? 1.5 : 2.5, textAlign: 'center' },
 });
 
 const S_DOWNLOAD = makeStyles(false);
@@ -605,7 +628,9 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
                 kalau dinaikkan. */}
             <View style={s.signBox}>
               <Text style={s.signCompany}>{(company.legal_name || '—').toUpperCase()}</Text>
-              <View style={s.signSpace} />
+              <View style={s.signSpace}>
+                <Text style={s.signPlaceholder}>Stamp / Signature</Text>
+              </View>
               <Text style={s.signName}>Account Dept</Text>
               <Text style={s.signRole}>Authorized Signature</Text>
             </View>
