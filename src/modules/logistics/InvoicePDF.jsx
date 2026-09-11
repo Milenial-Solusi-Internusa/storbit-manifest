@@ -186,7 +186,6 @@ const makeStyles = (print) => StyleSheet.create({
   billCol: { flex: 1 },
   billLabel: { fontSize: 8.25, letterSpacing: 0.66, textTransform: 'uppercase', color: PURPLE, marginBottom: 4.5 },
   billName: { fontFamily: 'Cormorant Garamond', fontWeight: 600, fontSize: 14.25, color: INK },
-  billSub: { fontSize: 10.5, marginTop: 2, color: INK },
   billMute: { fontSize: 9.75, marginTop: 4.5, color: MUTE_65, lineHeight: 1.55 },
   billFaint: { fontSize: 9.75, marginTop: 2.25, color: MUTE_55 },
 
@@ -457,8 +456,14 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
         <View style={s.billRow}>
           <View style={s.billCol}>
             <Text style={s.billLabel}>Billed By</Text>
-            <Text style={s.billName}>Storbit</Text>
-            <Text style={s.billSub}>{company.legal_name || '—'}</Text>
+            {/* Nama PT jadi nama pihak — memakai `billName`, style yang sama
+                dengan nama customer di Billed To, supaya kedua blok pihak
+                sejajar bentuknya. Baris "Storbit" (judul dokumen tetap yang
+                dulu di atasnya) dicabut 11 Sep 2026: di kertas kop nama itu
+                sudah tercetak, dan di varian download ia sudah ada di kop
+                atas. `billSub` tak lagi dipakai di kolom ini. Nilainya DATA —
+                companies.legal_name entitas SP — bukan literal. */}
+            <Text style={s.billName}>{company.legal_name || '—'}</Text>
             <Text style={s.billMute}>{fullAddress}</Text>
             <Text style={s.billFaint}>NPWP: {company.tax_id || '—'}</Text>
           </View>
