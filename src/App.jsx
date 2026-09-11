@@ -25,6 +25,7 @@ import { useUrlState } from './hooks/useUrlState';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
 import CompanySwitcher from './components/CompanySwitcher';
+import { MANAGER_OR_ABOVE, SP_ITEM_WRITER_ROLES, NO_ROLE_LABEL, hasAnyRole, isAdminSettings, isSuperAdmin } from './lib/roles';
 // Logo Nexus (hexagon N) untuk brand mark sidebar — sumber: Supabase Storage
 // assets/Nexus Logo.png (1254², 888 KB). Di-crop ke BENTUK YANG TERLIHAT
 // (bbox alpha>128 + 4 px tepi anti-alias), bukan ke bbox alpha>0 — yang
@@ -293,13 +294,10 @@ const ROLES = [
   { id: 'hrga',               label: 'HRGA'                },
   { id: 'it',                 label: 'IT'                  },
   { id: 'viewer',             label: 'Viewer'              },
-  // 'management' BUKAN role di tabel roles (0 baris, dicek 11 Sep 2026). Ia
-  // dipertahankan HANYA karena masih dipakai sebagai fallback
-  // `const role = authRole || 'management'` untuk user tanpa role di entitas
-  // aktif — mencabutnya di sini tanpa mengganti fallback itu membuat label
-  // role tampil sebagai string mentah. 'super' (legacy profiles.role, kolom
-  // sudah di-drop) sudah dicabut.
-  { id: 'management',         label: 'Management (legacy)'  },
+  // Nilai legacy 'super' dan 'management' sudah dicabut (11 Sep 2026): kolom
+  // profiles.role sudah di-drop, dan user TANPA role di entitas aktif kini
+  // direpresentasikan sebagai `role = null` + NO_ROLE_LABEL (src/lib/roles.js),
+  // bukan lagi pura-pura jadi role bernama 'management'.
 ];
 
 const PERMISSIONS = {
@@ -317,9 +315,8 @@ const PERMISSIONS = {
   hrga:               ['view','create','edit','export'],
   it:                 ['view','create','edit','export','master'],
   viewer:             ['view','export'],
-  // 'management' = fallback role user tanpa role (lihat catatan di ROLES);
-  // 'super' sudah dicabut (11 Sep 2026).
-  management:         ['view','export'],
+  // 'super' & 'management' dicabut 11 Sep 2026 (lihat catatan di ROLES).
+  // `can(null, …)` untuk user tanpa role jatuh ke `?? false` di bawah.
 };
 
 const can = (role, action) => PERMISSIONS[role]?.includes(action) ?? false;
@@ -934,11 +931,11 @@ const ERP_MENU_GROUPS = [
           { id: 'reports-custom',      label: 'Custom Report',       icon: FileText        },
         ],
       },
-      { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor'] },
+      { id: 'reporting-sales',       label: 'Sales Report', icon: BarChart2, role: MANAGER_OR_ABOVE },
       // Tahap 2c: riwayat-visit dipindah ke grup CRM (tab di menu "Aktivitas").
-      { id: 'indomarco-dashboard',   label: 'Indomarco Dashboard', icon: Building2, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor'] },
+      { id: 'indomarco-dashboard',   label: 'Indomarco Dashboard', icon: Building2, role: MANAGER_OR_ABOVE },
       { id: 'reporting-form-report', label: 'Form Report',  icon: FileText, planned: true },
-      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, role: ['super_admin','admin','ceo','gm','gm_bd','manager','supervisor','sales','operations'] },
+      { id: 'reporting-mom',         label: 'MOM',          icon: BookOpen, role: [...MANAGER_OR_ABOVE, 'sales', 'operations'] },
       {
         id: 'performance', label: 'Performance & Cache', icon: Zap,
         children: [
@@ -1353,6 +1350,11 @@ const MENU_KEY_MAP = {
   // ini. Key lama 'admin'/'admin-settings' di atas dibiarkan (dead, harmless).
   'admin-hub': 'foundation_master',
 };
+
+// Menu id sintetis / halaman detail yang dinavigasi programatik dari halaman
+// yang sudah ber-gate — selalu dianggap valid oleh redirect-guard MAUPUN
+// content-gate. Dulu daftar ini disalin di dua tempat (bug audit R5).
+const SYNTHETIC_MENU_IDS = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
 
 // canSeeMenuItem — priority: public → hasMenuPermission (per-user) → item.role
 // array → DEFAULT-DENY.
@@ -1846,7 +1848,12 @@ export default function StorbitManifest() {
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
   const { role: authRole, erpRoles: authErpRoles, profile, signOut, hasMenuPermission, permissionsLoading, isBnfAuthorized, bnfAuthLoading } = useAuth();
-  const role = authRole || 'management';
+  // `role` = role UTAMA di entitas aktif, atau NULL kalau user tak punya role
+  // di sana — state eksplisit (11 Sep 2026), menggantikan fallback lama
+  // `|| 'management'` yang berpura-pura jadi role bernama 'management'. Semua
+  // konsumen sudah null-safe: can(null,…) → false, item.role.includes(null) →
+  // false, role === 'super_admin' → false; label lewat NO_ROLE_LABEL.
+  const role = authRole ?? null;
 
   // canRenderPage — centralized route-guard (defense-in-depth). Reuses the same
   // gate as the sidebar (canSeeMenuItem) so a page can't be rendered by a role
@@ -1890,14 +1897,14 @@ export default function StorbitManifest() {
   // Kedua properti mati itu sudah DIHAPUS dari itemnya (Fase 0 Batch 3); gate
   // role-nya kini hidup di baris ini, bukan di pohon menu.
   // (AGENTS.md: don't rely on menu gating alone.)
-  const canAdminSettings = role === 'super_admin' || role === 'admin';
+  const canAdminSettings = isAdminSettings(authErpRoles);   // semua role aktif, cermin ADMIN_SETTINGS_ROLES
 
   // Defense-in-depth for Input SP (create SP — Storbit ops). Require BOTH the
   // per-menu permission (logistics_input via canRenderPage) AND an operational
   // role (admin/manager/operations/super_admin). InputSPPage has no guard of its
   // own, so this stops a stray navigation from rendering the create form.
   const canInputSP = canRenderPage('input')
-    && ['admin', 'manager', 'operations', 'super_admin'].includes(role);
+    && hasAnyRole(authErpRoles, SP_ITEM_WRITER_ROLES);   // cermin is_sp_item_writer(); semua role aktif
 
   // ── Navbar: Pending Approval badge (HRGA approver inbox count) ──────────────
   // Lightweight count: HRGA requests in-progress (submitted/under_review) whose
@@ -2185,8 +2192,7 @@ export default function StorbitManifest() {
 
     // Synthetic / detail pages are navigated to programmatically (not from the
     // sidebar) and are always valid — skip them.
-    const SYNTHETIC = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
-    if (SYNTHETIC.includes(activeMenu)) return;
+    if (SYNTHETIC_MENU_IDS.includes(activeMenu)) return;
     if (activeMenu?.startsWith('customer-') ||
         activeMenu?.startsWith('assets-') ||
         activeMenu?.startsWith('product-')) return;
@@ -2699,7 +2705,7 @@ export default function StorbitManifest() {
   const visibleMenus = visibleMenuGroups.flatMap(group => group.items.filter(i => !i.section));
   // eslint-disable-next-line no-unused-vars
   const activeMenuItem = visibleMenus.find(item => item.id === activeMenu) || visibleMenus[0];
-  const currentRoleLabel = ROLES.find(r => r.id === role)?.label || role;
+  const currentRoleLabel = ROLES.find(r => r.id === role)?.label ?? (role ?? NO_ROLE_LABEL);
 
   // Content-level access gate (Fix C / defense-in-depth): only render a module
   // page if the user can access its menu. The sidebar already gates visibility
@@ -2708,11 +2714,10 @@ export default function StorbitManifest() {
   // Plain const (not useMemo) because it sits after the `if (loading) return`
   // early-return and depends on visibleMenuGroups computed just above.
   const canAccessActiveMenu = (() => {
-    if (role === 'super_admin') return true;
+    if (isSuperAdmin(authErpRoles)) return true;
     // Synthetic / detail menus are navigated to programmatically from pages that
     // are themselves already gated — always allow.
-    const SYNTHETIC = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
-    if (SYNTHETIC.includes(activeMenu)) return true;
+    if (SYNTHETIC_MENU_IDS.includes(activeMenu)) return true;
     if (activeMenu?.startsWith('customer-') || activeMenu?.startsWith('assets-') || activeMenu?.startsWith('product-')) return true;
     // F4: per-item gate mirroring the sidebar (gateless child inherits its
     // module's visibility) — replaces the coarse "parent visible → all children
@@ -2834,7 +2839,7 @@ export default function StorbitManifest() {
               onClick={signOut}
               className="border rounded-full px-3 py-1.5 text-[11px] font-medium flex items-center gap-1.5"
               style={{ background: 'white', borderColor: PASTEL.line, color: PASTEL.ink }}
-              title={`${profile?.full_name || 'User'} · ${ROLES.find(r => r.id === role)?.label || role}`}
+              title={`${profile?.full_name || 'User'} · ${currentRoleLabel}`}
             >
               <LogOut size={11}/>
               Logout

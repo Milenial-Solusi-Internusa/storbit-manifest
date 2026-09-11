@@ -19,6 +19,7 @@
 
 import { useState, useCallback, lazy, Suspense } from "react";
 import { useAuth } from "../../contexts/useAuth";
+import { isAdminSettings, isSuperAdmin } from "../../lib/roles";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import { Icon, PageHeader, SectionLabel, KitStyles } from "./admin-settings/kit";
 import { SURFACE, NAVY, LINE, ORANGE, FAINT, INK, MUTED, FONT_BODY, FONT_HEAD, FONT_MONO } from "./admin-settings/tokens";
@@ -184,7 +185,7 @@ const Loading = () => <div style={{ padding: 40, textAlign: "center", fontFamily
 
 /* ===================== SHELL UTAMA ===================== */
 export default function AdminHub({ onExit, initialSection }) {
-  const { role, hasMenuPermission } = useAuth();
+  const { erpRoles, hasMenuPermission } = useAuth();
   const [activeSection, setActiveSection] = useState(initialSection || "landing");
   const backToLanding = useCallback(() => setActiveSection("landing"), []);
 
@@ -215,9 +216,12 @@ export default function AdminHub({ onExit, initialSection }) {
      (App.jsx:3322-3325 hari ini) — bug pre-existing, diwarisi apa adanya,
      BUKAN diperbaiki di sini (lihat plan, bagian "4 item top-level"). */
   const gMaster   = hasMenuPermission("foundation_master", "view");
-  const gSettings = role === "super_admin" || role === "admin";
+  // Gate PERAN dievaluasi terhadap SEMUA role aktif (src/lib/roles.js), bukan
+  // role utama — sama dengan canAdminSettings di App.jsx (dulu dua salinan).
+  const gSuper    = isSuperAdmin(erpRoles);
+  const gSettings = isAdminSettings(erpRoles);
   const gSchemaView = hasMenuPermission("foundation_schema", "view");
-  const gSchemaOpen = role === "super_admin";
+  const gSchemaOpen = gSuper;
   const G = {
     "companies":            { view: gMaster,   open: gMaster },
     "branches":             { view: gMaster,   open: gMaster },
@@ -225,7 +229,7 @@ export default function AdminHub({ onExit, initialSection }) {
     "positions":            { view: gMaster,   open: gMaster },
     "org-structure":        { view: gMaster,   open: gMaster },
     "user-access":          { view: gMaster,   open: gMaster },
-    "role-defaults":        { view: gMaster && role === "super_admin", open: gMaster && role === "super_admin" },
+    "role-defaults":        { view: gMaster && gSuper, open: gMaster && gSuper },
     "document-types":       { view: gMaster,   open: gMaster },
     "status-catalog":       { view: gMaster,   open: gMaster },
     "taxes":                { view: gMaster,   open: gMaster },
@@ -241,8 +245,8 @@ export default function AdminHub({ onExit, initialSection }) {
     "general-preferences":  { view: gSettings, open: gSettings },
     "integrations":         { view: gSettings, open: gSettings },
     "products":             { view: hasMenuPermission("foundation_products", "view"), open: hasMenuPermission("foundation_products", "view") },
-    "bulk-price":           { view: role === "super_admin", open: role === "super_admin" },
-    "bnf-org-roles":        { view: role === "super_admin" || role === "admin", open: role === "super_admin" || role === "admin" },
+    "bulk-price":           { view: gSuper, open: gSuper },
+    "bnf-org-roles":        { view: gSettings, open: gSettings },
     "schema-manager":       { view: gSchemaView, open: gSchemaOpen },
   };
 
