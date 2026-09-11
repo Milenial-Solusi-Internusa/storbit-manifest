@@ -263,15 +263,25 @@ export async function fetchPositionsForCompany(companyId) {
   return { data: data || [], error };
 }
 
+// `roles` is GLOBAL since 20260821000003_globalize_roles (every live row has
+// company_id = NULL; the per-company duplicates were soft-deleted and
+// user_roles.role_id repointed to the survivors). Filtering it by company_id
+// therefore ALWAYS returns zero rows — silently — which is exactly what left
+// the ERP Role dropdown with nothing but "— No ERP role —" for every user,
+// super_admin included, from 21 Aug until 11 Sep 2026 (TD-209, first runtime
+// confirmation). Company scoping belongs on user_roles.company_id, not here.
+// `companyId` is kept only for the form's cascade (the select is disabled
+// until a company is chosen); it is NOT a filter. Same pattern as
+// RoleDefaultsPage / DealPanels / salesRoster, which never filtered by company.
 export async function fetchRolesForCompany(companyId) {
   if (!companyId) return { data: [], error: null };
   const { data, error } = await supabase
     .from('roles')
     .select('id, code, name')
-    .eq('company_id', companyId)
     .is('deleted_at', null)
     .eq('is_active', true)
-    .order('name');
+    .order('name')
+    .limit(1000);
   return { data: data || [], error };
 }
 
