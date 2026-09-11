@@ -32,7 +32,8 @@ import {
 import { useAuth } from '../../../contexts/useAuth';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../../lib/auditLogger';
 import ConfirmModal from '../../../components/ConfirmModal';
-import { PASTEL, NAVY, RED, getPrimaryErpRole, ACTION_ORDER } from './userAccessTokens';
+import { PASTEL, NAVY, RED, ACTION_ORDER } from './userAccessTokens';
+import { pickPrimaryErpRole } from '../../../lib/roleResolution';
 import {
   Avatar, RoleBadge, StatusBadge,
   FieldLabel, FieldInput, FieldSelect, FieldToggle,
@@ -49,7 +50,10 @@ const AVATAR_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'w
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 
 function buildDraft(r) {
-  const primary = getPrimaryErpRole(r.user_roles);
+  // Role utama DI HOME COMPANY user ini — bukan baris aktif pertama company
+  // mana pun (definisi lama), yang sesudah ganti role lintas company masih
+  // menampilkan role lama dari company lain.
+  const primary = pickPrimaryErpRole(r.user_roles, r.company_id);
   return {
     id:                 r.id,
     full_name:          r.full_name || '',
@@ -227,9 +231,16 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
   }, [draft?.id, companyId]);
 
   const handleCompanyChange = useCallback((newCo) => {
-    setDraft((d) => ({ ...d, company_id: newCo, branch_id: '', department_id: '', position_id: '', erp_role_id: '' }));
+    // Pre-fill role dengan role aktif user DI COMPANY YANG BARU DIPILIH, dan
+    // jadikan itu juga acuan `_originalErpRoleId`. Sebelumnya erp_role_id
+    // di-reset '' sementara _originalErpRoleId tetap role home lama → Save
+    // tanpa menyentuh role dianggap "diubah jadi tidak ada" → saveUserAccess
+    // mencabut SEMUA role user di company baru itu (jebakan, 11 Sep 2026).
+    // Kini "tidak disentuh" = "tidak berubah", di company mana pun.
+    const next = pickPrimaryErpRole(rowMeta?.user_roles, newCo)?.role_id || '';
+    setDraft((d) => ({ ...d, company_id: newCo, branch_id: '', department_id: '', position_id: '', erp_role_id: next, _originalErpRoleId: next }));
     setCompanyId(newCo);
-  }, []);
+  }, [rowMeta]);
 
   const handleSave = useCallback(async () => {
     if (!draft) return;
@@ -539,7 +550,7 @@ export default function UserEditPage({ userId, initialRow, onBack, showToast }) 
 
   // ── Render ───────────────────────────────────────────────────
   const userName = draft?.full_name || rowMeta?.full_name || '(unnamed)';
-  const primaryErpRole = getPrimaryErpRole(rowMeta?.user_roles);
+  const primaryErpRole = pickPrimaryErpRole(rowMeta?.user_roles, rowMeta?.company_id);
 
   return (
     <div>

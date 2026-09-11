@@ -51,9 +51,10 @@ export const LEGACY_ROLE_COLOR = {
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-export function getPrimaryErpRole(userRoles) {
-  return (userRoles || []).find((ur) => ur.is_active) || null;
-}
+// getPrimaryErpRole (dulu di sini: `find(is_active)` — baris aktif pertama,
+// company mana pun) DIHAPUS 11 Sep 2026. Ia definisi "role utama" kedua yang
+// hasilnya beda dari gate aplikasi; pakai pickPrimaryErpRole dari
+// src/lib/roleResolution.js.
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
