@@ -279,13 +279,28 @@ export async function fetchRolesForCompany(companyId) {
 // saveUserAccess
 //
 // Atomically updates a user's profile fields and (optionally) their primary
-// ERP role assignment.
+// ERP role assignment IN ONE COMPANY.
 //
 // profilePatch:   partial profiles row to UPDATE
 // newErpRoleId:   undefined = skip ERP role entirely (user didn't change it)
-//                 null      = deactivate all active ERP roles, assign none
-//                 <uuid>    = deactivate all, upsert this role as active
-// companyId:      the target user's company_id (needed for user_roles INSERT RLS)
+//                 null      = deactivate all active ERP roles IN `companyId`,
+//                             assign none there
+//                 <uuid>    = deactivate the OTHER active roles in `companyId`,
+//                             then make sure this one is active there — a no-op
+//                             when it already is (its granted_at/granted_by are
+//                             left untouched)
+// companyId:      the company being edited in the form (draft.company_id).
+//                 It is BOTH the INSERT target (user_roles INSERT RLS) AND the
+//                 scope of the revocation. Required whenever newErpRoleId is
+//                 not undefined — without it the call is refused, never
+//                 widened to "every company".
+//
+// ⚠️ Roles the user holds in OTHER companies are never touched here. Until
+// 11 Sep 2026 the revocation had no company_id filter and relied on RLS to
+// scope it — which only holds for `admin` editors (user_roles_update:
+// company_id = get_user_company_id()). For a super_admin editor RLS does not
+// scope at all, so one Save wiped every active role of a multi-company user
+// across all entities. The scope is now explicit in the query.
 //
 // RLS constraint: user_roles_insert/update requires
 //   company_id = get_user_company_id()
@@ -311,23 +326,50 @@ export async function saveUserAccess({ profileId, profilePatch, newErpRoleId, co
   // Step 2: ERP role assignment — skip if caller passed undefined (no change)
   if (newErpRoleId === undefined) return { error: null };
 
+  // Without a company the revocation cannot be scoped. Refuse explicitly rather
+  // than fall through to the old "revoke everywhere" behaviour.
+  if (!companyId) return { error: new Error('Company wajib diisi untuk mengubah ERP role.') };
+
   // Resolve current session user for audit fields (revoked_by / granted_by)
   const { data: { session } } = await supabase.auth.getSession();
   const currentUserId = session?.user?.id || null;
   const now = new Date().toISOString();
 
-  // Deactivate all currently active user_roles for this user.
-  // RLS: only affects rows where company_id = get_user_company_id().
-  const { error: deactivateErr } = await supabase
+  // Step 2a: revoke the user's active roles in THIS company only, except the
+  // role being assigned — an unchanged assignment is not revoked-and-reinserted.
+  // The company_id filter is enforced HERE, not delegated to RLS: for a
+  // super_admin editor RLS does not scope by company, so without this filter
+  // every role the user holds in every entity was revoked (bug found 11 Sep
+  // 2026 while auditing multi-company role assignments).
+  let revoke = supabase
     .from('user_roles')
     .update({ is_active: false, revoked_at: now, revoked_by: currentUserId })
     .eq('user_id', profileId)
+    .eq('company_id', companyId)
     .eq('is_active', true);
+  if (newErpRoleId) revoke = revoke.neq('role_id', newErpRoleId);
+  const { error: deactivateErr } = await revoke;
 
   if (deactivateErr) return { error: deactivateErr };
 
-  // Insert or reactivate the chosen ERP role (only if one was selected)
-  if (newErpRoleId && companyId) {
+  // Step 2b: make sure the chosen role is active in this company. One row per
+  // (user, role, company) is guaranteed by user_roles_unique, so a single
+  // lookup tells whether it already is — in which case there is nothing to
+  // write, and the original granted_at/granted_by survive.
+  if (newErpRoleId) {
+    const { data: existing, error: existErr } = await supabase
+      .from('user_roles')
+      .select('id, is_active')
+      .eq('user_id', profileId)
+      .eq('role_id', newErpRoleId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (existErr) return { error: existErr };
+    if (existing?.is_active) return { error: null };
+
+    // Insert, or reactivate a previously revoked row (same unique triple).
+    // revoked_at/revoked_by are cleared on reactivation so the row does not
+    // read as "active but revoked".
     const { error: upsertErr } = await supabase
       .from('user_roles')
       .upsert(
@@ -338,6 +380,8 @@ export async function saveUserAccess({ profileId, profilePatch, newErpRoleId, co
           is_active:  true,
           granted_at: now,
           granted_by: currentUserId,
+          revoked_at: null,
+          revoked_by: null,
         },
         { onConflict: 'user_id,role_id,company_id' }
       );
