@@ -29,7 +29,12 @@ async function fetchProfileById(userId) {
     supabase.from('profiles').select('*').eq('id', userId),
     supabase
       .from('user_roles')
-      .select('id, role_id, company_id, roles(id, code, name)')
+      // roles.level (migrasi 20260911000004) dibaca isManagerOrAbove() di
+      // src/lib/roles.js — "manager ke atas" = level <= 6, bukan daftar nama.
+      // ⚠️ Kolom ini WAJIB sudah ada di DB sebelum kode ini mendarat: embed
+      // kolom yang tak ada membuat PostgREST menolak SELURUH query (42703) →
+      // erpRoles kosong → semua gate FE mati.
+      .select('id, role_id, company_id, roles(id, code, name, level)')
       .eq('user_id', userId)
       .eq('is_active', true)
       .is('valid_until', null)

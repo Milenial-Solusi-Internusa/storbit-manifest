@@ -8,7 +8,10 @@
 //
 // ⚠️ Daftar di sini harus SAMA dengan fungsi guard di DB. Kalau salah satu
 // diubah, ubah keduanya dalam satu unit kerja:
-//   MANAGER_OR_ABOVE     ↔ is_manager_or_above()   (schema_snapshot.sql)
+//   MANAGER_LEVEL_MAX    ↔ roles.level <= 6 di is_manager_or_above() /
+//                          is_manager_or_above_in() / mark_delivery_delivered
+//                          (LIVE 20260911000004); prf_release / prf_select_offer
+//                          menyusul lewat 20260911000005
 //   SP_ITEM_WRITER_ROLES ↔ is_sp_item_writer()
 //   ALL_ENTITIES_ROLES   ↔ is_super_admin()         (bypass lintas entitas)
 // Katalog role sendiri (nama, warna) TIDAK di sini — itu tabel `roles`.
@@ -17,11 +20,16 @@
 // role hantu 'sales_spv' di QuotationFormPage (keputusan bisnis terpisah),
 // dan array `role: [...]` pada item menu (rezim menu, task terpisah).
 
-// Cermin is_manager_or_above() — 7 role, TERMASUK gm_bd (keputusan Den 11 Sep
-// 2026: GM BD harus melihat seluruh timnya, sama seperti GM biasa; 3 tempat
-// yang dulu tidak menyertakannya adalah BUG) dan supervisor (ada di guard DB,
-// walau role-nya belum ada di tabel `roles` — TD-106; inert sampai dibuat).
-export const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
+// "Manager ke atas" = roles.level <= 6 (migrasi 20260911000004), BUKAN daftar
+// nama. Skala level (COMMENT ON COLUMN roles.level): 0 super_admin/admin ·
+// 1 ceo · 2 gm/gm_bd · 4 manager · 6 supervisor (belum ada, TD-106) · 7 staf
+// (sales/finance/finance_controller/operations/procurement/hrga/it) · 99
+// viewer. finance_controller SENGAJA 7: guard DB tak pernah memasukkannya
+// (regression check 11 Sep 2026). Role baru di tier manajerial (Pekerjaan 4)
+// cukup diberi level <= 6 di DB — nol perubahan di sini maupun di 5 fungsi
+// SQL. Daftar nama MANAGER_OR_ABOVE yang lama dihapus 11 Sep 2026 sesudah
+// dibuktikan identik (nol pemakai).
+export const MANAGER_LEVEL_MAX = 6;
 
 // "Semua entitas" = hanya super_admin, cermin bypass is_super_admin() di RLS.
 // `admin` di RLS SELALU di-scope ke home company-nya — jadi admin TIDAK
@@ -69,11 +77,27 @@ export function hasAnyRole(erpRoles, list, { companyId } = {}) {
     && (companyId == null || r.company_id === companyId));
 }
 
-export const isManagerOrAbove = (erpRoles, opt) => hasAnyRole(erpRoles, MANAGER_OR_ABOVE, opt);
 export const isAllEntities    = (erpRoles, opt) => hasAnyRole(erpRoles, ALL_ENTITIES_ROLES, opt);
 export const isAdminSettings  = (erpRoles, opt) => hasAnyRole(erpRoles, ADMIN_SETTINGS_ROLES, opt);
 export const isSuperAdmin     = (erpRoles, opt) => hasAnyRole(erpRoles, ['super_admin'], opt);
 export const canWriteSpItem   = (erpRoles, opt) => hasAnyRole(erpRoles, SP_ITEM_WRITER_ROLES, opt);
+
+// isManagerOrAbove — benar kalau SALAH SATU role aktif user ber-level <=
+// MANAGER_LEVEL_MAX (semantik entitas sama dengan hasAnyRole: semua entitas,
+// `companyId` opsional). Baris tanpa level integer (kolom belum ada / bentuk
+// data lain) dianggap BUKAN manager — fail-closed — dan dilaporkan sekali ke
+// console supaya tidak senyap (pola canRenderPage).
+let warnedMissingLevel = false;
+export function isManagerOrAbove(erpRoles, { companyId } = {}) {
+  if (!erpRoles?.length) return false;
+  if (!warnedMissingLevel && erpRoles.some((r) => r?.roles && !Number.isInteger(r.roles.level))) {
+    warnedMissingLevel = true;
+    console.warn('[roles] isManagerOrAbove: ada baris user_roles tanpa roles.level integer — dianggap bukan manager. Cek embed roles(level) di AuthContext / kolom roles.level di DB.');
+  }
+  return erpRoles.some((r) =>
+    Number.isInteger(r?.roles?.level) && r.roles.level <= MANAGER_LEVEL_MAX
+    && (companyId == null || r.company_id === companyId));
+}
 
 // isSalesOnly — flag RESTRIKTIF, dievaluasi terhadap role UTAMA (string kode),
 // bukan erpRoles. Lihat catatan SALES_ONLY_ROLES.
