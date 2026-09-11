@@ -128,6 +128,16 @@ const META_LIFT_PT = (4 - KOP_HEADER_CM) * CM_TO_PT;
 const SCREEN_PAD_TOP = 20;
 const SCREEN_PAD_BOTTOM = 24;
 const PAD_X = 46;
+// Ruang kosong untuk materai tempel + tanda tangan di blok tanda tangan
+// (kanan bawah). 80 pt = 2,82 cm — cukup untuk materai yang ditempel MELINTANG
+// (sisi pendek 2,2 cm) plus goresan tanda tangan di atasnya; materai yang
+// ditempel TEGAK (3,2 cm) akan melewati batasnya sedikit dan menutupi baris
+// "Account Dept". Angka ini dipilih sebagai batas TERBESAR yang tidak menambah
+// tinggi halaman: blok tanda tangan duduk SEJAJAR blok Terms & Payment dalam
+// satu baris flex, jadi selama tingginya <= kolom kiri (+ slack halaman yang
+// diukur 11 Sep 2026: 22,95 pt cetak / 22,27 pt download di n=6), ia gratis.
+// Menaikkannya ke 3,5 cm menurunkan batas cetak dari n<=6 jadi n<=5.
+const SIGN_SPACE_PT = 80;
 
 // `print` = true menghasilkan sheet varian cetak. Dipanggil DUA KALI di bawah,
 // sekali per varian, lalu hasilnya dipakai apa adanya — tidak ada sheet yang
@@ -327,6 +337,22 @@ const makeStyles = (print) => StyleSheet.create({
   payLabel: { color: MUTE_55 },
 
   disclaimer: { fontSize: print ? 7.5 : 8.25, color: MUTE_50, lineHeight: print ? 1.35 : 1.6, marginTop: print ? 6 : 10 },
+
+  // Baris kaki dua kolom: kiri = Terms + kotak Payment (yang sudah ada), kanan
+  // = blok tanda tangan. `alignItems:'flex-start'` supaya tinggi baris =
+  // max(kiri, kanan) dan kolom yang lebih pendek tidak ditarik memanjang.
+  footRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 },
+  footLeft: { flex: 1 },
+  // Blok tanda tangan: lebar tetap, menempel tepi kanan isi (566) — tepi yang
+  // sama dengan kolom SUBTOTAL, kotak Grand Total, dan nilai meta. Teks di
+  // dalamnya rata kiri mengikuti contoh yang diminta (tumpukan baris, bukan
+  // rata tengah). Ukuran font SAMA di kedua varian; yang beda hanya jarak
+  // kecil, mengikuti pola pemadatan varian cetak di blok kaki lainnya.
+  signBox: { width: 180, flexShrink: 0 },
+  signCompany: { fontFamily: 'Lora', fontWeight: 600, fontSize: 9.75, textTransform: 'uppercase', letterSpacing: 0.4, color: INK },
+  signSpace: { height: SIGN_SPACE_PT },
+  signName: { fontSize: 9.75, color: INK, textDecoration: 'underline' },
+  signRole: { fontSize: 8.25, color: MUTE_55, marginTop: print ? 1.5 : 2.5 },
 });
 
 const S_DOWNLOAD = makeStyles(false);
@@ -552,20 +578,37 @@ export default function InvoicePDF({ invoice = {}, variant = 'download' }) {
         {/* Terms & Payment */}
         <View style={s.footBlock}>
           <View style={s.hr} />
-          <Text style={s.termsLabel}>Terms &amp; Instructions</Text>
-          <Text style={s.termsText}>Payment must be made in full to the account below.</Text>
+          <View style={s.footRow}>
+            <View style={s.footLeft}>
+              <Text style={s.termsLabel}>Terms &amp; Instructions</Text>
+              <Text style={s.termsText}>Payment must be made in full to the account below.</Text>
 
-          <View style={s.payBox}>
-            <Text style={s.payTitle}>Payment</Text>
-            {bank ? (
-              <>
-                <Text style={s.payRow}><Text style={s.payLabel}>Bank  </Text>{bank.bank_name}{bank.branch ? ` ${bank.branch}` : ''}</Text>
-                <Text style={s.payRow}><Text style={s.payLabel}>Account No.  </Text>{bank.account_number}</Text>
-                <Text style={s.payRow}><Text style={s.payLabel}>Account Name  </Text>{bank.account_holder}</Text>
-              </>
-            ) : (
-              <Text style={{ fontSize: 9.5, color: MUTE_55 }}>Rekening pembayaran belum diatur untuk entitas ini.</Text>
-            )}
+              <View style={s.payBox}>
+                <Text style={s.payTitle}>Payment</Text>
+                {bank ? (
+                  <>
+                    <Text style={s.payRow}><Text style={s.payLabel}>Bank  </Text>{bank.bank_name}{bank.branch ? ` ${bank.branch}` : ''}</Text>
+                    <Text style={s.payRow}><Text style={s.payLabel}>Account No.  </Text>{bank.account_number}</Text>
+                    <Text style={s.payRow}><Text style={s.payLabel}>Account Name  </Text>{bank.account_holder}</Text>
+                  </>
+                ) : (
+                  <Text style={{ fontSize: 9.5, color: MUTE_55 }}>Rekening pembayaran belum diatur untuk entitas ini.</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Blok tanda tangan (11 Sep 2026). Nama PT = companies.legal_name
+                entitas SP, di-uppercase — sumber yang SAMA dengan Billed By,
+                bukan literal, supaya satu perbaikan data memperbaiki keduanya.
+                Ruang kosong SIGN_SPACE_PT untuk materai + tanda tangan; lihat
+                catatan di konstanta itu soal kenapa 80 pt dan apa harganya
+                kalau dinaikkan. */}
+            <View style={s.signBox}>
+              <Text style={s.signCompany}>{(company.legal_name || '—').toUpperCase()}</Text>
+              <View style={s.signSpace} />
+              <Text style={s.signName}>Account Dept</Text>
+              <Text style={s.signRole}>Authorized Signature</Text>
+            </View>
           </View>
 
           <View style={s.hr} />
