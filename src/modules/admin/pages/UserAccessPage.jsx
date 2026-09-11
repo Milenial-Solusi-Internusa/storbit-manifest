@@ -42,7 +42,8 @@ import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import ConfirmModal from '../../../components/ConfirmModal';
-import { PASTEL, getPrimaryErpRole, EMAIL_RE } from './userAccessTokens';
+import { PASTEL, EMAIL_RE } from './userAccessTokens';
+import { pickPrimaryErpRole, activeRolesByCompany } from '../../../lib/roleResolution';
 import {
   Avatar, RoleBadge, StatusBadge,
   FieldLabel, FieldInput, FieldSelect,
@@ -139,6 +140,20 @@ export default function UserAccessPage({ showToast, onEditUser }) {
     if (!addOpen) return;
     fetchAllCompanies().then(({ data: cos }) => setAddCompanies(cos || []));
   }, [addOpen]);
+
+  // Peta company_id -> code untuk chip role di daftar (role user di entitas
+  // selain home-nya tidak membawa embed companies, cuma company_id). Dimuat
+  // sekali saat mount; sengaja terpisah dari addCompanies supaya perilaku
+  // modal Add tidak berubah.
+  const [companyCodes, setCompanyCodes] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllCompanies().then(({ data: cos }) => {
+      if (cancelled) return;
+      setCompanyCodes(Object.fromEntries((cos || []).map((c) => [c.id, c.code])));
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // Cascade: fetch branches / departments / positions / ERP roles when company changes
   useEffect(() => {
@@ -318,7 +333,17 @@ export default function UserAccessPage({ showToast, onEditUser }) {
           <EmptyState message={search ? 'No users match your search.' : 'No user profiles found.'} />
         ) : (
           data.map((row) => {
-            const primaryErpRole = getPrimaryErpRole(row.user_roles);
+            // Jangkar = HOME company user yang ditampilkan (row.company_id) —
+            // daftar ini lintas entitas, jadi entitas aktif si admin bukan
+            // acuan yang tepat. Fungsi yang SAMA dengan yang dipakai gate.
+            const primaryErpRole = pickPrimaryErpRole(row.user_roles, row.company_id);
+            // SEMUA role aktif lain milik user ini (entitas mana pun, termasuk
+            // role kedua di home company) — ditampilkan sebagai chip di bawah
+            // badge primary, supaya multi-role tidak lagi tersembunyi dari admin.
+            const otherRoles = Object.entries(activeRolesByCompany(row.user_roles))
+              .flatMap(([cid, rows]) => rows
+                .filter((r) => r.id !== primaryErpRole?.id)
+                .map((r) => ({ id: r.id, code: r.roles?.code || '?', company: companyCodes[cid] || '?' })));
             const isSelf = row.id === myProfile?.id;
             const isToggling = togglingId === row.id;
             return (
@@ -358,9 +383,24 @@ export default function UserAccessPage({ showToast, onEditUser }) {
                   )}
                 </div>
 
-                {/* Role */}
+                {/* Role — badge = role utama di HOME company; chip = role aktif
+                    lain per entitas (kode entitas · kode role). */}
                 <div className="min-w-0 pr-2">
                   <RoleBadge erpRole={primaryErpRole} legacyRole={row.role} />
+                  {otherRoles.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {otherRoles.map((r) => (
+                        <span
+                          key={r.id}
+                          className="font-mono text-[10px] px-1.5 py-0.5 rounded-md font-semibold whitespace-nowrap"
+                          style={{ background: PASTEL.lineSoft, color: PASTEL.inkSoft }}
+                          title={`Role aktif di ${r.company}`}
+                        >
+                          {r.company} · {r.code}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Status */}

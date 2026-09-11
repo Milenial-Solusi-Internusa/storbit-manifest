@@ -5,32 +5,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../lib/auditLogger';
 import { AuthContext } from './authCtx';
-
-// ERP role priority — highest privilege wins when user has multiple active roles
-const ERP_ROLE_PRIORITY = [
-  'super_admin','admin','ceo','gm','gm_bd','manager','supervisor',
-  'finance_controller','finance','operations',
-  'sales','procurement','hrga','it','viewer',
-];
-
-// activeCompanyId-aware: only roles held IN the active company are eligible.
-// This filter is LOAD-BEARING — do not simplify it away. Genuinely
-// multi-company users exist (e.g. Finance staff holding roles in both MSI and
-// SOA), and CompanySwitcher.jsx flips activeCompanyId at runtime, so the same
-// user resolves to a different primary role per active company. An older
-// comment here claimed this was a no-op because every user's roles shared one
-// company_id; that stopped being true once multi-company assignments landed.
-function pickPrimaryErpRole(userRoles, activeCompanyId) {
-  const scoped = (userRoles || []).filter(r => r.company_id === activeCompanyId);
-  if (!scoped.length) return null;
-  // Sort by priority index (lower = higher privilege)
-  const sorted = [...scoped].sort((a, b) => {
-    const ai = ERP_ROLE_PRIORITY.indexOf(a.roles?.code ?? '');
-    const bi = ERP_ROLE_PRIORITY.indexOf(b.roles?.code ?? '');
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-  });
-  return sorted[0];
-}
+// ERP_ROLE_PRIORITY + pickPrimaryErpRole hidup di src/lib/roleResolution.js
+// sejak 11 Sep 2026 — satu sumber yang juga dipakai UserAccessPage/
+// UserEditPage, supaya "role utama" yang DITAMPILKAN admin sama dengan yang
+// DIPAKAI gate. Jangan definisikan ulang di sini.
+import { pickPrimaryErpRole } from '../lib/roleResolution';
 
 // matchesMenuAction — shared predicate for user_menu_permissions and
 // role_menu_permissions rows (same nested-embed shape): does this row cover

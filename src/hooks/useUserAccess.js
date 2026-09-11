@@ -76,6 +76,7 @@ export function useUserAccess({ page = 1, search = '' } = {}) {
         .from('user_roles')
         .select('id, user_id, role_id, is_active, company_id, roles(id, code, name)')
         .in('user_id', profileIds)
+        .limit(1000)
         .then(({ data: userRoles, error: roleErr }) => {
           if (cancelled) return;
 
