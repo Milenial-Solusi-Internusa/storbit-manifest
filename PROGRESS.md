@@ -36,7 +36,8 @@
 ### Invoice — enam penataan: empat dipasang, dua diselidiki dulu (nama PT & rekening)
 
 FE-only untuk yang dipasang. **Nol migrasi baru** di sesi ini; `20260910000001` (kemarin)
-tetap BELUM DIJALANKAN saat sesi ini ditulis.
+tetap BELUM DIJALANKAN saat sesi ini ditulis. **[→ Koreksi 11 Sep 2026, tindak lanjut kedua di
+bawah: `20260910000001` DAN `20260911000001` (lahir di sesi ini) keduanya sudah LIVE.]**
 
 ⚠️ **Baseline paginasi yang benar hari ini: cetak `n≤6`, download `n≤6`** — brief masih
 menyebut "cetak n≤4 seragam", itu angka sebelum 10 Sep. Slack di `n=6` cuma **7,47 pt**
@@ -151,6 +152,69 @@ browser**; embed bersarang `products(unit, uom)` belum pernah dieksekusi PostgRE
 - **Materai tetap 80 pt** (keputusan Den: melintang muat dan itu yang lazim; 3,5 cm menurunkan
   cetak ke `n≤5`, tak sepadan untuk kasus jarang).
 
+**Tindak lanjut kedua (11 Sep 2026, sesudah sesi — dicatat doc-keeper dari laporan Den + git):**
+
+- ✅ **Batas kop `KOP_HEADER_CM = 3` / `KOP_FOOTER_CM = 3,5` TERVERIFIKASI** lewat cetak percobaan
+  di kertas kop sungguhan **10 Sep 2026** (Den). Ini mengoreksi status "SEMENTARA" di entri
+  2026-09-10 — catatan itu benar pada waktunya dan dibiarkan. Angka lama 4 / 4,5 (penggaris
+  9 Sep) terbukti kejauhan. Komentar di `InvoicePDF.jsx` (blok ~:102 + inline :117-118) diubah
+  SEMENTARA → TERVERIFIKASI; angka lama dan asal-usulnya tetap tertulis. Batas paginasi tetap
+  **`n≤6` kedua varian**; **yang boleh dijanjikan tetap `n≤5`** (509 dari 522 SP).
+- ✅ **Kedua migrasi LIVE di produksi**, dieksekusi manual di SQL Editor (10-11 Sep; tanggal
+  persisnya tidak dicatat) dan **terverifikasi runtime dengan akun Elvira 11 Sep 2026**:
+  `20260910000001_finance_read_access` (`prospects_read` +`finance`/`finance_controller` dibatasi
+  `account_status='customer'`; `sp_invoices_read`/`sp_invoice_lines_read`/`sp_order_items_read`
+  singular → singular OR jamak) dan `20260911000001_entity_bank_accounts_read` (policy `FOR SELECT`
+  aditif; tulis tetap admin-only). Sebelum: nama customer kosong · panel Invoice "Belum
+  Diterbitkan" padahal sudah terbit · blok Payment "belum diatur" padahal rekening ada. Sesudah:
+  ketiganya benar. **Kolom UOM juga terverifikasi terisi** — embed bersarang `products(unit, uom)`
+  berjalan di PostgREST sungguhan (kekhawatiran di paragraf Verifikasi di atas tidak terjadi).
+  Header `Status:` kedua file migrasi dikoreksi BELUM DIJALANKAN → LIVE. ⚠️ **Refresh
+  `schema_snapshot.sql` MASIH TERUTANG** untuk kelima policy itu (snapshot `main` juga masih
+  tertinggal objek CRM v3 sejak 9 Sep — diff-nya akan lebih besar dari lima policy, bukan tanda
+  ada yang salah).
+- **Status TD:** **TD-217 → RESOLVED** · **TD-218 → RESOLVED** (keduanya lewat `20260910000001`) ·
+  TD-253 gejala kasus Elvira tertutup, POLA tetap OPEN · TD-254 "1 dari 11 ditutup" kini LIVE ·
+  **TD-180 tetap PARTIAL** (tiga policy invoice + satu policy rekening ditutup; sisir 198 policy /
+  76 tabel belum). **Nol TD baru** — TD-256 belum terpakai.
+- ✅ **DATA dikoreksi (bukan tampilan): `companies.legal_name` SOA "PT Storbit Indonesia" →
+  "PT Stuja Orbit Abadi"** (tanpa titik — mengikuti lima literal kode dan
+  `entity_bank_accounts.account_holder` di produksi). Dijalankan Den 11 Sep via UPDATE ber-guard,
+  `selaras_rekening = t`. Lima permukaan ikut benar tanpa deploy: PDF Invoice 2 varian · PDF
+  Picking List · PDF Surat Jalan · preview Surat Pesanan · blok tanda tangan. ⚠️ Ini perubahan
+  DATA — `schema_snapshot.sql` schema-only **tidak akan memuatnya**; yang terutang untuknya adalah
+  **rekaman sebagai file migrasi retroaktif** (pola `20260908000003_fix_harga_nol_5_sp.sql`), bukan
+  `pg_dump`. Semantik kolom kini tercatat di `03_DATA_MODEL.md` §3 `companies`: `legal_name` =
+  nama legal untuk dokumen cetak, `name` = nama internal (CompanySwitcher dll); kalau ejaan akta
+  ternyata bertitik, yang diubah `legal_name` SAJA.
+- **Blok tanda tangan disetel lagi (commit `5106eac`, sesudah entri di atas ditulis):** ketiga baris **rata
+  tengah** (`textAlign:'center'` per `<Text>`, BUKAN `alignItems:'center'` pada kotak — yang kedua
+  menghilangkan acuan lebar bersama untuk underline "Account Dept"), placeholder **"Stamp /
+  Signature"** samar (`RULE_20`, 7 pt, tanpa italic — tak ada muka italic yang terdaftar)
+  **DITAMBAHKAN** di dalam ruang materai, nama PT **ungu** (`PURPLE`, konstanta yang sama dengan
+  `billLabel`). Tinggi kotak tidak berubah — slack `n=6` tetap 6,45 pt cetak / 20,80 pt download,
+  batas tetap `n≤6`. ⚠️ **Pelajaran proses, dua kali di sesi ini:** dua perintah perbaikan lahir
+  dari pembacaan **gambar contoh**, bukan PDF — (a) "hapus placeholder Stamp/Signature" padahal
+  placeholder itu **tidak pernah ada** di PDF (coretan di gambar), dan (b) "Account Dept bergeser
+  dari PT STUJA di atasnya" padahal **ketiga baris rata kiri** di tepi kotak yang sama. CC
+  memeriksa kode dulu sebelum menuruti, dan itulah yang menyelamatkan keduanya — kini aturan di
+  `02_RULES_GOVERNANCE.md` §7: **perintah perbaikan yang menyebut PENYEBAB diperiksa dulu ke kode;
+  kalau kode tak cocok dengan deskripsi, laporkan selisihnya sebelum mengubah.**
+- **Audit role 10 Sep → empat KEPUTUSAN TERBUKA baru #49-#52** di `09_ROADMAP.md` (bukan TD):
+  Controller vs Jr. Manager untuk terbit invoice/catat pembayaran — Elvira satu-satunya
+  `finance_controller` dan mengerjakan **66 dari 71 invoice, 65 dari 66 jurnal** (query Q3/Q7 Den,
+  angka produksi) · bagan satu-entitas vs role per-entitas · nol role `accounting` · bagan tanpa
+  posisi gudang + `supervisor` tak ada di `roles` (TD-106). ⚠️ **#48 sengaja dilewati** (dipakai
+  branch `feature/crm-v3-batch-persiapan`). Fakta pendukung "`finance_controller` superset
+  `finance`" masuk `03_DATA_MODEL.md` gotcha **#33** — ⚠️ **doc-keeper menemukan pengecualian di luar
+  audit:** superset itu berlaku di seluruh gate domain Finance (6 fungsi + 19 policy yang menyebut
+  `finance_controller`), **tapi dua policy HRGA** (`hrga_requests_read_own`,
+  `hrga_offboarding_items_update`) dan dua menu HRGA (`App.jsx:794-795`) meloloskan `finance`
+  **tanpa** `finance_controller` — mencabut `finance` dari pemegang `finance_controller` aman untuk
+  Finance, tidak untuk HRGA. Label VAT 12% vs tarif 0,11 → gotcha **#32** + Don't di
+  `02_RULES_GOVERNANCE.md` §6. ⚠️ Gotcha #27-#31 sudah dipakai branch CRM v3 — lompatan 26→32
+  bukan kekeliruan.
+
 ## 2026-09-10
 
 ### Invoice cetak — delapan penataan dari cetak percobaan di kertas kop sungguhan
@@ -240,7 +304,9 @@ logo**, bukan tinggi pita kop yang ikut membawa ruang kosong di bawahnya.
 4 dan 4,5 berasal dari **pengukuran penggaris langsung** di kertas (9 Sep); 3 dan 3,5
 diturunkan dari **pembacaan foto** cetak percobaan. Keduanya disetel ulang sesudah cetak
 percobaan berikutnya kalau masih meleset, dan angka lamanya sengaja tetap tertulis di
-komentar kode supaya perubahannya terlacak. Keduanya dipasang bersamaan justru supaya satu
+komentar kode supaya perubahannya terlacak. **[Koreksi 11 Sep 2026: keduanya TERVERIFIKASI
+cetak percobaan di kertas kop sungguhan 10 Sep 2026 — lihat tindak lanjut kedua di entri
+2026-09-11.]** Keduanya dipasang bersamaan justru supaya satu
 cetak percobaan berikutnya menguji dua-duanya — memasang yang atas sekarang dan menunggu
 kalibrasi untuk yang bawah akan membuat cetak berikutnya cuma menjawab separuh.
 
@@ -299,6 +365,7 @@ mata lewat rasterisasi.
 ⚠️ **NOL tes runtime di browser.** Seluruh verifikasi lewat render di Node — kedua tombol
 belum diklik di aplikasi nyata. **Dan cetak percobaan di kertas kop untuk angka BARU
 (3 / 3,5) belum dilakukan** — itu yang menentukan apakah keduanya perlu disetel lagi.
+**[→ Sudah dilakukan 10 Sep 2026 dan lolos; koreksi bertanggal 11 Sep, entri 2026-09-11.]**
 Lembar kalibrasi ber-skala 0,25 cm sudah dibuat dan dikirim ke Den untuk keperluan itu
 (dicetak 100%, bukan "Fit to page"), tapi **tidak dimasukkan ke repo** — ia alat sekali
 pakai, bukan bagian aplikasi.

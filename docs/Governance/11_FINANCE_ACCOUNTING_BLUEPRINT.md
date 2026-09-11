@@ -59,7 +59,7 @@ Semua angka di bagian ini diukur langsung di produksi (ref `untmpqceexwxzuhlmyrg
 | **D-08** | Nomor invoice diturunkan dari `now()`, bukan dari `invoice_date` | `extract(year from now())`, bulan Romawi dari `extract(month from now())` | Setelah D3 diterapkan, nomor dan tanggal bisa berbeda bulan: BTB 30 Sep diinput 2 Okt → nomor Oktober, tanggal September |
 | **D-09** | `record_payment` menerima status `issued` | Hanya menolak `void` dan `draft` | Invoice yang langsung dibayar melompat ke `partial`/`paid`, dan `submit_invoice` menolaknya selamanya. `due_date` terkunci NULL |
 | **D-10** | `delivery_note_id` di `sp_btb` tidak pernah terisi | 0 dari 456 | Rantai Surat Jalan → BTB terputus di data, walaupun kolomnya ada |
-| **D-11** | Role finance tidak bisa membaca `accounts` | TD-217 | Kalau invoice pindah ke modul Finance dengan RLS sekarang, nama customer akan kosong di layar |
+| **D-11** | Role finance tidak bisa membaca `accounts` | TD-217 | Kalau invoice pindah ke modul Finance dengan RLS sekarang, nama customer akan kosong di layar. **✅ [11 Sep 2026] DITUTUP** — `20260910000001` LIVE, terverifikasi akun Elvira |
 | **D-12** | Nol approval pada penerbitan invoice | Status: `draft` → `issued` → `submitted` → `partial`/`paid` / `void` | Melanggar D5 |
 
 ### Yang sudah benar dan jangan diubah
@@ -295,7 +295,7 @@ Finance adalah fungsi **group-level**. Satu Finance Controller untuk tiga entita
 
 ### Prasyarat yang harus ditutup lebih dulu
 
-**TD-217** — `prospects_read` tidak mengizinkan role finance membaca `accounts`. Kalau tidak dibereskan, halaman Piutang menampilkan nama customer kosong. Ini **memblokir** pemindahan, bukan sekadar merepotkan.
+**TD-217** — `prospects_read` tidak mengizinkan role finance membaca `accounts`. Kalau tidak dibereskan, halaman Piutang menampilkan nama customer kosong. Ini **memblokir** pemindahan, bukan sekadar merepotkan. **✅ [11 Sep 2026] DITUTUP** — migrasi `20260910000001_finance_read_access` (cabang `finance`/`finance_controller` dibatasi `account_status='customer'`), LIVE, terverifikasi akun Elvira 11 Sep; prasyarat F6 **terpenuhi**. ⚠️ Yang muncul menggantikannya sebagai pertanyaan matriks: **Keputusan Terbuka #49 & #51** (`09_ROADMAP.md`) — guard `create_invoice`/`record_payment` menolak `finance` polos padahal matriks di atas memberi Jr. Manager "tulis + approve", dan sistem tak punya role `accounting` untuk 3 dari 7 baris peran di atas.
 
 ---
 
@@ -391,7 +391,7 @@ Alasannya: orang logistik perlu **tahu** SP ini sudah ditagih atau belum, tanpa 
 | **F3** | `sp_invoices.btb_id` + guard baru + penomoran dari `invoice_date` | Setelah F2 |
 | **F4** | Approval line + status `pending_approval` | Setelah F3 |
 | **F5** | Jurnal pindah dari invoice ke BTB | Setelah F3. Butuh keputusan sumber nilai HPP |
-| **F6** | Modul Finance + pemindahan halaman | Setelah TD-217 ditutup |
+| **F6** | Modul Finance + pemindahan halaman | Setelah TD-217 ditutup — **✅ terpenuhi 11 Sep 2026** (`20260910000001` LIVE) |
 | **F7** | Void dan terbitkan ulang enam invoice | Setelah F3, dan setelah konfirmasi Elvira/Gigih |
 
 ⚠️ **F1 sebelum F2 sebelum F3** mengikat. Tanpa `btb_date` terisi, `invoice_date` tidak punya sumber.

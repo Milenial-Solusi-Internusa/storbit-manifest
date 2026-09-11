@@ -99,11 +99,12 @@ function fmtDate(input) {
 // Payment 1 cm — ia pakai marginTop:'auto' dan sudah menempel batas lama
 // (diukur: baseline disclaimer 655,86, batas 658,44, sisa 2,58 pt).
 //
-// ⚠️ KEDUA ANGKA BARU ITU SEMENTARA. Keduanya diturunkan dari PEMBACAAN FOTO
-// cetak percobaan 9 Sep 2026, BUKAN dari pengukuran penggaris langsung di
-// kertas — bedanya nyata, dan angka lamanya (4 dan 4,5) justru berasal dari
-// pengukuran langsung. Disetel ulang sesudah cetak percobaan berikutnya kalau
-// masih meleset. Angka lama sengaja tetap tertulis di atas supaya
+// ✅ KEDUA ANGKA BARU ITU TERVERIFIKASI — cetak percobaan di kertas kop
+// sungguhan 10 Sep 2026 (dilaporkan Den 11 Sep 2026); sampai 10 Sep keduanya
+// bertanda SEMENTARA. Asal-usulnya: diturunkan dari PEMBACAAN FOTO cetak
+// percobaan 9 Sep 2026, BUKAN dari pengukuran penggaris langsung di kertas —
+// angka lamanya (4 dan 4,5) justru berasal dari pengukuran penggaris 9 Sep,
+// dan terbukti kejauhan. Angka lama sengaja tetap tertulis di atas supaya
 // perubahannya terlacak.
 //
 // ⚠️ Ini KALIBRASI, bukan konstanta abadi. Kalau cetak percobaan ternyata
@@ -114,8 +115,8 @@ function fmtDate(input) {
 // atas & bawah).
 const CM_TO_PT = 28.3465;
 const KOP_CLEARANCE_PT = 6;
-const KOP_HEADER_CM = 3;    // SEMENTARA, dari foto cetak percobaan 9 Sep 2026 (sebelumnya 4)
-const KOP_FOOTER_CM = 3.5;  // SEMENTARA, dari foto cetak percobaan 9 Sep 2026 (sebelumnya 4,5)
+const KOP_HEADER_CM = 3;    // TERVERIFIKASI cetak percobaan 10 Sep 2026; asal: foto cetak percobaan 9 Sep (sebelumnya 4, penggaris)
+const KOP_FOOTER_CM = 3.5;  // TERVERIFIKASI cetak percobaan 10 Sep 2026; asal: foto cetak percobaan 9 Sep (sebelumnya 4,5, penggaris)
 const PRINT_PAD_TOP = KOP_HEADER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
 const PRINT_PAD_BOTTOM = KOP_FOOTER_CM * CM_TO_PT + KOP_CLEARANCE_PT;
 // Ruang yang dibebaskan waktu batas atas dikecilkan dari 4 cm — dipakai HABIS

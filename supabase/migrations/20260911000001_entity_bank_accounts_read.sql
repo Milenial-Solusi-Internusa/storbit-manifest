@@ -5,7 +5,10 @@
 -- Depends:   get_user_company_ids() (sudah ada). Tidak bergantung pada
 --            20260910000001 — keduanya bisa dijalankan dalam urutan apa pun.
 --
--- ⚠️ BELUM DIJALANKAN. Dijalankan manual di SQL Editor oleh Den.
+-- Status:    LIVE — dieksekusi manual di SQL Editor produksi oleh Den (10-11 Sep
+--            2026; tanggal persisnya tidak dicatat), terverifikasi runtime akun
+--            Elvira 11 Sep 2026: blok Payment invoice terisi (bukan lagi "belum
+--            diatur"). Snapshot BELUM di-refresh.
 --
 -- SIFAT: 1 CREATE POLICY, FOR SELECT. Nol DDL tabel, nol GRANT/REVOKE, nol
 --   sentuhan ke policy yang sudah ada (entity_bank_accounts_access TETAP utuh),

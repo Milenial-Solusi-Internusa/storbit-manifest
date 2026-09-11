@@ -193,6 +193,7 @@
 | Edit incremental, scope kecil, satu concern | Big-bang rewrite / rewrite App.jsx sekaligus |
 | GRANT setelah CREATE tabel CLI | Asumsikan auto-grant |
 | `npm run build` clean sebelum selesai | Push tanpa verifikasi build |
+| Label PPN invoice dari `PPN_LABEL_PCT` (12); perhitungan dari `PPN_RATE` (0,11) **dan** literal `0.11` di `create_invoice` — dua keputusan terpisah (gotcha #32 `03_DATA_MODEL.md`) | "Menyamakan" `PPN_LABEL_PCT` ↔ `PPN_RATE` ke salah satu arah, atau menyentuh nominal `total_ppn` saat mengubah label (12% × DPP Nilai Lain 11/12 = 11% efektif — **keduanya benar**) |
 
 ---
 
@@ -206,6 +207,8 @@
 3. Untuk drop kolom: deploy code yang berhenti baca/tulis kolom + verifikasi production **dulu**, baru drop (staged tahap — lihat penghapusan `profiles.role`).
 
 **Audit-before-fix:** untuk bug non-trivial / lintas-komponen, jalankan AUDIT read-only dulu (laporan file:line + akar masalah + dugaan fix), baru EKSEKUSI. Banyak task sesi ini berpasangan AUDIT → EKSEKUSI.
+
+**Periksa PENYEBAB yang disebut dalam perintah perbaikan sebelum menjalankannya [aturan 11 Sep 2026]:** kalau instruksi menyebut *penyebab* ("hapus placeholder X", "Y bergeser dari Z"), cocokkan dulu ke kode/render — **kalau kode tidak sesuai deskripsi, laporkan selisihnya SEBELUM mengubah apa pun**, jangan dijalankan apa adanya. Diagnosis dari deskripsi layar/foto bisa menyesatkan, dan perbaikan atas penyebab yang salah menambah masalah baru tanpa menyentuh yang lama. Jejak: 11 Sep 2026, blok tanda tangan invoice — dua perintah lahir dari pembacaan **gambar contoh**, bukan PDF: (a) "hapus placeholder Stamp/Signature" padahal placeholder itu **tidak pernah ada** di PDF (coretan di gambar); (b) "Account Dept bergeser dari PT STUJA di atasnya" padahal **ketiga baris rata kiri** di tepi kotak yang sama. Kode diperiksa dulu, keduanya terhindar (`PROGRESS.md` 2026-09-11, tindak lanjut kedua).
 
 **Session relay pattern:** tiap task = sesi fokus. `CLAUDE.md` "Current Phase & Recent Changes" + `PROGRESS.md` di-update tiap akhir task (build status, lint delta, "Belum: tes manual runtime"). Tes manual runtime sering **belum** dijalankan — selalu tandai eksplisit.
 

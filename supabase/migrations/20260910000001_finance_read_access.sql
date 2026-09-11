@@ -5,7 +5,10 @@
 -- Depends:   get_user_company_ids() (sudah ada) · pola jamak yang sudah hidup
 --            di sp_btb_read / dc_master_read / journal_entries_read.
 --
--- ⚠️ BELUM DIJALANKAN. Dijalankan manual di SQL Editor oleh Den.
+-- Status:    LIVE — dieksekusi manual di SQL Editor produksi oleh Den (10-11 Sep
+--            2026; tanggal persisnya tidak dicatat), terverifikasi runtime akun
+--            Elvira 11 Sep 2026: nama customer terisi, panel Invoice benar (bukan
+--            lagi "Belum Diterbitkan"), kolom UOM terisi. Snapshot BELUM di-refresh.
 --
 -- SIFAT: 4 ALTER POLICY, semuanya FOR SELECT. Nol DDL tabel, nol GRANT/REVOKE,
 --   nol sentuhan RPC, nol perubahan pada is_manager_or_above() /
