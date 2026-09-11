@@ -19,9 +19,13 @@
 --                OR r.code = 'operations'); ketiganya tetap SECURITY DEFINER +
 --                SET search_path; nol literal 'gm_bd' di ketiganya.
 --              - Regression check (gerbang 2) LOLOS: level<=6 = daftar lama.
---            Snapshot BELUM di-refresh (ini DDL — wajib, lihat catatan akhir).
+--            ✅ Snapshot SUDAH di-refresh (pg_dump Den 11 Sep 2026 23:44, commit
+--            di branch feat/role-level-column) — diff terverifikasi: kolom +
+--            constraint + COMMENT + 5 body fungsi (3 dari sini, 2 dari 000005).
 --
--- ⚠️ DUA RPC PRF BELUM IKUT — lihat 20260911000005 (BELUM DIJALANKAN).
+-- ⚠️ DUA RPC PRF SEMPAT TERLEWAT — ditutup 20260911000005 (kini LIVE, lihat
+--    file itu). Kronologinya dipertahankan di bawah supaya kesalahan premisnya
+--    tidak terulang:
 --   Plan semula: 5 fungsi. Saat eksekusi, prf_release & prf_select_offer
 --   dilewati dengan alasan "keduanya cuma memanggil is_manager_or_above()".
 --   Itu benar HANYA di STAGING, yang masih memakai versi pra-7 Sep 2026
@@ -34,7 +38,8 @@
 --   eksekusi file ini (204c2fda… / d63b234d…). Jadi di produksi daftar nama
 --   masih hidup di dua tempat itu + is_bnf_authorized (konsep BNF, sengaja
 --   tak disentuh). Migrasi 20260907000001 sendiri belum pernah mendarat di
---   staging — drift lingkungan yang ikut ketahuan di sini.
+--   staging — drift lingkungan yang ikut ketahuan di sini; 000005 sekaligus
+--   menyusulkannya (staging kini memakai guard entitas yang sama).
 --
 -- SIFAT: DDL (1 kolom, 1 constraint) + DATA (backfill 14 baris) + 3 CREATE OR
 --   REPLACE FUNCTION (signature/atribut tak berubah). Nol policy, nol GRANT.
@@ -89,8 +94,8 @@ COMMENT ON COLUMN public.roles.level IS
   'prf_select_offer, mark_delivery_delivered dan src/lib/roles.js. finance_controller '
   'SENGAJA 7, bukan 4 seperti hierarki org di 04_ROLE_PERMISSION_MATRIX: guard-guard itu '
   'tidak pernah memasukkannya (regression check 11 Sep 2026). Migrasi 20260911000004.';
--- ⚠️ Kalimat "dipakai … prf_release, prf_select_offer" di COMMENT ini baru BENAR
---    sesudah 20260911000005 dijalankan (lihat header).
+-- Kalimat "dipakai … prf_release, prf_select_offer" di COMMENT ini BENAR sejak
+-- 20260911000005 (bagian fungsi) dijalankan, 11 Sep 2026.
 
 UPDATE public.roles r SET level = v.level
 FROM (VALUES
@@ -220,9 +225,10 @@ WHERE  table_schema = 'public' AND table_name = 'roles' AND column_name = 'level
 SELECT conname, pg_get_constraintdef(oid)
 FROM   pg_constraint WHERE conrelid = 'public.roles'::regclass AND contype = 'c';
 
--- V4 — fungsi yang MASIH memuat literal 'gm_bd'. HASIL produksi:
---      is_bnf_authorized (konsep BNF, sengaja), prf_release, prf_select_offer
---      (→ 20260911000005). Sesudah 000005: hanya is_bnf_authorized.
+-- V4 — fungsi yang MASIH memuat literal 'gm_bd'. HASIL produksi saat file ini
+--      ditulis: is_bnf_authorized (konsep BNF, sengaja), prf_release,
+--      prf_select_offer. Sesudah 000005 (dicek ulang 11 Sep 2026, kedua DB):
+--      hanya is_bnf_authorized.
 SELECT p.proname
 FROM   pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE  n.nspname = 'public' AND p.prosrc LIKE '%gm_bd%'
@@ -260,14 +266,14 @@ WHERE  schemaname = 'public'
 
 -- =============================================================================
 -- CATATAN SESUDAH EKSEKUSI
---   1. ⚠️ Refresh schema_snapshot.sql WAJIB (DDL: kolom + constraint + 3 fungsi)
---      — pg_dump persis 02_RULES_GOVERNANCE.md §Refresh snapshot. Diff yang
---      diharapkan: `level integer NOT NULL` di CREATE TABLE roles, constraint
---      roles_level_check, COMMENT ON COLUMN, 3 body fungsi. Snapshot main
---      tertinggal juga untuk 20260911000001/2/3 (data) — tidak akan tampak.
---   2. Jalankan 20260911000005 di PRODUKSI (dan staging) supaya prf_release /
---      prf_select_offer ikut level. Sampai itu terjadi, TD-233 masih hidup di
---      dua tempat itu.
+--   1. ✅ Snapshot di-refresh 11 Sep 2026 (diff: kolom + constraint + COMMENT +
+--      5 body fungsi). ⚠️ Diff-nya juga membawa `roles_code_unique UNIQUE (code)`
+--      — constraint yang ADA di produksi & staging tapi TIDAK berasal dari
+--      migrasi mana pun di repo (bukan dari file ini). Perlu dikonfirmasi
+--      asal-usulnya dan direkam retroaktif.
+--   2. ✅ 20260911000005 (bagian fungsi) LIVE di produksi & staging — TD-233
+--      tertutup di kelima tempat. Bagian COMMENT-nya masih terutang (lihat
+--      file itu).
 --   3. Dokumen: 04_ROLE_PERMISSION_MATRIX tabel level (finance_controller 4 →
 --      DB 7, alasannya di sini), TD-233 (3 dari 5 tempat tertutup), TD-106.
 -- =============================================================================

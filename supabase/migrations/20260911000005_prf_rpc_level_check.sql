@@ -7,7 +7,13 @@
 --            is_bnf_authorized (konsep BNF, sengaja tak disentuh).
 -- Depends:   20260911000004 (roles.level) — LIVE di staging & produksi.
 --
--- Status:    BELUM DIJALANKAN.
+-- Status:    LIVE SEBAGIAN — kedua CREATE OR REPLACE dieksekusi manual oleh Den
+--            11 Sep 2026 di STAGING dan PRODUKSI, diverifikasi baca-saja hari
+--            yang sama (V1: sisa 'gm_bd' hanya is_bnf_authorized; V2: kedua RPC
+--            pakai_level = t, guard_entitas = t, SECURITY DEFINER, search_path;
+--            snapshot sudah memuat body barunya). ⚠️ COMMENT ON FUNCTION
+--            is_manager_or_above_in di bawah BELUM DIJALANKAN di kedua DB (V4
+--            masih false) — sisa itu dipindah ke blok "SISA" tersendiri.
 --
 -- ── KENAPA TERLEWAT ────────────────────────────────────────────────────────
 --   Saat 20260911000004 dieksekusi, keduanya dilewati dengan alasan "cuma
@@ -30,12 +36,11 @@
 --   + 1 COMMENT ON FUNCTION (is_manager_or_above_in) yang basi.
 --   Regression check: level<=6 = daftar lama (dibuktikan di 000004, gerbang 2).
 --
--- ⚠️ STAGING: menjalankan file ini di staging sekaligus MENYUSULKAN guard
---   multi-company 7 Sep yang tak pernah mendarat di sana (versi staging saat
---   ini singular get_user_company_id()). Itu diinginkan — staging jadi sama
---   dengan produksi — tapi sadari bahwa di staging ini bukan cuma "ganti
---   predikat", melainkan ganti versi fungsi. Jalankan di staging DULU untuk
---   memastikan kompilasi, lalu produksi.
+-- ⚠️ STAGING: file ini di staging sekaligus MENYUSULKAN guard multi-company
+--   7 Sep yang tak pernah mendarat di sana (versi staging sebelumnya singular
+--   get_user_company_id()). Di staging ini bukan cuma "ganti predikat",
+--   melainkan ganti versi fungsi — sudah terjadi 11 Sep 2026 (V2 staging:
+--   guard_entitas = t); staging kini sama dengan produksi untuk kedua RPC.
 -- =============================================================================
 
 
@@ -147,6 +152,14 @@ BEGIN
 END;
 $$;
 
+COMMIT;
+
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- SISA — BELUM DIJALANKAN (kedua DB, per 11 Sep 2026): COMMENT yang basi.
+-- Jalankan sendiri (satu statement, tanpa efek perilaku), lalu ubah catatan ini.
+-- ═════════════════════════════════════════════════════════════════════════════
+
 -- COMMENT lama masih berbunyi "Daftar role WAJIB bergerak bersama TD-233 (lima
 -- tempat)" — tidak berlaku lagi: kelima tempat kini membaca roles.level.
 COMMENT ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) IS
@@ -154,8 +167,6 @@ COMMENT ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) IS
   'quotations/quotation_items agar TD-180 tertutup tanpa memutus keterkaitan dua syarat '
   '(gotcha #26). Sejak 20260911000004 "manager ke atas" = roles.level <= 6 — bukan '
   'daftar nama; TD-233 (daftar di lima tempat) selesai bersama 20260911000005.';
-
-COMMIT;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -190,6 +201,7 @@ WHERE  n.nspname = 'public'
 ORDER  BY 1;
 
 -- V4 — COMMENT mendarat. DIHARAPKAN: berisi '20260911000005'.
+--      HASIL 11 Sep 2026: BELUM (kedua DB) — lihat blok SISA di atas.
 SELECT obj_description(p.oid, 'pg_proc')
 FROM   pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE  n.nspname = 'public' AND p.proname = 'is_manager_or_above_in';
@@ -205,9 +217,10 @@ WHERE  n.nspname = 'public' AND p.proname = 'is_manager_or_above_in';
 
 -- =============================================================================
 -- CATATAN SESUDAH EKSEKUSI
---   1. Ubah header `Status:` jadi LIVE + tanggal + DB mana (staging/produksi).
---   2. Refresh schema_snapshot.sql (fungsi berubah) — bisa digabung dengan
---      refresh untuk 20260911000004 kalau dijalankan berurutan.
+--   1. ✅ Header sudah LIVE SEBAGIAN (fungsi); naikkan jadi LIVE penuh sesudah
+--      blok SISA dijalankan.
+--   2. ✅ Snapshot di-refresh 11 Sep 2026 bersama 20260911000004 — body kedua
+--      RPC sudah termuat. COMMENT tidak (memang belum jalan).
 -- =============================================================================
 
 
