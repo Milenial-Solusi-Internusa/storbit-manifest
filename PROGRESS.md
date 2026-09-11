@@ -121,6 +121,36 @@ tetap `x=392` (cetak). Kedua varian dirender + dirasterisasi. ⚠️ **NOL tes r
 browser**; embed bersarang `products(unit, uom)` belum pernah dieksekusi PostgREST sungguhan
 — kalau gagal, gejalanya kolom UOM `—` di semua baris, bukan error.
 
+**Tindak lanjut (sesi yang sama, sesudah keputusan Den):**
+
+- **Ejaan nama PT diputuskan TANPA titik — "PT Stuja Orbit Abadi"**, mengikuti lima literal kode.
+  ⚠️ Koreksi atas catatan di atas: `entity_bank_accounts.account_holder` di produksi ternyata
+  **juga tanpa titik** (dibaca langsung, query C1) — catatan "dengan titik" sebelumnya salah,
+  disalin dari teks brief bukan dari data. Jadi keputusan ini **nol divergensi** dengan sumber
+  mana pun. Query UPDATE ber-guard + SELECT sebelum/sesudah diserahkan ke Den; **belum
+  dijalankan** saat ini ditulis. Kalau ejaan akta ternyata bertitik: yang diubah
+  `companies.legal_name` saja — lima literal itu fallback yang tak pernah terpakai.
+- **TASK 5 terbukti di produksi lewat query langsung (C1/C2):** baris rekening SOA **utuh**
+  (`is_default`/`is_active` true, terakhir diubah 8 Agu; satu-satunya baris di tabel — MSI/JCI
+  memang belum punya rekening) dan invoice `SOA-INV-IX-2026-0074` **terbit hari ini oleh Elvira**,
+  entitas invoice = entitas SP = SOA. Yang tersisa hanya policy. Migrasi
+  **`20260911000001_entity_bank_accounts_read`** disiapkan: satu `CREATE POLICY … FOR SELECT`
+  aditif + `COMMENT ON`, policy `FOR ALL` lama **tidak disentuh** (tulis tetap admin-only —
+  semantik PostgreSQL, bukan kehati-hatian). String uji V2 (kesamaan klausa lama) **diambil dari
+  `pg_policies` hidup**, bukan dari snapshot. **BELUM DIJALANKAN.** Kecil: `account_number`
+  di data berbunyi `217-0496186 (IDR)` — sufiks mata uang ikut tersimpan di nomor rekening;
+  tercetak apa adanya, bukan urusan sesi ini.
+- **+TD-254 (MEDIUM, POLA)** — policy yang menyamakan izin baca dengan izin tulis; terukur
+  **25 policy `FOR ALL`, 11 tabel yang HANYA `FOR ALL`**; hari ini cuma `entity_bank_accounts`
+  yang bocor ke dokumen non-admin, tapi `entity_signatories` (sumber alami blok tanda tangan)
+  dan `entity_finance_settings` menunggu di belakangnya. ⚠️ Daftar "32 SELECT identik dengan
+  tulis" adalah **superset** yang mencampur kelas TD-173 — jangan dibaca sebagai 32 bug.
+- **+TD-255 (MEDIUM)** — UOM tidak di-snapshot; perbaikan = kolom `uom` baru diisi RPC saat
+  baris lahir (rekomendasi `sp_order_items`, sejajar `product_name`/`unit_price`) + backfill;
+  dokumen lama yang satuannya sudah sempat berubah **tak bisa dipulihkan**.
+- **Materai tetap 80 pt** (keputusan Den: melintang muat dan itu yang lazim; 3,5 cm menurunkan
+  cetak ke `n≤5`, tak sepadan untuk kasus jarang).
+
 ## 2026-09-10
 
 ### Invoice cetak — delapan penataan dari cetak percobaan di kertas kop sungguhan
