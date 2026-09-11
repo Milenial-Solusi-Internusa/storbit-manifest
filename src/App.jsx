@@ -26,9 +26,12 @@ import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
 import CompanySwitcher from './components/CompanySwitcher';
 // Logo Nexus (hexagon N) untuk brand mark sidebar — sumber: Supabase Storage
-// assets/Nexus Logo.png (1254², 888 KB), di-crop ke konten, dipusatkan di kanvas
-// persegi, diperkecil ke 160² (≈4× slot 38 px) dan dioptimalkan (23 KB). Favicon
-// 16/32/180 di public/ dibuat dari sumber yang sama.
+// assets/Nexus Logo.png (1254², 888 KB). Di-crop ke BENTUK YANG TERLIHAT
+// (bbox alpha>128 + 4 px tepi anti-alias), bukan ke bbox alpha>0 — yang
+// terakhir itu halo piksel nyaris transparan yang membuat hexagon cuma mengisi
+// ~77% kanvas dan tampak kecil/pudar di favicon (revisi 11 Sep 2026).
+// Dipusatkan di kanvas persegi, diperkecil ke 212² (= 4× slot 53 px) dan
+// dioptimalkan. Favicon 16/32/180 di public/ dibuat dari crop yang sama.
 import nexusLogo from './assets/nexus-logo.png';
 import { calcItem } from './lib/spCalc';
 import { getTodayWIB } from './lib/dateUtils';
@@ -1633,12 +1636,15 @@ function NexusSidebar({
   return (
     <aside className={asideClass} style={asideStyle}>
       {/* Brand */}
-      <div className="flex items-center gap-3" style={{ padding: '18px 16px 16px' }}>
+      {/* gap-2 (8 px), turun dari gap-3 (12 px): teks lebih rapat ke logo tapi
+          tidak menempel (revisi Den 11 Sep 2026). */}
+      <div className="flex items-center gap-2" style={{ padding: '18px 16px 16px' }}>
         {/* Logo Nexus menggantikan kotak navy ber-huruf "N" (11 Sep 2026).
             Tanpa kotak/latar: logonya berwarna dengan alpha, dan di atas navy
-            segmen birunya tenggelam — di atas putih sidebar ia tajam. Slot
-            tetap 38×38 supaya posisi teks "Nexus / BY MSI" tidak bergeser. */}
-        <img src={nexusLogo} alt="Nexus" width={38} height={38} style={{ width: 38, height: 38, objectFit: 'contain', flexShrink: 0, display: 'block' }} />
+            segmen birunya tenggelam — di atas putih sidebar ia tajam.
+            Slot 53×53 = 38 × 1,4 (revisi Den: 38 terlalu kecil); sumber 212 px
+            = 4× slot supaya tetap tajam di layar HiDPI. */}
+        <img src={nexusLogo} alt="Nexus" width={53} height={53} style={{ width: 53, height: 53, objectFit: 'contain', flexShrink: 0, display: 'block' }} />
         <div style={{ lineHeight: 1.1 }}>
           <div style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 16, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Nexus</div>
           <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--faint)', letterSpacing: '1.5px' }}>BY MSI</div>
