@@ -44,6 +44,12 @@ export const ADMIN_SETTINGS_ROLES = ['super_admin', 'admin'];
 // ceo/gm/gm_bd (VIEW-ONLY untuk item SP, keputusan Den 2 Sep 2026).
 export const SP_ITEM_WRITER_ROLES = ['super_admin', 'admin', 'manager', 'operations'];
 
+// Cermin is_procurement_functional() (migrasi 20260912000004) — "orang
+// procurement" SCM: proc_manager (level 4) + proc_staff (level 7). Role lama
+// 'procurement' SENGAJA tidak ada: dormant sejak pilot 2 pecah role (12 Sep
+// 2026), RLS/RPC sudah tidak mengenalnya. Daftar eksplisit, bukan prefix.
+export const PROCUREMENT_ROLES = ['proc_manager', 'proc_staff'];
+
 // Role yang "hanya melihat miliknya sendiri" di CRM. ⚠️ Flag RESTRIKTIF —
 // dievaluasi terhadap ROLE UTAMA (erpRole), BUKAN lewat hasAnyRole: user
 // manager@MSI + sales@SOA tidak boleh dianggap sales-only hanya karena punya
@@ -81,6 +87,7 @@ export const isAllEntities    = (erpRoles, opt) => hasAnyRole(erpRoles, ALL_ENTI
 export const isAdminSettings  = (erpRoles, opt) => hasAnyRole(erpRoles, ADMIN_SETTINGS_ROLES, opt);
 export const isSuperAdmin     = (erpRoles, opt) => hasAnyRole(erpRoles, ['super_admin'], opt);
 export const canWriteSpItem   = (erpRoles, opt) => hasAnyRole(erpRoles, SP_ITEM_WRITER_ROLES, opt);
+export const isProcurement    = (erpRoles, opt) => hasAnyRole(erpRoles, PROCUREMENT_ROLES, opt);
 
 // isManagerOrAbove — benar kalau SALAH SATU role aktif user ber-level <=
 // MANAGER_LEVEL_MAX (semantik entitas sama dengan hasAnyRole: semua entitas,

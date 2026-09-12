@@ -13,10 +13,14 @@
 // lain.
 
 // ERP role priority — highest privilege wins when user has multiple active roles
+// proc_manager (level 4) disisipkan tepat sesudah 'manager' (setara), proc_staff
+// (level 7) di tier staf di samping 'procurement' lama yang kini dormant
+// (pilot 2 pecah role, 12 Sep 2026). Kode yang tak ada di daftar ini mendapat
+// prioritas 99 (paling rendah) — bukan error, tapi kalah dari role apa pun.
 export const ERP_ROLE_PRIORITY = [
-  'super_admin','admin','ceo','gm','gm_bd','manager','supervisor',
+  'super_admin','admin','ceo','gm','gm_bd','manager','proc_manager','supervisor',
   'finance_controller','finance','operations',
-  'sales','procurement','hrga','it','viewer',
+  'sales','procurement','proc_staff','hrga','it','viewer',
 ];
 
 const priorityIndex = (row) => {

@@ -19,7 +19,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Plus, Trash2, FileText, Check, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
-import { isManagerOrAbove } from '../../lib/roles';
+import { isManagerOrAbove, isProcurement, isSuperAdmin } from '../../lib/roles';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import ConfirmModal from '../../components/ConfirmModal';
 import PRFVendorOfferModal from './PRFVendorOfferModal';
@@ -72,7 +72,12 @@ const COST_SELECT = 'id, component, cost_type, amount, currency, sort_order, not
 
 export default function PRFDetailPage({ prfId, onBack, showToast, onCreateQuotation, onEditDraft }) {
   const { profile, erpRole, hasMenuPermission, user, erpRoles } = useAuth();
-  const canEdit = ['procurement', 'super_admin'].includes(erpRole);
+  // Cermin RLS prf_update_status / prf_cost_items_* / prf_vendor_offers_* +
+  // RPC prf_claim: is_super_admin() OR is_procurement_functional() — dievaluasi
+  // atas SEMUA role aktif (hasAnyRole), bukan role UTAMA, sama seperti DB.
+  // Sampai 12 Sep 2026 gate ini `['procurement','super_admin'].includes(erpRole)`;
+  // kode 'procurement' dormant sejak pilot 2 pecah role (proc_manager/proc_staff).
+  const canEdit = isSuperAdmin(erpRoles) || isProcurement(erpRoles);
   const canSeeQuotations = hasMenuPermission('crm_quotation', 'view');
   const companyId = profile?.company_id || null;
 

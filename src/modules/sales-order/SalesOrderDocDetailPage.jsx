@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { ChevronLeft, Send, BadgeCheck, ExternalLink } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
-import { isManagerOrAbove } from '../../lib/roles';
+import { isManagerOrAbove, isProcurement } from '../../lib/roles';
 
 const C = {
   navy: '#144682', navyDark: '#0E3260', orange: '#E85A1E', orangeSoft: '#FBEDE4',
@@ -116,7 +116,10 @@ export default function SalesOrderDocDetailPage({ soId, onBack, showToast }) {
   const canEdit = isCreator || erpRole === 'super_admin';
   // Manager ke atas = RLS beri hak baca company-wide (membedakan "kosong" vs "tak boleh lihat").
   const quotationsDefinitive = isManagerOrAbove(erpRoles);
-  const prfDefinitive = quotationsDefinitive || erpRole === 'procurement';
+  // Procurement (proc_manager/proc_staff, cermin is_procurement_functional()) juga
+  // dapat hak baca PRF company-wide lewat RLS prf_select. Dulu `erpRole ===
+  // 'procurement'`; kode itu dormant sejak pilot 2 pecah role (12 Sep 2026).
+  const prfDefinitive = quotationsDefinitive || isProcurement(erpRoles);
 
   async function sendToProcurement() {
     if (!so) return;
