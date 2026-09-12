@@ -17,10 +17,15 @@
 // (level 7) di tier staf di samping 'procurement' lama yang kini dormant
 // (pilot 2 pecah role, 12 Sep 2026). Kode yang tak ada di daftar ini mendapat
 // prioritas 99 (paling rendah) — bukan error, tapi kalah dari role apa pun.
+// Pilot 3 BD (12 Sep 2026): kedua SPV sales (level 6) sejajar 'supervisor';
+// bd_account_executive / bd_sales_executive / bd_digital_marketing_spv (level 7)
+// di tier staf, di samping 'sales' lama yang kini dormant.
 export const ERP_ROLE_PRIORITY = [
-  'super_admin','admin','ceo','gm','gm_bd','manager','proc_manager','supervisor',
+  'super_admin','admin','ceo','gm','gm_bd','manager','proc_manager',
+  'supervisor','bd_sales_spv_console','bd_sales_spv_forwarding',
   'finance_controller','finance','operations',
-  'sales','procurement','proc_staff','hrga','it','viewer',
+  'sales','bd_account_executive','bd_sales_executive','bd_digital_marketing_spv',
+  'procurement','proc_staff','hrga','it','viewer',
 ];
 
 const priorityIndex = (row) => {

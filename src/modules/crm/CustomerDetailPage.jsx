@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { canCreatePrf } from '../../lib/roles';
 import BantScoreBar from './BantScoreBar';
 import { calcBantScore, bantQualifyGate, BANT_DIMENSIONS } from './bant';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -719,7 +720,9 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   // lebih tinggi (manager) menutupi role yang sebenarnya berhak (sales) di
   // erpRole. Cermin RLS prf_insert (has_role('sales') = EXISTS di seluruh
   // user_roles, bukan role primer).
-  const canCreatePRF = erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code));
+  // Daftar rolenya kini satu tempat: PRF_CREATOR_ROLES (src/lib/roles.js) —
+  // pilot 3 pecah role BD (12 Sep 2026) menambah 4 kode bd_* di sana.
+  const canCreatePRF = canCreatePrf(erpRoles);
 
   const [customer, setCustomer] = useState(null);
   const [loading,  setLoading]  = useState(true);

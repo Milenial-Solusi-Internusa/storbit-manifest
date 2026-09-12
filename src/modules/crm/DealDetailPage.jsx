@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
-import { isManagerOrAbove } from '../../lib/roles';
+import { isManagerOrAbove, canCreatePrf } from '../../lib/roles';
 import {
   C, HEAD, BODY, STAGES, stageIndex, isKnownStage, isActiveStage, fmtDate, fmtRp, Card, InfoRow, Tab,
   DealStepper, DealHeaderControls, EditDealModal, QuotationListCard,
@@ -845,7 +845,7 @@ export default function DealDetailPage({ inquiryId, onBack, onCreateQuotation, o
           // tombol ini karena role prioritas lebih tinggi menutupi 'sales' di
           // erpRole. Cermin RLS prf_insert (has_role('sales') = EXISTS lintas
           // user_roles, bukan role primer).
-          canCreate={erpRoles?.some((r) => ['sales', 'gm_bd', 'super_admin'].includes(r.roles?.code))}
+          canCreate={canCreatePrf(erpRoles)}
           onCreate={onCreatePRF}
           onView={onViewPRF}
           // Batch 3C — gate tombol "Pakai/Ganti Penawaran Ini"; RPC prf_select_offer

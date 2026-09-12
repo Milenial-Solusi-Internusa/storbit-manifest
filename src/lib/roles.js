@@ -50,11 +50,32 @@ export const SP_ITEM_WRITER_ROLES = ['super_admin', 'admin', 'manager', 'operati
 // 2026), RLS/RPC sudah tidak mengenalnya. Daftar eksplisit, bukan prefix.
 export const PROCUREMENT_ROLES = ['proc_manager', 'proc_staff'];
 
+// Role BD yang MENJUAL (boleh membuat PRF/SO, boleh di-assign visit/activity) —
+// cermin is_sales_functional() (Blok B pilot 3, migrasi 20260912000006).
+// bd_digital_marketing_spv SENGAJA tidak ada (nol jejak transaksi CRM/PRF/SO).
+// Level tidak dibedakan di sini: SPV (6) vs exec/AE (7) dibedakan oleh
+// isManagerOrAbove() dan SALES_ONLY_ROLES di bawah, bukan oleh daftar ini.
+export const BD_SALES_ROLES = [
+  'bd_sales_executive', 'bd_account_executive',
+  'bd_sales_spv_console', 'bd_sales_spv_forwarding',
+];
+
+// Siapa yang boleh MEMBUAT PRF — cermin persis RLS prf_insert:
+// is_sales_functional() OR has_role('gm_bd') (+ super_admin bypass).
+// ⚠️ TRANSISI pilot 3: 'sales' lama masih di sini karena FE-1 mendarat SEBELUM
+// roster dipindah; dicabut di FE-2 sesudah Blok B live (RLS berhenti mengenal
+// 'sales' saat itu). Jangan cabut lebih dulu — tombol Buat PRF hilang untuk
+// 7 user sales yang belum dipindah.
+export const PRF_CREATOR_ROLES = [...BD_SALES_ROLES, 'sales', 'gm_bd', 'super_admin'];
+
 // Role yang "hanya melihat miliknya sendiri" di CRM. ⚠️ Flag RESTRIKTIF —
 // dievaluasi terhadap ROLE UTAMA (erpRole), BUKAN lewat hasAnyRole: user
 // manager@MSI + sales@SOA tidak boleh dianggap sales-only hanya karena punya
 // satu role sales. Lihat isSalesOnly di bawah.
-export const SALES_ONLY_ROLES = ['sales', 'operations'];
+// Pilot 3 (12 Sep 2026): + bd_sales_executive & bd_account_executive (level 7,
+// mode personal). SPV (level 6) SENGAJA TIDAK — mode tim lewat isManagerOrAbove.
+// 'sales' lama = TRANSISI (dicabut di FE-2, lihat PRF_CREATOR_ROLES).
+export const SALES_ONLY_ROLES = ['bd_sales_executive', 'bd_account_executive', 'sales', 'operations'];
 
 // Label untuk user yang TIDAK punya role di entitas aktif. Ini state eksplisit
 // (erpRole = null), menggantikan fallback lama `authRole || 'management'` yang
@@ -88,6 +109,8 @@ export const isAdminSettings  = (erpRoles, opt) => hasAnyRole(erpRoles, ADMIN_SE
 export const isSuperAdmin     = (erpRoles, opt) => hasAnyRole(erpRoles, ['super_admin'], opt);
 export const canWriteSpItem   = (erpRoles, opt) => hasAnyRole(erpRoles, SP_ITEM_WRITER_ROLES, opt);
 export const isProcurement    = (erpRoles, opt) => hasAnyRole(erpRoles, PROCUREMENT_ROLES, opt);
+export const isBdSales        = (erpRoles, opt) => hasAnyRole(erpRoles, BD_SALES_ROLES, opt);
+export const canCreatePrf     = (erpRoles, opt) => hasAnyRole(erpRoles, PRF_CREATOR_ROLES, opt);
 
 // isManagerOrAbove — benar kalau SALAH SATU role aktif user ber-level <=
 // MANAGER_LEVEL_MAX (semantik entitas sama dengan hasAnyRole: semua entitas,
