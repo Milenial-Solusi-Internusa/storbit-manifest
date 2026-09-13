@@ -60,22 +60,20 @@ export const BD_SALES_ROLES = [
   'bd_sales_spv_console', 'bd_sales_spv_forwarding',
 ];
 
-// Siapa yang boleh MEMBUAT PRF — cermin persis RLS prf_insert:
-// is_sales_functional() OR has_role('gm_bd') (+ super_admin bypass).
-// ⚠️ TRANSISI pilot 3: 'sales' lama masih di sini karena FE-1 mendarat SEBELUM
-// roster dipindah; dicabut di FE-2 sesudah Blok B live (RLS berhenti mengenal
-// 'sales' saat itu). Jangan cabut lebih dulu — tombol Buat PRF hilang untuk
-// 7 user sales yang belum dipindah.
-export const PRF_CREATOR_ROLES = [...BD_SALES_ROLES, 'sales', 'gm_bd', 'super_admin'];
+// Siapa yang boleh MEMBUAT PRF — cermin persis RLS prf_insert (migrasi
+// 20260912000006): is_sales_functional() OR has_role('gm_bd') (+ super_admin
+// bypass). 'sales' lama dicabut di FE-2 sesudah Blok B live — RLS sudah tidak
+// mengenalnya dan roster produksi nol pemegang (dormant, pilot 3, 12 Sep 2026).
+export const PRF_CREATOR_ROLES = [...BD_SALES_ROLES, 'gm_bd', 'super_admin'];
 
 // Role yang "hanya melihat miliknya sendiri" di CRM. ⚠️ Flag RESTRIKTIF —
 // dievaluasi terhadap ROLE UTAMA (erpRole), BUKAN lewat hasAnyRole: user
 // manager@MSI + sales@SOA tidak boleh dianggap sales-only hanya karena punya
 // satu role sales. Lihat isSalesOnly di bawah.
-// Pilot 3 (12 Sep 2026): + bd_sales_executive & bd_account_executive (level 7,
+// Pilot 3 (12 Sep 2026): bd_sales_executive & bd_account_executive (level 7,
 // mode personal). SPV (level 6) SENGAJA TIDAK — mode tim lewat isManagerOrAbove.
-// 'sales' lama = TRANSISI (dicabut di FE-2, lihat PRF_CREATOR_ROLES).
-export const SALES_ONLY_ROLES = ['bd_sales_executive', 'bd_account_executive', 'sales', 'operations'];
+// 'sales' lama dicabut di FE-2 (dormant, nol pemegang; RLS tak mengenalnya).
+export const SALES_ONLY_ROLES = ['bd_sales_executive', 'bd_account_executive', 'operations'];
 
 // Label untuk user yang TIDAK punya role di entitas aktif. Ini state eksplisit
 // (erpRole = null), menggantikan fallback lama `authRole || 'management'` yang

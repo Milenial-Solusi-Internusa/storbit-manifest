@@ -20,9 +20,13 @@
 // File ini menggantikan 4 salinan identik `fetchSalesProfiles` yang sebelumnya di-copy-paste
 // di CRMDashboardPage / ActivitiesPage / SalesCallsPage / ActivityLogPage.
 import { supabase } from '../../lib/supabase';
+import { BD_SALES_ROLES } from '../../lib/roles';
 
 // Role yang boleh dipilih sebagai pelaksana operasional. Tambah di SINI, satu tempat.
-export const OPERATIONAL_ROSTER_ROLES = ['sales', 'gm_bd'];
+// Pilot 3 BD (12 Sep 2026): 'sales' lama (dormant) diganti 4 role penjual bd_*
+// (BD_SALES_ROLES — exec, AE, dan kedua SPV ikut di-assign visit/activity);
+// gm_bd tetap. bd_digital_marketing_spv sengaja tidak (nol jejak CRM).
+export const OPERATIONAL_ROSTER_ROLES = [...BD_SALES_ROLES, 'gm_bd'];
 
 /* Resolve active operational-roster users for a company via RBAC
    (roles.code IN OPERATIONAL_ROSTER_ROLES), never a hardcoded role_id. Conditions:

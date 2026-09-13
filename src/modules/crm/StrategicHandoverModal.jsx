@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { X, Crown, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { BD_SALES_ROLES } from '../../lib/roles';
 
 const C = {
   navy: '#1B4D8A', accent: '#E85A1E', ink: '#23291E', inkSoft: '#5E6553',
@@ -70,9 +71,13 @@ export default function StrategicHandoverModal({ account, onCancel, onSubmit }) 
       // Roster KAM (operasional: siapa yang boleh pegang akun strategis) → gm_bd ikut.
       // Alasan: kontrak mewajibkan BD memegang customer tier A, jadi BD memang dirancang
       // megang akun strategis — bukan dikecualikan. Keputusan tetap.
-      // Daftar sengaja LEBIH LUAS dari `./salesRoster` (yg cuma ['sales','gm_bd']) — jangan
+      // Daftar sengaja LEBIH LUAS dari `./salesRoster` (BD_SALES_ROLES + gm_bd) — jangan
       // ditukar dgn helper itu, nanti manager hilang dari dropdown ini.
-      const { data: roleRows } = await supabase.from('roles').select('id').eq('company_id', profile.company_id).in('code', ['sales', 'manager', 'gm_bd']);
+      // Pilot 3 BD (12 Sep 2026): 'sales' lama (dormant) → BD_SALES_ROLES.
+      // Fix TD-209 (sekalian): filter `roles.company_id` DICABUT — roles global sejak
+      // 20260821000003, filter itu = NOL baris → dropdown KAM selalu kosong. Scoping
+      // entitas tetap di user_roles.company_id di bawah.
+      const { data: roleRows } = await supabase.from('roles').select('id').in('code', [...BD_SALES_ROLES, 'manager', 'gm_bd']).is('deleted_at', null);
       const roleIds = (roleRows || []).map(r => r.id);
       if (!roleIds.length) return;
       const { data: urs } = await supabase.from('user_roles').select('user_id').eq('company_id', profile.company_id).in('role_id', roleIds).eq('is_active', true).is('revoked_at', null);

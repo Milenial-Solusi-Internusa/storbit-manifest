@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { pdf } from "@react-pdf/renderer";
 import { supabase } from "../../lib/supabase";
+import { BD_SALES_ROLES } from "../../lib/roles";
 import { useAuth } from "../../contexts/useAuth";
 import ActivityReportPDF from "./ActivityReportPDF";
 
@@ -157,10 +158,16 @@ function perSales(acts, prospects, quotations, salesList) {
 //      • LAPORAN (ini) = performa sales siapa yang DIHITUNG → BD TIDAK dihitung sbg
 //        performa sales (keputusan bisnis).
 //    Menambahkan gm_bd di sini = mengubah angka Sales Report.
+// Pilot 3 BD (12 Sep 2026): 'sales' lama (dormant) → BD_SALES_ROLES — kedua SPV
+// sales DIHITUNG performanya (keputusan Den #5); 'supervisor' generik (belum ada,
+// TD-106) & 'manager' dipertahankan seperti semula. gm_bd tetap TIDAK.
+// Fix TD-209 (sekalian): filter `roles.company_id` DICABUT — roles global
+// (company_id NULL) sejak 20260821000003, jadi filter itu mengembalikan NOL
+// baris untuk non-super_admin → roster laporan kosong. Scoping entitas tetap
+// di user_roles.company_id (langkah 2 di bawah), sama dengan salesRoster.js.
 async function fetchReportSales({ companyId, isSuper }) {
-  let rolesQ = supabase.from("roles").select("id, company_id, code").in("code", ["sales", "supervisor", "manager"]);
-  if (!isSuper) rolesQ = rolesQ.eq("company_id", companyId);
-  const { data: roleRows } = await rolesQ;
+  const { data: roleRows } = await supabase.from("roles").select("id, code")
+    .in("code", [...BD_SALES_ROLES, "supervisor", "manager"]).is("deleted_at", null);
   const roleIds = (roleRows || []).map((r) => r.id);
   if (!roleIds.length) return [];
 

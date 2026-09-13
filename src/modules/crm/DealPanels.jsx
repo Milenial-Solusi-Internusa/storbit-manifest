@@ -18,6 +18,7 @@ import {
   Plus, Download, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { BD_SALES_ROLES } from '../../lib/roles';
 import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 
 export const HEAD = "'Montserrat', system-ui, sans-serif";
@@ -133,11 +134,13 @@ export function useIsMobile(bp = 760) {
 
 // Sales/manager/supervisor/gm_bd of a company, via user_roles (profiles.role is dormant).
 // Roster ASSIGNEE deal (operasional: siapa yang boleh pegang deal) → gm_bd ikut.
-// Daftar sengaja LEBIH LUAS dari `./salesRoster` (yg cuma ['sales','gm_bd']) — jangan
+// Daftar sengaja LEBIH LUAS dari `./salesRoster` (BD_SALES_ROLES + gm_bd) — jangan
 // ditukar dgn helper itu, nanti manager & supervisor hilang dari dropdown ini.
+// Pilot 3 BD (12 Sep 2026): 'sales' lama (dormant) → BD_SALES_ROLES; 'supervisor'
+// (role generik yang belum ada, TD-106) sengaja dipertahankan sebagai penanda niat.
 export async function fetchAssignees(companyId) {
   const { data: roleRows } = await supabase
-    .from('roles').select('id').in('code', ['sales', 'manager', 'supervisor', 'gm_bd']).is('deleted_at', null);
+    .from('roles').select('id').in('code', [...BD_SALES_ROLES, 'manager', 'supervisor', 'gm_bd']).is('deleted_at', null);
   const roleIds = (roleRows || []).map((r) => r.id);
   if (!roleIds.length) return [];
   const { data: urs } = await supabase
