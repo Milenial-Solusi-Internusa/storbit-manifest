@@ -2,6 +2,8 @@
 -- Migration: 20260830000003_inquiries_rls_owner_based
 -- Batch:     CRM v3 — Batch Dashboard, kepemilikan deal (lanjutan)
 -- Depends:   ⚠️ 20260830000002 (backfill owner_id) HARUS SUDAH DIJALANKAN
+--            ⚠️ 20260912000004 (is_procurement_functional) — LIVE produksi 12 Sep 2026;
+--               klausa procurement di bawah menyalin bentuk SESUDAH migrasi itu.
 -- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
 --            ⚠️ Dijalankan MANUAL di Supabase SQL Editor oleh Den.
 --
@@ -32,17 +34,26 @@
 --                              dipertahankan apa adanya (hasil fix TD-180 P1,
 --                              21 Agu 2026). JANGAN dikembalikan ke singular.
 --   • Klausa procurement di inquiries_read — disalin BYTE-PER-BYTE dari policy
---                              yang berlaku; procurement melihat inquiry lewat
---                              PRF-nya, sama sekali tak bersinggungan dengan
---                              kepemilikan.
+--                              yang berlaku SESUDAH 20260912000004
+--                              (is_procurement_functional() + EXISTS prf).
+--                              Versi awal file ini masih has_role('procurement');
+--                              dikoreksi 14 Sep 2026 supaya migrasi ini tidak
+--                              mengembalikan bug akses proc_manager/proc_staff.
+--                              Procurement melihat inquiry lewat PRF-nya, sama
+--                              sekali tak bersinggungan dengan kepemilikan.
 --   • inquiries_insert       — TIDAK diubah: WITH CHECK-nya hanya memeriksa
 --                              company_id, nol rujukan created_by/owner_id,
 --                              jadi tak ada yang perlu dipindahkan.
 --
 -- SUMBER DEFINISI LAMA (diverifikasi, bukan ditebak)
---   schema_snapshot.sql baris 15751-15770 DAN
---   migrations/20260821000004_crm_prf_jamak.sql baris 28-41 — keduanya
---   COCOK PERSIS, jadi tak ada penambalan belakangan yang terlewat.
+--   inquiries_read   : 20260912000004_is_procurement_functional.sql baris 209-214
+--                      (ALTER POLICY, LIVE 12 Sep 2026) — menggantikan bentuk
+--                      20260821000004_crm_prf_jamak.sql baris 33-37.
+--   inquiries_update : 20260821000004_crm_prf_jamak.sql baris 38-41 — TIDAK
+--                      disentuh 20260912000004 (14 ALTER POLICY-nya nol yang
+--                      mengenai inquiries_update), jadi masih bentuk terkini.
+--   ⚠️ schema_snapshot.sql di main (refresh 11 Sep) BELUM memuat bentuk baru
+--      inquiries_read — jangan dipakai sebagai acuan sampai di-refresh.
 -- =============================================================================
 
 
@@ -87,7 +98,7 @@ USING (
       is_manager_or_above()
       OR (owner_id = auth.uid())
       OR (
-        has_role('procurement'::text)
+        is_procurement_functional()
         AND (EXISTS (
           SELECT 1 FROM prf p
           WHERE ((p.inquiry_id = inquiries.id)
@@ -136,6 +147,9 @@ COMMIT;
 --   HARAPAN: inquiries_read & inquiries_update memuat `owner_id = auth.uid()`
 --            dan TIDAK lagi memuat `created_by = auth.uid()`;
 --            inquiries_insert tetap hanya memeriksa company_id.
+--            inquiries_read memuat `is_procurement_functional()` dan TIDAK
+--            memuat `has_role('procurement'` — klausa procurement tetap bentuk
+--            20260912000004, bukan bentuk lama.
 --
 -- 2) Nol baris yatim (tak terlihat siapa pun kecuali manager+):
 -- SELECT COUNT(*) AS inquiry_tanpa_owner FROM public.inquiries WHERE owner_id IS NULL;
@@ -155,7 +169,7 @@ COMMIT;
 --   CREATE POLICY inquiries_read ON public.inquiries FOR SELECT
 --   USING (is_super_admin() OR ((company_id IN (SELECT get_user_company_ids()))
 --     AND (is_manager_or_above() OR (created_by = auth.uid())
---       OR (has_role('procurement'::text) AND (EXISTS ( SELECT 1 FROM prf p
+--       OR (is_procurement_functional() AND (EXISTS ( SELECT 1 FROM prf p
 --         WHERE ((p.inquiry_id = inquiries.id) AND (p.company_id = inquiries.company_id)
 --            AND (p.deleted_at IS NULL))))))));
 --   DROP POLICY IF EXISTS inquiries_update ON public.inquiries;
