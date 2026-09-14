@@ -31,6 +31,210 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-14
+
+> ⚠️ **Celah pencatatan yang MENDAHULUI entri ini (ditemukan doc-keeper 14 Sep 2026, di luar brief):** seluruh
+> pekerjaan **11 Sep (sore) s/d 13 Sep** — `src/lib/roles.js` sebagai satu sumber daftar role (`f9d7e86`,
+> `c825121`), satu rezim gate menu (`2779014` + `1e2df23` + `731a504`), kolom `roles.level` + fungsi
+> manager-ke-atas berbasis level (`20260911000004`/`000005`/`000006`), pilot role HCGA (`20260912000001`/`000002`),
+> Procurement `proc_manager`/`proc_staff` (`20260912000003`/`000004`), dan pilot BD `bd_*` (`20260912000005`/`000006`
+> + FE-1 `f6724cd` + FE-2 `57e17e4`) — **NOL jejak** di file ini, `CLAUDE.md`, maupun governance (grep
+> `bd_sales`/`roles.level`/`is_sales_functional`/`roles.js` di `PROGRESS.md` + `CLAUDE.md` + `docs/Governance/` = **0 hit**;
+> commit dokumentasi terakhir `ce3d6a8`, 11 Sep). Entri di bawah **merujuk** hal-hal itu lewat nomor commit /
+> file migrasi karena tak terhindarkan — **bukan mencatatnya**. Pencatatan sesi-sesi itu masih utang terpisah
+> (doc-keeper untuk sesi tersebut belum diminta). Konsekuensi nyata: `08_TECH_DEBT.md` TD-233 (daftar role
+> manajerial di 4 tempat) dan `04_ROLE_PERMISSION_MATRIX.md` (14 kode role) **sudah basi** oleh `roles.level`
+> dan **11 role baru** (`hcga_manager`/`hcga_ga`/`hcga_personel`/`hcga_peopledev` · `proc_manager`/`proc_staff` · 5 `bd_*` — dari header migrasi `20260912000001`/`000003`/`000005`) tanpa ada dokumen yang mengatakannya — jangan dipakai sebagai
+> dasar keputusan sebelum sesi-sesi itu dicatat.
+
+### Audit role sales di branch CRM v3 (pra-merge, read-only) + koreksi `20260830000003` + checklist hari merge ditulis ulang
+
+**Nol perubahan kode di `main`.** Satu commit di branch `feature/crm-v3-batch-persiapan` (`1cb2edd`, **file migrasi
+saja**, SQL-nya BELUM dijalankan). Sisanya dokumentasi. **Nol tes runtime.**
+
+**Latar — kenapa audit ini perlu SEBELUM merge, bukan sesudahnya.** Branch CRM v3 (HEAD `1cb2edd`; merge-base
+dengan `main` = `9391e6e`, 8 Sep) **tidak punya `src/lib/roles.js` sama sekali** (`git cat-file -e` gagal; file itu
+lahir di `main` 11 Sep, tiga hari sesudah merge-base) — ke-17 file CRM di branch masih memakai daftar role
+hardcoded (`['sales', …]`, `MANAGER_OR_ABOVE = [...]`). Sementara itu di produksi **role `sales` sudah nol
+pemegang**: 9 orang dipindah ke role `bd_*` 12-13 Sep (roster manual Den tercatat di header
+`20260912000005_bd_roles_menu_defaults.sql:87-90`; "roster produksi nol pemegang" per pesan commit `57e17e4`
+— keduanya **klaim dari header/commit, bukan verifikasi doc-keeper ke DB**). Jadi setiap `'sales'` yang selamat
+dari merge = gate yang **tidak pernah lolos untuk siapa pun**, dan setiap `MANAGER_OR_ABOVE` bernama = SPV sales
+baru (level 6) **tidak dianggap manajer** padahal RLS-nya (`is_manager_or_above()` / `is_manager_or_above_in()`,
+keduanya `r.level <= 6` sejak `20260911000004` — terverifikasi `schema_snapshot.sql` refresh `72cd622`) meloloskan.
+
+**Cakupan (Claude Code, 14 Sep; doc-keeper TIDAK menghitung ulang angka ini):** 19 file ber-pengecekan
+hardcoded (17 `src/modules/crm` + `App.jsx` + `AuthContext.jsx`), **41 titik** (40 FE + 1 SQL). **Yang doc-keeper
+verifikasi sendiri:** simulasi merge `git merge-tree --write-tree main feature/crm-v3-batch-persiapan` (tree
+`8a3d174`, read-only, nol sentuhan working tree) → konflik di **5 file CRM** (`CRMDashboardPage` ·
+`DealDetailPage` · `InquiryListPage` · `PipelineKanbanPage` · `QuotationListPage`) + `App.jsx` (satu-satunya
+blok konflik = logo sidebar, nol urusan role) + `schema_snapshot.sql` + 5 dokumen (`CLAUDE.md`, `PROGRESS.md`,
+`03`/`08`/`09`). Isi tiap blok konflik dan baris yang lolos di luar blok diperiksa satu per satu — hasilnya
+**Lampiran per-file di `09_ROADMAP.md` §Pekerjaan Sinkron Branch** (permintaan Den: disimpan sebagai rujukan,
+bukan ringkasan). Ringkasnya:
+
+- ✅ **11 file terbawa otomatis dari `main`** (rezim `roles.js`), wajib di-grep ulang pasca-merge:
+  `ActivitiesPage` · `ActivityLogPage` · `CRMReportPage` · `CustomerDetailPage` · `DealPanels` · `LeadPoolPage`
+  (:100) · `ProspectFormPage` · `ProspectListPage` · `StrategicHandoverModal` · `salesRoster.js` · `AuthContext`
+  (`ERP_ROLE_PRIORITY` → `roleResolution.js`, main-only).
+- ⚠️ **5 file bentrok, butuh tangan manusia** — dan yang paling berbahaya justru **bukan** di dalam blok konflik:
+  **`DealDetailPage.jsx:752` (branch) `canCreatePRF = erpRoles?.some(r => ['sales','gm_bd','super_admin']…)`
+  LOLOS auto-merge TANPA konflik** (di tree simulasi ia utuh di `:756`, di luar kedua blok konflik) karena `main`
+  memperbaiki baris yang sama di posisi lain (`main:848` `canCreate={canCreatePrf(erpRoles)}`) → sesudah merge
+  tombol "Buat PRF" **hilang untuk seluruh sales** tanpa satu pun tanda konflik. Dua file lain berisiko
+  **ReferenceError / white-screen** kalau bloknya diselesaikan "ambil `main`": `DealDetailPage` (`const
+  MANAGER_OR_ABOVE` di dalam blok konflik, pemakainya `canReassignOwner` di luar) dan `CRMDashboardPage`
+  (destructure `useAuth()` di dalam blok — `main` butuh `erpRoles`, branch butuh `activeCompanyId`, `canCancel`
+  yang memakai `erpRoles` sudah auto-merge di luar blok → **wajib GABUNGKAN keempatnya**).
+  **Temuan tambahan doc-keeper, di luar brief:** **`InquiryListPage.jsx` adalah file KETIGA yang white-screen
+  kalau "ambil `main`"** — deklarasi `canScopeToggle` (sisi branch, di dalam blok) lenyap sementara pemakainya
+  `{canScopeToggle && (` (`:538` tree simulasi) berada di luar blok. Filter `.eq('created_by', profile.id)` milik
+  `main` sendiri **sudah hilang otomatis** di tree simulasi (branch mencabutnya 1 Sep, TD-223) — yang tersisa di
+  sisi `main` blok itu hanya deklarasi `isSalesOnly`; **jangan diambil**.
+  ⚠️ Posisi `canSelect` (branch `:1365`) relatif blok konflik **berbeda antar-simulasi** — di simulasi doc-keeper
+  ia DI DALAM blok konflik kedua (sisi branch, `:1419`), brief sesi menyebutnya di luar. Instruksinya sama apa pun
+  posisinya: ganti `MANAGER_OR_ABOVE.includes(erpRole)` → `isManagerOrAbove(erpRoles)` seperti yang sudah
+  dilakukan `main` untuk `canSelectOffer` (`main:853`). **Nomor baris di Lampiran memakai BRANCH** (stabil,
+  bisa dicek `git show feature/crm-v3-batch-persiapan:<file>`), bukan tree simulasi.
+- ⛔ **3 titik yang `main` PUN belum membereskan** (di luar dugaan awal "5 halaman"): **(6)**
+  `QuotationDetailPage.jsx:17` + `:379` (kode 9 Sep, branch-only, tak bentrok justru karena `main` tak
+  menyentuhnya) — tombol Mark Accepted / Mark Rejected / Create Revision **tak muncul untuk SPV sales baru**
+  padahal RLS `quotations_update` (`is_manager_or_above_in(company_id)`, level-based — terverifikasi snapshot
+  `main`) meloloskan; **(7)** `QuotationFormPage.jsx:45` role hantu **`'sales_spv'`** (tak pernah ada di `roles`;
+  padanannya `bd_sales_spv_console`/`bd_sales_spv_forwarding` baru lahir 12 Sep) + 3 daftar nama tier diskon —
+  **ada di `main` hari ini juga** (baris yang sama), tampilan saja (TD-38: nol penegakan) → **Keputusan Terbuka
+  #54**; **(8)** `LeadPoolPage.jsx:151` roster notifikasi approval `.in('code', ['manager','supervisor'])` —
+  **ada di `main` hari ini juga**; `supervisor` tak ada di `roles` (TD-106), SPV sales baru tak dinotifikasi →
+  **Keputusan Terbuka #55**. ⚠️ Klaim "SPV sales baru BISA approve" **tidak bisa diverifikasi dari kode**:
+  halaman approval digerbangi key menu `crm_lead_pool_approval` (katalog DB, `20260911000003`), bukan daftar
+  role di FE, dan isi `role_menu_permissions` produksi tak terekam di repo (snapshot schema-only).
+- **SQL:** satu-satunya migrasi branch yang hardcode `'sales'` = `20260830000001_crm_menu_permissions_sales.sql:104`
+  (`WHERE r.code = 'sales'`, terverifikasi) → **SUPERSEDED, JANGAN dijalankan**: role-nya kosong, dan keenam key
+  CRM-nya (`crm_dashboard`/`crm_pipeline`/`crm_prospects`/`crm_inquiry`/`crm_quotation`/`crm_customers`) sudah
+  diseed untuk 4 role penjual baru oleh `20260912000005` (`main`, `:154-160`, LIVE per header). Dicoret dari
+  checklist hari merge + tabel Utang Migrasi. Migrasi branch lain (`20260830000003`, `20260830000005`,
+  `20260909000006`, RPC revisi quotation) — **nol literal `'sales'`** (klaim Claude Code, tidak di-grep ulang
+  doc-keeper).
+
+**Koreksi `20260830000003_inquiries_rls_owner_based.sql` (branch, `1cb2edd`) — kelas bug baru yang layak
+gotcha.** File itu ditulis 30 Agu dan ditahan; klausa procurement di `inquiries_read`-nya masih
+`has_role('procurement'::text)`. Dijalankan apa adanya = `DROP POLICY` + `CREATE POLICY` **menimpa** perbaikan
+yang mendarat belakangan (`20260912000004_is_procurement_functional.sql:209-214`, LIVE 12 Sep — klausanya kini
+`is_procurement_functional() AND EXISTS (prf …)`): Camelia/Dery (`proc_manager`/`proc_staff`) **kehilangan akses
+inquiry ber-PRF, senyap** (fungsi `has_role` masih ada, jadi nol error). Sudah dikoreksi di file: klausa disalin
+dari bentuk LIVE (verifikasi doc-keeper: `:99` `owner_id = auth.uid()`, `:101` `is_procurement_functional()`,
+header `Depends` menyebut `20260912000004`, blok SUMBER DEFINISI/VERIFIKASI/ROLLBACK ikut); `owner_id` (tujuan
+migrasi) dan `inquiries_update` tak disentuh; `Status: BELUM DIJALANKAN`. ⚠️ **Saat dijalankan, `p_scope_own` di
+RPC `crm_stage_conversion` & `crm_stage_age` WAJIB pindah `created_by`→`owner_id` di hari yang sama** (TD-249,
+hidup di branch) — kalau tidak, sales penerima deal operan tak melihat dealnya, senyap. ⚠️ Perhatikan `main`
+snapshot (refresh `72cd622`, 11 Sep) **masih memuat `has_role('procurement')`** di `inquiries_read` — snapshot
+basi untuk seluruh migrasi 12 Sep, bukan bukti bahwa produksi masih bentuk lama. Pelajaran umum →
+`03_DATA_MODEL.md` **gotcha #35** (*migrasi yang ditahan lama wajib disisir ulang terhadap policy LIVE sebelum
+dijalankan — DROP+CREATE menimpa perbaikan belakangan*; kerabat gotcha #26).
+
+**Dua penanda "gerbang rilis" yang ternyata sudah BASI — keduanya hidup di BRANCH, bukan `main`.** Brief sesi
+menyebut rujukan **"§4.6.1 handoff" — tidak ada di governance mana pun** (grep 0 hit `main` & branch). Yang basi
+sesungguhnya: **TD-225** di `08_TECH_DEBT.md` versi branch (masih *"`inquiries.owner_id` BELUM ADA di produksi …
+grep snapshot 31 Agu = 0 hit"*, ditulis 2 Sep + blokir kedua RENAME 4 Sep) dan bullet **⛔ GERBANG RILIS** di
+§Next Up `09_ROADMAP.md` versi branch (*"`inquiries.owner_id` tidak ada di `schema_snapshot.sql`"*), plus banner
+"gerbang rilisnya DUA: TD-225 dan TD-249" di §Selesai Terbaru 9-10 Sep (branch `:78`). **Kedua-duanya TIDAK ADA di
+`main`** (TD-222…228 milik branch; `main` melompat TD-221 → TD-229) — jadi tak bisa dikoreksi di sini; dicatat di
+§Pekerjaan Sinkron Branch sebagai butir yang **wajib dikoreksi saat sinkron (main menang)**. Faktanya (tabel
+§Utang Migrasi Produksi, 8 Sep, sudah benar): `20260827000001` LIVE 6 Sep, `20260830000002` LIVE 6 Sep, RENAME
+ditutup jalur B 7 Sep. **Verifikasi doc-keeper ke `schema_snapshot.sql` `main` (refresh 11 Sep):**
+`inquiries.owner_id` + `closed_at` + `loss_reason_id` ADA · `lifecycle_stage` 32 hit · `CREATE TABLE`
+`loss_reasons`/`channel_types`/`sla_policies` ADA · `trg_z_lock_inquiry_owner` ADA · **4 CHECK BANT ADA**
+(`accounts_bant_budget/authority/need/timeline_check`, snapshot `:4698-4701`; isinya identik STEP 5 migrasi
+`20260827000001:402-409` di branch) — klaim "4 CHECK BANT ada dari query produksi" (Den) **terkonfirmasi lewat
+snapshot**, bukan sekadar klaim. Sisa untaian TD-225 tinggal **satu**: `20260830000003` (di atas), serempak
+TD-249.
+
+**Checklist hari merge ditulis ulang** (`09_ROADMAP.md` §Pekerjaan Sinkron Branch, mengganti dua sub-bagian lama):
+prasyarat `useCustomFields.js` **sudah terpenuhi di branch sejak `48ea4b4` (8 Sep)** — diverifikasi: branch memuat
+`'lifecycle_stage'` (`:33`) DAN `'account_status'` (`:38`), tree simulasi membawa keduanya; seed menu `sales` **dicoret
+(SUPERSEDED)**; +8 titik fix manual + 11 file grep-ulang; +`20260830000003` serempak RPC `p_scope_own`;
++peringatan `DealDetailPage:752` lolos senyap & white-screen 3 file; +"ambil `main` untuk `schema_snapshot.sql` lalu
+refresh"; +tes akun role `bd_*` di staging (Mark as Won — restore 10 Sep di branch belum dites · daftar Deal v3 —
+nol tes · kartu MQL→SQL hanya bisa di produksi).
+
+### Investigasi `customers` → persiapan DROP (TD-19): ternyata migrasinya sudah selesai 14 Jun 2026, tinggal DROP
+
+**Status: PERSIAPAN SELESAI, EKSEKUSI PENDING. TD-19 TIDAK ditutup.** Dua commit di `main` sebagai konteks:
+`58643a3` (FE, 1 file) + `cdb8c91` (file migrasi baru, **BELUM dijalankan**). Nol SQL dijalankan di produksi.
+
+**Yang ditemukan dari git (Claude Code 14 Sep, diverifikasi ulang doc-keeper):** commit **`e31fa86`** (14 Jun 2026,
+author `mhmmdjaelaniii <mhmmdjaelani1296@gmail.com>` — identitas GitHub lama Den sebelum migrasi akun ke org
+9-10 Jul) = Phase 2.5A "unify customers into accounts": **7 file kode, NOL file migrasi** — SQL-nya dijalankan
+manual di SQL Editor (`migrations/` berhenti 3 Jun). Sudah tercatat di `PROGRESS.md` 2026-06-14 (*"5 FK
+di-repoint … tabel `customers` lama dipensiunkan (tidak dihapus)"*), `00_DEV_JOURNEY.md` fase 2.5A, `AGENTS.md:731`
+(⚠️ brief sesi menyebut `:720` — salah baris), TD-19. **Bukti salinan ber-id sama** dari snapshot berdata terakhir
+(31 Agu, `0c736fb`, blok `COPY` — diverifikasi doc-keeper): baris `accounts` `a18fad3c-75ee-4fc6-b3d2-5c5dfa810661`
+ber-`created_at 2026-05-24 21:20:01.489141+00` & `updated_at 2026-06-12 19:21:14.82031+00` **identik** dengan baris
+`customers`, pic "Dummy/Dummy", `nomor_kontrak 'test'` sama; bedanya `company_id`/`owner_company_id` SOA (di
+`customers` = MSI), `code` `SOA/CUST/2026/I` (dulu `IM`), nama → "PT. Indomarco Prismatama", `account_status`
+`customer`, `pipeline_stage` `WON`, `became_customer_at` = `created_at`. Id dipertahankan sengaja — ratusan
+`sp_items`/`ar_ttfs` ber-`customer_id` itu, dan `IndomarcoDashboardPage.jsx:19` meng-hardcode `INDOMARCO_ID`.
+Baris kedua `customers` (`53eb97a4-…`): dibuat 24 Mei 2026 20:30:17 UTC, di-soft-delete 20:30:20.902 UTC (**3,8
+detik**), pic "test/test" → uji fitur hapus lewat aplikasi (hari yang sama dengan commit "make customer delete
+RLS-safe"), bukan data asli.
+
+**Kondisi sekarang (snapshot `main` 11 Sep + grep kedua branch, diverifikasi doc-keeper):** **NOL** `REFERENCES
+public.customers` (8 FK yang menempel semuanya KELUAR) · **NOL** fungsi/RPC/trigger/view pembaca (yang menempel cuma
+milik sendiri: `trg_customers_updated_at`, 3 policy `customers_read/insert/update`, 5 index, ACL `GRANT ALL … TO
+authenticated`) · **NOL** `.from('customers')` di `src/` `main` maupun branch · **9 FK `*_customer_id_fkey`** (`ar_ttfs`,
+`dc_master`, `delivery_notes`, `inquiries`, `picking_lists`, `quotations`, `sp_btb`, `sp_items`, `sp_orders`) semuanya →
+`accounts(id)` · **nol baris yatim** — *klaim Den dari query ke staging & produksi 14 Sep, tidak bisa diverifikasi
+dari repo (snapshot schema-only)*. Rujukan tidak langsung tersisa: `useCustomFields('customers')` di `App.jsx`
+(`:4798` `CustomersPage`, `:4925` `CustomerModal`) → RPC `get_table_columns('customers')` membaca kolom tabel FISIK;
+sesudah DROP → 0 baris tanpa error, input "custom field" di modal Customer Storbit sekadar hilang (ekstra hari
+ini: `nomor_kontrak`/`status`/`prospect_id`/`assigned_to`/`tier`/`last_activity_at`/`source_company_id` — tiga di
+antaranya `status`/`prospect_id`/`source_company_id` **tidak ada di `accounts`**, jadi hilangnya justru membaik).
+Modul Customer Storbit (`CustomersPage`/`CustomerModal` inline `App.jsx`, menu id `customers`, key
+`logistics_customer_storbit`) 100% baca/tulis `accounts` lewat `db.js` `listCustomers`/`upsertCustomer`/
+`deleteCustomer` sejak 14 Jun.
+
+**Yang dikerjakan sesi ini.** **(1)** `SchemaManagerPage.jsx` (`58643a3`): `'customers'` dicabut dari
+`TABLE_GROUPS` MASTER DATA (kini `vendors, products, branches, departments, positions`), default `selectedTable`
+diturunkan `TABLE_GROUPS[0].tables[0]` — diverifikasi di HEAD (`:32-34`, `:137`); build clean, lint **169 (147/22)** =
+baseline (klaim commit). **(2)** File migrasi **`supabase/migrations/20260914000001_drop_customers_table.sql`**
+(`cdb8c91`), **Status: BELUM DIJALANKAN** — isinya (diverifikasi): header SEJARAH 2.5A lengkap (rumah bagi
+sejarah 14 Jun yang tak pernah punya file migrasi) · guard `DO $$` (backup `customers_backup_20260614` harus ADA +
+jumlah baris sama + nol FK masuk) · `DROP TABLE public.customers` **tanpa CASCADE** (sengaja: kalau ditolak
+karena dependensi berarti audit terlewat sesuatu) · VERIFIKASI LAPIS 1 (SQL, 4 query) + LAPIS 2 (browser, 3
+layar) · daftar SESUDAH PRODUKSI · ROLLBACK sebagai komentar (`CREATE TABLE AS` dari backup — **TIDAK memulihkan**
+5 index/3 policy/trigger/ACL/PK/8 FK keluar; DDL lengkap ada di snapshot 11 Sep & 31 Agu `0c736fb`). **(3)**
+Backup `customers_backup_20260614` **dibuat Den di STAGING** (0 baris — staging memang kosong; *klaim Den*).
+
+**Yang BELUM — urutan wajib, jangan dilompati:** (1) konfirmasi deploy `58643a3` LIVE di produksi (**belum
+terverifikasi** — Den menyebut akses Vercel MCP kena 403; verifikasi manual) → (2) backup `customers_backup_20260614`
+di **PRODUKSI** (akan **2 baris**, bukan 0) → (3) jalankan `20260914000001` di staging + LAPIS 1/2 → (4) produksi →
+(5) refresh `schema_snapshot.sql`, **baru** tutup TD-19, koreksi `03_DATA_MODEL.md` + baris `AGENTS.md:731`
+§Pending (koreksi fakta terverifikasi, JANGAN sekarang) → (6) jadwalkan drop `customers_backup_20260614`
+(**tabel backup ke-9**) bareng backup lain dalam satu sesi + satu refresh (gotcha #10), bukan sekarang.
+
+### Temuan baru sesi ini — satu TD, tiga Keputusan Terbuka
+
+- **`accounts` TIDAK punya relasi induk-anak perusahaan** → **Keputusan Terbuka #53.** Diverifikasi doc-keeper ke
+  snapshot: `parent_account_id` **0 hit**; kolom `parent_id` hanya ada di `chart_of_accounts` **dan
+  `departments`** (⚠️ brief sesi menyebut "satu-satunya di `chart_of_accounts`" — kurang satu; tetap nol di
+  `accounts`). Customer dengan anak perusahaan (badan hukum/NPWP beda) tercatat sebagai dua akun tanpa
+  hubungan; `InquiryFormPage` hanya bisa memilih akun yang sudah ada (picker prospect/customer, di `main`
+  maupun branch) — anak perusahaan harus didaftarkan dulu lewat form Prospect. Hard-block K-3
+  (`uq_accounts_norm_name_per_entitas`, `normalize_account_name` membuang PT/CV/TBK) **tidak menghalangi**
+  dua badan hukum bernama beda, tapi anak perusahaan bernama mirip bisa terkena peringatan fuzzy di UI.
+- **`inquiries.contact_id` — NOL jalur tulis di `main` (produksi hari ini) dan NOL pembaca di kedua sisi** →
+  **TD-258 (MEDIUM).** Diverifikasi: grep `contact_id` di `InquiryFormPage.jsx` + `db.js` `main` = **0 hit**
+  (kolom ada sejak `20260726000001`, dicatat "TIDAK dipakai jalur tulis FE mana pun" di `03_DATA_MODEL.md` — masih
+  benar untuk `main`). **KOREKSI atas brief sesi:** di branch CRM v3 jalur tulisnya **SUDAH ADA sejak 3 Sep**
+  (`InquiryFormPage.jsx:329-332`, commit `106cc43` "+ jalur tulis contact_id", prefill dari "+ New Inquiry" di Detail
+  Account; tercatat `PROGRESS.md` 2026-09-03 sisi branch) → gap tulis tertutup saat CRM v3 merge. **Yang masih
+  terbuka di KEDUA sisi = tampilan:** `DealDetailPage.jsx`, `InquiryPDF.jsx`, `InquiryListPage.jsx` di branch
+  **0 hit `contact`** kecuali `activities.contact_name` (2 hit di DealDetailPage) — PIC per-inquiry ditulis tapi
+  **tidak pernah ditampilkan**; Detail Deal/PDF tetap jatuh ke kontak utama akun (kerabat TD-132 untuk quotation).
+- **Role hantu `'sales_spv'` di tier diskon `QuotationFormPage` + roster notifikasi Lead Pool `['manager','supervisor']`**
+  → **Keputusan Terbuka #54 dan #55** (keduanya ada di `main` hari ini, bukan cuma di branch — lihat butir (7)/(8)
+  audit di atas).
+
 ## 2026-09-11
 
 ### Invoice — enam penataan: empat dipasang, dua diselidiki dulu (nama PT & rekening)
