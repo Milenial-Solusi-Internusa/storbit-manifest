@@ -29,7 +29,9 @@ const C = {
 const TABLE_GROUPS = [
   {
     section: 'MASTER DATA',
-    tables: ['customers', 'vendors', 'products', 'branches', 'departments', 'positions'],
+    // 'customers' dicabut (TD-19): tabel legacy itu dipensiunkan sejak 2.5A
+    // (14 Jun 2026) — master customer tunggal = 'accounts' (grup CRM di bawah).
+    tables: ['vendors', 'products', 'branches', 'departments', 'positions'],
   },
   {
     section: 'CRM',
@@ -130,7 +132,9 @@ export default function SchemaManagerPage({ showToast }) {
   // Guard — only super_admin
   const isAllowed = role === 'super_admin';
 
-  const [selectedTable, setSelectedTable] = useState('customers');
+  // Default = tabel pertama di grup pertama, diturunkan dari TABLE_GROUPS —
+  // bukan nama tabel hardcode, supaya tetap valid kalau daftarnya berubah.
+  const [selectedTable, setSelectedTable] = useState(TABLE_GROUPS[0].tables[0]);
   const [columns,       setColumns]       = useState([]);
   const [colLoading,    setColLoading]    = useState(false);
 
