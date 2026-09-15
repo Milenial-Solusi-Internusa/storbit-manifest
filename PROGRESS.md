@@ -31,6 +31,179 @@
 - **[2026-07-03]** Redesign `SalesOrderPage` (Daftar Pesanan) mengikuti mockup `SalesOrderClean.jsx` — retheme navy/orange, filter bar Status+Periode, baris clickable ke Detail. Commit `dd75c24`.
 - **[2026-07-04]** Quotation: tambah opsi Cargo Mode "Project" (tanpa sub-field khusus) + fitur "If Any" per baris charge (dikecualikan dari semua total). Commit `4ebb436`.
 
+## 2026-09-15
+
+### Penerimaan Barang (Inventory) — jalur simpan pindah dari INSERT langsung `stock_ledger` ke RPC `create_goods_receipt` (header + item + ledger, satu transaksi) + validasi baris ketat; migrasi `20260914000002` direkam (LIVE STAGING, BELUM PRODUKSI) + trigger recompute status SP di `stock_ledger`
+
+**Dua file (`882f629`): FE `src/modules/inventory/pages/PenerimaanBarangPage.jsx` (+125/−48 vs `03fa5d7`) + migrasi
+`supabase/migrations/20260914000002_goods_receipt_redesign_and_sp_status_trigger.sql` (389 baris, ditulis Den/Vir).**
+Header migrasi `:3`: **`Status: LIVE DI STAGING (14 Sep 2026) — BELUM DIJALANKAN DI PRODUCTION`**. `schema_snapshot.sql`
+(refresh `72cd622`) **0 hit `goods_receipt`** — itu benar untuk produksi hari ini, bukan snapshot basi. ⚠️ **Bedakan
+tiga hal:** *di repo* (ya, file migrasi + FE) · *di snapshot* (tidak — belum refresh, produksi belum jalan) · *LIVE*
+(staging ya, produksi belum). **Konsekuensi di produksi:** sampai migrasi dijalankan di sana, tombol Konfirmasi
+Penerimaan Barang **gagal keras di tiap submit** (`function create_goods_receipt does not exist`, tampil di toast) —
+FE ini sudah ada di `main`, jadi **migrasi produksi harus dijalankan SEBELUM atau segera sesudah deploy** (gotcha #36).
+✅ **Tes manual Den 15 Sep — 6 checklist LOLOS di STAGING** (laporan Den, tak bisa diverifikasi doc-keeper dari
+repo): isi lengkap → 1 header + N item + N baris ledger ber-`reference_id` · baris setengah terisi ditolak · qty `1.5`
+ditolak di form · Transfer Masuk vendor opsional · PO tanpa vendor ditolak · role tanpa akses ditolak RPC.
+**Produksi: belum dites** (RPC-nya belum ada di sana). **Verifikasi doc-keeper pada `882f629`:** `npm run build` clean
+(**2626 modules**); lint **168 (146 error / 22 warning)** vs baseline 14 Sep 169 (147/22) — turun 1 = `no-unused-vars
+'vendorObj'` yang hilang bersama blok lama (file: 2 error → 1 error; sisa `react-hooks/set-state-in-effect` effect
+`fetchMaster` `:399`, pre-existing). Nol finding baru.
+
+**Latar — audit 14 Sep atas jalur simpan lama** (menu id `inventory-penerimaan`, key `inv_penerimaan`, `App.jsx:1336`;
+render `:3536`). Seluruh butir diverifikasi doc-keeper ke `03fa5d7`, `schema_snapshot.sql`, dan snapshot berdata
+terakhir 31 Agu (`0c736fb`, blok `COPY`):
+- Insert langsung `.from('stock_ledger').insert(ledgerRows)` (`03fa5d7:407-409`) **tanpa tabel header**:
+  `movement_type` selalu `'inbound'`; `reference_type` = `'PO'` untuk tipe "Purchase Order", **tiga tipe lain runtuh
+  jadi `'ADJ'`**; `reference_id` selalu NULL; `created_by` NULL (di produksi `stock_ledger` **tanpa trigger** — 0
+  `CREATE TRIGGER … ON public.stock_ledger` di snapshot; migrasi baru menambah SATU, lihat di bawah). **Supplier/Vendor,
+  PO Number, Tanggal Penerimaan tidak pernah tersimpan** (`vendorObj` `03fa5d7:394` = dead code; `stock_ledger` memang
+  tak punya kolom vendor/tanggal transaksi — 14 kolom, `schema_snapshot.sql:9436-9451`).
+- Baris setengah terisi **dibuang diam-diam** (`filledRows = rows.filter(r => r.product_id && Number(r.qty) > 0)`,
+  `03fa5d7:370`); qty desimal lolos FE (input `min="1"` tanpa `step`, cek `Number(qty) > 0`) lalu gagal di DB (`qty integer`).
+- Nol validasi server: `stock_ledger_insert` = `WITH CHECK (auth.uid() IS NOT NULL)` (`:19719`) + `GRANT ALL … TO
+  authenticated` (`:21898`); `stock_ledger_modify` UPDATE hanya `is_super_admin()` (`:19726`); **nol policy DELETE**
+  (3 policy: `_select` `USING(true)` `:19733` / `_insert` / `_modify`) → mutasi stok yang salah **tak bisa dibatalkan
+  dari UI** — sekarang ada jalan resminya di DB (`void_goods_receipt`), tapi belum ada UI-nya (TD-260).
+- **Jejak data lama** (snapshot berdata 31 Agu `0c736fb`, `COPY public.stock_ledger`, 549 baris): **83 baris `inbound`
+  dari jalur lama** — **71 `ADJ` ber-`reference_no` `FC-2026-001`** (7 Jun 2026, **7 kali submit** dalam 7 menit
+  07:45–07:52 UTC, 2 gudang) + **12 `PO` ber-`reference_no` `0`/`00`/`01`** (20 & 27 Jul 2026; nomor referensi seperti
+  itu tampak data uji — *perlu konfirmasi*) — **seluruhnya `reference_id` NULL dan `created_by` NULL**. Baris sesudah
+  31 Agu tak terlihat (snapshot kini schema-only). Terpisah dari itu: 27 baris `adjustment`/`import`
+  `STOCK-REFRESH-2026` (2 Jul, refresh stok manual, bukan dari halaman ini). → **Keputusan Terbuka #56** (backfill ke
+  `goods_receipts` atau biarkan sebagai riwayat tanpa header).
+- Opsi dropdown **"Internal Transfer"** = baris ASLI tabel `vendors`, **bukan ditempel kode** — diverifikasi di `COPY
+  public.vendors` snapshot 31 Agu: `8db703e2-02c7-40b3-a4bb-4b4cc41c3bbd`, SOA, `VND-004`, `vendor_type='internal'`,
+  `created_at 2026-06-06 21:03:01+00`; tak berjejak migrasi (`migrations/` berhenti 3 Jun). ⚠️ Nilai `internal` **tidak
+  ada** di daftar klasifikasi COMMENT `vendors.vendor_type` (`:9749`: Shipping Line / Trucker / Customs Agent / Supplier /
+  Sub-contractor / General) — deskriptif, bukan CHECK, jadi bukan pelanggaran constraint.
+
+**Yang berubah di FE** (sesuai plan yang disetujui Den 14 Sep; nomor baris = `882f629`):
+1. **Jalur simpan → satu `supabase.rpc('create_goods_receipt', {…})`** (`:459-473`): `p_reference_no` (trim),
+   `p_receipt_date` (`'YYYY-MM-DD'`), `p_warehouse_id`, `p_receipt_type`, `p_vendor_id` (null bila kosong), `p_po_number`
+   (null bila kosong), `p_notes` (catatan umum = header), `p_items: [{product_id, qty, notes}]`. Insert langsung ke
+   `stock_ledger` **DIHAPUS** — kini **nol** penulis `.from('stock_ledger')` di `src/`. RPC mengembalikan uuid header
+   (skalar) — tidak ditampilkan; toast sukses memakai nomor referensi yang diketik user. Error RPC (termasuk penolakan
+   role/entitas — pesan RAISE dari migrasi `:195`, `:198-215`) → `err.message` ke toast, tidak ditelan. **`company_id`
+   tidak lagi dikirim dari FE** (state `soaId` dicabut; RPC menurunkannya dari `warehouses.company_id`, migrasi `:183`)
+   — SOA di halaman ini kini hanya untuk memuat master data (`fetchMaster` `:353-397`).
+2. **`RECEIPT_TYPES` → objek `{value,label}`** (`:57-62`): `purchase_order` / `restock_produksi` / `transfer_masuk` /
+   `adjustment` = persis CHECK `goods_receipts_type_check` (migrasi `:54-56`); label tetap "Purchase Order"/"Restock
+   Produksi"/"Transfer Masuk"/"Adjustment"; `RECEIPT_TYPE_LABEL` (`:63`) untuk kartu Ringkasan. `Select` sudah menerima
+   objek sejak sebelumnya (`normalised`, `:301`) — bukan bagian diff.
+3. **`VENDOR_REQUIRED_TYPES = ['purchase_order','restock_produksi']`** (`:70`) — Supplier/Vendor wajib hanya untuk dua
+   tipe itu; Transfer Masuk/Adjustment opsional (tetap bisa dipilih, termasuk "Internal Transfer"; kosong → null;
+   placeholder "Pilih supplier (opsional)…" `:592`, Ringkasan "Tidak wajib" `:716`). **Keputusan Den 14 Sep 2026.** ✅
+   **RPC MENOLAK vendor NULL untuk dua tipe itu — terverifikasi migrasi `:210-212`** (`RAISE EXCEPTION 'Vendor wajib
+   diisi untuk tipe penerimaan %'`) → validasi FE = cermin, bukan satu-satunya penjaga (**TD-259 RESOLVED**). ⚠️ Komentar
+   FE `:70-72` menulis *"ditambal migrasi terpisah, 15 Sep 2026"* — **tidak tepat**: header migrasi `:15-17` menyatakan
+   tambalan itu **digabung ke definisi fungsi, bukan patch terpisah**; hanya satu file migrasi. Komentar kode tidak
+   disentuh doc-keeper.
+4. ~~Kolom "Harga Beli (Rp)" per baris~~ **DICABUT sebelum commit — keputusan Den 15 Sep 2026:** `unit_cost` diisi
+   terpisah oleh Accounting lewat **Master Product** (`products.unit_cost` sudah ada; field "Unit Cost" di
+   `ProductDetailPage.jsx:615`), **bukan di form penerimaan**. FE **tidak mengirim `unit_cost`** (`:467-468`); kolom
+   `goods_receipt_items.unit_cost numeric(15,2)` **nullable** (migrasi `:75`) dan RPC menerimanya kosong
+   (`NULLIF(v_item->>'unit_cost','')::numeric`, `:246`) → untuk semua penerimaan dari halaman ini kolom itu **NULL**.
+   ⚠️ Catatan: `products.unit_cost` per komentar `InventoryDashboardPage.jsx:518` **seluruhnya NULL** di data — jadi
+   "diisi lewat Master Product" adalah jalur yang ada tapi belum pernah dipakai; nilai persediaan dashboard masih dari
+   `default_price` (harga jual). Kerabat Keputusan Terbuka #46 (sumber nilai HPP).
+5. **Validasi baris lewat fungsi murni `validateRow(r)`** (`:85-101`): `empty` (nol field disentuh → diabaikan, tidak
+   dikirim) · `complete` (produk + qty **BULAT** > 0 via `Number.isInteger`) · `partial` (ada yang terisi tapi tak
+   lengkap/valid → **submit DITOLAK**, pesan "Baris N: …" per masalah, daftar merah di bawah tabel `:673` + border merah
+   pada input yang salah + toast masalah pertama "(+k masalah lain)"). Qty desimal tidak pernah sampai RPC — dan RPC
+   pun menolaknya lagi (`v_qty IS NULL OR v_qty <= 0`, `:237-239`; CHECK `qty > 0` `:80`). *Klaim sesi: diuji 12 kasus
+   di scratchpad (bukan test di repo).*
+6. Nomor Referensi `maxLength={50}` (`:555`) = `goods_receipts.reference_no varchar(50) NOT NULL` (migrasi `:37`) + guard
+   RPC `length > 50` (`:201-203`); validasi header pakai `form.ref.trim()`.
+7. **Perilaku catatan berubah, disengaja:** catatan umum → `p_notes` header (`goods_receipts.notes`); catatan baris →
+   `items[].notes` (`goods_receipt_items.notes`). Di **ledger** RPC menulis `COALESCE(v_item->>'notes', p_notes)`
+   (`:257`) — jadi fallback header→baris yang dulu ada di FE kini hidup di ledger saja, sementara dua tabel dokumen
+   menyimpannya terpisah.
+8. Komentar header file diperbarui (`:1-7`).
+
+**Isi migrasi `20260914000002` (diverifikasi doc-keeper baris per baris):**
+- **`goods_receipts`** (`:34-60`): `company_id` NOT NULL FK `companies` · `reference_no varchar(50) NOT NULL` ·
+  `receipt_date date NOT NULL` · `warehouse_id` NOT NULL FK `warehouses` · `receipt_type varchar(20)` CHECK 4 nilai ·
+  `vendor_id` **nullable** FK `vendors` · `po_number varchar(50)` · `notes` · `status varchar(10)` CHECK `posted`/`void`
+  DEFAULT `posted` · `voided_at`/`voided_by`/`void_reason` · **`created_by uuid NOT NULL`** · `created_at`/`updated_at`.
+  2 index (`company_id,receipt_date` · `company_id,reference_no`). ⚠️ `reference_no` **tidak UNIQUE** — dua penerimaan
+  bernomor sama diterima DB.
+- **`goods_receipt_items`** (`:70-81`): `goods_receipt_id` FK **ON DELETE CASCADE** · `product_id` FK `products` ·
+  **`qty integer` CHECK `> 0`** · `unit_cost numeric(15,2)` nullable · `notes` · `created_at`.
+- **RLS + GRANT** (`:94-152`): `REVOKE ALL FROM PUBLIC` → `GRANT SELECT, INSERT … TO authenticated` (+`ALL` ke
+  `service_role`); **`REVOKE TRUNCATE, REFERENCES, TRIGGER … FROM authenticated` eksplisit** (`:110-111`). Policy:
+  `goods_receipts_read` (`:113-116`) · `_insert` = `is_super_admin() OR (company_id = get_user_company_id() AND
+  (is_manager_or_above() OR has_role('operations')))` (`:118-125`) · `_delete` super_admin saja (`:127-128`) · items
+  `_read`/`_insert` via EXISTS ke header (`:130-149`) · items `_delete` super_admin (`:151-152`). **NOL policy UPDATE —
+  sengaja** (`:90-92`): perubahan hanya lewat `void_goods_receipt`. ⚠️ **Keempat policy read/insert memakai
+  `get_user_company_id()` SINGULAR** (`:115`, `:122`, `:136`, `:146`) — dan **kedua guard RPC juga** (`:191`, `:297`):
+  instance baru kelas **TD-180**, lahir 14 Sep di migrasi baru (dicatat di TD-180, bukan TD baru). Efek: user
+  multi-entitas ber-home ≠ SOA yang punya role `operations`/manager di SOA **ditolak keras** (`RAISE`), padahal jalur
+  lama meloloskan siapa pun yang login.
+- **RPC `create_goods_receipt(p_reference_no varchar, p_receipt_date date, p_warehouse_id uuid, p_receipt_type
+  varchar, p_vendor_id uuid, p_po_number varchar, p_notes text, p_items jsonb) RETURNS uuid`** (`:162-267`) —
+  `SECURITY DEFINER SET search_path TO 'public'`, `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`
+  (`:266-267`). Urutan: company dari `warehouses.company_id` (`:183`, RAISE bila gudang tak ada) → guard role/entitas
+  (`:188-196`) → validasi `reference_no` wajib (`:198-200`) & ≤50 (`:201-203`), tanggal (`:204-206`), enum tipe (`:207-209`),
+  **vendor NULL ditolak utk `purchase_order`/`restock_produksi` (`:210-212`)**, `p_items` array non-kosong (`:213-215`) → **`movement_type` dipetakan** `transfer_masuk→transfer_in`, `adjustment→adjustment`,
+  lainnya→`inbound` (`:217-221`) → INSERT header (`:223-229`, `created_by = auth.uid()`) → per item: produk & qty
+  divalidasi lagi (`:233-240`), INSERT item (`:242-248`), INSERT ledger ber-**`reference_type 'goods_receipt'`,
+  `reference_id` = id header, `reference_no`, `notes = COALESCE(item, header)`, `created_by = auth.uid()`** (`:251-258`).
+- **RPC `void_goods_receipt(p_id uuid, p_reason text) RETURNS void`** (`:276-332`) — guard **manager+ saja** (`:295-300`;
+  `operations` boleh membuat tapi **tidak** membatalkan), alasan wajib (`:301-303`), tolak dobel-void (`:292-294`);
+  menulis **baris pembalik `-abs(qty)`** ber-`movement_type` `transfer_out` (utk `transfer_masuk`) / `outbound` (lainnya)
+  (`:305-308`, `:310-321`), `reference_type 'goods_receipt_void'`, lalu `status='void'` + `voided_*` (`:323-326`).
+  **Bukan hapus, bukan UPDATE qty** — append-only ledger dihormati. Nol pemanggil FE (TD-260).
+- **Trigger BARU `trg_stock_ledger_recompute_sp` AFTER INSERT ON `stock_ledger` FOR EACH ROW** (`:340-369`, fungsi
+  `SECURITY DEFINER`): tiap baris ledger baru **dari sumber mana pun** memicu `sp_recompute_status(customer_id, sp_no)`
+  untuk semua SP ber-`sp_items.sp_status='confirmed'` berproduk sama yang `sp_orders.status NOT IN ('CANCELLED','LUNAS')`
+  (`:348-357`). **Efek bisnis:** status SP Storbit (mis. `MENUNGGU_STOK` → `CONFIRMED`) menyesuaikan otomatis begitu
+  stok masuk — menutup celah "status nyangkut walau stok berubah di tempat lain". ⚠️ **Koreksi klaim "nol trigger di
+  `stock_ledger`":** benar untuk **produksi hari ini & snapshot**; di **staging kini 1**. ⚠️ Belum diukur: trigger ini
+  juga menyala untuk baris `reserved`/`unreserved`/`outbound` dari RPC picking/dispatch yang sudah memanggil recompute
+  sendiri → recompute ganda + loop lintas-SP per baris (biaya belum diukur, bukan bug).
+- **Ekor file (`:373-389`)** — blok `REVOKE INSERT ON TABLE public.stock_ledger FROM authenticated;` (`:388`) **SENGAJA
+  komentar = langkah terpisah**. Kedua prasyaratnya **sudah terpenuhi** (FE ganti ke RPC ✅; grep `src/` ✅ — lihat
+  audit di bawah) → **langkah manual DB berikutnya**, di staging dulu lalu produksi, sesudah migrasi utama.
+- **Temuan dari header migrasi (`:18-22`, `:104-109`), diverifikasi ke snapshot:** default privileges DB memang
+  menempelkan `REFERENCES,TRIGGER,TRUNCATE,MAINTAIN` ke `authenticated` untuk **setiap tabel baru** (`ALTER DEFAULT
+  PRIVILEGES FOR ROLE postgres … ON TABLES TO authenticated`, `schema_snapshot.sql:22028`; `FOR ROLE supabase_admin …
+  GRANT ALL ON TABLES TO authenticated`, `:22038`). Hari ini **99 tabel `GRANT ALL … TO authenticated`** (ALL memuat
+  TRUNCATE) + **29 tabel** dengan `TRUNCATE` eksplisit — TRUNCATE **tidak tunduk RLS**. Paparan praktis: **nol lewat
+  PostgREST** (tak ada verb TRUNCATE; `exec_sql` `service_role`-only, `:20108-20109`) → risiko laten/defense-in-depth,
+  bukan lubang aktif. Migrasi ini hanya membereskan 2 tabel barunya; **audit tabel lain = keputusan terpisah** (header
+  `:20-22` merujuk "Keputusan Terbuka terpisah" yang **belum ada di `09_ROADMAP.md`** — perlu Den putuskan mau dibuka
+  sebagai Keputusan Terbuka/TD).
+
+**Audit untuk langkah `REVOKE INSERT` (diverifikasi doc-keeper):** pembaca `stock_ledger` dari `src/` kini hanya
+**`InventoryDashboardPage.jsx:497`** — **SELECT saja** (`movement_type, qty, created_at, product_id, company_id`, 12
+minggu terakhir, grafik movement) → **SELECT harus tetap terbuka**. Nol insert/update/delete langsung lain
+(`src/lib/db.js:751` hanya komentar; akses lewat RPC). Penulis ledger di DB = **6 fungsi `SECURITY DEFINER SET
+search_path`** yang sudah LIVE (`add_picking_material` `:42` · `cancel_delivery` `:207` · `cancel_picking` `:259` ·
+`delete_picking_material` `:873` · `dispatch_delivery` `:989` · `generate_picking_from_sp` `:1166`) **+ 2 RPC baru
+(`create_goods_receipt`/`void_goods_receipt`, `SECURITY DEFINER`)** → aman kalau INSERT `authenticated` dicabut. ⚠️
+Catatan kecil untuk **TD-173**: kalimat "baca/tulis/**hapus** lintas company" di sana **tidak tepat untuk
+`stock_ledger`** — DELETE sudah tertolak RLS (nol policy DELETE); yang terbuka = SELECT `USING(true)` + INSERT
+`auth.uid() IS NOT NULL`. Baris TD-173 tidak diubah (satu tabel dari 19).
+
+**Sengaja TIDAK dikerjakan:** gate role di FE (RPC penegaknya, sesuai DoD) · UI/tombol `void_goods_receipt` (**nol
+pemanggil FE**, grep = 0 → **TD-260**) · total nilai penerimaan di Ringkasan · perubahan `InventoryDashboardPage` ·
+eksekusi `REVOKE INSERT` `stock_ledger` (langkah terpisah) · halaman daftar penerimaan (`goods_receipts` belum punya
+pembaca FE).
+
+**Yang BELUM (urutan):** (1) jalankan `20260914000002` di **produksi** (bungkus `BEGIN/COMMIT` sudah di file; ekor
+`REVOKE INSERT` tetap jangan ikut) → (2) tes 6 checklist yang sama di produksi + `InventoryDashboardPage` grafik
+movement tetap terisi → (3) langkah terpisah `REVOKE INSERT ON stock_ledger FROM authenticated` (staging → produksi)
+→ (4) refresh `schema_snapshot.sql` via `pg_dump` (sekaligus menutup utang refresh policy 10-11 Sep + migrasi 12 Sep)
+→ (5) ubah header migrasi `Status:` ke LIVE produksi; doc-keeper koreksi rujukan `:baris` snapshot.
+
+**Dokumentasi sesi ini:** `03_DATA_MODEL.md` (baris `stock_ledger` dikoreksi — CHECK `movement_type` **7 nilai**,
+bukan 5; +trigger baru; §3 +`goods_receipts`/`goods_receipt_items`; §5 +2 RPC **dari SQL**, penanda "BELUM DI
+SNAPSHOT / LIVE staging, belum produksi"; +gotcha #36) · `05_WORKFLOW_MAP.md` §Inventory Flow · `08_TECH_DEBT.md`
++TD-259 (RESOLVED)/TD-260 (OPEN)/TD-261 (RESOLVED-jejak) + catatan TD-180 · `09_ROADMAP.md` baris Inventory (Status
+Modul) + Keputusan Terbuka #56 · `CLAUDE.md` Recent + Known Issues.
+
 ## 2026-09-14
 
 > ⚠️ **Celah pencatatan yang MENDAHULUI entri ini (ditemukan doc-keeper 14 Sep 2026, di luar brief):** seluruh
