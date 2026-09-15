@@ -1,7 +1,10 @@
 // src/modules/inventory/pages/PenerimaanBarangPage.jsx
 // Penerimaan Barang — Goods Receipt form for Nexus by MSI (SOA)
 // Fetches products, warehouses, vendors from Supabase.
-// Saves to stock_ledger on Konfirmasi.
+// Konfirmasi memanggil RPC create_goods_receipt (satu transaksi: header
+// goods_receipts + goods_receipt_items + mutasi stock_ledger ber-reference_id).
+// Sejak 15 Sep 2026 — sebelumnya insert langsung ke stock_ledger tanpa header,
+// sehingga vendor / PO / tanggal / tipe penerimaan tak pernah tersimpan.
 //
 // Design reference: /tmp/pb_out/nexus-by-msi/project/PenerimaanBarangPage.jsx
 // Adapted: mock data → Supabase fetch + save, inline styles, Nexus patterns.
@@ -48,11 +51,55 @@ function Icon({ name, size = 18, color, style }) {
 }
 
 /* ── constants ─────────────────────────────────────────────────────────────── */
-const RECEIPT_TYPES = ['Purchase Order', 'Restock Produksi', 'Transfer Masuk', 'Adjustment'];
+// value = enum p_receipt_type RPC create_goods_receipt (snake_case), label =
+// teks dropdown. Select() menerima objek {value,label} (lihat normalised di
+// Select). Dulu label-nya sendiri yang jadi value dan diringkas ke 'PO'/'ADJ'.
+const RECEIPT_TYPES = [
+  { value: 'purchase_order',   label: 'Purchase Order'   },
+  { value: 'restock_produksi', label: 'Restock Produksi' },
+  { value: 'transfer_masuk',   label: 'Transfer Masuk'   },
+  { value: 'adjustment',       label: 'Adjustment'       },
+];
+const RECEIPT_TYPE_LABEL = Object.fromEntries(RECEIPT_TYPES.map(t => [t.value, t.label]));
+// Tipe yang MEWAJIBKAN Supplier/Vendor. Transfer Masuk & Adjustment boleh tanpa
+// vendor (dikirim null) — vendor "Internal Transfer" (vendor_type='internal',
+// baris asli tabel vendors) tetap bisa dipilih untuk keduanya. Keputusan Den
+// 14 Sep 2026. RPC juga menolak vendor NULL untuk dua tipe itu (ditambal
+// migrasi terpisah, 15 Sep 2026) — validasi FE di bawah = cermin, bukan
+// satu-satunya penjaga.
+const VENDOR_REQUIRED_TYPES = ['purchase_order', 'restock_produksi'];
 
 const nf = (n) => Number(n || 0).toLocaleString('id-ID');
 let _rid = 100;
+// Tanpa harga beli: unit_cost diisi terpisah oleh Accounting lewat Master
+// Product (keputusan Den 15 Sep 2026); RPC menerima unit_cost kosong/NULL.
 const newRow = () => ({ key: ++_rid, product_id: '', qty: '', catatan: '' });
+
+/* ── validasi satu baris Detail Barang ─────────────────────────────────────
+   status 'empty'    = tidak satu pun field disentuh → diabaikan, tidak dikirim.
+          'complete' = produk terisi + qty bilangan BULAT > 0.
+          'partial'  = ada yang terisi tapi belum lengkap/valid → DITOLAK saat
+                       submit dengan pesan per baris (dulu dibuang diam-diam).
+   Qty diperiksa bulat di sini supaya desimal tidak pernah sampai ke RPC/DB
+   (kolom qty integer). */
+function validateRow(r) {
+  const qtyStr  = String(r.qty ?? '').trim();
+  const noteStr = String(r.catatan ?? '').trim();
+  if (!r.product_id && qtyStr === '' && noteStr === '') {
+    return { status: 'empty', errors: [], productOk: true, qtyOk: true, qty: 0 };
+  }
+  const qtyNum    = Number(qtyStr);
+  const productOk = !!r.product_id;
+  const qtyOk     = qtyStr !== '' && Number.isInteger(qtyNum) && qtyNum > 0;
+  const errors = [];
+  if (!productOk) errors.push('produk belum dipilih');
+  if (!qtyOk)     errors.push('qty harus bilangan bulat lebih dari 0');
+  return {
+    status: errors.length ? 'partial' : 'complete',
+    errors, productOk, qtyOk,
+    qty: qtyOk ? qtyNum : 0,
+  };
+}
 
 /* ── style tokens ──────────────────────────────────────────────────────────── */
 const PB = {
@@ -102,6 +149,7 @@ const PB = {
   trashBtn:  { width: 34, height: 34, borderRadius: 9, border: '1px solid #F1D6CF', background: '#fff', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .14s ease' },
   trashBtnDisabled: { opacity: .4, cursor: 'not-allowed', borderColor: '#EEF0F3', color: '#C2C7D0' },
   addBtn:    { display: 'inline-flex', alignItems: 'center', gap: 8, height: 42, padding: '0 18px', borderRadius: 10, border: '1.5px dashed ' + NAVY, background: '#F7FAFD', color: NAVY, fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginTop: 16, transition: 'all .14s ease' },
+  rowErrors: { margin: '12px 0 0', padding: '10px 14px 10px 30px', borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', fontSize: 12.5, lineHeight: 1.6 },
 
   /* combobox */
   cbWrap:    { position: 'relative', minWidth: 240 },
@@ -277,7 +325,8 @@ function Select({ value, onChange, options, placeholder, invalid, disabled }) {
    ════════════════════════════════════════════════════════════════════════════ */
 export default function PenerimaanBarangPage({ setActiveMenu }) {
   /* ── master data from Supabase ── */
-  const [soaId,      setSoaId]      = useState(null);
+  // company_id tidak lagi dikirim dari FE — RPC create_goods_receipt menurunkannya
+  // sendiri; SOA di sini hanya untuk memuat master data (products/warehouses/vendors).
   const [products,   setProducts]   = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [vendors,    setVendors]    = useState([]);
@@ -311,7 +360,6 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
       if (coErr) throw coErr;
       const soa = (cos || []).find(c => c.code === 'SOA');
       if (!soa) throw new Error('Company SOA tidak ditemukan.');
-      setSoaId(soa.id);
 
       // Parallel fetch: products, warehouses, vendors
       const [pRes, wRes, vRes] = await Promise.all([
@@ -367,50 +415,67 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
   const warehouseById = (id) => warehouses.find(w => w.id === id) || null;
   const vendorById = (id) => vendors.find(v => v.id === id) || null;
 
-  const filledRows  = rows.filter(r => r.product_id && Number(r.qty) > 0);
-  const totalItems  = filledRows.length;
-  const totalQty    = filledRows.reduce((s, r) => s + Number(r.qty || 0), 0);
+  // Satu hasil validasi per baris, urutannya = urutan tabel (untuk pesan "Baris N").
+  const rowChecks    = rows.map(r => ({ row: r, ...validateRow(r) }));
+  const completeRows = rowChecks.filter(c => c.status === 'complete');
+  const partialRows  = rowChecks.filter(c => c.status === 'partial');
+  const totalItems   = completeRows.length;
+  const totalQty     = completeRows.reduce((s, c) => s + c.qty, 0);
 
   /* ── validation ── */
-  const reqMissing  = !form.ref || !form.date || !form.warehouse_id || !form.tipe || !form.vendor_id;
-  const rowsMissing = filledRows.length === 0;
-  const isValid     = !reqMissing && !rowsMissing;
-  const invalidFld  = v => showErrors && !v;
+  const vendorRequired = VENDOR_REQUIRED_TYPES.includes(form.tipe);
+  const headerMissing  = !form.ref.trim() || !form.date || !form.warehouse_id || !form.tipe;
+  const vendorMissing  = vendorRequired && !form.vendor_id;
+  const reqMissing     = headerMissing || vendorMissing;
+  const rowsMissing    = completeRows.length === 0;
+  // Baris "sebagian" memblokir submit — bukan dibuang diam-diam seperti dulu.
+  const isValid        = !reqMissing && !rowsMissing && partialRows.length === 0;
+  const invalidFld     = v => showErrors && !v;
+  const rowErrorMsgs   = rowChecks.flatMap((c, i) =>
+    c.status === 'partial' ? c.errors.map(e => `Baris ${i + 1}: ${e}`) : []);
 
   /* warehouse & vendor options */
   const warehouseOpts = warehouses.map(w => ({ value: w.id, label: w.name || w.code }));
   const vendorOpts    = vendors.map(v => ({ value: v.id, label: v.name }));
 
-  /* ── save: insert to stock_ledger ── */
+  /* ── save: RPC create_goods_receipt (header + item + stock_ledger, satu transaksi) ── */
   async function handleKonfirmasi() {
     if (!isValid) {
       setShowErrors(true);
-      fireToast('Lengkapi field wajib & minimal 1 produk', false);
+      const problems = [];
+      if (headerMissing) problems.push('Lengkapi field wajib di Informasi Penerimaan');
+      if (vendorMissing) problems.push(`Supplier / Vendor wajib untuk tipe ${RECEIPT_TYPE_LABEL[form.tipe]}`);
+      problems.push(...rowErrorMsgs);
+      if (rowsMissing && partialRows.length === 0) problems.push('Minimal 1 baris produk terisi lengkap');
+      fireToast(problems.length > 1 ? `${problems[0]} (+${problems.length - 1} masalah lain)` : problems[0], false);
       return;
     }
     if (saving) return;
     setSaving(true);
     try {
-      const vendorObj    = vendorById(form.vendor_id);
-      const refType      = form.tipe === 'Purchase Order' ? 'PO' : 'ADJ';
-      const ledgerRows   = filledRows.map(item => ({
-        company_id:     soaId,
-        warehouse_id:   form.warehouse_id,
-        product_id:     item.product_id,
-        movement_type:  'inbound',
-        qty:            Number(item.qty),
-        reference_type: refType,
-        reference_no:   form.ref || null,
-        notes:          item.catatan || form.notes || null,
-      }));
+      // RPC mengembalikan uuid header goods_receipts (skalar). Tidak ditampilkan:
+      // yang dikenal user adalah nomor referensi yang ia ketik sendiri.
+      // Penolakan role/entitas datang dari RPC sebagai error → err.message ke toast.
+      const { error: rpcErr } = await supabase.rpc('create_goods_receipt', {
+        p_reference_no: form.ref.trim(),
+        p_receipt_date: form.date,                 // 'YYYY-MM-DD' → date
+        p_warehouse_id: form.warehouse_id,
+        p_receipt_type: form.tipe,                 // enum snake_case (RECEIPT_TYPES.value)
+        p_vendor_id:    form.vendor_id || null,    // null hanya mungkin utk tipe non-wajib
+        p_po_number:    form.po.trim() || null,
+        p_notes:        form.notes.trim() || null, // catatan umum = header, bukan fallback per baris
+        // unit_cost SENGAJA tidak dikirim (RPC menerima kosong/NULL) — harga beli
+        // diisi Accounting lewat Master Product, bukan di form penerimaan.
+        p_items:        completeRows.map(c => ({
+          product_id: c.row.product_id,
+          qty:        c.qty,
+          notes:      String(c.row.catatan ?? '').trim() || null,
+        })),
+      });
 
-      const { error: insErr } = await supabase
-        .from('stock_ledger')
-        .insert(ledgerRows);
+      if (rpcErr) throw rpcErr;
 
-      if (insErr) throw insErr;
-
-      fireToast('Penerimaan berhasil disimpan', true);
+      fireToast(`Penerimaan ${form.ref.trim()} berhasil disimpan`, true);
       setTimeout(() => { setActiveMenu?.('inventory-stok'); }, 1400);
     } catch (err) {
       console.error('[PenerimaanBarangPage] save error:', err);
@@ -485,8 +550,9 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
                 <div style={PB.fieldGrid} className="pb-fieldgrid">
                   <Field label="Nomor Referensi" required>
                     <input
-                      style={{ ...PB.input, ...PB.inputMono, borderColor: invalidFld(form.ref) ? '#E5A48F' : '#E3E5EA' }}
+                      style={{ ...PB.input, ...PB.inputMono, borderColor: invalidFld(form.ref.trim()) ? '#E5A48F' : '#E3E5EA' }}
                       placeholder="PO-2026-XXXX"
+                      maxLength={50}
                       value={form.ref}
                       onChange={e => setF('ref', e.target.value)}
                     />
@@ -516,13 +582,15 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
                       invalid={invalidFld(form.tipe)}
                     />
                   </Field>
-                  <Field label="Supplier / Vendor" required>
+                  {/* Wajib hanya untuk tipe di VENDOR_REQUIRED_TYPES; untuk Transfer Masuk /
+                      Adjustment boleh kosong (dikirim null) tapi tetap bisa dipilih. */}
+                  <Field label="Supplier / Vendor" required={vendorRequired}>
                     <Select
                       value={form.vendor_id}
                       onChange={v => setF('vendor_id', v)}
                       options={vendorOpts}
-                      placeholder="Pilih supplier…"
-                      invalid={invalidFld(form.vendor_id)}
+                      placeholder={vendorRequired || !form.tipe ? 'Pilih supplier…' : 'Pilih supplier (opsional)…'}
+                      invalid={vendorRequired && invalidFld(form.vendor_id)}
                     />
                   </Field>
                   <Field label="PO Number">
@@ -554,6 +622,10 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
                   {rows.map((r, i) => {
                     const p = productById(r.product_id);
                     const uomLabel = p ? (p.uom || p.unit || '–') : null;
+                    // Border merah hanya untuk baris 'partial' (baris kosong dibiarkan,
+                    // ia memang diabaikan) dan hanya sesudah user mencoba submit.
+                    const chk = rowChecks[i];
+                    const bad = showErrors && chk.status === 'partial';
                     return (
                       <tr key={r.key}>
                         <td style={{ ...PB.dtTd, ...PB.idxCell }}>{i + 1}</td>
@@ -562,12 +634,12 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
                             value={r.product_id}
                             onChange={id => setRow(r.key, { product_id: id })}
                             products={products}
-                            invalid={showErrors && !r.product_id}
+                            invalid={bad && !chk.productOk}
                           />
                         </td>
                         <td style={{ ...PB.dtTd, textAlign: 'right' }}>
-                          <input type="number" min="1"
-                            style={{ ...PB.qtyInput, borderColor: showErrors && r.product_id && !(Number(r.qty) > 0) ? '#E5A48F' : '#E3E5EA' }}
+                          <input type="number" min="1" step="1"
+                            style={{ ...PB.qtyInput, borderColor: bad && !chk.qtyOk ? '#E5A48F' : '#E3E5EA' }}
                             placeholder="0"
                             value={r.qty}
                             onChange={e => setRow(r.key, { qty: e.target.value })}
@@ -598,6 +670,11 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
                   })}
                 </tbody>
               </table>
+              {showErrors && rowErrorMsgs.length > 0 && (
+                <ul style={PB.rowErrors}>
+                  {rowErrorMsgs.map(m => <li key={m}>{m}</li>)}
+                </ul>
+              )}
               <button type="button" className="pb-add" style={PB.addBtn} onClick={addRow}>
                 <Icon name="plus" size={16}/>Tambah Produk
               </button>
@@ -630,13 +707,13 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
                 <div style={PB.metaRow}>
                   <span style={PB.metaLbl}>Tipe penerimaan</span>
                   <span style={{ ...PB.metaVal, ...(form.tipe ? null : PB.metaValMuted) }}>
-                    {form.tipe || 'Belum dipilih'}
+                    {RECEIPT_TYPE_LABEL[form.tipe] || 'Belum dipilih'}
                   </span>
                 </div>
                 <div style={PB.metaRow}>
                   <span style={PB.metaLbl}>Supplier</span>
                   <span style={{ ...PB.metaVal, ...(selVendor ? null : PB.metaValMuted) }}>
-                    {selVendor ? selVendor.name : 'Belum dipilih'}
+                    {selVendor ? selVendor.name : (form.tipe && !vendorRequired ? 'Tidak wajib' : 'Belum dipilih')}
                   </span>
                 </div>
 
@@ -645,19 +722,19 @@ export default function PenerimaanBarangPage({ setActiveMenu }) {
                 <div style={PB.sumTblHead}>
                   <span>Produk</span><span>Qty</span>
                 </div>
-                {filledRows.length === 0 ? (
-                  <div style={PB.sumEmpty}>Belum ada produk terisi</div>
-                ) : filledRows.map(r => {
-                  const p = productById(r.product_id);
+                {completeRows.length === 0 ? (
+                  <div style={PB.sumEmpty}>Belum ada produk terisi lengkap</div>
+                ) : completeRows.map(c => {
+                  const p = productById(c.row.product_id);
                   if (!p) return null;
                   const uomLabel = p.uom || p.unit || '';
                   return (
-                    <div key={r.key} style={PB.sumItem}>
+                    <div key={c.row.key} style={PB.sumItem}>
                       <span style={{ minWidth: 0 }}>
                         <span style={PB.sumItemCode}>{p.code}</span>
                         <span style={{ ...PB.sumItemName, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                       </span>
-                      <span style={PB.sumItemQty}>{nf(r.qty)} {uomLabel}</span>
+                      <span style={PB.sumItemQty}>{nf(c.qty)} {uomLabel}</span>
                     </div>
                   );
                 })}
