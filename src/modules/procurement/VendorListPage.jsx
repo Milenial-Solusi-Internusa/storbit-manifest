@@ -1,7 +1,13 @@
 // src/modules/procurement/VendorListPage.jsx
 // Master Vendor (Procurement): list + form tambah/edit + nonaktifkan (soft delete).
-// Scope: company-scoped EKSPLISIT (.eq('company_id', profile.company_id)) di samping
-// RLS `vendors_*` (rombakan 21 Jul) yang tetap jadi penegak sebenarnya.
+// Scope daftar (pola isAllEntities, sama dengan 14 halaman lain — 15 Sep 2026):
+//   super_admin → TANPA filter entitas (RLS bypass is_super_admin() memberi semua
+//   entitas; kolom "Entitas" ditampilkan); selain itu company-scoped EKSPLISIT
+//   .eq('company_id', profile.company_id) di samping RLS `vendors_*` (rombakan
+//   21 Jul) yang tetap jadi penegak sebenarnya.
+// ⚠️ Keterbatasan yang DITERIMA (15 Sep 2026): tambah vendor baru tetap distempel
+//   company_id HOME user — super_admin belum bisa membuat vendor untuk entitas lain
+//   dari halaman ini.
 // Penghapusan = UPDATE deleted_at (arsip). TIDAK PERNAH memanggil .delete().
 // created_by/updated_by = profile.id — sah karena profiles.id ADALAH auth.users.id
 // (profiles_id_fkey → auth.users(id)); FK vendors_created_by_fkey menunjuk auth.users.
@@ -9,6 +15,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, Plus, Pencil, Ban, Search, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 import ConfirmModal from '../../components/ConfirmModal';
 
 const NAVY = '#144682';
@@ -32,7 +39,9 @@ const VENDOR_TYPES = [
 const TYPE_LABEL = VENDOR_TYPES.reduce((m, t) => { m[t.v] = t.l; return m; }, {});
 
 // List sengaja TIDAK menarik kolom sensitif (bank_account dkk) — hanya kolom tampil.
-const LIST_SELECT = 'id, code, name, vendor_type, city, currency_code, is_active';
+// Embed `company` (hint konstrain vendors_company_id_fkey, pola CustomerListPage)
+// untuk kolom "Entitas" saat daftar lintas entitas (super_admin).
+const LIST_SELECT = 'id, code, name, vendor_type, city, currency_code, is_active, company:companies!vendors_company_id_fkey(code, name)';
 // Field lengkap ditarik on-demand saat Edit saja.
 const FORM_SELECT = 'id, code, name, legal_name, vendor_type, tax_id, address, city, country, phone, email, pic_name, pic_phone, bank_name, bank_account, bank_account_name, currency_code, notes, is_active';
 
@@ -73,8 +82,12 @@ function TextField({ lbl, req, error, value, onChange, type = 'text', area }) {
 }
 
 export default function VendorListPage({ onBack, showToast }) {
-  const { profile } = useAuth();
+  const { profile, erpRoles } = useAuth();
   const companyId = profile?.company_id || null;
+  // super_admin → semua entitas (cermin bypass is_super_admin() di RLS), pola
+  // yang sama dengan InquiryListPage dkk. Hanya memengaruhi DAFTAR; jalur
+  // tambah vendor tetap memakai companyId home (lihat catatan header).
+  const isAllEntities = isAllEntitiesRole(erpRoles);
 
   const [rows, setRows]         = useState([]);
   const [currencies, setCurrencies] = useState([]);
@@ -95,19 +108,23 @@ export default function VendorListPage({ onBack, showToast }) {
   const [deleting, setDeleting]   = useState(false);
 
   const load = useCallback(async () => {
-    if (!companyId) { setError('Company tidak ditemukan untuk user ini.'); setLoading(false); return; }
+    // Guard company hanya untuk scope satu entitas — super_admin tanpa
+    // company_id tetap boleh memuat semua entitas.
+    if (!isAllEntities && !companyId) { setError('Company tidak ditemukan untuk user ini.'); setLoading(false); return; }
     setLoading(true); setError(null);
-    const { data, error: e } = await supabase
+    let query = supabase
       .from('vendors')
       .select(LIST_SELECT)
-      .eq('company_id', companyId)
-      .is('deleted_at', null)
+      .is('deleted_at', null);
+    // Role-aware scope (pola InquiryListPage): super_admin tanpa filter entitas.
+    if (!isAllEntities) query = query.eq('company_id', companyId);
+    const { data, error: e } = await query
       .order('code', { ascending: true })
       .limit(1000);
     if (e) { setError(e.message); setRows([]); }
     else setRows(data || []);
     setLoading(false);
-  }, [companyId]);
+  }, [companyId, isAllEntities]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
@@ -238,6 +255,8 @@ export default function VendorListPage({ onBack, showToast }) {
   const th = { textAlign: 'left', padding: '10px 12px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: MUTE, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' };
   const td = { padding: '10px 12px', fontSize: 13, color: INK, borderBottom: `1px solid ${BORDER}`, verticalAlign: 'middle' };
   const iconBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: NAVY, cursor: 'pointer' };
+  // Jumlah kolom tabel (untuk colSpan baris status): 7 tetap + kolom Entitas.
+  const colCount = 7 + (isAllEntities ? 1 : 0);
 
   return (
     <div style={page}>
@@ -249,7 +268,9 @@ export default function VendorListPage({ onBack, showToast }) {
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: ORANGE, marginBottom: 6 }}>Procurement · Vendor</div>
         <h1 style={{ fontFamily: HEAD, fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: NAVY, margin: 0 }}>Master Vendor</h1>
-        <div style={{ fontSize: 13, color: MUTE, marginTop: 5 }}>Daftar vendor entitas Anda. Vendor yang dinonaktifkan diarsipkan dan tidak ditampilkan.</div>
+        <div style={{ fontSize: 13, color: MUTE, marginTop: 5 }}>
+          {isAllEntities ? 'Daftar vendor semua entitas.' : 'Daftar vendor entitas Anda.'} Vendor yang dinonaktifkan diarsipkan dan tidak ditampilkan.
+        </div>
       </div>
 
       {/* Filter bar */}
@@ -275,6 +296,8 @@ export default function VendorListPage({ onBack, showToast }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
+                {/* Kolom Entitas hanya saat daftar lintas entitas (super_admin) */}
+                {isAllEntities && <th style={th}>Entitas</th>}
                 <th style={th}>Code</th>
                 <th style={th}>Name</th>
                 <th style={th}>Vendor Type</th>
@@ -286,18 +309,25 @@ export default function VendorListPage({ onBack, showToast }) {
             </thead>
             <tbody>
               {loading && (
-                <tr><td style={{ ...td, textAlign: 'center', color: MUTE }} colSpan={7}>Memuat…</td></tr>
+                <tr><td style={{ ...td, textAlign: 'center', color: MUTE }} colSpan={colCount}>Memuat…</td></tr>
               )}
               {!loading && error && (
-                <tr><td style={{ ...td, textAlign: 'center', color: DANGER }} colSpan={7}>{error}</td></tr>
+                <tr><td style={{ ...td, textAlign: 'center', color: DANGER }} colSpan={colCount}>{error}</td></tr>
               )}
               {!loading && !error && filtered.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: MUTE }} colSpan={7}>
-                  {rows.length === 0 ? 'Belum ada vendor untuk entitas ini. Klik "Tambah Vendor" untuk mulai.' : 'Tidak ada vendor yang cocok dengan filter.'}
+                <tr><td style={{ ...td, textAlign: 'center', color: MUTE }} colSpan={colCount}>
+                  {rows.length === 0
+                    ? (isAllEntities ? 'Belum ada vendor. Klik "Tambah Vendor" untuk mulai.' : 'Belum ada vendor untuk entitas ini. Klik "Tambah Vendor" untuk mulai.')
+                    : 'Tidak ada vendor yang cocok dengan filter.'}
                 </td></tr>
               )}
               {!loading && !error && filtered.map(r => (
                 <tr key={r.id}>
+                  {isAllEntities && (
+                    <td style={{ ...td, fontWeight: 600, color: MUTE, whiteSpace: 'nowrap' }} title={r.company?.name || ''}>
+                      {r.company?.code || r.company?.name || '—'}
+                    </td>
+                  )}
                   <td style={{ ...td, fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, color: NAVY }}>{r.code}</td>
                   <td style={td}>{r.name}</td>
                   <td style={td}>{TYPE_LABEL[r.vendor_type] || r.vendor_type || '—'}</td>
