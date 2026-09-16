@@ -11,6 +11,18 @@ const AGING_RULES: Record<string, number> = {
   QUALIFIED: 5,
 }
 
+// Lifecycle yang BOLEH diproses aging = fase PRA-customer saja. Cermin
+// PRA_CUSTOMER_STATUS di src/modules/crm/InquiryFormPage.jsx, minus 'lead_pool'
+// (nilai itu tak lolos CHECK accounts_lifecycle_stage_check, di FE tinggal TODO).
+// customer / free_agent / lost sudah melewati fase pra-customer dan tidak boleh
+// diparkir ke Lead Pool APA PUN nilai pipeline_stage-nya.
+// Sampai sekarang pengecualian itu terjadi KEBETULAN, bukan by design: akun yang
+// menang ditulis pipeline_stage='WON' oleh RPC mark_inquiry_won, dan 'WON' tak ada
+// di AGING_RULES. Begitu RPC itu berhenti menulis 'WON' (prasyarat batch B3),
+// customer yang baru menang tetap NEW/CONTACTED/QUALIFIED — filter inilah yang
+// menahannya. Filter pipeline_stage di bawah TETAP dipakai (tambahan, bukan ganti).
+const PRA_CUSTOMER_LIFECYCLE = ['lead', 'mql', 'sql', 'prospect']
+
 Deno.serve(async (req) => {
   const url = new URL(req.url)
   const dryRun = url.searchParams.get('dry_run') === 'true'
@@ -49,6 +61,7 @@ Deno.serve(async (req) => {
     .eq('is_active', true)
     .is('deleted_at', null)
     .in('pipeline_stage', stages)
+    .in('lifecycle_stage', PRA_CUSTOMER_LIFECYCLE)
     .in('company_id', companyIds)
     .limit(1000)
 
