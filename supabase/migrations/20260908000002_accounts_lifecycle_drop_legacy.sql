@@ -48,7 +48,7 @@ DROP FUNCTION IF EXISTS public.sync_lifecycle_columns();
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
--- 2. Sederhanakan keempat fungsi: satu kolom saja
+-- 2. Sederhanakan tiga fungsi: satu kolom saja (2b = pencabutan, bukan tulis ulang)
 -- ═════════════════════════════════════════════════════════════════════════════
 -- ── 2a. set_customer_on_inquiry_won ──────────────────────────────────────────
 -- Guard kembali ke SATU kolom. Kondisi ganda di 20260908000001 ada khusus untuk
@@ -80,19 +80,13 @@ BEGIN
 END;
 $$;
 
--- ── 2b. set_customer_on_won ──────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.set_customer_on_won() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  IF NEW.pipeline_stage = 'WON' AND COALESCE(NEW.lifecycle_stage,'') <> 'customer' THEN
-    NEW.lifecycle_stage    := 'customer';
-    NEW.became_customer_at := COALESCE(NEW.became_customer_at, now());
-    NEW.converted_at       := COALESCE(NEW.converted_at, now());
-  END IF;
-  RETURN NEW;
-END;
-$$;
+-- ── 2b. set_customer_on_won — DICABUT, bukan ditulis ulang ───────────────────
+-- Trigger + fungsinya dicabut 20260916000001 (mark_inquiry_won berhenti menulis
+-- pipeline_stage='WON'; nol pemicu tersisa). Baris di bawah idempoten: no-op bila
+-- migrasi itu sudah jalan; bila urutannya terbalik, di sinilah ia dicabut —
+-- versi lamanya merujuk NEW.account_status dan akan meledak sesudah langkah 3.
+DROP TRIGGER IF EXISTS trg_set_customer_on_won ON public.accounts;
+DROP FUNCTION IF EXISTS public.set_customer_on_won();
 
 -- ── 2c. set_prospect_on_inquiry ──────────────────────────────────────────────
 -- ⛔ DAFTAR TAHAP TETAP ('lead','mql','sql'). Penyempitan ke ('lead','mql')
@@ -206,6 +200,7 @@ COMMIT;
 --   SELECT tgname FROM pg_trigger
 --    WHERE tgrelid='public.accounts'::regclass AND NOT tgisinternal ORDER BY tgname;
 --   -- HARAPAN: trg_a_sync_lifecycle_columns TIDAK ADA lagi;
+--   --          trg_set_customer_on_won TIDAK ADA lagi (dicabut 20260916000001 / §2b);
 --   --          trg_z_log_lifecycle_change TETAP ADA
 --
 --   -- e. set_prospect_on_inquiry masih bertiga tahap
@@ -241,5 +236,7 @@ COMMIT;
 --      ALTER TABLE public.accounts ADD CONSTRAINT accounts_account_status_check
 --        CHECK (((account_status)::text = ANY ((ARRAY['lead','mql','sql','prospect',
 --          'customer','free_agent','lost']::character varying[])::text[])));
---   2. Pasang ulang seluruh isi 20260908000001 STEP 2, 3, 4.
+--   2. Pasang ulang seluruh isi 20260908000001 STEP 2, 3, 4 — KECUALI
+--      set_customer_on_won + trg_set_customer_on_won: keduanya sudah dicabut
+--      permanen oleh 20260916000001 dan TIDAK dipasang ulang di sini.
 --   3. ALTER TABLE public.accounts ALTER COLUMN lifecycle_stage DROP DEFAULT;
