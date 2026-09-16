@@ -590,8 +590,16 @@ function computeHealth(customer, prospect, visits, primaryContact) {
   const bantPct = prospect
     ? Math.round(((prospect.bant_score != null ? prospect.bant_score : calcBantScore(prospect)) / 12) * 100)
     : 0;
+  // "Menang" dibaca dari sumbu LIFECYCLE akun (lifecycle_stage='customer'), bukan
+  // pipeline_stage==='WON': sumbu deal sudah pindah ke inquiries.status, dan
+  // pipeline_stage akan berhenti ditulis 'WON' (prasyarat B3) — customer yang
+  // dibuat langsung pun lahir ber-pipeline_stage 'NEW'. lifecycle_stage ikut
+  // terbawa select('*') fetchCustomer; histInquiries SENGAJA tak dipakai karena
+  // hanya dimuat lazy saat tab Riwayat dibuka. Nilai warisan PROPOSAL/NEGOTIATION/
+  // QUALIFIED tetap dihormati untuk akun pra-customer.
+  const isCustomer = customer.lifecycle_stage === 'customer';
   const stage = (prospect?.pipeline_stage || '').toUpperCase();
-  const pipeline = stage === 'WON' ? 100
+  const pipeline = isCustomer ? 100
     : (stage === 'NEGOTIATION' || stage === 'PROPOSAL') ? 70
     : stage === 'QUALIFIED' ? 50
     : stage ? 30 : 0;
@@ -1275,6 +1283,11 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   }
 
   const statusKey = statusOf(customer);
+  // Penanda "sudah customer" dari sumbu lifecycle — dipakai chevron deal & badge
+  // kartu Pipeline Stage (basis sama dengan computeHealth). Dibaca langsung dari
+  // kolom, BUKAN lewat statusOf(): fallback '|| customer' di sana membuat baris
+  // ber-status kosong ikut terhitung customer.
+  const isCustomer = customer.lifecycle_stage === 'customer';
   // Nilai tak dikenal JANGAN dibuat blank — tampilkan mentahnya (pelajaran NURTURE / TD-61).
   const statusCfg = STATUS_CFG[statusKey] || { bg: '#EEF0F3', fg: '#5E6553', dot: '#B6BCC6', label: String(statusKey || '—') };
   // Penanda parkir Lead Pool = badge TERPISAH dari lifecycle, dari is_in_lead_pool.
@@ -1290,7 +1303,10 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
     : (customer.customer_type || '');
 
   // Deal (stepper + Nilai Deal) — dari baris accounts yang SUDAH di-fetch (0 query tambahan).
-  const dealStageIdx = stageIndex(customer.pipeline_stage);
+  // Customer selalu di posisi WON — pipeline_stage tak lagi bisa diandalkan sebagai
+  // penanda menang (lihat computeHealth). Konsekuensi disengaja: Move Stage pada
+  // customer tersimpan tapi chevron tidak bergerak (pola sama Batch A Detail Deal).
+  const dealStageIdx = isCustomer ? stageIndex('WON') : stageIndex(customer.pipeline_stage);
   const dealValue = Number(customer.estimated_value || 0);
   // Riwayat: group quotations per inquiry (nested); orphan = tanpa inquiry / inquiry di luar akun.
   const quotesByInquiry = {};
@@ -1742,9 +1758,10 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
                     <div style={{ fontSize: 12.5, color: INK_FAINT, marginTop: 2 }}>Account: {txt(prospect.name)}</div>
                   </div>
                 </div>
-                {(prospect.pipeline_stage || '').toUpperCase() === 'WON' && (
+                {/* Basis: lifecycle akun, bukan pipeline_stage==='WON' — lihat computeHealth. */}
+                {isCustomer && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 800, fontFamily: "'Montserrat', system-ui, sans-serif", letterSpacing: 0.5, padding: '8px 16px', borderRadius: 22, background: '#DEF0E4', color: '#1F8B4D' }}>
-                    <Icon name="check" size={15} strokeWidth={2.6} />WON
+                    <Icon name="check" size={15} strokeWidth={2.6} />CUSTOMER
                   </span>
                 )}
               </div>
