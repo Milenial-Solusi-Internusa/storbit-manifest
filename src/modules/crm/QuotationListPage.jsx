@@ -4,6 +4,7 @@ import { Search, Plus, ChevronRight, Receipt } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
 import { isAllEntities as isAllEntitiesRole, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
+import { formatQuotationNo } from './quotationVersion';
 
 const C = {
   bg:        '#F6EFE3',
@@ -22,12 +23,20 @@ const C = {
   neutral:   '#6B6F5E', neutralBg: '#EEE9DC', neutralBd: '#DDD3BE',
 };
 
+/* Label SENT = "Awaiting Customer Approval": nilai DB-nya TETAP 'SENT'
+   (satu-satunya nilai baru dari batch versioning adalah SUPERSEDED). Yang
+   diganti hanya teks tampilannya, karena "Sent" cuma bercerita soal aksi kita
+   sendiri sementara yang ingin diketahui pembaca adalah bola ada di siapa.
+
+   SUPERSEDED memakai tone NETRAL, bukan danger — versi yang digantikan itu
+   fakta administratif biasa, bukan kegagalan. */
 const STATUS_META = {
-  DRAFT:     { label: 'Draft',    bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
-  SENT:      { label: 'Sent',     bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
-  ACCEPTED:  { label: 'Accepted', bg: C.okBg,      color: C.ok,      bd: C.okBd      },
-  REJECTED:  { label: 'Rejected', bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
-  SUBMITTED: { label: 'Submitted',bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  DRAFT:      { label: 'Draft',                      bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
+  SENT:       { label: 'Awaiting Customer Approval', bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  ACCEPTED:   { label: 'Accepted',                   bg: C.okBg,      color: C.ok,      bd: C.okBd      },
+  REJECTED:   { label: 'Rejected',                   bg: C.dangerBg,  color: C.danger,  bd: C.dangerBd  },
+  SUBMITTED:  { label: 'Submitted',                  bg: C.infoBg,    color: C.info,    bd: C.infoBd    },
+  SUPERSEDED: { label: 'Superseded',                 bg: C.neutralBg, color: C.neutral, bd: C.neutralBd },
 };
 
 const SERVICE_TYPE_LABELS = {
@@ -46,7 +55,12 @@ const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 // SLA badge for the list row — On Time / Late / Pending / —
 function SlaBadge({ q }) {
   const targetMs = (SLA_HOURS[q.service_type] || 6) * 3600000;
-  const sentStatus = q.status === 'SENT' || q.status === 'ACCEPTED' || q.status === 'REJECTED';
+  /* SUPERSEDED ikut dihitung "pernah terkirim". Quotation yang sudah sampai ke
+     customer lalu digantikan revisi TETAP punya angka SLA yang sah — tanpa ini
+     badge-nya berubah jadi '—' begitu revisi lahir, seolah pengirimannya tak
+     pernah terjadi. */
+  const sentStatus = q.status === 'SENT' || q.status === 'ACCEPTED'
+    || q.status === 'REJECTED' || q.status === 'SUPERSEDED';
   if (sentStatus && q.pricing_done_at && q.quote_sent_at) {
     const dur = new Date(q.quote_sent_at).getTime() - new Date(q.pricing_done_at).getTime();
     const onTime = dur <= targetMs;
@@ -105,7 +119,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
       let query = supabase
         .from('quotations')
         .select(`
-          id, quotation_no, service_type, route, status,
+          id, quotation_no, revision, service_type, route, status,
           valid_until, total_amount, created_at, pricing_done_at, quote_sent_at,
           prospect:accounts!quotations_prospect_id_fkey(name),
           customer:accounts!quotations_customer_id_fkey(name)
@@ -132,7 +146,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
       setQuotations(data || []);
       setTotal(count || 0);
     } catch (err) {
-      showToast?.('Gagal memuat quotation: ' + err.message, 'error');
+      showToast?.('Failed to load quotation: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -183,7 +197,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Cari nomor quotation…"
+            placeholder="Search quotation number…"
             style={{
               width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`,
               background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13,
@@ -192,7 +206,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
           />
         </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
-          <option value="all">Semua Status</option>
+          <option value="all">All Statuses</option>
           {Object.entries(STATUS_META).map(([k, v]) => (
             <option key={k} value={k}>{v.label}</option>
           ))}
@@ -212,9 +226,9 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
             ) : quotations.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada quotation</td></tr>
+              <tr><td colSpan={10} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>No quotations yet</td></tr>
             ) : quotations.map((q, i) => (
               <tr
                 key={q.id}
@@ -226,7 +240,7 @@ export default function QuotationListPage({ onAddQuotation, onSelectQuotation, s
                 onMouseEnter={e => e.currentTarget.style.background = C.surface2}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
-                <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>{q.quotation_no || '—'}</td>
+                <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12.5, color: C.accent }}>{formatQuotationNo(q.quotation_no, q.revision)}</td>
                 <td style={{ padding: '12px 14px', fontWeight: 600, color: C.ink }}>
                   {q.prospect?.name || q.customer?.name || '—'}
                 </td>

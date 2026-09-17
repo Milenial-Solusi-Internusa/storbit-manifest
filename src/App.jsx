@@ -497,7 +497,7 @@ const CRM_MENU_ITEMS = [
       { id: 'crm-lead-pool',          label: 'Lead Pool',          icon: Archive },
     ],
   },
-  { id: 'crm-inquiry',    label: 'Inquiry',           icon: FileText  },
+  { id: 'crm-inquiry',    label: 'Deal',              icon: FileText  },
   { id: 'quotation-draft', label: 'Quotation',      icon: Receipt   },
   { id: 'crm-sales-order', label: 'Sales Order',     icon: ClipboardList },
   // Rate List dipindah keluar dari grup CRM (batch restrukturisasi menu CRM #1) —
@@ -1678,7 +1678,7 @@ function NexusSidebar({
 
   return (
     <aside className={asideClass} style={asideStyle}>
-      {/* Brand */}
+      {/* Brand — hex literal DISENGAJA, bukan token --ink/--faint: keduanya mewarnai teks umum sidebar di 15 titik lain (termasuk `color` dasar <aside> di :1523), jadi mengubah definisinya di index.css akan ikut mengecat label nav, ikon, judul grup, dan nama user. */}
       {/* gap-2 (8 px), turun dari gap-3 (12 px): teks lebih rapat ke logo tapi
           tidak menempel (revisi Den 11 Sep 2026). */}
       <div className="flex items-center gap-2" style={{ padding: '18px 16px 16px' }}>
@@ -1689,8 +1689,8 @@ function NexusSidebar({
             = 4× slot supaya tetap tajam di layar HiDPI. */}
         <img src={nexusLogo} alt="Nexus" width={53} height={53} style={{ width: 53, height: 53, objectFit: 'contain', flexShrink: 0, display: 'block' }} />
         <div style={{ lineHeight: 1.1 }}>
-          <div style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 16, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Nexus</div>
-          <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--faint)', letterSpacing: '1.5px' }}>BY MSI</div>
+          <div style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 800, fontSize: 16, color: '#144682', letterSpacing: '-0.3px' }}>Nexus</div>
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: '#E85A1E', letterSpacing: '1.5px' }}>BY MSI</div>
         </div>
         {asDrawer && (
           <button type="button" onClick={onClose} aria-label="Tutup menu" className="ml-auto" style={{ background: 'transparent', border: 'none', color: 'var(--mute)', cursor: 'pointer' }}>
@@ -1858,6 +1858,11 @@ export default function StorbitManifest() {
   // crmDealInquiry (DealDetailPage) supaya jalur DDP tak berubah. Balik → clear → remount tab Riwayat.
   const [customerQuotationView, setCustomerQuotationView] = useState(null); // quotation id → QuotationDetail
   const [customerPrfInquiryId,  setCustomerPrfInquiryId]  = useState(null); // inquiry id → PRFFormPage prefill
+  // Prefill "+ New Inquiry" dari Detail Account → InquiryFormPage (mode create).
+  // Bentuk: { accountId, contactId } — contactId = kontak UTAMA akun itu bila ada,
+  // null bila belum punya (InquiryFormPage tetap bisa menentukan sendiri dari daftar
+  // kontak akun). null = form create dibuka TANPA konteks (jalur "+" Inquiry List).
+  const [inquiryPrefill,        setInquiryPrefill]        = useState(null);
   // Lihat PRF dari tab Dokumen Detail Account — jalur TERPISAH dari customerPrfInquiryId
   // (yang untuk BUAT PRF baru dari tab Riwayat). Balik → clear → CustomerDetailPage remount.
   const [customerPrfViewId,     setCustomerPrfViewId]     = useState(null); // prf id → PRFDetailPage (dari tab Dokumen)
@@ -1880,6 +1885,10 @@ export default function StorbitManifest() {
   const [procPrfDetailId, setProcPrfDetailId] = useState(null);  // prf id → PRFDetailPage (dari list Forwarding MSI)
   const [procPrfEditId, setProcPrfEditId] = useState(null);  // prf id → PRFFormPage mode edit (TD-76, hanya status DRAFT)
   const [quotationFromPrf, setQuotationFromPrf] = useState(null); // payload prefill PRF → QuotationFormPage ("Buat Quotation" di PRFDetailPage)
+  // Inquiry asal untuk "Buat Quotation" dari Detail Deal — TANPA PRF, jadi hanya
+  // identitas inquiry yang dibawa (item tetap kosong; sumber item cuma ada di PRF).
+  // Berbeda dari quotationFromPrf yang membawa payload penuh.
+  const [quotationFromInquiryId, setQuotationFromInquiryId] = useState(null);
   const [soDetailId, setSoDetailId] = useState(null);  // SO id → tampilkan SO detail (crm/proc)
   const [soFormOpen, setSoFormOpen] = useState(false); // buka SO create form (crm)
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
@@ -2029,12 +2038,14 @@ export default function StorbitManifest() {
     setEditingQuotation(null);
     setDuplicatingQuotation(null);
     setQuotationFromPrf(null);
+    setQuotationFromInquiryId(null);
     setCrmDealInquiry(null);
     setCustomerInquiryEdit(null);
     setCustomerQuotationView(null);
     setCustomerPrfInquiryId(null);
     setCustomerPrfViewId(null);
     setCustomerDetailTab('info');
+    setInquiryPrefill(null);
     setPrfPrefillInquiryId(null);
     setProcPrfDetailId(null);
     setProcPrfEditId(null);
@@ -2081,6 +2092,7 @@ export default function StorbitManifest() {
     setCustomerPrfInquiryId(null);
     setCustomerPrfViewId(null);
     setCustomerDetailTab('info');
+    setInquiryPrefill(null);
     setActiveMenu('customer-detail');
   }, [activeMenu]);
   const backFromCustomerDetail = useCallback(() => {
@@ -2868,7 +2880,7 @@ export default function StorbitManifest() {
                 <Package size={17} style={{ color: 'white' }} strokeWidth={2}/>
               </div>
               <div>
-                <h1 className="font-display text-lg font-semibold leading-tight">Nexus by MSI</h1>
+                <h1 className="font-display text-lg font-semibold leading-tight"><span style={{ color: '#144682' }}>Nexus</span><span style={{ color: '#E85A1E' }}> by MSI</span></h1>
                 <p className="text-[8px] uppercase tracking-[0.14em] font-semibold leading-tight" style={{ color: PASTEL.inkMute }}>Unified Business Core</p>
               </div>
             </div>
@@ -3552,8 +3564,10 @@ export default function StorbitManifest() {
           {activeMenu === 'crm-inquiry' && !showInquiryForm && !crmDealInquiry && (
             <ErrorBoundary title="CRM Inquiry temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                {/* Jalur "+" lama: SELALU tanpa konteks. Clear eksplisit supaya prefill
+                    sisa dari jalur Detail Account tak pernah bocor ke form kosong ini. */}
                 <InquiryListPage
-                  onAddInquiry={() => setShowInquiryForm(true)}
+                  onAddInquiry={() => { setInquiryPrefill(null); setShowInquiryForm(true); }}
                   onSelectInquiry={(inq) => setCrmDealInquiry(inq)}
                   showToast={showToast}
                 />
@@ -3564,7 +3578,9 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Inquiry Form temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <InquiryFormPage
-                  onBack={() => setShowInquiryForm(false)}
+                  prefillAccountId={inquiryPrefill?.accountId || null}
+                  prefillContactId={inquiryPrefill?.contactId || null}
+                  onBack={() => { setShowInquiryForm(false); setInquiryPrefill(null); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -3576,7 +3592,7 @@ export default function StorbitManifest() {
                 <DealDetailPage
                   inquiryId={crmDealInquiry.id}
                   onBack={() => setCrmDealInquiry(null)}
-                  onCreateQuotation={() => { setCrmDealInquiry(null); setEditingQuotation(null); setQuotationFromPrf(null); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onCreateQuotation={(inqId) => { setCrmDealInquiry(null); setEditingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(inqId || null); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
                   onViewQuotation={(q) => { setCrmDealInquiry(null); setCrmQuotationDetail(q); setActiveMenu('quotation-draft'); }}
                   onEditInquiry={() => setShowInquiryForm(true)}
                   onCreatePRF={() => { setPrfPrefillInquiryId(crmDealInquiry.id); setCrmDealInquiry(null); setActiveMenu('prf'); }}
@@ -3617,12 +3633,13 @@ export default function StorbitManifest() {
           {activeMenu === 'crm-pipeline' && (
             <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
+                {/* B3: papan kini per-INQUIRY dan read-only. Prop lama yang
+                    melayani papan berbasis akun (setShowProspectForm /
+                    setEditingProspect / onSelectAccount / setActiveMenu) sudah
+                    tak dipakai — kartu membuka Detail Deal, bukan Detail Akun. */}
                 <PipelineKanbanPage
                   showToast={showToast}
-                  setActiveMenu={setActiveMenu}
-                  setShowProspectForm={setShowProspectForm}
-                  setEditingProspect={setEditingProspect}
-                  onSelectAccount={navigateToCustomerDetail}
+                  onSelectInquiry={(inq) => { setCrmDealInquiry({ id: inq.id }); setActiveMenu('crm-inquiry'); }}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -3699,7 +3716,7 @@ export default function StorbitManifest() {
             <ErrorBoundary title="Quotation List temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <QuotationListPage
-                  onAddQuotation={() => { setEditingQuotation(null); setQuotationFromPrf(null); setShowQuotationForm(true); }}
+                  onAddQuotation={() => { setEditingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setShowQuotationForm(true); }}
                   onSelectQuotation={(q) => setCrmQuotationDetail(q)}
                   showToast={showToast}
                 />
@@ -3713,8 +3730,8 @@ export default function StorbitManifest() {
                 <QuotationDetailPage
                   quotationId={crmQuotationDetail.id}
                   onBack={() => setCrmQuotationDetail(null)}
-                  onEdit={(q) => { setDuplicatingQuotation(null); setQuotationFromPrf(null); setEditingQuotation(q); setShowQuotationForm(true); }}
-                  onDuplicate={(q) => { setEditingQuotation(null); setQuotationFromPrf(null); setDuplicatingQuotation(q); setShowQuotationForm(true); }}
+                  onEdit={(q) => { setDuplicatingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setEditingQuotation(q); setShowQuotationForm(true); }}
+                  onDuplicate={(q) => { setEditingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setDuplicatingQuotation(q); setShowQuotationForm(true); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -3739,6 +3756,10 @@ export default function StorbitManifest() {
                   onBack={backFromCustomerDetail}
                   showToast={showToast}
                   initialTab={customerDetailTab}
+                  // "+ New Inquiry" — bawa akun (+ kontak utamanya) ke form create di menu
+                  // Inquiry. Digerbangi izin yang SAMA dengan Edit Inquiry (crm_inquiry.view),
+                  // supaya tombolnya tak muncul untuk user yang tak boleh masuk modul itu.
+                  onCreateInquiry={hasMenuPermission('crm_inquiry', 'view') ? (accountId, contactId) => { setInquiryPrefill({ accountId, contactId }); setActiveMenu('crm-inquiry'); setShowInquiryForm(true); } : undefined}
                   onEditInquiry={hasMenuPermission('crm_inquiry', 'view') ? (inq) => { setCustomerDetailTab('riwayat'); setCustomerInquiryEdit(inq.id); } : undefined}
                   onViewQuotation={(q) => { setCustomerDetailTab('riwayat'); setCustomerQuotationView(q.id); }}
                   onCreatePRF={(inq) => { setCustomerDetailTab('riwayat'); setCustomerPrfInquiryId(inq.id); }}
@@ -3772,8 +3793,8 @@ export default function StorbitManifest() {
                 <QuotationDetailPage
                   quotationId={customerQuotationView}
                   onBack={() => setCustomerQuotationView(null)}
-                  onEdit={(q) => { setCustomerQuotationView(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); setEditingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
-                  onDuplicate={(q) => { setCustomerQuotationView(null); setEditingQuotation(null); setQuotationFromPrf(null); setDuplicatingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onEdit={(q) => { setCustomerQuotationView(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setEditingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onDuplicate={(q) => { setCustomerQuotationView(null); setEditingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setDuplicatingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
                   showToast={showToast}
                 />
               </Suspense>
@@ -3879,7 +3900,7 @@ export default function StorbitManifest() {
             <ErrorBoundary title="PRF Detail temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <PRFDetailPage prfId={procPrfDetailId} onBack={() => setProcPrfDetailId(null)} showToast={showToast}
-                  onCreateQuotation={(payload) => { setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(payload); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onCreateQuotation={(payload) => { setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromInquiryId(null); setQuotationFromPrf(payload); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
                   onEditDraft={(id) => setProcPrfEditId(id)} />
               </Suspense>
             </ErrorBoundary>
@@ -4068,7 +4089,8 @@ export default function StorbitManifest() {
                   quotation={editingQuotation}
                   duplicateFrom={duplicatingQuotation}
                   prefillFromPrf={quotationFromPrf}
-                  onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); }}
+                  prefillInquiryId={quotationFromInquiryId}
+                  onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); }}
                   showToast={showToast}
                 />
               </Suspense>

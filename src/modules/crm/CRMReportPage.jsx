@@ -3,7 +3,7 @@
 // Data layer rewritten from seeded dummy → live Supabase (activities / accounts /
 // quotations + sales roster). Tokens, layout, recharts config, and CSS are kept
 // EXACTLY as designed; only the data source changed.
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   ResponsiveContainer,
@@ -201,9 +201,9 @@ async function fetchWindow({ start, end }) {
       .gte("scheduled_for", ymd(start)).lte("scheduled_for", ymd(end))
       .limit(1000),
     supabase.from("accounts")
-      .select("id, assigned_to, account_status, created_at")
+      .select("id, assigned_to, lifecycle_stage, created_at")
       .is("deleted_at", null)
-      .in("account_status", PROSPECT_STATUS)
+      .in("lifecycle_stage", PROSPECT_STATUS)
       .gte("created_at", startISO).lte("created_at", endISO)
       .limit(1000),
     supabase.from("quotations")
@@ -214,11 +214,64 @@ async function fetchWindow({ start, end }) {
       .limit(1000),
   ]);
   if (actRes.error) throw actRes.error;
+
+  /* Agregat KPI + tabel per-sales datang dari RPC, BUKAN dihitung ulang dari
+     baris di atas. Baris itu masih berplafon 1000 (dipakai grafik tren &
+     daftar detail); angkanya tidak boleh ikut terpotong. */
+  const aggRes = await supabase.rpc('crm_report_window', {
+    p_start: ymd(start),
+    p_end:   ymd(end),
+  });
+
+  /* Guard truncation — pola yang SAMA dengan CRMDashboardPage: kalau baris yang
+     kembali persis menyentuh plafon 1000, anggap terpotong dan kabarkan.
+     Sebelum ini ketiga query di atas memotong data DIAM-DIAM: laporan tetap
+     tampil rapi dengan angka yang salah, nol tanda apa pun. Dashboard setidaknya
+     memasang banner; halaman ini bahkan tidak. */
+  const truncated = [];
+  if ((actRes.data   || []).length === 1000) truncated.push('activities');
+  if ((prospRes.data || []).length === 1000) truncated.push('new accounts');
+  if ((quoRes.data   || []).length === 1000) truncated.push('quotations');
+
   return {
     activities: actRes.data || [],
     prospects: prospRes.data || [],
     quotations: quoRes.data || [],
+    agg: aggRes.error ? null : (aggRes.data || []),
+    truncated,
   };
+}
+
+/* Ambil SELURUH aktivitas satu jendela lewat paginasi .range(), tanpa plafon.
+   Dipakai HANYA oleh ekspor PDF — sengaja beda perlakuan dari KPI/tabel di
+   halaman yang sama (yang memakai RPC crm_report_window): ekspor cuma diklik
+   sesekali, jadi beberapa round-trip berantai masih murah. Menaruh loop ini di
+   jalur muat halaman justru membuat setiap kali buka halaman ikut membayarnya.
+
+   `PAGE` 1000 = plafon PostgREST itu sendiri; meminta lebih dari itu per
+   halaman tidak menambah apa pun. Berhenti saat satu halaman pulang KURANG
+   dari PAGE — itu tanda kita sudah menyentuh ujungnya. `SAFETY_PAGES` menjaga
+   dari loop tak berujung kalau suatu saat server berhenti menghormati range;
+   kalau tersentuh, hasilnya memang belum lengkap dan pemanggilnya diberi tahu. */
+const EXPORT_PAGE = 1000;
+const EXPORT_SAFETY_PAGES = 50;
+async function fetchAllActivities({ start, end }) {
+  const all = [];
+  for (let page = 0; page < EXPORT_SAFETY_PAGES; page++) {
+    const from = page * EXPORT_PAGE;
+    const { data, error } = await supabase.from("activities")
+      .select("id, type, status, scheduled_for, activity_time, assigned_to, created_by, contact_name, prospect_name, notes, outcome, account:accounts!activities_account_id_fkey(name)")
+      .is("deleted_at", null)
+      .gte("scheduled_for", ymd(start)).lte("scheduled_for", ymd(end))
+      .order("scheduled_for", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + EXPORT_PAGE - 1);
+    if (error) throw error;
+    const rows = data || [];
+    all.push(...rows);
+    if (rows.length < EXPORT_PAGE) return { rows: all, complete: true };
+  }
+  return { rows: all, complete: false };
 }
 
 /* ---------------- icons (inline, no lib) ---------------- */
@@ -250,7 +303,7 @@ const TYPE_COLOR = { Call: C.blue, Visit: C.purple, Task: C.amber, Email: C.teal
    COMPONENT
    =========================================================================== */
 export default function CRMReportPage() {
-  const { profile, erpRole } = useAuth();
+  const { profile, erpRole, activeCompanyId } = useAuth();
   const isSuper = erpRole === "super_admin";
 
   const [period, setPeriod] = useState("week");
@@ -271,8 +324,8 @@ export default function CRMReportPage() {
 
   // ── live data ──
   const [salesList, setSalesList] = useState([]);
-  const [rawCur, setRawCur] = useState({ activities: [], prospects: [], quotations: [] });
-  const [rawPrev, setRawPrev] = useState({ activities: [], prospects: [], quotations: [] });
+  const [rawCur, setRawCur] = useState({ activities: [], prospects: [], quotations: [], agg: [], truncated: [] });
+  const [rawPrev, setRawPrev] = useState({ activities: [], prospects: [], quotations: [], agg: [], truncated: [] });
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
   const selInit = useRef(false);
@@ -316,9 +369,12 @@ export default function CRMReportPage() {
   // Sales roster — fetch once when profile is ready; default-select all on first load.
   useEffect(() => {
     if (!profile?.id) return;
-    if (!isSuper && !profile?.company_id) return;
+    /* Entitas AKTIF dari CompanySwitcher, bukan entitas RUMAH. Sebelumnya
+       `profile.company_id`: user multi-entitas mengganti entitas di switcher
+       tapi roster sales-nya tetap milik entitas rumahnya. */
+    if (!isSuper && !activeCompanyId) return;
     let cancelled = false;
-    fetchReportSales({ companyId: profile.company_id, isSuper })
+    fetchReportSales({ companyId: activeCompanyId, isSuper })
       .then((list) => {
         if (cancelled) return;
         setSalesList(list);
@@ -329,12 +385,12 @@ export default function CRMReportPage() {
       })
       .catch((e) => console.debug("[CRMReport] sales fetch failed:", e?.message || e));
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.company_id, isSuper]);
+  }, [profile?.id, activeCompanyId, isSuper]);
 
   // Main data — refetch when period changes (current + previous window).
   useEffect(() => {
     if (!profile?.id) return;
-    if (!isSuper && !profile?.company_id) return;
+    if (!isSuper && !activeCompanyId) return;
     let cancelled = false;
     setLoading(true);
     setErrorMsg(null);
@@ -348,18 +404,21 @@ export default function CRMReportPage() {
       .catch((e) => {
         if (cancelled) return;
         console.debug("[CRMReport] data fetch failed:", e?.message || e);
-        setErrorMsg(e?.message || "Gagal memuat data report.");
+        setErrorMsg(e?.message || "Failed to load report data.");
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [period, profile?.id, profile?.company_id, isSuper]);
+  }, [period, profile?.id, activeCompanyId, isSuper]);
 
   const nameById = useMemo(() => Object.fromEntries(salesList.map((s) => [s.id, s.name])), [salesList]);
 
   // map raw activities → report shape (status: Done/Pending/Overdue; cancelled dropped)
-  const mapActs = useMemo(() => {
+  // `mapRows` diangkat ke useCallback supaya jalur EKSPOR bisa memakai pemeta
+  // yang SAMA PERSIS — dua pemeta terpisah untuk bentuk baris yang sama adalah
+  // cara paling pasti membuat PDF dan layar berbeda isi suatu hari.
+  const mapRows = useCallback((rows) => {
     const nowMs = Date.now();
-    const map = (rows) => (rows || []).map((a) => {
+    return (rows || []).map((a) => {
       let status;
       if (a.status === "cancelled") status = "Cancelled";
       else if (a.status === "done") status = "Done";
@@ -379,8 +438,12 @@ export default function CRMReportPage() {
         salesName: nameById[a.assigned_to] || "—",
       };
     }).filter(Boolean);
-    return { cur: map(rawCur.activities), prev: map(rawPrev.activities) };
-  }, [rawCur.activities, rawPrev.activities, nameById]);
+  }, [nameById]);
+
+  const mapActs = useMemo(
+    () => ({ cur: mapRows(rawCur.activities), prev: mapRows(rawPrev.activities) }),
+    [rawCur.activities, rawPrev.activities, mapRows],
+  );
 
   // effective sales = checked AND entity active
   const effSalesIds = useMemo(() => {
@@ -397,17 +460,91 @@ export default function CRMReportPage() {
   const prevAll     = useMemo(() => mapActs.prev.filter((a) => effSalesIds.has(a.salesId)), [mapActs, effSalesIds]);
   const acts        = useMemo(() => actsAll.filter((a) => a.status !== "Cancelled"), [actsAll]);
   const prevActs    = useMemo(() => prevAll.filter((a) => a.status !== "Cancelled"), [prevAll]);
-  const cancelledCount     = useMemo(() => actsAll.length - acts.length, [actsAll, acts]);
-  const prevCancelledCount = useMemo(() => prevAll.length - prevActs.length, [prevAll, prevActs]);
+  /* Cancelled ikut dari agregat kalau ada — kalau tidak, KPI ini akan jadi
+     satu-satunya kartu yang masih dihitung dari baris berplafon, berdampingan
+     dengan lima kartu lain yang sudah lengkap. */
+  const sumCancelled = (arr) => (arr || [])
+    .filter((r) => effSalesIds.has(r.sales_id))
+    .reduce((a, r) => a + Number(r.cancelled || 0), 0);
+  const cancelledCount = useMemo(
+    () => (rawCur.agg ? sumCancelled(rawCur.agg) : actsAll.length - acts.length),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rawCur.agg, effSalesIds, actsAll, acts],
+  );
+  const prevCancelledCount = useMemo(
+    () => (rawPrev.agg ? sumCancelled(rawPrev.agg) : prevAll.length - prevActs.length),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rawPrev.agg, effSalesIds, prevAll, prevActs],
+  );
   const curProspects  = useMemo(() => rawCur.prospects.filter((p) => effSalesIds.has(p.assigned_to)), [rawCur.prospects, effSalesIds]);
   const prevProspects = useMemo(() => rawPrev.prospects.filter((p) => effSalesIds.has(p.assigned_to)), [rawPrev.prospects, effSalesIds]);
   const curQuotations  = useMemo(() => rawCur.quotations.filter((q) => effSalesIds.has(q.created_by)), [rawCur.quotations, effSalesIds]);
   const prevQuotations = useMemo(() => rawPrev.quotations.filter((q) => effSalesIds.has(q.created_by)), [rawPrev.quotations, effSalesIds]);
 
-  const k = useMemo(() => kpis(acts, curProspects, curQuotations), [acts, curProspects, curQuotations]);
-  const kPrev = useMemo(() => kpis(prevActs, prevProspects, prevQuotations), [prevActs, prevProspects, prevQuotations]);
+  /* KPI & tabel per-sales: dari AGREGAT RPC, nol plafon.
+     `effSalesIds` (pilihan checkbox di UI) tetap diterapkan di sini — ia
+     pilihan tampilan, bukan batas keamanan, jadi menyaring hasil agregat
+     memberi angka yang sama dengan menyaring barisnya. Kalau RPC-nya gagal,
+     `agg` null dan kita JATUH BALIK ke hitungan dari baris — angkanya bisa
+     terpotong, tapi banner truncation yang sudah ada akan mengabarkannya.
+     Diam-diam menampilkan nol jauh lebih buruk daripada angka yang ditandai. */
+  const aggBy = useMemo(() => {
+    const m = {};
+    (rawCur.agg || []).forEach((r) => { m[r.sales_id] = r; });
+    return m;
+  }, [rawCur.agg]);
+  const aggByPrev = useMemo(() => {
+    const m = {};
+    (rawPrev.agg || []).forEach((r) => { m[r.sales_id] = r; });
+    return m;
+  }, [rawPrev.agg]);
+
+  const sumAgg = (map) => {
+    const ids = Object.keys(map).filter((id) => effSalesIds.has(id));
+    const add = (f) => ids.reduce((a, id) => a + Number(map[id][f] || 0), 0);
+    return { total: add('total'), done: add('done'), pending: add('pending'),
+             overdue: add('overdue'), prospect: add('prospects'), quotation: add('quotations') };
+  };
+
+  const k = useMemo(
+    () => (rawCur.agg ? sumAgg(aggBy) : kpis(acts, curProspects, curQuotations)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rawCur.agg, aggBy, effSalesIds, acts, curProspects, curQuotations],
+  );
+  const kPrev = useMemo(
+    () => (rawPrev.agg ? sumAgg(aggByPrev) : kpis(prevActs, prevProspects, prevQuotations)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rawPrev.agg, aggByPrev, effSalesIds, prevActs, prevProspects, prevQuotations],
+  );
+  /* Tren TETAP dari baris mentah: ia membutuhkan tanggal tiap aktivitas untuk
+     dikelompokkan per hari/minggu, dan agregat per-sales tak memuat itu.
+     Karena itu banner truncation di bawah TIDAK dicabut — ia kini bicara
+     tentang tren & daftar detail, bukan lagi tentang KPI. */
   const trend = useMemo(() => buildTrend(acts, period), [acts, period]);
-  const rows = useMemo(() => perSales(acts, curProspects, curQuotations, salesList).filter((r) => effSalesIds.has(r.id)), [acts, curProspects, curQuotations, salesList, effSalesIds]);
+  const rows = useMemo(() => {
+    if (!rawCur.agg) {
+      return perSales(acts, curProspects, curQuotations, salesList).filter((r) => effSalesIds.has(r.id));
+    }
+    return salesList
+      .filter((sp) => effSalesIds.has(sp.id))
+      .map((sp) => {
+        const a = aggBy[sp.id] || {};
+        const total = Number(a.total || 0);
+        const done  = Number(a.done || 0);
+        return {
+          id: sp.id, name: sp.name, entity: sp.entity,
+          call:  Number(a.calls || 0),
+          visit: Number(a.visits || 0),
+          task:  Number(a.tasks || 0),
+          total, done,
+          pending:   Number(a.pending || 0),
+          overdue:   Number(a.overdue || 0),
+          prospect:  Number(a.prospects || 0),
+          quotation: Number(a.quotations || 0),
+          winRate: total ? Math.round((done / total) * 100) : 0,
+        };
+      });
+  }, [rawCur.agg, aggBy, salesList, effSalesIds, acts, curProspects, curQuotations]);
 
   const barData = useMemo(
     () => rows.map((r) => ({ name: shortName(r.name), done: r.done, pending: r.pending, overdue: r.overdue })),
@@ -447,20 +584,34 @@ export default function CRMReportPage() {
     return Math.round(((cur - prev) / prev) * 100);
   };
 
+  /* Gabungan truncation kedua jendela. Jendela SEBELUMNYA ikut dihitung karena
+     setiap KPI di bawah memajang delta "vs previous period" — kalau pembanding
+     yang terpotong, panah naik/turunnya sama menyesatkannya dengan angka
+     utamanya. */
+  const truncated = useMemo(() => {
+    const all = [...(rawCur.truncated || []), ...(rawPrev.truncated || [])];
+    return [...new Set(all)];
+  }, [rawCur.truncated, rawPrev.truncated]);
+  const isTruncated = truncated.length > 0;
+  /* RPC agregat gagal -> KPI & tabel per-sales jatuh balik ke hitungan dari
+     baris berplafon. Ini SATU-SATUNYA keadaan di mana keduanya bisa tak
+     lengkap sekarang. */
+  const aggDegraded = !rawCur.agg || !rawPrev.agg;
+
   const KPI_DEFS = [
     { key: "total", name: "Total Aktivitas", color: C.navy, Icon: Ic.Activity, val: k.total, prev: kPrev.total },
     { key: "done", name: "Selesai", color: C.teal, Icon: Ic.CheckCircle, val: k.done, prev: kPrev.done },
     { key: "pending", name: "Pending", color: C.amber, Icon: Ic.Clock, val: k.pending, prev: kPrev.pending, goodWhenDown: true },
     { key: "overdue", name: "Overdue", color: C.red, Icon: Ic.AlertCircle, val: k.overdue, prev: kPrev.overdue, goodWhenDown: true },
     { key: "cancelled", name: "Dibatalkan", color: C.gray500, Icon: Ic.XCircle, val: cancelledCount, prev: prevCancelledCount, goodWhenDown: true },
-    { key: "prospect", name: "Akun Baru", color: C.purple, Icon: Ic.UserPlus, val: k.prospect, prev: kPrev.prospect },
-    { key: "quotation", name: "Quotation Dikirim", color: C.orange, Icon: Ic.FileText, val: k.quotation, prev: kPrev.quotation },
+    { key: "prospect", name: "New Accounts", color: C.purple, Icon: Ic.UserPlus, val: k.prospect, prev: kPrev.prospect },
+    { key: "quotation", name: "Quotations Sent", color: C.orange, Icon: Ic.FileText, val: k.quotation, prev: kPrev.quotation },
   ];
 
   const salesLabel = (() => {
     const ids = [...effSalesIds];
-    if (salesList.length && ids.length === salesList.length) return "Semua Sales";
-    if (ids.length === 0) return "Tidak ada Sales";
+    if (salesList.length && ids.length === salesList.length) return "All Salespeople";
+    if (ids.length === 0) return "No salesperson";
     if (ids.length === 1) return (salesList.find((s) => s.id === ids[0]) || {}).name || "1 Sales";
     return ids.length + " Sales";
   })();
@@ -474,9 +625,9 @@ export default function CRMReportPage() {
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" }));
 
   const periodPresets = [
-    { id: "today", label: "Hari Ini" },
-    { id: "week", label: "Minggu Ini" },
-    { id: "month", label: "Bulan Ini" },
+    { id: "today", label: "Today" },
+    { id: "week", label: "This Week" },
+    { id: "month", label: "This Month" },
     { id: "custom", label: "Custom" },
   ];
   const periodLabel = (periodPresets.find((p) => p.id === period) || {}).label || period;
@@ -493,16 +644,37 @@ export default function CRMReportPage() {
         `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       const meta = { periodLabel, salesLabel, generatedAt };
       const summary = { total: k.total, done: k.done, pending: k.pending, overdue: k.overdue, cancelled: cancelledCount };
-      const blob = await pdf(<ActivityReportPDF meta={meta} summary={summary} rows={exportRows} />).toBlob();
+
+      /* Ekspor mengambil SELURUH baris lewat paginasi, bukan memakai
+         `exportRows` yang berasal dari fetch berplafon 1000 di jalur muat
+         halaman. PDF adalah satu-satunya permukaan yang benar-benar menuntut
+         baris LENGKAP — layar cuma menampilkan 40 teratas. Dibayar saat diklik,
+         bukan tiap buka halaman.
+         Pemetaan & penyaringan memakai jalur yang SAMA dengan layar (mapRows +
+         effSalesIds + urutan terbaru dulu), jadi PDF dan layar tak bisa
+         berbeda isi selain karena jumlah barisnya. */
+      const { rows: allRaw, complete } = await fetchAllActivities(rangeFor(period));
+      const fullRows = mapRows(allRaw)
+        .filter((a) => effSalesIds.has(a.salesId))
+        .sort((a, b) => new Date(b.scheduled_for || 0) - new Date(a.scheduled_for || 0));
+      if (!complete) {
+        // Batas pengaman tersentuh — sangat tidak mungkin, tapi kalau terjadi
+        // user harus tahu SEBELUM memakai PDF-nya, bukan sesudah.
+        window.alert(
+          "Warning: the activity list was still not exhausted after "
+          + `${EXPORT_SAFETY_PAGES * EXPORT_PAGE} rows. The PDF may be incomplete.`,
+        );
+      }
+      const blob = await pdf(<ActivityReportPDF meta={meta} summary={summary} rows={fullRows} />).toBlob();
       const url = URL.createObjectURL(blob);
       const slug = (s) => String(s).replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "");
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Laporan-Aktivitas-${slug(salesLabel)}-${slug(periodLabel)}-${ymd(now)}.pdf`;
+      a.download = `Activity-Report-${slug(salesLabel)}-${slug(periodLabel)}-${ymd(now)}.pdf`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1500);
     } catch (err) {
-      window.alert("Gagal generate PDF: " + (err?.message || err));
+      window.alert("Failed to generate PDF: " + (err?.message || err));
     } finally {
       setExporting(false);
     }
@@ -539,8 +711,8 @@ export default function CRMReportPage() {
 
           {period === "custom" && (
             <div style={st.dateRange}>
-              <span style={{ color: C.gray400, fontSize: 12 }}>Rentang</span>
-              <strong style={{ fontSize: 13, color: C.navy }}>Hari ini</strong>
+              <span style={{ color: C.gray400, fontSize: 12 }}>Range</span>
+              <strong style={{ fontSize: 13, color: C.navy }}>Today</strong>
             </div>
           )}
 
@@ -558,7 +730,7 @@ export default function CRMReportPage() {
                   <Ic.Search style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, fill: "none", stroke: C.gray400, strokeWidth: 2.2 }} />
                   <input
                     className="crm-input"
-                    placeholder="Cari sales…"
+                    placeholder="Search salespeople…"
                     value={salesQuery}
                     onChange={(e) => setSalesQuery(e.target.value)}
                     style={st.dropInput}
@@ -587,7 +759,7 @@ export default function CRMReportPage() {
                   </label>
                 ))}
                 {salesList.length === 0 && (
-                  <div style={{ padding: "8px", fontSize: 12.5, color: C.gray400 }}>Tidak ada sales</div>
+                  <div style={{ padding: "8px", fontSize: 12.5, color: C.gray400 }}>No salespeople</div>
                 )}
               </div>,
               document.body
@@ -625,7 +797,7 @@ export default function CRMReportPage() {
             className="crm-pill"
             onClick={handleExportPDF}
             disabled={!canExport || exporting}
-            title={canExport ? "Export laporan ke PDF" : "Tidak ada aktivitas untuk diekspor"}
+            title={canExport ? "Export report to PDF" : "No activity to export"}
             style={{
               display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 16px",
               borderRadius: 11, border: "none", background: C.orange, color: "#fff",
@@ -636,7 +808,7 @@ export default function CRMReportPage() {
             }}
           >
             <Ic.Download style={{ width: 15, height: 15, fill: "none", stroke: "#fff", strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round" }} />
-            {exporting ? "Membuat…" : "Export PDF"}
+            {exporting ? "Generating…" : "Export PDF"}
           </button>
         </div>
       </div>
@@ -645,7 +817,7 @@ export default function CRMReportPage() {
       {loading ? (
         <div style={{ ...st.body, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 320, gap: 14 }}>
           <div className="crm-spinner" />
-          <div style={{ color: C.gray500, fontSize: 13.5 }}>Memuat data report…</div>
+          <div style={{ color: C.gray500, fontSize: 13.5 }}>Loading report data…</div>
         </div>
       ) : errorMsg ? (
         <div style={{ ...st.body, textAlign: "center", color: C.red, padding: "60px 24px" }}>
@@ -653,6 +825,20 @@ export default function CRMReportPage() {
         </div>
       ) : (
       <div style={st.body}>
+        {/* Banner truncation — ATM pola CRMDashboardPage secara LOKAL (dashboard
+            tidak punya komponen yang bisa dipinjam, dan me-refactornya di luar
+            scope). Nadanya netral: data terpotong itu keterbatasan pengambilan,
+            bukan kondisi darurat. */}
+        {isTruncated && (
+          <div style={{ margin: "0 0 16px", padding: "11px 14px", borderRadius: 10, background: tint(C.amber, 0.12), border: `1px solid ${tint(C.amber, 0.4)}`, color: C.ink, fontSize: 12.5, lineHeight: 1.6 }}>
+            <b>The activity trend and detail list are incomplete.</b>{" "}
+            {truncated.join(", ")} hit the 1,000-row ceiling for this period. The KPI
+            cards and the per-salesperson table are <b>not</b> affected — those are
+            aggregated in the database and have no ceiling. Narrow the date range if you
+            need the trend and detail list to be complete too.
+          </div>
+        )}
+
         {/* KPI ROW */}
         <div style={st.kpiGrid}>
           {KPI_DEFS.map((d) => {
@@ -667,12 +853,21 @@ export default function CRMReportPage() {
                     <d.Icon style={{ ...iconBase, width: 20, height: 20, stroke: d.color }} />
                   </span>
                 </div>
-                <div style={st.kpiNum}>{d.val.toLocaleString("id-ID")}</div>
+                {/* Penanda "—" dari Gelombang 1 DICABUT: KPI kini datang dari
+                    crm_report_window, jadi ia lengkap sekalipun baris mentah
+                    (tren & daftar detail) terpotong. Penandanya hanya kembali
+                    saat RPC-nya sendiri gagal dan kita jatuh balik ke hitungan
+                    dari baris — di situ angkanya memang bisa tak lengkap. */}
+                <div style={st.kpiNum}>{aggDegraded ? "—" : d.val.toLocaleString("id-ID")}</div>
                 <div style={st.kpiTrendRow}>
-                  <span style={st.trendChip}>
-                    {up ? "▲" : "▼"} {Math.abs(change)}%
-                  </span>
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>vs periode lalu</span>
+                  {aggDegraded ? (
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>data incomplete</span>
+                  ) : (<>
+                    <span style={st.trendChip}>
+                      {up ? "▲" : "▼"} {Math.abs(change)}%
+                    </span>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>vs previous period</span>
+                  </>)}
                 </div>
               </div>
             );
@@ -686,7 +881,7 @@ export default function CRMReportPage() {
             <div style={st.panelHead}>
               <div>
                 <div style={st.sectionLabel}>Tren Aktivitas</div>
-                <div style={st.panelSub}>Total · Selesai · Pending</div>
+                <div style={st.panelSub}>Total · Done · Pending</div>
               </div>
               <LegendDots items={[["Total", C.navy], ["Selesai", C.teal], ["Pending", C.amber]]} />
             </div>
@@ -749,7 +944,7 @@ export default function CRMReportPage() {
               <thead>
                 <tr>
                   <Th label="#" />
-                  <Th label="Nama Sales" col="name" sort={sort} onClick={clickSort} align="left" />
+                  <Th label="Salesperson Name" col="name" sort={sort} onClick={clickSort} align="left" />
                   <Th label="Call" col="call" sort={sort} onClick={clickSort} />
                   <Th label="Visit" col="visit" sort={sort} onClick={clickSort} />
                   <Th label="Task" col="task" sort={sort} onClick={clickSort} />
@@ -757,7 +952,7 @@ export default function CRMReportPage() {
                   <Th label="Selesai" col="done" sort={sort} onClick={clickSort} />
                   <Th label="Pending" col="pending" sort={sort} onClick={clickSort} />
                   <Th label="Overdue" col="overdue" sort={sort} onClick={clickSort} />
-                  <Th label="Akun Baru" col="prospect" sort={sort} onClick={clickSort} />
+                  <Th label="New Accounts" col="prospect" sort={sort} onClick={clickSort} />
                   <Th label="Quotation" col="quotation" sort={sort} onClick={clickSort} />
                   <Th label="Win Rate" col="winRate" sort={sort} onClick={clickSort} align="left" />
                 </tr>
@@ -792,7 +987,7 @@ export default function CRMReportPage() {
                   </tr>
                 ))}
                 {sortedRows.length === 0 && (
-                  <tr><td colSpan={12} style={{ ...st.td, padding: 40, color: C.gray400 }}>Tidak ada data untuk filter ini.</td></tr>
+                  <tr><td colSpan={12} style={{ ...st.td, padding: 40, color: C.gray400 }}>No data for this filter.</td></tr>
                 )}
               </tbody>
             </table>
@@ -823,12 +1018,12 @@ export default function CRMReportPage() {
               <table style={st.table}>
                 <thead>
                   <tr>
-                    <th style={{ ...st.th, textAlign: "left" }}>Tanggal</th>
-                    <th style={{ ...st.th, textAlign: "left" }}>Tipe</th>
+                    <th style={{ ...st.th, textAlign: "left" }}>Date</th>
+                    <th style={{ ...st.th, textAlign: "left" }}>Type</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Status</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Customer</th>
                     <th style={{ ...st.th, textAlign: "left" }}>Sales</th>
-                    <th style={{ ...st.th, textAlign: "left" }}>Catatan</th>
+                    <th style={{ ...st.th, textAlign: "left" }}>Notes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -852,7 +1047,7 @@ export default function CRMReportPage() {
                     </tr>
                   ))}
                   {shownActs.length === 0 && (
-                    <tr><td colSpan={6} style={{ ...st.td, padding: 32, textAlign: "center", color: C.gray400 }}>Tidak ada aktivitas.</td></tr>
+                    <tr><td colSpan={6} style={{ ...st.td, padding: 32, textAlign: "center", color: C.gray400 }}>No activity.</td></tr>
                   )}
                 </tbody>
               </table>

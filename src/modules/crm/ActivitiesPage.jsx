@@ -55,8 +55,8 @@ const TYPE_FORM = [
 // Status — todo (abu outline), done (hijau), cancelled (merah outline).
 const STATUS_META = {
   todo:      { label: 'To Do',      bg: 'transparent', color: C.inkSoft, bd: C.neutralBd },
-  done:      { label: 'Selesai',    bg: C.okBg,        color: C.ok,      bd: C.okBd     },
-  cancelled: { label: 'Dibatalkan', bg: 'transparent', color: C.danger,  bd: C.dangerBd },
+  done:      { label: 'Done',    bg: C.okBg,        color: C.ok,      bd: C.okBd     },
+  cancelled: { label: 'Cancelled', bg: 'transparent', color: C.danger,  bd: C.dangerBd },
 };
 
 const PAGE_SIZE = 20;
@@ -215,7 +215,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
         {!isEdit ? (
           <div style={{ padding: '20px 28px 28px' }}>
             <DSection title="Info Aktivitas">
-              <DField label="Tanggal"     value={fmtDate(act.scheduled_for)} mono />
+              <DField label="Date"     value={fmtDate(act.scheduled_for)} mono />
               <DField label="Waktu"       value={fmtTime(act.activity_time)} mono />
               <DField label="Salesperson" value={act.salesperson_name} />
               <DField label="Lokasi"      value={act.details?.location} />
@@ -231,7 +231,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
                 <div style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, whiteSpace: 'pre-wrap', background: C.surface2, borderRadius: 8, padding: '10px 14px' }}>{act.outcome || act.notes}</div>
               </div>
             )}
-            <DSection title="Tindak Lanjut">
+            <DSection title="Follow-up">
               <DField label="Next Action"      value={act.next_action} full />
               <DField label="Next Action Date" value={act.next_action_date ? fmtDate(act.next_action_date) : null} mono />
             </DSection>
@@ -244,7 +244,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
                 )}
                 {act.status === 'todo' && (
                   <button onClick={onMarkDone} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                    <Check size={15} /> Tandai Selesai
+                    <Check size={15} /> Mark as Done
                   </button>
                 )}
                 {act.status === 'todo' && canEdit && (
@@ -267,7 +267,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
               <div>
                 {lbl('Salesperson', true)}
                 <select value={draft.assigned_to} onChange={e => upd('assigned_to', e.target.value)} style={selStyle}>
-                  <option value="">— Pilih sales —</option>
+                  <option value="">— Select Salesperson —</option>
                   {salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
                 </select>
               </div>
@@ -275,7 +275,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
-                {lbl('Tanggal', true)}
+                {lbl('Date', true)}
                 <input type="date" value={draft.scheduled_for} onChange={e => upd('scheduled_for', e.target.value)} style={inpStyle} />
               </div>
               <div>
@@ -285,10 +285,10 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
             </div>
 
             <div>
-              {lbl('Account (Customer / Prospek)')}
+              {lbl('Account (Customer / Prospect)')}
               <select value={draft.account_id} onChange={e => upd('account_id', e.target.value)} style={selStyle}>
-                <option value="">— Opsional —</option>
-                {accounts.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
+                <option value="">— Optional —</option>
+                {accounts.length === 0 && <option value="" disabled>All accounts are currently in the Lead Pool. Claim one from the Lead Pool first to use it.</option>}
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
@@ -297,7 +297,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   {lbl('Contact Name')}
-                  <input value={draft.contact_name} onChange={e => upd('contact_name', e.target.value)} style={inpStyle} placeholder="Nama kontak" />
+                  <input value={draft.contact_name} onChange={e => upd('contact_name', e.target.value)} style={inpStyle} placeholder="Contact name" />
                 </div>
                 <div>
                   {lbl('Contact Phone')}
@@ -314,18 +314,18 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
             )}
 
             <div>
-              {lbl('Catatan')}
-              <textarea value={draft.notes} onChange={e => upd('notes', e.target.value)} rows={3} style={taStyle} placeholder="Catatan / agenda…" />
+              {lbl('Notes')}
+              <textarea value={draft.notes} onChange={e => upd('notes', e.target.value)} rows={3} style={taStyle} placeholder="Notes / agenda…" />
             </div>
 
             <div>
               {lbl('Outcome')}
-              <textarea value={draft.outcome} onChange={e => upd('outcome', e.target.value)} rows={2} style={taStyle} placeholder="Hasil aktivitas…" />
+              <textarea value={draft.outcome} onChange={e => upd('outcome', e.target.value)} rows={2} style={taStyle} placeholder="Activity outcome…" />
             </div>
 
             <div>
               {lbl('Next Action')}
-              <textarea value={draft.next_action} onChange={e => upd('next_action', e.target.value)} rows={2} style={taStyle} placeholder="Tindak lanjut berikutnya…" />
+              <textarea value={draft.next_action} onChange={e => upd('next_action', e.target.value)} rows={2} style={taStyle} placeholder="Next follow-up…" />
             </div>
 
             <div>
@@ -340,7 +340,7 @@ function ActivityDetailModal({ act, canEdit, isSuperAdmin, salesProfiles, accoun
                 Batal
               </button>
               <button onClick={() => onSave?.(draft)} disabled={saving} style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-                {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
+                {saving ? 'Saving…' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -383,7 +383,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
     <div style={{ position: 'fixed', inset: 0, zIndex: 10002, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ background: C.surface, borderRadius: 18, padding: 28, maxWidth: 560, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', border: `1px solid ${C.line}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: C.ink, fontFamily: "'Montserrat',sans-serif" }}>Tambah Task</h2>
+          <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: C.ink, fontFamily: "'Montserrat',sans-serif" }}>Add Task</h2>
           <button onClick={onClose} style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={16} color={C.inkSoft} />
           </button>
@@ -400,7 +400,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
             <div>
               {lbl('Salesperson', true)}
               <select value={draft.assigned_to} onChange={e => upd('assigned_to', e.target.value)} style={selStyle}>
-                <option value="">— Pilih sales —</option>
+                <option value="">— Select Salesperson —</option>
                 {salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
               </select>
             </div>
@@ -408,7 +408,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              {lbl('Tanggal', true)}
+              {lbl('Date', true)}
               <input type="date" value={draft.scheduled_for} onChange={e => upd('scheduled_for', e.target.value)} style={inpStyle} />
             </div>
             <div>
@@ -418,10 +418,10 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
           </div>
 
           <div>
-            {lbl('Account (Customer / Prospek)')}
+            {lbl('Account (Customer / Prospect)')}
             <select value={draft.account_id} onChange={e => upd('account_id', e.target.value)} style={selStyle}>
-              <option value="">— Opsional —</option>
-              {accounts.length === 0 && <option value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>}
+              <option value="">— Optional —</option>
+              {accounts.length === 0 && <option value="" disabled>All accounts are currently in the Lead Pool. Claim one from the Lead Pool first to use it.</option>}
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
@@ -430,7 +430,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 {lbl('Contact Name')}
-                <input value={draft.contact_name} onChange={e => upd('contact_name', e.target.value)} style={inpStyle} placeholder="Nama kontak" />
+                <input value={draft.contact_name} onChange={e => upd('contact_name', e.target.value)} style={inpStyle} placeholder="Contact name" />
               </div>
               <div>
                 {lbl('Contact Phone')}
@@ -448,12 +448,12 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
 
           <div>
             {lbl('Notes')}
-            <textarea value={draft.notes} onChange={e => upd('notes', e.target.value)} rows={3} style={taStyle} placeholder="Catatan / agenda…" />
+            <textarea value={draft.notes} onChange={e => upd('notes', e.target.value)} rows={3} style={taStyle} placeholder="Notes / agenda…" />
           </div>
 
           <div>
             {lbl('Next Action')}
-            <textarea value={draft.next_action} onChange={e => upd('next_action', e.target.value)} rows={2} style={taStyle} placeholder="Tindak lanjut berikutnya…" />
+            <textarea value={draft.next_action} onChange={e => upd('next_action', e.target.value)} rows={2} style={taStyle} placeholder="Next follow-up…" />
           </div>
 
           <div>
@@ -468,7 +468,7 @@ function TaskFormModal({ open, draft, setDraft, saving, error, accounts, salesPr
               Batal
             </button>
             <button onClick={onSave} disabled={saving} style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: C.navy, color: 'white', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Menyimpan…' : 'Simpan Task'}
+              {saving ? 'Saving…' : 'Save Task'}
             </button>
           </div>
         </div>
@@ -572,7 +572,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         completed_at:     a.completed_at,
       })));
     } catch (err) {
-      showToast?.('Gagal memuat data activity: ' + err.message, 'error');
+      showToast?.('Failed to load activity data: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -588,7 +588,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
     if (!profile?.company_id) return;
     const [aRes, sales] = await Promise.all([
       // Akun parkir Lead Pool tak boleh dipilih untuk aktivitas baru — is_in_lead_pool=false.
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
       fetchOperationalRoster(profile.company_id),
     ]);
     let list = aRes.data || [];
@@ -650,9 +650,9 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   };
 
   const handleSave = useCallback(async () => {
-    if (!draft.type)          { setFormError('Tipe wajib dipilih.'); return; }
-    if (!draft.scheduled_for) { setFormError('Tanggal wajib diisi.'); return; }
-    if (!draft.assigned_to)   { setFormError('Salesperson wajib dipilih.'); return; }
+    if (!draft.type)          { setFormError('Type is required.'); return; }
+    if (!draft.scheduled_for) { setFormError('Date is required.'); return; }
+    if (!draft.assigned_to)   { setFormError('Salesperson is required.'); return; }
     setSaving(true);
     setFormError(null);
     try {
@@ -689,11 +689,11 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           from_status: null, to_status: 'todo',
         }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] create', logErr); });
       }
-      showToast?.('Task berhasil disimpan');
+      showToast?.('Task saved');
       setFormOpen(false);
       fetchActivities();
     } catch (err) {
-      setFormError('Gagal menyimpan: ' + err.message);
+      setFormError('Failed to save: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -705,7 +705,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .from('activities')
       .update({ status: 'done', completed_at: new Date().toISOString() })
       .eq('id', row.id);
-    if (error) { showToast?.('Gagal menandai selesai: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to mark as done: ' + error.message, 'error'); return; }
     logAudit(supabase, {
       action: ACTION_TYPES.UPDATE_ACTIVITY,
       entityType: ENTITY_TYPES.ACTIVITY,
@@ -717,7 +717,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       activity_id: row.id, changed_by: profile.id,
       from_status: row.status || null, to_status: 'done',
     }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] done', logErr); });
-    showToast?.('Aktivitas ditandai selesai');
+    showToast?.('Activity marked as done');
     fetchActivities();
     // Close the detail modal if open (no-op when invoked from a list row).
     setDetail(null);
@@ -729,7 +729,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .from('activities')
       .update({ status: 'cancelled' })
       .eq('id', id);
-    if (error) { showToast?.('Gagal membatalkan: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to cancel: ' + error.message, 'error'); return; }
     const fromStatus = rows.find(r => r.id === id)?.status || null;
     logAudit(supabase, {
       action: ACTION_TYPES.UPDATE_ACTIVITY,
@@ -742,7 +742,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       activity_id: id, changed_by: profile.id,
       from_status: fromStatus, to_status: 'cancelled',
     }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] cancel', logErr); });
-    showToast?.('Aktivitas dibatalkan');
+    showToast?.('Activity cancelled');
     setDetail(null);
     fetchActivities();
   }, [fetchActivities, showToast, profile, rows]);
@@ -753,14 +753,14 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       .from('activities')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
-    if (error) { showToast?.('Gagal menghapus: ' + error.message, 'error'); return; }
+    if (error) { showToast?.('Failed to delete: ' + error.message, 'error'); return; }
     logAudit(supabase, {
       action: ACTION_TYPES.DELETE_ACTIVITY,
       entityType: ENTITY_TYPES.ACTIVITY,
       entityId: id,
       entityLabel: null,
     }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-    showToast?.('Aktivitas dihapus');
+    showToast?.('Activity deleted');
     setDetail(null);
     setDeleteConfirm(null);
     fetchActivities();
@@ -771,9 +771,9 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
   // is merge-preserved so hidden jsonb keys (call_type/visit_type/mom/…) survive.
   const handleEditSave = useCallback(async (draft) => {
     if (!detail) return;
-    if (!draft.type)          { setDetailError('Tipe wajib dipilih.'); return; }
-    if (!draft.scheduled_for) { setDetailError('Tanggal wajib diisi.'); return; }
-    if (!draft.assigned_to)   { setDetailError('Salesperson wajib dipilih.'); return; }
+    if (!draft.type)          { setDetailError('Type is required.'); return; }
+    if (!draft.scheduled_for) { setDetailError('Date is required.'); return; }
+    if (!draft.assigned_to)   { setDetailError('Salesperson is required.'); return; }
     setDetailSaving(true);
     setDetailError(null);
     try {
@@ -801,11 +801,11 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         activity_id: detail.id, changed_by: profile.id,
         from_status: 'edited', to_status: 'edited',
       }).then(({ error: logErr }) => { if (logErr) console.error('[activity_logs] edit', logErr); });
-      showToast?.('Aktivitas berhasil diperbarui');
+      showToast?.('Activity updated');
       setDetail(null);
       fetchActivities();
     } catch (err) {
-      setDetailError('Gagal menyimpan: ' + err.message);
+      setDetailError('Failed to save: ' + err.message);
     } finally {
       setDetailSaving(false);
     }
@@ -844,22 +844,22 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Jadwal & Tugas</h1>
-            <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>Catat dan pantau semua aktivitas sales — call, whatsapp, visit, meeting, email, follow-up</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.inkSoft }}>Record and track all sales activity: calls, WhatsApp, visits, meetings, email, and follow-ups</p>
           </div>
         </div>
         <button
           onClick={openAdd}
           style={{ display: 'flex', alignItems: 'center', gap: 7, background: C.navy, color: '#fff', border: 'none', borderRadius: 9, padding: '9px 18px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(20,70,130,.22)' }}
         >
-          <Plus size={16} /> Tambah Task
+          <Plus size={16} /> Add Task
         </button>
       </div>
 
       {/* Stat cards */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <StatCard label="Total Aktivitas Bulan Ini" value={stats.total} unit="aktivitas" accent={C.navy} />
-        <StatCard label="To Do (Belum Selesai)"     value={stats.todo}  unit="task"      accent={C.accent} />
-        <StatCard label="Selesai Bulan Ini"         value={stats.done}  unit="aktivitas" accent={C.ok} />
+        <StatCard label="Total Activities This Month" value={stats.total} unit="aktivitas" accent={C.navy} />
+        <StatCard label="To Do (Not Done)"     value={stats.todo}  unit="task"      accent={C.accent} />
+        <StatCard label="Completed This Month"         value={stats.done}  unit="aktivitas" accent={C.ok} />
       </div>
 
       {/* Filters */}
@@ -869,26 +869,26 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Cari customer / prospek / contact…"
+            placeholder="Search customer / prospect / contact…"
             style={{ width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`, background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13, color: C.ink, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
           />
         </div>
         <select value={filterType} onChange={e => setFilterType(e.target.value)} style={selStyle}>
-          <option value="all">Semua Tipe</option>
+          <option value="all">All Types</option>
           {TYPE_FORM.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
-          <option value="all">Semua Status</option>
+          <option value="all">All Statuses</option>
           <option value="todo">To Do</option>
-          <option value="done">Selesai</option>
-          <option value="cancelled">Dibatalkan</option>
+          <option value="done">Done</option>
+          <option value="cancelled">Cancelled</option>
         </select>
         <select value={filterDate} onChange={e => setFilterDate(e.target.value)} style={selStyle}>
-          <option value="today">Hari Ini</option>
-          <option value="this_week">Minggu Ini</option>
-          <option value="this_month">Bulan Ini</option>
+          <option value="today">Today</option>
+          <option value="this_week">This Week</option>
+          <option value="this_month">This Month</option>
           <option value="custom">Custom</option>
-          <option value="all">Semua Tanggal</option>
+          <option value="all">All Dates</option>
         </select>
         {filterDate === 'custom' && (
           <>
@@ -897,7 +897,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           </>
         )}
         <select value={filterSales} onChange={e => setFilterSales(e.target.value)} style={selStyle}>
-          <option value="all">Semua Sales</option>
+          <option value="all">All Salespeople</option>
           {salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
         </select>
       </div>
@@ -908,16 +908,16 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-                {['No', 'Tanggal', 'Tipe', 'Status', 'Customer / Prospek', 'Sales', 'Catatan / Outcome', 'Aksi'].map(h => (
+                {['No', 'Date', 'Tipe', 'Status', 'Customer / Prospect', 'Sales', 'Catatan / Outcome', 'Aksi'].map(h => (
                   <th key={h} style={{ padding: '11px 14px', textAlign: h === 'No' ? 'center' : 'left', minWidth: h === 'No' ? 48 : undefined, fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
               ) : pageRows.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada aktivitas</td></tr>
+                <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>No activity yet</td></tr>
               ) : pageRows.map((r, i) => (
                 <tr key={r.id} onClick={() => setDetail(r)} style={{ borderBottom: i < pageRows.length - 1 ? `1px solid ${C.lineSoft}` : 'none', cursor: 'pointer' }}>
                   <td style={{ padding: '12px 14px', textAlign: 'center', minWidth: 48, fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.inkSoft, whiteSpace: 'nowrap' }}>
@@ -935,7 +935,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                       {r.status === 'todo' && (
                         <button
-                          title="Tandai selesai"
+                          title="Mark as done"
                           onClick={(e) => { e.stopPropagation(); handleCheck(r); }}
                           style={{ background: C.okBg, border: `1px solid ${C.okBd}`, borderRadius: 7, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
@@ -946,7 +946,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
                         <Eye size={16} color={C.inkFaint} />
                       </button>
                       {!r.account_id && (
-                        <button title="Jadikan Prospek" onClick={(e) => { e.stopPropagation(); setConfirmProspect(r); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+                        <button title="Convert to Prospect" onClick={(e) => { e.stopPropagation(); setConfirmProspect(r); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
                           <UserPlus size={16} color={C.navy} />
                         </button>
                       )}
@@ -988,7 +988,7 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
         accounts={accounts}
         saving={detailSaving}
         error={detailError}
-        onEnterEdit={() => { setDetailError(null); loadFormOptions(detail?.account_id ? { id: detail.account_id, name: detail.account?.name || '(akun tertaut)' } : undefined); }}
+        onEnterEdit={() => { setDetailError(null); loadFormOptions(detail?.account_id ? { id: detail.account_id, name: detail.account?.name || '(linked account)' } : undefined); }}
         onSave={handleEditSave}
         onCancel={() => detail && handleCancelActivity(detail.id)}
         onMarkDone={() => detail && handleCheck(detail)}
@@ -1012,10 +1012,10 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       <ConfirmModal
         open={!!confirmProspect}
         variant="info"
-        title="Jadikan Prospek?"
-        message="Buat prospek baru dari kontak aktivitas ini?"
-        confirmLabel="Ya, Jadikan Prospek"
-        cancelLabel="Batal"
+        title="Convert to Prospect?"
+        message="Create a new prospect from this activity's contact?"
+        confirmLabel="Yes, Convert to Prospect"
+        cancelLabel="Cancel"
         onConfirm={() => { const r = confirmProspect; setConfirmProspect(null); openProspectFromActivity(r); }}
         onCancel={() => setConfirmProspect(null)}
       />
@@ -1023,10 +1023,10 @@ export default function ActivitiesPage({ showToast, setActiveMenu, setShowProspe
       <ConfirmModal
         open={!!deleteConfirm}
         variant="danger"
-        title="Hapus Aktivitas?"
-        message="Aktivitas ini akan dihapus permanen."
-        confirmLabel="Ya, Hapus"
-        cancelLabel="Batal"
+        title="Delete Activity?"
+        message="This activity will be permanently deleted."
+        confirmLabel="Yes, Delete"
+        cancelLabel="Cancel"
         onConfirm={() => deleteConfirm && handleDeleteActivity(deleteConfirm.id)}
         onCancel={() => setDeleteConfirm(null)}
       />

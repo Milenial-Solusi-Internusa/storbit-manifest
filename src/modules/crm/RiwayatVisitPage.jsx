@@ -103,20 +103,20 @@ function VisitDetail({ v, onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.mute, padding: 4, display: 'flex' }}><X size={18} /></button>
         </div>
         <div style={{ padding: '6px 20px 18px' }}>
-          <DetailRow label="Tanggal" value={fmtDateTime(v.date, v.time)} />
+          <DetailRow label="Date" value={fmtDateTime(v.date, v.time)} />
           <DetailRow label="Sales" value={v.salesName} />
-          <DetailRow label="Customer / Prospek" value={v.customer} />
+          <DetailRow label="Customer / Prospect" value={v.customer} />
           <DetailRow label="Entitas" value={v.entity} mono />
-          <DetailRow label="Jenis Kunjungan" value={v.visit_type} />
+          <DetailRow label="Visit Type" value={v.visit_type} />
           <DetailRow label="Lokasi" value={v.location} />
           <DetailRow label="Point of Meeting" value={v.point_of_meeting} />
-          <DetailRow label="Tindak Lanjut" value={v.next_action} />
-          <DetailRow label="Catatan" value={v.notes} />
+          <DetailRow label="Follow-up" value={v.next_action} />
+          <DetailRow label="Notes" value={v.notes} />
           {/* MOM — lengkap */}
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.navy, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Minute of Meeting (MOM)</div>
             <div style={{ fontSize: 13, color: v.mom ? C.ink : C.faint, lineHeight: 1.55, whiteSpace: 'pre-wrap', background: C.headBg, border: `1px solid ${C.line}`, borderRadius: 10, padding: '12px 14px' }}>
-              {v.mom || 'Belum ada MOM (visit ini belum diisi / belum completed).'}
+              {v.mom || 'No MOM yet. This visit has not been filled in or marked completed.'}
             </div>
           </div>
         </div>
@@ -185,7 +185,7 @@ export default function RiwayatVisitPage({ showToast }) {
       }));
       setRows(mapped);
     } catch (err) {
-      setError(err.message || 'Gagal memuat riwayat visit.');
+      setError(err.message || 'Failed to load visit history.');
       setRows([]);
     } finally {
       setLoading(false);
@@ -247,10 +247,10 @@ export default function RiwayatVisitPage({ showToast }) {
       };
       const periodLabel = (filterFrom || filterTo)
         ? `${filterFrom ? fmtDate(filterFrom) : '…'} — ${filterTo ? fmtDate(filterTo) : '…'}`
-        : 'Semua Periode';
+        : 'All Periods';
       const meta = {
         periodLabel,
-        salesLabel: filterSales !== 'all' ? filterSales : 'Semua Sales',
+        salesLabel: filterSales !== 'all' ? filterSales : 'All Salespeople',
         generatedAt: new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
       };
       const pdfRows = filtered.map(r => ({
@@ -273,14 +273,14 @@ export default function RiwayatVisitPage({ showToast }) {
           ? `${MONTHS[df.getMonth()]}-${MONTHS[dt.getMonth()]}-${df.getFullYear()}`
           : `${monthYear(filterFrom)}_${monthYear(filterTo)}`;
       } else if (filterFrom) periodSlug = `Sejak-${monthYear(filterFrom)}`;
-      else periodSlug = `Sampai-${monthYear(filterTo)}`;
+      else periodSlug = `To-${monthYear(filterTo)}`;
       const salesSlug = filterSales !== 'all' ? sanitize(filterSales) : 'Semua-Sales';
       const genDate = getTodayWIB();
       a.download = `Riwayat-Visit_${periodSlug}_${salesSlug}_${genDate}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      showToast?.('Gagal membuat PDF: ' + (err?.message || err), 'error');
+      showToast?.('Failed to generate PDF: ' + (err?.message || err), 'error');
     } finally {
       setExporting(false);
     }
@@ -298,10 +298,10 @@ export default function RiwayatVisitPage({ showToast }) {
           <nav style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 10 }}>
             <span style={{ color: C.orange, fontWeight: 600 }}>CRM</span>
             <ChevronRight size={13} style={{ color: C.faint, flexShrink: 0 }} />
-            <span style={{ color: C.mute }}>Riwayat Visit</span>
+            <span style={{ color: C.mute }}>Visit History</span>
           </nav>
-          <h1 style={{ margin: 0, fontFamily: "'Montserrat', 'Inter', sans-serif", fontSize: 25, fontWeight: 700, letterSpacing: '-.01em', color: C.ink, lineHeight: 1.15 }}>Riwayat Visit</h1>
-          <p style={{ margin: '5px 0 0', fontSize: 13, color: C.mute }}>Semua historical kunjungan sales — lintas bulan</p>
+          <h1 style={{ margin: 0, fontFamily: "'Montserrat', 'Inter', sans-serif", fontSize: 25, fontWeight: 700, letterSpacing: '-.01em', color: C.ink, lineHeight: 1.15 }}>Visit History</h1>
+          <p style={{ margin: '5px 0 0', fontSize: 13, color: C.mute }}>All historical sales visits, across months</p>
         </div>
         <button
           onClick={handleExport}
@@ -315,31 +315,31 @@ export default function RiwayatVisitPage({ showToast }) {
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', padding: '18px 20px', background: C.headBg, border: `1px solid ${C.line}`, borderRadius: 12 }}>
         <FilterField label="Sales" wide>
           <select value={filterSales} onChange={e => { setFilterSales(e.target.value); setPage(1); }} style={selStyle}>
-            <option value="all">Semua Sales</option>
+            <option value="all">All Salespeople</option>
             {salesOptions.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </FilterField>
         <FilterField label="Customer" wide>
           <select value={filterCustomer} onChange={e => { setFilterCustomer(e.target.value); setPage(1); }} style={selStyle}>
-            <option value="all">Semua Customer</option>
+            <option value="all">All Customers</option>
             {customerOptions.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </FilterField>
         <FilterField label="Status">
           <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }} style={selStyle}>
-            <option value="all">Semua Status</option>
+            <option value="all">All Statuses</option>
             {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
           </select>
         </FilterField>
         {isSuper && (
           <FilterField label="Entitas">
             <select value={filterEntity} onChange={e => { setFilterEntity(e.target.value); setPage(1); }} style={selStyle}>
-              <option value="all">Semua Entitas</option>
+              <option value="all">All Entities</option>
               {entityOptions.map(en => <option key={en} value={en}>{en}</option>)}
             </select>
           </FilterField>
         )}
-        <FilterField label="Periode (Tanggal Visit)" wide>
+        <FilterField label="Period (Visit Date)" wide>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input type="date" value={filterFrom} max={filterTo || undefined} onChange={e => { setFilterFrom(e.target.value); setPage(1); }} style={dateStyle} />
             <span style={{ color: C.faint, fontSize: 13 }}>–</span>
@@ -353,7 +353,7 @@ export default function RiwayatVisitPage({ showToast }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', width: 280, maxWidth: '100%' }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: C.faint, pointerEvents: 'none' }} />
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Cari customer, sales, catatan, MOM…"
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search customer, salesperson, notes, MOM…"
             style={{ width: '100%', height: 38, padding: '0 12px 0 34px', boxSizing: 'border-box', border: `1px solid ${C.line}`, borderRadius: 9, background: C.bg, fontSize: 13, color: C.ink, outline: 'none', fontFamily: 'inherit' }} />
         </div>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.mute, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
@@ -372,9 +372,9 @@ export default function RiwayatVisitPage({ showToast }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              <th style={th}>Tanggal</th>
+              <th style={th}>Date</th>
               <th style={th}>Sales</th>
-              <th style={th}>Customer / Prospek</th>
+              <th style={th}>Customer / Prospect</th>
               <th style={th}>Status</th>
               <th style={th}>Entitas</th>
               <th style={{ ...th, textAlign: 'center' }}>MOM</th>
@@ -382,9 +382,9 @@ export default function RiwayatVisitPage({ showToast }) {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.faint, height: 120 }}>Memuat…</td></tr>
+              <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.faint, height: 120 }}>Loading…</td></tr>
             ) : paged.length === 0 ? (
-              <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.faint, height: 120 }}>Tidak ada visit yang cocok dengan filter ini</td></tr>
+              <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: C.faint, height: 120 }}>No visits match this filter</td></tr>
             ) : paged.map(v => (
               <tr key={v.id}
                 onClick={() => setDetail(v)}
@@ -398,7 +398,7 @@ export default function RiwayatVisitPage({ showToast }) {
                 <td style={{ ...td, color: C.mute, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>{v.entity}</td>
                 <td style={{ ...td, textAlign: 'center' }}>
                   {v.mom.trim()
-                    ? <span style={{ fontSize: 11.5, fontWeight: 700, color: C.greenT, background: C.greenBg, padding: '3px 10px', borderRadius: 20 }}>Ada</span>
+                    ? <span style={{ fontSize: 11.5, fontWeight: 700, color: C.greenT, background: C.greenBg, padding: '3px 10px', borderRadius: 20 }}>Yes</span>
                     : <span style={{ color: C.faint }}>—</span>}
                 </td>
               </tr>
@@ -411,7 +411,7 @@ export default function RiwayatVisitPage({ showToast }) {
       {!loading && filtered.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12.5, color: C.mute }}>
-            Menampilkan <strong style={{ color: C.ink }}>{(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)}</strong> dari <strong style={{ color: C.ink }}>{filtered.length}</strong> visit
+            Menampilkan <strong style={{ color: C.ink }}>{(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)}</strong> of <strong style={{ color: C.ink }}>{filtered.length}</strong> visit
           </span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <PagerBtn disabled={safePage <= 1} onClick={() => setPage(p => p - 1)}>‹</PagerBtn>

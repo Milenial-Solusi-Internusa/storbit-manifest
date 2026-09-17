@@ -39,7 +39,7 @@ const D = {
 // ─── Constants (form) ───────────────────────────────────────────────────────────
 const CUSTOMER_TYPES = ['PT', 'CV', 'Mr.', 'Mrs.', 'Ms.', 'Other'];
 const TIERS = ['A', 'B', 'C'];
-// Filter-bar options — must match accounts.account_status values
+// Filter-bar options — must match accounts.lifecycle_stage values
 const STATUS_FILTERS = [
   { value: 'customer',   label: 'Customer'   },
   { value: 'free_agent', label: 'Free Agent' },
@@ -77,7 +77,7 @@ const TIER_CFG = {
   C: { label: 'Tier C', bg: '#F1E1D2', fg: '#9A5B2C', dot: '#B0703C' },
 };
 const STATUS_CFG = {
-  // accounts.account_status segments (lifecycle akun)
+  // accounts.lifecycle_stage segments (lifecycle akun)
   lead:       { label: 'Lead',       bg: '#EFEAF6', fg: '#6A3D9A', dot: '#7A4E8C' },
   mql:        { label: 'MQL',        bg: '#E6EEF9', fg: '#2A5B8C', dot: '#2A5B8C' },
   sql:        { label: 'SQL',        bg: '#E1ECF7', fg: '#1B4D8A', dot: '#1B4D8A' },
@@ -103,8 +103,8 @@ const fmtDate = (iso) => {
 const initials = (s) =>
   ((s || '?').replace(/^PT\s+|^CV\s+/i, '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) || '?';
 const colorFor = (s) => PIC_COLORS[[...(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % PIC_COLORS.length];
-// accounts model: status comes from account_status (legacy customers.status fallback)
-const statusOf = (c) => c.account_status || c.status || 'customer';
+// accounts model: status comes from lifecycle_stage (legacy customers.status fallback)
+const statusOf = (c) => c.lifecycle_stage || c.status || 'customer';
 // Kontak primary dari embed `contacts` (row.contacts = array, LEFT JOIN — akun
 // tanpa kontak dapat array kosong, bukan hilang dari hasil). Dipilih client-side
 // (bukan filter server-side pada embed) supaya tak bergantung pada perilaku
@@ -172,7 +172,7 @@ function StatusBadge({ status }) {
   return <span style={{ ...P.badge, background: s.bg, color: s.fg }}><span style={{ ...P.bdot, background: s.dot }} />{s.label}</span>;
 }
 // Penanda parkir Lead Pool = badge TERPISAH dari lifecycle, sumbernya
-// is_in_lead_pool (bukan account_status). Lihat AUDIT_CRM_FLOW.md.
+// is_in_lead_pool (bukan lifecycle_stage). Lihat AUDIT_CRM_FLOW.md.
 function LeadPoolBadge() {
   return <span style={{ ...P.badge, background: '#F0EBE0', color: '#7A6A45' }}><span style={{ ...P.bdot, background: '#B0703C' }} />Lead Pool</span>;
 }
@@ -320,12 +320,12 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       p_name: nameVal.trim(), p_company_id: profile.company_id,
     });
     if (error || !data?.length) { setDupWarning(''); return; }
-    setDupWarning(`Mirip dengan: ${data.map(d => d.name).join(', ')} — yakin ini akun baru?`);
+    setDupWarning(`Similar to: ${data.map(d => d.name).join(', ')}. Are you sure this is a new account?`);
   };
 
   const validate = () => {
     const e = {};
-    if (!form.name.trim()) e.name = 'Wajib diisi';
+    if (!form.name.trim()) e.name = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -354,7 +354,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         notes:            form.notes           || null,
         is_odoo_customer: !!form.is_odoo_customer,
         updated_by:       profile.id,
-        // Lifecycle (account_status/became_customer_at) hanya naik lewat trigger DB,
+        // Lifecycle (lifecycle_stage/became_customer_at) hanya naik lewat trigger DB,
         // TIDAK PERNAH lewat form edit — jadi UPDATE tak menulisnya. `code` juga tak
         // ditulis di UPDATE: kode diterbitkan trigger generate_customer_code, dan field
         // editable-nya adalah pintu masuk kode duplikat. Keduanya ditulis di INSERT saja.
@@ -370,12 +370,12 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
         payload.owner_company_id   = profile.company_id;
         payload.created_by         = profile.id;
         payload.code               = form.code || null;
-        payload.account_status     = 'customer';
+        payload.lifecycle_stage     = 'customer';
         payload.became_customer_at = new Date().toISOString();
         ({ error } = await supabase.from('accounts').insert(payload));
       }
       if (error) throw error;
-      showToast?.(initial?.id ? 'Customer diperbarui ✨' : 'Customer ditambahkan ✨');
+      showToast?.(initial?.id ? 'Customer updated' : 'Customer added');
       onSaved();
     } catch (err) {
       // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut
@@ -386,10 +386,10 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
       const isDupName = err?.code === '23505'
         && /uq_accounts_norm_name_per_entitas/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
       if (isDupName) {
-        setErrors(e => ({ ...e, name: 'Nama sudah dipakai' }));
-        showToast?.(`Akun dengan nama ini sudah ada di ${entityCode || 'entitas'} ini.`, 'error');
+        setErrors(e => ({ ...e, name: 'Name already in use' }));
+        showToast?.(`An account with this name already exists in ${entityCode || 'this entity'}.`, 'error');
       } else {
-        showToast?.('Gagal menyimpan: ' + (err?.message || 'terjadi kesalahan'), 'error');
+        showToast?.('Failed to save: ' + (err?.message || 'terjadi kesalahan'), 'error');
       }
     } finally {
       setSaving(false);
@@ -405,7 +405,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: D.inkFaint, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>MASTER CUSTOMER</div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: D.ink, fontFamily: "'Montserrat', sans-serif" }}>
-              {initial?.id ? 'Edit Customer' : 'Tambah Customer Baru'}
+              {initial?.id ? 'Edit Customer' : 'New Customer'}
             </h2>
           </div>
           <button onClick={onClose} style={{ background: D.surface2, border: `1px solid ${D.line}`, borderRadius: 7, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -418,7 +418,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
           {/* Identitas */}
           <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 5, borderBottom: `1px solid ${D.lineSoft}` }}>Identitas</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
-            <FG label="Nama Perusahaan" req full>
+            <FG label="Company Name" req full>
               <input value={form.name} onChange={set('name')} onBlur={e => checkDuplicate(e.target.value)}
                 placeholder="PT. ..." style={{ ...INP_STYLE, borderColor: errors.name ? D.danger : D.line }} />
               {errors.name && <span style={{ fontSize: 11.5, color: D.danger, marginTop: 3 }}>{errors.name}</span>}
@@ -430,7 +430,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               )}
             </FG>
             <FG label="Legal Name">
-              <input value={form.legal_name} onChange={set('legal_name')} placeholder="Nama legal sesuai akta" style={INP_STYLE} />
+              <input value={form.legal_name} onChange={set('legal_name')} placeholder="Legal name as per the deed" style={INP_STYLE} />
             </FG>
             <FG label="Customer Type">
               <select value={form.customer_type} onChange={set('customer_type')} style={SEL_STYLE}>
@@ -467,7 +467,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
               Detail Account). Field dipertahankan (bukan dihapus) supaya nilai
               lama tetap terlihat, bukan diam-diam hilang dari tampilan. */}
           <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 5, borderBottom: `1px solid ${D.lineSoft}` }}>PIC</div>
-          <div style={{ fontSize: 12, color: D.inkFaint, marginBottom: 12, marginTop: -6 }}>Kelola kontak di tab Kontak.</div>
+          <div style={{ fontSize: 12, color: D.inkFaint, marginBottom: 12, marginTop: -6 }}>Manage contacts in the Contacts tab.</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
             <FG label="PIC Name"><input value={form.pic_name} disabled style={{ ...INP_STYLE, background: D.surface2, cursor: 'not-allowed' }} /></FG>
             <FG label="PIC Phone"><input value={form.pic_phone} disabled style={{ ...INP_STYLE, background: D.surface2, cursor: 'not-allowed' }} /></FG>
@@ -479,13 +479,13 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
             <FG label="Tier">
               <select value={form.tier} onChange={set('tier')} style={SEL_STYLE}>
-                <option value="">— Pilih tier —</option>
+                <option value="">— Select Tier —</option>
                 {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </FG>
             <FG label="Payment Terms">
               <select value={form.payment_terms_id} onChange={set('payment_terms_id')} style={SEL_STYLE}>
-                <option value="">— Pilih —</option>
+                <option value="">— Select —</option>
                 {payTerms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </FG>
@@ -499,7 +499,7 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
             </FG>
             <FG label="Assigned Salesperson">
               <select value={form.assigned_to} onChange={set('assigned_to')} style={SEL_STYLE}>
-                <option value="">— Pilih —</option>
+                <option value="">— Select —</option>
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
               </select>
             </FG>
@@ -515,13 +515,13 @@ export function CustomerFormModal({ initial, onClose, onSaved, showToast }) {
 
           {/* Notes */}
           <div style={{ fontSize: 11, fontWeight: 700, color: D.inkSoft, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12, paddingBottom: 5, borderBottom: `1px solid ${D.lineSoft}` }}>Notes</div>
-          <textarea value={form.notes} onChange={set('notes')} rows={3} placeholder="Catatan tambahan..." style={{ ...INP_STYLE, height: 'auto', padding: '9px 11px', resize: 'vertical' }} />
+          <textarea value={form.notes} onChange={set('notes')} rows={3} placeholder="Additional notes..." style={{ ...INP_STYLE, height: 'auto', padding: '9px 11px', resize: 'vertical' }} />
 
           {/* Footer */}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, paddingTop: 16, borderTop: `1px solid ${D.lineSoft}` }}>
-            <Btn onClick={onClose} disabled={saving}>Batal</Btn>
+            <Btn onClick={onClose} disabled={saving}>Cancel</Btn>
             <Btn primary onClick={handleSave} disabled={saving} icon={Save}>
-              {saving ? 'Menyimpan…' : (initial?.id ? 'Simpan Perubahan' : 'Tambah Customer')}
+              {saving ? 'Saving…' : (initial?.id ? 'Save Changes' : 'Add Customer')}
             </Btn>
           </div>
         </div>
@@ -536,7 +536,7 @@ const ENTITY_HEADER = {
   MSI:        { title: 'Customer MSI', sub: 'Customer freight forwarding MSI' },
   JCI:        { title: 'Customer JCI', sub: 'Customer customs & PPJK JCI' },
   SOA:        { title: 'Customer SOA', sub: 'Customer trading Storbit' },
-  FREE_AGENT: { title: 'Free Agent',   sub: 'Customer tidak terikat entitas' },
+  FREE_AGENT: { title: 'Free Agent',   sub: 'Customer not tied to an entity' },
 };
 
 // Lightweight client-side CSV export of the currently-filtered rows.
@@ -579,7 +579,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
-    // Merged Master Customer view = accounts WHERE account_status IN (customer, free_agent);
+    // Merged Master Customer view = accounts WHERE lifecycle_stage IN (customer, free_agent);
     // the Status filter narrows client-side. Legacy entityFilter prop (dormant) still
     // locks to a single status when set.
     const statusValues = entityFilter === 'FREE_AGENT' ? ['free_agent']
@@ -595,7 +595,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
           payment_term:payment_terms!prospects_payment_terms_id_fkey(name),
           contacts(id, name, email, phone, is_primary, deleted_at)
         `)
-        .in('account_status', statusValues)
+        .in('lifecycle_stage', statusValues)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);
@@ -608,7 +608,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
       const { data, error: fbErr } = await supabase
         .from('accounts')
         .select('*, contacts(id, name, email, phone, is_primary, deleted_at)')
-        .in('account_status', statusValues)
+        .in('lifecycle_stage', statusValues)
         .is('deleted_at', null)
         .order('name')
         .limit(1000);
@@ -684,7 +684,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
         </div>
         <div style={P.actions}>
           <button type="button" className="cl-outline" style={P.outlineBtn}
-            onClick={() => { exportCsv(filtered, `customers_${entityFilter || 'all'}.csv`); showToast?.('Daftar customer di-export ✨'); }}>
+            onClick={() => { exportCsv(filtered, `customers_${entityFilter || 'all'}.csv`); showToast?.('Customer list exported'); }}>
             <Ico name="download" size={16} />Export
           </button>
           <button type="button" className="cl-primary" style={P.primaryBtn} onClick={openAdd}>
@@ -696,9 +696,9 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
       {/* Stat cards */}
       <div style={P.statsRow} className="cl-stats">
         <StatCard label="Total Customer" value={total}     hint="customer terdaftar"     icon="users"     iconBg="#EAF0F8" iconFg={NAVY} />
-        <StatCard label="Active"         value={activeCnt} hint={`dari ${total} customer`} icon="usercheck" iconBg="#DEF0E4" iconFg="#1F8B4D" />
+        <StatCard label="Active"         value={activeCnt} hint={`of ${total} customers`} icon="usercheck" iconBg="#DEF0E4" iconFg="#1F8B4D" />
         <StatCard label="Tier A"         value={tierACnt}  hint="customer prioritas"      icon="award"     iconBg="#F7EAC4" iconFg="#8A6A12" />
-        <StatCard label="Free Agent"     value={freeCnt}   hint="tanpa entitas"           icon="usercog"   iconBg="#FBE6DA" iconFg="#C8521B" />
+        <StatCard label="Free Agent"     value={freeCnt}   hint="without entity"           icon="usercog"   iconBg="#FBE6DA" iconFg="#C8521B" />
       </div>
 
       {/* Table card */}
@@ -707,12 +707,12 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
         <div style={P.filterBar}>
           <div style={P.searchWrap}>
             <span style={P.searchIco}><Ico name="search" size={16} /></span>
-            <input className="cl-inp" style={P.searchInput} placeholder="Cari nama, legal name, code, PIC…"
+            <input className="cl-inp" style={P.searchInput} placeholder="Search name, legal name, code, PIC…"
               value={rawSearch} onChange={(e) => handleSearch(e.target.value)} />
           </div>
           <div style={P.selectWrap}>
             <select className="cl-sel" style={P.select} value={filterTier} onChange={(e) => setFilterTier(e.target.value)}>
-              <option value="all">Semua Tier</option>
+              <option value="all">All Tiers</option>
               {TIERS.map(t => <option key={t} value={t}>Tier {t}</option>)}
             </select>
             <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
@@ -720,7 +720,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
           {entityFilter !== 'FREE_AGENT' && (
             <div style={P.selectWrap}>
               <select className="cl-sel" style={P.select} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                <option value="all">Semua Status</option>
+                <option value="all">All Statuses</option>
                 {STATUS_FILTERS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
               <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
@@ -729,7 +729,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
           {!entityLocked && (
             <div style={P.selectWrap}>
               <select className="cl-sel" style={P.select} value={filterCo} onChange={(e) => setFilterCo(e.target.value)}>
-                <option value="all">Semua Entitas</option>
+                <option value="all">All Entities</option>
                 {['MSI', 'JCI', 'SOA'].map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <span style={P.selectChev}><Ico name="chevdown" size={15} /></span>
@@ -744,7 +744,7 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
             <thead>
               <tr>
                 <th style={P.th}>Customer Code</th>
-                <th style={P.th}>Nama Perusahaan</th>
+                <th style={P.th}>Company Name</th>
                 <th style={P.th}>Legal Name</th>
                 <th style={P.th}>PIC Name</th>
                 <th style={P.th}>Tier</th>
@@ -756,10 +756,10 @@ export default function CustomerListPage({ showToast, onSelectCustomer, entityFi
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>Memuat data…</td></tr>
+                <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>Loading data…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={9} style={{ ...P.td, textAlign: 'center', padding: '48px 16px', color: '#A29684' }}>
-                  {search || filterStatus !== 'customer' || filterCo !== 'all' || filterTier !== 'all' ? 'Tidak ada customer yang cocok dengan filter.' : 'Belum ada data customer.'}
+                  {search || filterStatus !== 'customer' || filterCo !== 'all' || filterTier !== 'all' ? 'No customers match the filter.' : 'No customer data yet.'}
                 </td></tr>
               ) : (
                 filtered.map((c, i) => (

@@ -93,7 +93,7 @@ export default function ActivityLogPage({ showToast }) {
       });
       setEvents(data);
     } catch (err) {
-      showToast?.('Gagal memuat activity log: ' + err.message, 'error');
+      showToast?.('Failed to load activity log: ' + err.message, 'error');
       setEvents([]);
     } finally {
       setLoading(false);
@@ -154,14 +154,14 @@ export default function ActivityLogPage({ showToast }) {
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={filterType} onChange={e => setFilterType(e.target.value)} style={selStyle}>
-          {TYPE_FILTER.map(o => <option key={o.value} value={o.value}>{o.label === 'Semua' ? 'Semua Tipe' : o.label}</option>)}
+          {TYPE_FILTER.map(o => <option key={o.value} value={o.value}>{o.label === 'Semua' ? 'All Types' : o.label}</option>)}
         </select>
         <select value={filterDate} onChange={e => setFilterDate(e.target.value)} style={selStyle}>
-          <option value="today">Hari Ini</option>
-          <option value="this_week">Minggu Ini</option>
-          <option value="this_month">Bulan Ini</option>
+          <option value="today">Today</option>
+          <option value="this_week">This Week</option>
+          <option value="this_month">This Month</option>
           <option value="custom">Custom</option>
-          <option value="all">Semua Tanggal</option>
+          <option value="all">All Dates</option>
         </select>
         {filterDate === 'custom' && (
           <>
@@ -171,7 +171,7 @@ export default function ActivityLogPage({ showToast }) {
         )}
         {!isSalesOnly && (
           <select value={filterSales} onChange={e => setFilterSales(e.target.value)} style={selStyle}>
-            <option value="all">Semua Sales</option>
+            <option value="all">All Salespeople</option>
             {salesOpts.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
           </select>
         )}
@@ -183,9 +183,9 @@ export default function ActivityLogPage({ showToast }) {
       {/* Feed list */}
       <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, overflow: 'hidden', boxShadow: '0 1px 6px rgba(35,41,30,.06)' }}>
         {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint, fontSize: 13.5 }}>Memuat data…</div>
+          <div style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint, fontSize: 13.5 }}>Loading data…</div>
         ) : pageRows.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint, fontSize: 13.5 }}>Belum ada aktivitas pada rentang ini</div>
+          <div style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint, fontSize: 13.5 }}>No activity in this range</div>
         ) : pageRows.map((e, i) => {
           const tone = TYPE_TONE[e.type] || TYPE_TONE.activity;
           const Ico = ICONS[e.icon] || Activity;

@@ -11,7 +11,6 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { useCustomFields, STANDARD_COLUMNS } from '../../hooks/useCustomFields';
 import CustomFieldsSection from '../../components/CustomFieldsSection';
 import ConfirmModal from '../../components/ConfirmModal';
-import WinLossModal from './WinLossModal';
 import { BANT_DIMENSIONS, calcBantScore, bantQualifyGate, BANT_FREQUENCY_OPTIONS } from './bant';
 import { ACTIVE_STAGE_KEYS, isActiveStage, isKnownStage } from './DealPanels';
 import BantScoreBar from './BantScoreBar';
@@ -33,11 +32,17 @@ const C = {
 // <select> di Section Pipeline.
 const STAGE_DOT = { NEW: '#94A3B8', CONTACTED: '#3B82F6', QUALIFIED: '#0D9488', PROPOSAL: '#F59E0B', NEGOTIATION: '#E85A1E', WON: '#16A34A', LOST: '#DC2626', NURTURE: '#94A3B8' };
 const CUSTOMER_TYPES = ['freight', 'customs', 'trading', 'mixed'];
-const SOURCES = ['sales_visit', 'cold_call', 'referral', 'existing_network', 'exhibition', 'instagram', 'linkedin', 'tiktok', 'website', 'walk_in', 'other'];
+// `whatsapp` disisipkan di antara tiktok dan website supaya seluruh channel
+// digital tetap berdampingan (instagram · linkedin · tiktok · whatsapp ·
+// website). Urutan relatif opsi lama TIDAK berubah.
+// ⚠️ Nilai di sini terikat CHECK constraint `prospects_source_check` pada tabel
+// `accounts` — menambah opsi di FE saja akan ditolak DB. Pelebaran constraint-nya
+// ada di migrasi 20260830000004.
+const SOURCES = ['sales_visit', 'cold_call', 'referral', 'existing_network', 'exhibition', 'instagram', 'linkedin', 'tiktok', 'whatsapp', 'website', 'walk_in', 'other'];
 const SOURCE_LABELS = {
   sales_visit: 'Sales Visit', cold_call: 'Cold Call', referral: 'Referral',
   existing_network: 'Existing Network', exhibition: 'Exhibition / Pameran', instagram: 'Instagram',
-  linkedin: 'LinkedIn', tiktok: 'TikTok', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
+  linkedin: 'LinkedIn', tiktok: 'TikTok', whatsapp: 'WhatsApp', website: 'Website', walk_in: 'Walk-in', other: 'Lainnya',
 };
 const BANT_ICON = { bant_budget: DollarSign, bant_authority: Users, bant_need: Target, bant_timeline: Clock };
 
@@ -99,7 +104,6 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
     bant_current_vendor: '', bant_payment: '', bant_decision_maker: '', bant_score: 0,
   });
 
-  const [winLoss, setWinLoss] = useState({ open: false, mode: 'won' });
   const [nameWarning, setNameWarning] = useState('');
   // Kode entitas (MSI/JCI/SOA) untuk pesan tolak duplikat. Pola sama dgn
   // InquiryFormPage:286 / QuotationFormPage:964 — fetch sekali saat mount.
@@ -183,15 +187,15 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
   const handleDelete = useCallback(() => {
     if (!prospect?.id) return;
-    showConfirm('Hapus Prospect', `Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`, async () => {
+    showConfirm('Delete Prospect', `Delete prospect "${prospect.name}"? This action cannot be undone.`, async () => {
       closeConfirm();
       try {
         const { error } = await supabase.from('accounts').update({ deleted_at: new Date().toISOString() }).eq('id', prospect.id);
         if (error) throw error;
-        showToast?.('Prospect berhasil dihapus.', 'success');
+        showToast?.('Prospect deleted.', 'success');
         onBack?.();
       } catch (err) {
-        showToast?.('Gagal hapus prospect: ' + err.message, 'error');
+        showToast?.('Failed to delete prospect: ' + err.message, 'error');
       }
     });
   }, [prospect?.id, prospect?.name, showToast, onBack]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -209,7 +213,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   // sama — RLS accounts membatasi sales ke akunnya sendiri, sehingga cek dari
   // klien biasa akan buta dan menjanjikan "aman" untuk nama yang justru ditolak
   // index. Cakupannya juga seluruh lifecycle (bukan cuma pra-customer), meniru
-  // uq_accounts_norm_name_per_entitas yang tak peduli account_status.
+  // uq_accounts_norm_name_per_entitas yang tak peduli lifecycle_stage.
   // Ini WARNING, bukan gerbang — hard-block-nya di DB.
   const checkDuplicateName = async (val) => {
     if (!val.trim() || isEdit || !profile?.company_id) { setNameWarning(''); return; }
@@ -217,14 +221,11 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       p_name: val.trim(), p_company_id: profile.company_id,
     });
     if (error || !data?.length) { setNameWarning(''); return; }
-    setNameWarning(`Mirip dengan: ${data.map(d => d.name).join(', ')} — yakin ini akun baru?`);
+    setNameWarning(`Similar to: ${data.map(d => d.name).join(', ')}. Are you sure this is a new account?`);
   };
 
   const handleStageChange = (e) => {
     const v = e.target.value;
-    // Cabang WON/LOST kini TAK TERJANGKAU — keduanya tidak lagi ditawarkan dropdown.
-    // Dibiarkan utuh (bukan lingkup batch ini untuk membongkar WinLossModal).
-    if (v === 'WON' || v === 'LOST') { setWinLoss({ open: true, mode: v.toLowerCase() }); return; }
     // Gate BANT untuk naik ke QUALIFIED — aturan & teks sama persis dengan Kanban.
     if (v === 'QUALIFIED') {
       const gate = bantQualifyGate(form);
@@ -246,14 +247,9 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
   const stageKnown = isKnownStage(form.pipeline_stage);
   const stageOffered = isActiveStage(form.pipeline_stage);
 
-  const handleWinLossSave = (values) => {
-    setForm(f => ({ ...f, pipeline_stage: winLoss.mode.toUpperCase(), ...values }));
-    setWinLoss(wl => ({ ...wl, open: false }));
-  };
-
   const validate = () => {
     const e = {};
-    if (!form.name.trim()) e.name = 'Wajib diisi';
+    if (!form.name.trim()) e.name = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -282,7 +278,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         ({ error } = await supabase.from('accounts').update(payload).eq('id', prospect.id));
       } else {
         // Akun baru lahir sebagai 'lead' — inquiry adalah gerbang menuju 'prospect' (dinaikkan trigger DB Fase 2).
-        payload.created_by = profile.id; payload.account_status = 'lead';
+        payload.created_by = profile.id; payload.lifecycle_stage = 'lead';
         payload.owner_company_id = profile.company_id; payload.last_activity_at = new Date().toISOString();
         ({ error } = await supabase.from('accounts').insert(payload));
       }
@@ -291,7 +287,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         action: isEdit ? ACTION_TYPES.UPDATE_PROSPECT : ACTION_TYPES.CREATE_PROSPECT,
         entityType: ENTITY_TYPES.PROSPECT, entityId: isEdit ? prospect.id : null, entityLabel: form.name,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.(isEdit ? 'Prospect berhasil diupdate ✨' : 'Akun baru berhasil ditambahkan');
+      showToast?.(isEdit ? 'Prospect updated' : 'New account added');
       onBack();
     } catch (err) {
       // 23505 = unique_violation. Index-nya PARTIAL UNIQUE, jadi Postgres menyebut
@@ -301,10 +297,10 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
       const isDupName = err?.code === '23505'
         && /uq_accounts_norm_name_per_entitas/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
       if (isDupName) {
-        setErrors(e => ({ ...e, name: 'Nama sudah dipakai' }));
-        showToast?.(`Akun dengan nama ini sudah ada di ${entityCode || 'entitas'} ini.`, 'error');
+        setErrors(e => ({ ...e, name: 'Name already in use' }));
+        showToast?.(`An account with this name already exists in ${entityCode || 'this entity'}.`, 'error');
       } else {
-        showToast?.('Gagal menyimpan: ' + (err?.message || 'terjadi kesalahan'), 'error');
+        showToast?.('Failed to save: ' + (err?.message || 'terjadi kesalahan'), 'error');
       }
     } finally {
       setSaving(false);
@@ -326,13 +322,13 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         {/* header card */}
         <div style={S.headerCard}>
           <div style={{ minWidth: 0 }}>
-            <h1 style={S.hTitle}>{isEdit ? 'Edit Prospect' : 'Tambah Prospect'}</h1>
-            <div style={S.hSub}>{isEdit ? prospect.name : 'Lengkapi data akun baru untuk masuk ke pipeline CRM.'}</div>
+            <h1 style={S.hTitle}>{isEdit ? 'Edit Prospect' : 'Add Prospect'}</h1>
+            <div style={S.hSub}>{isEdit ? prospect.name : 'Complete the new account details to enter the CRM pipeline.'}</div>
           </div>
           <div style={{ display: 'flex', gap: 10, flex: '0 0 auto' }}>
-            <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Batal</button>
+            <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Cancel</button>
             <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleSave} disabled={saving}>
-              <UserPlus size={17} />{saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Tambah Prospect')}
+              <UserPlus size={17} />{saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Prospect')}
             </button>
           </div>
         </div>
@@ -342,12 +338,12 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           <div style={S.secBar}>
             <div style={S.secNum}>01</div>
             <div><div style={S.secTitle}>Informasi Perusahaan</div></div>
-            <div style={S.secSub}>Identitas legal &amp; kontak calon customer</div>
+            <div style={S.secSub}>Legal identity &amp; prospective customer contact</div>
           </div>
           <div style={S.secBody}>
             <div style={{ display: 'grid', gap: 18 }}>
               {/* Row 1 — prefix + name combined */}
-              <Field label="Nama Perusahaan" required>
+              <Field label="Company Name" required>
                 <PrefixNameField
                   prefix={form.company_prefix} onPrefix={set('company_prefix')}
                   name={form.name} onName={set('name')} onNameBlur={checkDuplicateName}
@@ -359,7 +355,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
 
               {/* Row 2 */}
               <div style={grid3}>
-                <Field label="Legal Name"><input value={form.legal_name} onChange={set('legal_name')} style={S.input} placeholder="Nama badan hukum…" /></Field>
+                <Field label="Legal Name"><input value={form.legal_name} onChange={set('legal_name')} style={S.input} placeholder="Legal entity name…" /></Field>
                 <Field label="Customer Type">
                   <div style={selWrap}>
                     <select value={form.customer_type} onChange={set('customer_type')} style={selInput}>
@@ -379,7 +375,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
               {/* Row 3 — PIC. Read-only sejak batch "kunci pic_*" 26 Jul 2026 —
                   kelola kontak di tab Kontak (Detail Account). Field dipertahankan
                   (bukan dihapus) supaya nilai lama tetap terlihat. */}
-              <div style={{ fontSize: 12, color: C.muted, marginBottom: -4 }}>Kelola kontak di tab Kontak.</div>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: -4 }}>Manage contacts in the Contacts tab.</div>
               <div style={grid3}>
                 <Field label="PIC Name"><input value={form.pic_name} disabled style={{ ...S.input, background: C.pageBg, cursor: 'not-allowed' }} /></Field>
                 <Field label="PIC Phone"><input value={form.pic_phone} disabled style={{ ...S.input, background: C.pageBg, cursor: 'not-allowed' }} /></Field>
@@ -421,7 +417,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                         (aturan batch penjaga stage, tidak diubah); stage lama yang masih
                         dikenal tetap boleh dipindahkan ke salah satu stage aktif. */}
                     <select value={form.pipeline_stage} onChange={handleStageChange} disabled={!stageKnown} style={{ ...selInput, paddingLeft: 30 }}>
-                      {!stageOffered && <option value={form.pipeline_stage} disabled>{form.pipeline_stage || '(kosong)'}</option>}
+                      {!stageOffered && <option value={form.pipeline_stage} disabled>{form.pipeline_stage || '(empty)'}</option>}
                       {ACTIVE_STAGE_KEYS.map(s => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
                     </select><SelectChevron />
                   </div>
@@ -436,12 +432,12 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                       <div style={selWrap}>
                         {assignInitials && <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', width: 26, height: 26, borderRadius: 999, background: C.navy, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', fontFamily: "'Montserrat',sans-serif", zIndex: 1 }}>{assignInitials}</span>}
                         <select value={form.assigned_to} onChange={set('assigned_to')} style={{ ...selInput, paddingLeft: assignInitials ? 44 : 14 }}>
-                          <option value="">— Pilih sales —</option>
+                          <option value="">— Select Salesperson —</option>
                           {assigneeOptions.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
                         </select><SelectChevron />
                       </div>
                       {!isEdit && !isSalesCreator && !form.assigned_to && (
-                        <div style={{ marginTop: 6, fontSize: 12, color: C.orange, fontWeight: 500 }}>Prospect belum di-assign ke sales.</div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: C.orange, fontWeight: 500 }}>Prospect is not assigned to a salesperson yet.</div>
                       )}
                     </>
                   )}
@@ -449,13 +445,13 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                 <Field label="Payment Terms">
                   <div style={selWrap}>
                     <select value={form.payment_terms_id} onChange={set('payment_terms_id')} style={selInput}>
-                      <option value="">— Pilih payment terms —</option>
+                      <option value="">— Select Payment Terms —</option>
                       {paymentTerms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select><SelectChevron />
                   </div>
                 </Field>
               </div>
-              <Field label="Notes" span><textarea value={form.notes} onChange={set('notes')} rows={3} style={S.textarea} placeholder="Catatan tambahan…" /></Field>
+              <Field label="Notes" span><textarea value={form.notes} onChange={set('notes')} rows={3} style={S.textarea} placeholder="Additional notes…" /></Field>
             </div>
           </div>
         </section>
@@ -465,7 +461,7 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           <div style={S.secBar}>
             <div style={S.secNum}>03</div>
             <div><div style={S.secTitle}>BANT Qualification</div></div>
-            <div style={S.secSub}>Skor ≥ 8/12 untuk lanjut ke tahap Qualified</div>
+            <div style={S.secSub}>Score ≥ 8/12 to move on to Qualified</div>
           </div>
           <div style={S.secBody}>
             <div style={{ marginBottom: 22 }}><BantScoreBar score={form.bant_score} /></div>
@@ -482,14 +478,14 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
           <div style={S.secBar}>
             <div style={S.secNum}>04</div>
             <div><div style={S.secTitle}>Informasi Tambahan</div></div>
-            <div style={S.secSub}>Detail kargo &amp; kontak komersial prospect</div>
+            <div style={S.secSub}>Cargo details &amp; commercial contact for the prospect</div>
           </div>
           <div style={S.secBody}>
             <div style={{ display: 'grid', gap: 18 }}>
               <div style={grid3}>
-                <Field label="Komoditi"><input value={form.bant_commodity} onChange={set('bant_commodity')} style={S.input} placeholder="Jenis komoditi / barang…" /></Field>
+                <Field label="Komoditi"><input value={form.bant_commodity} onChange={set('bant_commodity')} style={S.input} placeholder="Commodity / goods type…" /></Field>
                 <Field label="Origin (POL)"><input value={form.bant_origin} onChange={set('bant_origin')} style={S.input} placeholder="Kota / port asal…" /></Field>
-                <Field label="Destination (POD)"><input value={form.bant_destination} onChange={set('bant_destination')} style={S.input} placeholder="Kota / port tujuan…" /></Field>
+                <Field label="Destination (POD)"><input value={form.bant_destination} onChange={set('bant_destination')} style={S.input} placeholder="Destination city / port…" /></Field>
               </div>
               <div style={grid3}>
                 <Field label="Frekuensi">
@@ -498,8 +494,8 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
                     {BANT_FREQUENCY_OPTIONS.filter(Boolean).map(o => <option key={o} value={o} />)}
                   </datalist>
                 </Field>
-                <Field label="Vendor Saat Ini"><input value={form.bant_current_vendor} onChange={set('bant_current_vendor')} style={S.input} placeholder="Forwarder / vendor incumbent…" /></Field>
-                <Field label="Decision Maker"><input value={form.bant_decision_maker} onChange={set('bant_decision_maker')} style={S.input} placeholder="Nama / jabatan pengambil keputusan…" /></Field>
+                <Field label="Current Vendor"><input value={form.bant_current_vendor} onChange={set('bant_current_vendor')} style={S.input} placeholder="Forwarder / vendor incumbent…" /></Field>
+                <Field label="Decision Maker"><input value={form.bant_decision_maker} onChange={set('bant_decision_maker')} style={S.input} placeholder="Decision maker name / title…" /></Field>
               </div>
             </div>
           </div>
@@ -519,31 +515,26 @@ export default function ProspectFormPage({ prospect, onBack, showToast }) {
         {/* footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
           {canDelete && isEdit ? (
-            <button type="button" onClick={handleDelete} style={{ ...S.btnGhost, borderColor: C.error, color: C.error }}>Hapus Prospect</button>
+            <button type="button" onClick={handleDelete} style={{ ...S.btnGhost, borderColor: C.error, color: C.error }}>Delete Prospect</button>
           ) : <span />}
           <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" style={S.btnGhost} onClick={onBack}><ChevronLeft size={16} />Batal</button>
+            <button type="button" style={S.btnGhost} onClick={onBack}><ChevronLeft size={16} />Cancel</button>
             <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleSave} disabled={saving}>
-              <Save size={16} />{saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Tambah Prospect')}
+              <Save size={16} />{saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Prospect')}
             </button>
           </div>
         </div>
       </div>
 
-      <WinLossModal
-        key={`${winLoss.mode}-${winLoss.open}`}
-        open={winLoss.open} mode={winLoss.mode} prospectName={form.name}
-        onSave={handleWinLossSave} onCancel={() => setWinLoss(wl => ({ ...wl, open: false }))}
-      />
       <ConfirmModal
         open={confirmState.open} title={confirmState.title} message={confirmState.message}
-        confirmLabel="Ya, Hapus" cancelLabel="Batal" variant="danger"
+        confirmLabel="Yes, Delete" cancelLabel="Cancel" variant="danger"
         onConfirm={confirmState.onConfirm} onCancel={closeConfirm}
       />
       <ConfirmModal
         open={stageGate.open} variant="warning"
-        title="Score BANT Belum Optimal" message={stageGate.message}
-        confirmLabel="Ya, Lanjut" cancelLabel="Batal"
+        title="Suboptimal BANT Score" message={stageGate.message}
+        confirmLabel="Yes, Continue" cancelLabel="Cancel"
         onConfirm={() => { stageGate.onYes?.(); setStageGate({ open: false, message: '', onYes: null }); }}
         onCancel={() => setStageGate({ open: false, message: '', onYes: null })}
       />
@@ -563,7 +554,7 @@ function PrefixNameField({ prefix, onPrefix, name, onName, onNameBlur, error }) 
         </select>
         <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}><ChevronDown size={15} color={C.navy} /></span>
       </div>
-      <input value={name} placeholder="Nama perusahaan…" onChange={onName} onBlur={onNameBlur ? (e) => onNameBlur(e.target.value) : undefined} onFocus={() => setF(true)}
+      <input value={name} placeholder="Company name…" onChange={onName} onBlur={onNameBlur ? (e) => onNameBlur(e.target.value) : undefined} onFocus={() => setF(true)}
         style={{ flex: 1, height: 44, border: 'none', outline: 'none', padding: '0 14px', fontSize: 14, fontFamily: 'inherit', color: C.text, minWidth: 0 }} />
     </div>
   );

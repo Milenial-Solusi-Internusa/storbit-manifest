@@ -7,8 +7,7 @@
 import { useState, useEffect } from 'react';
 import {
   ChevronLeft, ChevronDown, Send, X, Check, User, Calendar, Hash, Anchor, MapPin,
-  Package, AlertTriangle, Droplets, Thermometer, Maximize2, FileCheck,
-  Shield, Warehouse, FileText, Umbrella, Truck,
+  AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
@@ -16,6 +15,9 @@ import { logAudit, ACTION_TYPES, ENTITY_TYPES } from '../../lib/auditLogger';
 import { getTodayWIB } from '../../lib/dateUtils';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import AccountPicker from '../../components/AccountPicker';
+// Sumber TUNGGAL kosakata kargo & layanan tambahan — dipakai bersama
+// DealDetailPage. Tidak boleh dideklarasikan ulang di sini.
+import { CARGO_TYPES, SERVICES } from './inquiryOptions';
 
 const C = {
   navy: '#1B4D8A', navyDark: '#0F3768', navySoft: '#EEF3FB',
@@ -34,24 +36,9 @@ const SERVICE_TYPES_FALLBACK = [
 const INCOTERMS = ['EXW', 'FOB', 'CFR/CNF', 'CIF', 'DDU/DAP', 'DDP'];
 const CONTAINERS = ["FCL 20'", "FCL 40'", "FCL 40'HC", 'LCL'];
 const IMO_CLASSES = ['Class 1 — Explosives', 'Class 2 — Gases', 'Class 3 — Flammable Liquids', 'Class 4 — Flammable Solids', 'Class 5 — Oxidizers', 'Class 6 — Toxic', 'Class 7 — Radioactive', 'Class 8 — Corrosives', 'Class 9 — Miscellaneous'];
-const CARGO_TYPES = [
-  { id: 'normal', Icon: Package, label: 'Normal Cargo', desc: 'Kargo umum tanpa penanganan khusus' },
-  { id: 'dg', Icon: AlertTriangle, label: 'Dangerous Goods (DG) / Hazmat', desc: 'Bahan berbahaya & beracun' },
-  { id: 'liquid', Icon: Droplets, label: 'Barang Cair (Liquid)', desc: 'Cairan, flexitank atau drum' },
-  { id: 'reefer', Icon: Thermometer, label: 'Perlu Suhu Khusus (Reefer)', desc: 'Rantai dingin / temperature-controlled' },
-  { id: 'oversize', Icon: Maximize2, label: 'Oversize / Overweight', desc: 'Out-of-gauge / break bulk' },
-  { id: 'permit', Icon: FileCheck, label: 'Izin Khusus (BPOM, Kementan, dll)', desc: 'Memerlukan izin instansi terkait' },
-];
-const SERVICES = [
-  { id: 'customs', Icon: Shield, label: 'Custom Clearance' },
-  { id: 'warehouse', Icon: Warehouse, label: 'Warehouse' },
-  { id: 'undername', Icon: FileText, label: 'Undername' },
-  { id: 'insurance', Icon: Umbrella, label: 'Cargo Insurance' },
-  { id: 'trucking', Icon: Truck, label: 'Trucking' },
-];
-const MSDS_OPTS = ['Ya', 'Tidak', 'Belum Tahu'];
+const MSDS_OPTS = ['Ya', 'Tidak', 'Not Sure Yet'];
 
-// Kelompok lifecycle account_status. Dropdown inquiry harus bisa memilih akun
+// Kelompok lifecycle lifecycle_stage. Dropdown inquiry harus bisa memilih akun
 // pra-customer (lead/mql/sql/prospect) supaya trigger gerbang Fase 2 hidup.
 // TODO: hapus 'lead_pool' setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
 const PRA_CUSTOMER_STATUS = ['lead', 'mql', 'sql', 'prospect', 'lead_pool'];
@@ -144,18 +131,18 @@ async function generateInquiryNo(companyId, companyCode) {
   const { data, error } = await supabase.rpc('increment_document_sequence', {
     p_company_id: companyId, p_document_type: 'INQ', p_department_code: 'CRM', p_year: year, p_month: 0,
   });
-  if (error) throw new Error('Gagal generate nomor dokumen, coba lagi.');
+  if (error) throw new Error('Failed to generate the document number, please try again.');
   return `INQ/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
 }
 
-export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = 'create' }) {
+export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = 'create', prefillAccountId = null, prefillContactId = null }) {
   const { profile, erpRole, user } = useAuth();
   const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
   const isEdit = mode === 'edit' && !!inquiryId;
 
   const [form, setForm] = useState({
-    prospect_id: '', customer_id: '', service_type: 'freight_forwarding',
-    route: '', estimated_volume: '', notes: '',
+    prospect_id: '', customer_id: '', contact_id: '', service_type: 'freight_forwarding',
+    route: '', estimated_volume: '', estimated_value: '', notes: '',
     // new RFQ fields
     deadline_quote: '', pol: '', pod: '', incoterms: [], container_types: [],
     goods_name: '', hs_code: '', weight_kg: '', volume_cbm: '', dimension: '',
@@ -165,6 +152,11 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
   });
   const [prospects, setProspects] = useState([]);
   const [customers, setCustomers] = useState([]);
+  // Kontak milik akun yang SEDANG terpilih saja — bukan seluruh contacts perusahaan.
+  // Disimpan BESERTA id akun pemiliknya supaya daftar milik akun sebelumnya tak sempat
+  // terbaca sebagai milik akun baru selama fetch berikutnya masih jalan (lihat turunan
+  // `contacts`/`contactsLoaded` di bawah). Reset-nya turunan, bukan setState di effect.
+  const [contactsFor, setContactsFor] = useState({ accountId: null, list: [] });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [sourceType, setSourceType] = useState('prospect');
@@ -178,11 +170,86 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
     if (!profile?.company_id) return;
     // Akun yang sedang parkir di Lead Pool tak boleh dipilih untuk dokumen baru —
     // harus ditarik dulu lewat approval. is_in_lead_pool=false di semua picker.
-    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', PRA_CUSTOMER_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name, lifecycle_stage').eq('company_id', profile.company_id).in('lifecycle_stage', PRA_CUSTOMER_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setProspects(data || []));
-    supabase.from('accounts').select('id, name, account_status').eq('company_id', profile.company_id).in('account_status', CUSTOMER_SIDE_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
+    supabase.from('accounts').select('id, name, lifecycle_stage').eq('company_id', profile.company_id).in('lifecycle_stage', CUSTOMER_SIDE_STATUS).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000)
       .then(({ data }) => setCustomers(data || []));
   }, [profile?.company_id]);
+
+  // Akun yang sedang jadi sumber inquiry ini. Satu turunan dipakai bersama oleh
+  // fetch kontak + render field Kontak, supaya tak ada dua definisi yang melenceng.
+  const resolvedAccountId = sourceType === 'prospect' ? form.prospect_id : form.customer_id;
+  // Daftar kontak dianggap milik akun sekarang HANYA bila id-nya cocok. Selama fetch
+  // akun baru belum selesai, `contactsLoaded` false → UI menahan diri (bukan menampilkan
+  // "belum punya kontak" yang keliru, dan bukan daftar akun sebelumnya).
+  const contactsLoaded = contactsFor.accountId === resolvedAccountId;
+  const contacts = contactsLoaded ? contactsFor.list : [];
+
+  // ── Prefill dari Detail Account ("+ New Inquiry") ────────────────────────────
+  // HANYA mode create: mode edit punya jalur populate sendiri di bawah dan tak boleh
+  // ditimpa. Toggle Prospect|Customer diturunkan dari lifecycle_stage akunnya (bukan
+  // ditebak), memakai dua daftar status yang SUDAH dipakai dropdown di atas — jadi
+  // akun yang jatuh di bucket customer otomatis membuka toggle "Customer (Existing)".
+  // Akun di-inject ke daftar dropdown-nya supaya namanya tampil walau daftar utama
+  // belum/tak memuatnya (pola sama dengan inject edit-mode di bawah).
+  useEffect(() => {
+    if (isEdit || !prefillAccountId) return undefined;
+    let cancelled = false;
+    supabase.from('accounts').select('id, name, lifecycle_stage')
+      .eq('id', prefillAccountId).is('deleted_at', null).maybeSingle()
+      .then(({ data: acc }) => {
+        if (cancelled || !acc) return;
+        const isCustomerSide = CUSTOMER_SIDE_STATUS.includes(acc.lifecycle_stage);
+        const opt = { id: acc.id, name: acc.name, lifecycle_stage: acc.lifecycle_stage };
+        setSourceType(isCustomerSide ? 'customer' : 'prospect');
+        if (isCustomerSide) {
+          setCustomers(prev => prev.some(c => c.id === acc.id) ? prev : [opt, ...prev]);
+          setCustomerText(acc.name);
+        } else {
+          setProspects(prev => prev.some(p => p.id === acc.id) ? prev : [opt, ...prev]);
+          setProspectText(acc.name);
+        }
+        setForm(f => ({
+          ...f,
+          prospect_id: isCustomerSide ? '' : acc.id,
+          customer_id: isCustomerSide ? acc.id : '',
+          // Kontak dari pemanggil (kontak utama akun) dipakai bila ada; kalau null,
+          // fetch kontak di bawah yang menentukan default-nya.
+          contact_id: prefillContactId || f.contact_id,
+        }));
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, prefillAccountId, prefillContactId]);
+
+  // ── Kontak akun terpilih ────────────────────────────────────────────────────
+  // SATU mekanisme untuk ketiga kasus (0 / 1 / banyak kontak): selalu ambil daftar
+  // kontak akun ini, lalu pilih default-nya di sini — bukan tiga cabang UI berbeda.
+  // Default = kontak UTAMA (is_primary) bila ada; kalau tidak ada primary TAPI cuma
+  // ada satu kontak, pakai yang satu itu. Selebihnya dibiarkan kosong supaya user
+  // memilih sadar. Pilihan yang SUDAH ada (prefill dari pemanggil / mode edit / hasil
+  // klik user) TIDAK PERNAH ditimpa.
+  // Filter `deleted_at` saja — sengaja TIDAK menyaring is_active, supaya jumlah kontak
+  // di sini sama persis dengan tab Kontak di Detail Account (yang juga menampilkan yang
+  // non-aktif, dengan badge). Yang non-aktif ditandai di label, bukan disembunyikan.
+  useEffect(() => {
+    if (!resolvedAccountId) return undefined;
+    let cancelled = false;
+    supabase.from('contacts')
+      .select('id, name, position, is_primary, is_active')
+      .eq('account_id', resolvedAccountId).is('deleted_at', null)
+      .order('is_primary', { ascending: false }).order('name').limit(1000)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const list = data || [];
+        setContactsFor({ accountId: resolvedAccountId, list });
+        setForm(f => {
+          if (f.contact_id) return f;
+          const auto = list.find(c => c.is_primary) || (list.length === 1 ? list[0] : null);
+          return auto ? { ...f, contact_id: auto.id } : f;
+        });
+      });
+    return () => { cancelled = true; };
+  }, [resolvedAccountId]);
 
   // Edit mode — fetch the inquiry and populate the form once.
   useEffect(() => {
@@ -197,9 +264,14 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         setForm({
           prospect_id: data.prospect_id || '',
           customer_id: data.customer_id || '',
+          // WAJIB ikut dipopulate: `fields` di handleSave dipakai bersama oleh create
+          // DAN update, jadi tanpa baris ini setiap Simpan di mode edit akan menimpa
+          // contact_id yang sudah tersimpan dengan NULL.
+          contact_id: data.contact_id || '',
           service_type: data.service_type || 'freight_forwarding',
           route: data.route || '',
           estimated_volume: data.estimated_volume || '',
+          estimated_value: data.estimated_value != null ? String(data.estimated_value) : '',
           notes: data.notes || '',
           deadline_quote: data.deadline_quote || '',
           pol: data.pol || '',
@@ -222,9 +294,9 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         // Make sure the linked account appears in its dropdown (it may be inactive
         // or in the other status bucket) so the name renders instead of blank.
         if (linkedId) {
-          const { data: acc } = await supabase.from('accounts').select('id, name, account_status').eq('id', linkedId).maybeSingle();
+          const { data: acc } = await supabase.from('accounts').select('id, name, lifecycle_stage').eq('id', linkedId).maybeSingle();
           if (cancelled || !acc) return;
-          const opt = { id: acc.id, name: acc.name, account_status: acc.account_status };
+          const opt = { id: acc.id, name: acc.name, lifecycle_stage: acc.lifecycle_stage };
           if (data.customer_id) { setCustomers(prev => prev.some(c => c.id === acc.id) ? prev : [opt, ...prev]); setCustomerText(acc.name); }
           else { setProspects(prev => prev.some(p => p.id === acc.id) ? prev : [opt, ...prev]); setProspectText(acc.name); }
         }
@@ -238,9 +310,9 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
 
   const validate = () => {
     const e = {};
-    if (sourceType === 'prospect' && !form.prospect_id) e.source = 'Pilih prospect';
-    if (sourceType === 'customer' && !form.customer_id) e.source = 'Pilih customer';
-    if (!form.service_type) e.service_type = 'Wajib diisi';
+    if (sourceType === 'prospect' && !form.prospect_id) e.source = 'Select prospect';
+    if (sourceType === 'customer' && !form.customer_id) e.source = 'Select customer';
+    if (!form.service_type) e.service_type = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -254,9 +326,20 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       const fields = {
         prospect_id: sourceType === 'prospect' ? (form.prospect_id || null) : (form.customer_id || null),
         customer_id: null,
+        // Jalur tulis PERTAMA untuk kolom `inquiries.contact_id` (FK ke contacts,
+        // nullable — akun tanpa kontak tetap boleh punya inquiry). Sebelum ini kolomnya
+        // ada tapi nol penulis di seluruh FE.
+        contact_id: form.contact_id || null,
         service_type: form.service_type,
         route: form.route || null,
         estimated_volume: form.estimated_volume || null,
+        // Kosong → NULL, BUKAN 0. `inquiries.estimated_value` sengaja nullable
+        // tanpa default (migrasi 20260722000007) supaya "belum diisi" bisa
+        // dibedakan dari "nol"; menulis 0 akan mencemari total nilai pipeline di
+        // Dashboard dan menghapus perbedaan itu selamanya. Ini juga sebabnya
+        // pola di sini mengikuti weight_kg/volume_cbm, BUKAN modal Edit Deal
+        // yang menulis ke accounts.estimated_value (kolom itu DEFAULT 0).
+        estimated_value: form.estimated_value !== '' ? Number(form.estimated_value) : null,
         notes: form.notes || null,
         deadline_quote: form.deadline_quote || null,
         pol: form.pol || null,
@@ -283,7 +366,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         logAudit(supabase, {
           action: ACTION_TYPES.UPDATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: inquiryId, entityLabel: editNo,
         }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-        showToast?.('Inquiry berhasil diupdate ✨');
+        showToast?.('Inquiry updated');
         onBack();
         return;
       }
@@ -292,16 +375,23 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
       const companyCode = companyRow.data?.code || 'MSI';
       const inquiry_no = await generateInquiryNo(profile.company_id, companyCode);
 
-      const payload = { inquiry_no, company_id: profile.company_id, status: 'OPEN', created_by: profile.id, ...fields };
+      // `owner_id` = pembuat inquiry (keputusan Den 30 Agu 2026). Kolomnya lahir
+      // di Batch Persiapan dengan backfill dari created_by, tapi sampai batch ini
+      // NOL jalur tulis mengisinya — akibatnya setiap inquiry baru sejak 27 Agu
+      // ber-owner_id NULL, dan Sales Performance + filter Pemilik Deal di Pipeline
+      // tak punya apa pun untuk dikelompokkan. Nilainya sengaja sama dengan
+      // created_by di sini, TAPI dua kolom ini bukan sinonim: created_by permanen,
+      // owner_id bisa dipindahtangankan selama deal masih terbuka (Detail Deal).
+      const payload = { inquiry_no, company_id: profile.company_id, status: 'OPEN', created_by: profile.id, owner_id: profile.id, ...fields };
       const { error } = await supabase.from('inquiries').insert(payload);
       if (error) throw error;
       logAudit(supabase, {
         action: ACTION_TYPES.CREATE_INQUIRY, entityType: ENTITY_TYPES.INQUIRY, entityId: null, entityLabel: inquiry_no,
       }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-      showToast?.('Inquiry berhasil dibuat ✨');
+      showToast?.('Inquiry created');
       onBack();
     } catch (err) {
-      showToast?.('Gagal menyimpan: ' + err.message, 'error');
+      showToast?.('Failed to save: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -316,15 +406,15 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         <div style={S.headerCard}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0 }}>
-              <h1 style={S.hTitle}>{isEdit ? 'Edit Inquiry' : 'Buat Inquiry Baru'}</h1>
-              <div style={S.hSub}>Form Permintaan Penawaran (RFQ)</div>
+              <h1 style={S.hTitle}>{isEdit ? 'Edit Inquiry' : 'New Inquiry'}</h1>
+              <div style={S.hSub}>Request for Quotation (RFQ) Form</div>
             </div>
             <span style={S.inqBadge}>{isEdit ? (editNo || '—') : `INQ/MSI/${new Date().getFullYear()}/—`}</span>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-            <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Batal</button>
+            <button type="button" style={S.btnGhost} onClick={onBack}><X size={16} />Cancel</button>
             <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleSave} disabled={saving}>
-              <Send size={16} />{saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Submit Inquiry')}
+              <Send size={16} />{saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Submit Inquiry')}
             </button>
           </div>
         </div>
@@ -333,14 +423,14 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         <section style={S.card}>
           <div style={S.secBar}>
             <div style={S.secNum}>01</div><div style={S.secTitle}>Informasi Dasar</div>
-            <div style={S.secSub}>Sales, customer &amp; tenggat penawaran</div>
+            <div style={S.secSub}>Sales, customer &amp; quotation deadline</div>
           </div>
           <div style={S.secBody}>
             {/* auto-filled info row */}
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 0', background: '#F8FAFC', border: '1px solid ' + C.border, borderRadius: 10, padding: '16px 20px', marginBottom: 20 }}>
               <div style={S.infoChip}><User size={16} color={C.navy} /><span><span style={S.infoChipK}>Sales</span><span style={S.infoChipV}>{profile?.full_name || user?.email || '—'}</span></span></div>
               <div style={S.infoDiv} />
-              <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Tanggal Inquiry</span><span style={S.infoChipV}>{getTodayWIB().split('-').reverse().join('/')}</span></span></div>
+              <div style={S.infoChip}><Calendar size={16} color={C.navy} /><span><span style={S.infoChipK}>Inquiry Date</span><span style={S.infoChipV}>{getTodayWIB().split('-').reverse().join('/')}</span></span></div>
               <div style={S.infoDiv} />
               <div style={S.infoChip}><Hash size={16} color={C.navy} /><span><span style={S.infoChipK}>No. Inquiry</span><span style={{ ...S.infoChipV, fontFamily: "'IBM Plex Mono',monospace" }}>INQ/MSI/{new Date().getFullYear()}/—</span></span></div>
             </div>
@@ -350,7 +440,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               <Field label="Sumber" span>
                 <div style={{ display: 'flex', gap: 10 }}>
                   {['prospect', 'customer'].map(t => (
-                    <button key={t} type="button" onClick={() => { setSourceType(t); setForm(f => ({ ...f, prospect_id: '', customer_id: '' })); setProspectText(''); setCustomerText(''); }}
+                    <button key={t} type="button" onClick={() => { setSourceType(t); setForm(f => ({ ...f, prospect_id: '', customer_id: '', contact_id: '' })); setProspectText(''); setCustomerText(''); }}
                       style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: "'Montserrat',sans-serif", border: '1px solid ' + (sourceType === t ? C.navy : C.border), background: sourceType === t ? C.navy : '#fff', color: sourceType === t ? '#fff' : C.sub }}>
                       {t === 'prospect' ? 'Prospect' : 'Customer (Existing)'}
                     </button>
@@ -366,9 +456,9 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                       accounts={prospects}
                       statusLabel={lifecycleLabel}
                       inputStyle={S.input}
-                      placeholder="Cari prospect…"
-                      onChangeText={(v) => { setProspectText(v); setForm(f => ({ ...f, prospect_id: '' })); }}
-                      onPick={(a) => { setProspectText(a.name); setForm(f => ({ ...f, prospect_id: a.id })); }}
+                      placeholder="Search prospects…"
+                      onChangeText={(v) => { setProspectText(v); setForm(f => ({ ...f, prospect_id: '', contact_id: '' })); }}
+                      onPick={(a) => { setProspectText(a.name); setForm(f => ({ ...f, prospect_id: a.id, contact_id: '' })); }}
                     />
                   ) : (
                     <AccountPicker
@@ -376,13 +466,13 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                       accounts={customers}
                       statusLabel={lifecycleLabel}
                       inputStyle={S.input}
-                      placeholder="Cari customer…"
-                      onChangeText={(v) => { setCustomerText(v); setForm(f => ({ ...f, customer_id: '' })); }}
-                      onPick={(a) => { setCustomerText(a.name); setForm(f => ({ ...f, customer_id: a.id })); }}
+                      placeholder="Search customers…"
+                      onChangeText={(v) => { setCustomerText(v); setForm(f => ({ ...f, customer_id: '', contact_id: '' })); }}
+                      onPick={(a) => { setCustomerText(a.name); setForm(f => ({ ...f, customer_id: a.id, contact_id: '' })); }}
                     />
                   )}
                   {sourceType === 'prospect' && prospects.length === 0 && (
-                    <span style={{ fontSize: 12, color: C.sub, marginTop: 5, display: 'block' }}>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</span>
+                    <span style={{ fontSize: 12, color: C.sub, marginTop: 5, display: 'block' }}>All accounts are currently in the Lead Pool. Claim one from the Lead Pool first to use it.</span>
                   )}
                   {errors.source && <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors.source}</span>}
                 </Field>
@@ -390,6 +480,38 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   <input type="date" value={form.deadline_quote} onChange={set('deadline_quote')} style={S.input} />
                 </Field>
               </div>
+
+              {/* Contact — hanya muncul setelah akun terpilih (lewat prefill "+ New
+                  Inquiry" dari Detail Account MAUPUN pilih manual di picker atas), karena
+                  daftarnya DIBATASI ke kontak akun itu saja. Tidak wajib: akun tanpa
+                  kontak tetap boleh menyimpan inquiry (lihat catatan gate di laporan). */}
+              {resolvedAccountId && (
+                <div style={grid2}>
+                  <Field label="Contact">
+                    {!contactsLoaded ? (
+                      <span style={{ fontSize: 12, color: C.muted, display: 'block', paddingTop: 6 }}>Loading contacts…</span>
+                    ) : contacts.length === 0 ? (
+                      <span style={{ fontSize: 12, color: C.sub, display: 'block', paddingTop: 6 }}>
+                        This account has no contacts yet. Add one from Account Detail → Contacts tab.
+                      </span>
+                    ) : (
+                      <div style={{ position: 'relative' }}>
+                        <select value={form.contact_id} onChange={set('contact_id')} style={selInput}>
+                          <option value="">— Select contact —</option>
+                          {contacts.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                              {c.position ? ` — ${c.position}` : ''}
+                              {c.is_primary ? ' (Primary)' : ''}
+                              {c.is_active === false ? ' (Inactive)' : ''}
+                            </option>
+                          ))}
+                        </select><Chevron />
+                      </div>
+                    )}
+                  </Field>
+                </div>
+              )}
 
               <div style={grid2}>
                 <Field label="Service Type" required>
@@ -400,6 +522,26 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   </div>
                   {errors.service_type && <span style={{ fontSize: 12, color: C.error, marginTop: 5, display: 'block' }}>{errors.service_type}</span>}
                 </Field>
+                {/* Nilai estimasi deal — OPSIONAL, sesuai blueprint yang tidak
+                    mewajibkannya untuk status OPEN. Prefix "Rp" mengikuti pola
+                    modal Edit Deal; input mono + setNum mengikuti Berat/Volume
+                    di bawah. Dikosongkan = NULL, bukan 0. */}
+                <Field label="Deal Estimated Value">
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>Rp</span>
+                    <input
+                      value={form.estimated_value}
+                      onChange={setNum('estimated_value')}
+                      style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingLeft: 38 }}
+                      placeholder="0"
+                    />
+                  </div>
+                  <span style={{ fontSize: 11.5, color: C.muted, marginTop: 5, display: 'block' }}>
+                    {form.estimated_value !== ''
+                      ? `Rp ${Number(form.estimated_value).toLocaleString('id-ID')}`
+                      : 'Optional. Can be left empty and filled in later on the Deal Detail page.'}
+                  </span>
+                </Field>
               </div>
             </div>
           </div>
@@ -409,19 +551,19 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         <section style={S.card}>
           <div style={S.secBar}>
             <div style={S.secNum}>02</div><div style={S.secTitle}>Detail Shipment &amp; Kargo</div>
-            <div style={S.secSub}>Rute, incoterm, kontainer &amp; spesifikasi barang</div>
+            <div style={S.secSub}>Route, incoterm, container &amp; cargo specification</div>
           </div>
           <div style={S.secBody}>
             <div style={{ display: 'grid', gap: 20 }}>
               <div style={grid2}>
                 <div style={{ minWidth: 0 }}>
                   <div style={S.miniLabel}>Origin</div>
-                  <div style={S.label}><Anchor size={13} color={C.navy} /> POL — Port of Loading</div>
+                  <div style={S.label}><Anchor size={13} color={C.navy} /> POL: Port of Loading</div>
                   <input value={form.pol} onChange={set('pol')} style={S.input} placeholder="cth: Tanjung Priok - IDJKT" />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ ...S.miniLabel, color: C.orange }}>Destination</div>
-                  <div style={S.label}><MapPin size={13} color={C.orange} /> POD — Port of Discharge</div>
+                  <div style={S.label}><MapPin size={13} color={C.orange} /> POD: Port of Discharge</div>
                   <input value={form.pod} onChange={set('pod')} style={S.input} placeholder="cth: Singapore - SGSIN" />
                 </div>
               </div>
@@ -429,11 +571,11 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               <div style={grid2}>
                 <div style={{ minWidth: 0 }}>
                   <div style={S.label}><Anchor size={13} color={C.navy} /> Pickup Address</div>
-                  <textarea value={form.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Alamat penjemputan barang…" />
+                  <textarea value={form.pickup_address} onChange={set('pickup_address')} rows={2} style={S.textarea} placeholder="Cargo pickup address…" />
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={S.label}><MapPin size={13} color={C.orange} /> Delivery Address</div>
-                  <textarea value={form.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Alamat pengiriman barang…" />
+                  <textarea value={form.delivery_address} onChange={set('delivery_address')} rows={2} style={S.textarea} placeholder="Cargo delivery address…" />
                 </div>
               </div>
 
@@ -445,19 +587,19 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
               </div>
 
               <div>
-                <div style={S.label}>Jenis Kontainer</div>
+                <div style={S.label}>Container Type</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12 }}>
                   {CONTAINERS.map(t => <Pill key={t} active={form.container_types.includes(t)} onClick={() => toggleArr('container_types', t)}>{t}</Pill>)}
                 </div>
               </div>
 
               <div style={grid2}>
-                <Field label="Nama Barang (EN)"><input value={form.goods_name} onChange={set('goods_name')} style={S.input} placeholder="e.g. Industrial Machinery" /></Field>
+                <Field label="Item Name (EN)"><input value={form.goods_name} onChange={set('goods_name')} style={S.input} placeholder="e.g. Industrial Machinery" /></Field>
                 <Field label="HS Code"><input value={form.hs_code} onChange={set('hs_code')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace" }} placeholder="0000.00.00" /></Field>
               </div>
 
               <div style={grid2}>
-                <Field label="Berat Total">
+                <Field label="Total Weight">
                   <div style={{ position: 'relative' }}>
                     <input value={form.weight_kg} onChange={setNum('weight_kg')} style={{ ...S.input, fontFamily: "'IBM Plex Mono',monospace", paddingRight: 56 }} placeholder="0" />
                     <span style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 12, fontWeight: 600, color: C.muted }}>KG</span>
@@ -487,7 +629,7 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         <section style={S.card}>
           <div style={S.secBar}>
             <div style={S.secNum}>03</div><div style={S.secTitle}>Checklist Kargo Khusus</div>
-            <div style={S.secSub}>Tandai karakteristik kargo untuk penanganan tepat</div>
+            <div style={S.secSub}>Flag cargo characteristics for correct handling</div>
           </div>
           <div style={S.secBody}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: C.orange, marginBottom: 14 }}>Kategori Kargo</div>
@@ -506,13 +648,13 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
                   <Field label="IMO Class">
                     <div style={{ position: 'relative' }}>
                       <select value={form.imo_class} onChange={set('imo_class')} style={selInput}>
-                        <option value="">— Pilih IMO Class —</option>
+                        <option value="">— Select IMO Class —</option>
                         {IMO_CLASSES.map(o => <option key={o} value={o}>{o}</option>)}
                       </select><Chevron />
                     </div>
                   </Field>
                 </div>
-                <div style={S.label}>Sudah Ada MSDS?</div>
+                <div style={S.label}>MSDS Available?</div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   {MSDS_OPTS.map(o => <RadioPill key={o} value={o} current={form.has_msds} onClick={() => set('has_msds')({ target: { value: o } })}>{o}</RadioPill>)}
                 </div>
@@ -524,8 +666,8 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         {/* SECTION 04 — Layanan Tambahan */}
         <section style={S.card}>
           <div style={S.secBar}>
-            <div style={S.secNum}>04</div><div style={S.secTitle}>Layanan Tambahan</div>
-            <div style={S.secSub}>Pilih layanan yang dibutuhkan (opsional)</div>
+            <div style={S.secNum}>04</div><div style={S.secTitle}>Additional Services</div>
+            <div style={S.secSub}>Select the services needed (optional)</div>
           </div>
           <div style={S.secBody}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
@@ -537,20 +679,20 @@ export default function InquiryFormPage({ onBack, showToast, inquiryId, mode = '
         {/* SECTION 05 — Notes */}
         <section style={S.card}>
           <div style={S.secBar}>
-            <div style={S.secNum}>05</div><div style={S.secTitle}>Catatan Tambahan</div>
-            <div style={S.secSub}>Instruksi khusus untuk tim operasional</div>
+            <div style={S.secNum}>05</div><div style={S.secTitle}>Additional Notes</div>
+            <div style={S.secSub}>Special instructions for the operations team</div>
           </div>
           <div style={S.secBody}>
             <textarea value={form.notes} onChange={set('notes')} rows={5} style={S.textarea}
-              placeholder="Tambahkan catatan khusus, instruksi, atau informasi tambahan yang perlu diketahui tim operasional…" />
+              placeholder="Add any special notes, instructions, or extra information the operations team should know…" />
           </div>
         </section>
 
         {/* footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginBottom: 8 }}>
-          <button type="button" style={S.btnGhost} onClick={onBack}><ChevronLeft size={16} />Batal</button>
+          <button type="button" style={S.btnGhost} onClick={onBack}><ChevronLeft size={16} />Cancel</button>
           <button type="button" style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }} onClick={handleSave} disabled={saving}>
-            <Send size={16} />{saving ? 'Menyimpan…' : 'Submit Inquiry'}
+            <Send size={16} />{saving ? 'Saving…' : 'Submit Inquiry'}
           </button>
         </div>
       </div>

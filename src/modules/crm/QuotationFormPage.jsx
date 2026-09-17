@@ -11,6 +11,7 @@ import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import { useProducts } from '../../hooks/useProducts';
 import { PPN_RATE, PPN_RATE_FREIGHT_FORWARDING } from '../../lib/taxConstants';
 import { getTodayWIB } from '../../lib/dateUtils';
+import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 
 // Cegah scroll roda mouse mengubah nilai input type=number saat ter-focus.
 const blurOnWheel = (e) => { if (e.currentTarget.type === 'number') e.currentTarget.blur(); };
@@ -41,20 +42,20 @@ const rp = (n) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
 // Returns { tone: 'green'|'orange'|'red', text } based on discount % and user role.
 function pricingAuthority(discountPct, erpRole) {
   const d = Number(discountPct) || 0;
-  if (d <= 0) return { tone: 'green', text: '✓ Tidak perlu approval' };
+  if (d <= 0) return { tone: 'green', text: '✓ No approval required' };
   if (d <= 5) return ['sales_spv', 'manager', 'ceo', 'gm', 'admin', 'super_admin'].includes(erpRole)
-    ? { tone: 'green', text: '✓ Dalam wewenang Anda' }
-    : { tone: 'orange', text: '⚠ Perlu approval Sales SPV' };
+    ? { tone: 'green', text: '✓ Within your authority' }
+    : { tone: 'orange', text: '⚠ Requires approval from Sales SPV' };
   if (d <= 10) return ['manager', 'ceo', 'gm', 'admin', 'super_admin'].includes(erpRole)
-    ? { tone: 'green', text: '✓ Dalam wewenang Anda' }
-    : { tone: 'orange', text: '⚠ Perlu approval Sales Manager' };
+    ? { tone: 'green', text: '✓ Within your authority' }
+    : { tone: 'orange', text: '⚠ Requires approval from Sales Manager' };
   if (d <= 15) return ['ceo', 'gm', 'admin', 'super_admin'].includes(erpRole)
-    ? { tone: 'green', text: '✓ Dalam wewenang Anda' }
-    : { tone: 'orange', text: '⚠ Perlu approval BD GM / Commercial Director' };
+    ? { tone: 'green', text: '✓ Within your authority' }
+    : { tone: 'orange', text: '⚠ Requires approval from BD GM / Commercial Director' };
   if (d <= 20) return ['ceo', 'super_admin'].includes(erpRole)
-    ? { tone: 'green', text: '✓ Dalam wewenang Anda' }
-    : { tone: 'red', text: '✗ Perlu approval CEO' };
-  return { tone: 'red', text: '✗ Perlu approval CEO + Finance Controller + BoD' };
+    ? { tone: 'green', text: '✓ Within your authority' }
+    : { tone: 'red', text: '✗ Requires approval from CEO' };
+  return { tone: 'red', text: '✗ Requires approval from CEO + Finance Controller + BoD' };
 }
 const AUTHORITY_TONE = {
   green:  { bg: '#E4F0E5', bd: '#BFDDC4', color: '#2E7D4F' },
@@ -183,20 +184,34 @@ function Field({ label, req, children, full }) {
 }
 
 // ─── Document number generator ────────────────────────────────────────────
-async function generateQuotationNo(companyId, companyCode) {
-  const year = new Date().getFullYear();
-  const { data, error } = await supabase.rpc('increment_document_sequence', {
-    p_company_id:     companyId,
-    p_document_type:  'QUO',
-    p_department_code:'CRM',
-    p_year:           year,
-    p_month:          0,
-  });
-  // No silent fallback: a non-sequential number (e.g. timestamp) risks duplicate /
-  // garbage document numbers. Surface the failure so the caller's try/catch aborts
-  // the save and shows an error instead of generating a bad number.
-  if (error) throw new Error('Gagal generate nomor dokumen, coba lagi.');
-  return `QUO/${companyCode || 'MSI'}/${year}/${String(data).padStart(3, '0')}`;
+// Nomor quotation DITURUNKAN dari nomor inquiry-nya: INQ/MSI/2026/007 menjadi
+// QUO/MSI/2026/007. Sebelumnya ia mengambil deret sendiri lewat
+// increment_document_sequence('QUO'), sehingga INQ/.../007 bisa melahirkan
+// QUO/.../031 — dua nomor yang tak bisa dihubungkan tanpa membuka datanya.
+//
+// Konsekuensi struktural yang DISENGAJA: satu inquiry = satu quotation_no.
+// Quotation KEDUA dari inquiry yang sama akan menabrak UNIQUE (quotation_no,
+// revision) — itu memang jalur yang benar, karena yang kedua seharusnya
+// REVISI, bukan quotation baru. Guard di `dupActiveQuotation` mencegah user
+// sampai ke sana, dan handler 23505 di handleSave menangkap sisanya.
+//
+// Efek samping: baris 'QUO' di document_sequences jadi dorman. Tidak di-drop
+// (tak berbahaya), tapi jangan dikira rusak.
+//
+// Segmen dipecah per '/' — BUKAN .replace('INQ','QUO'), karena nama customer
+// pun bisa memuat "INQ".
+function quotationNoFromInquiry(inquiryNo) {
+  const parts = String(inquiryNo || '').split('/');
+  // No silent fallback: nomor karangan jauh lebih berbahaya daripada simpan
+  // yang gagal. Caller's try/catch yang menampilkan pesannya.
+  if (parts.length < 2 || parts[0] !== 'INQ') {
+    throw new Error(
+      `Inquiry number "${inquiryNo || '(empty)'}" does not follow the INQ/... format, `
+      + 'so the quotation number cannot be derived from it. Fix the inquiry number first.',
+    );
+  }
+  parts[0] = 'QUO';
+  return parts.join('/');
 }
 
 // ─── Section component ────────────────────────────────────────────────────
@@ -291,8 +306,8 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                   {row.currency !== 'IDR' ? (
                     // Kurs = turunan tabel kurs header (satu sumber kebenaran) → read-only di baris.
                     <input type="number" value={row.exchange_rate ?? ''} readOnly
-                      title="Kurs diambil dari tabel kurs di header quotation. Ubah nilainya di header."
-                      placeholder="isi di header"
+                      title="The rate comes from the exchange-rate table in the quotation header. Change it there."
+                      placeholder="fill in the header"
                       style={cellInp({ textAlign: 'right', background: C.surface2, color: C.inkSoft, cursor: 'default' })} />
                   ) : (
                     <span style={{ display: 'block', textAlign: 'center', color: C.inkFaint, fontSize: 11 }}>—</span>
@@ -336,7 +351,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
                     type="checkbox"
                     checked={!!row.if_any}
                     onChange={e => onUpdateRow(section.id, row.id, 'if_any', e.target.checked)}
-                    title="If Any — baris tetap tampil, tapi tidak dijumlahkan ke total mana pun"
+                    title="If Any — the line still shows, but is not added to any total"
                     style={{ accentColor: '#1B4D8A', width: 15, height: 15, cursor: 'pointer' }}
                   />
                 </td>
@@ -365,7 +380,7 @@ function SectionCard({ section, onUpdateName, onAddRow, onRemoveRow, onUpdateRow
 }
 
 // ─── Main component ───────────────────────────────────────────────────────
-export default function QuotationFormPage({ onBack, showToast, quotation = null, duplicateFrom = null, prefillFromPrf = null }) {
+export default function QuotationFormPage({ onBack, showToast, quotation = null, duplicateFrom = null, prefillFromPrf = null, prefillInquiryId = null }) {
   const { profile, erpRole, user } = useAuth();
   const isEdit = !!quotation;
 
@@ -415,6 +430,13 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   const [rateWarnings, setRateWarnings] = useState([]);
   const [saving,       setSaving]       = useState(false);
   const [errors,       setErrors]       = useState({});
+  // Hasil probe "inquiry ini sudah punya quotation?" (mode CREATE saja).
+  // Menyimpan inquiryId-nya sekalian supaya hasil basi tak pernah menempel di
+  // inquiry lain — lihat derivasi `dupActive` di bawah. Terisi → simpan
+  // diblokir, karena nomor quotation kini diturunkan dari nomor inquiry: yang
+  // kedua pasti menabrak UNIQUE (quotation_no, revision). Jalan keluarnya bukan
+  // "coba lagi" melainkan REVISI dari quotation yang sudah ada.
+  const [dupProbe, setDupProbe] = useState({ inquiryId: null, active: null });
 
   // ── DB-driven dropdowns (fallback to hardcoded const on error/empty) ──────
   const { options: serviceTypeOpts } = useDropdownOptions('service_type', SERVICE_TYPES_FALLBACK);
@@ -458,6 +480,48 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       });
     return () => { cancelled = true; };
   }, [profile?.company_id]);
+
+  /* Pratinjau nomor untuk header form (mode CREATE). Sengaja memakai try/catch:
+     `quotationNoFromInquiry` MELEMPAR untuk format tak sah — itu perilaku yang
+     benar saat menyimpan, tapi di pratinjau ia cukup diam supaya form tetap
+     bisa dibuka. Penolakan sesungguhnya tetap terjadi di handleSave. */
+  const previewQuotationNo = useMemo(() => {
+    const inq = inquiries.find(i => i.id === header.inquiry_id);
+    if (!inq?.inquiry_no) return '';
+    try { return quotationNoFromInquiry(inq.inquiry_no); } catch { return ''; }
+  }, [inquiries, header.inquiry_id]);
+
+  /* ── Guard duplikat: inquiry terpilih sudah punya quotation? ──────────────
+     Hanya di mode CREATE (termasuk duplicate & prefill-dari-PRF) — mode EDIT
+     memang menulis ulang baris yang sudah ada, jadi tak mungkin bentrok.
+
+     Ini diperiksa DI DEPAN, bukan cuma diandalkan handler 23505, supaya user
+     tidak mengisi form panjang lalu ditolak di detik terakhir. Handler 23505
+     tetap dipasang sebagai jaring: dua orang bisa menyimpan bersamaan. */
+  useEffect(() => {
+    if (isEdit || !header.inquiry_id) return undefined;
+    let cancelled = false;
+    supabase
+      .from('quotations')
+      .select('id, quotation_no, revision, status, created_at, deleted_at')
+      .eq('inquiry_id', header.inquiry_id)
+      .is('deleted_at', null)
+      .limit(1000)
+      .then(({ data }) => {
+        if (!cancelled) setDupProbe({ inquiryId: header.inquiry_id, active: pickActiveQuotation(data || []) });
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, header.inquiry_id]);
+
+  /* Hasil probe DITURUNKAN saat render, bukan di-reset lewat setState sinkron di
+     dalam effect. Dua alasan: (1) lint react-hooks/set-state-in-effect memang
+     melarangnya; (2) lebih benar — hasil probe hanya berlaku untuk inquiry yang
+     SEDANG dipilih, jadi pindah inquiry langsung membatalkannya tanpa menunggu
+     fetch berikutnya selesai. Tanpa perbandingan id ini ada jendela sempit di
+     mana peringatan milik inquiry lama menempel di inquiry baru. */
+  const dupActive = (!isEdit && header.inquiry_id && dupProbe.inquiryId === header.inquiry_id)
+    ? dupProbe.active
+    : null;
 
   // Load dropdowns
   useEffect(() => {
@@ -634,8 +698,11 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   }, [isEdit, duplicateFrom?.id]);
 
   // ── PRF mode — prefill a NEW (create) quotation from an answered PRF ─────
-  // Identitas (prf_id + inquiry_id) + currency/valid_until + SATU baris item
-  // (harga jual PRF sbg unit_price, Σ prf_cost_items sbg cost_price). Field
+  // Identitas (prf_id + inquiry_id) + currency/valid_until + item. Item punya
+  // DUA bentuk (lihat cabang di bawah): N baris per cost item untuk PRF modul
+  // Penawaran Vendor, atau SATU baris agregat untuk PRF jalur lama yang sudah
+  // punya suggested_rate (harga jual PRF sbg unit_price, Σ cost item sbg
+  // cost_price) — bentuk kedua ini yang berlaku sebelum batch ini. Field
   // service_type/route/vat diambil dari INQUIRY (pola handleInquiryChange),
   // BUKAN dari PRF — sumbu service_type beda (TD-108); gw/dimension/cw/cbm/
   // container dibiarkan kosong (mode-dependent, TD-107). prf.pricing_notes
@@ -653,7 +720,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
       if (p.inquiry_id) {
         const { data } = await supabase
           .from('inquiries')
-          .select('id, inquiry_no, service_type, route, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
+          .select('id, inquiry_no, service_type, route, pickup_address, delivery_address, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
           .eq('id', p.inquiry_id)
           .maybeSingle();
         inq = data || null;
@@ -675,28 +742,117 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         service_type:  inq?.service_type || h.service_type,
         route:         inq?.route || h.route,
         vat_rate:      vatDefaultFor(inq?.service_type || h.service_type),
+        // Alamat: PRF lebih diprioritaskan daripada inquiry karena hanya versi
+        // PRF yang divalidasi per incoterm (PRFFormPage.validate); PRF mengisinya
+        // dari inquiry secara fill-empty-only, jadi koreksi manual di PRF memang
+        // disengaja dan tak boleh ditimpa balik oleh nilai inquiry.
+        // inland_* SENGAJA tidak dipakai — itu field cabang moda Inland, bukan
+        // alamat dokumen.
+        pickup_address:   p.pickup_address   || inq?.pickup_address   || '',
+        delivery_address: p.delivery_address || inq?.delivery_address || '',
       }));
-      // Satu baris item: teks generik menyebut layanan (netral, TANPA pricing_notes).
-      const svcLabel = SERVICE_TYPES_FALLBACK.find(s => s.value === inq?.service_type)?.label || 'Freight Forwarding';
-      const row = {
-        ...freshRow(),
-        description: `Jasa ${svcLabel}`,
-        qty:         1,
-        currency:    p.rate_currency || 'IDR',
-        // Jalur PRF baru (modul Penawaran Vendor): suggested_rate NULL — harga
-        // jual belum ditentukan procurement, sales mengisi sendiri. Dibiarkan
-        // '' (bukan 0) supaya field tampil KOSONG, bukan angka 0 yang terbaca
-        // sebagai harga jual valid di sebelah cost_price yang sudah terisi
-        // nyata. Jalur PRF lama (suggested_rate terisi) tidak berubah.
-        unit_price:  p.suggested_rate != null ? Number(p.suggested_rate) : '',
-        cost_price:  Number(p.cost_total) || 0,
-      };
-      row.total = calcRowTotal(row);
-      setSections([{ id: crypto.randomUUID(), name: 'CHARGES', rows: [row] }]);
+
+      // ── Item: DUA cabang, dan urutannya yang menentukan ──────────────────
+      // Cabang dipilih dari `has_suggested_rate`, BUKAN dari "cost_items kosong".
+      // Sebabnya konkret: PRF jalur lama terbukti bisa punya cost item juga
+      // (PRF/MSI/2026/VII/001 & /005 di produksi), sehingga mencabangkan di
+      // cost_items akan menyeret mereka ke jalur N-baris dan MEMBUANG
+      // suggested_rate mereka tanpa suara. `?? ` di bawah menjaga pemanggil lama
+      // yang belum mengirim flag ini tetap jatuh ke perilaku benar.
+      const hasSuggested = p.has_suggested_rate
+        ?? (p.suggested_rate != null && Number(p.suggested_rate) > 0);
+      const costItems = Array.isArray(p.cost_items) ? p.cost_items : [];
+
+      if (!hasSuggested && costItems.length) {
+        // (A) N baris — satu per cost item PRF, dikelompokkan per item_group.
+        // Kurs diambil dari tabel kurs header PRF (p.exchange_rates), BUKAN
+        // prf_cost_items.exchange_rate per baris, supaya Σ cost_price N baris
+        // sama dengan costTotalIdr yang dipakai gerbang di PRFDetailPage.
+        // TANPA pembulatan saat ingest: cost_price numeric(15,2), dan pembulatan
+        // memang sudah terjadi belakangan di totalCost (per baris).
+        const rates = (p.exchange_rates && typeof p.exchange_rates === 'object') ? p.exchange_rates : {};
+        const rateOf = (c) => ((c || 'IDR') === 'IDR' ? 1 : (Number(rates[c]) || 1));
+        const order = [];
+        const byGroup = new Map();
+        costItems.forEach((ci) => {
+          // item_group PRF ('Origin Charges') → nama section quotation
+          // ('ORIGIN CHARGES'); kosong/null → 'CHARGES'.
+          const key = String(ci.item_group || '').trim().toUpperCase() || 'CHARGES';
+          if (!byGroup.has(key)) { byGroup.set(key, []); order.push(key); }
+          const r = {
+            ...freshRow(),
+            description: ci.component || '',
+            qty:         1,   // cost item PRF adalah NILAI TOTAL, bukan harga satuan
+            currency:    'IDR',
+            exchange_rate: 1,
+            // Harga jual dikosongkan di SETIAP baris — tak ada markup otomatis.
+            // suggested_rate tak pernah menyentuh cabang ini (lihat guard di atas),
+            // jadi tak ada angka jual yang bisa disebar per komponen.
+            unit_price:  '',
+            cost_price:  Number(ci.amount) * rateOf(ci.currency),
+          };
+          r.total = calcRowTotal(r);
+          byGroup.get(key).push(r);
+        });
+        setSections(order.map((name) => ({ id: crypto.randomUUID(), name, rows: byGroup.get(name) })));
+      } else {
+        // (B) SATU baris agregat — perilaku sebelum batch ini, tidak diubah.
+        // Dipakai untuk PRF jalur lama (suggested_rate terisi) DAN sebagai
+        // fallback saat tak ada cost_items sama sekali.
+        // Teks generik menyebut layanan (netral, TANPA pricing_notes).
+        const svcLabel = SERVICE_TYPES_FALLBACK.find(s => s.value === inq?.service_type)?.label || 'Freight Forwarding';
+        const row = {
+          ...freshRow(),
+          description: `Jasa ${svcLabel}`,
+          qty:         1,
+          currency:    p.rate_currency || 'IDR',
+          // Jalur PRF baru (modul Penawaran Vendor): suggested_rate NULL — harga
+          // jual belum ditentukan procurement, sales mengisi sendiri. Dibiarkan
+          // '' (bukan 0) supaya field tampil KOSONG, bukan angka 0 yang terbaca
+          // sebagai harga jual valid di sebelah cost_price yang sudah terisi
+          // nyata. Jalur PRF lama (suggested_rate terisi) tidak berubah.
+          unit_price:  p.suggested_rate != null ? Number(p.suggested_rate) : '',
+          cost_price:  Number(p.cost_total) || 0,
+        };
+        row.total = calcRowTotal(row);
+        setSections([{ id: crypto.randomUUID(), name: 'CHARGES', rows: [row] }]);
+      }
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, duplicateFrom, prefillFromPrf?.prf_id]);
+
+  // ── Inquiry mode — "Buat Quotation" dari Detail Deal (TANPA PRF) ─────────
+  // Hanya memilihkan inquiry-nya: hasil akhirnya identik dengan user memilih
+  // inquiry itu sendiri di dropdown (handleInquiryChange) — service_type/route/
+  // vat_rate ikut terisi, ITEM TETAP KOSONG. Item memang tak bisa diisi di sini:
+  // satu-satunya sumber baris item adalah cost item PRF, dan jalur ini tak punya PRF.
+  // Didahului guard `prefillFromPrf` supaya tak pernah bentrok dengan effect di atas.
+  useEffect(() => {
+    if (isEdit || duplicateFrom || prefillFromPrf || !prefillInquiryId) return undefined;
+    let cancelled = false;
+    // Dropdown hanya memuat inquiry status OPEN — deal yang sudah non-OPEN tetap
+    // harus bisa dibuatkan quotation, jadi resolve by id lalu inject (pola sama
+    // dengan jalur PRF di atas).
+    supabase.from('inquiries')
+      .select('id, inquiry_no, service_type, route, prospect:accounts!inquiries_prospect_id_fkey(id, name), customer:accounts!inquiries_customer_id_fkey(id, name)')
+      .eq('id', prefillInquiryId)
+      .maybeSingle()
+      .then(({ data: inq }) => {
+        if (cancelled || !inq) return;
+        setInquiries(list => (list.some(i => i.id === inq.id) ? list : [inq, ...list]));
+        setSelectedInquiry(inq);
+        setClientName(inq.prospect?.name || inq.customer?.name || '');
+        setHeader(h => ({
+          ...h,
+          inquiry_id:   inq.id,
+          service_type: inq.service_type || h.service_type,
+          route:        inq.route || h.route,
+          vat_rate:     vatDefaultFor(inq.service_type || h.service_type),
+        }));
+      });
+    return () => { cancelled = true; };
+  }, [isEdit, duplicateFrom, prefillFromPrf, prefillInquiryId]);
 
   const setH = (k) => (e) => setHeader(h => ({ ...h, [k]: e.target.value }));
 
@@ -812,7 +968,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   const removeRate = (code) => {
     const n = usedCurrencies[code] || 0;
     if (n > 0) {
-      showToast?.(`Kurs ${code} masih dipakai ${n} baris item. Ganti currency baris itu dulu sebelum menghapus kursnya.`, 'error');
+      showToast?.(`The ${code} rate is still used by ${n} line item(s). Change those lines’ currency before removing the rate.`, 'error');
       return;
     }
     setHeader(h => {
@@ -856,7 +1012,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
   // Draft: syarat minimum saja — kurs boleh belum lengkap (user simpan dulu, lengkapi nanti).
   const validate = () => {
     const e = {};
-    if (!header.inquiry_id) e.inquiry_id = 'Pilih inquiry';
+    if (!header.inquiry_id) e.inquiry_id = 'Select inquiry';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -872,7 +1028,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
     if (!validate()) return false;
     if (missingRates.length > 0) {
       showToast?.(
-        `Tambahkan kurs ${missingRates.join(', ')} di tabel kurs header dulu sebelum submit.`,
+        `Add the ${missingRates.join(', ')} rate to the header rate table before submitting.`,
         'error',
       );
       return false;
@@ -909,7 +1065,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
       if (isEdit) {
         // ── Guard: quotation.id must exist ────────────────────────────
-        if (!quotation?.id) throw new Error('Quotation ID tidak ditemukan — tidak bisa update.');
+        if (!quotation?.id) throw new Error('Quotation ID not found — cannot update.');
 
         // ── Atomic save via RPC: update header + replace items in one txn ──
         // internal_notes / currency_code / margin_floor are read from the (real)
@@ -965,13 +1121,13 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           entityId: quotation.id,
           entityLabel: quotation.quotation_no,
         }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-        showToast?.(submitNow ? 'Quotation di-submit ✨' : 'Quotation berhasil diupdate ✨');
+        showToast?.(submitNow ? 'Quotation di-submit' : 'Quotation updated');
       } else {
         // ── CREATE new quotation (insert; verify a row came back) ───────
-        const { data: companyRow } = await supabase
-          .from('companies').select('code').eq('id', profile.company_id).maybeSingle();
-        const companyCode  = companyRow?.code || 'MSI';
-        const quotation_no = await generateQuotationNo(profile.company_id, companyCode);
+        // Nomor diturunkan dari inquiry yang dipilih — nol round-trip tambahan,
+        // `inquiries` state sudah membawa inquiry_no di ketiga jalur fetch-nya.
+        const selectedInquiry = inquiries.find(i => i.id === header.inquiry_id);
+        const quotation_no = quotationNoFromInquiry(selectedInquiry?.inquiry_no);
 
         const insertPayload = {
           quotation_no,
@@ -1018,7 +1174,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         const { data: quot, error: qErr } = await supabase
           .from('quotations').insert(insertPayload).select('id').single();
         if (qErr) throw qErr;
-        if (!quot?.id) throw new Error('Gagal membuat quotation — tidak ada baris kembali (cek izin akses).');
+        if (!quot?.id) throw new Error('Failed to create the quotation — no rows returned (check access permissions).');
 
         const itemRows = baseItemRows().map(r => ({ ...r, quotation_id: quot.id }));
         const { error: iErr } = await supabase.from('quotation_items').insert(itemRows);
@@ -1030,12 +1186,26 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           entityId: quot.id,
           entityLabel: quotation_no,
         }, { id: profile?.id, email: user?.email, role: erpRole, companyId: profile?.company_id });
-        showToast?.(submitNow ? 'Quotation berhasil di-submit ✨' : 'Draft quotation tersimpan ✨');
+        showToast?.(submitNow ? 'Quotation submitted' : 'Quotation draft saved');
       }
 
       onBack();
     } catch (err) {
-      showToast?.(err.message, 'error');
+      // 23505 = unique_violation. Kode SAJA TIDAK CUKUP: quotations juga punya
+      // quotations_pkey — tanpa cek nama constraint, bentrok id akan salah
+      // dilaporkan sebagai bentrok nomor. Pola identik dengan tiga jalur create
+      // lain (ProspectFormPage / CustomerListPage / App.jsx).
+      const isDupNo = err?.code === '23505'
+        && /quotations_quotation_no_revision_key/i.test(`${err?.message ?? ''} ${err?.details ?? ''}`);
+      if (isDupNo) {
+        showToast?.(
+          'This inquiry already has a quotation with that number. '
+          + 'Open the existing quotation and create a revision instead.',
+          'error',
+        );
+      } else {
+        showToast?.(err.message, 'error');
+      }
     } finally {
       setSaving(false);
     }
@@ -1066,10 +1236,16 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>
-              {isEdit ? 'Edit Quotation' : 'Buat Quotation'}
+              {isEdit ? 'Edit Quotation' : 'Create Quotation'}
             </h1>
+            {/* Pratinjau nomor NYATA begitu inquiry dipilih — nomornya kini
+                diturunkan dari nomor inquiry, jadi ia sudah bisa diketahui
+                sebelum disimpan. Placeholder lama menjanjikan deret 'QUO'
+                sendiri yang sudah tidak dipakai lagi. */}
             <p style={{ margin: 0, fontSize: 12.5, color: C.inkSoft }}>
-              {isEdit ? quotation.quotation_no : `QUO/${profile?.company_id ? 'MSI' : '…'}/${new Date().getFullYear()}/… • auto-generate`}
+              {isEdit
+                ? formatQuotationNo(quotation.quotation_no, quotation.revision)
+                : (previewQuotationNo || 'Select an inquiry — the quotation number follows it')}
             </p>
           </div>
         </div>
@@ -1088,11 +1264,11 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
               <Field label="Inquiry" req full>
                 <select value={header.inquiry_id} onChange={handleInquiryChange} style={selStyle}>
-                  <option value="">— Pilih inquiry —</option>
+                  <option value="">— Select Inquiry —</option>
                   {inquiries.map(inq => (
                     <option key={inq.id} value={inq.id}>
                       {inq.inquiry_no} — {inq.prospect?.name || inq.customer?.name || '?'}
-                      {inq.status === 'IN_REVIEW' ? ' (menunggu harga beli)' : ''}
+                      {inq.status === 'IN_REVIEW' ? ' (awaiting buy price)' : ''}
                     </option>
                   ))}
                 </select>
@@ -1102,7 +1278,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
               <Field label="Prospect / Customer" full>
                 <input value={clientName} readOnly
                   style={inpStyle({ background: C.surface2, color: C.inkSoft, cursor: 'default' })}
-                  placeholder="Auto-fill dari inquiry" />
+                  placeholder="Auto-filled from inquiry" />
               </Field>
 
               <Field label="Service Type">
@@ -1116,7 +1292,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                   placeholder="cth: Jakarta – Singapore" />
               </Field>
 
-              <Field label="Tanggal">
+              <Field label="Date">
                 <input type="date" value={header.quote_date} onChange={setH('quote_date')} style={inpStyle()} />
               </Field>
 
@@ -1124,17 +1300,17 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                 <input type="date" value={header.valid_until} onChange={setH('valid_until')} style={inpStyle()} min={getTodayWIB()} />
               </Field>
 
-              <Field label="Pricing Selesai">
+              <Field label="Pricing Completed">
                 <input
                   type="datetime-local"
                   value={header.pricing_done_at}
                   onChange={setH('pricing_done_at')}
                   style={inpStyle()}
-                  title="Kapan tim pricing selesai input harga?"
+                  title="When did the pricing team finish entering prices?"
                 />
               </Field>
 
-              <Field label="Kurs (ke IDR)" full>
+              <Field label="Rate (to IDR)" full>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {Object.keys(header.exchange_rates || {}).length === 0 && (
                     <div style={{ fontSize: 12, color: C.inkFaint }}>
@@ -1152,7 +1328,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                         style={inpStyle({ textAlign: 'right', flex: 1 })}
                         placeholder="cth: 16200"
                       />
-                      <button type="button" onClick={() => removeRate(code)} title={`Hapus kurs ${code}`}
+                      <button type="button" onClick={() => removeRate(code)} title={`Remove ${code} rate`}
                         style={{ border: `1px solid ${C.line}`, background: C.surface, color: C.danger, borderRadius: 8, height: 34, padding: '0 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
                         Hapus
                       </button>
@@ -1162,9 +1338,9 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                     value=""
                     onChange={(e) => { addRateCurrency(e.target.value); e.target.value = ''; }}
                     style={selStyle}
-                    title="Tambahkan currency ke tabel kurs. Kurs diisi manual per-quotation (tidak ada kurs otomatis)."
+                    title="Add a currency to the rate table. Rates are entered manually per quotation (no automatic rates)."
                   >
-                    <option value="">+ Tambah Currency…</option>
+                    <option value="">+ Add Currency…</option>
                     {currencyCodes
                       .filter(c => c !== 'IDR' && !(c in (header.exchange_rates || {})))
                       .map(c => <option key={c} value={c}>{c}</option>)}
@@ -1178,13 +1354,13 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
                   ))}
                   {missingRates.length > 0 && (
                     <div style={{ fontSize: 12, fontWeight: 700, color: C.danger }}>
-                      Kurs belum diisi: {missingRates.join(', ')} — Submit akan diblokir (Simpan Draft tetap bisa).
+                      Missing rates: {missingRates.join(', ')} — Submit will be blocked (Save Draft still works).
                     </div>
                   )}
                 </div>
               </Field>
 
-              <Field label="Diskon (%)" full>
+              <Field label="Discount (%)" full>
                 <input
                   type="number" min="0" max="100" step="0.1"
                   value={header.discount_pct}
@@ -1207,7 +1383,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
               <Field label="Payment Terms">
                 <select value={header.payment_terms_id} onChange={setH('payment_terms_id')} style={selStyle}>
-                  <option value="">— Pilih payment terms —</option>
+                  <option value="">— Select Payment Terms —</option>
                   {paymentTerms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </Field>
@@ -1225,7 +1401,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
               <Field label="Notes" full>
                 <textarea value={header.notes} onChange={setH('notes')} rows={2}
                   style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical' }) }}
-                  placeholder="Catatan untuk customer…" />
+                  placeholder="Notes for the customer…" />
               </Field>
 
               <Field label="Terms & Conditions / Above Rates" full>
@@ -1239,33 +1415,33 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
               </Field>
 
               {/* Sales-only — never printed to the customer PDF */}
-              <Field label="Catatan Internal (Sales) — tidak tampil di PDF customer" full>
+              <Field label="Internal Notes (Sales) — not shown in the customer PDF" full>
                 <textarea value={header.internal_notes} onChange={setH('internal_notes')} rows={2}
                   style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical', borderColor: '#E6BBB2', background: '#FFF6F5' }) }}
-                  placeholder="Catatan internal tim sales (tidak dikirim ke customer)…" />
+                  placeholder="Internal sales-team notes (not sent to the customer)…" />
               </Field>
 
               {/* New fields — state-only (belum ada kolom di tabel quotations) */}
               <Field label="Attention To" full>
                 <input value={header.attention_to} onChange={setH('attention_to')} style={inpStyle()}
-                  placeholder="Nama PIC customer yang dituju" />
+                  placeholder="Name of the customer PIC addressed" />
               </Field>
 
               <Field label="Pick Up Address" full>
                 <textarea value={header.pickup_address} onChange={setH('pickup_address')} rows={2}
                   style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical' }) }}
-                  placeholder="Alamat pengambilan (opsional)…" />
+                  placeholder="Pickup address (optional)…" />
               </Field>
 
               <Field label="Delivery Address" full>
                 <textarea value={header.delivery_address} onChange={setH('delivery_address')} rows={2}
                   style={{ ...inpStyle({ height: 'auto', padding: '8px 12px', resize: 'vertical' }) }}
-                  placeholder="Alamat pengiriman akhir (opsional)…" />
+                  placeholder="Final delivery address (optional)…" />
               </Field>
 
               <Field label="Cargo Mode" full>
                 <select value={header.cargo_mode} onChange={setH('cargo_mode')} style={selStyle}>
-                  <option value="">— Pilih cargo mode —</option>
+                  <option value="">— Select Cargo Mode —</option>
                   {CARGO_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </Field>
@@ -1293,7 +1469,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
               {header.cargo_mode === 'sea_fcl' && (
                 <Field label="Container Type">
                   <select value={header.container_type} onChange={setH('container_type')} style={selStyle}>
-                    <option value="">— Pilih container —</option>
+                    <option value="">— Select Container —</option>
                     {containerTypeOpts.map(o => {
                       const v = typeof o === 'string' ? o : o.value;
                       const l = typeof o === 'string' ? o : o.label;
@@ -1337,7 +1513,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
         {/* ── RIGHT — sticky summary (40%) ───────────────────────────────── */}
         <div style={{ flex: '0 0 40%', minWidth: 0, position: 'sticky', top: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.line}`, padding: 24, boxShadow: '0 2px 12px rgba(35,41,30,.08)' }}>
-            <p style={{ margin: '0 0 16px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft }}>Ringkasan</p>
+            <p style={{ margin: '0 0 16px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft }}>Summary</p>
 
             {/* Per-section subtotals */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
@@ -1353,7 +1529,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
 
             {/* Cost / profit section — no-print */}
             <div className="no-print" style={{ marginBottom: 14, padding: '12px', borderRadius: 8, background: C.dangerBg, border: `1px solid ${C.dangerBd}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.danger }}>Internal — tidak dicetak</p>
+              <p style={{ margin: '0 0 10px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.danger }}>Internal — not printed</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
                   <span style={{ color: C.inkSoft }}>Total Cost</span>
@@ -1397,19 +1573,36 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
               </div>
             </div>
 
+            {/* Inquiry ini sudah punya quotation → kedua tombol simpan mati.
+                Nomor quotation kini diturunkan dari nomor inquiry, jadi yang
+                kedua PASTI menabrak UNIQUE (quotation_no, revision). Jalan
+                keluarnya revisi dari quotation yang sudah ada, bukan mencoba
+                menyimpan ulang di sini. */}
+            {dupActive && (
+              <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 9, padding: '11px 13px', marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.accent, marginBottom: 4 }}>
+                  This inquiry already has a quotation
+                </div>
+                <div style={{ fontSize: 12, color: C.inkSoft, lineHeight: 1.5 }}>
+                  {formatQuotationNo(dupActive.quotation_no, dupActive.revision)} is already linked to
+                  this inquiry. Open it and create a revision instead of starting a new quotation.
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button onClick={() => handleSave(false)} disabled={saving}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13.5, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .7 : 1 }}>
-                <Save size={15} /> Simpan Draft
+              <button onClick={() => handleSave(false)} disabled={saving || !!dupActive}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: `1px solid ${C.line}`, background: C.surface2, color: C.inkSoft, fontSize: 13.5, fontWeight: 700, cursor: (saving || dupActive) ? 'not-allowed' : 'pointer', opacity: (saving || dupActive) ? .7 : 1 }}>
+                <Save size={15} /> Save Draft
               </button>
-              <button onClick={() => handleSave(true)} disabled={saving || !header.inquiry_id}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: 'none', background: !header.inquiry_id ? C.line : C.accent, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: (saving || !header.inquiry_id) ? 'not-allowed' : 'pointer', boxShadow: header.inquiry_id ? '0 2px 8px rgba(47,107,63,.25)' : 'none', opacity: saving ? .7 : 1, transition: 'background .14s' }}>
+              <button onClick={() => handleSave(true)} disabled={saving || !header.inquiry_id || !!dupActive}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 9, border: 'none', background: (!header.inquiry_id || dupActive) ? C.line : C.accent, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: (saving || !header.inquiry_id || dupActive) ? 'not-allowed' : 'pointer', boxShadow: (header.inquiry_id && !dupActive) ? '0 2px 8px rgba(47,107,63,.25)' : 'none', opacity: saving ? .7 : 1, transition: 'background .14s' }}>
                 <Check size={15} /> Submit Quotation
               </button>
             </div>
 
             <p style={{ margin: '14px 0 0', fontSize: 11, color: C.inkFaint, textAlign: 'center', lineHeight: 1.5 }}>
-              Submit disabled sampai inquiry dipilih.<br />Submit akan mengubah status inquiry ke QUOTED.
+              Submit is disabled until an inquiry is selected.<br />Submitting will change the inquiry status to QUOTED.
             </p>
           </div>
 
@@ -1448,7 +1641,7 @@ export default function QuotationFormPage({ onBack, showToast, quotation = null,
           onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
           onMouseLeave={e => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.color = C.inkSoft; }}
         >
-          <Plus size={15} /> Tambah Section
+          <Plus size={15} /> Add Section
         </button>
       </div>
     </div>

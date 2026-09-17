@@ -3,9 +3,8 @@ import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pi
 import { supabase } from '../../lib/supabase';
 import { fetchOperationalRoster } from './salesRoster';
 import { useAuth } from '../../contexts/useAuth';
-import { isManagerOrAbove, isSalesOnly as isSalesOnlyRole } from '../../lib/roles';
+import { isManagerOrAbove, isSalesOnly as isSalesOnlyRole, isAllEntities as isAllEntitiesRole } from '../../lib/roles';
 import { fetchActivityFeed } from './activityFeed';
-import { STAGES as SHARED_STAGES, STAGE_IDS } from './DealPanels';
 
 /* =========================================================================
    CRMDashboardPage — Nexus by MSI · CRM Sales Dashboard (freight forwarding)
@@ -14,7 +13,7 @@ import { STAGES as SHARED_STAGES, STAGE_IDS } from './DealPanels';
    ========================================================================= */
 
 /* ---------- brand tokens ---------- */
-const NAVY = "#1B4D8A";
+const NAVY = "#144682";
 const ORANGE = "#E85A1E";
 
 /* ---------- icons (inline lucide paths) ---------- */
@@ -49,12 +48,17 @@ const ICONS = {
   plus:        '<path d="M5 12h14"/><path d="M12 5v14"/>',
   x:           '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   mappin:      '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  // Ikon KPI hero — dari spek desain yang di-approve. Hanya Win Rate yang
+  // metriknya benar-benar cocok dengan tile Dashboard; tiga ikon spek lain
+  // (New SQL / Pipeline Value / Quota Attainment) SENGAJA tidak dipasang
+  // karena metriknya tidak ada di Dashboard ini (keputusan Den).
+  kpiWinRate:  '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.4"/><circle cx="12" cy="12" r="1" fill="rgba(255,255,255,.85)" stroke="none"/>',
 };
 
-function Icon({ name, size = 18, color, style }) {
+function Icon({ name, size = 18, color, style, strokeWidth = 1.7 }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color || "currentColor"}
-      strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
       style={{ display: "block", flex: "0 0 auto", ...style }}
       dangerouslySetInnerHTML={{ __html: ICONS[name] || ICONS.info }} />
   );
@@ -63,67 +67,246 @@ function Icon({ name, size = 18, color, style }) {
 /* ---------- formatting ---------- */
 const rp = (n) => "Rp " + Number(n || 0).toLocaleString("id-ID");
 const rpShort = (n) => {
-  if (n >= 1e9) return "Rp " + (n / 1e9).toLocaleString("id-ID", { maximumFractionDigits: 2 }) + " M";
-  if (n >= 1e6) return "Rp " + (n / 1e6).toLocaleString("id-ID", { maximumFractionDigits: 0 }) + " Jt";
+  // "Bn"/"Mn", bukan "M"/"Jt": "M" ambigu antara Million dan Miliar — selisih
+  // seribu kali di kolom nilai deal.
+  if (n >= 1e9) return "Rp " + (n / 1e9).toLocaleString("id-ID", { maximumFractionDigits: 2 }) + " Bn";
+  if (n >= 1e6) return "Rp " + (n / 1e6).toLocaleString("id-ID", { maximumFractionDigits: 0 }) + " Mn";
   return rp(n);
 };
 
 /* ---------- static/fallback data ---------- */
 const KPIS = [
-  { label: "Total Prospect Aktif", icon: "users",  value: "—", unit: "prospect", accent: NAVY,      accentBg: "#EAF0F8", trend: null },
+  { label: "Total Active Prospects", icon: "users",  value: "—", unit: "prospect", accent: NAVY,      accentBg: "#EAF0F8", trend: null },
   { label: "Total Inquiry",        icon: "filetext",value: "—", unit: "inquiry",  accent: ORANGE,    accentBg: "#FBE6DA", trend: null },
   { label: "Total Quotation",      icon: "receipt", value: "—", unit: "quotation",accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
   { label: "Win Rate",             icon: "target",  value: "—", unit: "%",        accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
 ];
 
-// Fallback funnel (dipakai PipelineByStage saat data belum ada) — diturunkan dari
-// DealPanels.STAGES, sumber tunggal daftar stage. Tetap 7 nilai: ini konsumen RENDER.
-// Peta warna ditulis lokal (bukan STAGE_COLORS di bawah) karena const itu baru
-// diinisialisasi jauh setelah baris ini — merujuknya = TDZ error saat modul dievaluasi.
-const STAGE_FALLBACK_COLOR = { won: "#1F8B4D", lost: "#C0392B" };
-const STAGES = SHARED_STAGES.map((s) => ({
-  id: s.key.toLowerCase(),
-  name: s.label,
-  count: 0,
-  value: 0,
-  color: STAGE_FALLBACK_COLOR[s.key.toLowerCase()] || NAVY,
+/* ─── Sumbu deal = inquiries.status ────────────────────────────────────────
+   Sejak Batch Pipeline (B3), tahap deal dibaca dari `inquiries.status` — BUKAN
+   lagi `accounts.pipeline_stage` (kolom lama, dijadwalkan drop). Urutan lajur
+   SENGAJA identik dengan PipelineKanbanPage supaya angka di dashboard dan di
+   papan Pipeline selalu bisa direkonsiliasi; kalau salah satu berubah, ubah
+   dua-duanya. */
+const INQ_OPEN_STATUSES   = ['OPEN', 'IN_REVIEW', 'QUOTED', 'NEGOTIATION'];
+const INQ_CLOSED_STATUSES = ['WON', 'LOST', 'CANCELLED'];
+const INQ_STAGE_ORDER     = [...INQ_OPEN_STATUSES, ...INQ_CLOSED_STATUSES];
+const INQ_STAGE_LABELS = {
+  OPEN: 'Open', IN_REVIEW: 'In Review', QUOTED: 'Quoted', NEGOTIATION: 'Negotiation',
+  WON: 'Won', LOST: 'Lost', CANCELLED: 'Cancelled',
+};
+// Warna bar dipertahankan apa adanya dari versi sebelumnya (won hijau / lost
+// merah); CANCELLED lajur baru → abu netral. Penyelarasan visual ke kit v3
+// adalah batch tersendiri dan sengaja TIDAK dikerjakan di sini.
+const INQ_STAGE_COLOR = { WON: '#1F8B4D', LOST: '#C0392B', CANCELLED: '#6B7280' };
+/* Empat tahap TERBUKA memakai satu warna navy dengan opacity bertingkat —
+   makin jauh dari Open, makin pudar. Sebelumnya keempatnya memakai gradient
+   `navyBar` yang IDENTIK, jadi tak ada beda visual antar-tahap sama sekali.
+   WON/LOST/CANCELLED tidak ikut: ketiganya punya warna sendiri di
+   INQ_STAGE_COLOR dan selalu tampil penuh. */
+const OPEN_STAGE_OPACITY = { OPEN: 1, IN_REVIEW: 0.75, QUOTED: 0.55, NEGOTIATION: 0.4 };
+
+// Fallback funnel — dipakai PipelineByStage saat data belum tiba.
+const STAGES = INQ_STAGE_ORDER.map((id) => ({
+  id, name: INQ_STAGE_LABELS[id], count: 0, value: 0,
 }));
+
+/* ─── Sumbu LIFECYCLE akun ─────────────────────────────────────────────────
+   Sumbu KEDUA, sepenuhnya terpisah dari inquiries.status di atas: yang satu
+   perjalanan AKUN, yang satu perjalanan DEAL. Lima tahap progresif mengikuti
+   COMMENT kolom accounts.lifecycle_stage (migrasi 20260827000002).
+
+   `free_agent` dan `lost` SENGAJA di luar urutan funnel: keduanya exit yang
+   bisa terjadi dari tahap mana pun, bukan kelanjutan perjalanan. Memaksanya
+   masuk urutan akan membuat corongnya berbohong soal arah. Tapi keduanya
+   TETAP dihitung dan ditampilkan terpisah — menyembunyikannya sama dengan
+   membuang akun dari pandangan tanpa jejak. */
+const LIFECYCLE_FUNNEL = ['lead', 'mql', 'prospect', 'sql', 'customer'];
+const LIFECYCLE_EXITS  = ['free_agent', 'lost'];
+const LIFECYCLE_LABELS = {
+  lead: 'Lead', mql: 'MQL', prospect: 'Prospect', sql: 'SQL', customer: 'Customer',
+  free_agent: 'Free Agent', lost: 'Lost',
+};
+
+/* ─── Rentang periode ──────────────────────────────────────────────────────
+   Satu sumber untuk lima widget yang mengikuti selektor: Total Inquiry, Total
+   Quotation, Win Rate, Loss Reason, Sales Performance.
+   ⚠️ Pipeline Trend TIDAK LAGI memakai rentang ini sejak 8 Sep 2026 — ia punya
+   jendela tetap 12 bulan berjalan (`trendStart`/`trendBuckets` di fetchDash).
+   Akibatnya `buckets`, `prevStart`, `prevEnd`, `curLabel`, `prevLabel` di bawah
+   kini NOL PEMBACA. Sengaja DIBIARKAN, bukan terlewat: kelimanya dibutuhkan
+   lagi begitu garis pembanding dihidupkan (butuh data tahun kedua), dan
+   mencabutnya sekarang berarti menulis ulang tiga cabang return untuk sesuatu
+   yang nol biayanya.
+   ⚠️ KPI personal sales (Call/Visit Minggu Ini, Quotation Bulan Ini) SENGAJA
+   TIDAK memakai rentang ini — lihat catatan di fetchDash. */
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+function periodRange(period, now) {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+
+  if (period === 'This Year') {
+    const start = new Date(y, 0, 1);
+    return {
+      start, end: new Date(y + 1, 0, 1),
+      prevStart: new Date(y - 1, 0, 1), prevEnd: start,
+      curLabel: 'This Year', prevLabel: 'Last Year',
+      buckets: Array.from({ length: 12 }, (_, i) => ({
+        name: MONTH_SHORT[i],
+        start: new Date(y, i, 1),     end: new Date(y, i + 1, 1),
+        prevStart: new Date(y - 1, i, 1), prevEnd: new Date(y - 1, i + 1, 1),
+      })),
+    };
+  }
+
+  if (period === 'This Quarter') {
+    const q = Math.floor(m / 3) * 3;
+    const start = new Date(y, q, 1);
+    return {
+      start, end: new Date(y, q + 3, 1),
+      prevStart: new Date(y, q - 3, 1), prevEnd: start,
+      curLabel: 'This Quarter', prevLabel: 'Last Quarter',
+      buckets: Array.from({ length: 3 }, (_, i) => {
+        const bs = new Date(y, q + i, 1);
+        return {
+          name: MONTH_SHORT[bs.getMonth()],
+          start: bs, end: new Date(y, q + i + 1, 1),
+          prevStart: new Date(y, q - 3 + i, 1), prevEnd: new Date(y, q - 3 + i + 1, 1),
+        };
+      }),
+    };
+  }
+
+  // Default "This Month" — 4 minggu, pembanding bulan lalu (perilaku lama).
+  // Minggu ke-4 sengaja memanjang sampai akhir bulan: versi lama memotong di
+  // tanggal 28, jadi tanggal 29-31 hilang dari grafik tanpa jejak.
+  const start = new Date(y, m, 1);
+  const end   = new Date(y, m + 1, 1);
+  const pStart = new Date(y, m - 1, 1);
+  return {
+    start, end, prevStart: pStart, prevEnd: start,
+    curLabel: 'This Month', prevLabel: 'Last Month',
+    buckets: [1, 2, 3, 4].map((w) => ({
+      name: `Week ${w}`,
+      start: new Date(y, m, (w - 1) * 7 + 1),
+      end:   w === 4 ? end : new Date(y, m, w * 7 + 1),
+      prevStart: new Date(y, m - 1, (w - 1) * 7 + 1),
+      prevEnd:   w === 4 ? start : new Date(y, m - 1, w * 7 + 1),
+    })),
+  };
+}
 
 const STATUS_BADGE = {
   "Exceeding": { bg: "#DEF0E4", fg: "#1F8B4D" },
   "On Track":  { bg: "#E5EDF7", fg: "#1E5894" },
   "Need Push": { bg: "#FBEFD3", fg: "#9A6B12" },
   "At Risk":   { bg: "#F7E1DE", fg: "#C0392B" },
+  // Netral, bukan merah: tak punya target ≠ gagal mencapai target.
+  "No Target": { bg: "#EEF0F3", fg: "#5A6270" },
 };
-
-const LEADS_BY_SOURCE = [
-  { source: "Referral",          leads: "—", conv: "—", response: "—" },
-  { source: "Existing Network",  leads: "—", conv: "—", response: "—" },
-  { source: "Digital Marketing", leads: "—", conv: "—", response: "—" },
-  { source: "Cold Call",         leads: "—", conv: "—", response: "—" },
-];
 
 const ACTIVITY = [];
 
+/* Nada ikon feed — semuanya turunan navy #144682 / orange #E85A1E.
+   PENGECUALIAN SENGAJA: `won` hijau dan `lost` merah dipertahankan karena
+   keduanya kembaran semantik INQ_STAGE_COLOR, yang penyelarasannya ke kit v3
+   memang ditunda ke batch tersendiri. Mengubah yang di sini saja justru
+   melahirkan dua bahasa warna untuk satu konsep yang sama.
+   `login` DIHAPUS bersama sumber datanya (lihat activityFeed.js). */
 const ACT_META = {
   quotation: { icon: "filetext",    bg: "#FBE6DA", fg: "#C8521B" },
   prospect:  { icon: "userplus",    bg: "#EAF0F8", fg: NAVY },
   won:       { icon: "checkcircle", bg: "#DEF0E4", fg: "#1F8B4D" },
   inquiry:   { icon: "inbox",       bg: "#E5EDF7", fg: "#1E5894" },
-  move:      { icon: "arrowright",  bg: "#EAF0F8", fg: NAVY },
+  move:      { icon: "arrowright",  bg: "#EAF0F8", fg: "#2A6FA8" },
   lost:      { icon: "ban",         bg: "#F7E1DE", fg: "#C0392B" },
-  activity:  { icon: "activity",    bg: "#EFE7F6", fg: "#7C3AED" },
-  login:     { icon: "login",       bg: "#EEF0F3", fg: "#51607A" },
+  activity:  { icon: "activity",    bg: "#FDEEE6", fg: ORANGE },
 };
 
 /* ---------- lead source color palette ---------- */
 // Pastel ungu/pink/biru — selaras dengan gradient line "Bulan Ini" (pie only)
-const SOURCE_PALETTE = [
-  "#8B7DD8", "#E89BC4", "#7FB5E6", "#A8C5E0", "#C9B8E0",
-];
+/* ─── Palet chart MULTI-KATEGORI ──────────────────────────────────────────
+   Dipakai Account Lifecycle Funnel, Lead Source Distribution, dan MQL→SQL.
+   Ini BUKAN kasus "warna lepas brand yang perlu diseragamkan ke navy":
+   ketiga chart itu membedakan kategori, jadi warna berbeda adalah FUNGSI,
+   bukan hiasan. Nilai di bawah diambil dari mockup desain apa adanya.
+   ⚠️ Pipeline by Stage TIDAK memakai palet ini — ia satu warna navy dengan
+   opacity berbeda per tahap, dan memang sudah sesuai mockup. */
+/* Lead Source — peta EKSPLISIT per nilai `accounts.source`, bukan hash.
+   Hash sebelumnya menabrakkan warna justru di slice terbesar: cold_call
+   (36,8%) sewarna dengan `other`, dan sales_visit (21,3%) sewarna dengan
+   `website` — dua slice terbesar kehilangan bedanya. Tabel eksplisit menjamin
+   tak ada tabrakan sekarang maupun nanti saat nilai baru mulai terpakai.
+
+   Cakupan = 11 nilai yang diizinkan CHECK constraint produksi hari ini
+   (`prospects_source_check`) + `whatsapp` (migrasi 20260830000004 sudah ada di
+   kode dan sudah jalan di staging, tinggal menunggu produksi — warnanya
+   disiapkan lebih dulu supaya tak perlu sentuh file ini lagi saat migrasinya
+   jalan) + `__none__` untuk baris yang `source`-nya NULL. Total 13 slot.
+
+   Empat warna disebut eksplisit di mockup (referral/website/exhibition/other);
+   dua lagi (#E39CA8, #D2A0CB) juga milik mockup dan diberikan ke dua sumber
+   TERBESAR di produksi. Enam sisanya BUKAN pilihan tangan: dicari lewat
+   farthest-point di ruang CIELAB, DIKUNCI ke pita milik keluarga mockup
+   sendiri (S 38-56, L 68-77) supaya tetap sekelas pastel dan tidak melompat
+   jadi warna vivid. Hasilnya jarak minimum antar-13-warna = ΔE 21,5.
+   ⚠️ Percobaan pertama memakai hash menghasilkan Sales Visit vs Instagram
+   ΔE 7,4 — praktis kembar. Kalau peta ini disunting, ukur ulang jarak
+   minimumnya; unik secara hex TIDAK cukup.
+   `__none__` sengaja NETRAL abu, bukan pastel: "tidak diisi" bukan kategori
+   setara dengan sumber lead yang sebenarnya. */
+const SOURCE_META = {
+  referral:         { label: 'Referral',         color: '#EEAD86' },  // mockup
+  website:          { label: 'Website',          color: '#B8A4E3' },  // mockup
+  exhibition:       { label: 'Exhibition',       color: '#EFC873' },  // mockup
+  other:            { label: 'Other',            color: '#8FCBBF' },  // mockup
+  cold_call:        { label: 'Cold Call',        color: '#E39CA8' },  // mockup
+  sales_visit:      { label: 'Sales Visit',      color: '#D2A0CB' },  // mockup
+  whatsapp:         { label: 'WhatsApp',         color: '#81D981' },
+  walk_in:          { label: 'Walk In',          color: '#CEE2A7' },
+  tiktok:           { label: 'TikTok',           color: '#DDC9AC' },
+  existing_network: { label: 'Existing Network', color: '#81D9AA' },
+  linkedin:         { label: 'LinkedIn',         color: '#81B0D9' },
+  instagram:        { label: 'Instagram',        color: '#D981D9' },
+  __none__:         { label: 'Not specified',    color: '#C7CBD4' },
+};
+/* Nilai di luar tabel = constraint dilebarkan tanpa peta ini ikut diperbarui.
+   Warnanya sengaja abu yang BERBEDA dari `__none__` supaya "belum dipetakan"
+   tak tertukar dengan "tidak diisi", dan labelnya di-Title Case apa adanya. */
+function sourceMeta(key) {
+  const k = String(key || '__none__').trim().toLowerCase();
+  if (SOURCE_META[k]) return SOURCE_META[k];
+  return {
+    label: k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    color: '#AEB6C2',
+  };
+}
+
+/* Account Lifecycle Funnel — warna bar + warna angka per tahap. Angkanya
+   duduk di atas kartu putih (bukan di atas bar), jadi warna gelap di sini
+   adalah teks pada latar putih. */
+const LIFECYCLE_COLOR = {
+  lead:     { bar: "#B8A4E3", num: "#2E2440" },
+  mql:      { bar: "#D2A0CB", num: "#3A2438" },
+  prospect: { bar: "#E39CA8", num: "#3E2229" },
+  sql:      { bar: "#EEAD86", num: "#402A16" },
+  customer: { bar: "#EFC873", num: "#3F2E0B" },
+};
+
+/* MQL → SQL. Slice "Not yet" bukan warna penuh melainkan track terang
+   ber-border, supaya bacaannya "ruang yang belum terisi", bukan kategori
+   setara. */
+const MQL_COLOR = {
+  converted: "#D2A0CB",
+  pendingBg: "#F3ECF7",
+  pendingBd: "#DFD3E6",
+};
 
 /* ---------- avatar helper ---------- */
-const AV_COLORS = ["#1B4D8A", "#1E5894", "#1F8B4D", "#6E4B8C", "#C8521B", "#1F6B6B"];
+/* Avatar — hijau/ungu/teal lama diganti turunan navy+orange. Semuanya
+   sengaja tetap gelap: inisialnya ditulis putih di atas warna ini. */
+const AV_COLORS = ["#144682", "#1E5894", "#2A6FA8", "#A8410F", "#C8521B", "#E85A1E"];
 function initials(name) { return (name || '?').split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 function avatarColor(name) { let h = 0; for (let i = 0; i < (name||'').length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return AV_COLORS[h % AV_COLORS.length]; }
 
@@ -191,10 +374,10 @@ const D = {
   wrap: { maxWidth: "100%", margin: "0 auto" },
 
   topRow: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 18, marginBottom: 22, flexWrap: "wrap" },
-  crumbs: { display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#9AA0AC", marginBottom: 8 },
+  crumbs: { display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#6B7280", marginBottom: 8 },
   crumbCur: { color: "#545B66", fontWeight: 600 },
   title: { fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 24, fontWeight: 800, letterSpacing: -0.4, color: "#16243A", margin: 0 },
-  sub: { fontSize: 13, color: "#7A828E", marginTop: 4 },
+  sub: { fontSize: 13, color: "#5A6270", marginTop: 4 },
 
   /* segmented date filter */
   seg: { display: "inline-flex", background: "#ECEDF1", borderRadius: 11, padding: 4, gap: 2 },
@@ -203,21 +386,25 @@ const D = {
 
   /* card */
   card: { background: "#fff", border: "1px solid #ECEDF1", borderRadius: 14, boxShadow: "0 1px 2px rgba(20,40,70,.04), 0 4px 14px rgba(20,40,70,.03)", overflow: "hidden" },
-  cardHead: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: NAVY, borderTopLeftRadius: 14, borderTopRightRadius: 14 },
-  cardIco: { width: 34, height: 34, borderRadius: 9, background: "rgba(255,255,255,.16)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 34px" },
-  cardTitle: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: "#fff", letterSpacing: -0.2 },
-  cardSub: { fontSize: 11.5, color: "rgba(255,255,255,.7)", marginTop: 1 },
+  /* Header kartu — gaya light-gray mengikuti pola Card di v3/kit.jsx (bar abu
+     muda + garis bawah + judul tinta gelap), menggantikan bar navy solid
+     berjudul putih. Nilai warnanya mencerminkan v3/tokens.js: SURFACE_2
+     #F7F8FA, LINE_SOFT #EFE9DD, INK #16243A, MUTED #6B7280, NAVY_SOFT #EAF0F8. */
+  cardHead: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "#F7F8FA", borderBottom: "1px solid #EFE9DD", borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+  cardIco: { width: 34, height: 34, borderRadius: 9, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 34px" },
+  cardTitle: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 700, fontSize: 13.5, color: "#16243A", letterSpacing: -0.2 },
+  cardSub: { fontSize: 11.5, color: "#6B7280", marginTop: 1 },
 
   /* tab navigation (below page header) */
   tabBar: { display: "flex", gap: 4, borderBottom: "1px solid #ECEDF1", marginBottom: 22 },
-  tab: { position: "relative", display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "transparent", border: 0, color: "#7A828E", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", transition: "color .15s ease" },
+  tab: { position: "relative", display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "transparent", border: 0, color: "#5A6270", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", transition: "color .15s ease" },
   tabHover: { color: NAVY },
   tabActive: { color: NAVY },
   tabInd: { position: "absolute", left: 0, right: 0, bottom: -1, height: 2, background: NAVY },
 
   /* calendar */
   calGridHead: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)" },
-  calDow: { padding: "9px 10px", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#9AA0AC", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", borderRight: "1px solid #F4F5F7" },
+  calDow: { padding: "9px 10px", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "#6B7280", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", borderRight: "1px solid #F4F5F7" },
   calGrid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)" },
   calCell: { minHeight: 110, padding: "7px 8px", borderRight: "1px solid #F4F5F7", borderBottom: "1px solid #F4F5F7" },
   calCellMuted: { background: "#FBFBFC" },
@@ -239,10 +426,10 @@ const D = {
   kpiTop: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   kpiIco: { width: 40, height: 40, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" },
   kpiTrend: { display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 700, padding: "4px 8px", borderRadius: 20, fontVariantNumeric: "tabular-nums" },
-  kpiLabel: { fontSize: 12, fontWeight: 600, color: "#7A828E", letterSpacing: 0.1 },
+  kpiLabel: { fontSize: 12, fontWeight: 600, color: "#5A6270", letterSpacing: 0.1 },
   kpiValue: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 29, color: "#16243A", letterSpacing: -0.8, lineHeight: 1.05, marginTop: 5, display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", whiteSpace: "nowrap" },
-  kpiUnit: { fontSize: 13, fontWeight: 600, color: "#9AA0AC", letterSpacing: 0 },
-  kpiNote: { fontSize: 11.5, color: "#9AA0AC", marginTop: 9 },
+  kpiUnit: { fontSize: 13, fontWeight: 600, color: "#6B7280", letterSpacing: 0 },
+  kpiNote: { fontSize: 11.5, color: "#6B7280", marginTop: 9 },
 
   /* bar chart */
   barBody: { padding: "16px 20px 18px" },
@@ -261,16 +448,16 @@ const D = {
   donutWrap: { position: "relative", flex: "0 0 150px", width: 150, height: 160 },
   donutCenter: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
   donutTotal: { fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 26, color: "#16243A", letterSpacing: -0.6, lineHeight: 1 },
-  donutTotalLbl: { fontSize: 10.5, color: "#9AA0AC", fontWeight: 600, marginTop: 3, letterSpacing: 0.3 },
-  legend: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 },
+  donutTotalLbl: { fontSize: 10.5, color: "#6B7280", fontWeight: 600, marginTop: 3, letterSpacing: 0.3 },
+  legend: { flex: 1, minWidth: 150, display: "flex", flexDirection: "column", gap: 1 },
   legRow: { display: "flex", alignItems: "center", gap: 7, padding: "3px 0", fontSize: 11 },
   legName: { color: "#48505C", fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   legVal: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 700, color: "#16243A", fontVariantNumeric: "tabular-nums" },
-  legPct: { color: "#9AA0AC", fontWeight: 600, fontSize: 10, width: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" },
+  legPct: { color: "#6B7280", fontWeight: 600, fontSize: 10, width: 30, textAlign: "right", fontVariantNumeric: "tabular-nums" },
   legItem: { display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: "#48505C" },
 
   /* tables */
-  th: { fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: "#9AA0AC", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", padding: "9px 16px", textAlign: "left", whiteSpace: "nowrap" },
+  th: { fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: "#6B7280", background: "#FAFBFC", borderBottom: "1px solid #F0F1F4", padding: "9px 16px", textAlign: "left", whiteSpace: "nowrap" },
   td: { padding: "11px 16px", borderBottom: "1px solid #F4F5F7", fontSize: 12.5, color: "#1A2330", verticalAlign: "middle" },
   avatar: { width: 30, height: 30, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 11, flex: "0 0 30px", fontFamily: "'Montserrat', system-ui, sans-serif" },
   num: { fontFamily: "'IBM Plex Mono', ui-monospace, monospace", fontWeight: 600, fontVariantNumeric: "tabular-nums" },
@@ -283,8 +470,8 @@ const D = {
   actRow: { display: "flex", alignItems: "center", gap: 14, padding: "13px 0", borderBottom: "1px solid #F4F5F7" },
   actIco: { width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 38px" },
   actText: { fontWeight: 600, fontSize: 13, color: "#16243A" },
-  actCo: { fontSize: 12, color: "#7A828E", marginTop: 2 },
-  actTime: { fontSize: 11.5, color: "#9AA0AC", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
+  actCo: { fontSize: 12, color: "#5A6270", marginTop: 2 },
+  actTime: { fontSize: 11.5, color: "#6B7280", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   userBadge: { display: "inline-flex", alignItems: "center", gap: 7, background: "#F5F6F8", border: "1px solid #ECEDF1", borderRadius: 20, padding: "4px 11px 4px 4px", fontSize: 11.5, fontWeight: 600, color: "#48505C", whiteSpace: "nowrap" },
   userBadgeAv: { width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 9, flex: "0 0 22px", fontFamily: "'Montserrat', system-ui, sans-serif" },
 
@@ -295,30 +482,44 @@ const D = {
 };
 
 /* ---------- KPI card ---------- */
+/* KPI hero card — styling di kelas `.kpi` pada blok <style> di bawah (butuh
+   ::before/::after). Geometri ke-4 tile SENGAJA identik; yang berbeda hanya
+   isinya. Data TIDAK diubah: label/value/unit/subtitle/progress tetap dibaca
+   dari array kpisReal/kpisSales apa adanya, cuma dirender ulang untuk latar
+   gelap. `trend` hari ini selalu null di kedua array, jadi chip ▲/▼ praktis
+   tak pernah muncul — markupnya tetap disiapkan supaya begitu jalur datanya
+   ada, tile langsung memakainya tanpa ubah komponen. */
 function KpiCard({ data }) {
-  const [h, setH] = useState(false);
-  const hasTrend = !!data.trend;
-  const up   = hasTrend && data.trend.dir === "up";
-  const good = hasTrend && data.trend.good;
-  const tone = good ? { fg: "#1F8B4D", bg: "#DEF0E4" } : { fg: "#C0392B", bg: "#F7E1DE" };
+  const unitInline = data.unit === "%";
   return (
-    <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} style={{ ...D.kpiCard, ...(h ? D.kpiCardHover : null) }}>
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "linear-gradient(90deg, " + data.accent + ", " + data.accent + "55)" }} />
-      <div style={D.kpiTop}>
-        <div style={{ ...D.kpiIco, background: data.accentBg, color: data.accent }}><Icon name={data.icon} size={20} /></div>
-        {hasTrend && (
-          <span style={{ ...D.kpiTrend, color: tone.fg, background: tone.bg }}>
-            <Icon name={up ? "arrowup" : "arrowdown"} size={12} color={tone.fg} />{data.trend.val}
-          </span>
-        )}
+    <div className="kpi">
+      <div className="kpi-top">
+        <div className="kpi-label">{data.label}</div>
+        <span className="kpi-icon">
+          <Icon name={data.icon} size={27} color="rgba(255,255,255,.85)" strokeWidth={2} />
+        </span>
       </div>
-      <div style={D.kpiLabel}>{data.label}</div>
-      <div style={D.kpiValue}><span style={{ whiteSpace: "nowrap" }}>{data.value}</span><span style={D.kpiUnit}>{data.unit}</span></div>
-      {hasTrend && <div style={D.kpiNote}>{data.trend.note}</div>}
-      {!hasTrend && data.subtitle && <div style={{ ...D.kpiNote, color: "#6B7280" }}>{data.subtitle}</div>}
-      {!hasTrend && !data.subtitle && <div style={{ ...D.kpiNote, color: "#BCC0C8" }}>Realtime</div>}
+      {/* Unit diperlakukan dua macam, dan pembedanya BUKAN kosmetik:
+          "%" adalah simbol yang secara tipografis menempel pada angkanya —
+          "28.4%" satu kesatuan, dibaca sebagai satu nilai. Sedangkan
+          "prospect"/"inquiry"/"quotation" adalah KATA yang menerangkan angka,
+          bukan bagian dari nilainya, jadi ia berdiri sendiri di pojok kiri
+          bawah. Berlaku sama untuk kpisReal maupun kpisSales (unit "%" hanya
+          dipakai kedua tile Win Rate). */}
+      <div className="kpi-value-group">
+        <span className="kpi-value">{data.value}</span>
+        {unitInline && <span className="kpi-unit">{data.unit}</span>}
+      </div>
+      {/* Slot foot selalu dirender; min-height 2 baris di CSS yang menjaga
+          tingginya seragam, sebab isinya berbeda antar-tile: tiga tile
+          mengisi sisi kiri dengan unit dan sisi kanannya kosong, Win Rate
+          justru sebaliknya. */}
+      <div className="kpi-foot">
+        <span className="kpi-unit">{unitInline ? "" : (data.unit || "")}</span>
+        <span className="kpi-hint">{data.trend?.note || data.subtitle || ""}</span>
+      </div>
       {data.progress && (
-        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, background: "#EEF0F3" }}>
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, background: "rgba(8,14,24,.35)", zIndex: 1 }}>
           <div style={{ height: "100%", width: `${data.progress.pct}%`, background: data.progress.color, transition: "width .3s" }} />
         </div>
       )}
@@ -335,19 +536,20 @@ function AreaTip({ active, payload, label }) {
       <div style={D.tipTitle}>{label}</div>
       <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#8B5CF6", flex: "0 0 8px" }} />
-          Bulan Ini · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanIni")} prospect</b>
-        </div>
-        <div style={{ ...D.tipRow, display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: "#CBD5E1", flex: "0 0 8px" }} />
-          Bulan Lalu · <b style={{ color: "#fff", fontWeight: 700 }}>{get("bulanLalu")} prospect</b>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: NAVY, flex: "0 0 8px" }} />
+          <b style={{ color: "#fff", fontWeight: 700 }}>{get("current")} deal</b>
         </div>
       </div>
     </div>
   );
 }
 
-function PipelineTrend({ data = [] }) {
+/* Sumbu = DEAL yang dibuat per BULAN (inquiries.created_at), bukan akun baru.
+   Kartunya bernama "Pipeline Trend" dan pipeline diisi deal.
+   ⚠️ Jendelanya TETAP 12 bulan dan SENGAJA tidak mengikuti selektor periode
+   global — lihat query [14] di fetchDash untuk alasannya. Karena itu komponen
+   ini tak lagi menerima prop label/bucket apa pun: tak ada yang bisa berubah. */
+function PipelineTrend({ data = [], degraded = false }) {
   const [areaRef, areaW] = useWidth();
   const isEmpty = data.length === 0;
   return (
@@ -355,58 +557,41 @@ function PipelineTrend({ data = [] }) {
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="trendup" size={18} /></div>
         <div>
-          <div style={D.cardTitle}>Prospect Trend</div>
-          <div style={D.cardSub}>Jumlah prospect baru per minggu — bulan ini vs bulan lalu</div>
+          <div style={D.cardTitle}>Pipeline Trend</div>
+          <div style={D.cardSub}>New deals per month, last 12 months</div>
         </div>
       </div>
       <div style={{ padding: "16px 16px 4px" }}>
-        {isEmpty ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#9AA0AC", fontSize: 13 }}>Belum ada data prospect</div>
+        {degraded ? <DegradedNotice what="Pipeline trend" /> : isEmpty ? (
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280", fontSize: 13 }}>No pipeline data yet</div>
         ) : (
           <div ref={areaRef} className="bar-in">
           {areaW > 0 && (
             <AreaChart width={areaW} height={240} data={data} margin={{ top: 10, right: 22, left: -10, bottom: 0 }}>
               <defs>
-                {/* Horizontal (kiri→kanan) gradient untuk garis "Bulan Ini" */}
-                <linearGradient id="lineGradIni" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%"   stopColor="#7C3AED" />
-                  <stop offset="35%"  stopColor="#D946A6" />
-                  <stop offset="70%"  stopColor="#3B82F6" />
-                  <stop offset="100%" stopColor="#60A5FA" />
-                </linearGradient>
+                {/* Gradasi 4-stop ungu→pink→biru DIHAPUS: warnanya lepas dari
+                    brand, dan karena arahnya horizontal, nilai yang sama
+                    terbaca beda warna tergantung posisi X — dekoratif tanpa
+                    makna data. Diganti navy solid; isian area turunan navy.
+                    Gradasi pembanding (`areaLalu`) ikut dibuang 8 Sep 2026
+                    bersama garis pembandingnya. */}
                 <linearGradient id="areaIni" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#8B5CF6" stopOpacity={0.18} />
-                  <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0.02} />
-                </linearGradient>
-                <linearGradient id="areaLalu" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor="#CBD5E1" stopOpacity={0.08} />
-                  <stop offset="100%" stopColor="#CBD5E1" stopOpacity={0.01} />
+                  <stop offset="0%"   stopColor={NAVY} stopOpacity={0.16} />
+                  <stop offset="100%" stopColor={NAVY} stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} stroke="#F1F2F5" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} dy={6}
-                tick={{ fontSize: 11.5, fill: "#7A828E", fontWeight: 600 }} />
+                tick={{ fontSize: 11.5, fill: "#5A6270", fontWeight: 600 }} />
               <YAxis axisLine={false} tickLine={false} width={30} allowDecimals={false}
-                tick={{ fontSize: 11, fill: "#9AA0AC" }} />
+                tick={{ fontSize: 11, fill: "#6B7280" }} />
               <Tooltip content={<AreaTip />} cursor={{ stroke: "#C7CBD4", strokeWidth: 1, strokeDasharray: "4 4" }} />
-              <Area type="monotone" dataKey="bulanLalu" stroke="#CBD5E1" strokeWidth={2} strokeDasharray="6 5"
-                fill="url(#areaLalu)" dot={{ r: 3, fill: "#CBD5E1", strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
-              <Area type="monotone" dataKey="bulanIni" stroke="url(#lineGradIni)" strokeWidth={2.5}
-                fill="url(#areaIni)" dot={{ r: 3, fill: "#8B5CF6", strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+              <Area type="monotone" dataKey="current" stroke={NAVY} strokeWidth={2.5}
+                fill="url(#areaIni)" dot={{ r: 3, fill: NAVY, strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
             </AreaChart>
           )}
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "center", gap: 24, padding: "8px 0 14px" }}>
-          <span style={D.legItem}>
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#8B5CF6", flex: "0 0 11px" }} />
-            Bulan Ini
-          </span>
-          <span style={D.legItem}>
-            <span style={{ width: 14, height: 0, borderTop: "2.5px dashed #CBD5E1", flex: "0 0 14px" }} />
-            Bulan Lalu
-          </span>
-        </div>
       </div>
     </div>
   );
@@ -416,7 +601,7 @@ function PipelineTrend({ data = [] }) {
 function BarTip({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
   const d = payload[0].payload;
-  const color = d.id === "won" ? "#1F8B4D" : d.id === "lost" ? "#C0392B" : NAVY;
+  const color = INQ_STAGE_COLOR[d.id] || NAVY;
   return (
     <div style={D.tip}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
@@ -428,28 +613,29 @@ function BarTip({ active, payload }) {
   );
 }
 
-function PipelineByStage({ stages = STAGES }) {
+function PipelineByStage({ stages = STAGES, conversion = [], degraded = false }) {
   const [barRef, barW] = useWidth();
   const totalVal   = stages.reduce((a, s) => a + (s.value || 0), 0);
+  /* Tanpa ini, `stages` default (STAGES) yang seluruh count-nya 0 tetap
+     menggambar sumbu lengkap dengan tujuh label dan NOL batang — terbaca
+     sebagai chart rusak, bukan sebagai "belum ada data". */
+  const isEmpty    = stages.every((s) => !s.count);
   return (
     <div className="om-card" style={D.card}>
       <div style={D.cardHead}>
         <div style={D.cardIco}><Icon name="bars" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Pipeline by Stage</div>
-          <div style={D.cardSub}>Jumlah deal per tahap pipeline</div>
+          <div style={D.cardSub}>Inquiry count by status, using the same axis as the Pipeline board</div>
         </div>
       </div>
+      {degraded ? <DegradedNotice what="Pipeline by stage" /> : isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No pipeline data yet</div>
+      ) : (
       <div style={{ padding: "14px 14px 4px" }}>
         <div ref={barRef} className="bar-in">
         {barW > 0 && (
           <BarChart layout="vertical" width={barW} height={300} data={stages} margin={{ top: 4, right: 80, left: 6, bottom: 4 }} barCategoryGap={10}>
-            <defs>
-              <linearGradient id="navyBar" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#2A6FA8" />
-                <stop offset="100%" stopColor="#1B4D8A" />
-              </linearGradient>
-            </defs>
             <CartesianGrid horizontal={false} stroke="#F1F2F5" />
             <XAxis type="number" hide domain={[0, "dataMax"]} />
             <YAxis type="category" dataKey="name" width={86} axisLine={false} tickLine={false}
@@ -458,7 +644,9 @@ function PipelineByStage({ stages = STAGES }) {
             <Tooltip content={<BarTip />} cursor={{ fill: "rgba(20,70,130,.05)" }} />
             <Bar dataKey="count" radius={[0, 7, 7, 0]} barSize={22} isAnimationActive={false}>
               {stages.map((s) => (
-                <Cell key={s.id} fill={s.id === "won" ? "#1F8B4D" : s.id === "lost" ? "#C0392B" : "url(#navyBar)"} />
+                <Cell key={s.id}
+                  fill={INQ_STAGE_COLOR[s.id] || NAVY}
+                  fillOpacity={INQ_STAGE_COLOR[s.id] ? 1 : (OPEN_STAGE_OPACITY[s.id] ?? 1)} />
               ))}
               <LabelList dataKey="count" position="right" fill="#16243A" fontSize={11} fontWeight={700} />
             </Bar>
@@ -470,7 +658,30 @@ function PipelineByStage({ stages = STAGES }) {
             <span style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 14, color: NAVY, letterSpacing: -0.3 }}>{rpShort(totalVal)}</span>
           </div>
         )}
+        {/* Konversi antar-tahap — "pernah mencapai", dari riwayat transisi.
+            LOST/CANCELLED tidak masuk rantai: keduanya exit dari tahap mana pun,
+            bukan tahap berikutnya. */}
+        {conversion.length > 0 && (
+          <div style={{ borderTop: "1px solid #ECEDF1", margin: "2px 8px 0", padding: "11px 0 13px" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "#6B7280", marginBottom: 7 }}>
+              Stage-to-stage conversion
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {conversion.map((c) => (
+                <span key={c.to} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 20, background: "#F4F5F7", fontSize: 11, color: "#48505C", fontWeight: 600 }}>
+                  {c.fromLabel} → {c.toLabel}
+                  <b style={{ ...D.legVal, fontSize: 11.5 }}>{c.pct === null ? "—" : c.pct + "%"}</b>
+                </span>
+              ))}
+            </div>
+            <div style={{ marginTop: 7, fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
+              From transition history. Deals that moved before 28 Agu 2026 have no full
+              history yet, so these figures still under-report older data.
+            </div>
+          </div>
+        )}
       </div>
+      )}
     </div>
   );
 }
@@ -491,14 +702,20 @@ function PieTip({ active, payload, total }) {
   );
 }
 
-function LeadSourceDonut({ data = [] }) {
+function LeadSourceDonut({ data = [], degraded = false }) {
   // Normalise: data has { source, count } — add name + color for chart
-  const normalised = data.map((d, i) => ({
-    name:  d.source || 'Lainnya',
-    count: d.count,
-    color: SOURCE_PALETTE[i % SOURCE_PALETTE.length],
-  }));
+  // Label & warna dari SOURCE_META — legenda menampilkan "Cold Call", bukan
+  // kode mentah "cold_call". Pengelompokan datanya TIDAK diubah: setiap
+  // sumber tetap berdiri sendiri, tak ada yang dilebur ke "Other".
+  const normalised = data.map((d) => {
+    const m = sourceMeta(d.source);
+    return { name: m.label, count: d.count, color: m.color };
+  });
   const total = normalised.reduce((a, s) => a + s.count, 0);
+  // Skala bar volume — warisan satu-satunya kolom bermakna dari tabel "New
+  // Leads by Source" yang dilebur ke sini (kolom conv/response tabel itu
+  // permanen kosong, jadi ikut dilepas bersama tabelnya).
+  const maxCount = normalised.reduce((a, s) => Math.max(a, s.count), 0);
   const isEmpty = normalised.length === 0;
   return (
     <div className="om-card" style={D.card}>
@@ -506,11 +723,11 @@ function LeadSourceDonut({ data = [] }) {
         <div style={D.cardIco}><Icon name="pie" size={17} /></div>
         <div>
           <div style={D.cardTitle}>Lead Source Distribution</div>
-          <div style={D.cardSub}>Asal lead sepanjang periode</div>
+          <div style={D.cardSub}>Lead origin across the period</div>
         </div>
       </div>
-      {isEmpty ? (
-        <div style={{ padding: "32px 18px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada data lead source</div>
+      {degraded ? <DegradedNotice what="Lead source mix" /> : isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No lead source data yet</div>
       ) : (
         <div style={D.donutBody}>
           <div style={D.donutWrap} className="donut-in">
@@ -529,11 +746,19 @@ function LeadSourceDonut({ data = [] }) {
           </div>
           <div style={D.legend}>
             {normalised.map((s) => (
-              <div key={s.name} style={D.legRow}>
-                <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
-                <span style={D.legName}>{s.name}</span>
-                <span style={D.legVal}>{s.count}</span>
-                <span style={D.legPct}>{total > 0 ? Math.round((s.count / total) * 100) : 0}%</span>
+              <div key={s.name}>
+                <div style={D.legRow}>
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "0 0 9px" }} />
+                  <span style={D.legName}>{s.name}</span>
+                  <span style={D.legVal}>{s.count}</span>
+                  <span style={D.legPct}>{total > 0 ? Math.round((s.count / total) * 100) : 0}%</span>
+                </div>
+                <div style={{ ...D.miniTrack, marginTop: 3, marginBottom: 7 }}>
+                  <span style={{
+                    display: "block", height: "100%", borderRadius: 4, background: s.color,
+                    width: (maxCount > 0 ? (s.count / maxCount) * 100 : 0) + "%",
+                  }} />
+                </div>
               </div>
             ))}
           </div>
@@ -543,15 +768,529 @@ function LeadSourceDonut({ data = [] }) {
   );
 }
 
+/* ---------- baris funnel (dipakai dua widget baru) ---------- */
+// Gaya bar mengikuti D.miniTrack yang sudah dipakai legenda donut Lead Source —
+// bukan Recharts, karena kedua widget ini cuma butuh daftar berbanding, bukan
+// grafik dengan sumbu.
+/* `barColor`/`numColor` OPSIONAL — kalau tak diberikan, perilakunya persis
+   seperti sebelumnya (bar navy, angka #16243A). Ini disengaja: FunnelRow juga
+   dipakai LossReasonBreakdown, yang di luar scope revisi palet ini dan harus
+   tetap sama persis. */
+function FunnelRow({ label, count, max, muted = false, barColor, numColor }) {
+  return (
+    <div style={{ marginBottom: 9 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <span style={{ flex: 1, minWidth: 0, color: muted ? "#5A6270" : "#48505C", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {label}
+        </span>
+        <span style={numColor ? { ...D.legVal, color: numColor } : D.legVal}>{count}</span>
+      </div>
+      <div style={D.miniTrack}>
+        <span style={{ display: "block", height: "100%", borderRadius: 4, background: muted ? "#C7CBD4" : (barColor || NAVY), width: (max > 0 ? (count / max) * 100 : 0) + "%" }} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------- penanda data tak lengkap (dipakai lintas kartu) ----------
+   Dipasang di dalam KARTU, bukan cuma banner di puncak halaman. Banner
+   memberi tahu "ada yang salah"; ia tidak memberi tahu ANGKA MANA. Selama
+   kartunya sendiri tetap memajang angka, pembaca yang melewatkan banner
+   tidak punya petunjuk apa pun bahwa yang dilihatnya tidak utuh.
+
+   Nadanya sengaja netral (abu, bukan merah): data terpotong itu keterbatasan
+   pengambilan, bukan kondisi darurat. */
+function DegradedNotice({ what = 'This figure', reason = 'truncated' }) {
+  return (
+    <div style={{ padding: "28px 18px", textAlign: "center", color: "#6B7280", fontSize: 13, lineHeight: 1.6 }}>
+      {what} is not shown
+      <div style={{ marginTop: 6, fontSize: 12, color: "#9CA3AF" }}>
+        {reason === 'error'
+          ? 'The underlying query failed, so any number here would be a guess. Reload the page; if it keeps happening, report it.'
+          : 'The underlying query hit its 1,000-row ceiling, so the figures would be computed from partial data.'}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- funnel lifecycle akun ---------- */
+/* `total` datang dari COUNT SERVER (query [15]), TERPISAH dari baris yang
+   membentuk rinciannya. Itu disengaja: rincian per-tahap bisa terpotong di
+   1000 sementara totalnya tetap bisa dipertanggungjawabkan. Kalau `total`
+   tak tersedia (null), kaki kartu menampilkan '—' — bukan menjumlahkan
+   baris yang sudah diketahui tidak lengkap. */
+function LifecycleFunnel({ funnel = [], exits = [], total = null, degraded = false }) {
+  const max        = funnel.reduce((a, s) => Math.max(a, s.count), 0);
+  const totalFun   = funnel.reduce((a, s) => a + s.count, 0);
+  const totalExit  = exits.reduce((a, s) => a + s.count, 0);
+  const isEmpty    = totalFun === 0 && totalExit === 0;
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="users" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Account Lifecycle Funnel</div>
+          <div style={D.cardSub}>Current account distribution (does not follow the period filter)</div>
+        </div>
+      </div>
+      {degraded ? (
+        <>
+          <DegradedNotice what="The per-stage breakdown" />
+          {/* Total TETAP tampil: ia datang dari count server, bukan dari baris
+              yang terpotong. Menyembunyikannya juga akan membuang satu-satunya
+              angka yang justru masih benar di kartu ini. */}
+          <div style={{ borderTop: "1px solid #ECEDF1", padding: "10px 16px 14px", textAlign: "right", fontSize: 11.5, color: "#6B7280" }}>
+            Total accounts <b style={{ color: "#16243A" }}>{total == null ? '—' : total}</b>
+          </div>
+        </>
+      ) : isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No accounts yet</div>
+      ) : (
+        <div style={{ padding: "14px 16px 16px" }}>
+          {funnel.map((s) => (
+            <FunnelRow key={s.id} label={s.name} count={s.count} max={max}
+              barColor={LIFECYCLE_COLOR[s.id]?.bar} numColor={LIFECYCLE_COLOR[s.id]?.num} />
+          ))}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid #ECEDF1", paddingTop: 12, marginTop: 3 }}>
+            {exits.map((e) => (
+              <span key={e.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 20, background: "#F4F5F7", fontSize: 11.5, color: "#5A6270", fontWeight: 600 }}>
+                {e.name}<span style={D.legVal}>{e.count}</span>
+              </span>
+            ))}
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#6B7280" }}>
+              Total accounts <b style={{ color: "#16243A" }}>{total == null ? '—' : total}</b>
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- pie konversi MQL → SQL ---------- */
+// Tooltip sendiri, BUKAN PieTip: PieTip membaca field `count` dan mencetak
+// satuan "lead" — dua-duanya salah di sini (slice-nya pakai `value`, dan
+// satuannya akun MQL, bukan lead).
+function MqlTip({ active, payload, total }) {
+  if (!active || !payload || !payload.length) return null;
+  const d = payload[0].payload;
+  const pct = total > 0 ? Math.round((d.value / total) * 100) : 0;
+  return (
+    <div style={D.tip}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flex: "0 0 8px" }} />
+        <span style={D.tipTitle}>{d.name}</span>
+      </div>
+      <div style={D.tipRow}><b style={{ color: "#fff", fontWeight: 700 }}>{d.value}</b> accounts · {pct}%</div>
+    </div>
+  );
+}
+
+function MqlToSqlPie({ data, degraded = false }) {
+  const converted = data?.converted ?? 0;
+  const pending   = data?.pending   ?? 0;
+  const lost      = data?.lost      ?? 0;
+  const pct       = data?.pct ?? null;
+  /* TIGA keadaan, bukan dua. Selain "kohort kosong" (isEmpty), ada keadaan
+     ketiga: kohortnya ADA tapi seluruh barisnya berasal dari backfill 7 Sep 2026
+     (`from_stage` NULL), jadi nol transisi nyata pernah terekam. Menampilkan
+     persentase di keadaan itu terbaca sebagai "sekian persen gagal naik" —
+     padahal yang benar adalah belum ada yang bisa diukur. Diukur di produksi
+     8 Sep 2026: kohort 166 akun, converted 0 → tanpa penjagaan ini kartunya
+     memberi tahu CEO "0%". */
+  const notEnoughHistory = !data?.hasRealTransition;
+  const slices = [
+    { name: 'Reached SQL', value: converted, color: MQL_COLOR.converted },
+    // "Not yet" sengaja track terang ber-border, bukan warna penuh: ia ruang
+    // yang belum terisi, bukan kategori yang setara dengan yang sudah konversi.
+    { name: 'Not yet',     value: pending,   color: MQL_COLOR.pendingBg, border: MQL_COLOR.pendingBd },
+  ];
+  const isEmpty = converted + pending + lost === 0;
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="pie" size={17} /></div>
+        <div>
+          <div style={D.cardTitle}>MQL to SQL Conversion</div>
+          <div style={D.cardSub}>Accounts that have ever reached MQL</div>
+        </div>
+      </div>
+      {/* `degraded` HARUS diperiksa SEBELUM isEmpty. Saat query-nya gagal,
+          ketiga penghitung tetap 0 sehingga isEmpty ikut true — dan kartunya
+          akan menuliskan "No account has been recorded reaching MQL yet",
+          sebuah KLAIM BISNIS, padahal yang terjadi cuma request-nya tak pernah
+          berhasil. Urutan dua cabang ini yang membedakan keduanya. */}
+      {degraded ? (
+        <DegradedNotice what="MQL to SQL conversion" reason="error" />
+      ) : isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
+          No account has been recorded reaching MQL yet
+        </div>
+      ) : notEnoughHistory ? (
+        <div style={{ padding: "28px 18px", textAlign: "center", color: "#6B7280", fontSize: 13, lineHeight: 1.6 }}>
+          Not enough history to measure conversion yet
+          <div style={{ marginTop: 6, fontSize: 12, color: "#9CA3AF" }}>
+            {converted + pending + lost} account(s) are on the MQL cohort, but every record comes from the
+            initial backfill. Lifecycle history only started being recorded on 7 September 2026 — a
+            percentage will appear once real stage transitions accumulate.
+          </div>
+        </div>
+      ) : (
+        <div style={{ padding: "14px 16px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ position: "relative", flex: "0 0 auto" }}>
+              <PieChart width={132} height={132}>
+                <Pie data={slices} dataKey="value" nameKey="name" cx={66} cy={66}
+                  innerRadius={40} outerRadius={62} paddingAngle={1.5} stroke="none"
+                  startAngle={90} endAngle={-270} isAnimationActive={false}>
+                  {slices.map((s) => (
+                    <Cell key={s.name} fill={s.color} stroke={s.border || 'none'} strokeWidth={s.border ? 1 : 0} />
+                  ))}
+                </Pie>
+                <Tooltip content={<MqlTip total={converted + pending} />} />
+              </PieChart>
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                <div style={{ fontFamily: "'Montserrat', system-ui, sans-serif", fontWeight: 800, fontSize: 19, color: "#16243A" }}>
+                  {pct === null ? '—' : pct + '%'}
+                </div>
+                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".05em", color: "#6B7280" }}>REACHED SQL</div>
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 190 }}>
+              {slices.map((s) => (
+                <div key={s.name} style={D.legRow}>
+                  <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color,
+                    border: s.border ? `1px solid ${s.border}` : undefined, boxSizing: "border-box", flex: "0 0 9px" }} />
+                  <span style={D.legName}>{s.name}</span>
+                  <span style={D.legVal}>{s.value}</span>
+                </div>
+              ))}
+              {/* `lost` DI LUAR pie: akun mati bukan "belum konversi" — satu masih
+                  mungkin jadi SQL, satu tidak akan pernah. Mencampurnya akan
+                  membuat penyebutnya menghukum konversi untuk sesuatu yang sudah
+                  selesai. Tetap ditampilkan supaya tak hilang dari pandangan. */}
+              {lost > 0 && (
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #ECEDF1" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: 20, background: "#F4F5F7", fontSize: 11, color: "#5A6270", fontWeight: 600 }}>
+                    Lost (excluded)<span style={D.legVal}>{lost}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
+            Cohort from lifecycle history, not from the current stage — an account can skip
+            past MQL. Accounts that passed MQL before 27 Agu 2026 left no trace, so this
+            cohort still under-reports older data.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- breakdown alasan kalah ---------- */
+function LossReasonBreakdown({ data = [], total = 0, degraded = false }) {
+  const max = data.reduce((a, s) => Math.max(a, s.count), 0);
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="ban" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Loss Reason</div>
+          <div style={D.cardSub}>Deals marked Lost that closed in the active period</div>
+        </div>
+      </div>
+      {degraded ? <DegradedNotice what="Loss reason breakdown" /> : data.length === 0 ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No lost deals in this period</div>
+      ) : (
+        <div style={{ padding: "14px 16px 16px" }}>
+          {/* Baris "Tanpa Alasan" diredupkan tapi TIDAK disembunyikan: totalnya
+              harus tetap sama dengan jumlah LOST di Pipeline by Stage. */}
+          {data.map((s) => (
+            <FunnelRow key={s.id} label={s.name} count={s.count} max={max} muted={s.unknown} />
+          ))}
+          <div style={{ borderTop: "1px solid #ECEDF1", paddingTop: 12, marginTop: 3, fontSize: 11.5, color: "#6B7280" }}>
+            Total LOST periode ini <b style={{ color: "#16243A" }}>{total}</b> — harus sama dengan batang LOST di Pipeline by Stage.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- beban pipeline aktif per sales ---------- */
+function ActivePipelineLoad({ rows = [], totalDeals = 0 }) {
+  const [hover, setHover] = useState(-1);
+  const anyMissing = rows.some((r) => r.missing > 0);
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="users" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Active Pipeline Load</div>
+          {/* Sengaja tegas membedakan diri dari Sales Performance: yang itu
+              tentang deal yang SUDAH ditutup di periode, yang ini tentang beban
+              yang MASIH dipegang hari ini. Dua sumbu waktu berbeda. */}
+          <div style={D.cardSub}>Open deals currently held, not closed-deal performance</div>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
+          Tidak ada deal terbuka
+        </div>
+      ) : (
+        <>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 400 }}>
+              <thead>
+                <tr>
+                  <th style={D.th}>Salesperson</th>
+                  <th style={{ ...D.th, textAlign: "center", width: 76 }}>Active Deals</th>
+                  <th style={{ ...D.th, textAlign: "right" }}>Pipeline Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.id} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
+                    style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
+                    <td style={D.td}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ ...D.avatar, background: r.noOwner ? "#C7CBD4" : avatarColor(r.name) }}>
+                          {r.noOwner ? "—" : initials(r.name)}
+                        </span>
+                        <span style={{ fontWeight: 600, color: r.noOwner ? "#5A6270" : "#16243A" }}>{r.name}</span>
+                      </div>
+                    </td>
+                    <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{r.deals}</span></td>
+                    <td style={{ ...D.td, textAlign: "right" }}>
+                      <span style={D.num}>{rpShort(r.value)}</span>
+                      {/* Gap per baris disebut, supaya total per sales tak
+                          terbaca lengkap padahal sebagian dealnya tak bernilai. */}
+                      {r.missing > 0 && (
+                        <div style={{ fontSize: 10, color: "#C0392B", marginTop: 2 }}>
+                          {r.missing} deal tanpa nilai
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
+            Total <b>{totalDeals} deal</b> terbuka — sama dengan jumlah keempat batang terbuka di
+            Pipeline by Stage.
+            {anyMissing && <> Pipeline value only sums deals that already have a value; the deal count is still counted in full.</>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- aging per tahap ---------- */
+function AgingPerStage({ rows = [], unknown = 0, degraded = false }) {
+  const isEmpty = rows.every((r) => r.count === 0);
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="clock" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Aging by Stage</div>
+          <div style={D.cardSub}>Median days at the current stage (does not follow the period filter)</div>
+        </div>
+      </div>
+      {degraded ? <DegradedNotice what="Stage aging" /> : isEmpty ? (
+        <div style={{ padding: "32px 18px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No open deals yet</div>
+      ) : (
+        <>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={D.th}>Stage</th>
+                <th style={{ ...D.th, textAlign: "center", width: 62 }}>Deal</th>
+                <th style={{ ...D.th, textAlign: "center", width: 86 }}>Median</th>
+                <th style={{ ...D.th, textAlign: "center", width: 78 }}>Ambang</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const over = r.median !== null && r.threshold !== null && r.median > r.threshold;
+                return (
+                  <tr key={r.id}>
+                    <td style={D.td}><span style={{ fontWeight: 600, color: "#16243A" }}>{r.name}</span></td>
+                    <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{r.count}</span></td>
+                    <td style={{ ...D.td, textAlign: "center" }}>
+                      {/* Median null = tak ada deal yang umurnya bisa diukur.
+                          "—", bukan 0 — nol hari mengklaim deal baru masuk. */}
+                      <span style={{ ...D.num, fontWeight: 700, color: over ? "#C0392B" : "#16243A" }}>
+                        {r.median === null ? '—' : `${r.median} hr`}
+                      </span>
+                    </td>
+                    <td style={{ ...D.td, textAlign: "center", color: "#6B7280" }}>
+                      <span style={D.num}>{r.threshold === null ? '—' : `${r.threshold} hr`}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
+            Ambang dari master SLA. <b>IN_REVIEW has no threshold</b> — kebijakannya bersumbu moda
+            transport yang tidak ada di inquiry, jadi tak diarang-arang. Ambang hari kerja
+            diperlakukan sebagai hari kalender (belum ada kalender kerja).
+            {unknown > 0 && <> · <b>{unknown} deal</b> has no status history yet, so its age cannot be computed.</>}
+            <br />Deal yang bergerak sebelum 28 Agu 2026 umurnya dihitung dari edit terakhir, bukan
+            perubahan status — angkanya bisa lebih muda dari kenyataan.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- daftar deal stale ---------- */
+function StaleDeals({ rows = [], total = 0, cap = 30, degraded = false }) {
+  const [hover, setHover] = useState(-1);
+  return (
+    <div className="om-card" style={D.card}>
+      <div style={D.cardHead}>
+        <div style={D.cardIco}><Icon name="alert" size={18} /></div>
+        <div>
+          <div style={D.cardTitle}>Deal Stale</div>
+          <div style={D.cardSub}>Past the SLA threshold for their stage, worst first</div>
+        </div>
+      </div>
+      {degraded ? <DegradedNotice what="Stale deals" /> : rows.length === 0 ? (
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
+          Tidak ada deal yang melewati ambang
+        </div>
+      ) : (
+        <>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
+              <thead>
+                <tr>
+                  <th style={D.th}>Inquiry</th>
+                  <th style={D.th}>Account</th>
+                  <th style={D.th}>Stage</th>
+                  <th style={D.th}>Owner</th>
+                  <th style={{ ...D.th, textAlign: "center", width: 70 }}>Age</th>
+                  <th style={{ ...D.th, textAlign: "center", width: 84 }}>Lewat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.id} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
+                    style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
+                    <td style={{ ...D.td, ...D.num, whiteSpace: "nowrap" }}>{r.inquiryNo}</td>
+                    <td style={D.td}><span style={{ fontWeight: 600, color: "#16243A" }}>{r.account}</span></td>
+                    <td style={{ ...D.td, color: "#5A6270" }}>{r.statusLabel}</td>
+                    <td style={{ ...D.td, color: r.noOwner ? "#6B7280" : "#48505C" }}>{r.owner}</td>
+                    <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{r.days} hr</span></td>
+                    <td style={{ ...D.td, textAlign: "center" }}>
+                      <span style={{ ...D.num, fontWeight: 700, color: "#C0392B" }}>+{r.over} hr</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ padding: "10px 16px 14px", fontSize: 10.5, color: "#6B7280", lineHeight: 1.5 }}>
+            {/* Pemotongan disebutkan, tidak diam-diam. */}
+            {total > cap
+              ? <>Showing <b>{cap}</b> of <b>{total}</b> stale deals — the rest are truncated, ordered worst first.</>
+              : <>Total <b>{total}</b> deal stale.</>}
+            {' '}IN_REVIEW tidak ikut dinilai (tak punya ambang yang bisa dipakai).
+            Deal yang bergerak sebelum 28 Agu 2026 umurnya dihitung dari edit terakhir, jadi
+            sebagian deal mandek bisa belum muncul di sini.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- sel pencapaian target ----------
+   Satu sel, dua baris (Nilai + Deal). SENGAJA tidak dirata-ratakan jadi satu
+   angka: dua persentase yang penyebutnya berbeda, kalau digabung, menghasilkan
+   angka yang tak mewakili keadaan mana pun — sales dengan 120% nilai dan 40%
+   deal akan tampil 80% dan terbaca stabil.
+
+   Empat keadaan yang gampang tertukar dan sengaja dibedakan:
+     • tak ada baris target sama sekali   → "—" tunggal (BUKAN 0%)
+     • ada target, metriknya belum diisi  → baris itu "—"
+     • ada target, hasilnya nol           → 0%, angka sungguhan
+     • ada target nilai, hasil tak terukur → "—" + penanda (lihat komentar
+       valueUnmeasured di fetchDash)
+
+   Persentasenya sengaja TIDAK diberi warna: kolom Status di sebelahnya sudah
+   memegang penilaian visual, dan dua sumbu warna yang bisa bertentangan
+   (mis. 120% target tapi win rate "At Risk") justru membingungkan. */
+function AttainmentCell({ att }) {
+  if (!att) return <span style={{ ...D.num, color: "#6B7280" }}>—</span>;
+
+  const row = (label, pct) => (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+      <span style={{ fontSize: 10, color: "#6B7280", fontWeight: 600, width: 32 }}>{label}</span>
+      <span style={{ ...D.num, fontWeight: 700, fontSize: 12.5, color: pct === null ? "#6B7280" : "#16243A" }}>
+        {pct === null ? "—" : `${pct}%`}
+      </span>
+    </div>
+  );
+
+  // Penanda cakupan hanya relevan untuk periode multi-bulan. Angka di atasnya
+  // OPTIMIS saat cakupannya belum penuh — penyebutnya lebih kecil dari target
+  // sebenarnya, jadi bisa turun belakangan tanpa kinerja berubah.
+  const partial = att.expectedMonths > 1 && att.monthsCovered < att.expectedMonths;
+
+  return (
+    <div style={{ display: "inline-flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
+      {row("Value", att.valuePct)}
+      {row("Deals", att.dealsPct)}
+      {att.valueUnmeasured && (
+        <div style={{ fontSize: 9.5, color: "#C0392B", lineHeight: 1.35, maxWidth: 104 }}>
+          deal value not recorded
+        </div>
+      )}
+      {partial && (
+        <div style={{ fontSize: 9.5, color: "#6B7280", lineHeight: 1.35 }}>
+          {att.monthsCovered}/{att.expectedMonths} mo
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- sales performance table ---------- */
-function salesStatus(convRate) {
-  if (convRate >= 30) return "Exceeding";
-  if (convRate >= 20) return "On Track";
-  if (convRate >= 10) return "Need Push";
+/* Basis badge Status = CAPAIAN TARGET, bukan lagi win rate.
+   Sebelumnya Status diturunkan dari convRate sementara kolom di sebelahnya
+   menampilkan capaian target, sehingga satu baris bisa berlabel hijau
+   "Exceeding" tepat di samping angka "Nilai 15%" — dua kolom bersebelahan
+   yang saling membantah.
+   Dipakai nilai TERKECIL dari dua persentase yang tersedia (value & deals).
+   Alasannya: kolom % Target menampilkan KEDUANYA, jadi memakai yang tertinggi
+   membuat badge tetap bisa berlawanan arah dengan salah satu angka yang
+   terlihat. Yang terkecil tak pernah bisa mengklaim lebih dari yang tertulis.
+   Tanpa baris target sama sekali → null, BUKAN 0%: "belum punya target" dan
+   "target tak tercapai" dua pernyataan berbeda (pola yang sama dengan
+   attainmentFor di fetchDash). */
+function attainmentBasis(att) {
+  if (!att) return null;
+  const parts = [att.valuePct, att.dealsPct].filter((v) => v !== null && v !== undefined);
+  return parts.length ? Math.min(...parts) : null;
+}
+function salesStatus(pct) {
+  if (pct === null) return "No Target";
+  if (pct >= 30) return "Exceeding";
+  if (pct >= 20) return "On Track";
+  if (pct >= 10) return "Need Push";
   return "At Risk";
 }
 
-function SalesPerformance({ data = [] }) {
+function SalesPerformance({ data = [], degraded = false }) {
   const [hover, setHover] = useState(-1);
   const maxConv = data.length > 0 ? Math.max(...data.map((s) => s.convRate || 0)) : 100;
   const isEmpty = data.length === 0;
@@ -561,12 +1300,12 @@ function SalesPerformance({ data = [] }) {
         <div style={D.cardIco}><Icon name="award" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Sales Performance</div>
-          <div style={D.cardSub}>Performa tim sales berdasarkan prospect</div>
+          <div style={D.cardSub}>Won deals per salesperson, from deals closed in the active period</div>
         </div>
       </div>
-      {isEmpty ? (
-        <div style={{ padding: "32px 16px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>
-          Belum ada data — assign salesperson ke prospects dulu
+      {degraded ? <DegradedNotice what="Sales performance" /> : isEmpty ? (
+        <div style={{ padding: "32px 16px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>
+          No deals closed in this period yet
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
@@ -574,27 +1313,39 @@ function SalesPerformance({ data = [] }) {
           <thead>
             <tr>
               <th style={D.th}>Salesperson</th>
-              <th style={{ ...D.th, textAlign: "center" }}>Prospek</th>
-              <th style={{ ...D.th, textAlign: "center" }}>Won</th>
-              <th style={{ ...D.th, textAlign: "center" }}>Conv %</th>
+              <th style={{ ...D.th, textAlign: "center" }}>Deal WON</th>
+              <th style={{ ...D.th, textAlign: "right" }}>Won Value</th>
+              <th style={{ ...D.th, textAlign: "center" }}>Win %</th>
+              <th style={{ ...D.th, textAlign: "center", width: 108 }}>% Target</th>
               <th style={{ ...D.th, textAlign: "right" }}>Status</th>
             </tr>
           </thead>
           <tbody>
             {data.map((s, i) => {
-              const status = salesStatus(s.convRate || 0);
+              const status = salesStatus(attainmentBasis(s.att));
               const b = STATUS_BADGE[status];
               return (
                 <tr key={s.name + i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
                   style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
                   <td style={D.td}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ ...D.avatar, background: avatarColor(s.name) }}>{initials(s.name)}</span>
-                      <span style={{ fontWeight: 600, color: "#16243A" }}>{s.name}</span>
+                      <span style={{ ...D.avatar, background: s.noOwner ? "#C7CBD4" : avatarColor(s.name) }}>
+                        {s.noOwner ? "—" : initials(s.name)}
+                      </span>
+                      <span style={{ fontWeight: 600, color: s.noOwner ? "#5A6270" : "#16243A" }}>{s.name}</span>
                     </div>
                   </td>
-                  <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.prospek}</span></td>
                   <td style={{ ...D.td, textAlign: "center" }}><span style={D.num}>{s.won}</span></td>
+                  {/* `valueUnmeasured` = WON > 0 tapi total nilainya 0, artinya
+                      estimated_value-nya memang belum pernah diisi (deal lama).
+                      "Rp 0" di sini adalah pernyataan yang salah — bukan "tidak
+                      menghasilkan", tapi "hasilnya tak terukur". Penanda yang
+                      sama sudah dipakai di kolom % Target. */}
+                  <td style={{ ...D.td, textAlign: "right" }}>
+                    <span style={{ ...D.num, color: s.att?.valueUnmeasured ? "#6B7280" : undefined }}>
+                      {s.att?.valueUnmeasured ? "—" : rpShort(s.value)}
+                    </span>
+                  </td>
                   <td style={{ ...D.td, textAlign: "center" }}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
                       <span style={{ ...D.num, fontWeight: 700, color: "#16243A" }}>{s.convRate}%</span>
@@ -602,6 +1353,12 @@ function SalesPerformance({ data = [] }) {
                         <span style={{ display: "block", height: "100%", width: (maxConv > 0 ? (s.convRate / maxConv) * 100 : 0) + "%", background: b.fg, borderRadius: 4 }} />
                       </div>
                     </div>
+                  </td>
+                  {/* ── % Target ── satu kolom, dua baris. TIDAK dirata-ratakan:
+                      dua persentase berpenyebut berbeda kalau dijadikan satu
+                      angka akan mewakili keadaan yang tak pernah terjadi. */}
+                  <td style={{ ...D.td, textAlign: "center" }}>
+                    <AttainmentCell att={s.att} />
                   </td>
                   <td style={{ ...D.td, textAlign: "right" }}>
                     <span style={{ ...D.badge, background: b.bg, color: b.fg }}>{status}</span>
@@ -611,59 +1368,52 @@ function SalesPerformance({ data = [] }) {
             })}
           </tbody>
         </table>
+        {/* Keterangan muncul HANYA saat barisnya ada — supaya angka tabel ini
+            selalu bisa dicocokkan dengan kartu Win Rate tanpa user menebak ke
+            mana perginya selisihnya. */}
+        {data.some((s) => s.noOwner) && (
+          <div style={{ padding: "10px 16px 14px", fontSize: 11.5, color: "#5A6270", lineHeight: 1.5 }}>
+            <b>Unassigned</b> = deals whose <code>owner_id</code> is not filled in yet, so they
+            cannot be attributed to any salesperson. The row is still counted so the totals here
+            reconcile with the Win Rate card and the Pipeline by Stage chart.
+          </div>
+        )}
         </div>
       )}
     </div>
   );
 }
 
-/* ---------- new leads by source table (static reference data) ---------- */
-function LeadsBySource({ sourceData = [] }) {
-  const [hover, setHover] = useState(-1);
-  // Build from real lead source data if available
-  const rows = sourceData.length > 0
-    ? sourceData.slice(0, 8).map(d => ({ source: d.source || d.name || '—', leads: d.count, conv: '—', response: '—' }))
-    : LEADS_BY_SOURCE;
-  const maxLeads = rows.reduce((a, r) => Math.max(a, typeof r.leads === 'number' ? r.leads : 0), 1);
+/* Kerangka untuk SELURUH baris di bawah KPI.
+   Sebelumnya hanya baris KPI yang di-gate `dashLoading`; baris 2 ke bawah
+   dirender tanpa syarat dengan `dashData?.x || []`, sehingga selama fetch
+   berjalan ketujuh kartu menampilkan empty-state-nya sendiri — "No prospect
+   data yet", "No lead source data yet", dan seterusnya. Di koneksi lambat
+   user membaca pernyataan yang SALAH: "belum dimuat" tak bisa dibedakan dari
+   "memang kosong". Bentuk kerangkanya sengaja mengikuti tinggi & jumlah
+   kolom baris aslinya supaya tak ada lompatan layout saat data tiba. */
+function SkeletonBlock({ h }) {
   return (
-    <div className="om-card" style={D.card}>
-      <div style={D.cardHead}>
-        <div style={D.cardIco}><Icon name="inbox" size={18} /></div>
-        <div>
-          <div style={D.cardTitle}>New Leads by Source</div>
-          <div style={D.cardSub}>Lead baru per kanal</div>
-        </div>
-      </div>
-      <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 360 }}>
-        <thead>
-          <tr>
-            <th style={D.th}>Source</th>
-            <th style={{ ...D.th, textAlign: "center", width: 96 }}>New Leads</th>
-            <th style={{ ...D.th, width: 150 }}>Volume</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((l, i) => (
-            <tr key={l.source + i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(-1)}
-              style={{ background: hover === i ? "#FAFBFC" : "transparent", transition: "background .12s ease" }}>
-              <td style={D.td}><span style={{ fontWeight: 600, color: "#16243A" }}>{l.source}</span></td>
-              <td style={{ ...D.td, textAlign: "center" }}>
-                {typeof l.leads === 'number' ? <span style={D.countPill}>{l.leads}</span> : <span style={{ color: "#9AA0AC" }}>—</span>}
-              </td>
-              <td style={D.td}>
-                {typeof l.leads === 'number' ? (
-                  <div style={{ ...D.miniTrack, marginTop: 0 }}>
-                    <span style={{ display: "block", height: "100%", width: (l.leads / maxLeads) * 100 + "%", borderRadius: 4, background: NAVY }} />
-                  </div>
-                ) : <span style={{ color: "#9AA0AC", fontSize: 12 }}>—</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
+  <div style={{ height: h, borderRadius: 14, background: "linear-gradient(90deg,#F2F4F7 25%,#E8EBF0 50%,#F2F4F7 75%)", backgroundSize: "400% 100%", animation: "db-shimmer 1.4s ease infinite" }} />
+  );
+}
+function SkeletonBelow({ isSalesOnly }) {
+  return (
+  <>
+    <div style={{ marginBottom: 16 }}><SkeletonBlock h={330} /></div>
+    <div className="nx-grid-2" style={D.chartsRow}>
+      <SkeletonBlock h={420} /><SkeletonBlock h={420} />
     </div>
+    <div className="nx-grid-3" style={{ ...D.tablesRow, gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
+      <SkeletonBlock h={300} /><SkeletonBlock h={300} /><SkeletonBlock h={300} />
+    </div>
+    <div style={{ marginBottom: 16 }}><SkeletonBlock h={260} /></div>
+    <div className="nx-grid-2" style={{ ...D.tablesRow, gridTemplateColumns: "minmax(0,1fr) minmax(0,1.9fr)" }}>
+      <SkeletonBlock h={300} /><SkeletonBlock h={300} />
+    </div>
+    {!isSalesOnly && <div style={{ marginBottom: 16 }}><SkeletonBlock h={300} /></div>}
+    <SkeletonBlock h={360} />
+  </>
   );
 }
 
@@ -676,9 +1426,9 @@ function RecentActivity({ items = ACTIVITY }) {
       <div className="om-card" style={D.card}>
         <div style={D.cardHead}>
           <div style={D.cardIco}><Icon name="activity" size={18} /></div>
-          <div><div style={D.cardTitle}>Recent Activity</div><div style={D.cardSub}>Prospect, inquiry, quotation & aktivitas terbaru</div></div>
+          <div><div style={D.cardTitle}>Recent Activity</div><div style={D.cardSub}>Latest prospects, inquiries, quotations & activities</div></div>
         </div>
-        <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA0AC", fontSize: 13 }}>Belum ada aktivitas</div>
+        <div style={{ padding: "32px 20px", textAlign: "center", color: "#6B7280", fontSize: 13 }}>No activity yet</div>
       </div>
     );
   }
@@ -688,7 +1438,7 @@ function RecentActivity({ items = ACTIVITY }) {
         <div style={D.cardIco}><Icon name="activity" size={18} /></div>
         <div>
           <div style={D.cardTitle}>Recent Activity</div>
-          <div style={D.cardSub}>Prospect, inquiry, quotation & aktivitas terbaru</div>
+          <div style={D.cardSub}>Latest prospects, inquiries, quotations & activities</div>
         </div>
       </div>
       <div style={D.actBody}>
@@ -743,249 +1493,6 @@ function DashTabs({ active, onSelect }) {
   return <div style={D.tabBar}>{DASH_TABS.map((t) => <DashTab key={t.id} tab={t} active={active === t.id} onSelect={onSelect} />)}</div>;
 }
 
-/* =========================================================================
-   ActivityReportTab — daily activity report (Aktivitas tab)
-   Sales: own today-summary + date-filtered detail.
-   Manager+: per-sales today-summary + sales/date filters + detail.
-   ========================================================================= */
-const ART_TYPE_META = {
-  call:        { label: 'Call',        bg: '#E1ECF7', color: '#2563EB', bd: '#BBD3EE' },
-  visit:       { label: 'Visit',       bg: '#EFE7F6', color: '#7C3AED', bd: '#D6C6EC' },
-  meeting:     { label: 'Meeting',     bg: '#E1ECF5', color: '#1B4D8A', bd: '#BAD2E6' },
-  prospecting: { label: 'Prospecting', bg: '#FBE6DA', color: '#C8521B', bd: '#F0C3A8' },
-  followup:    { label: 'Follow-up',   bg: '#F8ECCF', color: '#9A6B0E', bd: '#E6CE94' },
-};
-const ART_STATUS_META = {
-  todo:      { label: 'To Do',      bg: 'transparent', color: '#5E6553', bd: '#DDD3BE' },
-  done:      { label: 'Selesai',    bg: '#E4F0E5',     color: '#2E7D4F', bd: '#BFDDC4' },
-  cancelled: { label: 'Dibatalkan', bg: 'transparent', color: '#B23227', bd: '#E6BBB2' },
-};
-const ART_TYPES = ['call', 'visit', 'meeting', 'prospecting', 'followup'];
-function ArtBadge({ meta }) {
-  if (!meta) return <span style={{ color: '#D1D5DB' }}>—</span>;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 700, letterSpacing: '.3px', border: `1px solid ${meta.bd}`, background: meta.bg, color: meta.color }}>
-      {meta.label}
-    </span>
-  );
-}
-function artTodayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function artFmtDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso + (String(iso).length === 10 ? 'T00:00:00' : ''));
-  if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-function artBounds(filterDate, customFrom, customTo) {
-  const d = new Date();
-  const f = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
-  if (filterDate === 'today') return { start: artTodayStr(), end: artTodayStr() };
-  if (filterDate === 'this_week') {
-    const dow = (d.getDay() + 6) % 7;
-    const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow);
-    const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
-    return { start: f(monday), end: f(sunday) };
-  }
-  if (filterDate === 'this_month') {
-    return { start: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`, end: f(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
-  }
-  return { start: customFrom || '0000-01-01', end: customTo || '9999-12-31' };
-}
-
-function ActivityReportTab({ profile, isSalesOnly, showToast }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filterDate, setFilterDate] = useState('today');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
-  const [filterSales, setFilterSales] = useState('all');
-  const [salesOpts, setSalesOpts] = useState([]);
-
-  useEffect(() => {
-    if (!profile?.company_id) return;
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      let q = supabase
-        .from('activities')
-        .select('id, type, status, scheduled_for, activity_time, outcome, notes, account_id, assigned_to, prospect_name, account:accounts!activities_account_id_fkey(name)')
-        .eq('company_id', profile.company_id)
-        .is('deleted_at', null);
-      if (isSalesOnly) q = q.eq('assigned_to', profile.id);
-      const { data, error } = await q.order('scheduled_for', { ascending: false }).limit(1000);
-      if (cancelled) return;
-      if (error) { showToast?.('Gagal memuat aktivitas: ' + error.message, 'error'); setRows([]); setLoading(false); return; }
-      const list = data || [];
-      const ids = [...new Set(list.map(a => a.assigned_to).filter(Boolean))];
-      const nm = {};
-      if (ids.length) {
-        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
-        (profs || []).forEach(p => { nm[p.id] = p.full_name; });
-      }
-      setRows(list.map(a => ({
-        ...a,
-        salesperson_name: a.assigned_to ? (nm[a.assigned_to] || null) : null,
-        account_name: a.account?.name || a.prospect_name || '—',
-      })));
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [profile?.company_id, profile?.id, isSalesOnly, showToast]);
-
-  // Manager+ sales dropdown (RBAC sales-only, company-scoped).
-  useEffect(() => {
-    if (isSalesOnly || !profile?.company_id) return;
-    let cancelled = false;
-    fetchOperationalRoster(profile.company_id).then(s => { if (!cancelled) setSalesOpts(s); });
-    return () => { cancelled = true; };
-  }, [isSalesOnly, profile?.company_id]);
-
-  const today = artTodayStr();
-  const todayRows = rows.filter(r => r.scheduled_for === today);
-
-  // Sales summary (today).
-  const salesSummary = {
-    todo: todayRows.filter(r => r.status === 'todo').length,
-    done: todayRows.filter(r => r.status === 'done').length,
-    donePerType: ART_TYPES.reduce((acc, t) => { acc[t] = todayRows.filter(r => r.status === 'done' && r.type === t).length; return acc; }, {}),
-  };
-
-  // Manager per-sales summary (today).
-  const perSales = (() => {
-    const map = {};
-    todayRows.forEach(r => {
-      const key = r.assigned_to || '—';
-      if (!map[key]) map[key] = { name: r.salesperson_name || 'Belum di-assign', todo: 0, done: 0, call: 0, visit: 0, meeting: 0, prospecting: 0, followup: 0 };
-      if (r.status === 'todo') map[key].todo++;
-      if (r.status === 'done') map[key].done++;
-      if (ART_TYPES.includes(r.type)) map[key][r.type]++;
-    });
-    return Object.values(map).sort((a, b) => (b.done + b.todo) - (a.done + a.todo));
-  })();
-
-  // Detail (date-filtered + sales filter for manager).
-  const { start, end } = artBounds(filterDate, customFrom, customTo);
-  let detail = rows.filter(r => r.scheduled_for >= start && r.scheduled_for <= end);
-  if (!isSalesOnly && filterSales !== 'all') detail = detail.filter(r => r.assigned_to === filterSales);
-
-  const card = { background: '#fff', border: '1px solid #ECE3D4', borderRadius: 14, padding: 18, boxShadow: '0 1px 6px rgba(35,41,30,.05)' };
-  const selStyle = { height: 34, borderRadius: 8, border: '1px solid #E2D9C7', background: '#fff', padding: '0 10px', fontSize: 13, color: '#23291E', outline: 'none', fontFamily: 'inherit', cursor: 'pointer' };
-  const th = { padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: '#857A68', whiteSpace: 'nowrap' };
-  const td = { padding: '10px 14px', fontSize: 13, color: '#4A5360', whiteSpace: 'nowrap' };
-  const mono = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5 };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 4 }}>
-      {/* ── Summary (today) ── */}
-      {isSalesOnly ? (
-        <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 14 }}>Ringkasan Hari Ini</div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-            <div style={{ flex: '1 1 140px', background: '#FBF8F2', border: '1px solid #ECE3D4', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#857A68', textTransform: 'uppercase', marginBottom: 6 }}>To Do</div>
-              <div style={{ ...mono, fontSize: 24, fontWeight: 800, color: ORANGE }}>{salesSummary.todo}</div>
-            </div>
-            <div style={{ flex: '1 1 140px', background: '#FBF8F2', border: '1px solid #ECE3D4', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#857A68', textTransform: 'uppercase', marginBottom: 6 }}>Selesai</div>
-              <div style={{ ...mono, fontSize: 24, fontWeight: 800, color: '#2E7D4F' }}>{salesSummary.done}</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {ART_TYPES.map(t => (
-              <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4A5360' }}>
-                <ArtBadge meta={ART_TYPE_META[t]} /><span style={{ ...mono, fontWeight: 700, color: '#16243A' }}>{salesSummary.donePerType[t]}</span>
-              </span>
-            ))}
-            <span style={{ fontSize: 11, color: '#A29684', alignSelf: 'center' }}>(selesai per tipe)</span>
-          </div>
-        </div>
-      ) : (
-        <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 12 }}>Ringkasan Per Sales — Hari Ini</div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ borderBottom: '1px solid #ECE3D4' }}>
-                {['Sales', 'Todo', 'Done', 'Call', 'Visit', 'Meeting', 'Prospecting', 'Followup'].map(h => <th key={h} style={th}>{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {perSales.length === 0 ? (
-                  <tr><td colSpan={8} style={{ ...td, textAlign: 'center', padding: '24px', color: '#A29684' }}>Belum ada aktivitas hari ini</td></tr>
-                ) : perSales.map((s, i) => (
-                  <tr key={i} style={{ borderBottom: i < perSales.length - 1 ? '1px solid #F3ECDF' : 'none' }}>
-                    <td style={{ ...td, fontWeight: 600, color: '#23291E' }}>{s.name}</td>
-                    <td style={{ ...td, ...mono }}>{s.todo}</td>
-                    <td style={{ ...td, ...mono, color: '#2E7D4F', fontWeight: 700 }}>{s.done}</td>
-                    <td style={{ ...td, ...mono }}>{s.call}</td>
-                    <td style={{ ...td, ...mono }}>{s.visit}</td>
-                    <td style={{ ...td, ...mono }}>{s.meeting}</td>
-                    <td style={{ ...td, ...mono }}>{s.prospecting}</td>
-                    <td style={{ ...td, ...mono }}>{s.followup}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ── Filters ── */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        {!isSalesOnly && (
-          <select value={filterSales} onChange={e => setFilterSales(e.target.value)} style={selStyle}>
-            <option value="all">Semua Sales</option>
-            {salesOpts.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
-        )}
-        <select value={filterDate} onChange={e => setFilterDate(e.target.value)} style={selStyle}>
-          <option value="today">Hari Ini</option>
-          <option value="this_week">Minggu Ini</option>
-          <option value="this_month">Bulan Ini</option>
-          <option value="custom">Custom</option>
-        </select>
-        {filterDate === 'custom' && (
-          <>
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={selStyle} />
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={selStyle} />
-          </>
-        )}
-      </div>
-
-      {/* ── Detail table ── */}
-      <div style={card}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr style={{ borderBottom: '1px solid #ECE3D4' }}>
-              {(isSalesOnly
-                ? ['Tanggal', 'Tipe', 'Status', 'Customer / Prospek', 'Catatan / Outcome']
-                : ['Tanggal', 'Tipe', 'Status', 'Sales', 'Customer / Prospek', 'Catatan / Outcome']
-              ).map(h => <th key={h} style={th}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={isSalesOnly ? 5 : 6} style={{ ...td, textAlign: 'center', padding: '32px', color: '#A29684' }}>Memuat data…</td></tr>
-              ) : detail.length === 0 ? (
-                <tr><td colSpan={isSalesOnly ? 5 : 6} style={{ ...td, textAlign: 'center', padding: '32px', color: '#A29684' }}>Tidak ada aktivitas pada rentang ini</td></tr>
-              ) : detail.map((r, i) => (
-                <tr key={r.id} style={{ borderBottom: i < detail.length - 1 ? '1px solid #F3ECDF' : 'none' }}>
-                  <td style={{ ...td, ...mono, color: '#23291E' }}>{artFmtDate(r.scheduled_for)}{r.activity_time ? ` · ${String(r.activity_time).slice(0, 5)}` : ''}</td>
-                  <td style={td}><ArtBadge meta={ART_TYPE_META[r.type]} /></td>
-                  <td style={td}><ArtBadge meta={ART_STATUS_META[r.status]} /></td>
-                  {!isSalesOnly && <td style={td}>{r.salesperson_name || '—'}</td>}
-                  <td style={{ ...td, fontWeight: 600, color: '#23291E' }}>{r.account_name}</td>
-                  <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.outcome || r.notes || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ---------- visit status badge ---------- */
 const VISIT_STATUS = {
   scheduled: { bg: "#EFF6FF", fg: "#3B82F6", label: "Terjadwal",  dot: "#3B82F6" },
@@ -1004,7 +1511,7 @@ const VISIT_TO_ACT_STATUS = { scheduled: 'todo', completed: 'done', cancelled: '
 
 /* ---------- visit type (BD-07) ---------- */
 const VISIT_TYPES = [
-  { id: 'discovery',             label: 'Discovery Visit',       desc: 'Gali kebutuhan prospect baru',       output: 'Output: Discovery Notes lengkap + next step jelas' },
+  { id: 'discovery',             label: 'Discovery Visit',       desc: 'Explore new prospect needs',       output: 'Output: Discovery Notes lengkap + next step jelas' },
   { id: 'solution_presentation', label: 'Solution Presentation', desc: 'Presentasi solusi',                  output: 'Output: Feedback recorded + komitmen ke RFQ' },
   { id: 'qbr',                   label: 'QBR Visit',             desc: 'Quarterly Business Review (Tier A)',  output: 'Output: Signed-off action items + JBP refresh' },
   { id: 'problem_solving',       label: 'Problem Solving',       desc: 'Resolusi complaint/issue',           output: 'Output: SLA improvement plan signed-off' },
@@ -1097,9 +1604,9 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>JADWAL VISIT</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>VISIT SCHEDULE</div>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>
-              {isEdit ? 'Edit Kunjungan' : 'Tambah Kunjungan'}
+              {isEdit ? 'Edit Visit' : 'Add Visit'}
             </h2>
           </div>
           <button onClick={onClose} style={{ background: '#F3F4F6', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1121,21 +1628,21 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
 
         {/* Stage context hint */}
         <div style={{ background: st.bg, border: `1px solid ${st.dot}30`, borderRadius: 10, padding: '10px 14px', marginBottom: 20, fontSize: 12.5, color: st.fg, fontWeight: 600 }}>
-          {status === 'scheduled' && '📅 Isi agenda kunjungan yang akan dilakukan.'}
-          {status === 'completed' && '✅ Meeting selesai — isi hasil dan tindak lanjut.'}
-          {status === 'cancelled' && '❌ Kunjungan dibatalkan — isi alasan pembatalan.'}
+          {status === 'scheduled' && 'Fill in the agenda for the upcoming visit.'}
+          {status === 'completed' && 'Meeting completed. Fill in the outcome and follow-up.'}
+          {status === 'cancelled' && 'Visit cancelled. Fill in the cancellation reason.'}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Jenis Kunjungan (BD-07) */}
           <div>
-            {lbl('Jenis Kunjungan', true)}
+            {lbl('Visit Type', true)}
             {sel({
               value: draft.visit_type || '',
               onChange: e => setDraft(d => ({ ...d, visit_type: e.target.value })),
               children: [
-                <option key="" value="">— Pilih jenis kunjungan —</option>,
+                <option key="" value="">— Select Visit Type —</option>,
                 ...VISIT_TYPES.map(t => <option key={t.id} value={t.id}>{`${t.label} — ${t.desc}`}</option>),
               ],
             })}
@@ -1154,8 +1661,8 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                 value: draft.prospect_id,
                 onChange: e => setDraft(d => ({ ...d, prospect_id: e.target.value })),
                 children: [
-                  <option key="" value="">— Opsional —</option>,
-                  ...(prospectOptions.length === 0 ? [<option key="__empty" value="" disabled>Semua akun sedang di Lead Pool — tarik dari Lead Pool dulu untuk memakainya.</option>] : []),
+                  <option key="" value="">— Optional —</option>,
+                  ...(prospectOptions.length === 0 ? [<option key="__empty" value="" disabled>All accounts are currently in the Lead Pool. Claim one from the Lead Pool first to use it.</option>] : []),
                   ...prospectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>),
                 ],
               })}
@@ -1166,7 +1673,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                 value: draft.salesperson_id,
                 onChange: e => setDraft(d => ({ ...d, salesperson_id: e.target.value })),
                 children: [
-                  <option key="" value="">— Pilih —</option>,
+                  <option key="" value="">— Select —</option>,
                   ...salesProfiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>),
                 ],
               })}
@@ -1176,7 +1683,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
           {/* Tanggal + Waktu */}
           <div className="nx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              {lbl('Tanggal Kunjungan', true)}
+              {lbl('Visit Date', true)}
               {inp({ type: 'date', value: draft.visit_date, onChange: e => setDraft(d => ({ ...d, visit_date: e.target.value })) })}
             </div>
             <div>
@@ -1194,8 +1701,8 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
           {/* Stage 1 — Agenda editable */}
           {status === 'scheduled' && (
             <div>
-              {lbl('Agenda / Point of Meeting')}
-              {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Poin-poin yang akan dibahas dalam kunjungan...')}
+              {lbl('Agenda / Points of Meeting')}
+              {ta(draft.point_of_meeting, e => setDraft(d => ({ ...d, point_of_meeting: e.target.value })), 'Points to be discussed during the visit...')}
             </div>
           )}
 
@@ -1204,9 +1711,9 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
             <>
               {/* Readonly agenda card */}
               <div style={{ borderTop: '1px dashed #E5E7EB', paddingTop: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Agenda yang direncanakan</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Planned agenda</div>
                 <div style={{ background: '#F3F4F6', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: draft.point_of_meeting?.trim() ? '#374151' : '#9CA3AF', fontStyle: draft.point_of_meeting?.trim() ? 'normal' : 'italic', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {draft.point_of_meeting?.trim() || 'Tidak ada agenda yang dicatat.'}
+                  {draft.point_of_meeting?.trim() || 'No agenda recorded.'}
                 </div>
               </div>
 
@@ -1215,11 +1722,11 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
                 <>
                   <div>
                     {lbl('Minute of Meeting (MOM)')}
-                    {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Catatan lengkap hasil meeting...', 4)}
+                    {ta(draft.mom, e => setDraft(d => ({ ...d, mom: e.target.value })), 'Full notes from the meeting...', 4)}
                   </div>
                   <div>
-                    {lbl('Tindak Lanjut')}
-                    {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up action yang perlu dilakukan...')}
+                    {lbl('Follow-up')}
+                    {ta(draft.follow_up, e => setDraft(d => ({ ...d, follow_up: e.target.value })), 'Follow-up actions required...')}
                   </div>
                 </>
               )}
@@ -1227,8 +1734,8 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
               {/* CANCELLED extra field */}
               {status === 'cancelled' && (
                 <div>
-                  {lbl('Alasan Pembatalan', true)}
-                  {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Jelaskan alasan pembatalan kunjungan...')}
+                  {lbl('Cancellation Reason', true)}
+                  {ta(draft.notes, e => setDraft(d => ({ ...d, notes: e.target.value })), 'Explain why the visit was cancelled...')}
                 </div>
               )}
             </>
@@ -1243,7 +1750,7 @@ function AddVisitModal({ open, onClose, onSave, saving, error, draft, setDraft, 
               Batal
             </button>
             <button onClick={onSave} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: st.dot, color: 'white', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Menyimpan…' : (isEdit ? 'Simpan Perubahan' : 'Simpan Visit')}
+              {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Save Visit')}
             </button>
           </div>
         </div>
@@ -1308,7 +1815,7 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
     if (!log.from_status && log.to_status) return `Visit dibuat → ${VISIT_STATUS[log.to_status]?.label || log.to_status}`;
     if (log.from_status !== log.to_status)
       return `${VISIT_STATUS[log.from_status]?.label || log.from_status} → ${VISIT_STATUS[log.to_status]?.label || log.to_status}`;
-    return 'Data visit diperbarui';
+    return 'Visit updated';
   };
 
   return (
@@ -1318,10 +1825,10 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
           <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>DETAIL KUNJUNGAN</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>VISIT DETAILS</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827', fontFamily: "'Montserrat',sans-serif" }}>
-                {visit.prospect !== '—' ? visit.prospect : 'Kunjungan Umum'}
+                {visit.prospect !== '—' ? visit.prospect : 'General Visit'}
               </h2>
               <span style={{ background: st.bg, color: st.fg, padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{st.label}</span>
             </div>
@@ -1337,25 +1844,25 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
         {/* Info rows */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
           {visit.visit_type && VISIT_TYPE_MAP[visit.visit_type] && row(
-            'Jenis Kunjungan',
+            'Visit Type',
             `${VISIT_TYPE_MAP[visit.visit_type].label} — ${VISIT_TYPE_MAP[visit.visit_type].desc}\n${VISIT_TYPE_MAP[visit.visit_type].output}`,
           )}
-          {row('Tanggal & Waktu', dateStr + (visit.time ? ' · ' + visit.time.slice(0,5) : ''))}
+          {row('Date & Time', dateStr + (visit.time ? ' · ' + visit.time.slice(0,5) : ''))}
           {row('Salesperson', visit.salesperson !== '—' ? visit.salesperson : null)}
           {row('Lokasi', visit.location !== '—' ? visit.location : null)}
-          {row('Agenda / Point of Meeting', visit.point_of_meeting || null)}
+          {row('Agenda / Points of Meeting', visit.point_of_meeting || null)}
           {visit.status === 'completed' && row('Minute of Meeting (MOM)', visit.mom || null)}
-          {visit.status === 'completed' && row('Tindak Lanjut', visit.follow_up || null)}
-          {visit.status === 'cancelled' && row('Alasan Pembatalan', visit.notes || null)}
+          {visit.status === 'completed' && row('Follow-up', visit.follow_up || null)}
+          {visit.status === 'cancelled' && row('Cancellation Reason', visit.notes || null)}
         </div>
 
         {/* History section */}
         <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>Riwayat Perubahan</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>Change History</div>
           {logsLoad ? (
-            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>Memuat riwayat…</div>
+            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>Loading history…</div>
           ) : logs.length === 0 ? (
-            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>Belum ada riwayat perubahan.</div>
+            <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>No change history yet.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {logs.map((log, i) => {
@@ -1388,7 +1895,7 @@ function VisitDetailModal({ visit, onClose, onEdit }) {
           <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 9, border: '1.5px solid #D1D5DB', background: 'white', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Tutup
           </button>
-          <button onClick={onEdit} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#1B4D8A', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={onEdit} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#144682', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Edit
           </button>
         </div>
@@ -1463,7 +1970,7 @@ function DashCalendar({
 
   const fmtRangeD = (s) => { const d = new Date(s + 'T00:00:00'); return isNaN(d.getTime()) ? s : `${d.getDate()} ${MONTH_LABELS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`; };
   const inRange  = mode === 'range' && range.from && range.to;
-  const subLabel = inRange ? `Rentang: ${fmtRangeD(range.from)} – ${fmtRangeD(range.to)}` : `Kunjungan tim sales — ${MONTH_LABELS[month]} ${year}`;
+  const subLabel = inRange ? `Range: ${fmtRangeD(range.from)} – ${fmtRangeD(range.to)}` : `Sales team visits — ${MONTH_LABELS[month]} ${year}`;
 
   // control styles (white toolbar below the navy header)
   const selSm  = { height: 34, border: '1px solid #E3E7EE', borderRadius: 8, background: '#fff', padding: '0 9px', fontSize: 12.5, color: '#2A3340', cursor: 'pointer', outline: 'none', fontFamily: 'inherit' };
@@ -1476,52 +1983,54 @@ function DashCalendar({
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={D.cardIco}><Icon name="calendar" size={18} /></div>
           <div>
-            <div style={D.cardTitle}>Jadwal Visit Sales</div>
+            <div style={D.cardTitle}>Sales Visit Schedule</div>
             <div style={D.cardSub}>{subLabel}</div>
           </div>
         </div>
+        {/* Ikut header kartu yang kini abu muda: putih-transparan di atas navy
+            solid dulu terbaca, di latar terang jadi tak kelihatan. */}
         <button
           onClick={onAddVisit}
-          style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", borderRadius: 8, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "#EAF0F8", border: "1px solid #C3D3E8", color: NAVY, borderRadius: 8, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
           <Icon name="plus" size={14} />
-          Tambah Visit
+          Add Visit
         </button>
       </div>
 
       {/* toolbar — month nav (left) + filters & custom range (right) */}
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid #F0F1F4" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button onClick={onPrevMonth} title="Bulan sebelumnya" style={navBtn}>‹</button>
+          <button onClick={onPrevMonth} title="Previous month" style={navBtn}>‹</button>
           <div style={{ minWidth: 138, textAlign: "center", fontSize: 13, fontWeight: 700, color: "#16243A", fontFamily: "'Montserrat',system-ui,sans-serif" }}>{MONTH_LABELS[month]} {year}</div>
-          <button onClick={onNextMonth} title="Bulan berikutnya" style={navBtn}>›</button>
-          <button onClick={onThisMonth} style={{ height: 34, border: "1px solid #CFDDF0", borderRadius: 8, background: "#EAF0F8", color: NAVY, padding: "0 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Bulan Ini</button>
+          <button onClick={onNextMonth} title="Next month" style={navBtn}>›</button>
+          <button onClick={onThisMonth} style={{ height: 34, border: "1px solid #CFDDF0", borderRadius: 8, background: "#EAF0F8", color: NAVY, padding: "0 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>This Month</button>
         </div>
 
         <div style={{ flex: 1, minWidth: 8 }} />
 
         <select value={fSales} onChange={e => setFSales(e.target.value)} style={selSm} title="Sales">
-          <option value="all">Semua Sales</option>
+          <option value="all">All Salespeople</option>
           {salesOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={selSm} title="Status">
-          <option value="all">Semua Status</option>
+          <option value="all">All Statuses</option>
           {VISIT_STAGES.map(s => <option key={s} value={s}>{VISIT_STATUS[s].label}</option>)}
         </select>
-        <select value={fType} onChange={e => setFType(e.target.value)} style={selSm} title="Tipe visit">
-          <option value="all">Semua Tipe</option>
+        <select value={fType} onChange={e => setFType(e.target.value)} style={selSm} title="Visit type">
+          <option value="all">All Types</option>
           {typeOptions.map(t => <option key={t} value={t}>{VISIT_TYPE_MAP[t]?.label || t}</option>)}
         </select>
         {isSuper && (
           <select value={fEntity} onChange={e => setFEntity(e.target.value)} style={selSm} title="Entitas">
-            <option value="all">Semua Entitas</option>
+            <option value="all">All Entities</option>
             {entityOptions.map(en => <option key={en} value={en}>{en}</option>)}
           </select>
         )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <input type="date" value={range.from} max={range.to || undefined} onChange={e => onApplyRange(e.target.value, range.to)} style={dateSm} title="Dari tanggal" />
+          <input type="date" value={range.from} max={range.to || undefined} onChange={e => onApplyRange(e.target.value, range.to)} style={dateSm} title="From date" />
           <span style={{ color: "#9AA3B2", fontSize: 12 }}>–</span>
-          <input type="date" value={range.to} min={range.from || undefined} onChange={e => onApplyRange(range.from, e.target.value)} style={dateSm} title="Sampai tanggal" />
+          <input type="date" value={range.to} min={range.from || undefined} onChange={e => onApplyRange(range.from, e.target.value)} style={dateSm} title="To date" />
         </div>
 
         {(filtersActive || inRange) && (
@@ -1531,8 +2040,8 @@ function DashCalendar({
 
       {/* stats row */}
       <div style={{ display: "flex", gap: 20, padding: "10px 16px 0", borderBottom: "1px solid #F0F1F4", flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ padding: "8px 0", fontSize: 12, color: "#7A828E" }}>
-          <b style={{ color: NAVY, fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800 }}>{totalVisits}</b> {inRange ? "jadwal pada rentang" : "jadwal bulan ini"}
+        <div style={{ padding: "8px 0", fontSize: 12, color: "#5A6270" }}>
+          <b style={{ color: NAVY, fontFamily: "'Montserrat',system-ui,sans-serif", fontWeight: 800 }}>{totalVisits}</b> {inRange ? "scheduled in range" : "scheduled this month"}
         </div>
         {Object.entries(VISIT_STATUS).map(([key, meta]) => {
           const cnt = shown.filter(v => (v.status || 'scheduled') === key).length;
@@ -1544,7 +2053,7 @@ function DashCalendar({
             </div>
           );
         })}
-        {loading && <div style={{ padding: "8px 0", fontSize: 12, color: "#9AA3B2" }}>Memuat…</div>}
+        {loading && <div style={{ padding: "8px 0", fontSize: 12, color: "#9AA3B2" }}>Loading…</div>}
       </div>
 
       {/* day headers */}
@@ -1599,7 +2108,7 @@ function DashCalendar({
                   );
                 })}
                 {dayVisits.length > 3 && (
-                  <div style={{ fontSize: 10, color: "#9AA0AC", fontWeight: 600, paddingLeft: 2 }}>+{dayVisits.length - 3} lainnya</div>
+                  <div style={{ fontSize: 10, color: "#6B7280", fontWeight: 600, paddingLeft: 2 }}>+{dayVisits.length - 3} lainnya</div>
                 )}
               </div>
 
@@ -1611,7 +2120,7 @@ function DashCalendar({
                       background: VISIT_DOT_PASTEL[v.status || 'scheduled'] || VISIT_DOT_PASTEL.scheduled }} />
                   ))}
                   {dayVisits.length > 3 && (
-                    <span style={{ fontSize: 8.5, fontWeight: 700, color: '#9AA0AC', lineHeight: 1 }}>+{dayVisits.length - 3}</span>
+                    <span style={{ fontSize: 8.5, fontWeight: 700, color: '#6B7280', lineHeight: 1 }}>+{dayVisits.length - 3}</span>
                   )}
                 </div>
               )}
@@ -1654,15 +2163,15 @@ function DashCalendar({
             </div>
             <button onClick={() => { const k = dayPopup.dateKey; setDayPopup(null); onDayClick?.(k); }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', background: NAVY, color: '#fff', border: 'none', borderRadius: 10, padding: '11px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              <Icon name="plus" size={15} /> Tambah Visit
+              <Icon name="plus" size={15} /> Add Visit
             </button>
           </div>
         </div>
       )}
 
       {totalVisits === 0 && (
-        <div style={{ padding: "20px", textAlign: "center", color: "#9AA0AC", fontSize: 13, borderTop: "1px solid #F4F5F7" }}>
-          Belum ada jadwal visit bulan ini. Klik "+ Tambah Visit" untuk menambah jadwal.
+        <div style={{ padding: "20px", textAlign: "center", color: "#6B7280", fontSize: 13, borderTop: "1px solid #F4F5F7" }}>
+          Belum ada jadwal visit bulan ini. Klik "+ Add Visit" untuk menambah jadwal.
         </div>
       )}
 
@@ -1695,14 +2204,14 @@ function DashCalendar({
                     {/* Date badge */}
                     <div style={{ textAlign: 'center', minWidth: 40 }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' }}>{dayName}</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: '#1B4D8A', fontFamily: "'IBM Plex Mono',monospace", lineHeight: 1.1 }}>{dayNum}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#144682', fontFamily: "'IBM Plex Mono',monospace", lineHeight: 1.1 }}>{dayNum}</div>
                     </div>
                     {/* Divider */}
                     <div style={{ width: 1, height: 36, background: '#E5E7EB' }} />
                     {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {v.prospect || 'Kunjungan Umum'}
+                        {v.prospect || 'General Visit'}
                       </div>
                       <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
                         {v.salesperson !== '—' ? v.salesperson : '—'}
@@ -1729,18 +2238,15 @@ function DashCalendar({
 function fmtTimeAgo(iso) {
   if (!iso) return '—';
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)    return `${diff} detik lalu`;
-  if (diff < 3600)  return `${Math.floor(diff / 60)} menit lalu`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} jam lalu`;
-  return `${Math.floor(diff / 86400)} hari lalu`;
+  if (diff < 60)    return `${diff} seconds ago`;
+  if (diff < 3600)  return `${Math.floor(diff / 60)} minutes ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+  return `${Math.floor(diff / 86400)} days ago`;
 }
 
-/* ── stage order for pipeline chart ─────────────────────────────────────── */
-// Urutan batang funnel — tetap 7 nilai (konsumen RENDER), diturunkan dari sumber
-// tunggal DealPanels.STAGES supaya tidak jadi daftar stage kedua.
-const STAGE_ORDER  = STAGE_IDS;
-const STAGE_COLORS = { won: '#1F8B4D', lost: '#C0392B' };
-const STAGE_LABELS = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', negotiation: 'Negotiation', won: 'Won', lost: 'Lost' };
+/* Urutan/label/warna funnel kini hidup di INQ_STAGE_* (dekat puncak file),
+   turunan langsung dari inquiries.status. Trio STAGE_ORDER/STAGE_COLORS/
+   STAGE_LABELS lama ikut dilepas bersama sumbu accounts.pipeline_stage. */
 
 /* ========================================================================= */
 /* ---------- S2: "Aktivitas Saya" personal target tracker (sales view) ---------- */
@@ -1748,7 +2254,7 @@ function ActivityItem({ label, value, target, sublabel }) {
   const ratio = target > 0 ? value / target : 0;
   const pct   = Math.min(ratio * 100, 100);
   const color = ratio >= 1 ? '#22C55E' : ratio >= 0.5 ? '#F59E0B' : '#EF4444';
-  const status = ratio >= 1 ? 'On Track' : ratio >= 0.5 ? 'Perlu ditingkatkan' : 'Di bawah target';
+  const status = ratio >= 1 ? 'On Track' : ratio >= 0.5 ? 'Perlu ditingkatkan' : 'Below target';
   return (
     <div style={{ background: '#fff', border: '1px solid #E8EBF0', borderRadius: 12, padding: '16px 18px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, gap: 8 }}>
@@ -1757,7 +2263,7 @@ function ActivityItem({ label, value, target, sublabel }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 10 }}>
         <span style={{ fontSize: 22, fontWeight: 800, color: '#1F2430', fontFamily: "'IBM Plex Mono',monospace" }}>{value}</span>
-        <span style={{ fontSize: 13, color: '#9AA0AC' }}>/ {target}</span>
+        <span style={{ fontSize: 13, color: '#6B7280' }}>/ {target}</span>
       </div>
       <div style={{ height: 6, borderRadius: 99, background: '#EEF0F3', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99, transition: 'width .3s' }} />
@@ -1769,21 +2275,27 @@ function ActivityItem({ label, value, target, sublabel }) {
 function ActivitySaya({ data }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 12 }}>
+      {/* Blok ini SENGAJA tidak mengikuti selector periode: metrik kadens
+          dengan target per-minggu/per-bulan. Penanda di bawah supaya tidak
+          terbaca ikut berubah saat periode diganti. */}
+      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.5px', color: '#6B7280', textTransform: 'uppercase', marginBottom: 2 }}>
         Aktivitas Saya — Minggu Ini &amp; Bulan Ini
       </div>
+      <div style={{ fontSize: 11.5, color: '#6B7280', marginBottom: 12 }}>
+        Selalu minggu &amp; bulan berjalan — tidak mengikuti filter periode di atas.
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
-        <ActivityItem label="Call Minggu Ini"     value={data.callsThisWeek}        target={60} />
-        <ActivityItem label="Visit Minggu Ini"    value={data.visitsThisWeek}       target={5} />
-        <ActivityItem label="Quotation Bulan Ini" value={data.quotationsThisMonth}  target={20} />
-        <ActivityItem label="SQL Baru Bulan Ini"  value={data.sqlThisMonth}         target={15} sublabel="Qualified Lead" />
+        <ActivityItem label="Calls This Week"     value={data.callsThisWeek}        target={60} />
+        <ActivityItem label="Visits This Week"    value={data.visitsThisWeek}       target={5} />
+        <ActivityItem label="Quotations This Month" value={data.quotationsThisMonth}  target={20} />
+        <ActivityItem label="New SQL This Month"  value={data.sqlThisMonth}         target={15} sublabel="Qualified Lead" />
       </div>
     </div>
   );
 }
 
 function CRMDashboardPage() {
-  const { profile, erpRole, erpRoles } = useAuth();
+  const { profile, erpRole, erpRoles, activeCompanyId } = useAuth();
   // Sales/operations may cancel their OWN visits (the visit list is already scoped
   // to assigned_to/created_by = self, and RLS only permits the owner to UPDATE).
   // = manager ke atas (semua role aktif, kini termasuk gm_bd & supervisor —
@@ -1791,6 +2303,9 @@ function CRMDashboardPage() {
   const canCancel = isManagerOrAbove(erpRoles) || isSalesOnlyRole(erpRole);
   // S2 — sales/operations see a personal dashboard; everyone else sees team-wide.
   const isSalesOnly = isSalesOnlyRole(erpRole);
+  // Cakupan entitas — definisi SAMA dengan PipelineKanbanPage supaya super_admin
+  // tidak melihat dua cakupan berbeda di dua halaman modul yang sama.
+  const isAllEntities = isAllEntitiesRole(erpRoles);
   const [period, setPeriod] = useState("This Month");
   const [tab, setTab]       = useState("summary");
   const [toast, setToast]   = useState({ msg: "", icon: "check", show: false });
@@ -1801,6 +2316,10 @@ function CRMDashboardPage() {
   const [dashData,    setDashData]    = useState(null);
   const [dashLoading, setDashLoading] = useState(true);
   const [dashError,   setDashError]   = useState(null);
+  // Daftar bagian data sekunder yang gagal dimuat. Kegagalan sekunder tidak
+  // mengosongkan halaman, tapi WAJIB terlihat — angka nol yang lahir dari fetch
+  // gagal tak bisa dibedakan dari nol yang memang benar.
+  const [partialFail, setPartialFail] = useState([]);
 
   // ── add visit modal state ────────────────────────────────────────────────
   const [addVisitOpen,     setAddVisitOpen]     = useState(false);
@@ -1831,12 +2350,12 @@ function CRMDashboardPage() {
   // useCallback with an empty dependency array — same fix as App.jsx's
   // showToast (2026-08-05, BNF Fase G 403 incident): this closes over only
   // setToast (useState setter, stable) and toastTimer (useRef object, stable
-  // — mutating .current doesn't require it in deps). Without this, every
-  // CRMDashboardPage render handed ActivityReportTab a new showToast prop,
-  // which sits in that component's own fetch-effect dependency array (see
-  // ActivityReportTab below) — a failed fetch calling showToast would set
-  // state here, re-render, hand down a new identity, and refire the effect,
-  // same render/refetch loop as the BNF incident.
+  // — mutating .current doesn't require it in deps). Dipertahankan meski
+  // konsumen aslinya (ActivityReportTab) sudah dihapus: identitas stabil ini
+  // syarat aman bagi komponen anak mana pun yang menaruh showToast di
+  // dependency array fetch-effect-nya — kalau identitasnya berubah tiap render,
+  // fetch gagal → showToast → set state → render → refire, loop yang sama
+  // dengan insiden BNF Fase G.
   const showToast = useCallback((msg, icon) => {
     setToast({ msg, icon: icon || "info", show: true });
     clearTimeout(toastTimer.current);
@@ -1845,269 +2364,897 @@ function CRMDashboardPage() {
 
   // ── fetch dashboard data from Supabase ───────────────────────────────────
   const fetchDash = useCallback(async () => {
-    if (!profile?.company_id) return;
+    // Gerbangnya kini activeCompanyId, sumbu yang benar-benar dipakai di bawah.
+    // `profile?.company_id` ikut dijaga karena `uid`/profil lain masih dibaca
+    // dari sana — keduanya berasal dari muatan yang sama, jadi ini bukan dua
+    // syarat yang bisa lepas satu sama lain.
+    if (!activeCompanyId || !profile?.company_id) return;
     setDashLoading(true);
     setDashError(null);
+    setPartialFail([]);
     try {
-      const cid = profile.company_id;
+      /* Entitas AKTIF (yang sedang dipilih di CompanySwitcher), BUKAN entitas
+         RUMAH. Sebelumnya `profile.company_id`, sehingga user multi-entitas yang
+         mengganti entitas di switcher tetap melihat angka entitas rumahnya —
+         switcher-nya bergerak, dashboard-nya tidak.
+         `erpRole` di file ini SUDAH activeCompanyId-aware (pickPrimaryErpRole,
+         AuthContext:23), jadi `isSalesOnly`/`isAllEntities` sudah mengikuti
+         switcher; hanya sumbu company yang tertinggal. Kini keduanya sejalan.
+         AuthContext:96 sudah menjatuhkan activeCompanyId ke profile.company_id
+         saat belum ada override, jadi user satu-entitas nol perubahan. */
+      const cid = activeCompanyId;
+      const uid = profile.id;
+      const now = new Date();
+      const P   = periodRange(period, now);
 
-      const now            = new Date();
+      /* Scope ENTITAS — diselaraskan dengan applyScope PipelineKanbanPage:
+         super_admin lintas entitas (tanpa filter company_id), sisanya terkunci
+         ke entitasnya. Sebelumnya dashboard SELALU mengunci company_id, jadi
+         super_admin melihat cakupan lebih sempit di sini dibanding di papan
+         Pipeline — dua angka berbeda untuk pertanyaan yang sama. */
+      const byCompany = (q) => (isAllEntities ? q : q.eq('company_id', cid));
+
+      /* Scope KEPEMILIKAN, sengaja dua macam:
+         - accounts  : tetap `assigned_to OR created_by` (perilaku lama yang
+                       DIPERTAHANKAN — untuk sebuah AKUN, "punya saya" memang
+                       wajar mencakup yang di-assign ke saya maupun yang saya
+                       buat). Di luar scope batch ini.
+         - inquiries : `owner_id` SAJA, sama persis dengan applyScope di
+                       PipelineKanbanPage. `created_by` sengaja DILEPAS dari
+                       sini: kepemilikan deal bisa dioper, dan selama created_by
+                       ikut di-OR, deal yang sudah dioper akan tetap menempel di
+                       Dashboard pembuat lamanya — bertentangan dengan papan
+                       Pipeline yang sudah pindah. Cermin RLS `inquiries_read`
+                       sesudah migrasi 20260830000003. */
+      const ownAccounts  = (q) => (isSalesOnly ? q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`) : q);
+      const ownInquiries = (q) => (isSalesOnly ? q.eq('owner_id', uid) : q);
+      const ownBySales   = (q) => (isSalesOnly ? q.eq('assigned_to', uid) : q);
+      const ownByCreator = (q) => (isSalesOnly ? q.eq('created_by', uid) : q);
+
+      /* KPI personal sales memakai minggu/bulan berjalan dan SENGAJA TIDAK ikut
+         `period` (keputusan Den): ini metrik KADENS dengan target per-minggu/
+         per-bulan, jadi merentangkannya ke kuartal/tahun membuat label DAN
+         target sama-sama bohong. Tanggal LOKAL (bukan toISOString) supaya WIB
+         sebelum 07:00 tak menggeser tanggal mundur sehari — `scheduled_for`
+         itu DATE lokal. */
+      const dow            = (now.getDay() + 6) % 7;          // 0 = Senin … 6 = Minggu
+      const mondayDate     = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+      const pad            = (n) => String(n).padStart(2, '0');
+      const localDate      = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const startOfWeek    = localDate(mondayDate);
+      const todayStr       = localDate(now);
       const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const endLastMonth   = new Date(startThisMonth.getTime() - 1);
+      const startNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      /* Jendela Pipeline Trend — 12 bulan BERJALAN yang berakhir di bulan ini
+         (bukan tahun kalender), sengaja TERPISAH dari `P` supaya grafiknya tak
+         ikut berubah saat selektor periode global digeser. */
+      const TREND_MONTHS = 12;
+      const trendStart   = new Date(now.getFullYear(), now.getMonth() - (TREND_MONTHS - 1), 1);
+      const trendEnd     = startNextMonth;
+      const trendBuckets = Array.from({ length: TREND_MONTHS }, (_, i) => {
+        const bs = new Date(now.getFullYear(), now.getMonth() - (TREND_MONTHS - 1) + i, 1);
+        return {
+          name:  `${MONTH_SHORT[bs.getMonth()]} ${String(bs.getFullYear()).slice(2)}`,
+          start: bs,
+          end:   new Date(bs.getFullYear(), bs.getMonth() + 1, 1),
+        };
+      });
 
-      // S2 — current ISO week (Monday start) + today, for personal activity KPIs.
-      // Use LOCAL date parts (not toISOString/UTC) so WIB pre-07:00 doesn't shift
-      // the date back a day and exclude today's calls (scheduled_for is a local DATE).
-      const dow         = (now.getDay() + 6) % 7;          // 0 = Monday … 6 = Sunday
-      const mondayDate  = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
-      const pad         = (n) => String(n).padStart(2, '0');
-      const localDate   = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-      const startOfWeek = localDate(mondayDate);
-      const todayStr    = localDate(now);
-      const uid         = profile.id;
+      /* Bulan-bulan yang dicakup periode aktif — dipakai query target sales.
+         `sales_targets` tersimpan per (tahun, bulan), jadi untuk kuartal/tahun
+         target yang relevan adalah PENJUMLAHAN beberapa baris bulanan, bukan
+         satu baris. Ketiga mode selalu di dalam satu tahun kalender, jadi cukup
+         satu `period_year` + daftar bulan. */
+      const targetYear = now.getFullYear();
+      const targetMonths = period === 'This Year'
+        ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        : period === 'This Quarter'
+          ? [0, 1, 2].map((i) => Math.floor(now.getMonth() / 3) * 3 + i + 1)
+          : [now.getMonth() + 1];
 
-      // S2 — sales/operations only see their own data
-      const ownProspects = (q) => isSalesOnly ? q.or(`assigned_to.eq.${uid},created_by.eq.${uid}`) : q;
-      const ownBySales   = (q) => isSalesOnly ? q.eq('assigned_to', uid) : q;  // activities use assigned_to
-      const ownByCreator = (q) => isSalesOnly ? q.eq('created_by', uid) : q;
+      /* Kartu Recent Activity hanya menampilkan 7 baris teratas, jadi menarik
+         1000 baris per sumber (sampai 4200 baris) adalah pemborosan murni.
+         20 per sumber lebih dari cukup: 7 teratas hasil merge dijamin ada di
+         dalam gabungan 20-teratas tiap sumber.
+         includeLogin:false — "user X login" bukan aktivitas CRM dan memakan
+         jatah 7 slot yang sangat terbatas. includeStatusChanges:true — deal
+         menang/kalah/pindah tahap justru peristiwa paling layak diberitakan,
+         dan ikonnya sudah lama ada di ACT_META tanpa pernah terpakai.
+         ⚠️ Keduanya OPSI, bukan perubahan global: ActivityLogPage memakai modul
+         yang sama, punya filter tipe "Login" sendiri, dan memaginasi seluruh
+         hasil di klien — default modul sengaja dibiarkan seperti semula. */
+      const feedPromise = fetchActivityFeed({
+        companyId: cid, uid, isAllEntities, isSalesOnly,
+        limitPerSource: 20, includeLogin: false, includeStatusChanges: true,
+      });
 
-      // Unified Recent Activity feed (prospect/inquiry/quotation/activity). Dashboard
-      // widget is always single-entity (isAllEntities:false) — consistent with fetchDash.
-      const feedPromise = fetchActivityFeed({ companyId: cid, uid, isAllEntities: false, isSalesOnly });
+      const res = await Promise.all([
+        /* [0] Donut Lead Source — AGREGAT DI DB (Gelombang 2).
+           Dulu menarik baris akun lalu menghitung `sourceCounts` di JS, dan
+           berplafon 1000. Ini widget PERSENTASE: kalau 1000 baris pertama tak
+           representatif, SELURUH proporsi salah sambil tetap terlihat utuh —
+           kelas kesalahan paling buruk di halaman ini. Whitelist
+           lifecycle_stage & sentinel '__none__' hidup di dalam RPC sekarang. */
+        supabase.rpc('crm_lead_source_distribution', {
+          p_company_id: isAllEntities ? null : cid,
+          p_scope_own:  isSalesOnly,
+          p_start:      P.start.toISOString(),
+          p_end:        P.end.toISOString(),
+        }),
 
-      const [prospectsRes, inquiriesRes, quotationsRes, lastMonthRes, salesPerfRes, callsWeekRes, visitsWeekRes, quotMonthRes, wonCustomersRes, activeProspectsRes] = await Promise.all([
-        // Full prospects for this company — all fields needed for multiple computations
-        ownProspects(supabase
+        // [1] "Prospect Aktif" — server count, TANPA batas periode: ini keadaan
+        //     saat ini, bukan kejadian dalam rentang waktu. Filter lama
+        //     `pipeline_stage NOT IN (WON,LOST)` DILEPAS — whitelist
+        //     lifecycle_stage di bawah sudah mengecualikan customer/lost/
+        //     free_agent, jadi filter itu mubazir sekaligus jadi referensi
+        //     terakhir ke kolom yang dijadwalkan drop.
+        ownAccounts(byCompany(supabase
           .from('accounts')
-          .select('id, pipeline_stage, name, created_at, source, assigned_to, profiles!prospects_assigned_to_fkey(full_name)')
-          .eq('company_id', cid)
-          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
-          .is('deleted_at', null)
-          .limit(1000)),
+          .select('id', { count: 'exact', head: true }))
+          .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .eq('is_in_lead_pool', false)
+          .is('deleted_at', null)),
 
-        // Inquiry count
-        supabase
+        // [2] Inquiry lajur TERBUKA — tanpa batas periode, persis seperti papan
+        //     Pipeline: deal terbuka tak punya tanggal tutup untuk disaring.
+        // Kolom tambahan (inquiry_no, owner_id, company_id, nama akun) dipakai
+        // widget Aging Per Tahap & Daftar Deal Stale. Embed dua FK akun ini
+        // pola yang sudah terbukti jalan di PipelineKanbanPage dan
+        // activityFeed.js — beda dari embed `profiles` yang dulu gagal.
+        ownInquiries(byCompany(supabase
           .from('inquiries')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', cid)
-          .is('deleted_at', null),
+          .select(`id, status, inquiry_no, owner_id, company_id, estimated_value,
+                   prospect:accounts!inquiries_prospect_id_fkey(name),
+                   customer:accounts!inquiries_customer_id_fkey(name)`))
+          .in('status', INQ_OPEN_STATUSES)
+          .is('deleted_at', null)
+          .limit(1000)),
 
-        // Quotation count
-        supabase
+        // [3] Inquiry lajur TERTUTUP di periode aktif — sumber Win Rate,
+        //     hitungan CANCELLED, dan Sales Performance.
+        ownInquiries(byCompany(supabase
+          .from('inquiries')
+          .select('id, status, closed_at, owner_id, estimated_value, loss_reason_id'))
+          .in('status', INQ_CLOSED_STATUSES)
+          .is('deleted_at', null)
+          .gte('closed_at', P.start.toISOString())
+          .lt('closed_at', P.end.toISOString())
+          .limit(1000)),
+
+        // [4] Total Inquiry periode aktif
+        ownInquiries(byCompany(supabase
+          .from('inquiries')
+          .select('id', { count: 'exact', head: true }))
+          .is('deleted_at', null)
+          .gte('created_at', P.start.toISOString())
+          .lt('created_at', P.end.toISOString())),
+
+        // [5] Total Quotation periode aktif — `deleted_at` disamakan dengan
+        //     query inquiries; tanpa ini quotation yang sudah dibuang ikut
+        //     terhitung.
+        ownByCreator(byCompany(supabase
           .from('quotations')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', cid),
-
-        // Last month prospects — for trend comparison
-        ownProspects(supabase
-          .from('accounts')
-          .select('created_at')
-          .eq('company_id', cid)
-          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+          .select('id', { count: 'exact', head: true }))
           .is('deleted_at', null)
-          .gte('created_at', startLastMonth.toISOString())
-          .lt('created_at', startThisMonth.toISOString())
-          .limit(1000)),
+          .gte('created_at', P.start.toISOString())
+          .lt('created_at', P.end.toISOString())),
 
-        // Sales performance — assigned prospects with pipeline stage
-        ownProspects(supabase
-          .from('accounts')
-          .select('assigned_to, pipeline_stage, profiles!prospects_assigned_to_fkey(full_name)')
-          .eq('company_id', cid)
-          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
-          .is('deleted_at', null)
-          .not('assigned_to', 'is', null)
-          .limit(1000)),
-
-        // S2 Query A — calls this week (personal KPI) — activities type='call'
-        ownBySales(supabase
+        /* [6] KPI personal — call minggu ini. COUNT SERVER, bukan baris.
+              Sebelumnya mengambil baris lalu memakai `.length`, sehingga angkanya
+              BERHENTI di 1000 tanpa tanda apa pun — dan tak ada satu pun guard
+              truncation yang menjaganya. Barisnya sendiri tak pernah dipakai:
+              KPI ini cuma butuh angka. */
+        ownBySales(byCompany(supabase
           .from('activities')
-          .select('id, scheduled_for, assigned_to')
-          .eq('company_id', cid)
+          .select('id', { count: 'exact', head: true }))
           .eq('type', 'call')
           .is('deleted_at', null)
           .gte('scheduled_for', startOfWeek)
-          .lte('scheduled_for', todayStr)
-          .limit(1000)),
+          .lte('scheduled_for', todayStr)),
 
-        // S2 Query B — visits this week (personal KPI) — activities type='visit'
-        ownBySales(supabase
+        // [7] KPI personal — visit minggu ini. COUNT SERVER (alasan sama [6]).
+        ownBySales(byCompany(supabase
           .from('activities')
-          .select('id, scheduled_for, assigned_to')
-          .eq('company_id', cid)
+          .select('id', { count: 'exact', head: true }))
           .eq('type', 'visit')
           .is('deleted_at', null)
           .gte('scheduled_for', startOfWeek)
-          .lte('scheduled_for', todayStr)
-          .limit(1000)),
+          .lte('scheduled_for', todayStr)),
 
-        // S2 Query C — quotations this month (personal KPI)
-        ownByCreator(supabase
+        // [8] KPI personal — quotation bulan ini. COUNT SERVER (alasan sama [6]).
+        ownByCreator(byCompany(supabase
           .from('quotations')
-          .select('id, created_at, created_by')
-          .eq('company_id', cid)
-          .gte('created_at', startThisMonth.toISOString())
-          .limit(1000)),
-
-        // Won deals that already auto-converted to customer (account_status='customer'
-        // + pipeline_stage='WON' + became_customer_at set). These leave the prospect
-        // query, so without this they vanish from WON count / win rate / sales perf.
-        // Same company + role scope as the prospect queries.
-        ownProspects(supabase
-          .from('accounts')
-          .select('id, pipeline_stage, assigned_to, created_at, account_status, became_customer_at, profiles!prospects_assigned_to_fkey(full_name)')
-          .eq('company_id', cid)
-          .eq('account_status', 'customer')
-          .eq('pipeline_stage', 'WON')
-          .not('became_customer_at', 'is', null)
+          .select('id', { count: 'exact', head: true }))
           .is('deleted_at', null)
+          .gte('created_at', startThisMonth.toISOString())
+          .lt('created_at', startNextMonth.toISOString())),
+
+        // [9] "SQL Baru Bulan Ini" — dari riwayat lifecycle, BUKAN lagi tebakan
+        //      dari pipeline_stage. Ini menjawab "berapa yang BARU jadi SQL
+        //      bulan ini", bukan "berapa yang kebetulan sekarang di tahap
+        //      lanjut". Tanpa filter company_id: tabelnya tak punya kolom itu —
+        //      scoping datang dari RLS `alh_read` yang mendelegasikan ke RLS
+        //      `accounts` (entitas + kepemilikan sekaligus).
+        supabase
+          .from('account_lifecycle_history')
+          .select('id', { count: 'exact', head: true })
+          .eq('to_stage', 'sql')
+          .gte('changed_at', startThisMonth.toISOString())
+          .lt('changed_at', startNextMonth.toISOString()),
+
+        // [10] Distribusi lifecycle akun — SNAPSHOT keadaan sekarang, sengaja
+        //      TANPA filter periode: pertanyaannya "sekarang akun-akun itu ada
+        //      di tahap mana", bukan "berapa yang masuk tahap X bulan ini".
+        //      Menyaringnya per periode akan mengubah maknanya jadi cohort dan
+        //      membuat corongnya menyusut tiap ganti bulan tanpa alasan.
+        // `id` ikut diambil karena widget Konversi MQL→SQL butuh memetakan
+        // kohort riwayat ke tahap akun SEKARANG. Nol dampak ke funnel lifecycle
+        // yang hanya membaca lifecycle_stage.
+        supabase.rpc('crm_lifecycle_funnel', {
+          p_company_id: isAllEntities ? null : cid,
+          p_scope_own:  isSalesOnly,
+        }),
+
+        // [11] Master alasan kalah — untuk memberi NAMA pada loss_reason_id.
+        //      ⚠️ TANPA filter company_id: `loss_reasons` GLOBAL (company_id
+        //      selalu NULL), memfilternya mengembalikan NOL BARIS tanpa error
+        //      (gotcha #18) dan seluruh breakdown akan jatuh ke "Tanpa Alasan".
+        supabase
+          .from('loss_reasons')
+          .select('id, name')
+          .is('deleted_at', null)
+          .limit(1000),
+
+        // [12] Ambang aging dari master SLA. PER-ENTITAS, jadi ikut byCompany:
+        //      super_admin lintas entitas dapat semuanya dan dipetakan
+        //      per (company_id, status); role lain terkunci ke entitasnya.
+        byCompany(supabase
+          .from('sla_policies')
+          .select('company_id, code, target_status, threshold, time_unit'))
+          .eq('policy_type', 'deal_aging')
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .limit(1000),
+
+        /* [13] Target sales untuk periode aktif.
+           Filter (tahun, bulan) bisa sesederhana ini karena KETIGA mode periode
+           selalu berada di dalam satu tahun kalender — This Month/Quarter/Year
+           semuanya dibatasi Jan–Des tahun berjalan, jadi tak perlu penanganan
+           rentang lintas tahun.
+           RLS `sales_targets_read` sudah pas apa adanya: manager+ dapat seluruh
+           entitasnya, sales hanya barisnya sendiri. */
+        byCompany(supabase
+          .from('sales_targets')
+          .select('user_id, period_year, period_month, target_value, target_deals'))
+          .eq('period_year', targetYear)
+          .in('period_month', targetMonths)
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .limit(1000),
+
+        /* [14] Deal yang DIBUAT dalam 12 BULAN TERAKHIR — sumber grafik Pipeline
+           Trend.
+           ⚠️ SENGAJA LEPAS dari selektor periode global (keputusan Den 8 Sep 2026).
+           Mengikuti selektor membuat default "This Month" menghasilkan 4 titik
+           mingguan, dan dengan volume deal sekarang garisnya nyaris datar di nol —
+           grafik yang benar secara teknis tapi tak bermakna dibaca. Jendelanya
+           kini TETAP: 12 bulan berjalan, granularitas bulanan. Lima widget lain
+           (Total Inquiry, Total Quotation, Win Rate, Loss Reason, Sales
+           Performance) TETAP mengikuti selektor — jangan ikut dilepas.
+           Sumbunya sengaja DEAL (inquiries), bukan akun: kartunya bernama
+           "Pipeline Trend" dan pipeline diisi deal, bukan pendaftaran akun.
+           Query accounts [0] TETAP ADA karena donut Lead Source masih
+           membutuhkannya.
+           ⚠️ TANPA filter status — DISENGAJA. Kalau disaring ke status terbuka,
+           deal yang dibuat bulan ke-1 lalu menang di bulan ke-3 akan HILANG
+           dari titik bulan ke-1, sehingga bentuk grafik masa lalu berubah
+           tiap kali ada deal closing. Menghitung semua deal yang dibuat
+           (termasuk CANCELLED) membuat titik historis stabil. Keputusan Den. */
+        ownInquiries(byCompany(supabase
+          .from('inquiries')
+          .select('id, created_at'))
+          .is('deleted_at', null)
+          .gte('created_at', trendStart.toISOString())
+          .lt('created_at', trendEnd.toISOString())
           .limit(1000)),
 
-        // "Prospect Aktif" KPI — kriteria SAMA dengan header PipelineKanbanPage
-        // (account_status pra-customer + is_in_lead_pool=false + stage bukan
-        // WON/LOST, NULL disertakan seperti Pipeline `null → 'NEW'`). Server
-        // count(head) → TIDAK kena batas 1000 baris (beda dari prospectsRes.length).
-        // WON/LOST huruf BESAR (DB uppercase; Pipeline lowercase-mapping di JS).
-        // `.or(...is.null...)` supaya baris pipeline_stage NULL tak silent-drop
-        // (NOT IN polos mengecualikan NULL). Di-wrap ownProspects() → company-scoped
-        // untuk non-sales (identity) & owner-scoped untuk sales, jadi angka ini juga
-        // dipakai sebagai basis penyebut Win Rate (TD-102) yang scope-aware.
-        ownProspects(supabase
-          .from('accounts')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', cid)
-          .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool']) /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
-          .eq('is_in_lead_pool', false)
-          .or('pipeline_stage.is.null,pipeline_stage.not.in.(WON,LOST)')
-          .is('deleted_at', null)),
+        /* [15] DICABUT di Gelombang 2. Total akun kini = SUM(cnt) dari
+           crm_lifecycle_funnel [10]. Count terpisah ini lahir HANYA karena
+           plafon memaksa total dan rincian datang dari dua query berbeda;
+           begitu rinciannya diagregasi di DB, dua sumbu itu melebur jadi satu
+           dan mustahil melenceng. Indeks [15] sengaja dibiarkan kosong — tak
+           ada res[15] lagi. */
+
       ]);
 
-      if (prospectsRes.error) throw prospectsRes.error;
+      /* Pemeriksaan error MENYELURUH. Sebelumnya hanya hasil [0] yang diperiksa
+         dan sembilan sisanya jatuh diam-diam ke `?? 0` / `|| []` — kegagalan
+         fetch tampil sebagai angka yang kelihatan sah. Yang esensial tetap
+         melempar; sisanya dikumpulkan dan dilaporkan lewat banner. */
+      const ESSENTIAL = [
+        ['prospect', res[0]],
+        ['active prospects', res[1]],
+        ['pipeline terbuka', res[2]],
+        ['deal tertutup', res[3]],
+      ];
+      for (const [label, r] of ESSENTIAL) {
+        if (r?.error) throw new Error(`${label} — ${r.error.message}`);
+      }
 
-      const prospects       = prospectsRes.data || [];
-      const totalProspects  = prospects.length; // row-pull count (capped 1000, incl Lead Pool). TD-102: TIDAK lagi dipakai Win Rate/subtitle (diganti activeProspects); kini yatim — kandidat hapus di batch lanjutan.
-      // Kartu "Prospect Aktif" — server count, kriteria = header Pipeline (lihat query di atas).
-      const activeProspects = activeProspectsRes.count ?? 0;
+      const failed = [
+        ['previous-period trend', res[1]],
+        ['lead source', res[0]],
+        ['total inquiry', res[4]],
+        ['total quotation', res[5]],
+        ['calls this week', res[6]],
+        ['visits this week', res[7]],
+        ['quotations this month', res[8]],
+        ['new SQL this month', res[9]],
+        ['account lifecycle funnel', res[10]],
+        ['loss reason master', res[11]],
+        ['ambang SLA aging', res[12]],
+        ['sales targets', res[13]],
+        ['pipeline trend', res[14]],
+      ].filter(([, r]) => r?.error).map(([label]) => label);
 
-      // Won deals = active prospects still at stage WON (rare) + customers that
-      // auto-converted from a WON deal. Win rate is over all deals that ever
-      // entered the pipeline: active prospects + those converted WON customers.
-      const wonCustomers    = wonCustomersRes.data || [];
-      const wonProspects    = prospects.filter(p => (p.pipeline_stage || '').toUpperCase() === 'WON').length;
-      const wonCount        = wonProspects + wonCustomers.length;
-      const totalDeals      = activeProspects + wonCustomers.length; // TD-102: server-count (uncapped, is_in_lead_pool=false, scope-aware) — bukan lagi totalProspects capped-1000
-      const winRate         = totalDeals > 0 ? Math.round((wonCount / totalDeals) * 100) : 0;
-      const totalInquiries  = inquiriesRes.count  ?? 0;
-      const totalQuotations = quotationsRes.count ?? 0;
-      const lastMonthProspects = lastMonthRes.data || [];
+      /* PENANDA PER-WIDGET, pendamping `failed`.
+         `failed` hanya menghasilkan BANNER — kalimat di puncak halaman yang
+         mudah terlewat dan tidak memberi tahu angka mana yang salah. `degraded`
+         membawa informasi yang sama TURUN KE KARTUNYA, supaya widget yang
+         datanya terpotong/gagal berhenti memajang angka seolah-olah sah.
+         Keduanya di-set berpasangan di tiap titik guard; jangan menambah salah
+         satu tanpa yang lain. */
+      const degraded = {};
 
-      // ── Stage breakdown ─────────────────────────────────────────────────
-      const stageCounts = {};
-      prospects.forEach(p => {
-        const s = (p.pipeline_stage || 'new').toLowerCase();
-        stageCounts[s] = (stageCounts[s] || 0) + 1;
-      });
-      const stagesData = STAGE_ORDER.map(id => ({
-        id,
-        name:  STAGE_LABELS[id] || id,
-        count: stageCounts[id] || 0,
-        value: 0,
-        color: STAGE_COLORS[id] || NAVY,
+      /* RPC mengembalikan BARIS AGREGAT, bukan baris mentah — `.data` di sini
+         sudah berupa [{source, cnt}] / [{stage, cnt}], bukan daftar akun. */
+      const leadSourceRows      = res[0].data  || [];
+      const activeProspects     = res[1].count ?? 0;
+      const openInq             = res[2].data  || [];
+      const closedInq           = res[3].data  || [];
+      const totalInquiries      = res[4].count ?? 0;
+      const totalQuotations     = res[5].count ?? 0;
+      const callsThisWeek       = res[6].count ?? 0;
+      const visitsThisWeek      = res[7].count ?? 0;
+      const quotationsThisMonth = res[8].count ?? 0;
+      const sqlThisMonth        = res[9].count ?? 0;
+      const lifecycleRows       = res[10].data || [];   // [{stage, cnt}]
+      const lossReasonRows      = res[11].data || [];
+      const slaRows             = res[12].data || [];
+      const targetRows          = res[13].data || [];
+      const dealRows            = res[14].data || [];
+      /* Total akun = SUM(cnt) funnel. Satu sumber dengan rinciannya, jadi
+         "Total accounts" dan batang di atasnya MUSTAHIL melenceng — beda dari
+         Gelombang 1 yang memakai count terpisah karena plafon memaksanya.
+         null (bukan 0) saat RPC-nya gagal: nol adalah pernyataan ("tidak ada
+         akun"), null adalah ketiadaan jawaban, dan kartunya menampilkan '—'. */
+      const totalAccounts = res[10].error
+        ? null
+        : lifecycleRows.reduce((a, r) => a + Number(r.cnt || 0), 0);
+
+      /* ⚠️ GUARD TRUNCATION untuk funnel & lead source DICABUT di Gelombang 2 —
+         plafonnya hilang secara STRUKTURAL, jadi `length === 1000` bukan lagi
+         sinyal apa pun (kedua RPC mengembalikan ~7 baris agregat, bukan ribuan).
+         Yang TETAP HIDUP adalah cabang ERROR di bawah: RLS, jaringan, dan
+         timeout masih bisa menjatuhkannya, dan kartu yang diam-diam menampilkan
+         0 saat itu terjadi adalah persis bug yang ditutup Gelombang 1. */
+      if (res[10].error) degraded.lifecycleFunnel = true;
+      if (res[0].error)  degraded.leadSource = true;
+      if (dealRows.length === 1000)     { failed.push('pipeline trend (truncated at 1000 rows)'); degraded.pipelineTrend = true; }
+      if (openInq.length === 1000)      { failed.push('pipeline by stage — open deals (truncated at 1000 rows)'); degraded.pipelineByStage = true; }
+      if (closedInq.length === 1000)    { failed.push('sales performance & win rate — closed deals (truncated at 1000 rows)'); degraded.salesPerf = true; }
+
+      /* Nama pemilik deal lewat query TERPISAH, bukan embed FK — pola yang
+         sudah dipakai di file ini (feed aktivitas & kalender). Satu query untuk
+         seluruh papan: id dikumpulkan lebih dulu lalu di-dedup, jadi jumlah
+         query tidak tumbuh mengikuti jumlah deal (nol N+1). */
+      // openInq ikut: daftar Deal Stale menampilkan pemilik deal yang MASIH
+      // terbuka, jadi namanya harus ikut teresolusi di sini.
+      const ownerIds   = [...new Set([...closedInq, ...openInq].map((r) => r.owner_id).filter(Boolean))];
+      const ownerNames = {};
+      if (ownerIds.length) {
+        const { data: profs, error: profErr } = await supabase
+          .from('profiles').select('id, full_name').in('id', ownerIds).limit(1000);
+        if (profErr) failed.push('deal owner names');
+        else (profs || []).forEach((p) => { ownerNames[p.id] = p.full_name; });
+      }
+
+      // ── Pipeline by Stage — sumbu inquiries.status ───────────────────────
+      const statusCounts = {};
+      for (const r of [...openInq, ...closedInq]) {
+        const s = String(r.status || '').toUpperCase();
+        statusCounts[s] = (statusCounts[s] || 0) + 1;
+      }
+      const stagesData = INQ_STAGE_ORDER.map((id) => ({
+        id, name: INQ_STAGE_LABELS[id], count: statusCounts[id] || 0, value: 0,
       }));
 
-      // ── Lead source distribution ─────────────────────────────────────────
-      const sourceCounts = {};
-      prospects.forEach(p => {
-        const s = p.source || 'Lainnya';
-        sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+      /* ── Win Rate ────────────────────────────────────────────────────────
+         WON / (WON + LOST) atas deal yang DITUTUP di periode aktif.
+         CANCELLED sengaja di luar pembilang MAUPUN penyebut: deal yang
+         dibatalkan bukan kompetisi yang kita kalah, jadi memasukkannya ke
+         penyebut menghukum win rate untuk sesuatu yang tak pernah
+         diperebutkan. Angkanya tetap dibawa keluar dan ditampilkan di sebelah
+         kartu — dikeluarkan dari rumus, bukan disembunyikan. */
+      const wonCount       = closedInq.filter((r) => r.status === 'WON').length;
+      const lostCount      = closedInq.filter((r) => r.status === 'LOST').length;
+      const cancelledCount = closedInq.filter((r) => r.status === 'CANCELLED').length;
+      const decided        = wonCount + lostCount;
+      const winRate        = decided > 0 ? Math.round((wonCount / decided) * 100) : 0;
+
+      /* ── Konversi antar-tahap (dari riwayat transisi) ────────────────────
+         Kohortnya = PERSIS deal yang ditampilkan widget ini (openInq +
+         closedInq), jadi dasar persentasenya selalu bisa direkonsiliasi dengan
+         batang di sebelahnya. "Pernah mencapai X" = ada baris riwayat dengan
+         to_status = X — jadi deal yang mati di tengah tetap terhitung pernah
+         melewati tahap-tahap sebelumnya. Itulah yang membuat angka ini menjawab
+         "bocor di tahap mana", bukan sekadar "sekarang ada berapa".
+
+         ⚠️ BATASAN YANG DISADARI (keputusan Den 30 Agu 2026): backfill
+         28 Agu 2026 hanya menulis SATU baris per inquiry (status saat itu),
+         bukan riwayat penuh. Deal yang sudah melewati beberapa tahap SEBELUM
+         tanggal itu tampak melompat langsung ke status akhirnya, jadi angka ini
+         UNDER-REPORT untuk data lama dan makin akurat seiring waktu. Alternatif
+         satu-satunya — menyimpulkan dari urutan status sekarang — justru buta
+         terhadap deal LOST/CANCELLED, yang persis kebocoran yang dicari. */
+      /* Konversi antar-tahap & umur tahap kini DUA RPC, bukan satu fetch riwayat.
+         Yang digantikan: .in('inquiry_id', cohortIds) dengan cohortIds sampai
+         2.000 UUID (openInq 1000 + closedInq 1000) — URL ~74 KB, dua kali lipat
+         kasus MQL, dan belum meledak hanya karena volume inquiry belum sampai.
+         Plafon 1000-nya juga paling cepat kena di sini: riwayat tumbuh per
+         TRANSISI, bukan per inquiry.
+
+         ⚠️ Kohortnya kini dibentuk DI DALAM SQL dengan syarat yang sama
+         (terbuka + tertutup dalam periode). Konsekuensi yang disadari: batang
+         "Pipeline by Stage" di sebelahnya MASIH dari openInq/closedInq yang
+         berplafon, jadi saat plafon itu benar-benar kena, angka konversi (yang
+         sudah benar) tak lagi rekonsiliasi dengan batangnya (yang terpotong).
+         Batang itu punya guard `degraded.pipelineByStage` sendiri yang menyala
+         di keadaan itu — jadi ketidakcocokannya berbunyi, tidak diam-diam. */
+      const reached = {};
+      const stageSince = {};
+      const rpcScope = {
+        p_company_id: isAllEntities ? null : cid,
+        p_scope_own:  isSalesOnly,
+        p_start:      P.start.toISOString(),
+        p_end:        P.end.toISOString(),
+      };
+      const [convRes, ageRes] = await Promise.all([
+        supabase.rpc('crm_stage_conversion', rpcScope),
+        supabase.rpc('crm_stage_age', rpcScope),
+      ]);
+      if (convRes.error || ageRes.error) {
+        /* ⚠️ JANGAN dicabut. Plafon sudah hilang, tapi RLS/jaringan/timeout
+           belum — dan persentase konversi yang dihitung dari data yang gagal
+           dimuat adalah persis jenis angka yang Gelombang 1 tutup. */
+        failed.push('stage-to-stage conversion & stage age');
+        degraded.stageHistory = true;
+      } else {
+        for (const s of INQ_STAGE_ORDER) reached[s] = 0;
+        (convRes.data || []).forEach((r) => {
+          reached[String(r.to_status || '').toUpperCase()] = Number(r.inquiries || 0);
+        });
+        (ageRes.data || []).forEach((r) => { stageSince[r.inquiry_id] = r.stage_since; });
+      }
+      /* Rantai konversi menyusuri lajur terbuka + WON saja. LOST/CANCELLED
+         SENGAJA di luar rantai: keduanya exit yang bisa terjadi dari tahap mana
+         pun, jadi menempatkannya sebagai "tahap berikutnya" akan menyesatkan. */
+      const CONV_CHAIN = [...INQ_OPEN_STATUSES, 'WON'];
+      const conversionData = CONV_CHAIN.slice(1).map((to, i) => {
+        const from = CONV_CHAIN[i];
+        const base = reached[from] || 0;
+        return {
+          to,
+          fromLabel: INQ_STAGE_LABELS[from],
+          toLabel:   INQ_STAGE_LABELS[to],
+          // base 0 → null, BUKAN 0%. Nol persen mengklaim "semua gagal lolos";
+          // yang sebenarnya terjadi adalah tak ada yang bisa diukur.
+          pct: base > 0 ? Math.round(((reached[to] || 0) / base) * 100) : null,
+        };
       });
-      const leadSourceData = Object.entries(sourceCounts)
-        .map(([source, count]) => ({ source, count }))
+
+      /* ── Beban pipeline per sales ────────────────────────────────────────
+         Snapshot deal TERBUKA hari ini (openInq), tanpa filter periode, dan
+         diturunkan dari array yang sama dengan Pipeline by Stage — jadi jumlah
+         dealnya rekonsiliasi secara konstruksi.
+
+         Widget "Nilai Pipeline Berbobot" yang dulu berbagi loop ini sudah
+         di-drop (keputusan Den): konsep nilai berbobot vs nilai penuh menuntut
+         penjelasan tambahan dan berisiko membuat Dashboard rancu bagi pembaca
+         tanpa konteks. Yang ikut hilang cuma perhitungan berbobotnya; kolom
+         `estimated_value` di query deal terbuka TETAP diambil karena tabel ini
+         memakainya.
+
+         ⚠️ `inquiries.estimated_value` baru punya jalur tulis sejak 30 Agu 2026,
+         jadi deal lama masih NULL. Yang kosong tidak ikut ke total nilai tapi
+         TETAP dihitung sebagai deal — beban kerja seseorang tidak berkurang
+         hanya karena nilainya belum diisi — dan gap-nya disebut per baris di
+         UI, bukan didiamkan. */
+      const loadByOwner = {};
+      for (const r of openInq) {
+        const key = r.owner_id || '__no_owner__';
+        if (!loadByOwner[key]) loadByOwner[key] = { deals: 0, value: 0, missing: 0 };
+        loadByOwner[key].deals++;
+
+        const raw = (r.estimated_value === null || r.estimated_value === undefined)
+          ? null : Number(r.estimated_value);
+        if (raw === null || !Number.isFinite(raw)) {
+          loadByOwner[key].missing++;
+          continue;
+        }
+        loadByOwner[key].value += raw;
+      }
+      // Dipakai tabel Beban Pipeline untuk menyatakan totalnya sama dengan
+      // keempat batang terbuka di Pipeline by Stage.
+      const openDealTotal = openInq.length;
+      const loadRows = Object.entries(loadByOwner)
+        .map(([id, s]) => ({
+          id,
+          name:    id === '__no_owner__' ? 'Unassigned' : (ownerNames[id] || '(unnamed)'),
+          noOwner: id === '__no_owner__',
+          deals: s.deals, value: s.value, missing: s.missing,
+        }))
+        // "Tanpa Pemilik" selalu di dasar — keranjang sisa, bukan salesperson.
+        .sort((a, b) => (a.noOwner - b.noOwner) || (b.deals - a.deals) || (b.value - a.value));
+
+      /* ── Aging per tahap + daftar deal stale ─────────────────────────────
+         Umur = sekarang − saat masuk status ini (stageSince). MEDIAN, bukan
+         rata-rata: distribusi umur deal condong ke kanan, jadi beberapa deal
+         yang nyangkut ekstrem lama akan menarik rata-rata sampai ia tak
+         mewakili deal tipikal mana pun.
+
+         ⚠️ KETERBATASAN — ARAHNYA BERBAHAYA, beda dari widget sebelumnya.
+         Backfill 28 Agu 2026 mengisi changed_at dengan
+         COALESCE(updated_at, created_at, now()). Untuk deal yang status
+         terakhirnya berubah SEBELUM tanggal itu, "masuk status ini" sebenarnya
+         = waktu edit TERAKHIR apa pun — ganti catatan, rute, nilai. Efeknya
+         umur ter-UNDER-STATE: deal yang benar-benar mandek berbulan-bulan tapi
+         baru disunting kemarin tampak berumur sehari dan LOLOS dari daftar
+         stale. Ini false negative yang menyamar, bukan sekadar data hilang —
+         justru deal yang paling perlu ditemukan yang paling mungkin luput.
+         Transisi setelah 28 Agu akurat. Ditulis apa adanya di UI kedua widget. */
+      const DAY_MS = 86400000;
+      const nowMs  = now.getTime();
+      const median = (arr) => {
+        if (!arr.length) return null;
+        const s = [...arr].sort((a, b) => a - b);
+        const m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+      };
+
+      /* Ambang dari master `sla_policies` (policy_type='deal_aging'), diambil
+         MINIMUM per (entitas, status). QUOTED punya DUA baris — 14 hari
+         flag_stale dan 30 hari propose_cancel — dan yang dipakai adalah ambang
+         PERTAMA yang terlewati, 14 (keputusan Den): `flag_stale` memang aksi
+         yang menandai stale, sementara 30 hari itu tahap eskalasi berikutnya,
+         bukan definisi stale.
+
+         `business_day` diperlakukan sebagai hari kalender — repo ini tak punya
+         tabel kalender kerja/hari libur, jadi menghitung hari kerja sungguhan
+         mustahil; aproksimasinya disebutkan di UI. `business_hour` SENGAJA
+         ditolak: satu-satunya pemakainya ambang IN_REVIEW, yang memang
+         dikecualikan di bawah. */
+      const thrByKey = {};
+      slaRows.forEach((p) => {
+        if (!['day', 'business_day'].includes(p.time_unit)) return;
+        const v = Number(p.threshold);
+        if (!Number.isFinite(v) || v <= 0) return;
+        const key = `${p.company_id}|${String(p.target_status || '').toUpperCase()}`;
+        if (thrByKey[key] === undefined || v < thrByKey[key]) thrByKey[key] = v;
+      });
+
+      /* IN_REVIEW SENGAJA TANPA AMBANG (keputusan Den): keenam baris
+         AGING_IN_REVIEW_* bersumbu `transport_mode` dan hanya ada untuk MSI,
+         sementara `inquiries` tak punya kolom moda sama sekali — moda hidup di
+         PRF dengan taksonomi berbeda dari service_type. Mengarang ambangnya
+         akan menghasilkan angka buatan yang menyamar sebagai kebijakan. Median
+         IN_REVIEW tetap ditampilkan (median tak butuh ambang); yang absen hanya
+         pembanding dan keikutsertaannya di daftar stale. */
+      const agingRows = [];
+      const staleAll  = [];
+      let ageUnknown  = 0;
+      for (const st of INQ_OPEN_STATUSES) {
+        const inStage = openInq.filter((r) => String(r.status || '').toUpperCase() === st);
+        const ages = [];
+        for (const r of inStage) {
+          const since = stageSince[r.id];
+          // Tanpa baris riwayat, umurnya TAK DIKETAHUI — bukan nol. Dihitung
+          // terpisah dan dilaporkan, tidak dibuang diam-diam.
+          if (!since) { ageUnknown++; continue; }
+          const days = Math.floor((nowMs - new Date(since).getTime()) / DAY_MS);
+          ages.push(days);
+          const thr = thrByKey[`${r.company_id}|${st}`];
+          if (thr !== undefined && days > thr) {
+            staleAll.push({
+              id: r.id,
+              inquiryNo: r.inquiry_no || '—',
+              account:   r.customer?.name || r.prospect?.name || '—',
+              statusLabel: INQ_STAGE_LABELS[st],
+              owner:     r.owner_id ? (ownerNames[r.owner_id] || '(unnamed)') : 'Unassigned',
+              noOwner:   !r.owner_id,
+              days,
+              over:      days - thr,
+            });
+          }
+        }
+        // Pembanding hanya ditampilkan kalau ambangnya TUNGGAL untuk seluruh
+        // deal di tahap itu. Untuk super_admin lintas entitas, ambang bisa
+        // berbeda antar-entitas — menampilkan salah satunya sebagai "ambang"
+        // akan salah untuk sebagian barisnya.
+        const thrSet = new Set(
+          inStage.map((r) => thrByKey[`${r.company_id}|${st}`]).filter((v) => v !== undefined),
+        );
+        agingRows.push({
+          id: st,
+          name: INQ_STAGE_LABELS[st],
+          count: inStage.length,
+          median: median(ages),
+          threshold: thrSet.size === 1 ? [...thrSet][0] : null,
+        });
+      }
+      staleAll.sort((a, b) => (b.over - a.over) || (b.days - a.days));
+      const STALE_CAP  = 30;
+      const staleRows  = staleAll.slice(0, STALE_CAP);
+      const staleTotal = staleAll.length;
+
+      /* ── Konversi MQL → SQL ──────────────────────────────────────────────
+         Kohort HARUS dari riwayat, TIDAK boleh disimpulkan dari lifecycle_stage
+         sekarang — sudah diverifikasi bahwa akun BISA melompati mql:
+           • set_prospect_on_inquiry menaikkan lead → prospect begitu inquiry
+             pertamanya dibuat (WHERE lifecycle_stage IN ('lead','mql')), jadi
+             sebuah lead bisa jadi prospect tanpa pernah menyentuh mql;
+           • set_customer_on_inquiry_won menaikkan tahap APA PUN → customer.
+         Artinya akun ber-tahap prospect/sql/customer belum tentu pernah MQL,
+         dan menghitung kohort dari tahap sekarang akan melebih-lebihkannya.
+
+         ⚠️ KETERBATASAN CAKUPAN (sama kelasnya dengan konversi status inquiry):
+         backfill `20260908000001_accounts_lifecycle_dual_write` (LIVE di produksi
+         7 Sep 2026) hanya menulis SATU baris per akun — tahap SAAT ITU, dengan
+         `from_stage` NULL — bukan riwayat penuh.
+         ⚠️ Tanggal ini SEMPAT SALAH TERTULIS "27 Agu 2026", merujuk migrasi
+         `20260827000002_crm_v3_lifecycle` yang TIDAK PERNAH dijalankan dan
+         digantikan jalur B. Dikoreksi 8 Sep 2026. Akun yang melewati mql SEBELUM
+         tanggal itu lalu sudah bergerak lagi tidak punya jejak mql sama sekali,
+         jadi kohort ini UNDER-REPORT untuk data lama dan makin lengkap seiring
+         waktu. Ditulis apa adanya di UI, bukan disembunyikan. */
+      /* Kohort + klasifikasinya kini dihitung DI DB (crm_mql_conversion).
+         Dua cacat sekaligus hilang: filter .in('account_id', <=1000 UUID) yang
+         menghasilkan URL ~37 KB dan ditolak sebelum menyentuh Postgres — sebab
+         sebenarnya kartu ini menampilkan "No account has been recorded reaching
+         MQL yet" — DAN rantai dua tingkat, di mana kohortnya cuma bisa diambil
+         dari 1000 akun yang lolos plafon query [10]. */
+      const { data: mqlAgg, error: mqlErr } = await supabase.rpc('crm_mql_conversion', {
+        p_company_id: isAllEntities ? null : cid,
+        p_scope_own:  isSalesOnly,
+      });
+      let mqlSql = 0, mqlPending = 0, mqlLost = 0;
+      let mqlHasRealTransition = false;
+      if (mqlErr) {
+        /* ⚠️ JANGAN dicabut. Kegagalan di sini BUKAN "nol akun MQL". Tanpa
+           penanda ini kartunya jatuh ke empty-state dan menuliskan "No account
+           has been recorded reaching MQL yet" — sebuah KLAIM BISNIS, padahal
+           yang terjadi cuma request-nya tak pernah berhasil. Plafon memang sudah
+           hilang, tapi RLS/jaringan/timeout belum. */
+        failed.push('MQL to SQL conversion');
+        degraded.mql = true;
+      } else {
+        const agg = (mqlAgg && mqlAgg[0]) || {};
+        mqlSql               = Number(agg.converted || 0);
+        mqlPending           = Number(agg.pending   || 0);
+        mqlLost              = Number(agg.lost      || 0);
+        mqlHasRealTransition = !!agg.has_real_transition;
+      }
+      const mqlBase = mqlSql + mqlPending;
+      const mqlData = {
+        converted: mqlSql,
+        pending:   mqlPending,
+        lost:      mqlLost,
+        // Basis nol → null, BUKAN 0%. Nol persen mengklaim "tak satu pun lolos";
+        // yang sebenarnya terjadi adalah belum ada yang bisa diukur.
+        pct: mqlBase > 0 ? Math.round((mqlSql / mqlBase) * 100) : null,
+        // Kohort ada tapi SELURUHNYA baris backfill → angka apa pun menyesatkan.
+        hasRealTransition: mqlHasRealTransition,
+      };
+
+      /* ── Funnel lifecycle akun ───────────────────────────────────────────
+         Snapshot distribusi akun, bukan cohort periode (lihat query [10]). */
+      // RPC sudah mengelompokkan; JS tinggal memetakannya ke bentuk kartu.
+      // '(empty)' dibentuk di dalam SQL (COALESCE), bukan di sini.
+      const lcCounts = {};
+      lifecycleRows.forEach((r) => { lcCounts[r.stage] = Number(r.cnt || 0); });
+      const lifecycleFunnel = LIFECYCLE_FUNNEL.map((id) => ({
+        id, name: LIFECYCLE_LABELS[id], count: lcCounts[id] || 0,
+      }));
+      // Nilai di luar 5 tahap funnel + 2 exit yang dikenal (termasuk NULL)
+      // dikumpulkan ke keranjang "Lainnya" — supaya "Total akun" di kartu itu
+      // benar-benar sama dengan jumlah baris yang terbaca, bukan cuma yang
+      // kebetulan cocok dengan daftar yang kita kenal.
+      const knownLc = new Set([...LIFECYCLE_FUNNEL, ...LIFECYCLE_EXITS]);
+      const lcOther = Object.entries(lcCounts)
+        .filter(([k]) => !knownLc.has(k))
+        .reduce((a, [, v]) => a + v, 0);
+      const lifecycleExits = [
+        ...LIFECYCLE_EXITS.map((id) => ({ id, name: LIFECYCLE_LABELS[id], count: lcCounts[id] || 0 })),
+        ...(lcOther > 0 ? [{ id: '__other__', name: 'Lainnya', count: lcOther }] : []),
+      ];
+
+      /* ── Breakdown alasan kalah ──────────────────────────────────────────
+         Diturunkan dari array `closedInq` yang SAMA dengan Pipeline by Stage
+         dan Win Rate — jadi totalnya rekonsiliasi secara konstruksi, bukan
+         karena kebetulan dua query menghasilkan angka yang mirip.
+         `loss_reason_id` NULL → "Tanpa Alasan", bukan dibuang: LOST lama
+         (sebelum B3) dan jalur penutupan non-modal tidak mengisi kolom itu. */
+      const lossNameById = {};
+      lossReasonRows.forEach((r) => { lossNameById[r.id] = r.name; });
+      const lossCounts = {};
+      closedInq.filter((r) => r.status === 'LOST').forEach((r) => {
+        const k = r.loss_reason_id || '__none__';
+        lossCounts[k] = (lossCounts[k] || 0) + 1;
+      });
+      const lossReasonData = Object.entries(lossCounts)
+        .map(([id, count]) => ({
+          id,
+          name: id === '__none__' ? 'No Reason' : (lossNameById[id] || '(unknown reason)'),
+          count,
+          unknown: id === '__none__',
+        }))
+        // "Tanpa Alasan" selalu paling bawah — ia keranjang sisa, bukan alasan.
+        .sort((a, b) => (a.unknown - b.unknown) || (b.count - a.count));
+
+      /* ── Lead source (periode aktif) ─────────────────────────────────────
+         Agregat datang JADI dari crm_lead_source_distribution. Sentinel
+         '__none__' untuk source kosong kini dibentuk di dalam SQL — SENGAJA
+         bukan 'other', karena `other` nilai source yang SAH dan punya ratusan
+         baris sendiri; meleburkannya membuat dua hal berbeda tak terpisahkan.
+         Pola sentinel yang sama dipakai `loss_reason_id || '__none__'` di atas. */
+      const leadSourceData = leadSourceRows
+        .map((r) => ({ source: r.source, count: Number(r.cnt || 0) }))
         .sort((a, b) => b.count - a.count);
 
-      // ── Pipeline trend — prospect count per week (bulan ini vs bulan lalu) ─
-      const trendData = [1, 2, 3, 4].map(week => {
-        const weekStart = new Date(startThisMonth);
-        weekStart.setDate((week - 1) * 7 + 1);
-        const weekEnd = new Date(startThisMonth);
-        weekEnd.setDate(week * 7);
+      /* ── Pipeline Trend — 12 bulan berjalan, SATU garis ────────────────────
+         Sumbernya DEAL (res[14]), bucket-nya `trendBuckets` — bukan `P.buckets`,
+         supaya grafik ini tidak ikut bergeser saat selektor periode global diubah.
+         Nilai tiap titik = jumlah deal yang DIBUAT di bulan itu (per bulan,
+         naik-turun), BUKAN kumulatif.
+         ⚠️ GARIS PEMBANDING SENGAJA DIBUANG 8 Sep 2026, bukan kelalaian.
+         Pembanding yang benar untuk rentang 12 bulan adalah 12 bulan sebelumnya
+         — dan data 2025 NOL, Nexus baru jalan Januari 2026. Garis putus-putus
+         yang selalu menempel di nol hanya menambah kebingungan tanpa menambah
+         informasi. Hidupkan lagi begitu ada data tahun kedua: kembalikan query
+         pembanding (dulu slot [1]) + field `previous` di sini + Area kedua,
+         legend, dan baris `previous` di AreaTip. */
+      const inBucket = (rows, from, to) => rows.filter((r) => {
+        const d = new Date(r.created_at);
+        return d >= from && d < to;
+      }).length;
+      const trendData = trendBuckets.map((b) => ({
+        name:    b.name,
+        current: inBucket(dealRows, b.start, b.end),
+      }));
 
-        const thisCount = prospects.filter(p => {
-          const d = new Date(p.created_at);
-          return d >= weekStart && d <= weekEnd;
-        }).length;
-
-        const lmStart = new Date(weekStart); lmStart.setMonth(lmStart.getMonth() - 1);
-        const lmEnd   = new Date(weekEnd);   lmEnd.setMonth(lmEnd.getMonth() - 1);
-        const lastCount = lastMonthProspects.filter(p => {
-          const d = new Date(p.created_at);
-          return d >= lmStart && d <= lmEnd;
-        }).length;
-
-        return { name: `Minggu ${week}`, bulanIni: thisCount, bulanLalu: lastCount };
+      /* ── Sales performance — per PEMILIK DEAL (inquiries.owner_id) ───────
+         ⚠️ Deal ber-`owner_id` NULL DIKUMPULKAN ke baris "Tanpa Pemilik", bukan
+         dibuang. Sebelumnya baris NULL di-`return` diam-diam, sehingga widget
+         ini bisa berkata "belum ada deal yang ditutup" untuk periode yang sama
+         di mana kartu Win Rate menghitung deal itu — persis kelas kegagalan
+         senyap yang dibereskan di batch sebelumnya, lahir kembali dalam bentuk
+         baru.
+         NULL-nya sendiri bukan anomali data langka: `owner_id` lahir di Batch
+         Persiapan dengan backfill dari `created_by`, tapi TIDAK ADA satu pun
+         jalur tulis yang mengisinya sejak itu (insert InquiryFormPage tak
+         memuat kolom ini), jadi setiap inquiry BARU pasti NULL sampai jalur
+         tulisnya dibuat. Sampai saat itu, baris ini yang menahan angkanya tetap
+         rekonsiliasi dengan Win Rate dan Pipeline by Stage. */
+      const NO_OWNER = '__no_owner__';
+      const perOwner = {};
+      closedInq.forEach((r) => {
+        const id = r.owner_id || NO_OWNER;
+        if (!perOwner[id]) perOwner[id] = { won: 0, lost: 0, value: 0 };
+        if (r.status === 'WON') {
+          perOwner[id].won++;
+          perOwner[id].value += Number(r.estimated_value) || 0;
+        } else if (r.status === 'LOST') {
+          perOwner[id].lost++;
+        }
+      });
+      /* ── Target per sales ────────────────────────────────────────────────
+         Dijumlahkan dari baris-baris BULANAN dalam periode aktif, dan dihitung
+         TERPISAH per metrik: satu bulan boleh menetapkan hanya salah satunya
+         (CHECK di DB cuma menuntut minimal satu terisi), jadi cakupan bulan
+         untuk `value` bisa berbeda dari `deals`. */
+      const expectedMonths = targetMonths.length;
+      const targetByUser = {};
+      targetRows.forEach((t) => {
+        if (!t.user_id) return;
+        if (!targetByUser[t.user_id]) {
+          targetByUser[t.user_id] = { value: 0, deals: 0, hasValue: false, hasDeals: false, months: new Set() };
+        }
+        const acc = targetByUser[t.user_id];
+        acc.months.add(t.period_month);
+        if (t.target_value !== null && t.target_value !== undefined) {
+          acc.value += Number(t.target_value) || 0;
+          acc.hasValue = true;
+        }
+        if (t.target_deals !== null && t.target_deals !== undefined) {
+          acc.deals += Number(t.target_deals) || 0;
+          acc.hasDeals = true;
+        }
       });
 
-      // ── Sales performance ─────────────────────────────────────────────────
-      // prospek = active prospects assigned to the sales; won = active WON
-      // prospects + converted WON customers assigned to them. convRate uses the
-      // same "all deals" denominator as the global win rate (prospek + wonCust).
-      const salesMap = {};
-      (salesPerfRes.data || []).forEach(p => {
-        const id   = p.assigned_to;
-        const name = p.profiles?.full_name || 'Unknown';
-        if (!salesMap[id]) salesMap[id] = { name, prospek: 0, won: 0, wonCust: 0 };
-        salesMap[id].prospek++;
-        if ((p.pipeline_stage || '').toLowerCase() === 'won') salesMap[id].won++;
-      });
-      wonCustomers.forEach(c => {
-        const id = c.assigned_to;
-        if (!id) return;
-        const name = c.profiles?.full_name || 'Unknown';
-        if (!salesMap[id]) salesMap[id] = { name, prospek: 0, won: 0, wonCust: 0 };
-        salesMap[id].won++;
-        salesMap[id].wonCust++;
-      });
-      const salesPerfData = Object.values(salesMap)
-        .map(s => {
-          const deals = s.prospek + s.wonCust; // all deals that entered the pipeline
-          return { name: s.name, prospek: s.prospek, won: s.won, convRate: deals > 0 ? Math.round((s.won / deals) * 100) : 0 };
+      /* Pencapaian per sales. Mengembalikan null kalau tak ada baris target
+         sama sekali — pemanggilnya menampilkan "—", BUKAN 0%: "belum ada
+         target" dan "target tak tercapai" adalah dua pernyataan berbeda. */
+      const attainmentFor = (ownerId, won, wonValue) => {
+        const t = ownerId === NO_OWNER ? null : targetByUser[ownerId];
+        if (!t) return null;
+
+        /* WON > 0 tapi total nilainya 0 → nilai deal-nya memang belum pernah
+           diisi (inquiries.estimated_value baru punya jalur tulis 30 Agu 2026,
+           deal lama masih NULL). Ini BUKAN 0%: nol persen mengklaim "tak
+           menghasilkan apa-apa", padahal yang terjadi adalah hasilnya tak
+           terukur — dua hal yang sangat berbeda bagi orang yang dinilai.
+           Keputusan Den, menyimpang sadar dari aturan "aktual 0 → 0%". */
+        const valueUnmeasured = t.hasValue && won > 0 && wonValue === 0;
+
+        return {
+          // Target 0 → null, bukan pembagian nol.
+          valuePct: (t.hasValue && t.value > 0 && !valueUnmeasured)
+            ? Math.round((wonValue / t.value) * 100) : null,
+          valueUnmeasured,
+          dealsPct: (t.hasDeals && t.deals > 0)
+            ? Math.round((won / t.deals) * 100) : null,
+          monthsCovered: t.months.size,
+          expectedMonths,
+        };
+      };
+
+      const salesPerfData = Object.entries(perOwner)
+        .map(([id, s]) => {
+          const dec = s.won + s.lost;
+          return {
+            ownerId:   id,
+            name:      id === NO_OWNER ? 'Unassigned' : (ownerNames[id] || '(unnamed)'),
+            noOwner:   id === NO_OWNER,
+            won:       s.won,
+            lost:      s.lost,
+            value:     s.value,
+            convRate:  dec > 0 ? Math.round((s.won / dec) * 100) : 0,
+            att:       attainmentFor(id, s.won, s.value),
+          };
         })
-        .sort((a, b) => b.prospek - a.prospek);
+        // "Tanpa Pemilik" selalu di dasar tabel — ia keranjang sisa, bukan
+        // salesperson yang sedang diperingkat.
+        .sort((a, b) => (a.noOwner - b.noOwner) || (b.won - a.won) || (b.value - a.value));
 
-      // ── Recent activity (unified feed: prospect/inquiry/quotation/activity) ──
+      // ── Recent activity (feed terpadu) ──────────────────────────────────
       const feedEvents = await feedPromise;
-      const recentActivity = feedEvents.slice(0, 7).map(ev => ({
-        type: ev.type,                 // prospect | inquiry | quotation | activity → ACT_META
+      const recentActivity = feedEvents.slice(0, 7).map((ev) => ({
+        type: ev.type,
         text: ev.title,
         co:   ev.subtitle,
         time: fmtTimeAgo(ev.timestamp),
         user: ev.user_name || '—',
       }));
 
-      // ── S2 personal activity KPIs ───────────────────────────────────────────
-      const callsThisWeek       = (callsWeekRes.data  || []).length;
-      const visitsThisWeek      = (visitsWeekRes.data || []).length;
-      const quotationsThisMonth = (quotMonthRes.data  || []).length;
-      const SQL_STAGES = new Set(['QUALIFIED', 'PROPOSAL', 'NEGOTIATION', 'WON']);
-      const sqlThisMonth = prospects.filter(p => {
-        const created = new Date(p.created_at);
-        return created >= startThisMonth && SQL_STAGES.has((p.pipeline_stage || '').toUpperCase());
-      }).length;
+      if (failed.length) setPartialFail(failed);
 
       setDashData({
-        totalProspects, activeProspects, totalDeals, totalInquiries, totalQuotations, winRate,
-        stagesData, recentActivity,
-        trendData, leadSourceData, salesPerfData,
+        activeProspects, totalInquiries, totalQuotations,
+        winRate, wonCount, lostCount, cancelledCount, decided,
+        stagesData, recentActivity, trendData, leadSourceData, salesPerfData,
+        lifecycleFunnel, lifecycleExits, lossReasonData, conversionData, mqlData,
+        agingRows, ageUnknown, staleRows, staleTotal, staleCap: STALE_CAP,
+        loadRows, openDealTotal,
         callsThisWeek, visitsThisWeek, quotationsThisMonth, sqlThisMonth,
+        totalAccounts, degraded,
       });
     } catch (err) {
       console.error('[CRMDashboardPage] fetch error:', err);
-      setDashError(err.message || 'Gagal memuat data dashboard.');
+      setDashError(err.message || 'Failed to load dashboard data.');
     } finally {
       setDashLoading(false);
     }
-  }, [profile?.company_id, profile?.id, isSalesOnly]);
+  }, [activeCompanyId, profile?.company_id, profile?.id, isSalesOnly, isAllEntities, period]);
 
   useEffect(() => { fetchDash(); }, [fetchDash]);
 
@@ -2200,14 +3347,14 @@ function CRMDashboardPage() {
     Promise.all([
       fetchOperationalRoster(profile.company_id),
       // Akun parkir Lead Pool tak boleh dipilih untuk visit baru — is_in_lead_pool=false.
-      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
+      supabase.from('accounts').select('id, name').eq('company_id', profile.company_id).in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool', 'customer', 'free_agent']).eq('is_in_lead_pool', false).is('deleted_at', null).order('name').limit(1000), /* TODO: hapus 'lead_pool' setelah backfill (AUDIT_CRM_FLOW.md) */
     ]).then(([sales, prospRes]) => {
       setSalesProfiles(sales);
       // Suntik akun yang SUDAH tertaut ke visit yang diedit (walau parkir) supaya relasi lama tak hilang.
       let list = prospRes.data || [];
       const editing = editVisitId ? calVisits.find(x => x.id === editVisitId) : null;
       if (editing?.prospect_id && !list.some(p => p.id === editing.prospect_id)) {
-        list = [{ id: editing.prospect_id, name: editing.prospect && editing.prospect !== '—' ? editing.prospect : '(akun tertaut)' }, ...list];
+        list = [{ id: editing.prospect_id, name: editing.prospect && editing.prospect !== '—' ? editing.prospect : '(linked account)' }, ...list];
       }
       setProspectOptions(list);
     });
@@ -2217,11 +3364,11 @@ function CRMDashboardPage() {
   const EMPTY_DRAFT = { visit_date: '', visit_time: '', prospect_id: '', salesperson_id: '', location: '', notes: '', status: 'scheduled', visit_type: '', point_of_meeting: '', mom: '', follow_up: '' };
 
   const handleSaveVisit = useCallback(async () => {
-    if (!visitDraft.visit_type) { setVisitError('Jenis kunjungan wajib dipilih.'); return; }
-    if (!visitDraft.visit_date) { setVisitError('Tanggal kunjungan wajib diisi.'); return; }
-    if (!visitDraft.salesperson_id) { setVisitError('Salesperson wajib dipilih.'); return; }
+    if (!visitDraft.visit_type) { setVisitError('Visit type is required.'); return; }
+    if (!visitDraft.visit_date) { setVisitError('Visit date is required.'); return; }
+    if (!visitDraft.salesperson_id) { setVisitError('Salesperson is required.'); return; }
     if (visitDraft.status === 'cancelled' && !visitDraft.notes?.trim()) {
-      setVisitError('Alasan pembatalan wajib diisi.'); return;
+      setVisitError('A cancellation reason is required.'); return;
     }
     setVisitSaving(true);
     setVisitError(null);
@@ -2264,7 +3411,7 @@ function CRMDashboardPage() {
       // VISIT_STATUS lookup + the migrated logs stay consistent.
       if (visitId) {
         const logNote = editVisitId
-          ? (prevStatus !== visitDraft.status ? null : 'Data visit diperbarui')
+          ? (prevStatus !== visitDraft.status ? null : 'Visit updated')
           : 'Visit dibuat';
         supabase.from('activity_logs').insert({
           activity_id:  visitId,
@@ -2281,31 +3428,52 @@ function CRMDashboardPage() {
       fetchDash();
       fetchCalVisits();
     } catch (err) {
-      setVisitError('Gagal simpan: ' + err.message);
+      setVisitError('Failed to save: ' + err.message);
     } finally {
       setVisitSaving(false);
     }
   }, [visitDraft, editVisitId, calVisits, profile, fetchDash, fetchCalVisits]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* Win Rate & Loss Reason keduanya diturunkan dari `closedInq`, jadi guard
+     yang sama (salesPerf) ikut menjatuhkan keduanya. Guard itu memang sudah
+     menyebut "win rate" di teksnya — tanpa penanda ini, banner mengatakan win
+     rate mungkin salah sementara kartunya tetap memajang persentase.
+
+     ⚠️ HARUS tetap DI ATAS `kpisReal`. `const` tidak ter-hoist nilainya (TDZ),
+     dan KEDUA array KPI di bawah membacanya — dulu ia terjepit di antara
+     keduanya, sehingga `kpisReal` menyentuhnya sebelum ia ada:
+     "ReferenceError: Cannot access 'winRateDegraded' before initialization",
+     white-screen yang LOLOS dari `npm run build` karena hanya muncul saat
+     dieksekusi. Kelas bug yang sama dengan insiden `handleNotifClick` vs
+     `navigateTo` (22 Jun 2026) — jangan dipindah ke bawah lagi. */
+  const winRateDegraded = !!dashData?.degraded?.salesPerf;
+
   // ── KPI cards from real data ─────────────────────────────────────────────
   const kpisReal = dashData ? [
-    { label: "Prospect Aktif", icon: "users",       value: String(dashData.activeProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
+    { label: "Active Prospects", icon: "users",       value: String(dashData.activeProspects), unit: "prospect",  accent: NAVY,      accentBg: "#EAF0F8", trend: null },
     { label: "Total Inquiry",   icon: "filetext",    value: String(dashData.totalInquiries), unit: "inquiry",   accent: ORANGE,    accentBg: "#FBE6DA", trend: null },
     { label: "Total Quotation", icon: "receipt",     value: String(dashData.totalQuotations),unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null },
-    { label: "Win Rate",        icon: "checkcircle", value: String(dashData.winRate),        unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null },
+    // CANCELLED tidak masuk rumus Win Rate, tapi ikut ditampilkan di subtitle —
+    // dikeluarkan dari hitungan, bukan disembunyikan dari pembaca.
+    { label: "Win Rate",        icon: "kpiWinRate", value: winRateDegraded ? '—' : String(dashData.winRate), unit: "%", accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
+      subtitle: winRateDegraded
+        ? 'Closed deals hit the 1,000-row ceiling — the rate would be computed from partial data'
+        : `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled (not counted)` },
   ] : KPIS;
 
   // ── S2 — personal KPI cards (sales/operations view) ──────────────────────
   const progColor = (v, green, yellow) => v >= green ? '#22C55E' : v >= yellow ? '#F59E0B' : '#EF4444';
   const kpisSales = dashData ? [
-    { label: "Call Minggu Ini",     icon: "target",      value: String(dashData.callsThisWeek),       unit: "call",      accent: NAVY,      accentBg: "#EAF0F8", trend: null,
-      subtitle: `${dashData.callsThisWeek} / 60 target minggu ini`,       progress: { pct: Math.min(dashData.callsThisWeek / 60 * 100, 100),       color: progColor(dashData.callsThisWeek, 60, 30) } },
-    { label: "Visit Minggu Ini",    icon: "calendar",    value: String(dashData.visitsThisWeek),      unit: "visit",     accent: ORANGE,    accentBg: "#FBE6DA", trend: null,
-      subtitle: `${dashData.visitsThisWeek} / 5 target minggu ini`,        progress: { pct: Math.min(dashData.visitsThisWeek / 5 * 100, 100),       color: progColor(dashData.visitsThisWeek, 5, 3) } },
-    { label: "Quotation Bulan Ini", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
-      subtitle: `${dashData.quotationsThisMonth} / 20 target bulan ini`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
-    { label: "Win Rate Personal",   icon: "checkcircle", value: String(dashData.winRate),             unit: "%",         accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
-      subtitle: `dari ${dashData.totalDeals} prospect aktif` },
+    { label: "Calls This Week",     icon: "target",      value: String(dashData.callsThisWeek),       unit: "call",      accent: NAVY,      accentBg: "#EAF0F8", trend: null,
+      subtitle: `${dashData.callsThisWeek} / 60 target this week`,       progress: { pct: Math.min(dashData.callsThisWeek / 60 * 100, 100),       color: progColor(dashData.callsThisWeek, 60, 30) } },
+    { label: "Visits This Week",    icon: "calendar",    value: String(dashData.visitsThisWeek),      unit: "visit",     accent: ORANGE,    accentBg: "#FBE6DA", trend: null,
+      subtitle: `${dashData.visitsThisWeek} / 5 target this week`,        progress: { pct: Math.min(dashData.visitsThisWeek / 5 * 100, 100),       color: progColor(dashData.visitsThisWeek, 5, 3) } },
+    { label: "Quotations This Month", icon: "receipt",     value: String(dashData.quotationsThisMonth), unit: "quotation", accent: "#6E4B8C", accentBg: "#EEE7F4", trend: null,
+      subtitle: `${dashData.quotationsThisMonth} / 20 target this month`,    progress: { pct: Math.min(dashData.quotationsThisMonth / 20 * 100, 100), color: progColor(dashData.quotationsThisMonth, 20, 10) } },
+    { label: "Win Rate Personal",   icon: "kpiWinRate", value: winRateDegraded ? '—' : String(dashData.winRate), unit: "%", accent: "#1F8B4D", accentBg: "#DEF0E4", trend: null,
+      subtitle: winRateDegraded
+        ? 'Closed deals hit the 1,000-row ceiling — the rate would be computed from partial data'
+        : `${dashData.wonCount} won / ${dashData.decided} deals decided · ${dashData.cancelledCount} cancelled` },
   ] : KPIS;
 
   const kpiCards = isSalesOnly ? kpisSales : kpisReal;
@@ -2319,6 +3487,7 @@ function CRMDashboardPage() {
     </div>
   );
 
+
   return (
     <div className="nx-page-pad" style={D.root}>
       <style>{`
@@ -2331,6 +3500,157 @@ function CRMDashboardPage() {
         .bar-in{animation:chartFade .7s ease-out both;}
         .donut-in{animation:popIn .7s cubic-bezier(.34,1.2,.5,1) both;}
         @media (prefers-reduced-motion: reduce){.bar-in,.donut-in{animation:none;}}
+
+        /* ── KPI hero card ────────────────────────────────────────────────
+           EXCEPTION PALET YANG DISETUJUI, scoped HANYA ke 4 tile KPI ini.
+           #5C6070 / #EEAA8D / #B4E0F2 / #7FBBDA / #5A9CC3 ADA DI LUAR palet
+           resmi (navy #144682 / orange #E85A1E / cream #F6EFE3) — hasil
+           eksplorasi Claude Design yang sudah di-approve. JANGAN dipakai di
+           komponen lain, dan JANGAN "dibetulkan" balik ke palet standar.
+           Ditulis sebagai CSS (bukan objek D inline) karena butuh ::before /
+           ::after yang tak bisa diekspresikan lewat style inline. */
+        .kpi-grid{container-type:inline-size;}
+        .kpi{
+          position:relative; border-radius:14px;
+          /* Padding 33/23/31 = 32/22/30 lama + 1px, kompensasi border yang
+             dicabut. Geometri luar & posisi isi kartu TETAP SAMA PERSIS
+             (dulu border 1px + padding 32 = 33px dari tepi; sekarang padding
+             33 langsung).
+             Border 1px rgba(255,255,255,.10) DICABUT, bukan sekadar diwarnai
+             ulang: background kartu memakai background-clip:border-box
+             (bawaan) sehingga gradien 135deg-nya terlukis sampai border box,
+             sementara ::before/::after hanya menutup PADDING box karena
+             overflow:hidden meng-clip anak ke padding box. Akibatnya cincin
+             1px di seluruh keliling kartu memperlihatkan gradien mentah yang
+             tak tersentuh scrim — di paruh kanan-bawah warnanya peach, dan
+             terbaca sebagai garis oranye menyembul di luar kartu (paling
+             kentara di lengkung sudut kanan-bawah). background-clip:padding-box
+             menghilangkan oranyenya tapi menggantinya dengan cincin putih
+             (border jadi 10% putih di atas latar halaman), jadi border-nya
+             dilepas saja. */
+          padding:33px 23px 31px;
+          overflow:hidden;
+          display:flex; flex-direction:column;
+          /* Rasio 1.6:1 sebagai BATAS BAWAH, bukan kunci mati.
+             JANGAN pakai "aspect-ratio" di sini. aspect-ratio membuat tinggi
+             intrinsik kotak dihitung DARI rasio itu sendiri, sehingga
+             min-height:max-content ikut bernilai width/1.6 dan tak menahan
+             apa pun — terukur: tinggi bertahan 142,5px padahal isinya butuh
+             168px, dan foot menonjol 28px di bawah tepi kartu @1024.
+             Gantinya tinggi minimum diturunkan dari LEBAR TILE lewat container
+             query pada .kpi-grid: lebar tile = (lebar grid - total gap) /
+             jumlah kolom, lalu dibagi 1.6. Pembaginya mengikuti jumlah kolom
+             di tiap breakpoint .nx-grid-kpi (4 → 2 → 1 kolom, gap 16px).
+             Karena ini min-height murni, kotak bebas tumbuh saat kontennya
+             lebih tinggi (layar sempit) → nol clipping. */
+          min-height:calc((100cqw - 48px) / 6.4);
+          box-shadow:0 14px 30px rgba(10,20,38,.30), 0 2px 8px rgba(10,20,38,.16);
+          background:linear-gradient(135deg,#5C6070 0%,#5C6070 50%,#EEAA8D 50%,#EEAA8D 100%);
+        }
+        /* Blob biru. Lebar tile FLUID (grid repeat(4,minmax(0,1fr)) → ±218px
+           @1280 sampai ±386px @1920, dan 2/1 kolom di bawah 1024px), jadi
+           diameter px tetap hanya proporsional benar di satu lebar layar.
+           Nilai di bawah menerjemahkan rumus proporsi desain apa adanya:
+             diameter        = 1.585 × lebar_tile   → width:158.5%
+             left            = (w − d)/2            → left:-29.25%
+             puncak dari atas= 0.36 × tinggi_tile   → top:36%
+           "aspect-ratio:1/1" mengunci lingkaran sempurna, jadi persen di sini
+           TIDAK bisa membuatnya lonjong — itu sebabnya % aman dipakai walau
+           spek awal melarangnya. "top" dipakai, bukan "bottom", karena persen
+           pada bottom mengacu ke TINGGI sementara diameter mengacu ke LEBAR;
+           menaruh puncak lingkaran lewat "top" membuat keduanya tak tercampur. */
+        .kpi::after{
+          content:""; position:absolute; z-index:0;
+          width:158.5%; aspect-ratio:1/1; left:-29.25%; top:36%;
+          border-radius:50%;
+          background:radial-gradient(circle at 34% 22%,#B4E0F2 0%,#7FBBDA 55%,#5A9CC3 100%);
+          pointer-events:none;
+        }
+        /* SCRIM DIHAPUS TOTAL (keputusan Den) — dulu ada .kpi::before berisi
+           gradasi gelap di pita bawah supaya unit & hint terbaca. Sekarang
+           blob biru tampil penuh tanpa lapisan gelap apa pun, dan keterbacaan
+           teks bawah bersandar pada text-shadow saja.
+           Kalau kelak dipertimbangkan menghidupkannya lagi: ia HARUS
+           z-index:1, bukan 0. Scrim (::before) dan blob (::after) sama-sama
+           pseudo-element .kpi; kalau z-index-nya sama, urutan cat mengikuti
+           urutan tree dan ::after SELALU sesudah ::before, sehingga blob
+           menutup scrim sepenuhnya dan pita gelapnya tak pernah terlihat —
+           bug yang pernah terjadi dan butuh pixel-sampling untuk ketahuan. */
+        .kpi-top{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+        .kpi-icon{flex-shrink:0;opacity:.85;}
+        .kpi-label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.7);}
+        /* Angka besar berdiri SENDIRI di tengah sisa ruang antara kpi-top dan
+           kpi-foot; kotak inilah yang menyerap seluruh sisa tinggi, bukan
+           margin manual — jadi angkanya tetap di tengah berapa pun tinggi
+           kartunya. Unit pindah ke pojok kiri bawah (lihat .kpi-foot).
+           "flex:1 1 auto", BUKAN "flex:1": keduanya sama-sama menyerap sisa
+           ruang, tapi "flex:1" berarti flex-basis:0 sehingga tinggi baris 46px
+           tak ikut terhitung saat browser menentukan tinggi minimum kartu, dan
+           kartu jadi terpotong di layar sempit. flex-shrink tetap 1, tapi
+           min-height:auto bawaan flex item mencegahnya menyusut di bawah
+           tinggi kontennya sendiri. */
+        /* Grup value+unit menyerap seluruh sisa tinggi (lihat catatan
+           flex:1 1 auto di atas) dan meletakkan isinya di tengah kotak itu.
+           Dipakai GRID, bukan flex: butuh align-items:baseline supaya "%"
+           duduk di garis dasar angka, SEKALIGUS align-content:center supaya
+           barisnya di tengah vertikal. Pada flex satu-baris align-content
+           tak berlaku, dan mengaktifkan flex-wrap agar berlaku justru bikin
+           unit terlempar ke baris kedua di kolom sempit. */
+        .kpi-value-group{
+          position:relative;z-index:1;flex:1 1 auto;margin:0;
+          /* gap:0 — "%" harus MENEMPEL ke angka ("28.4%"), bukan "28.4 %". */
+          display:grid;grid-auto-flow:column;gap:0;
+          justify-content:center;align-content:center;align-items:baseline;
+        }
+        .kpi-value{
+          white-space:nowrap;
+          font-family:'Oswald',sans-serif;font-weight:700;font-size:46px;line-height:1;
+          color:#fff;letter-spacing:.02em;
+          text-shadow:0 2px 10px rgba(8,14,24,.35);
+        }
+        /* Bentuk dasar = unit INLINE ("%" di sebelah angka besar). Tetap putih
+           dengan shadow yang sama persis seperti .kpi-value, karena ia dibaca
+           sebagai satu kesatuan dengan angkanya ("28.4%"); membuatnya gelap
+           sendirian justru memutus kesatuan itu. Kontrasnya memang rendah
+           (1,45-1,51:1), sama seperti angka besar yang ia tempeli — diterima
+           sadar, lihat catatan di blok scrim. */
+        .kpi-unit{font-size:14px;font-weight:600;color:rgba(255,255,255,.72);white-space:nowrap;
+          text-shadow:0 2px 10px rgba(8,14,24,.35);}
+        /* Teks di kpi-foot justru dibalik jadi GELAP. Sejak scrim dihapus,
+           latar di belakang dua teks ini selalu bagian terang blob —
+           tersampling (167-170, 215-217, 236-237) di 1024/1440/2560 pada kedua
+           tampilan, tak ada satu lebar pun yang jatuh ke area slate gelap.
+           Teks putih di situ cuma 1,31-1,47:1 (praktis tak terbaca), dan
+           text-shadow TIDAK menolong: ia hanya menambah halo tipis, angkanya
+           tak bergerak sama sekali. Teks gelap membalik keadaan jadi
+           7,5-9,2:1 tanpa perlu mengembalikan lapisan gelap apa pun. */
+        .kpi-foot .kpi-unit{color:rgba(12,22,34,.88);text-shadow:none;}
+        /* Slot foot menempel dasar kartu dengan sendirinya karena grup
+           value+unit di atasnya flex:1 1 auto — tak perlu margin-top:auto
+           maupun margin tetap.
+           min-height WAJIB: sejak unit pindah ke grup value, slot ini
+           benar-benar kosong di 3 dari 4 tile tampilan admin, dan tanpa
+           min-height tingginya runtuh ke nol sehingga grup value ikut melar
+           dan posisi Y-nya beda antar-tile.
+           Nilainya 2.7em = TEPAT DUA baris hint (2 × 1.35em), bukan satu:
+           subtitle Win Rate membungkus jadi 2 baris di lebar desktop, jadi
+           satu baris saja membuat tile itu tetap meleset 15,5px dari tiga
+           tile lain. Dengan 2 baris, keempat tile punya tinggi foot yang sama
+           tanpa ada teks yang dipotong. Sisa: di 1024 subtitle itu jadi 3
+           baris DAN label panjang ikut membungkus, sehingga identitas Y di
+           lebar itu memang tak tercapai — pilihan sadar, daripada memotong
+           teks. */
+        .kpi-foot{
+          position:relative;z-index:1;margin-top:0;
+          display:flex;align-items:flex-end;justify-content:space-between;gap:8px;
+          font-size:11.5px;line-height:1.35;min-height:2.7em;
+        }
+        .kpi-hint{font-size:11.5px;line-height:1.35;color:rgba(12,22,34,.88);text-align:right;min-width:0;}
+        /* .nx-grid-kpi turun ke 2 kolom di bawah 1024px dan 1 kolom di bawah
+           640px (src/index.css); pembagi min-height ikut berubah supaya rasio
+           1.6:1 tetap jadi batas bawah yang benar di kedua mode itu. */
+        @media (max-width:1023.98px){ .kpi{min-height:calc((100cqw - 16px) / 3.2);} }
+        @media (max-width:639.98px){ .kpi{min-height:calc(100cqw / 1.6);} }
       `}</style>
       <div style={D.wrap}>
         {/* header */}
@@ -2344,11 +3664,11 @@ function CRMDashboardPage() {
               <span style={D.crumbCur}>Dashboard</span>
             </nav>
             <h1 style={D.title}>CRM Dashboard</h1>
-            <div style={D.sub}>{isSalesOnly ? `Dashboard personal · ${profile?.full_name || ''}` : 'Dashboard tim · semua data'}</div>
+            <div style={D.sub}>{isSalesOnly ? `Dashboard personal · ${profile?.full_name || ''}` : 'Team dashboard · all data'}</div>
           </div>
           <div style={D.seg}>
             {PERIODS.map((p) => (
-              <button key={p} onClick={() => { setPeriod(p); showToast("Periode: " + p, "refresh"); }}
+              <button key={p} onClick={() => { setPeriod(p); showToast("Period: " + p, "refresh"); }}
                 style={{ ...D.segBtn, ...(period === p ? D.segBtnActive : null) }}>
                 {p}
               </button>
@@ -2361,6 +3681,19 @@ function CRMDashboardPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: 13, marginBottom: 16 }}>
             <Icon name="alert" size={15} />
             {dashError}
+          </div>
+        )}
+
+        {/* Kegagalan SEBAGIAN — halaman tetap tampil, tapi bagian yang gagal
+            disebut namanya. Tanpa ini, fetch yang gagal berubah jadi angka nol
+            yang tak bisa dibedakan dari nol yang memang benar. */}
+        {!dashError && partialFail.length > 0 && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E", fontSize: 13, marginBottom: 16 }}>
+            <Icon name="alert" size={15} />
+            <span>
+              Some data failed to load — the following figures may not be correct:{' '}
+              <b>{partialFail.join(', ')}</b>. Try reloading the page.
+            </span>
           </div>
         )}
 
@@ -2404,7 +3737,7 @@ function CRMDashboardPage() {
               prospectOptions={prospectOptions}
               isEdit={!!editVisitId}
               canCancel={canCancel}
-              onCancelBlocked={() => showToast('Hanya Manager ke atas yang dapat membatalkan kunjungan', 'error')}
+              onCancelBlocked={() => showToast('Only Manager and above can cancel a visit', 'error')}
             />
             <VisitDetailModal
               visit={visitDetail}
@@ -2431,13 +3764,11 @@ function CRMDashboardPage() {
               }}
             />
           </>
-        ) : tab === "activity" ? (
-          <ActivityReportTab profile={profile} isSalesOnly={isSalesOnly} showToast={showToast} />
         ) : (
           <React.Fragment>
           {/* row 1 — KPI */}
           {dashLoading ? <SkeletonRow /> : (
-            <div className="nx-grid-kpi" style={D.kpiRow}>
+            <div className="nx-grid-kpi kpi-grid" style={D.kpiRow}>
               {kpiCards.map((k) => <KpiCard key={k.label} data={k} />)}
             </div>
           )}
@@ -2445,27 +3776,80 @@ function CRMDashboardPage() {
           {/* S2 — Aktivitas Saya (sales/operations view only) */}
           {!dashLoading && isSalesOnly && dashData && <ActivitySaya data={dashData} />}
 
+          {dashLoading ? <SkeletonBelow isSalesOnly={isSalesOnly} /> : (<>
           {/* row 2 — pipeline trend */}
           <div style={{ marginBottom: 16 }}>
-            <PipelineTrend data={dashData?.trendData || []} />
+            <PipelineTrend data={dashData?.trendData || []} degraded={!!dashData?.degraded?.pipelineTrend} />
           </div>
 
           {/* row 3 — charts */}
           <div className="nx-grid-2" style={D.chartsRow}>
-            <PipelineByStage stages={dashData?.stagesData} />
-            <LeadSourceDonut data={dashData?.leadSourceData || []} />
+            <PipelineByStage stages={dashData?.stagesData} conversion={dashData?.conversionData || []}
+              degraded={!!dashData?.degraded?.pipelineByStage || !!dashData?.degraded?.stageHistory} />
+            <LeadSourceDonut data={dashData?.leadSourceData || []} degraded={!!dashData?.degraded?.leadSource} />
           </div>
 
-          {/* row 4 — tables (team view only — hidden for sales/operations) */}
+          {/* row 3b — dua funnel baru. Lifecycle akun (sumbu AKUN) sengaja
+              bersebelahan dengan Alasan Kalah (sumbu DEAL) supaya perbedaan
+              kedua sumbu itu terbaca langsung, bukan tercampur jadi satu. */}
+          <div className="nx-grid-3" style={{ ...D.tablesRow, gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
+            <LifecycleFunnel
+              funnel={dashData?.lifecycleFunnel || []}
+              exits={dashData?.lifecycleExits || []}
+              total={dashData?.totalAccounts ?? null}
+              degraded={!!dashData?.degraded?.lifecycleFunnel}
+            />
+            {/* Pie MQL→SQL duduk tepat di samping funnel lifecycle: keduanya
+                sumbu AKUN dan membaca kohort yang sama, jadi angkanya saling
+                menjelaskan. */}
+            <MqlToSqlPie data={dashData?.mqlData} degraded={!!dashData?.degraded?.mql} />
+            <LossReasonBreakdown
+              data={dashData?.lossReasonData || []}
+              total={dashData?.lostCount || 0}
+              degraded={!!dashData?.degraded?.salesPerf}
+            />
+          </div>
+
+          {/* row 3d — beban pipeline per sales, lebar penuh. Dulu berbagi baris
+              dengan "Nilai Pipeline Berbobot"; sesudah widget itu di-drop,
+              tabelnya melebar sendiri alih-alih meninggalkan kolom kosong.
+              Pola satu-kartu-selebar-baris ini sama dengan row 4 di bawah. */}
+          <div style={{ marginBottom: 16 }}>
+            <ActivePipelineLoad
+              rows={dashData?.loadRows || []}
+              totalDeals={dashData?.openDealTotal || 0}
+            />
+          </div>
+
+          {/* row 3c — aging (sempit) + daftar deal stale (lebar). Keduanya
+              snapshot kondisi hari ini dan saling menjelaskan: median yang
+              melewati ambang seharusnya punya baris-barisnya di tabel sebelah. */}
+          <div className="nx-grid-2" style={{ ...D.tablesRow, gridTemplateColumns: "minmax(0,1fr) minmax(0,1.9fr)" }}>
+            <AgingPerStage
+              rows={dashData?.agingRows || []}
+              unknown={dashData?.ageUnknown || 0}
+              degraded={!!dashData?.degraded?.stageHistory}
+            />
+            <StaleDeals
+              rows={dashData?.staleRows || []}
+              total={dashData?.staleTotal || 0}
+              cap={dashData?.staleCap || 30}
+              degraded={!!dashData?.degraded?.stageHistory}
+            />
+          </div>
+
+          {/* row 4 — tabel (team view only — hidden for sales/operations).
+              Dulu dua kolom; "New Leads by Source" dilebur ke donut Lead Source
+              karena sumber datanya sama persis. */}
           {!isSalesOnly && (
-            <div className="nx-grid-2" style={D.tablesRow}>
-              <SalesPerformance data={dashData?.salesPerfData || []} />
-              <LeadsBySource sourceData={dashData?.leadSourceData || []} />
+            <div style={{ marginBottom: 16 }}>
+              <SalesPerformance data={dashData?.salesPerfData || []} degraded={!!dashData?.degraded?.salesPerf} />
             </div>
           )}
 
           {/* row 5 — activity */}
           <RecentActivity items={dashData?.recentActivity} />
+          </>)}
           </React.Fragment>
         )}
       </div>

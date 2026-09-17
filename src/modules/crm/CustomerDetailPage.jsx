@@ -42,7 +42,7 @@ const TEMPO_TERMS = new Set([
   'Net 30 Days',
   'Net 45 Days',
   'Net 60 Days',
-  'Top Net 7 hari',
+  'Top Net 7 days',
 ]);
 const isTempoTerm = (name) => !!name && TEMPO_TERMS.has(String(name).trim());
 
@@ -54,6 +54,7 @@ const ICONS = {
   trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
   x:          '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   check:      '<path d="M20 6 9 17l-5-5"/>',
+  plus:       '<path d="M5 12h14"/><path d="M12 5v14"/>',
   save:       '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
   info:       '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   briefcase:  '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
@@ -98,7 +99,7 @@ const TIER_CFG = {
   C: { bg: '#F1E1D2', fg: '#9A5B2C' },
 };
 const STATUS_CFG = {
-  // accounts.account_status segments (lifecycle akun)
+  // accounts.lifecycle_stage segments (lifecycle akun)
   lead:       { bg: '#EFEAF6', fg: '#6A3D9A', dot: '#7A4E8C', label: 'Lead'       },
   mql:        { bg: '#E6EEF9', fg: '#2A5B8C', dot: '#2A5B8C', label: 'MQL'        },
   sql:        { bg: '#E1ECF7', fg: '#1B4D8A', dot: '#1B4D8A', label: 'SQL'        },
@@ -168,7 +169,7 @@ const BANT_FIELD_DEFS = [
   { key: 'bant_origin',         label: 'Asal',            icon: 'globe' },
   { key: 'bant_destination',    label: 'Tujuan',          icon: 'mappin' },
   { key: 'bant_frequency',      label: 'Frekuensi',       icon: 'repeat' },
-  { key: 'bant_current_vendor', label: 'Vendor Saat Ini', icon: 'truck' },
+  { key: 'bant_current_vendor', label: 'Current Vendor', icon: 'truck' },
   { key: 'bant_payment',        label: 'Payment',         icon: 'creditcard' },
   { key: 'bant_decision_maker', label: 'Decision Maker',  icon: 'user' },
 ];
@@ -191,7 +192,7 @@ const txt = (x) => (x == null || x === '') ? '—' : x;
 const initials = (s) => ((s || '?').replace(/^PT\s+|^CV\s+/i, '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) || '?';
 const picInitials = (s) => (s || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
 const colorFor = (s) => PIC_COLORS[[...(s || '?')].reduce((a, c) => a + c.charCodeAt(0), 0) % PIC_COLORS.length];
-const statusOf = (c) => c.account_status || c.status || 'customer';
+const statusOf = (c) => c.lifecycle_stage || c.status || 'customer';
 
 // ─── Style tokens (ported from design) ──────────────────────────────────────────
 const S = {
@@ -352,7 +353,7 @@ function VisitRow({ v }) {
       {hasDetail && (
         <button type="button" className="cd-expand" style={S.expandBtn} onClick={() => setOpen(o => !o)}>
           <Icon name="chevdown" size={14} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .18s ease' }} />
-          {open ? 'Sembunyikan detail' : 'Lihat MOM & tindak lanjut'}
+          {open ? 'Sembunyikan detail' : 'View MOM & follow-up'}
         </button>
       )}
       {open && hasDetail && (
@@ -365,7 +366,7 @@ function VisitRow({ v }) {
           )}
           {v.follow_up && v.follow_up.trim() && (
             <div style={{ ...S.expandBox, background: '#FFF6EE', borderColor: '#F6E2D2' }}>
-              <div style={{ ...S.expandLbl, color: '#C8521B' }}>Tindak Lanjut</div>
+              <div style={{ ...S.expandLbl, color: '#C8521B' }}>Follow-up</div>
               <div style={S.expandText}>{v.follow_up}</div>
             </div>
           )}
@@ -390,7 +391,11 @@ const INQ_STATUS_TONE = {
   OPEN:      { bg: '#E1ECF5', fg: '#2A5B8C', label: 'Open'      },
   IN_REVIEW: { bg: '#F8ECCF', fg: '#9A6B0E', label: 'In Review' },
   QUOTED:    { bg: '#ECE3F4', fg: '#6E4B8C', label: 'Quoted'    },
-  WON:       { bg: '#E4F0E5', fg: '#2E7D4F', label: 'Won'       },
+  // Won disinkronkan ke navy mengikuti InquiryListPage (batch redesign v3):
+  // status yang sama tak boleh tampil hijau di satu layar dan navy di layar lain.
+  // Enam entri lain SENGAJA belum ikut — sisanya menyusul saat konstanta status
+  // CRM bersama dibuat (tech debt LOW di komentar atas), bukan disalin lagi di sini.
+  WON:       { bg: '#E1E9F2', fg: '#144682', label: 'Won'       },
   LOST:      { bg: '#F6E0DB', fg: '#B23227', label: 'Lost'      },
   CANCELLED: { bg: '#EEE9DC', fg: '#6B6F5E', label: 'Cancelled' },
 };
@@ -424,25 +429,25 @@ function InqPills({ label, values }) {
 function InquiryDetailBlock({ inq }) {
   const scalars = [
     { l: 'Route',          v: inq.route },
-    { l: 'Nama Barang',    v: inq.goods_name },
+    { l: 'Item Name',    v: inq.goods_name },
     { l: 'HS Code',        v: inq.hs_code },
-    { l: 'Berat (KG)',     v: inq.weight_kg != null ? String(inq.weight_kg) : '' },
+    { l: 'Weight (KG)',     v: inq.weight_kg != null ? String(inq.weight_kg) : '' },
     { l: 'Volume (CBM)',   v: inq.volume_cbm != null ? String(inq.volume_cbm) : '' },
     { l: 'Deadline Quote', v: inq.deadline_quote ? fmtDateShort(inq.deadline_quote) : '' },
   ].filter((f) => f.v != null && f.v !== '');
   const pills = [
     { l: 'Incoterm',         v: inq.incoterms },
-    { l: 'Jenis Kontainer',  v: inq.container_types },
+    { l: 'Container Type',  v: inq.container_types },
     { l: 'Cargo Type',       v: inq.cargo_types },
-    { l: 'Layanan Tambahan', v: inq.additional_services },
+    { l: 'Additional Services', v: inq.additional_services },
   ].filter((p) => Array.isArray(p.v) && p.v.filter(Boolean).length);
   const hasNotes = inq.notes && String(inq.notes).trim();
   const isEmpty = !scalars.length && !pills.length && !hasNotes;
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, marginBottom: 10 }}>Detail Permintaan</div>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, marginBottom: 10 }}>Request Details</div>
       {isEmpty ? (
-        <div style={{ fontSize: 12.5, color: INK_FAINT }}>Detail permintaan belum diisi.</div>
+        <div style={{ fontSize: 12.5, color: INK_FAINT }}>Request details not filled in yet.</div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px 20px' }}>
           {scalars.map((f) => <InqField key={f.l} label={f.l} value={f.v} />)}
@@ -478,7 +483,7 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry, onViewQuotation, onCrea
           <span style={{ fontSize: 12, color: INK_FAINT, marginLeft: 'auto' }}>{fmtDateShort(inq.created_at)}</span>
           <span style={{ ...S.badge, background: st.bg, color: st.fg, padding: '3px 10px' }}>{st.label}</span>
           <span style={{ ...S.badge, background: n ? '#EAF0F8' : '#F4EFE5', color: n ? NAVY : INK_FAINT, padding: '3px 10px' }}>
-            {n ? `${n} quotation` : 'Belum ada quotation'}
+            {n ? `${n} quotation` : 'No quotations yet'}
           </span>
         </button>
         {onEditInquiry && (
@@ -490,7 +495,7 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry, onViewQuotation, onCrea
         {onCreatePRF && (
           <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5, flex: '0 0 auto' }}
             onClick={() => onCreatePRF(inq)}>
-            <Icon name="filecheck" size={14} />Buat PRF
+            <Icon name="filecheck" size={14} />Create PRF
           </button>
         )}
       </div>
@@ -499,13 +504,13 @@ function InquiryHistoryRow({ inq, quotes, onEditInquiry, onViewQuotation, onCrea
           <InquiryDetailBlock inq={inq} />
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, marginBottom: 10 }}>Quotation</div>
           {n === 0 ? (
-            <div style={{ fontSize: 12.5, color: INK_FAINT }}>Inquiry ini belum punya quotation.</div>
+            <div style={{ fontSize: 12.5, color: INK_FAINT }}>This deal has no quotation yet.</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
-                    {['Quotation No', 'Tanggal', 'Nilai', 'Status', 'Aksi'].map((h) => (
+                    {['Quotation No', 'Date', 'Nilai', 'Status', 'Aksi'].map((h) => (
                       <th key={h} style={{ textAlign: h === 'Nilai' ? 'right' : 'left', padding: '7px 8px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -577,7 +582,7 @@ function HealthComp({ comp }) {
 function healthStatus(score) {
   if (score > 75) return { key: 'HEALTHY', color: GREEN, bg: '#DCFCE7', fg: '#15803D', recIcon: 'check', rec: 'Customer engaged & growing. Lanjutkan cadence normal.' };
   if (score >= 60) return { key: 'MONITOR', color: YELLOW, bg: '#FEF3C7', fg: '#B45309', recIcon: 'activity', rec: 'Sinyal campuran. Tingkatkan frekuensi touch & investigasi root cause.' };
-  return { key: 'AT-RISK', color: RED, bg: '#FEE2E2', fg: '#B91C1C', recIcon: 'alert', rec: 'Trigger Save Playbook. Jadwalkan visit face-to-face dalam 3 hari kerja.' };
+  return { key: 'AT-RISK', color: RED, bg: '#FEE2E2', fg: '#B91C1C', recIcon: 'alert', rec: 'Trigger the Save Playbook. Schedule a face-to-face visit within 3 working days.' };
 }
 
 // TODO(health-score): replace this heuristic with a real auto-calculated score once
@@ -613,7 +618,7 @@ function computeHealth(customer, prospect, visits, primaryContact) {
     { name: 'BANT Qualification', weight: 30, value: bantPct,      icon: 'target' },
     { name: 'Pipeline Status',    weight: 20, value: pipeline,     icon: 'trendingup' },
     { name: 'Kelengkapan Profil', weight: 10, value: completeness, icon: 'usercheck' },
-    { name: 'Status Kontrak',     weight: 10, value: contract,     icon: 'filecheck' },
+    { name: 'Contract Status',     weight: 10, value: contract,     icon: 'filecheck' },
   ];
   const score = Math.round(components.reduce((s, c) => s + (c.value * c.weight) / 100, 0));
   return { score, components };
@@ -652,7 +657,7 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
 
   const handleSave = async () => {
     const name = draft.name.trim();
-    if (!name) { setNameError('Nama wajib diisi'); return; }
+    if (!name) { setNameError('Name is required'); return; }
     setSaving(true);
     const ok = await onSave({ ...draft, name });
     setSaving(false);
@@ -664,14 +669,14 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
       <div onMouseDown={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: 'min(480px, 100%)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', boxShadow: '0 24px 64px rgba(19,35,59,0.28)' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 24px', borderBottom: '1px solid ' + LINE, background: '#FBF6EC' }}>
           <span style={{ color: NAVY, display: 'flex' }}><Icon name="user" size={18} strokeWidth={2.2} /></span>
-          <h3 style={{ margin: 0, fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 17, fontWeight: 700, color: INK, flex: 1 }}>{initial ? 'Edit Kontak' : 'Tambah Kontak'}</h3>
+          <h3 style={{ margin: 0, fontFamily: "'Montserrat', system-ui, sans-serif", fontSize: 17, fontWeight: 700, color: INK, flex: 1 }}>{initial ? 'Edit Contact' : 'Add Contact'}</h3>
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: INK_SOFT, display: 'flex', padding: 4 }}><Icon name="x" size={18} /></button>
         </header>
 
         <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <label style={labelStyle}>Nama <span style={{ color: '#C0392B' }}>*</span></label>
-            <input value={draft.name} onChange={(e) => { set('name', e.target.value); setNameError(null); }} style={{ ...inputStyle, borderColor: nameError ? '#C0392B' : LINE }} placeholder="Nama kontak" />
+            <input value={draft.name} onChange={(e) => { set('name', e.target.value); setNameError(null); }} style={{ ...inputStyle, borderColor: nameError ? '#C0392B' : LINE }} placeholder="Contact name" />
             {nameError && <span style={{ fontSize: 11.5, color: '#C0392B', marginTop: 4, display: 'block' }}>{nameError}</span>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -689,7 +694,7 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <label style={labelStyle}>Email</label>
-              <input type="email" value={draft.email} onChange={(e) => set('email', e.target.value)} style={inputStyle} placeholder="nama@perusahaan.com" />
+              <input type="email" value={draft.email} onChange={(e) => set('email', e.target.value)} style={inputStyle} placeholder="name@company.com" />
             </div>
             <div>
               <label style={labelStyle}>Telepon</label>
@@ -701,15 +706,15 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
             Kontak aktif
           </label>
           <div>
-            <label style={labelStyle}>Catatan</label>
-            <textarea value={draft.notes} onChange={(e) => set('notes', e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} placeholder="Catatan tambahan…" />
+            <label style={labelStyle}>Notes</label>
+            <textarea value={draft.notes} onChange={(e) => set('notes', e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} placeholder="Additional notes…" />
           </div>
         </div>
 
         <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: '1px solid ' + LINE, background: '#FBF6EC' }}>
-          <button type="button" onClick={onClose} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: '1px solid ' + LINE, background: '#fff', color: INK_SOFT, fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Batal</button>
+          <button type="button" onClick={onClose} disabled={saving} style={{ height: 40, padding: '0 16px', borderRadius: 10, border: '1px solid ' + LINE, background: '#fff', color: INK_SOFT, fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
           <button type="button" onClick={handleSave} disabled={saving} style={{ height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: NAVY, color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-            {saving ? 'Menyimpan…' : (initial ? 'Simpan Perubahan' : 'Simpan Kontak')}
+            {saving ? 'Saving…' : (initial ? 'Save Changes' : 'Save Contact')}
           </button>
         </footer>
       </div>
@@ -718,7 +723,7 @@ function ContactFormModal({ open, initial, onClose, onSave }) {
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────────
-export default function CustomerDetailPage({ id, onBack, showToast, onEditInquiry, onViewQuotation, onCreatePRF, onViewPRF, initialTab }) {
+export default function CustomerDetailPage({ id, onBack, showToast, onCreateInquiry, onEditInquiry, onViewQuotation, onCreatePRF, onViewPRF, initialTab }) {
   const { profile, erpRole, erpRoles, user } = useAuth();
   // Delete customer is restricted to super_admin (soft-delete via deleted_at).
   const canDelete = erpRole === 'super_admin';
@@ -861,7 +866,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         const ids = [...new Set(rows.map(a => a.assigned_to).filter(Boolean))];
         const nm = {};
         if (ids.length) {
-          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids).limit(1000);
           (profs || []).forEach(p => { nm[p.id] = p.full_name; });
         }
         setVisits(rows.map(a => ({
@@ -898,7 +903,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         const ids = [...new Set(rows.map(a => a.assigned_to).filter(Boolean))];
         const nm = {};
         if (ids.length) {
-          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids).limit(1000);
           (profs || []).forEach(p => { nm[p.id] = p.full_name; });
         }
         setActivities(rows.map(a => ({
@@ -986,12 +991,13 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         .eq('account_id', id)
         .is('deleted_at', null)
         .order('is_primary', { ascending: false })
-        .order('name');
+        .order('name')
+        .limit(1000);
       if (error) throw error;
       setContacts(data || []);
       setContactsLoaded(true);
     } catch (err) {
-      setContactsError(err.message || 'Gagal memuat kontak.');
+      setContactsError(err.message || 'Failed to load contacts.');
     } finally {
       setContactsLoading(false);
     }
@@ -1097,8 +1103,8 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
     // penyimpanannya memang berhasil.
     if (ok && !stageWritable) {
       showToast(stageKnown
-        ? `Stage "${seedStage}" sekarang mengikuti status inquiry — stage tidak diubah. Perubahan lain tersimpan.`
-        : `Stage "${seedStage || '(kosong)'}" tidak dikenal — stage tidak diubah. Perubahan lain tersimpan.`);
+        ? `Stage "${seedStage}" now follows the inquiry status. Stage was not changed; other changes were saved.`
+        : `Stage "${seedStage || '(empty)'}" is not recognized. Stage was not changed; other changes were saved.`);
     }
     return ok;
   };
@@ -1146,11 +1152,11 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         .update({ deleted_at: new Date().toISOString(), updated_by: profile.id })
         .eq('id', id);
       if (error) throw error;
-      showToast?.('Customer dihapus.', 'success');
+      showToast?.('Customer deleted.', 'success');
       setConfirmDel(false);
       onBack?.();
     } catch (err) {
-      showToast?.('Gagal menghapus: ' + err.message, 'error');
+      showToast?.('Failed to delete: ' + err.message, 'error');
     } finally {
       setDeleting(false);
     }
@@ -1167,9 +1173,9 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       if (error) throw error;
       setCustomer(c => ({ ...c, notes: notesDraft || null }));
       setEditNotes(false);
-      showToast?.('Notes diperbarui ✨');
+      showToast?.('Notes updated');
     } catch (err) {
-      showToast?.('Gagal menyimpan notes: ' + err.message, 'error');
+      showToast?.('Failed to save notes: ' + err.message, 'error');
     } finally {
       setSavingNotes(false);
     }
@@ -1203,11 +1209,11 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
           .insert({ ...payload, account_id: id, company_id: customer.company_id }));
       }
       if (error) throw error;
-      showToast?.(editingContact ? 'Kontak diperbarui.' : 'Kontak ditambahkan.', 'success');
+      showToast?.(editingContact ? 'Contact updated.' : 'Contact added.', 'success');
       fetchContacts();
       return true;
     } catch (err) {
-      showToast?.('Gagal menyimpan kontak: ' + err.message, 'error');
+      showToast?.('Failed to save contact: ' + err.message, 'error');
       return false;
     }
   };
@@ -1234,10 +1240,10 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         .update({ is_primary: true, updated_at: now })
         .eq('id', contact.id);
       if (promoteErr) throw promoteErr;
-      showToast?.(`${contact.name} dijadikan kontak utama.`, 'success');
+      showToast?.(`${contact.name} set as primary contact.`, 'success');
       fetchContacts();
     } catch (err) {
-      showToast?.('Gagal menjadikan kontak utama: ' + err.message, 'error');
+      showToast?.('Failed to set primary contact: ' + err.message, 'error');
       // Resync — langkah 1 (turunkan yang lama) bisa saja sudah sukses walau
       // langkah 2 (naikkan yang baru) gagal; jangan biarkan UI menampilkan
       // primary lama yang sudah tidak sesuai isi DB.
@@ -1258,25 +1264,25 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
         .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', deleteContactTarget.id);
       if (error) throw error;
-      showToast?.('Kontak dihapus.', 'success');
+      showToast?.('Contact deleted.', 'success');
       setDeleteContactTarget(null);
       fetchContacts();
     } catch (err) {
-      showToast?.('Gagal menghapus kontak: ' + err.message, 'error');
+      showToast?.('Failed to delete contact: ' + err.message, 'error');
     } finally {
       setDeletingContact(false);
     }
   };
 
   if (loading) {
-    return <div style={{ fontFamily: "'Inter', system-ui, sans-serif", padding: '4rem', textAlign: 'center', color: INK_FAINT, fontSize: 14 }}>Memuat data customer…</div>;
+    return <div style={{ fontFamily: "'Inter', system-ui, sans-serif", padding: '4rem', textAlign: 'center', color: INK_FAINT, fontSize: 14 }}>Loading customer data…</div>;
   }
   if (!customer) {
     return (
       <div style={{ fontFamily: "'Inter', system-ui, sans-serif", padding: '3rem', textAlign: 'center', color: '#C0392B', fontSize: 14 }}>
         Customer tidak ditemukan.
         <div style={{ marginTop: 14 }}>
-          <button type="button" style={S.backBtn} onClick={onBack}><Icon name="arrowleft" size={15} />Kembali</button>
+          <button type="button" style={S.backBtn} onClick={onBack}><Icon name="arrowleft" size={15} />Back</button>
         </div>
       </div>
     );
@@ -1334,7 +1340,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
   // Info Dasar / Komersial — 2-col grid sections
   const infoSections = [
     { label: 'Identitas', icon: 'building', fields: [
-      { l: 'Nama Perusahaan', v: txt(customer.name) },
+      { l: 'Company Name', v: txt(customer.name) },
       { l: 'Legal Name', v: txt(customer.legal_name) },
       { l: 'Customer Type', v: txt(customer.customer_type) },
       { l: 'Tax ID / NPWP', v: txt(customer.tax_id), mono: true },
@@ -1360,14 +1366,14 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
     { label: 'Klasifikasi & Kepemilikan', icon: 'briefcase', fields: [
       { l: 'Tier', v: tierCfg ? <span style={{ ...S.badge, background: tierCfg.bg, color: tierCfg.fg }}><Icon name="award" size={13} strokeWidth={2} />Tier {customer.tier}</span> : '—' },
       { l: 'Status', v: <Badge cfg={statusCfg}>{statusCfg.label}</Badge> },
-      { l: 'Entitas Owner', v: customer.source_company?.name ? <span style={S.who}><Icon name="building" size={16} color={NAVY} />{customer.source_company.name}</span> : '—' },
+      { l: 'Owner Entity', v: customer.source_company?.name ? <span style={S.who}><Icon name="building" size={16} color={NAVY} />{customer.source_company.name}</span> : '—' },
       { l: 'Assigned Salesperson', v: customer.assigned_profile?.full_name ? <span style={S.who}><PicAvatar name={customer.assigned_profile.full_name} />{customer.assigned_profile.full_name}</span> : '—' },
     ]},
     { label: 'Ketentuan Komersial', icon: 'creditcard', fields: [
       { l: 'Payment Terms', v: txt(customer.payment_term?.name || customer.payment_terms), mono: true },
       { l: 'Credit Limit', v: fmtRupiah(customer.credit_limit), mono: true },
       { l: 'Currency', v: txt(customer.currency_code), mono: true },
-      { l: 'Nomor Kontrak', v: txt(customer.contract_no), mono: true },
+      { l: 'Contract Number', v: txt(customer.contract_no), mono: true },
       { l: 'Last Activity', v: <span style={S.who}><Icon name="clock" size={15} color={INK_FAINT} />{fmtDate(customer.last_activity_at || customer.updated_at || customer.created_at)}</span> },
     ]},
   ];
@@ -1403,7 +1409,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       <div style={S.topRow}>
         <div>
           <div style={S.backRow}>
-            <button type="button" className="cd-back" style={S.backBtn} onClick={onBack}><Icon name="arrowleft" size={15} />Kembali</button>
+            <button type="button" className="cd-back" style={S.backBtn} onClick={onBack}><Icon name="arrowleft" size={15} />Back</button>
             <nav style={S.crumbs}>
               <span>CRM</span><Icon name="chevright" size={13} />
               <span>Account</span><Icon name="chevright" size={13} />
@@ -1413,11 +1419,21 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
           <h1 style={S.title}>Detail Account</h1>
         </div>
         <div style={S.actions}>
+          {/* "+ New Inquiry" — titik awal rantai Account → Inquiry. Mengoper id akun
+              yang sedang dibuka + kontak UTAMA-nya (primaryContact sudah dibaca eager
+              di atas untuk header/Info Dasar, jadi tak ada fetch tambahan di sini).
+              contactId boleh null: akun tanpa kontak primary tetap boleh bikin inquiry —
+              form tujuan yang memutuskan cara menampilkannya, bukan tombol ini. */}
+          {onCreateInquiry && (
+            <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => onCreateInquiry(id, primaryContact?.id || null)}>
+              <Icon name="plus" size={16} />New Inquiry
+            </button>
+          )}
           {isTempoTerm(customer.payment_term?.name) && (
             <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setTopOpen(true)}><Icon name="creditcard" size={16} />Ajukan TOP Request</button>
           )}
           <button type="button" className="cd-outline" style={S.outlineBtn} onClick={() => setEditing(true)}><Icon name="pencil" size={16} />Edit</button>
-          {canDelete && <button type="button" className="cd-danger" style={S.dangerBtn} onClick={() => setConfirmDel(true)}><Icon name="trash" size={16} />Hapus</button>}
+          {canDelete && <button type="button" className="cd-danger" style={S.dangerBtn} onClick={() => setConfirmDel(true)}><Icon name="trash" size={16} />Delete</button>}
         </div>
       </div>
 
@@ -1486,11 +1502,11 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
             </div>
           </div>
           {contactsLoading ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Loading…</div>
           ) : contactsError ? (
             <div style={{ padding: '40px 22px', textAlign: 'center', color: '#C0392B', fontSize: 13 }}>Gagal memuat kontak: {contactsError}</div>
           ) : contacts.length === 0 ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada kontak</div>
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>No contacts yet</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -1508,7 +1524,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
                       <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
                         <span style={{ fontWeight: 600, color: INK }}>{c.name}</span>
                         {c.is_primary && <span style={{ ...S.navyBadge, marginLeft: 8, padding: '2px 9px', fontSize: 10 }}>Utama</span>}
-                        {c.is_active === false && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#B23227', background: '#F6E0DB', borderRadius: 20, padding: '2px 9px' }}>Tidak Aktif</span>}
+                        {c.is_active === false && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#B23227', background: '#F6E0DB', borderRadius: 20, padding: '2px 9px' }}>Inactive</span>}
                       </td>
                       <td style={{ padding: '9px 16px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{txt(c.position)}</td>
                       <td style={{ padding: '9px 16px', color: INK_SOFT, whiteSpace: 'nowrap' }}>{CONTACT_ROLE_LABEL[c.role_type] || '—'}</td>
@@ -1520,7 +1536,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
                             <Icon name="pencil" size={14} />
                           </button>
                           {!c.is_primary && (
-                            <button type="button" title="Jadikan Kontak Utama" disabled={primaryBusyId === c.id} onClick={() => handleSetPrimary(c)}
+                            <button type="button" title="Set as Primary Contact" disabled={primaryBusyId === c.id} onClick={() => handleSetPrimary(c)}
                               style={{ background: 'none', border: 'none', cursor: primaryBusyId === c.id ? 'not-allowed' : 'pointer', color: primaryBusyId === c.id ? INK_FAINT : ORANGE, padding: 5, display: 'inline-flex', opacity: primaryBusyId === c.id ? 0.6 : 1 }}>
                               <Icon name="award" size={14} />
                             </button>
@@ -1543,13 +1559,13 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       {tab === 'riwayat' && (
         <div style={S.card}>
           <div style={S.cardHead}>
-            <h3 style={S.cardHeadTitle}>Riwayat Inquiry &amp; Quotation</h3>
-            <span style={S.cardHeadSub}>{histInquiries.length} inquiry · {histQuotes.length} quotation</span>
+            <h3 style={S.cardHeadTitle}>Deal &amp; Quotation History</h3>
+            <span style={S.cardHeadSub}>{histInquiries.length} deal · {histQuotes.length} quotation</span>
           </div>
           {histLoading ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Loading…</div>
           ) : (histInquiries.length === 0 && orphanQuotes.length === 0) ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada inquiry untuk account ini.</div>
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>No inquiries for this account yet.</div>
           ) : (
             <div>
               {histInquiries.map((inq) => (
@@ -1594,7 +1610,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       {tab === 'dokumen' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {docLoading ? (
-            <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div></div>
+            <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Loading…</div></div>
           ) : (
             <>
               <PrfListCard prfs={docPrfs} canCreate={false} onView={onViewPRF} />
@@ -1604,13 +1620,13 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
                   <span style={S.cardHeadSub}>{docSOs.length} SO</span>
                 </div>
                 {docSOs.length === 0 ? (
-                  <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada Sales Order.</div>
+                  <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>No sales orders yet.</div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid ' + LINE_SOFT }}>
-                          {['No', 'SO No', 'Tanggal', 'Status', 'Tanda Tangan'].map((h) => (
+                          {['No', 'SO No', 'Date', 'Status', 'Tanda Tangan'].map((h) => (
                             <th key={h} style={{ textAlign: 'left', padding: '9px 16px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
                           ))}
                         </tr>
@@ -1643,9 +1659,9 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
             <span style={S.cardHeadSub}>{visits.length} kunjungan tercatat</span>
           </div>
           {visitsLoading ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Loading…</div>
           ) : visits.length === 0 ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada riwayat kunjungan.</div>
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>No visit history yet.</div>
           ) : (
             <div>{visits.map((v) => <VisitRow key={v.id} v={v} />)}</div>
           )}
@@ -1660,15 +1676,15 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
             <span style={S.cardHeadSub}>{activities.length} aktivitas tercatat</span>
           </div>
           {activitiesLoading ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Memuat…</div>
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Loading…</div>
           ) : activities.length === 0 ? (
-            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada aktivitas tercatat.</div>
+            <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>No activity recorded yet.</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #EFE6D8' }}>
-                    {['Tanggal', 'Tipe', 'Status', 'Sales', 'Catatan / Outcome'].map(h => (
+                    {['Date', 'Tipe', 'Status', 'Sales', 'Catatan / Outcome'].map(h => (
                       <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: INK_FAINT, whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -1695,7 +1711,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       {/* BANT & PIPELINE */}
       {tab === 'bant' && (
         !hasBant ? (
-          <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Belum ada data BANT / pipeline untuk account ini.</div></div>
+          <div style={S.card}><div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>No BANT / pipeline data for this account yet.</div></div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ ...S.card, padding: '18px 22px' }}>
@@ -1725,7 +1741,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
                       <Icon name="x" size={14} />Batal
                     </button>
                     <button type="button" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 11, border: 'none', background: NAVY, color: '#fff', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: savingBant ? 'not-allowed' : 'pointer', opacity: savingBant ? 0.6 : 1 }} onClick={saveBant} disabled={savingBant}>
-                      <Icon name="save" size={15} color="#fff" />{savingBant ? 'Menyimpan…' : 'Simpan BANT'}
+                      <Icon name="save" size={15} color="#fff" />{savingBant ? 'Saving…' : 'Save BANT'}
                     </button>
                   </div>
                 </div>
@@ -1748,7 +1764,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
             <div style={S.card}>
               <div style={S.cardHead}>
                 <h3 style={S.cardHeadTitle}>Pipeline Stage</h3>
-                <span style={S.cardHeadSub}>Status terakhir prospect</span>
+                <span style={S.cardHeadSub}>Latest prospect status</span>
               </div>
               <div style={S.pipelineRow}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
@@ -1778,7 +1794,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={S.banner}>
               <Icon name="alert" size={16} color="#B45309" strokeWidth={2} style={{ marginTop: 1 }} />
-              <span>Skor sementara (heuristik) — dihitung dari sinyal yang tersedia: visit, BANT, pipeline & kelengkapan profil. Parameter SOP penuh (Volume Trend, Payment Behavior, NPS, Complaint) menunggu data transaksi & survey. <b>TODO: auto-calculate.</b></span>
+              <span>Provisional (heuristic) score, computed from the signals available: visits, BANT, pipeline & profile completeness. The full SOP parameters (Volume Trend, Payment Behavior, NPS, Complaint) await transaction and survey data.</span>
             </div>
             <div style={S.card}>
               <div style={S.healthTop}>
@@ -1818,7 +1834,7 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       {tab === 'notes' && (
         <div style={S.card}>
           <div style={S.cardHead}>
-            <h3 style={S.cardHeadTitle}>Catatan Customer</h3>
+            <h3 style={S.cardHeadTitle}>Customer Notes</h3>
             {!editNotes && (
               <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 36, fontSize: 12.5 }} onClick={startEditNotes}>
                 <Icon name="pencil" size={14} />Edit Notes
@@ -1828,16 +1844,16 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
           {!editNotes ? (
             customer.notes
               ? <div style={S.notesBox}>{customer.notes}</div>
-              : <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>Tidak ada catatan.</div>
+              : <div style={{ padding: '40px 22px', textAlign: 'center', color: INK_FAINT, fontSize: 13 }}>No notes.</div>
           ) : (
             <>
-              <textarea style={S.notesArea} value={notesDraft} onChange={e => setNotesDraft(e.target.value)} placeholder="Catatan tambahan…" />
+              <textarea style={S.notesArea} value={notesDraft} onChange={e => setNotesDraft(e.target.value)} placeholder="Additional notes…" />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '12px 22px 20px' }}>
                 <button type="button" className="cd-outline" style={{ ...S.outlineBtn, height: 38 }} onClick={() => setEditNotes(false)} disabled={savingNotes}>
                   <Icon name="x" size={14} />Batal
                 </button>
                 <button type="button" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 11, border: 'none', background: NAVY, color: '#fff', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: savingNotes ? 'not-allowed' : 'pointer', opacity: savingNotes ? 0.6 : 1 }} onClick={saveNotes} disabled={savingNotes}>
-                  <Icon name="save" size={15} color="#fff" />{savingNotes ? 'Menyimpan…' : 'Simpan Notes'}
+                  <Icon name="save" size={15} color="#fff" />{savingNotes ? 'Saving…' : 'Save Notes'}
                 </button>
               </div>
             </>
@@ -1879,10 +1895,10 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       <ConfirmModal
         open={stageGate.open}
         variant="warning"
-        title="Score BANT Belum Optimal"
+        title="Suboptimal BANT Score"
         message={stageGate.message}
-        confirmLabel="Ya, Lanjut"
-        cancelLabel="Batal"
+        confirmLabel="Yes, Continue"
+        cancelLabel="Cancel"
         onConfirm={() => { stageGate.onYes?.(); setStageGate({ open: false, message: '', onYes: null }); }}
         onCancel={() => setStageGate({ open: false, message: '', onYes: null })}
       />
@@ -1890,10 +1906,10 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       {/* Delete confirm */}
       <ConfirmModal
         open={confirmDel}
-        title="Hapus Customer?"
-        message={`Customer "${customer.name}" akan dihapus (soft delete). Lanjutkan?`}
-        confirmLabel={deleting ? 'Menghapus…' : 'Ya, Hapus'}
-        cancelLabel="Batal"
+        title="Delete Customer?"
+        message={`Customer "${customer.name}" will be deleted (soft delete). Continue?`}
+        confirmLabel={deleting ? 'Deleting…' : 'Yes, Delete'}
+        cancelLabel="Cancel"
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setConfirmDel(false)}
@@ -1910,10 +1926,10 @@ export default function CustomerDetailPage({ id, onBack, showToast, onEditInquir
       {/* Kontak: hapus confirm */}
       <ConfirmModal
         open={!!deleteContactTarget}
-        title="Hapus Kontak?"
-        message={`Kontak "${deleteContactTarget?.name || ''}" akan dihapus (soft delete). Lanjutkan?`}
-        confirmLabel={deletingContact ? 'Menghapus…' : 'Ya, Hapus'}
-        cancelLabel="Batal"
+        title="Delete Contact?"
+        message={`Contact "${deleteContactTarget?.name || ''}" will be deleted (soft delete). Continue?`}
+        confirmLabel={deletingContact ? 'Deleting…' : 'Yes, Delete'}
+        cancelLabel="Cancel"
         variant="danger"
         onConfirm={handleDeleteContact}
         onCancel={() => setDeleteContactTarget(null)}

@@ -38,11 +38,33 @@ const STAGE_META = {
   NURTURE:     { label: 'Nurture',     bg: C.purpleBg,  color: C.purple,  bd: C.purpleBd  },
 };
 
+/* Daftar ini menyetir DUA hal: dropdown filter Source dan SourceBadge di kolom
+   tabel. Isinya kini disamakan PERSIS dengan nilai yang sah menurut CHECK
+   constraint `prospects_source_check`, dan urutannya sama dengan dropdown di
+   ProspectFormPage.
+
+   Sebelumnya daftar ini berisi empat entri yang tak pernah cocok dengan
+   kenyataan: `digital_marketing` dan `event` BUKAN nilai yang sah (constraint
+   menolaknya, jadi memfilternya selalu nol hasil), sementara delapan nilai yang
+   sah — cold_call, existing_network, exhibition, instagram, linkedin, tiktok,
+   website, walk_in — tak bisa difilter sama sekali dan badge-nya jatuh ke
+   fallback teks mentah (`SOURCE_LABELS[source] || source`).
+
+   ⚠️ Kalau nilai source bertambah lagi, ubah DI SINI dan di ProspectFormPage
+   berbarengan — dua daftar ini memang belum disatukan. */
 const SOURCE_LABELS = {
-  digital_marketing: 'Digital Marketing',
-  sales_visit:       'Sales Visit',
-  referral:          'Referral',
-  event:             'Event',
+  sales_visit:      'Sales Visit',
+  cold_call:        'Cold Call',
+  referral:         'Referral',
+  existing_network: 'Existing Network',
+  exhibition:       'Exhibition / Pameran',
+  instagram:        'Instagram',
+  linkedin:         'LinkedIn',
+  tiktok:           'TikTok',
+  whatsapp:         'WhatsApp',
+  website:          'Website',
+  walk_in:          'Walk-in',
+  other:            'Lainnya',
 };
 
 const PAGE_SIZE = 20;
@@ -128,7 +150,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
         `, { count: 'exact' })
         // Semua akun pra-customer supaya lead/mql/sql tetap tampil di daftar pasca-backfill.
         // TODO: hapus 'lead_pool' setelah backfill lifecycle - lihat AUDIT_CRM_FLOW.md
-        .in('account_status', ['lead', 'mql', 'sql', 'prospect', 'lead_pool'])
+        .in('lifecycle_stage', ['lead', 'mql', 'sql', 'prospect', 'lead_pool'])
         .is('deleted_at', null);
 
       // Role-aware scope (see flags above)
@@ -148,7 +170,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
       setProspects(data || []);
       setTotal(count || 0);
     } catch (err) {
-      showToast?.('Gagal memuat prospect: ' + err.message, 'error');
+      showToast?.('Failed to load prospects: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -158,8 +180,8 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
 
   const handleDelete = useCallback((prospect) => {
     showConfirm(
-      'Hapus Prospect',
-      `Hapus prospect "${prospect.name}"? Tindakan ini tidak dapat dibatalkan.`,
+      'Delete Prospect',
+      `Delete prospect "${prospect.name}"? This action cannot be undone.`,
       async () => {
         closeConfirm();
         try {
@@ -168,10 +190,10 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
             .update({ deleted_at: new Date().toISOString() })
             .eq('id', prospect.id);
           if (error) throw error;
-          showToast?.('Prospect berhasil dihapus.', 'success');
+          showToast?.('Prospect deleted.', 'success');
           fetchProspects();
         } catch (err) {
-          showToast?.('Gagal hapus prospect: ' + err.message, 'error');
+          showToast?.('Failed to delete prospect: ' + err.message, 'error');
         }
       }
     );
@@ -221,7 +243,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Cari nama perusahaan…"
+            placeholder="Search company name…"
             style={{
               width: '100%', height: 34, borderRadius: 8, border: `1px solid ${C.line}`,
               background: C.surface, paddingLeft: 32, paddingRight: 10, fontSize: 13,
@@ -230,13 +252,13 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
           />
         </div>
         <select value={filterStage} onChange={e => setFilterStage(e.target.value)} style={selStyle}>
-          <option value="all">Semua Stage</option>
+          <option value="all">All Stages</option>
           {Object.entries(STAGE_META).map(([k, v]) => (
             <option key={k} value={k}>{v.label}</option>
           ))}
         </select>
         <select value={filterSource} onChange={e => setFilterSource(e.target.value)} style={selStyle}>
-          <option value="all">Semua Source</option>
+          <option value="all">All Sources</option>
           {Object.entries(SOURCE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
@@ -248,16 +270,16 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
             <tr style={{ background: C.surface2, borderBottom: `1px solid ${C.line}` }}>
-              {['Nama Perusahaan', 'PIC', 'Source', 'Pipeline Stage', 'Assigned To', 'Created At', ''].map(h => (
+              {['Company Name', 'PIC', 'Source', 'Pipeline Stage', 'Assigned To', 'Created At', ''].map(h => (
                 <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: C.inkSoft, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Memuat data…</td></tr>
+              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Loading data…</td></tr>
             ) : prospects.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>Belum ada prospect</td></tr>
+              <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: C.inkFaint }}>No prospects yet</td></tr>
             ) : prospects.map((p, i) => (
               <tr
                 key={p.id}
@@ -282,7 +304,7 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
                 <td style={{ padding: '12px 14px' }}>
                   {p.assigned_profile?.full_name
                     ? <span style={{ color: C.inkSoft }}>{p.assigned_profile.full_name}</span>
-                    : <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: C.accentSoft, color: C.accent }}>Belum di-assign</span>}
+                    : <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: C.accentSoft, color: C.accent }}>Unassigned</span>}
                 </td>
                 <td style={{ padding: '12px 14px', color: C.inkFaint, fontSize: 12.5 }}>{fmtDate(p.created_at)}</td>
                 <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
@@ -331,8 +353,8 @@ export default function ProspectListPage({ onAddProspect, onSelectProspect, show
         open={confirmState.open}
         title={confirmState.title}
         message={confirmState.message}
-        confirmLabel="Ya, Hapus"
-        cancelLabel="Batal"
+        confirmLabel="Yes, Delete"
+        cancelLabel="Cancel"
         variant="danger"
         onConfirm={confirmState.onConfirm}
         onCancel={closeConfirm}

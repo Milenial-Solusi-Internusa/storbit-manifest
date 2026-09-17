@@ -1,7 +1,7 @@
 // src/components/AccountPicker.jsx
 // Searchable account combobox (portal dropdown, filter by name, flip-up).
 // Reuses the ProductPicker *pattern* (portal menu, realtime filter, flip-up,
-// outside-click close) but is shaped for CRM accounts — {id, name, account_status}
+// outside-click close) but is shaped for CRM accounts — {id, name, lifecycle_stage}
 // — instead of products: filters on `name` only (accounts have no code), renders
 // name + a status badge (e.g. "AROMA SCENTS" + "Prospect"), and single-selects.
 // Deliberate divergences from ProductPicker: a single-line <input> (this is a
@@ -125,12 +125,12 @@ export default function AccountPicker({
               <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {a.name}
               </span>
-              {a.account_status && (
+              {a.lifecycle_stage && (
                 <span style={{
                   flex: '0 0 auto', fontSize: 10.5, fontWeight: 600, color: C.navy,
                   background: C.navyBg, borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap',
                 }}>
-                  {statusLabel ? statusLabel(a.account_status) : a.account_status}
+                  {statusLabel ? statusLabel(a.lifecycle_stage) : a.lifecycle_stage}
                 </span>
               )}
             </button>

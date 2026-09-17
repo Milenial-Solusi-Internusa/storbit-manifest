@@ -41,10 +41,10 @@ function escapeHtml(s) {
 function timeAgo(iso) {
   if (!iso) return '';
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (d < 60) return 'baru saja';
-  if (d < 3600) return `${Math.floor(d / 60)} menit lalu`;
-  if (d < 86400) return `${Math.floor(d / 3600)} jam lalu`;
-  return `${Math.floor(d / 86400)} hari lalu`;
+  if (d < 60) return 'just now';
+  if (d < 3600) return `${Math.floor(d / 60)} minutes ago`;
+  if (d < 86400) return `${Math.floor(d / 3600)} hours ago`;
+  return `${Math.floor(d / 86400)} days ago`;
 }
 
 // Cari token "@query" yang sedang diketik tepat sebelum cursor. Match hanya
@@ -106,7 +106,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       .limit(200);
     if (error) {
       console.error('[chatter] fetch comments failed:', error.message);
-      showToast?.('Gagal memuat komentar: ' + error.message, 'error');
+      showToast?.('Failed to load comments: ' + error.message, 'error');
       setLoadingComments(false);
       return;
     }
@@ -218,8 +218,17 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       const { data: inserted, error: insErr } = await supabase
         .from('inquiry_comments')
         .insert({ inquiry_id: inquiryId, company_id: companyId, created_by: currentUserId, body })
-        .select('id').single();
+        .select('id').maybeSingle();
       if (insErr) throw insErr;
+      /* maybeSingle(), BUKAN single(). Ini insert-returning: kalau insert-nya
+         berhasil tapi barisnya tak terbaca balik (policy SELECT menutupnya),
+         PostgREST mengembalikan NOL baris — single() melempar PGRST116 yang
+         pesannya tak berarti apa-apa bagi user.
+         Guard di bawah WAJIB ada bersama perubahan ini: `inserted` kini bisa
+         null, sedangkan seluruh langkah sesudahnya (mention, notifikasi,
+         email) butuh id ini sebagai kunci. Dilempar, bukan di-return diam-diam,
+         supaya jatuh ke catch yang sudah ada (console.error + showToast). */
+      if (!inserted?.id) throw new Error('Comment saved but could not be read back — tagging and notifications were skipped.');
       const newCommentId = inserted.id;
 
       // Tag final — hanya yang teksnya masih ada di body (user mungkin sudah
@@ -233,7 +242,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             .insert(finalTags.map((m) => ({ comment_id: newCommentId, user_id: m.userId })));
         } catch (e) {
           console.error('[chatter] insert mentions failed:', e?.message || e);
-          showToast?.('Komentar terkirim, tapi menandai beberapa orang gagal.', 'error');
+          showToast?.('Comment sent, but tagging some people failed.', 'error');
         }
 
         const taggerName = profile?.full_name || user?.email || 'Seseorang';
@@ -243,8 +252,8 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             company_id: companyId,
             user_id: m.userId,
             event_type: 'inquiry_mention',
-            title: 'Anda di-tag di komentar',
-            body: `${taggerName} men-tag Anda di komentar pada inquiry ${inquiryNo || ''}`.trim(),
+            title: 'You were tagged in a comment',
+            body: `${taggerName} tagged you in a comment on inquiry ${inquiryNo || ''}`.trim(),
             reference_type: 'inquiry',
             reference_id: inquiryId,
           }));
@@ -252,7 +261,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
           try { await supabase.from('notifications').insert(notifRows); }
           catch (e) {
             console.error('[chatter] notify mentions failed:', e?.message || e);
-            showToast?.('Komentar terkirim, tapi notifikasi ke beberapa orang gagal terkirim.', 'error');
+            showToast?.('Comment sent, but notifications to some people failed to send.', 'error');
           }
 
           // Best-effort email fan-out (secondary channel, inquiry_mention only —
@@ -269,8 +278,8 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             await Promise.all(notifRows.map((n) => {
               const to = emailOf[n.user_id];
               if (!to) return null; // no email on file for this user — skip them, not the rest
-              const subject = inquiryNo ? `Anda di-tag di komentar — Inquiry ${inquiryNo}` : 'Anda di-tag di komentar';
-              const html = `<p>Halo,</p><p><strong>${escapeHtml(taggerName)}</strong> men-tag Anda di komentar pada inquiry <strong>${escapeHtml(inquiryNo || '')}</strong> di Nexus.</p><p><a href="https://nexus.msigroup.co.id">Buka Nexus</a> untuk melihat komentar selengkapnya.</p><p style="color:#7A828E;font-size:12px;margin-top:24px;">Email otomatis dari Nexus by MSI — balas lewat aplikasi, bukan email ini.</p>`;
+              const subject = inquiryNo ? `You were tagged in a comment — Inquiry ${inquiryNo}` : 'You were tagged in a comment';
+              const html = `<p>Hello,</p><p><strong>${escapeHtml(taggerName)}</strong> tagged you in a comment on inquiry <strong>${escapeHtml(inquiryNo || '')}</strong> in Nexus.</p><p><a href="https://nexus.msigroup.co.id">Open Nexus</a> to see the full comment.</p><p style="color:#7A828E;font-size:12px;margin-top:24px;">Automated email from Nexus by MSI. Please reply in the app, not to this email.</p>`;
               return supabase.functions.invoke('send-email', { body: { to, subject, html } })
                 .catch((e) => console.error('[chatter] send-email failed for', n.user_id, e?.message || e));
             }));
@@ -285,7 +294,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
       await refetchComments();
     } catch (e) {
       console.error('[chatter] submit comment failed:', e?.message || e);
-      showToast?.('Gagal mengirim komentar: ' + (e?.message || e), 'error');
+      showToast?.('Failed to send comment: ' + (e?.message || e), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -304,13 +313,13 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
         .eq('id', commentId)
         .select('id');
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error('Tidak ada izin mengubah komentar ini.');
+      if (!data || data.length === 0) throw new Error('You do not have permission to edit this comment.');
       setEditingId(null);
       setEditBody('');
       await refetchComments();
     } catch (e) {
       console.error('[chatter] edit comment failed:', e?.message || e);
-      showToast?.('Gagal menyimpan perubahan komentar: ' + (e?.message || e), 'error');
+      showToast?.('Failed to save comment changes: ' + (e?.message || e), 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -326,12 +335,12 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
         .eq('id', deleteTarget.id)
         .select('id');
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error('Tidak ada izin menghapus komentar ini.');
+      if (!data || data.length === 0) throw new Error('You do not have permission to delete this comment.');
       setDeleteTarget(null);
       await refetchComments();
     } catch (e) {
       console.error('[chatter] delete comment failed:', e?.message || e);
-      showToast?.('Gagal menghapus komentar: ' + (e?.message || e), 'error');
+      showToast?.('Failed to delete comment: ' + (e?.message || e), 'error');
     } finally {
       setDeleting(false);
     }
@@ -341,9 +350,9 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
     <Card title="Chatter" icon={<MessageCircle size={17} />}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {loadingComments ? (
-          <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Memuat komentar…</div>
+          <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Loading comments…</div>
         ) : comments.length === 0 ? (
-          <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>Belum ada komentar</div>
+          <div style={{ fontFamily: BODY, fontSize: 13, color: C.textFaint, padding: '8px 0' }}>No comments yet</div>
         ) : (
           comments.map((c) => {
             const author = authorMap[c.created_by];
@@ -374,8 +383,8 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                         style={{ width: '100%', boxSizing: 'border-box', borderRadius: 9, border: `1px solid ${C.borderStrong}`, padding: '8px 10px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
                       />
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button type="button" onClick={() => saveEdit(c.id)} disabled={savingEdit} style={ghostBtn(false)}><Check size={13} />{savingEdit ? 'Menyimpan…' : 'Simpan'}</button>
-                        <button type="button" onClick={cancelEdit} disabled={savingEdit} style={ghostBtn(false)}><X size={13} />Batal</button>
+                        <button type="button" onClick={() => saveEdit(c.id)} disabled={savingEdit} style={ghostBtn(false)}><Check size={13} />{savingEdit ? 'Saving…' : 'Save'}</button>
+                        <button type="button" onClick={cancelEdit} disabled={savingEdit} style={ghostBtn(false)}><X size={13} />Cancel</button>
                       </div>
                     </div>
                   ) : (
@@ -384,7 +393,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
                       {isMine && (
                         <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
                           <button type="button" onClick={() => startEdit(c)} style={ghostBtn(false)}><Pencil size={12} />Edit</button>
-                          <button type="button" onClick={() => setDeleteTarget(c)} style={ghostBtn(true)}><Trash2 size={12} />Hapus</button>
+                          <button type="button" onClick={() => setDeleteTarget(c)} style={ghostBtn(true)}><Trash2 size={12} />Delete</button>
                         </div>
                       )}
                     </>
@@ -400,7 +409,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             ref={textareaRef}
             value={newBody}
             onChange={handleComposerChange}
-            placeholder="Tulis komentar… ketik @ untuk tag seseorang"
+            placeholder="Write a comment… type @ to tag someone"
             rows={3}
             style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: `1px solid ${C.borderStrong}`, padding: '9px 11px', fontFamily: BODY, fontSize: 13, color: C.text, resize: 'vertical', outline: 'none' }}
           />
@@ -411,7 +420,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
               disabled={submitting || !newBody.trim()}
               style={{ height: 34, padding: '0 14px', borderRadius: 9, border: 'none', background: submitting || !newBody.trim() ? C.grayBg : C.orange, color: submitting || !newBody.trim() ? C.gray : '#fff', fontFamily: HEAD, fontSize: 12.5, fontWeight: 700, cursor: submitting || !newBody.trim() ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <Send size={13} />{submitting ? 'Mengirim…' : 'Kirim'}
+              <Send size={13} />{submitting ? 'Sending…' : 'Send'}
             </button>
           </div>
 
@@ -427,7 +436,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
             >
               {mentionMatches.priority.length > 0 && (
                 <>
-                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Terkait deal ini</div>
+                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Related to this deal</div>
                   {mentionMatches.priority.map((p) => (
                     <button key={p.id} type="button" onMouseDown={(e) => { e.preventDefault(); pickMention(p); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
@@ -439,7 +448,7 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
               )}
               {mentionMatches.rest.length > 0 && (
                 <>
-                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Lainnya</div>
+                  <div style={{ padding: '6px 10px', fontFamily: HEAD, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: C.textFaint }}>Others</div>
                   {mentionMatches.rest.map((p) => (
                     <button key={p.id} type="button" onMouseDown={(e) => { e.preventDefault(); pickMention(p); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
@@ -457,10 +466,10 @@ export default function InquiryChatter({ inquiryId, companyId, inquiryNo, priori
 
       <ConfirmModal
         open={!!deleteTarget}
-        title="Hapus komentar?"
-        message="Komentar ini akan dihapus dari chatter. Tindakan ini tidak bisa dibatalkan."
-        confirmLabel={deleting ? 'Menghapus…' : 'Hapus'}
-        cancelLabel="Batal"
+        title="Delete comment?"
+        message="This comment will be removed from the chatter. This action cannot be undone."
+        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        cancelLabel="Cancel"
         variant="danger"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
