@@ -813,7 +813,10 @@ export async function updateDeliveryArmada(deliveryNoteId, fields) {
 }
 
 // Status transition: draft → in_transit (dispatched_at) → delivered (delivered_at).
-export async function setDeliveryStatus(deliveryNoteId, status) {
+// signedDate (YYYY-MM-DD) hanya dipakai transisi 'delivered': tanggal SJ
+// ditandatangani customer/DC → delivery_notes.signed_date. Wajib; RPC menolak
+// NULL dan tanggal masa depan (jaring pengaman kedua setelah validasi FE).
+export async function setDeliveryStatus(deliveryNoteId, status, signedDate) {
   // in_transit → RPC dispatch_delivery (release reservation + post outbound atomically).
   if (status === 'in_transit') {
     const { error } = await supabase.rpc('dispatch_delivery', { p_delivery_note_id: deliveryNoteId });
@@ -822,7 +825,10 @@ export async function setDeliveryStatus(deliveryNoteId, status) {
   // delivered → RPC mark_delivery_delivered (FASE 2C: set delivered + delivered_at +
   // PERFORM sp_recompute_status → status SP naik ke SAMPAI). Guard in_transit-only di RPC.
   if (status === 'delivered') {
-    const { error } = await supabase.rpc('mark_delivery_delivered', { p_delivery_note_id: deliveryNoteId });
+    const { error } = await supabase.rpc('mark_delivery_delivered', {
+      p_delivery_note_id: deliveryNoteId,
+      p_signed_date:      signedDate || null,
+    });
     return { error };
   }
   // status lain (tak dipakai saat ini) → plain update sebagai fallback.

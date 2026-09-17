@@ -19,6 +19,7 @@ import ProductPicker from '../../components/ProductPicker';
 import DeliveryNotePDF from './DeliveryNotePDF';
 import { useAuth } from '../../contexts/useAuth';
 import { isManagerOrAbove, hasAnyRole } from '../../lib/roles';
+import { getTodayWIB } from '../../lib/dateUtils';
 
 const C = {
   navy: '#1B4D8A', ink: '#212A37', mute: '#7E8899', faint: '#A6AEBD',
@@ -88,6 +89,10 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
   // bukan company home user (super_admin/MSI pun dapat katalog yang benar).
   const { products } = useProducts({ companyId: 'd2e5e565-5f67-4954-b8d9-5979a2a0c697' });
   const [newItem, setNewItem] = useState({ product_id: null, product_name: '', sku: '', qty: '' });
+  // Tanggal SJ ditandatangani customer/DC (YYYY-MM-DD) — wajib sebelum
+  // "Tandai Terkirim", dikirim ke RPC sebagai p_signed_date. Sengaja bukan
+  // bagian `form`: ia bukan patch armada, ditulis oleh RPC bukan updateDeliveryArmada.
+  const [signedDate, setSignedDate] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,13 +144,28 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
 
   const handleStatus = useCallback(async (next) => {
     if (!canWarehouseOps) return;
+    // 'delivered' wajib bawa tanggal SJ ditandatangani customer/DC, dan tidak
+    // boleh di masa depan. Validasi FE di sini; RPC mark_delivery_delivered
+    // menolak NULL/masa depan juga sebagai jaring pengaman kedua.
+    if (next === 'delivered') {
+      if (!signedDate) { showToast?.('Isi tanggal SJ ditandatangani customer/DC dulu', 'error'); return; }
+      if (signedDate > getTodayWIB()) { showToast?.('Tanggal SJ ditandatangani tidak boleh di masa depan', 'error'); return; }
+      // Batas bawah = tanggal berangkat, dari detail.dispatched_at yang sudah
+      // di-load (timestamptz → tanggal WIB, formatter sama dgn getTodayWIB;
+      // sisi DB memakai (dispatched_at AT TIME ZONE 'Asia/Jakarta')::date).
+      // Dilewati bila dispatched_at kosong — tak ada pembanding.
+      const dispatchedDate = detail?.dispatched_at
+        ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(detail.dispatched_at))
+        : '';
+      if (dispatchedDate && signedDate < dispatchedDate) { showToast?.('Tanggal SJ ditandatangani tidak boleh sebelum tanggal berangkat', 'error'); return; }
+    }
     setBusy(true);
-    const { error } = await setDeliveryStatus(deliveryNoteId, next);
+    const { error } = await setDeliveryStatus(deliveryNoteId, next, signedDate);
     setBusy(false);
     if (error) { showToast?.(error.message || 'Gagal memperbarui status', 'error'); return; }
     showToast?.(next === 'in_transit' ? 'Surat jalan diberangkatkan.' : 'Surat jalan ditandai terkirim.');
     load();
-  }, [deliveryNoteId, showToast, load, canWarehouseOps]);
+  }, [deliveryNoteId, showToast, load, canWarehouseOps, signedDate, detail]);
 
   const handleCancel = useCallback(async () => {
     if (!canWarehouseOps) return;
@@ -352,7 +372,7 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
       </div>
 
       {/* Actions */}
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <button onClick={handlePrint}
           style={{ display: 'flex', alignItems: 'center', gap: 7, background: C.card, border: `1px solid ${C.line}`, color: C.mute, fontWeight: 600, fontSize: 13, padding: '10px 18px', borderRadius: 11, cursor: 'pointer' }}>
           <Printer size={15} /> Cetak PDF
@@ -366,10 +386,21 @@ export default function DeliveryNoteDetailPage({ deliveryNoteId, onBack, showToa
           </button>
         )}
         {status === 'in_transit' && (
-          <button onClick={() => handleStatus('delivered')} disabled={busy || !canWarehouseOps}
-            style={{ background: C.greenI, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-            {busy ? 'Memproses…' : 'Tandai Terkirim'}
-          </button>
+          <>
+            {/* Wajib sebelum Tandai Terkirim → delivery_notes.signed_date lewat RPC.
+                max = hari ini WIB hanya hint picker; validasi sebenarnya di
+                handleStatus (kosong / masa depan), RPC menolak juga. */}
+            <div style={{ width: 300 }}>
+              <span style={lblStyle}>Tanggal SJ ditandatangani customer/DC</span>
+              <input type="date" style={inputStyle} value={signedDate} max={getTodayWIB()} disabled={busy}
+                onChange={e => setSignedDate(e.target.value)} />
+            </div>
+            <button onClick={() => handleStatus('delivered')} disabled={busy || !signedDate || !canWarehouseOps}
+              title={!signedDate ? 'Isi tanggal SJ ditandatangani customer/DC dulu' : ''}
+              style={{ background: C.greenI, color: '#fff', fontWeight: 700, fontSize: 13, padding: '10px 20px', borderRadius: 11, border: 'none', cursor: (busy || !signedDate) ? 'not-allowed' : 'pointer', opacity: (busy || !signedDate) ? 0.5 : 1 }}>
+              {busy ? 'Memproses…' : 'Tandai Terkirim'}
+            </button>
+          </>
         )}
         {(status === 'draft' || status === 'in_transit') && (
           <button onClick={() => setConfirmCancelOpen(true)} disabled={busy || !canWarehouseOps}
