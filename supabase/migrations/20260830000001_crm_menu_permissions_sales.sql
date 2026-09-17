@@ -2,8 +2,11 @@
 -- Migration: 20260830000001_crm_menu_permissions_sales
 -- Batch:     CRM v3 — Batch Dashboard, temuan tes Vercel Preview
 -- Depends:   modules · module_menus · menu_actions · roles · role_menu_permissions
--- Status:    BELUM DIJALANKAN — ditulis sebelum eksekusi.
---            ⚠️ Dijalankan MANUAL di Supabase SQL Editor oleh Den.
+-- Status:    SUPERSEDED — role `sales` lama nol pemegang sejak 12 Sep 2026
+--            (9 sales → bd_*), dan menu CRM untuk 4 role penjual baru sudah
+--            diseed manual oleh 20260912000005. Migrasi ini TIDAK PERNAH
+--            dijalankan dan TIDAK PERLU dijalankan. Dipertahankan sebagai
+--            jejak (keputusan 14 Sep 2026, checklist hari merge butir 6).
 --
 -- MASALAH
 --   Akun role `sales` tidak melihat menu Dashboard, Pipeline, Inquiry,

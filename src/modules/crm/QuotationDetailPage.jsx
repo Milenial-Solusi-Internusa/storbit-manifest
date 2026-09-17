@@ -5,16 +5,16 @@ import { ChevronLeft, Edit2, Download, Receipt, Send, Copy, GitBranch, CheckCirc
 import { pdf } from '@react-pdf/renderer';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/useAuth';
+import { isManagerOrAbove as isManagerOrAboveRole } from '../../lib/roles';
 import ConfirmModal from '../../components/ConfirmModal';
 import QuotationPDF from './QuotationPDF';
 import { formatQuotationNo, pickActiveQuotation } from './quotationVersion';
 
-/* Gate FE untuk revisi & pencatatan hasil. CERMIN dari RLS quotations_update
-   (pemilik ATAU manager-ke-atas) — RPC di DB yang menegakkan izin sebenarnya,
-   ini murni supaya tombol tak muncul untuk orang yang pasti ditolak.
-   Daftar rolenya disalin dari DealDetailPage.jsx; pola mirror-per-file ini
-   sudah berulang di codebase (lihat catatan di file itu). */
-const MANAGER_OR_ABOVE = ['super_admin', 'admin', 'ceo', 'gm', 'gm_bd', 'manager', 'supervisor'];
+/* Gate FE untuk revisi & pencatatan hasil — cermin RLS quotations_update
+   (is_manager_or_above_in(company_id) ATAU pemilik); RPC di DB yang menegakkan
+   izin sebenarnya, ini murni supaya tombol tak muncul untuk orang yang pasti
+   ditolak. Gate role = isManagerOrAbove di src/lib/roles.js, di-scope ke
+   entitas quotation (lihat pemakaiannya di badan komponen). */
 
 // ─── Design tokens ────────────────────────────────────────────────────────
 const C = {
@@ -253,7 +253,7 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
       supabase
         .from('quotations')
         .select(`
-          id, quotation_no, revision, status, service_type, route,
+          id, quotation_no, revision, status, company_id, service_type, route,
           created_by, accepted_at, accepted_by, rejection_reason,
           valid_until, created_at, notes, terms, usd_rate,
           subtotal, tax_amount, total_amount, payment_terms_id,
@@ -372,11 +372,11 @@ export default function QuotationDetailPage({ quotationId, onBack, onEdit, onDup
     return () => { cancelled = true; };
   }, [quot?.quotation_no, quot?.status, quot?.revision]);
 
-  /* Cermin RLS quotations_update: pemilik ATAU manager-ke-atas. Seluruh role
-     aktif diperiksa (bukan erpRole primer) karena is_manager_or_above() di DB
-     juga EXISTS lintas role — role prioritas lebih tinggi bisa menutupi yang
-     lain di erpRole. */
-  const isManagerOrAbove = erpRoles?.some((r) => MANAGER_OR_ABOVE.includes(r.roles?.code));
+  /* Cermin RLS quotations_update: pemilik ATAU manager-ke-atas DI ENTITAS
+     quotation ini (is_manager_or_above_in(company_id) di DB). Seluruh role
+     aktif diperiksa (bukan erpRole primer), dibatasi ke company_id quotation —
+     helper isManagerOrAbove di src/lib/roles.js, berbasis roles.level. */
+  const isManagerOrAbove = isManagerOrAboveRole(erpRoles, { companyId: quot?.company_id });
   const canAct = !!quot && (quot.created_by === profile?.id || !!isManagerOrAbove);
 
   /* Revisi terakhir = ujung rantai versi. pickActiveQuotation dipakai supaya
