@@ -1493,19 +1493,30 @@ export default function SalesOrderDetailPage({
     if (!group) return null;
     return HEADLINE_META[spOrder?.status] || HEADLINE_META.DRAFT;
   })();
-  // Aksi gudang (Generate Picking + indikator stok). Keempat status di bawah
+  // Aksi gudang (Generate Picking + indikator stok). Kelima status di bawah
   // punya SATU kesamaan: masih MUNGKIN ada item outstanding (qty > shipped_qty)
   // dan tak ada picking yang sedang berjalan.
   //   CONFIRMED / MENUNGGU_STOK -> belum pernah dibuatkan picking sama sekali.
   //   DIKIRIM / SAMPAI          -> pengiriman PARSIAL: sebagian qty sudah
   //     berangkat (DIKIRIM) atau sudah dikonfirmasi sampai oleh DC (SAMPAI),
   //     sisanya masih outstanding dan justru BUTUH picking lanjutan.
+  //   BTB_TERBIT                -> BTB dicatat per surat jalan (sp_issue_btb tak
+  //     mensyaratkan kirim penuh), jadi satu SP bisa punya BANYAK BTB sesuai
+  //     jumlah pengirimannya; BTB pertama sudah menaikkan status ke sini padahal
+  //     item lain masih outstanding. Backend tidak membatasi berdasarkan status
+  //     ini — dan karena BTB_TERBIT berperingkat di atas DIKIRIM/SAMPAI di
+  //     sp_recompute_status, SP semacam itu tidak akan pernah turun lagi ke dua
+  //     status tadi: tanpa baris ini tombolnya hilang PERMANEN (kasus SP 2290815,
+  //     17 Sep 2026). INVOICED / SUBMITTED SENGAJA belum ikut — menunggu
+  //     konfirmasi Finance.
   //
   // Daftar ini dulu cuma CONFIRMED + MENUNGGU_STOK, dengan komentar "hanya di
   // tahap awal, belum picking" — asumsi dari masa sebelum alur partial shipment
   // ada, dan tak pernah ditinjau ulang sesudahnya. Akibatnya SP parsial yang SJ
   // pertamanya sudah berangkat/sampai TIDAK BISA dilanjutkan dari UI sama
   // sekali: tombol ini SATU-SATUNYA pintu ke generate_picking_from_sp.
+  // Perluasan 26 Agu 2026 (+DIKIRIM/+SAMPAI) berhenti di SAMPAI dan melewatkan
+  // BTB_TERBIT — kelas kelalaian yang sama, ditutup 17 Sep 2026.
   //
   // PICKING / PACKED / MENUNGGU_KONFIRMASI_DC / TERKIRIM_PENUH SENGAJA di luar
   // daftar — tapi FE TIDAK menduplikasi larangannya, karena RPC-nya sendiri yang
@@ -1522,7 +1533,7 @@ export default function SalesOrderDetailPage({
   // ⚠️ MENAMBAH STATUS SP BARU? TINJAU ULANG DAFTAR INI. Status baru tidak masuk
   // otomatis, dan gejalanya senyap: tombolnya cuma tidak muncul, tanpa error.
   const canGeneratePicking = canWarehouseOps
-    && ['CONFIRMED', 'MENUNGGU_STOK', 'DIKIRIM', 'SAMPAI'].includes(spOrder?.status);
+    && ['CONFIRMED', 'MENUNGGU_STOK', 'DIKIRIM', 'SAMPAI', 'BTB_TERBIT'].includes(spOrder?.status);
 
   if (!spNo) return null;
 
