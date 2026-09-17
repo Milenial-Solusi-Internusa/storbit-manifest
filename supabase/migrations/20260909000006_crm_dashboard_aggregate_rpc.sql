@@ -184,15 +184,12 @@ $$;
 -- mati di tengah TETAP terhitung pernah melewati tahap sebelumnya — itulah yang
 -- membuat angka ini menjawab "bocor di tahap mana", bukan "sekarang ada berapa".
 --
--- ⛔⛔ p_scope_own memakai `created_by`, BUKAN `owner_id` — DISENGAJA.
---    RLS inquiries_read di PRODUKSI hari ini masih berbasis created_by;
---    migrasi 20260830000003 yang memindahkannya ke owner_id BELUM DIJALANKAN
---    (header filenya masih "BELUM DIJALANKAN", dan snapshot produksi
---    membuktikannya). Memakai owner_id di sini sementara RLS masih created_by
---    menghasilkan IRISAN keduanya — sales kehilangan deal yang dioper kepadanya,
---    SENYAP, nol baris tanpa error.
---    GANTI ke owner_id BERSAMAAN dengan migrasi 20260830000003, jangan salah
---    satu duluan. Berlaku untuk fungsi ini DAN crm_stage_age di bawah.
+-- ⛔⛔ p_scope_own di versi INI memakai `created_by` (sengaja: RLS inquiries_read
+--    produksi saat itu masih created_by). SUDAH DIGANTI ke owner_id oleh
+--    20260917000002, yang wajib jalan satu sesi dengan 20260830000003 (TD-249;
+--    alasan irisan senyap ada di header file itu). Berlaku juga untuk
+--    crm_stage_age di bawah. ⛔ JANGAN jalankan ulang file ini sesudahnya —
+--    CREATE OR REPLACE-nya mengembalikan created_by tanpa peringatan.
 --
 -- Kohortnya = deal TERBUKA (tanpa batas periode, deal terbuka tak punya tanggal
 -- tutup untuk disaring) + deal TERTUTUP di periode aktif. Sama persis dengan
@@ -236,7 +233,8 @@ $$;
 -- (openInq 1000 + closedInq 1000) — URL ~74 KB, dua kali lipat kasus MQL, dan
 -- belum meledak hanya karena volume inquiry belum sampai ke sana.
 --
--- ⛔ p_scope_own memakai created_by — alasan lengkap di crm_stage_conversion.
+-- ⛔ p_scope_own memakai created_by di versi ini — diganti owner_id oleh
+--    20260917000002 (lihat catatan di crm_stage_conversion).
 --
 -- owner_id dikembalikan MENTAH (bukan namanya): resolusi nama sudah punya
 -- query sendiri di FE yang dibatasi jumlah USER (puluhan), bukan jumlah baris —
@@ -431,6 +429,8 @@ COMMENT ON FUNCTION public.crm_mql_conversion(uuid, boolean) IS
   'Kohort akun yang PERNAH mencapai mql + klasifikasi tahap sekarang. Urutan klasifikasi (lost -> sql/customer -> pending) TIDAK BOLEH diubah.';
 COMMENT ON FUNCTION public.crm_lead_source_distribution(uuid, boolean, timestamptz, timestamptz) IS
   'Distribusi accounts.source untuk donut Lead Source. Widget PERSENTASE — terpotongnya paling menyesatkan, itulah alasan ia dipindah ke DB.';
+-- [17 Sep 2026] Teks dua COMMENT crm_stage_* di bawah DIGANTIKAN oleh
+-- 20260917000002 (owner_id); dibiarkan apa adanya sebagai jejak isi file ini.
 COMMENT ON FUNCTION public.crm_stage_conversion(uuid, boolean, timestamptz, timestamptz) IS
   'Jumlah inquiry DISTINCT yang pernah mencapai tiap status. p_scope_own memakai created_by — ganti ke owner_id BERSAMAAN dengan migrasi 20260830000003.';
 COMMENT ON FUNCTION public.crm_stage_age(uuid, boolean, timestamptz, timestamptz) IS
