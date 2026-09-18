@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Ok9hwvGHBnkoE3DWbNAGD69C6qZO8g3aitNiXJE5fV011JebBIgwq0vVanZrhuF
+\restrict mhQRzv3KZFENqvoESpR0Lk8cgcCQHckvDYQsc8RijddgJDC6lLDGuNsMwYJbtWi
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -20,23 +20,21 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: public; Type: SCHEMA; Schema: -; Owner: pg_database_owner
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
 --
 
 CREATE SCHEMA public;
 
 
-ALTER SCHEMA public OWNER TO pg_database_owner;
-
 --
--- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: pg_database_owner
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
 --
 
 COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
--- Name: add_picking_material(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: add_picking_material(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer) RETURNS uuid
@@ -74,10 +72,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer) OWNER TO postgres;
-
 --
--- Name: ar_ttfs_set_company(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: ar_ttfs_set_company(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.ar_ttfs_set_company() RETURNS trigger
@@ -96,10 +92,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.ar_ttfs_set_company() OWNER TO postgres;
-
 --
--- Name: attach_price_contract_info(uuid, text, date, date); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: attach_price_contract_info(uuid, text, date, date); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.attach_price_contract_info(p_history_id uuid, p_contract_no text, p_valid_from date, p_valid_until date) RETURNS void
@@ -119,10 +113,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.attach_price_contract_info(p_history_id uuid, p_contract_no text, p_valid_from date, p_valid_until date) OWNER TO postgres;
-
 --
--- Name: bulk_update_product_prices(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: bulk_update_product_prices(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.bulk_update_product_prices(p_rows jsonb) RETURNS jsonb
@@ -198,10 +190,8 @@ end;
 $$;
 
 
-ALTER FUNCTION public.bulk_update_product_prices(p_rows jsonb) OWNER TO postgres;
-
 --
--- Name: cancel_delivery(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: cancel_delivery(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.cancel_delivery(p_delivery_note_id uuid) RETURNS void
@@ -250,10 +240,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.cancel_delivery(p_delivery_note_id uuid) OWNER TO postgres;
-
 --
--- Name: cancel_picking(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: cancel_picking(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.cancel_picking(p_picking_list_id uuid) RETURNS void
@@ -278,10 +266,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.cancel_picking(p_picking_list_id uuid) OWNER TO postgres;
-
 --
--- Name: capture_login_session(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: capture_login_session(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.capture_login_session() RETURNS trigger
@@ -300,10 +286,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.capture_login_session() OWNER TO postgres;
-
 --
--- Name: check_similar_accounts(text, uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: check_similar_accounts(text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.check_similar_accounts(p_name text, p_company_id uuid) RETURNS TABLE(id uuid, name text, similarity real)
@@ -328,10 +312,8 @@ CREATE FUNCTION public.check_similar_accounts(p_name text, p_company_id uuid) RE
 $$;
 
 
-ALTER FUNCTION public.check_similar_accounts(p_name text, p_company_id uuid) OWNER TO postgres;
-
 --
--- Name: complete_picking(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: complete_picking(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.complete_picking(p_picking_list_id uuid) RETURNS void
@@ -349,10 +331,107 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.complete_picking(p_picking_list_id uuid) OWNER TO postgres;
+--
+-- Name: create_goods_receipt(character varying, date, uuid, character varying, uuid, character varying, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_goods_receipt(p_reference_no character varying, p_receipt_date date, p_warehouse_id uuid, p_receipt_type character varying, p_vendor_id uuid, p_po_number character varying, p_notes text, p_items jsonb) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+    v_company_id uuid;
+    v_receipt_id uuid;
+    v_movement_type character varying;
+    v_item jsonb;
+    v_qty int;
+    v_product_id uuid;
+BEGIN
+    SELECT company_id INTO v_company_id FROM public.warehouses WHERE id = p_warehouse_id;
+    IF v_company_id IS NULL THEN
+        RAISE EXCEPTION 'Gudang tujuan tidak ditemukan';
+    END IF;
+
+    IF NOT (
+        public.is_super_admin()
+        OR (
+            v_company_id = public.get_user_company_id()
+            AND (public.is_manager_or_above() OR public.has_role('operations'::text))
+        )
+    ) THEN
+        RAISE EXCEPTION 'Tidak punya akses membuat penerimaan barang untuk entitas ini';
+    END IF;
+
+    IF p_reference_no IS NULL OR btrim(p_reference_no) = '' THEN
+        RAISE EXCEPTION 'Nomor referensi wajib diisi';
+    END IF;
+    IF length(p_reference_no) > 50 THEN
+        RAISE EXCEPTION 'Nomor referensi maksimal 50 karakter';
+    END IF;
+    IF p_receipt_date IS NULL THEN
+        RAISE EXCEPTION 'Tanggal penerimaan wajib diisi';
+    END IF;
+    IF p_receipt_type NOT IN ('purchase_order','restock_produksi','transfer_masuk','adjustment') THEN
+        RAISE EXCEPTION 'Tipe penerimaan tidak valid: %', p_receipt_type;
+    END IF;
+    IF p_receipt_type IN ('purchase_order','restock_produksi') AND p_vendor_id IS NULL THEN
+        RAISE EXCEPTION 'Vendor wajib diisi untuk tipe penerimaan %', p_receipt_type;
+    END IF;
+    IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
+        RAISE EXCEPTION 'Minimal satu baris barang (produk + qty) wajib diisi';
+    END IF;
+
+    v_movement_type := CASE p_receipt_type
+        WHEN 'transfer_masuk' THEN 'transfer_in'
+        WHEN 'adjustment' THEN 'adjustment'
+        ELSE 'inbound'
+    END;
+
+    INSERT INTO public.goods_receipts (
+        company_id, reference_no, receipt_date, warehouse_id, receipt_type,
+        vendor_id, po_number, notes, created_by
+    ) VALUES (
+        v_company_id, btrim(p_reference_no), p_receipt_date, p_warehouse_id, p_receipt_type,
+        p_vendor_id, p_po_number, p_notes, auth.uid()
+    ) RETURNING id INTO v_receipt_id;
+
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+    LOOP
+        v_qty := NULLIF(v_item->>'qty','')::int;
+        v_product_id := NULLIF(v_item->>'product_id','')::uuid;
+
+        IF v_product_id IS NULL THEN
+            RAISE EXCEPTION 'Setiap baris wajib punya produk yang valid';
+        END IF;
+        IF v_qty IS NULL OR v_qty <= 0 THEN
+            RAISE EXCEPTION 'Qty setiap baris wajib bilangan bulat lebih dari 0 (produk %)', v_product_id;
+        END IF;
+
+        INSERT INTO public.goods_receipt_items (
+            goods_receipt_id, product_id, qty, unit_cost, notes
+        ) VALUES (
+            v_receipt_id, v_product_id, v_qty,
+            NULLIF(v_item->>'unit_cost','')::numeric,
+            v_item->>'notes'
+        );
+
+        INSERT INTO public.stock_ledger (
+            company_id, warehouse_id, product_id, movement_type, qty,
+            reference_type, reference_id, reference_no, notes, created_by
+        ) VALUES (
+            v_company_id, p_warehouse_id, v_product_id, v_movement_type, v_qty,
+            'goods_receipt', v_receipt_id, btrim(p_reference_no),
+            COALESCE(v_item->>'notes', p_notes), auth.uid()
+        );
+    END LOOP;
+
+    RETURN v_receipt_id;
+END;
+$$;
+
 
 --
--- Name: create_invoice(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: create_invoice(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.create_invoice(p_sp_order_id uuid) RETURNS uuid
@@ -484,10 +563,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.create_invoice(p_sp_order_id uuid) OWNER TO postgres;
-
 --
--- Name: create_quotation_revision(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: create_quotation_revision(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.create_quotation_revision(p_quotation_id uuid) RETURNS uuid
@@ -576,17 +653,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.create_quotation_revision(p_quotation_id uuid) OWNER TO postgres;
-
 --
--- Name: FUNCTION create_quotation_revision(p_quotation_id uuid); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION create_quotation_revision(p_quotation_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.create_quotation_revision(p_quotation_id uuid) IS 'Lahirkan revisi berikutnya: sumber -> SUPERSEDED, baris baru revision=MAX+1 nomor SAMA status DRAFT, items disalin. Satu transaksi. SECURITY INVOKER: gate = RLS quotations_update/insert.';
 
 
 --
--- Name: create_sp_order_dual(uuid, uuid, text, date, uuid, text, date, text, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: create_sp_order_dual(uuid, uuid, text, date, uuid, text, date, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb) RETURNS uuid
@@ -628,10 +703,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb) OWNER TO postgres;
-
 --
--- Name: crm_lead_source_distribution(uuid, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: crm_lead_source_distribution(uuid, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.crm_lead_source_distribution(p_company_id uuid DEFAULT NULL::uuid, p_scope_own boolean DEFAULT false, p_start timestamp with time zone DEFAULT NULL::timestamp with time zone, p_end timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS TABLE(source text, cnt bigint)
@@ -653,10 +726,8 @@ CREATE FUNCTION public.crm_lead_source_distribution(p_company_id uuid DEFAULT NU
 $$;
 
 
-ALTER FUNCTION public.crm_lead_source_distribution(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone) OWNER TO postgres;
-
 --
--- Name: crm_lifecycle_funnel(uuid, boolean); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: crm_lifecycle_funnel(uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.crm_lifecycle_funnel(p_company_id uuid DEFAULT NULL::uuid, p_scope_own boolean DEFAULT false) RETURNS TABLE(stage text, cnt bigint)
@@ -675,10 +746,8 @@ CREATE FUNCTION public.crm_lifecycle_funnel(p_company_id uuid DEFAULT NULL::uuid
 $$;
 
 
-ALTER FUNCTION public.crm_lifecycle_funnel(p_company_id uuid, p_scope_own boolean) OWNER TO postgres;
-
 --
--- Name: crm_mql_conversion(uuid, boolean); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: crm_mql_conversion(uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.crm_mql_conversion(p_company_id uuid DEFAULT NULL::uuid, p_scope_own boolean DEFAULT false) RETURNS TABLE(converted bigint, pending bigint, lost bigint, has_real_transition boolean)
@@ -710,10 +779,8 @@ CREATE FUNCTION public.crm_mql_conversion(p_company_id uuid DEFAULT NULL::uuid, 
 $$;
 
 
-ALTER FUNCTION public.crm_mql_conversion(p_company_id uuid, p_scope_own boolean) OWNER TO postgres;
-
 --
--- Name: crm_report_window(date, date); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: crm_report_window(date, date); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.crm_report_window(p_start date, p_end date) RETURNS TABLE(sales_id uuid, total bigint, done bigint, pending bigint, overdue bigint, cancelled bigint, calls bigint, visits bigint, tasks bigint, prospects bigint, quotations bigint)
@@ -789,10 +856,8 @@ CREATE FUNCTION public.crm_report_window(p_start date, p_end date) RETURNS TABLE
 $$;
 
 
-ALTER FUNCTION public.crm_report_window(p_start date, p_end date) OWNER TO postgres;
-
 --
--- Name: crm_stage_age(uuid, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: crm_stage_age(uuid, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.crm_stage_age(p_company_id uuid DEFAULT NULL::uuid, p_scope_own boolean DEFAULT false, p_start timestamp with time zone DEFAULT NULL::timestamp with time zone, p_end timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS TABLE(inquiry_id uuid, inquiry_no text, status text, company_id uuid, owner_id uuid, account_name text, stage_since timestamp with time zone)
@@ -805,7 +870,7 @@ CREATE FUNCTION public.crm_stage_age(p_company_id uuid DEFAULT NULL::uuid, p_sco
     FROM   inquiries i
     WHERE  i.deleted_at IS NULL
       AND  (p_company_id IS NULL OR i.company_id = p_company_id)
-      AND  (NOT p_scope_own OR i.created_by = auth.uid())
+      AND  (NOT p_scope_own OR i.owner_id = auth.uid())
       AND  (
              i.status IN ('OPEN','IN_REVIEW','QUOTED','NEGOTIATION')
              OR (i.status IN ('WON','LOST','CANCELLED')
@@ -833,10 +898,15 @@ CREATE FUNCTION public.crm_stage_age(p_company_id uuid DEFAULT NULL::uuid, p_sco
 $$;
 
 
-ALTER FUNCTION public.crm_stage_age(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone) OWNER TO postgres;
+--
+-- Name: FUNCTION crm_stage_age(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.crm_stage_age(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone) IS 'Satu baris per inquiry + kapan ia masuk status sekarang (Aging & Stale Deals). p_scope_own memakai inquiries.owner_id sejak 20260917000002 (semula created_by; diganti bersamaan RLS 20260830000003 — TD-249).';
+
 
 --
--- Name: crm_stage_conversion(uuid, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: crm_stage_conversion(uuid, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.crm_stage_conversion(p_company_id uuid DEFAULT NULL::uuid, p_scope_own boolean DEFAULT false, p_start timestamp with time zone DEFAULT NULL::timestamp with time zone, p_end timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS TABLE(to_status text, inquiries bigint)
@@ -848,7 +918,7 @@ CREATE FUNCTION public.crm_stage_conversion(p_company_id uuid DEFAULT NULL::uuid
     FROM   inquiries i
     WHERE  i.deleted_at IS NULL
       AND  (p_company_id IS NULL OR i.company_id = p_company_id)
-      AND  (NOT p_scope_own OR i.created_by = auth.uid())
+      AND  (NOT p_scope_own OR i.owner_id = auth.uid())
       AND  (
              i.status IN ('OPEN','IN_REVIEW','QUOTED','NEGOTIATION')
              OR (i.status IN ('WON','LOST','CANCELLED')
@@ -864,10 +934,15 @@ CREATE FUNCTION public.crm_stage_conversion(p_company_id uuid DEFAULT NULL::uuid
 $$;
 
 
-ALTER FUNCTION public.crm_stage_conversion(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone) OWNER TO postgres;
+--
+-- Name: FUNCTION crm_stage_conversion(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.crm_stage_conversion(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone) IS 'Jumlah inquiry DISTINCT yang pernah mencapai tiap status. p_scope_own memakai inquiries.owner_id sejak 20260917000002 (semula created_by; diganti bersamaan RLS 20260830000003 — TD-249).';
+
 
 --
--- Name: delete_picking_material(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: delete_picking_material(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.delete_picking_material(p_material_id uuid) RETURNS void
@@ -894,10 +969,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.delete_picking_material(p_material_id uuid) OWNER TO postgres;
-
 --
--- Name: delete_sp_dual(uuid, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: delete_sp_dual(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.delete_sp_dual(p_customer_id uuid, p_sp_no text) RETURNS void
@@ -928,10 +1001,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.delete_sp_dual(p_customer_id uuid, p_sp_no text) OWNER TO postgres;
-
 --
--- Name: delete_sp_item_dual(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: delete_sp_item_dual(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.delete_sp_item_dual(p_id uuid) RETURNS void
@@ -973,17 +1044,15 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.delete_sp_item_dual(p_id uuid) OWNER TO postgres;
-
 --
--- Name: FUNCTION delete_sp_item_dual(p_id uuid); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION delete_sp_item_dual(p_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.delete_sp_item_dual(p_id uuid) IS 'Satu-satunya jalur sah menghapus SATU baris item SP. Menghapus sp_items DAN kembarannya di sp_order_items (legacy_sp_item_id TANPA FK) dalam satu transaksi — mencegah baris hantu yang membuat guard Sigma-shipped=Sigma-qty create_invoice mustahil terpenuhi. Hapus SP UTUH pakai delete_sp_dual().';
 
 
 --
--- Name: dispatch_delivery(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: dispatch_delivery(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.dispatch_delivery(p_delivery_note_id uuid) RETURNS void
@@ -1041,10 +1110,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.dispatch_delivery(p_delivery_note_id uuid) OWNER TO postgres;
-
 --
--- Name: exec_sql(text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: exec_sql(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.exec_sql(sql text) RETURNS void
@@ -1056,10 +1123,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.exec_sql(sql text) OWNER TO postgres;
-
 --
--- Name: generate_customer_code(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: generate_customer_code(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.generate_customer_code() RETURNS trigger
@@ -1092,10 +1157,8 @@ end;
 $$;
 
 
-ALTER FUNCTION public.generate_customer_code() OWNER TO postgres;
-
 --
--- Name: generate_delivery_from_picking(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: generate_delivery_from_picking(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.generate_delivery_from_picking(p_picking_list_id uuid) RETURNS TABLE(delivery_note_id uuid, do_no text)
@@ -1157,10 +1220,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.generate_delivery_from_picking(p_picking_list_id uuid) OWNER TO postgres;
-
 --
--- Name: generate_picking_from_sp(text, uuid, uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: generate_picking_from_sp(text, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid DEFAULT NULL::uuid) RETURNS TABLE(picking_list_id uuid, picking_no text)
@@ -1238,10 +1299,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid) OWNER TO postgres;
-
 --
--- Name: get_linked_bnf_status(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_linked_bnf_status(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_linked_bnf_status(p_daily_report_item_id uuid) RETURNS text
@@ -1269,10 +1328,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.get_linked_bnf_status(p_daily_report_item_id uuid) OWNER TO postgres;
-
 --
--- Name: get_storbit_dashboard_stats(uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_storbit_dashboard_stats(uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_storbit_dashboard_stats(p_customer_id uuid DEFAULT NULL::uuid, p_price_category text DEFAULT NULL::text, p_company_id uuid DEFAULT NULL::uuid) RETURNS jsonb
@@ -1456,10 +1513,8 @@ SELECT jsonb_build_object(
 $$;
 
 
-ALTER FUNCTION public.get_storbit_dashboard_stats(p_customer_id uuid, p_price_category text, p_company_id uuid) OWNER TO postgres;
-
 --
--- Name: get_storbit_outstanding_summary(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_storbit_outstanding_summary(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_storbit_outstanding_summary(p_company_id uuid DEFAULT NULL::uuid, p_customer_id uuid DEFAULT NULL::uuid, p_price_category text DEFAULT NULL::text) RETURNS jsonb
@@ -1555,10 +1610,8 @@ SELECT jsonb_build_object(
 $$;
 
 
-ALTER FUNCTION public.get_storbit_outstanding_summary(p_company_id uuid, p_customer_id uuid, p_price_category text) OWNER TO postgres;
-
 --
--- Name: FUNCTION get_storbit_outstanding_summary(p_company_id uuid, p_customer_id uuid, p_price_category text); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_outstanding_summary(p_company_id uuid, p_customer_id uuid, p_price_category text); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.get_storbit_outstanding_summary(p_company_id uuid, p_customer_id uuid, p_price_category text) IS 'Empat angka Storbit. DUA BRUTO, DUA DPP — jangan dijumlahkan lintas basis.
@@ -1580,7 +1633,7 @@ Sumber angka sp_items (bukan sp_order_items).';
 
 
 --
--- Name: get_storbit_product_report(uuid, uuid, date, date); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_storbit_product_report(uuid, uuid, date, date); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_storbit_product_report(p_product_id uuid, p_company_id uuid DEFAULT NULL::uuid, p_date_from date DEFAULT NULL::date, p_date_to date DEFAULT NULL::date) RETURNS jsonb
@@ -1683,10 +1736,8 @@ SELECT jsonb_build_object(
 $$;
 
 
-ALTER FUNCTION public.get_storbit_product_report(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date) OWNER TO postgres;
-
 --
--- Name: FUNCTION get_storbit_product_report(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_product_report(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.get_storbit_product_report(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date) IS 'Laporan satu produk: ringkasan + rincian per customer.
@@ -1702,7 +1753,7 @@ tidak terpengaruh p_date_from/p_date_to.';
 
 
 --
--- Name: get_storbit_product_sp_list(uuid, uuid, date, date, integer); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_storbit_product_sp_list(uuid, uuid, date, date, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_storbit_product_sp_list(p_product_id uuid, p_company_id uuid DEFAULT NULL::uuid, p_date_from date DEFAULT NULL::date, p_date_to date DEFAULT NULL::date, p_limit integer DEFAULT 200) RETURNS TABLE(sp_no text, customer_id uuid, customer_name text, dc_nama text, sp_date date, expired_date date, status text, qty integer, shipped_qty integer, sisa integer, nilai_sisa numeric, umur_hari integer)
@@ -1767,10 +1818,8 @@ LIMIT GREATEST(COALESCE(p_limit, 200), 1);
 $$;
 
 
-ALTER FUNCTION public.get_storbit_product_sp_list(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date, p_limit integer) OWNER TO postgres;
-
 --
--- Name: FUNCTION get_storbit_product_sp_list(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date, p_limit integer); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_product_sp_list(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date, p_limit integer); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.get_storbit_product_sp_list(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date, p_limit integer) IS 'Daftar SP yang memuat satu produk, satu baris per SP.
@@ -1782,7 +1831,7 @@ Detail SP; jangan dicabut walau tak dipakai sebagai kolom tampilan.';
 
 
 --
--- Name: get_storbit_rekap_per_customer(text, uuid, text, uuid, integer); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_storbit_rekap_per_customer(text, uuid, text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_storbit_rekap_per_customer(p_category text, p_customer_id uuid DEFAULT NULL::uuid, p_price_category text DEFAULT NULL::text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 500) RETURNS TABLE(customer_id uuid, customer_name text, sp_no text, dc_nama text, sp_date date, expired_date date, status text, nilai_outstanding numeric, produk text)
@@ -1888,17 +1937,15 @@ LIMIT GREATEST(COALESCE(p_limit, 500), 1);
 $$;
 
 
-ALTER FUNCTION public.get_storbit_rekap_per_customer(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer) OWNER TO postgres;
-
 --
--- Name: FUNCTION get_storbit_rekap_per_customer(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_rekap_per_customer(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.get_storbit_rekap_per_customer(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer) IS 'Rekap SP per customer untuk SATU kategori status. Satu baris per SP (sp_items di-GROUP BY per SP; produk digabung string_agg DISTINCT). nilai_outstanding = DPP, BELUM termasuk PPN, TANPA shipping_price — rumus pra/pasca-kirim disalin dari get_storbit_dashboard_stats. NULL untuk terkirim_penuh, pernah_risiko_pinalti, dan cancelled: basisnya sengaja belum ditetapkan, jangan dikoersi jadi 0. Kategori tak dikenal mengembalikan nol baris.';
 
 
 --
--- Name: get_storbit_sp_drilldown(text, uuid, text, uuid, integer); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_storbit_sp_drilldown(text, uuid, text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_storbit_sp_drilldown(p_category text, p_customer_id uuid DEFAULT NULL::uuid, p_price_category text DEFAULT NULL::text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200) RETURNS TABLE(sp_no text, customer_id uuid, customer_name text, dc_nama text, sp_date date, status text, expired_date date)
@@ -1969,10 +2016,8 @@ LIMIT GREATEST(COALESCE(p_limit, 200), 1);
 $$;
 
 
-ALTER FUNCTION public.get_storbit_sp_drilldown(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer) OWNER TO postgres;
-
 --
--- Name: get_storbit_stock_drilldown(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_storbit_stock_drilldown(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_storbit_stock_drilldown(p_category text, p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200) RETURNS TABLE(product_id uuid, sku text, product_name text, available numeric, reorder_point numeric)
@@ -2010,10 +2055,8 @@ LIMIT GREATEST(COALESCE(p_limit, 200), 1);
 $$;
 
 
-ALTER FUNCTION public.get_storbit_stock_drilldown(p_category text, p_company_id uuid, p_limit integer) OWNER TO postgres;
-
 --
--- Name: get_storbit_top_outstanding_products(uuid, integer); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_storbit_top_outstanding_products(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_storbit_top_outstanding_products(p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 10) RETURNS TABLE(product_id uuid, code text, product_name text, uom text, qty_outstanding integer, nilai_outstanding numeric, stok_tersedia integer, jml_sp integer)
@@ -2065,10 +2108,8 @@ LIMIT GREATEST(COALESCE(p_limit, 10), 1);
 $$;
 
 
-ALTER FUNCTION public.get_storbit_top_outstanding_products(p_company_id uuid, p_limit integer) OWNER TO postgres;
-
 --
--- Name: FUNCTION get_storbit_top_outstanding_products(p_company_id uuid, p_limit integer); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_top_outstanding_products(p_company_id uuid, p_limit integer); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.get_storbit_top_outstanding_products(p_company_id uuid, p_limit integer) IS 'Produk dengan nilai outstanding terbesar.
@@ -2080,7 +2121,7 @@ sebagai sumber tunggal isi combobox produk.';
 
 
 --
--- Name: get_table_columns(text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_table_columns(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_table_columns(p_table text) RETURNS TABLE(column_name text, data_type text)
@@ -2094,10 +2135,8 @@ CREATE FUNCTION public.get_table_columns(p_table text) RETURNS TABLE(column_name
 $$;
 
 
-ALTER FUNCTION public.get_table_columns(p_table text) OWNER TO postgres;
-
 --
--- Name: get_user_company_id(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_user_company_id(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_user_company_id() RETURNS uuid
@@ -2110,17 +2149,15 @@ CREATE FUNCTION public.get_user_company_id() RETURNS uuid
 $$;
 
 
-ALTER FUNCTION public.get_user_company_id() OWNER TO postgres;
-
 --
--- Name: FUNCTION get_user_company_id(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION get_user_company_id(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.get_user_company_id() IS 'Returns the company_id of the authenticated user from profiles. NULL before Phase 1.0F backfill. Used in all company-scoped RLS policies.';
 
 
 --
--- Name: get_user_company_ids(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_user_company_ids(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_user_company_ids() RETURNS SETOF uuid
@@ -2133,17 +2170,15 @@ CREATE FUNCTION public.get_user_company_ids() RETURNS SETOF uuid
 $$;
 
 
-ALTER FUNCTION public.get_user_company_ids() OWNER TO postgres;
-
 --
--- Name: FUNCTION get_user_company_ids(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION get_user_company_ids(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.get_user_company_ids() IS 'Returns every company_id where the authenticated user holds an active role (user_roles.is_active = true). Multi-company counterpart to get_user_company_id(), which returns only the home company (profiles.company_id) — keep using that one for policies that must stay single-value (e.g. user_login_logs).';
 
 
 --
--- Name: get_user_role_code(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: get_user_role_code(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.get_user_role_code() RETURNS text
@@ -2165,10 +2200,8 @@ CREATE FUNCTION public.get_user_role_code() RETURNS text
 $$;
 
 
-ALTER FUNCTION public.get_user_role_code() OWNER TO postgres;
-
 --
--- Name: guard_bnf_department_scope_not_home(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: guard_bnf_department_scope_not_home(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.guard_bnf_department_scope_not_home() RETURNS trigger
@@ -2186,10 +2219,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.guard_bnf_department_scope_not_home() OWNER TO postgres;
-
 --
--- Name: guard_bnf_division_scope_not_home(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: guard_bnf_division_scope_not_home(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.guard_bnf_division_scope_not_home() RETURNS trigger
@@ -2207,10 +2238,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.guard_bnf_division_scope_not_home() OWNER TO postgres;
-
 --
--- Name: guard_bnf_reports_field_update(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: guard_bnf_reports_field_update(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.guard_bnf_reports_field_update() RETURNS trigger
@@ -2252,17 +2281,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.guard_bnf_reports_field_update() OWNER TO postgres;
-
 --
--- Name: FUNCTION guard_bnf_reports_field_update(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION guard_bnf_reports_field_update(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.guard_bnf_reports_field_update() IS 'BEFORE UPDATE guard on bnf_reports, 4 tiers: (0) auth.uid() IS NULL (SQL Editor/migrations/service-role) bypasses everything; (1) id/company_id/report_no/created_by/created_at always locked, no exceptions; (2) created_by = auth.uid() or is_admin_or_above() may edit remaining report-content columns; (3) everyone else in the company (existing bnf_reports_update RLS row-scope, unchanged) may only edit status/updated_by/closed_at. Fase G (2026-08-05): related_department_id removed from Tier 2 list — moved to bnf_report_related_departments junction table with its own RLS.';
 
 
 --
--- Name: guard_daily_report_items_field_update(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: guard_daily_report_items_field_update(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.guard_daily_report_items_field_update() RETURNS trigger
@@ -2282,10 +2309,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.guard_daily_report_items_field_update() OWNER TO postgres;
-
 --
--- Name: guard_quotation_prf_consistency(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: guard_quotation_prf_consistency(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.guard_quotation_prf_consistency() RETURNS trigger
@@ -2318,10 +2343,8 @@ end;
 $$;
 
 
-ALTER FUNCTION public.guard_quotation_prf_consistency() OWNER TO postgres;
-
 --
--- Name: handle_new_user(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: handle_new_user(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.handle_new_user() RETURNS trigger
@@ -2385,17 +2408,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.handle_new_user() OWNER TO postgres;
-
 --
--- Name: FUNCTION handle_new_user(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION handle_new_user(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.handle_new_user() IS 'Auth trigger: creates a profiles row when a new Supabase Auth user is created. Reads company_code, branch_code, department_code from raw_user_meta_data with defaults MSI / HO / IT. Resolves company_id (required), branch_id and department_id (optional) from master data tables before inserting. Raises an exception if company_code is not found in public.companies. ON CONFLICT (id) DO NOTHING makes it safe to re-run. SECURITY DEFINER + SET search_path = public prevents hijacking. Patched in migration 016 after profiles.company_id became NOT NULL (Phase 1.0F).';
 
 
 --
--- Name: has_permission(text, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: has_permission(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.has_permission(module_code text, action_code text) RETURNS boolean
@@ -2417,17 +2438,15 @@ CREATE FUNCTION public.has_permission(module_code text, action_code text) RETURN
 $$;
 
 
-ALTER FUNCTION public.has_permission(module_code text, action_code text) OWNER TO postgres;
-
 --
--- Name: FUNCTION has_permission(module_code text, action_code text); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION has_permission(module_code text, action_code text); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.has_permission(module_code text, action_code text) IS 'True if the current user holds the given {module}.{action} permission through any active role. Performs 3 JOINs — use for mutation checks, not bulk SELECT policies.';
 
 
 --
--- Name: has_role(text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: has_role(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.has_role(role_code text) RETURNS boolean
@@ -2446,17 +2465,15 @@ CREATE FUNCTION public.has_role(role_code text) RETURNS boolean
 $$;
 
 
-ALTER FUNCTION public.has_role(role_code text) OWNER TO postgres;
-
 --
--- Name: FUNCTION has_role(role_code text); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION has_role(role_code text); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.has_role(role_code text) IS 'True if the current user holds the specified role code in any active user_roles assignment. Does not fall back to legacy roles.';
 
 
 --
--- Name: hrga_submit_approval(uuid, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: hrga_submit_approval(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.hrga_submit_approval(p_request_id uuid, p_action text, p_comment text DEFAULT NULL::text) RETURNS void
@@ -2531,10 +2548,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.hrga_submit_approval(p_request_id uuid, p_action text, p_comment text) OWNER TO postgres;
-
 --
--- Name: increment_document_sequence(uuid, text, text, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: increment_document_sequence(uuid, text, text, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.increment_document_sequence(p_company_id uuid, p_document_type text, p_department_code text, p_year integer, p_month integer DEFAULT 0, p_day integer DEFAULT 0) RETURNS integer
@@ -2569,10 +2584,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.increment_document_sequence(p_company_id uuid, p_document_type text, p_department_code text, p_year integer, p_month integer, p_day integer) OWNER TO postgres;
-
 --
--- Name: indomarco_dashboard_stats(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: indomarco_dashboard_stats(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) RETURNS jsonb
@@ -2624,10 +2637,8 @@ CREATE FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) RETURNS jso
 $$;
 
 
-ALTER FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) OWNER TO postgres;
-
 --
--- Name: int_to_roman(integer); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: int_to_roman(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.int_to_roman(num integer) RETURNS text
@@ -2650,10 +2661,8 @@ begin
 end; $$;
 
 
-ALTER FUNCTION public.int_to_roman(num integer) OWNER TO postgres;
-
 --
--- Name: is_admin_or_above(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: is_admin_or_above(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.is_admin_or_above() RETURNS boolean
@@ -2671,17 +2680,15 @@ CREATE FUNCTION public.is_admin_or_above() RETURNS boolean
 $$;
 
 
-ALTER FUNCTION public.is_admin_or_above() OWNER TO postgres;
-
 --
--- Name: FUNCTION is_admin_or_above(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION is_admin_or_above(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.is_admin_or_above() IS 'True if current user is admin or super_admin. Includes legacy profiles.role=''super'' fallback for Phase 1.0D→1.0F transition.';
 
 
 --
--- Name: is_admin_tier_role(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: is_admin_tier_role(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.is_admin_tier_role(p_role_id uuid) RETURNS boolean
@@ -2696,17 +2703,15 @@ CREATE FUNCTION public.is_admin_tier_role(p_role_id uuid) RETURNS boolean
 $$;
 
 
-ALTER FUNCTION public.is_admin_tier_role(p_role_id uuid) OWNER TO postgres;
-
 --
--- Name: FUNCTION is_admin_tier_role(p_role_id uuid); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION is_admin_tier_role(p_role_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.is_admin_tier_role(p_role_id uuid) IS 'True if the given role_id resolves to super_admin or admin. SECURITY DEFINER so the check is independent of caller''s RLS visibility into roles. Used to gate user_roles writes — see user_roles_insert/update.';
 
 
 --
--- Name: is_bnf_authorized(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: is_bnf_authorized(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.is_bnf_authorized() RETURNS boolean
@@ -2729,10 +2734,35 @@ CREATE FUNCTION public.is_bnf_authorized() RETURNS boolean
 $$;
 
 
-ALTER FUNCTION public.is_bnf_authorized() OWNER TO postgres;
+--
+-- Name: is_hcga_functional(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_hcga_functional() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM   user_roles ur
+    JOIN   roles r ON r.id = ur.role_id
+    WHERE  ur.user_id   = auth.uid()
+      AND  ur.is_active = true
+      AND  (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND  r.code IN ('hcga_manager','hcga_ga','hcga_personel','hcga_peopledev')
+  );
+$$;
+
 
 --
--- Name: is_manager_or_above(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: FUNCTION is_hcga_functional(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.is_hcga_functional() IS 'True bila user memegang salah satu role fungsional HCGA aktif (hcga_manager/hcga_ga/hcga_personel/hcga_peopledev) di entitas mana pun — pengganti has_role(''hrga'') di 9 policy hrga_* (migrasi 20260912000002). Cakupan entitas TETAP dari klausa company_id = get_user_company_id() di tiap policy (pola is_manager_or_above()). Daftar kode eksplisit, bukan LIKE ''hcga_%''. Legacy ''hrga'' sengaja tidak dimasukkan (0 pemegang sejak 11 Sep 2026). Tiga role staf (hcga_ga/personel/peopledev) sengaja level 7, BUKAN level<=6, supaya tidak otomatis lolos is_manager_or_above() di 52 policy lain di luar domain HCGA — otorisasi domain HCGA murni lewat fungsi ini.';
+
+
+--
+-- Name: is_manager_or_above(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.is_manager_or_above() RETURNS boolean
@@ -2748,10 +2778,8 @@ CREATE FUNCTION public.is_manager_or_above() RETURNS boolean
 $$;
 
 
-ALTER FUNCTION public.is_manager_or_above() OWNER TO postgres;
-
 --
--- Name: is_manager_or_above_in(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: is_manager_or_above_in(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.is_manager_or_above_in(p_company_id uuid) RETURNS boolean
@@ -2771,17 +2799,81 @@ CREATE FUNCTION public.is_manager_or_above_in(p_company_id uuid) RETURNS boolean
 $$;
 
 
-ALTER FUNCTION public.is_manager_or_above_in(p_company_id uuid) OWNER TO postgres;
-
 --
--- Name: FUNCTION is_manager_or_above_in(p_company_id uuid); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION is_manager_or_above_in(p_company_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) IS 'Kembaran is_manager_or_above() yang MENGIKAT role ke entitas baris. Dipakai policy quotations/quotation_items agar TD-180 tertutup tanpa memutus keterkaitan dua syarat (gotcha #26). Daftar role WAJIB bergerak bersama TD-233 (lima tempat).';
+COMMENT ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) IS 'Cek apakah user punya role level<=6 (manager ke atas) di company_id tertentu. Kini level-driven (roles.level), bukan daftar nama role.';
 
 
 --
--- Name: is_sp_item_writer(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: is_procurement_functional(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_procurement_functional() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id = auth.uid() AND ur.is_active = true
+      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND r.code IN ('proc_manager','proc_staff'));
+$$;
+
+
+--
+-- Name: FUNCTION is_procurement_functional(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.is_procurement_functional() IS 'True bila user memegang proc_manager/proc_staff aktif di entitas mana pun — pengganti has_role(''procurement'') di 14 policy (migrasi 20260912000004). Legacy ''procurement'' sengaja tidak dimasukkan (dormant sejak pilot 2, 12 Sep 2026).';
+
+
+--
+-- Name: is_procurement_functional_in(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_procurement_functional_in(p_company_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id = auth.uid() AND ur.company_id = p_company_id AND ur.is_active = true
+      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND r.code IN ('proc_manager','proc_staff'));
+$$;
+
+
+--
+-- Name: FUNCTION is_procurement_functional_in(p_company_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.is_procurement_functional_in(p_company_id uuid) IS 'Varian entitas-terikat is_procurement_functional(), dipakai prf_claim. Migrasi 20260912000004.';
+
+
+--
+-- Name: is_sales_functional(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_sales_functional() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id = auth.uid() AND ur.is_active = true
+      AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND r.code IN ('bd_sales_executive','bd_account_executive','bd_sales_spv_console','bd_sales_spv_forwarding'));
+$$;
+
+
+--
+-- Name: FUNCTION is_sales_functional(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.is_sales_functional() IS 'True bila user memegang salah satu role penjual BD aktif (bd_sales_executive/bd_account_executive/bd_sales_spv_console/bd_sales_spv_forwarding) — pengganti has_role(''sales'') di prf_insert dan sales_orders_insert (migrasi 20260912000006). DM dan legacy ''sales'' sengaja tidak dimasukkan.';
+
+
+--
+-- Name: is_sp_item_writer(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.is_sp_item_writer() RETURNS boolean
@@ -2799,17 +2891,15 @@ CREATE FUNCTION public.is_sp_item_writer() RETURNS boolean
 $$;
 
 
-ALTER FUNCTION public.is_sp_item_writer() OWNER TO postgres;
-
 --
--- Name: FUNCTION is_sp_item_writer(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION is_sp_item_writer(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.is_sp_item_writer() IS 'Izin TULIS baris item SP (sp_items/sp_order_items). Sengaja TIDAK memakai is_manager_or_above(): ceo/gm/gm_bd VIEW-ONLY di konteks ini (keputusan Den 2 Sep 2026, sejalan 04_ROLE_PERMISSION_MATRIX baris Logistics: ceo=R, gm_bd=tanpa akses). Jangan tambah role tanpa memperbarui matrix itu juga.';
 
 
 --
--- Name: is_super_admin(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: is_super_admin(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.is_super_admin() RETURNS boolean
@@ -2827,17 +2917,15 @@ CREATE FUNCTION public.is_super_admin() RETURNS boolean
 $$;
 
 
-ALTER FUNCTION public.is_super_admin() OWNER TO postgres;
-
 --
--- Name: FUNCTION is_super_admin(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION is_super_admin(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.is_super_admin() IS 'True if the current user holds super_admin role (new user_roles table) or legacy profiles.role=''super''. Legacy fallback removed after Phase 1.0F.';
 
 
 --
--- Name: lock_inquiry_owner_when_closed(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: lock_inquiry_owner_when_closed(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.lock_inquiry_owner_when_closed() RETURNS trigger
@@ -2856,17 +2944,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.lock_inquiry_owner_when_closed() OWNER TO postgres;
-
 --
--- Name: FUNCTION lock_inquiry_owner_when_closed(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION lock_inquiry_owner_when_closed(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.lock_inquiry_owner_when_closed() IS 'Menolak perubahan inquiries.owner_id ketika status LAMA sudah WON/LOST/CANCELLED. Sengaja RAISE EXCEPTION, bukan silent revert. Dipasang oleh migrasi 20260830000002.';
 
 
 --
--- Name: log_inquiry_status_change(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: log_inquiry_status_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.log_inquiry_status_change() RETURNS trigger
@@ -2908,10 +2994,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.log_inquiry_status_change() OWNER TO postgres;
-
 --
--- Name: log_lifecycle_change(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: log_lifecycle_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.log_lifecycle_change() RETURNS trigger
@@ -2928,10 +3012,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.log_lifecycle_change() OWNER TO postgres;
-
 --
--- Name: log_product_price_change(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: log_product_price_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.log_product_price_change() RETURNS trigger
@@ -2948,10 +3030,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.log_product_price_change() OWNER TO postgres;
-
 --
--- Name: mark_delivery_delivered(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: mark_delivery_delivered(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.mark_delivery_delivered(p_delivery_note_id uuid) RETURNS void
@@ -2982,10 +3062,48 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.mark_delivery_delivered(p_delivery_note_id uuid) OWNER TO postgres;
+--
+-- Name: mark_delivery_delivered(uuid, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_delivery_delivered(p_delivery_note_id uuid, p_signed_date date DEFAULT NULL::date) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_status text; v_cust uuid; v_sp text; v_dispatched_at timestamptz;
+BEGIN
+  SELECT status, customer_id, sp_no, dispatched_at INTO v_status, v_cust, v_sp, v_dispatched_at
+    FROM delivery_notes WHERE id=p_delivery_note_id;
+  IF v_sp IS NULL THEN RAISE EXCEPTION 'Surat jalan tidak ditemukan'; END IF;
+  IF v_status <> 'in_transit' THEN
+    RAISE EXCEPTION 'Hanya surat jalan in_transit yang bisa ditandai terkirim (status=%)', v_status; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM   user_roles ur
+    JOIN   roles       r ON r.id = ur.role_id
+    WHERE  ur.user_id  = auth.uid()
+      AND  ur.is_active = true
+      AND  (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
+      AND  (r.level <= 6 OR r.code = 'operations')
+  ) THEN
+    RAISE EXCEPTION 'Tidak berhak menandai surat jalan sebagai terkirim. Butuh level manager ke atas atau role operations.';
+  END IF;
+
+  IF p_signed_date IS NULL THEN
+    RAISE EXCEPTION 'Tanggal surat jalan ditandatangani wajib diisi'; END IF;
+  IF p_signed_date > current_date THEN
+    RAISE EXCEPTION 'Tanggal tanda tangan tidak boleh di masa depan'; END IF;
+  IF v_dispatched_at IS NOT NULL
+     AND p_signed_date < (v_dispatched_at AT TIME ZONE 'Asia/Jakarta')::date THEN
+    RAISE EXCEPTION 'Tanggal SJ ditandatangani tidak boleh sebelum tanggal berangkat'; END IF;
+  UPDATE delivery_notes SET status='delivered', delivered_at=now(), signed_date=p_signed_date WHERE id=p_delivery_note_id;
+  PERFORM sp_recompute_status(v_cust, v_sp);
+END; $$;
+
 
 --
--- Name: mark_inquiry_won(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: mark_inquiry_won(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.mark_inquiry_won(p_inquiry_id uuid) RETURNS void
@@ -2995,16 +3113,13 @@ CREATE FUNCTION public.mark_inquiry_won(p_inquiry_id uuid) RETURNS void
 DECLARE
   v_status      text;
   v_created_by  uuid;
-  v_prospect_id uuid;
-  v_customer_id uuid;
   v_inquiry_no  text;
   v_company_id  uuid;
-  v_account_id  uuid;
   v_user_email  text;
   v_user_role   text;
 BEGIN
-  SELECT status, created_by, prospect_id, customer_id, inquiry_no, company_id
-    INTO v_status, v_created_by, v_prospect_id, v_customer_id, v_inquiry_no, v_company_id
+  SELECT status, created_by, inquiry_no, company_id
+    INTO v_status, v_created_by, v_inquiry_no, v_company_id
   FROM public.inquiries
   WHERE id = p_inquiry_id
     AND deleted_at IS NULL
@@ -3025,14 +3140,6 @@ BEGIN
   UPDATE public.inquiries
   SET status = 'WON', updated_at = now()
   WHERE id = p_inquiry_id;
-
-  v_account_id := COALESCE(v_prospect_id, v_customer_id);
-  IF v_account_id IS NOT NULL THEN
-    UPDATE public.accounts
-    SET pipeline_stage = 'WON'
-    WHERE id = v_account_id
-      AND deleted_at IS NULL;
-  END IF;
 
   SELECT email INTO v_user_email FROM public.profiles WHERE id = auth.uid();
 
@@ -3060,10 +3167,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.mark_inquiry_won(p_inquiry_id uuid) OWNER TO postgres;
+--
+-- Name: FUNCTION mark_inquiry_won(p_inquiry_id uuid); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.mark_inquiry_won(p_inquiry_id uuid) IS 'Tandai inquiry WON manual (pembuat atau super_admin; menolak bila sudah WON). Menulis inquiries.status + audit_logs MARK_INQUIRY_WON. Sejak 20260916000001 TIDAK menyentuh accounts.pipeline_stage; konversi akun -> customer lewat trg_set_customer_on_inquiry_won.';
+
 
 --
--- Name: mark_ttf_received(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: mark_ttf_received(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) RETURNS uuid
@@ -3141,10 +3253,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text, p_notes text) OWNER TO postgres;
-
 --
--- Name: normalize_account_name(text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: normalize_account_name(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.normalize_account_name(p_name text) RETURNS text
@@ -3156,10 +3266,8 @@ CREATE FUNCTION public.normalize_account_name(p_name text) RETURNS text
 $$;
 
 
-ALTER FUNCTION public.normalize_account_name(p_name text) OWNER TO postgres;
-
 --
--- Name: notify_sp_milestone(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: notify_sp_milestone(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.notify_sp_milestone(p_sp_order_id uuid, p_milestone text, p_old_status text, p_new_status text) RETURNS void
@@ -3191,10 +3299,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.notify_sp_milestone(p_sp_order_id uuid, p_milestone text, p_old_status text, p_new_status text) OWNER TO postgres;
-
 --
--- Name: prf_claim(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: prf_claim(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.prf_claim(p_prf_id uuid) RETURNS void
@@ -3217,16 +3323,7 @@ BEGIN
 
   IF NOT (
     is_super_admin()
-    OR EXISTS (
-         SELECT 1
-         FROM user_roles ur
-         JOIN roles r ON r.id = ur.role_id
-         WHERE ur.user_id    = v_uid
-           AND ur.company_id = v_company
-           AND ur.is_active
-           AND r.code        = 'procurement'
-           AND (ur.valid_until IS NULL OR ur.valid_until >= CURRENT_DATE)
-       )
+    OR is_procurement_functional_in(v_company)
   ) THEN
     RAISE EXCEPTION 'Tidak berhak mengambil PRF ini';
   END IF;
@@ -3246,10 +3343,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.prf_claim(p_prf_id uuid) OWNER TO postgres;
-
 --
--- Name: prf_mark_quoted(uuid, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: prf_mark_quoted(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.prf_mark_quoted(p_prf_id uuid, p_waiver_reason text DEFAULT NULL::text) RETURNS void
@@ -3300,10 +3395,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.prf_mark_quoted(p_prf_id uuid, p_waiver_reason text) OWNER TO postgres;
-
 --
--- Name: prf_release(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: prf_release(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.prf_release(p_prf_id uuid) RETURNS void
@@ -3352,10 +3445,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.prf_release(p_prf_id uuid) OWNER TO postgres;
-
 --
--- Name: prf_select_offer(uuid, uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: prf_select_offer(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.prf_select_offer(p_prf_id uuid, p_offer_id uuid) RETURNS void
@@ -3416,10 +3507,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.prf_select_offer(p_prf_id uuid, p_offer_id uuid) OWNER TO postgres;
-
 --
--- Name: record_payment(uuid, numeric, date, text, numeric, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: record_payment(uuid, numeric, date, text, numeric, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date DEFAULT CURRENT_DATE, p_reference text DEFAULT NULL::text, p_pph numeric DEFAULT 0, p_bukti_potong_url text DEFAULT NULL::text, p_bukti_potong_no text DEFAULT NULL::text) RETURNS uuid
@@ -3545,10 +3634,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_reference text, p_pph numeric, p_bukti_potong_url text, p_bukti_potong_no text) OWNER TO postgres;
-
 --
--- Name: save_prf_pricing(uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: save_prf_pricing(uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb) RETURNS jsonb
@@ -3623,10 +3710,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb) OWNER TO postgres;
-
 --
--- Name: save_quotation(uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: save_quotation(uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.save_quotation(p_quotation_id uuid, p_header jsonb, p_items jsonb) RETURNS jsonb
@@ -3708,10 +3793,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.save_quotation(p_quotation_id uuid, p_header jsonb, p_items jsonb) OWNER TO postgres;
-
 --
--- Name: set_customer_on_inquiry_won(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_customer_on_inquiry_won(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_customer_on_inquiry_won() RETURNS trigger
@@ -3743,31 +3826,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_customer_on_inquiry_won() OWNER TO postgres;
-
 --
--- Name: set_customer_on_won(); Type: FUNCTION; Schema: public; Owner: postgres
---
-
-CREATE FUNCTION public.set_customer_on_won() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  IF NEW.pipeline_stage = 'WON' AND COALESCE(NEW.lifecycle_stage,'') <> 'customer' THEN
-    NEW.account_status     := 'customer';
-    NEW.lifecycle_stage    := 'customer';
-    NEW.became_customer_at := COALESCE(NEW.became_customer_at, now());
-    NEW.converted_at       := COALESCE(NEW.converted_at, now());
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-
-ALTER FUNCTION public.set_customer_on_won() OWNER TO postgres;
-
---
--- Name: set_daily_report_items_defaults(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_daily_report_items_defaults(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_daily_report_items_defaults() RETURNS trigger
@@ -3785,10 +3845,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_daily_report_items_defaults() OWNER TO postgres;
-
 --
--- Name: set_inquiry_negotiation_on_quotation_revision(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_inquiry_negotiation_on_quotation_revision(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_inquiry_negotiation_on_quotation_revision() RETURNS trigger
@@ -3812,17 +3870,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_inquiry_negotiation_on_quotation_revision() OWNER TO postgres;
-
 --
--- Name: FUNCTION set_inquiry_negotiation_on_quotation_revision(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION set_inquiry_negotiation_on_quotation_revision(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.set_inquiry_negotiation_on_quotation_revision() IS 'Revisi ke-2+ DIKIRIM (transisi ke SENT) => inquiry QUOTED naik ke NEGOTIATION. Pengganti tombol manual "Start Negotiation" yang dicabut bersamaan dengan migrasi ini. Revisi yang masih DRAFT sengaja TIDAK memicu apa pun.';
 
 
 --
--- Name: set_inquiry_quoted_on_quotation_sent(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_inquiry_quoted_on_quotation_sent(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_inquiry_quoted_on_quotation_sent() RETURNS trigger
@@ -3844,10 +3900,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_inquiry_quoted_on_quotation_sent() OWNER TO postgres;
-
 --
--- Name: set_inquiry_review_on_prf_submit(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_inquiry_review_on_prf_submit(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_inquiry_review_on_prf_submit() RETURNS trigger
@@ -3869,10 +3923,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_inquiry_review_on_prf_submit() OWNER TO postgres;
-
 --
--- Name: set_inquiry_won_on_so(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_inquiry_won_on_so(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_inquiry_won_on_so() RETURNS trigger
@@ -3895,10 +3947,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_inquiry_won_on_so() OWNER TO postgres;
-
 --
--- Name: set_product_category_prices(uuid, numeric, numeric, numeric); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_product_category_prices(uuid, numeric, numeric, numeric); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_product_category_prices(p_product_id uuid, p_semester numeric, p_tahunan numeric, p_project numeric) RETURNS void
@@ -3938,10 +3988,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.set_product_category_prices(p_product_id uuid, p_semester numeric, p_tahunan numeric, p_project numeric) OWNER TO postgres;
-
 --
--- Name: set_prospect_on_inquiry(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_prospect_on_inquiry(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_prospect_on_inquiry() RETURNS trigger
@@ -3960,10 +4008,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_prospect_on_inquiry() OWNER TO postgres;
-
 --
--- Name: set_quotation_outcome(uuid, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_quotation_outcome(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text DEFAULT NULL::text) RETURNS void
@@ -4024,17 +4070,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text) OWNER TO postgres;
-
 --
--- Name: FUNCTION set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text) IS 'Catat jawaban customer (ACCEPTED/REJECTED) atas quotation SENT versi terakhir. Satu-satunya penulis accepted_at/accepted_by/rejection_reason.';
 
 
 --
--- Name: set_sp_expired_date(uuid, text, date); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_sp_expired_date(uuid, text, date); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date) RETURNS void
@@ -4073,10 +4117,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date) OWNER TO postgres;
-
 --
--- Name: set_sp_finance_docs(uuid, text, boolean, boolean, boolean, boolean, date, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_sp_finance_docs(uuid, text, boolean, boolean, boolean, boolean, date, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_sp_finance_docs(p_customer_id uuid, p_sp_no text, p_inv boolean, p_fp boolean, p_submit boolean, p_kirim boolean, p_submit_date date, p_email_status text) RETURNS void
@@ -4119,17 +4161,15 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.set_sp_finance_docs(p_customer_id uuid, p_sp_no text, p_inv boolean, p_fp boolean, p_submit boolean, p_kirim boolean, p_submit_date date, p_email_status text) OWNER TO postgres;
-
 --
--- Name: FUNCTION set_sp_finance_docs(p_customer_id uuid, p_sp_no text, p_inv boolean, p_fp boolean, p_submit boolean, p_kirim boolean, p_submit_date date, p_email_status text); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION set_sp_finance_docs(p_customer_id uuid, p_sp_no text, p_inv boolean, p_fp boolean, p_submit boolean, p_kirim boolean, p_submit_date date, p_email_status text); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.set_sp_finance_docs(p_customer_id uuid, p_sp_no text, p_inv boolean, p_fp boolean, p_submit boolean, p_kirim boolean, p_submit_date date, p_email_status text) IS 'Satu-satunya penulis sah inv/fp/submit/kirim/submit_date/email_status. Menulis sp_orders (sumber kebenaran) DAN menyinkronkan ke SEMUA sp_items se-SP dalam satu transaksi. Guard sumbu FINANCE (super_admin / finance_controller / finance) — SENGAJA tanpa is_manager_or_above(): matrix baris Finance menaruh manager di R, bukan CRUD.';
 
 
 --
--- Name: set_sp_status(text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_sp_status(text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid) RETURNS integer
@@ -4170,10 +4210,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid) OWNER TO postgres;
-
 --
--- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.set_updated_at() RETURNS trigger
@@ -4186,17 +4224,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.set_updated_at() OWNER TO postgres;
-
 --
--- Name: FUNCTION set_updated_at(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION set_updated_at(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.set_updated_at() IS 'Trigger function: sets updated_at = now() before every UPDATE. Defined in migration 000 (legacy baseline) and reused by all subsequent migrations via CREATE OR REPLACE — safe to re-run.';
 
 
 --
--- Name: sp_delete_btb(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: sp_delete_btb(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.sp_delete_btb(p_btb_id uuid) RETURNS void
@@ -4218,10 +4254,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.sp_delete_btb(p_btb_id uuid) OWNER TO postgres;
-
 --
--- Name: sp_issue_btb(uuid, text, text, integer, date, uuid, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: sp_issue_btb(uuid, text, text, integer, date, uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.sp_issue_btb(p_customer_id uuid, p_sp_no text, p_btb_no text, p_qty integer DEFAULT NULL::integer, p_btb_date date DEFAULT NULL::date, p_delivery_note_id uuid DEFAULT NULL::uuid, p_remarks text DEFAULT NULL::text) RETURNS uuid
@@ -4261,10 +4295,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.sp_issue_btb(p_customer_id uuid, p_sp_no text, p_btb_no text, p_qty integer, p_btb_date date, p_delivery_note_id uuid, p_remarks text) OWNER TO postgres;
-
 --
--- Name: sp_recompute_status(uuid, text); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: sp_recompute_status(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.sp_recompute_status(p_customer_id uuid, p_sp_no text) RETURNS void
@@ -4328,10 +4360,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.sp_recompute_status(p_customer_id uuid, p_sp_no text) OWNER TO postgres;
-
 --
--- Name: stamp_inquiry_closure(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: stamp_inquiry_closure(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.stamp_inquiry_closure() RETURNS trigger
@@ -4346,10 +4376,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.stamp_inquiry_closure() OWNER TO postgres;
-
 --
--- Name: storbit_sp_customers(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: storbit_sp_customers(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.storbit_sp_customers() RETURNS jsonb
@@ -4372,10 +4400,8 @@ CREATE FUNCTION public.storbit_sp_customers() RETURNS jsonb
 $$;
 
 
-ALTER FUNCTION public.storbit_sp_customers() OWNER TO postgres;
-
 --
--- Name: submit_invoice(uuid); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: submit_invoice(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.submit_invoice(p_invoice_id uuid) RETURNS void
@@ -4425,10 +4451,8 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.submit_invoice(p_invoice_id uuid) OWNER TO postgres;
-
 --
--- Name: sync_last_activity_on_account(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: sync_last_activity_on_account(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.sync_last_activity_on_account() RETURNS trigger
@@ -4457,10 +4481,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.sync_last_activity_on_account() OWNER TO postgres;
-
 --
--- Name: sync_lifecycle_columns(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: sync_lifecycle_columns(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.sync_lifecycle_columns() RETURNS trigger
@@ -4490,17 +4512,15 @@ END;
 $$;
 
 
-ALTER FUNCTION public.sync_lifecycle_columns() OWNER TO postgres;
-
 --
--- Name: FUNCTION sync_lifecycle_columns(); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION sync_lifecycle_columns(); Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON FUNCTION public.sync_lifecycle_columns() IS 'Menjaga accounts.account_status dan accounts.lifecycle_stage identik selama transisi jalur B. Sengaja tanpa tie-break: nol jalur tulis menyentuh keduanya (diukur 7 Sep 2026). Dicabut oleh migrasi 20260908000002.';
 
 
 --
--- Name: sync_profile_email(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: sync_profile_email(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.sync_profile_email() RETURNS trigger
@@ -4514,10 +4534,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.sync_profile_email() OWNER TO postgres;
-
 --
--- Name: track_stage_change(); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: track_stage_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.track_stage_change() RETURNS trigger
@@ -4533,10 +4551,37 @@ END;
 $$;
 
 
-ALTER FUNCTION public.track_stage_change() OWNER TO postgres;
+--
+-- Name: trg_stock_ledger_recompute_sp(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.trg_stock_ledger_recompute_sp() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT DISTINCT si.customer_id, si.sp_no
+        FROM public.sp_items si
+        JOIN public.sp_orders so
+          ON so.customer_id = si.customer_id
+         AND so.sp_no = si.sp_no
+         AND so.deleted_at IS NULL
+        WHERE si.product_id = NEW.product_id
+          AND si.sp_status = 'confirmed'
+          AND so.status NOT IN ('CANCELLED','LUNAS')
+    LOOP
+        PERFORM public.sp_recompute_status(r.customer_id, r.sp_no);
+    END LOOP;
+    RETURN NEW;
+END;
+$$;
+
 
 --
--- Name: update_sp_item_dual(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: update_sp_item_dual(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_sp_item_dual(p_id uuid, p_item jsonb) RETURNS void
@@ -4585,14 +4630,68 @@ BEGIN
 END; $$;
 
 
-ALTER FUNCTION public.update_sp_item_dual(p_id uuid, p_item jsonb) OWNER TO postgres;
+--
+-- Name: void_goods_receipt(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.void_goods_receipt(p_id uuid, p_reason text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+    v_receipt public.goods_receipts;
+    v_item public.goods_receipt_items;
+    v_reverse_type character varying;
+BEGIN
+    SELECT * INTO v_receipt FROM public.goods_receipts WHERE id = p_id;
+    IF v_receipt.id IS NULL THEN
+        RAISE EXCEPTION 'Dokumen penerimaan tidak ditemukan';
+    END IF;
+    IF v_receipt.status = 'void' THEN
+        RAISE EXCEPTION 'Dokumen ini sudah dibatalkan sebelumnya';
+    END IF;
+    IF NOT (
+        public.is_super_admin()
+        OR (v_receipt.company_id = public.get_user_company_id() AND public.is_manager_or_above())
+    ) THEN
+        RAISE EXCEPTION 'Tidak punya akses membatalkan penerimaan barang ini';
+    END IF;
+    IF p_reason IS NULL OR btrim(p_reason) = '' THEN
+        RAISE EXCEPTION 'Alasan pembatalan wajib diisi';
+    END IF;
+
+    v_reverse_type := CASE v_receipt.receipt_type
+        WHEN 'transfer_masuk' THEN 'transfer_out'
+        ELSE 'outbound'
+    END;
+
+    FOR v_item IN SELECT * FROM public.goods_receipt_items WHERE goods_receipt_id = p_id
+    LOOP
+        INSERT INTO public.stock_ledger (
+            company_id, warehouse_id, product_id, movement_type, qty,
+            reference_type, reference_id, reference_no, notes, created_by
+        ) VALUES (
+            v_receipt.company_id, v_receipt.warehouse_id, v_item.product_id,
+            v_reverse_type, -abs(v_item.qty),
+            'goods_receipt_void', p_id, v_receipt.reference_no,
+            'Pembatalan: ' || p_reason, auth.uid()
+        );
+    END LOOP;
+
+    UPDATE public.goods_receipts
+    SET status = 'void', voided_at = now(), voided_by = auth.uid(),
+        void_reason = p_reason, updated_at = now()
+    WHERE id = p_id;
+END;
+$$;
+
 
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: account_lifecycle_history; Type: TABLE; Schema: public; Owner: postgres
+-- Name: account_lifecycle_history; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.account_lifecycle_history (
@@ -4606,24 +4705,22 @@ CREATE TABLE public.account_lifecycle_history (
 );
 
 
-ALTER TABLE public.account_lifecycle_history OWNER TO postgres;
-
 --
--- Name: TABLE account_lifecycle_history; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE account_lifecycle_history; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.account_lifecycle_history IS 'Riwayat perubahan accounts.lifecycle_stage. Audit-only: ditulis EKSKLUSIF oleh trg_z_log_lifecycle_change (SECURITY DEFINER), nol policy tulis untuk authenticated.';
 
 
 --
--- Name: COLUMN account_lifecycle_history.changed_by; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN account_lifecycle_history.changed_by; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.account_lifecycle_history.changed_by IS 'auth.uid() saat perubahan. NULL bila perubahan datang dari trigger SECURITY DEFINER tanpa konteks user (mis. promosi otomatis dari inquiry).';
 
 
 --
--- Name: accounts; Type: TABLE; Schema: public; Owner: postgres
+-- Name: accounts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.accounts (
@@ -4705,24 +4802,22 @@ CREATE TABLE public.accounts (
 );
 
 
-ALTER TABLE public.accounts OWNER TO postgres;
-
 --
--- Name: COLUMN accounts.account_status; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN accounts.account_status; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.accounts.account_status IS 'DIPENSIUNKAN sejak 7 Sep 2026 — digantikan lifecycle_stage. Selama transisi keduanya disinkronkan otomatis: tulis ke salah satu, yang lain ikut. Di-drop di migrasi 20260908000002 setelah branch CRM v3 merge & stabil di produksi.';
 
 
 --
--- Name: COLUMN accounts.lifecycle_stage; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN accounts.lifecycle_stage; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.accounts.lifecycle_stage IS 'Sumbu LIFECYCLE akun. Tujuh nilai: lead, mql, sql, prospect, customer, free_agent, lost. Gerbang yang hidup: prospect lewat inquiry masuk, customer lewat WON. free_agent dan lost adalah exit manual. URUTAN TAHAP TIDAK DIKLAIM DI SINI — dua sumber bertentangan, lihat Keputusan Terbuka #37. Urutan nilai di CHECK/array BUKAN bukti urutan tahap. Berdampingan dengan account_status selama transisi jalur B; disinkronkan trg_a_sync_lifecycle_columns. TANPA default selama transisi. account_status di-drop di 20260908000002.';
 
 
 --
--- Name: activities; Type: TABLE; Schema: public; Owner: postgres
+-- Name: activities; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.activities (
@@ -4754,10 +4849,8 @@ CREATE TABLE public.activities (
 );
 
 
-ALTER TABLE public.activities OWNER TO postgres;
-
 --
--- Name: activity_logs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: activity_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.activity_logs (
@@ -4771,10 +4864,8 @@ CREATE TABLE public.activity_logs (
 );
 
 
-ALTER TABLE public.activity_logs OWNER TO postgres;
-
 --
--- Name: app_settings; Type: TABLE; Schema: public; Owner: postgres
+-- Name: app_settings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.app_settings (
@@ -4788,10 +4879,8 @@ CREATE TABLE public.app_settings (
 );
 
 
-ALTER TABLE public.app_settings OWNER TO postgres;
-
 --
--- Name: approval_delegations; Type: TABLE; Schema: public; Owner: postgres
+-- Name: approval_delegations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.approval_delegations (
@@ -4813,45 +4902,43 @@ CREATE TABLE public.approval_delegations (
 );
 
 
-ALTER TABLE public.approval_delegations OWNER TO postgres;
-
 --
--- Name: TABLE approval_delegations; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE approval_delegations; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.approval_delegations IS 'Temporary approval authority delegation. Must be approved by Admin before taking effect.';
 
 
 --
--- Name: COLUMN approval_delegations.delegator_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_delegations.delegator_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_delegations.delegator_id IS 'The user who is delegating their approval authority (e.g. a manager going on leave).';
 
 
 --
--- Name: COLUMN approval_delegations.delegate_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_delegations.delegate_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_delegations.delegate_id IS 'The user receiving temporary approval authority.';
 
 
 --
--- Name: COLUMN approval_delegations.document_types; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_delegations.document_types; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_delegations.document_types IS 'JSON array of document type codes this delegation covers. Empty array [] = all types.';
 
 
 --
--- Name: COLUMN approval_delegations.is_active; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_delegations.is_active; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_delegations.is_active IS 'False = pending Admin approval. True = delegation is in effect. Auto-expires at valid_until.';
 
 
 --
--- Name: approval_logs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: approval_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.approval_logs (
@@ -4872,45 +4959,43 @@ CREATE TABLE public.approval_logs (
 );
 
 
-ALTER TABLE public.approval_logs OWNER TO postgres;
-
 --
--- Name: TABLE approval_logs; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE approval_logs; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.approval_logs IS 'Immutable approval action audit trail. Append-only — never UPDATE or DELETE rows. One row per approval action.';
 
 
 --
--- Name: COLUMN approval_logs.document_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_logs.document_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_logs.document_id IS 'UUID of the document row in its own table (quotations.id, sales_orders.id, etc.). Not a hard FK — keeps the engine module-agnostic.';
 
 
 --
--- Name: COLUMN approval_logs.document_no; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_logs.document_no; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_logs.document_no IS 'Human-readable document number (e.g. QT/MSI/SLS/2026/0001). Stored for fast display without a join.';
 
 
 --
--- Name: COLUMN approval_logs.action; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_logs.action; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_logs.action IS 'What happened: submit, approve, reject, revision_requested, revise, cancel, delegate, on_hold, resume.';
 
 
 --
--- Name: COLUMN approval_logs.sequence_level; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_logs.sequence_level; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_logs.sequence_level IS 'Which approval level was actioned (1 = first approver, 2 = second, etc.).';
 
 
 --
--- Name: approval_rules; Type: TABLE; Schema: public; Owner: postgres
+-- Name: approval_rules; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.approval_rules (
@@ -4934,59 +5019,57 @@ CREATE TABLE public.approval_rules (
 );
 
 
-ALTER TABLE public.approval_rules OWNER TO postgres;
-
 --
--- Name: TABLE approval_rules; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE approval_rules; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.approval_rules IS 'Reusable approval engine rules. Company-scoped, module-agnostic. Multi-level supported via sequence_order. See docs/workflow/approval-engine.md.';
 
 
 --
--- Name: COLUMN approval_rules.document_type; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_rules.document_type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_rules.document_type IS 'Document type code (e.g. QT, SP, PO). Stored as varchar — NOT a FK to document_types to keep the engine decoupled.';
 
 
 --
--- Name: COLUMN approval_rules.department_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_rules.department_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_rules.department_id IS 'If set, rule applies only to documents from this department. NULL = applies to all departments.';
 
 
 --
--- Name: COLUMN approval_rules.min_amount; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_rules.min_amount; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_rules.min_amount IS 'Minimum document amount this rule applies to. 0 or NULL = no lower bound.';
 
 
 --
--- Name: COLUMN approval_rules.max_amount; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_rules.max_amount; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_rules.max_amount IS 'Maximum document amount this rule applies to. NULL = no upper limit.';
 
 
 --
--- Name: COLUMN approval_rules.sequence_order; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_rules.sequence_order; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_rules.sequence_order IS 'Approval level sequence. Level 1 must complete before Level 2 is triggered.';
 
 
 --
--- Name: COLUMN approval_rules.deadline_hours; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN approval_rules.deadline_hours; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.approval_rules.deadline_hours IS 'Hours within which the approver must act. NULL = no deadline. Enables escalation on overdue.';
 
 
 --
--- Name: approval_workflow_steps; Type: TABLE; Schema: public; Owner: postgres
+-- Name: approval_workflow_steps; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.approval_workflow_steps (
@@ -5004,10 +5087,8 @@ CREATE TABLE public.approval_workflow_steps (
 );
 
 
-ALTER TABLE public.approval_workflow_steps OWNER TO postgres;
-
 --
--- Name: approval_workflows; Type: TABLE; Schema: public; Owner: postgres
+-- Name: approval_workflows; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.approval_workflows (
@@ -5024,10 +5105,8 @@ CREATE TABLE public.approval_workflows (
 );
 
 
-ALTER TABLE public.approval_workflows OWNER TO postgres;
-
 --
--- Name: ar_btbs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: ar_btbs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.ar_btbs (
@@ -5042,38 +5121,36 @@ CREATE TABLE public.ar_btbs (
 );
 
 
-ALTER TABLE public.ar_btbs OWNER TO postgres;
-
 --
--- Name: TABLE ar_btbs; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE ar_btbs; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.ar_btbs IS 'AR Tracker BTB line items. Child of ar_ttfs (ON DELETE CASCADE). Update strategy: DELETE all rows for the TTF, then re-INSERT — never UPDATE individual BTB rows. Therefore no updated_at trigger needed.';
 
 
 --
--- Name: COLUMN ar_btbs.dpp_ppn; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN ar_btbs.dpp_ppn; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.ar_btbs.dpp_ppn IS 'DPP (Dasar Pengenaan Pajak) + PPN combined amount.';
 
 
 --
--- Name: COLUMN ar_btbs.pph; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN ar_btbs.pph; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.ar_btbs.pph IS 'PPh (Pajak Penghasilan) withholding tax.';
 
 
 --
--- Name: COLUMN ar_btbs."position"; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN ar_btbs."position"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.ar_btbs."position" IS 'Sort order index. TTF detail display sorts by position ASC.';
 
 
 --
--- Name: ar_ttfs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: ar_ttfs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.ar_ttfs (
@@ -5095,38 +5172,36 @@ CREATE TABLE public.ar_ttfs (
 );
 
 
-ALTER TABLE public.ar_ttfs OWNER TO postgres;
-
 --
--- Name: TABLE ar_ttfs; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE ar_ttfs; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.ar_ttfs IS 'AR Tracker TTF (Tanda Terima Faktur) headers. Parent of ar_btbs (cascade delete). tgl_pembayaran = NULL means unpaid; used for payment status calculation in calcAR().';
 
 
 --
--- Name: COLUMN ar_ttfs.tgl_pembayaran; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN ar_ttfs.tgl_pembayaran; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.ar_ttfs.tgl_pembayaran IS 'Payment receipt date. NULL = not yet paid. calcAR() in App.jsx uses this to determine status: Lunas / Partial / Belum Bayar.';
 
 
 --
--- Name: COLUMN ar_ttfs.diterima_oleh; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN ar_ttfs.diterima_oleh; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.ar_ttfs.diterima_oleh IS 'Nama orang di pihak customer yang menerima faktur. Teks bebas — orang di luar sistem Nexus, sengaja BUKAN FK ke profiles.';
 
 
 --
--- Name: COLUMN ar_ttfs.company_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN ar_ttfs.company_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.ar_ttfs.company_id IS 'Entitas pemilik TTF. Diisi otomatis trigger trg_ar_ttfs_set_company dari invoice -> sp_order -> customer. SENGAJA nullable: baris warisan yang ketiga jalurnya kosong tak boleh menggagalkan migrasi — lihat query yatim di STEP 3.';
 
 
 --
--- Name: asset_categories; Type: TABLE; Schema: public; Owner: postgres
+-- Name: asset_categories; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.asset_categories (
@@ -5147,38 +5222,36 @@ CREATE TABLE public.asset_categories (
 );
 
 
-ALTER TABLE public.asset_categories OWNER TO postgres;
-
 --
--- Name: TABLE asset_categories; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE asset_categories; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.asset_categories IS 'P3 — Phase 4.2 only. Asset classification with depreciation parameters. Schema defined in Phase 1.0B for completeness.';
 
 
 --
--- Name: COLUMN asset_categories.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN asset_categories.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.asset_categories.code IS 'Category code, unique per company. e.g. IT-EQP, FURN, VEH, BLDG.';
 
 
 --
--- Name: COLUMN asset_categories.useful_life_years; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN asset_categories.useful_life_years; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.asset_categories.useful_life_years IS 'Expected useful life in years. Drives depreciation schedule calculation.';
 
 
 --
--- Name: COLUMN asset_categories.depreciation_method; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN asset_categories.depreciation_method; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.asset_categories.depreciation_method IS 'straight_line: equal annual depreciation. double_declining: accelerated. none: non-depreciable assets (land).';
 
 
 --
--- Name: asset_fuel_logs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.asset_fuel_logs (
@@ -5201,10 +5274,8 @@ CREATE TABLE public.asset_fuel_logs (
 );
 
 
-ALTER TABLE public.asset_fuel_logs OWNER TO postgres;
-
 --
--- Name: asset_locations; Type: TABLE; Schema: public; Owner: postgres
+-- Name: asset_locations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.asset_locations (
@@ -5222,31 +5293,29 @@ CREATE TABLE public.asset_locations (
 );
 
 
-ALTER TABLE public.asset_locations OWNER TO postgres;
-
 --
--- Name: TABLE asset_locations; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE asset_locations; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.asset_locations IS 'P3 — Phase 4.2 only. Physical asset placement registry per branch. Schema defined in Phase 1.0B for completeness.';
 
 
 --
--- Name: COLUMN asset_locations.branch_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN asset_locations.branch_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.asset_locations.branch_id IS 'Branch where this location exists. Required — assets are always at a branch.';
 
 
 --
--- Name: COLUMN asset_locations.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN asset_locations.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.asset_locations.code IS 'Location code, unique per company. e.g. HO-IT-ROOM, HO-FIN-DESK.';
 
 
 --
--- Name: asset_maintenance_records; Type: TABLE; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.asset_maintenance_records (
@@ -5270,10 +5339,8 @@ CREATE TABLE public.asset_maintenance_records (
 );
 
 
-ALTER TABLE public.asset_maintenance_records OWNER TO postgres;
-
 --
--- Name: asset_network; Type: TABLE; Schema: public; Owner: postgres
+-- Name: asset_network; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.asset_network (
@@ -5298,10 +5365,8 @@ CREATE TABLE public.asset_network (
 );
 
 
-ALTER TABLE public.asset_network OWNER TO postgres;
-
 --
--- Name: asset_software_licenses; Type: TABLE; Schema: public; Owner: postgres
+-- Name: asset_software_licenses; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.asset_software_licenses (
@@ -5325,10 +5390,8 @@ CREATE TABLE public.asset_software_licenses (
 );
 
 
-ALTER TABLE public.asset_software_licenses OWNER TO postgres;
-
 --
--- Name: asset_specifications; Type: TABLE; Schema: public; Owner: postgres
+-- Name: asset_specifications; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.asset_specifications (
@@ -5374,10 +5437,8 @@ CREATE TABLE public.asset_specifications (
 );
 
 
-ALTER TABLE public.asset_specifications OWNER TO postgres;
-
 --
--- Name: assets; Type: TABLE; Schema: public; Owner: postgres
+-- Name: assets; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.assets (
@@ -5432,66 +5493,64 @@ CREATE TABLE public.assets (
 );
 
 
-ALTER TABLE public.assets OWNER TO postgres;
-
 --
--- Name: TABLE assets; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE assets; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.assets IS 'P3 — Phase 4.2 only. Fixed asset register. Disposal requires approval workflow — never hard delete. Schema defined in Phase 1.0B for completeness.';
 
 
 --
--- Name: COLUMN assets.asset_no; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN assets.asset_no; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.assets.asset_no IS 'Document number in standard format: AST/{ENTITY}/{DEPT}/{YYYY}/{SEQ}. Generated via document_sequences.';
 
 
 --
--- Name: COLUMN assets.useful_life_years; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN assets.useful_life_years; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.assets.useful_life_years IS 'Overrides the category default if set. Otherwise inherits from asset_categories.useful_life_years.';
 
 
 --
--- Name: COLUMN assets.book_value; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN assets.book_value; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.assets.book_value IS 'Current book value = purchase_price - accumulated_depreciation. Updated each depreciation run.';
 
 
 --
--- Name: COLUMN assets.status; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN assets.status; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.assets.status IS 'Asset lifecycle status: active, disposed, in_repair, retired, transferred.';
 
 
 --
--- Name: COLUMN assets.coa_asset_account_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN assets.coa_asset_account_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.assets.coa_asset_account_id IS 'Nullable FK to chart_of_accounts. Asset acquisition posting account. Set when COA is configured in Phase 3.';
 
 
 --
--- Name: COLUMN assets.coa_depreciation_account_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN assets.coa_depreciation_account_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.assets.coa_depreciation_account_id IS 'Nullable FK to chart_of_accounts. Accumulated depreciation contra-asset account.';
 
 
 --
--- Name: COLUMN assets.coa_expense_account_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN assets.coa_expense_account_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.assets.coa_expense_account_id IS 'Nullable FK to chart_of_accounts. Depreciation expense posting account.';
 
 
 --
--- Name: audit_logs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.audit_logs (
@@ -5513,10 +5572,8 @@ CREATE TABLE public.audit_logs (
 );
 
 
-ALTER TABLE public.audit_logs OWNER TO postgres;
-
 --
--- Name: backfill_sp_order_items_20260808; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backfill_sp_order_items_20260808; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backfill_sp_order_items_20260808 (
@@ -5534,10 +5591,8 @@ CREATE TABLE public.backfill_sp_order_items_20260808 (
 );
 
 
-ALTER TABLE public.backfill_sp_order_items_20260808 OWNER TO postgres;
-
 --
--- Name: backup_b4_inquiries_20260725; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_b4_inquiries_20260725; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_b4_inquiries_20260725 (
@@ -5579,10 +5634,8 @@ CREATE TABLE public.backup_b4_inquiries_20260725 (
 );
 
 
-ALTER TABLE public.backup_b4_inquiries_20260725 OWNER TO postgres;
-
 --
--- Name: backup_dedup_accounts_20260725; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_dedup_accounts_20260725; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_dedup_accounts_20260725 (
@@ -5654,10 +5707,8 @@ CREATE TABLE public.backup_dedup_accounts_20260725 (
 );
 
 
-ALTER TABLE public.backup_dedup_accounts_20260725 OWNER TO postgres;
-
 --
--- Name: backup_dedup_activities_20260725; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_dedup_activities_20260725; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_dedup_activities_20260725 (
@@ -5688,10 +5739,8 @@ CREATE TABLE public.backup_dedup_activities_20260725 (
 );
 
 
-ALTER TABLE public.backup_dedup_activities_20260725 OWNER TO postgres;
-
 --
--- Name: backup_dedup_alliance_20260725; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_dedup_alliance_20260725; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_dedup_alliance_20260725 (
@@ -5763,10 +5812,8 @@ CREATE TABLE public.backup_dedup_alliance_20260725 (
 );
 
 
-ALTER TABLE public.backup_dedup_alliance_20260725 OWNER TO postgres;
-
 --
--- Name: backup_dedup_inquiries_20260725; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_dedup_inquiries_20260725; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_dedup_inquiries_20260725 (
@@ -5808,10 +5855,8 @@ CREATE TABLE public.backup_dedup_inquiries_20260725 (
 );
 
 
-ALTER TABLE public.backup_dedup_inquiries_20260725 OWNER TO postgres;
-
 --
--- Name: backup_dedup_quotations_20260725; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_dedup_quotations_20260725; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_dedup_quotations_20260725 (
@@ -5862,10 +5907,8 @@ CREATE TABLE public.backup_dedup_quotations_20260725 (
 );
 
 
-ALTER TABLE public.backup_dedup_quotations_20260725 OWNER TO postgres;
-
 --
--- Name: backup_leadpool_c1_won_20260724; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_leadpool_c1_won_20260724; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_leadpool_c1_won_20260724 (
@@ -5937,10 +5980,8 @@ CREATE TABLE public.backup_leadpool_c1_won_20260724 (
 );
 
 
-ALTER TABLE public.backup_leadpool_c1_won_20260724 OWNER TO postgres;
-
 --
--- Name: backup_leadpool_trap_20260724; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_leadpool_trap_20260724; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_leadpool_trap_20260724 (
@@ -6012,10 +6053,8 @@ CREATE TABLE public.backup_leadpool_trap_20260724 (
 );
 
 
-ALTER TABLE public.backup_leadpool_trap_20260724 OWNER TO postgres;
-
 --
--- Name: backup_prf_20260727; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_prf_20260727; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_prf_20260727 (
@@ -6090,10 +6129,8 @@ CREATE TABLE public.backup_prf_20260727 (
 );
 
 
-ALTER TABLE public.backup_prf_20260727 OWNER TO postgres;
-
 --
--- Name: backup_prf_cost_items_20260727; Type: TABLE; Schema: public; Owner: postgres
+-- Name: backup_prf_cost_items_20260727; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.backup_prf_cost_items_20260727 (
@@ -6115,10 +6152,8 @@ CREATE TABLE public.backup_prf_cost_items_20260727 (
 );
 
 
-ALTER TABLE public.backup_prf_cost_items_20260727 OWNER TO postgres;
-
 --
--- Name: bnf_authorized_users; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_authorized_users (
@@ -6132,10 +6167,8 @@ CREATE TABLE public.bnf_authorized_users (
 );
 
 
-ALTER TABLE public.bnf_authorized_users OWNER TO postgres;
-
 --
--- Name: bnf_department_scopes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_department_scopes (
@@ -6147,10 +6180,8 @@ CREATE TABLE public.bnf_department_scopes (
 );
 
 
-ALTER TABLE public.bnf_department_scopes OWNER TO postgres;
-
 --
--- Name: bnf_departments; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_departments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_departments (
@@ -6168,10 +6199,8 @@ CREATE TABLE public.bnf_departments (
 );
 
 
-ALTER TABLE public.bnf_departments OWNER TO postgres;
-
 --
--- Name: bnf_division_scopes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_division_scopes (
@@ -6183,10 +6212,8 @@ CREATE TABLE public.bnf_division_scopes (
 );
 
 
-ALTER TABLE public.bnf_division_scopes OWNER TO postgres;
-
 --
--- Name: bnf_divisions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_divisions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_divisions (
@@ -6203,10 +6230,8 @@ CREATE TABLE public.bnf_divisions (
 );
 
 
-ALTER TABLE public.bnf_divisions OWNER TO postgres;
-
 --
--- Name: bnf_report_action_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_report_action_items (
@@ -6222,10 +6247,8 @@ CREATE TABLE public.bnf_report_action_items (
 );
 
 
-ALTER TABLE public.bnf_report_action_items OWNER TO postgres;
-
 --
--- Name: bnf_report_logs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_report_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_report_logs (
@@ -6239,10 +6262,8 @@ CREATE TABLE public.bnf_report_logs (
 );
 
 
-ALTER TABLE public.bnf_report_logs OWNER TO postgres;
-
 --
--- Name: bnf_report_related_departments; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_report_related_departments (
@@ -6253,10 +6274,8 @@ CREATE TABLE public.bnf_report_related_departments (
 );
 
 
-ALTER TABLE public.bnf_report_related_departments OWNER TO postgres;
-
 --
--- Name: bnf_reports; Type: TABLE; Schema: public; Owner: postgres
+-- Name: bnf_reports; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.bnf_reports (
@@ -6282,17 +6301,15 @@ CREATE TABLE public.bnf_reports (
 );
 
 
-ALTER TABLE public.bnf_reports OWNER TO postgres;
-
 --
--- Name: COLUMN bnf_reports.status; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN bnf_reports.status; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.bnf_reports.status IS 'Title Case by design (Open/In Progress/Escalated/Closed) — mirrors App.jsx StatusBadge value convention, unlike lowercase status on activities/hrga_requests.';
 
 
 --
--- Name: branches; Type: TABLE; Schema: public; Owner: postgres
+-- Name: branches; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.branches (
@@ -6310,31 +6327,29 @@ CREATE TABLE public.branches (
 );
 
 
-ALTER TABLE public.branches OWNER TO postgres;
-
 --
--- Name: TABLE branches; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE branches; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.branches IS 'Physical or operational locations of a company.';
 
 
 --
--- Name: COLUMN branches.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN branches.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.branches.code IS 'Short location identifier, unique per company, e.g. HO, SBY, MDN.';
 
 
 --
--- Name: COLUMN branches.deleted_at; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN branches.deleted_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.branches.deleted_at IS 'Soft delete timestamp. NULL = active.';
 
 
 --
--- Name: channel_types; Type: TABLE; Schema: public; Owner: postgres
+-- Name: channel_types; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.channel_types (
@@ -6356,17 +6371,15 @@ CREATE TABLE public.channel_types (
 );
 
 
-ALTER TABLE public.channel_types OWNER TO postgres;
-
 --
--- Name: TABLE channel_types; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE channel_types; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.channel_types IS 'Channel penjualan per entitas (Direct/Forwarder/Hybrid). margin_floor dipakai gerbang margin Quotation (batch B4).';
 
 
 --
--- Name: chart_of_accounts; Type: TABLE; Schema: public; Owner: postgres
+-- Name: chart_of_accounts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.chart_of_accounts (
@@ -6391,66 +6404,64 @@ CREATE TABLE public.chart_of_accounts (
 );
 
 
-ALTER TABLE public.chart_of_accounts OWNER TO postgres;
-
 --
--- Name: TABLE chart_of_accounts; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE chart_of_accounts; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.chart_of_accounts IS 'Company-scoped general ledger account structure. Finance Controller must approve before any accounting transaction is recorded.';
 
 
 --
--- Name: COLUMN chart_of_accounts.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN chart_of_accounts.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.chart_of_accounts.code IS 'Account code, unique per company. Follows Indonesian standard COA numbering convention.';
 
 
 --
--- Name: COLUMN chart_of_accounts.account_type; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN chart_of_accounts.account_type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.chart_of_accounts.account_type IS 'Fundamental account classification: asset, liability, equity, revenue, expense.';
 
 
 --
--- Name: COLUMN chart_of_accounts.parent_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN chart_of_accounts.parent_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.chart_of_accounts.parent_id IS 'Self-referential parent for hierarchy. NULL = top-level account type grouping.';
 
 
 --
--- Name: COLUMN chart_of_accounts.level; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN chart_of_accounts.level; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.chart_of_accounts.level IS '1=Type, 2=Group, 3=Sub-Group, 4=Detail. Only level 4 (leaf) accounts accept direct postings.';
 
 
 --
--- Name: COLUMN chart_of_accounts.is_header; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN chart_of_accounts.is_header; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.chart_of_accounts.is_header IS 'True = summary/header account. Direct journal postings to header accounts are not allowed.';
 
 
 --
--- Name: COLUMN chart_of_accounts.normal_balance; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN chart_of_accounts.normal_balance; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.chart_of_accounts.normal_balance IS 'debit: increases with debit entries (assets, expenses). credit: increases with credit entries (liabilities, equity, revenue).';
 
 
 --
--- Name: COLUMN chart_of_accounts.deleted_at; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN chart_of_accounts.deleted_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.chart_of_accounts.deleted_at IS 'Soft delete only if no transactions reference this account. Finance Controller approval required before deleting any account.';
 
 
 --
--- Name: code_counters; Type: TABLE; Schema: public; Owner: postgres
+-- Name: code_counters; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.code_counters (
@@ -6460,10 +6471,8 @@ CREATE TABLE public.code_counters (
 );
 
 
-ALTER TABLE public.code_counters OWNER TO postgres;
-
 --
--- Name: companies; Type: TABLE; Schema: public; Owner: postgres
+-- Name: companies; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.companies (
@@ -6494,38 +6503,36 @@ CREATE TABLE public.companies (
 );
 
 
-ALTER TABLE public.companies OWNER TO postgres;
-
 --
--- Name: TABLE companies; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE companies; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.companies IS 'Root anchor for all company-scoped data. One row per MSI Group legal entity.';
 
 
 --
--- Name: COLUMN companies.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN companies.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.companies.code IS 'Short identifier: MSI, JCI, SBI. Used as the {ENTITY} segment in document numbers.';
 
 
 --
--- Name: COLUMN companies.business_focus; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN companies.business_focus; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.companies.business_focus IS 'Human-readable description: Freight Forwarding, PPJK, General Trading.';
 
 
 --
--- Name: COLUMN companies.tax_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN companies.tax_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.companies.tax_id IS 'NPWP — Indonesian tax registration number.';
 
 
 --
--- Name: contacts; Type: TABLE; Schema: public; Owner: postgres
+-- Name: contacts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.contacts (
@@ -6548,10 +6555,8 @@ CREATE TABLE public.contacts (
 );
 
 
-ALTER TABLE public.contacts OWNER TO postgres;
-
 --
--- Name: cost_centers; Type: TABLE; Schema: public; Owner: postgres
+-- Name: cost_centers; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.cost_centers (
@@ -6570,38 +6575,36 @@ CREATE TABLE public.cost_centers (
 );
 
 
-ALTER TABLE public.cost_centers OWNER TO postgres;
-
 --
--- Name: TABLE cost_centers; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE cost_centers; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.cost_centers IS 'Company-scoped budget and cost tracking units. Used in job costing, expense allocation, and management reporting.';
 
 
 --
--- Name: COLUMN cost_centers.branch_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN cost_centers.branch_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.cost_centers.branch_id IS 'Optional branch association. NULL = cost center spans all branches.';
 
 
 --
--- Name: COLUMN cost_centers.department_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN cost_centers.department_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.cost_centers.department_id IS 'Optional department association. NULL = cost center spans all departments.';
 
 
 --
--- Name: COLUMN cost_centers.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN cost_centers.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.cost_centers.code IS 'Cost center code, unique per company. e.g. CC-LOG-HO, CC-SLS-SBY.';
 
 
 --
--- Name: currencies; Type: TABLE; Schema: public; Owner: postgres
+-- Name: currencies; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.currencies (
@@ -6615,152 +6618,71 @@ CREATE TABLE public.currencies (
 );
 
 
-ALTER TABLE public.currencies OWNER TO postgres;
-
 --
--- Name: TABLE currencies; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE currencies; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.currencies IS 'Global ISO 4217 currency registry. Readable by all authenticated users; managed by Super Admin only.';
 
 
 --
--- Name: COLUMN currencies.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN currencies.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.currencies.code IS 'ISO 4217 three-letter currency code: IDR, USD, SGD, EUR, JPY.';
 
 
 --
--- Name: COLUMN currencies.decimal_places; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN currencies.decimal_places; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.currencies.decimal_places IS 'Number of decimal places for display. IDR = 0, USD/EUR/SGD = 2, JPY = 0.';
 
 
 --
--- Name: customers; Type: TABLE; Schema: public; Owner: postgres
+-- Name: customers_backup_20260614; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.customers (
-    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
-    name text NOT NULL,
+CREATE TABLE public.customers_backup_20260614 (
+    id uuid,
+    name text,
     code text,
-    default_dc text DEFAULT ''::text NOT NULL,
-    pic_name text DEFAULT ''::text NOT NULL,
-    pic_email text DEFAULT ''::text NOT NULL,
-    active boolean DEFAULT true NOT NULL,
-    payment_terms integer DEFAULT 30 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid NOT NULL,
+    default_dc text,
+    pic_name text,
+    pic_email text,
+    active boolean,
+    payment_terms integer,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    company_id uuid,
     legal_name character varying(200),
     customer_type character varying(50),
     tax_id character varying(50),
     address text,
     city character varying(100),
-    country character varying(100) DEFAULT 'Indonesia'::character varying,
+    country character varying(100),
     phone character varying(50),
     email character varying(100),
     pic_phone character varying(50),
-    credit_limit numeric(18,2) DEFAULT 0,
+    credit_limit numeric(18,2),
     payment_terms_id uuid,
-    currency_code character varying(3) DEFAULT 'IDR'::character varying,
+    currency_code character varying(3),
     notes text,
     deleted_at timestamp with time zone,
     created_by uuid,
     updated_by uuid,
     nomor_kontrak text,
-    status character varying(50) DEFAULT 'active'::character varying,
+    status character varying(50),
     prospect_id uuid,
     assigned_to uuid,
     tier character varying(20),
-    last_activity_at timestamp with time zone DEFAULT now(),
+    last_activity_at timestamp with time zone,
     source_company_id uuid
 );
 
 
-ALTER TABLE public.customers OWNER TO postgres;
-
 --
--- Name: TABLE customers; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON TABLE public.customers IS 'Legacy customer master table. Used by Customer page, SP Manifest, and AR Tracker. Extended by migration 008 with ERP fields (company_id, credit_limit, etc.). payment_terms (integer days) is the legacy field; payment_terms_id FK added in 008.';
-
-
---
--- Name: COLUMN customers.code; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.code IS 'Customer code, unique per company. Auto-generated or manually assigned. e.g. CST-0001.';
-
-
---
--- Name: COLUMN customers.payment_terms; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.payment_terms IS 'Legacy payment terms in days (integer). Not used by current customerFromDb() but preserved as a pre-existing column. Migration 008 adds payment_terms_id (FK). Phase 1.0F migrates this value to the FK and drops this integer column.';
-
-
---
--- Name: COLUMN customers.company_id; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.company_id IS 'ERP company scope. NULL until Phase 1.0F backfill. Will become NOT NULL after 1.0F.';
-
-
---
--- Name: COLUMN customers.customer_type; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.customer_type IS 'Customer classification: Individual, Company, Government, Freight Agent, etc.';
-
-
---
--- Name: COLUMN customers.tax_id; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.tax_id IS 'NPWP (Indonesian tax ID) or equivalent for non-Indonesian customers.';
-
-
---
--- Name: COLUMN customers.credit_limit; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.credit_limit IS 'Maximum outstanding AR allowed. Sensitive — mask in non-Finance role views.';
-
-
---
--- Name: COLUMN customers.payment_terms_id; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.payment_terms_id IS 'FK to payment_terms. New ERP field running alongside legacy payment_terms (integer). Phase 1.0F migrates and removes the integer.';
-
-
---
--- Name: COLUMN customers.currency_code; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.currency_code IS 'Default billing currency for this customer. Default IDR.';
-
-
---
--- Name: COLUMN customers.deleted_at; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.deleted_at IS 'Soft delete timestamp. NULL = active. If column already exists, ADD IF NOT EXISTS is safe.';
-
-
---
--- Name: COLUMN customers.updated_by; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON COLUMN public.customers.updated_by IS 'User who last updated this record.';
-
-
---
--- Name: daily_report_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: daily_report_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.daily_report_items (
@@ -6785,10 +6707,8 @@ CREATE TABLE public.daily_report_items (
 );
 
 
-ALTER TABLE public.daily_report_items OWNER TO postgres;
-
 --
--- Name: dc_master; Type: TABLE; Schema: public; Owner: postgres
+-- Name: dc_master; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.dc_master (
@@ -6808,10 +6728,8 @@ CREATE TABLE public.dc_master (
 );
 
 
-ALTER TABLE public.dc_master OWNER TO postgres;
-
 --
--- Name: deal_handovers; Type: TABLE; Schema: public; Owner: postgres
+-- Name: deal_handovers; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.deal_handovers (
@@ -6870,10 +6788,8 @@ CREATE TABLE public.deal_handovers (
 );
 
 
-ALTER TABLE public.deal_handovers OWNER TO postgres;
-
 --
--- Name: delivery_incidents; Type: TABLE; Schema: public; Owner: postgres
+-- Name: delivery_incidents; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.delivery_incidents (
@@ -6902,17 +6818,15 @@ CREATE TABLE public.delivery_incidents (
 );
 
 
-ALTER TABLE public.delivery_incidents OWNER TO postgres;
-
 --
--- Name: TABLE delivery_incidents; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE delivery_incidents; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.delivery_incidents IS 'Kendala/insiden selama perjalanan Surat Jalan. Sumber data tracking SLA vendor pengiriman. occurred_at (kapan terjadi) sengaja dipisah dari reported_at (kapan dilaporkan).';
 
 
 --
--- Name: delivery_note_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: delivery_note_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.delivery_note_items (
@@ -6928,10 +6842,8 @@ CREATE TABLE public.delivery_note_items (
 );
 
 
-ALTER TABLE public.delivery_note_items OWNER TO postgres;
-
 --
--- Name: delivery_notes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: delivery_notes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.delivery_notes (
@@ -6958,14 +6870,13 @@ CREATE TABLE public.delivery_notes (
     cancelled_at timestamp with time zone,
     customer_name text,
     sp_order_id uuid,
+    signed_date date,
     CONSTRAINT delivery_notes_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'in_transit'::text, 'delivered'::text, 'cancelled'::text])))
 );
 
 
-ALTER TABLE public.delivery_notes OWNER TO postgres;
-
 --
--- Name: departments; Type: TABLE; Schema: public; Owner: postgres
+-- Name: departments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.departments (
@@ -6982,38 +6893,36 @@ CREATE TABLE public.departments (
 );
 
 
-ALTER TABLE public.departments OWNER TO postgres;
-
 --
--- Name: TABLE departments; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE departments; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.departments IS 'Organizational units. Codes appear as the {DEPT} segment in document numbers.';
 
 
 --
--- Name: COLUMN departments.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN departments.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.departments.code IS 'Short dept code matching the Document Numbering standard: SLS, LOG, FIN, PROC, IT, MGMT, HR.';
 
 
 --
--- Name: COLUMN departments.parent_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN departments.parent_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.departments.parent_id IS 'Self-referential parent department for hierarchy. NULL = top-level.';
 
 
 --
--- Name: COLUMN departments.deleted_at; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN departments.deleted_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.departments.deleted_at IS 'Soft delete timestamp. NULL = active.';
 
 
 --
--- Name: document_numbering; Type: TABLE; Schema: public; Owner: postgres
+-- Name: document_numbering; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.document_numbering (
@@ -7035,10 +6944,8 @@ CREATE TABLE public.document_numbering (
 );
 
 
-ALTER TABLE public.document_numbering OWNER TO postgres;
-
 --
--- Name: document_sequences; Type: TABLE; Schema: public; Owner: postgres
+-- Name: document_sequences; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.document_sequences (
@@ -7055,38 +6962,36 @@ CREATE TABLE public.document_sequences (
 );
 
 
-ALTER TABLE public.document_sequences OWNER TO postgres;
-
 --
--- Name: TABLE document_sequences; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE document_sequences; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.document_sequences IS 'Running sequence counter per (company, document_type, department_code, year, month). Incremented atomically via UPDATE ... RETURNING. See docs/workflow/document-numbering.md.';
 
 
 --
--- Name: COLUMN document_sequences.month; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN document_sequences.month; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.document_sequences.month IS '0 = yearly reset (most common). 1–12 = monthly reset. Matches reset_period in document_types.';
 
 
 --
--- Name: COLUMN document_sequences.last_sequence; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN document_sequences.last_sequence; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.document_sequences.last_sequence IS 'The last assigned sequence number. Increment atomically: UPDATE ... SET last_sequence = last_sequence + 1 ... RETURNING last_sequence. Never SELECT then UPDATE.';
 
 
 --
--- Name: COLUMN document_sequences.day; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN document_sequences.day; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.document_sequences.day IS '0 = not day-scoped (yearly/monthly reset, all pre-existing callers). 1-31 = daily reset (BNF).';
 
 
 --
--- Name: document_templates; Type: TABLE; Schema: public; Owner: postgres
+-- Name: document_templates; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.document_templates (
@@ -7108,10 +7013,8 @@ CREATE TABLE public.document_templates (
 );
 
 
-ALTER TABLE public.document_templates OWNER TO postgres;
-
 --
--- Name: document_types; Type: TABLE; Schema: public; Owner: postgres
+-- Name: document_types; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.document_types (
@@ -7134,52 +7037,50 @@ CREATE TABLE public.document_types (
 );
 
 
-ALTER TABLE public.document_types OWNER TO postgres;
-
 --
--- Name: TABLE document_types; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE document_types; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.document_types IS 'Document type registry per company. Defines numbering format, approval requirement, and department segment for each document code.';
 
 
 --
--- Name: COLUMN document_types.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN document_types.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.document_types.code IS 'Short document code: QT, SP, SHP, CUS, TRD, PR, PO, GRN, INV, RCP, PV, JE, AST, TCK, HRG.';
 
 
 --
--- Name: COLUMN document_types.prefix_format; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN document_types.prefix_format; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.document_types.prefix_format IS 'Numbering format template. Supported tokens: {DOC}, {ENTITY}, {DEPT}, {YYYY}, {MM}, {SEQ}.';
 
 
 --
--- Name: COLUMN document_types.department_code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN document_types.department_code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.document_types.department_code IS 'Default department code used in the document number segment. Stored as varchar — NOT a FK to departments. See docs/workflow/document-numbering.md.';
 
 
 --
--- Name: COLUMN document_types.reset_period; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN document_types.reset_period; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.document_types.reset_period IS 'Sequence reset period: yearly (most common) or monthly.';
 
 
 --
--- Name: COLUMN document_types.seq_padding; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN document_types.seq_padding; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.document_types.seq_padding IS 'Zero-padding width for the sequence segment. Default 4 produces 0001, 0042, 1234.';
 
 
 --
--- Name: dropdown_options; Type: TABLE; Schema: public; Owner: postgres
+-- Name: dropdown_options; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.dropdown_options (
@@ -7197,10 +7098,8 @@ CREATE TABLE public.dropdown_options (
 );
 
 
-ALTER TABLE public.dropdown_options OWNER TO postgres;
-
 --
--- Name: entity_bank_accounts; Type: TABLE; Schema: public; Owner: postgres
+-- Name: entity_bank_accounts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.entity_bank_accounts (
@@ -7219,10 +7118,8 @@ CREATE TABLE public.entity_bank_accounts (
 );
 
 
-ALTER TABLE public.entity_bank_accounts OWNER TO postgres;
-
 --
--- Name: entity_finance_settings; Type: TABLE; Schema: public; Owner: postgres
+-- Name: entity_finance_settings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.entity_finance_settings (
@@ -7251,10 +7148,8 @@ CREATE TABLE public.entity_finance_settings (
 );
 
 
-ALTER TABLE public.entity_finance_settings OWNER TO postgres;
-
 --
--- Name: entity_signatories; Type: TABLE; Schema: public; Owner: postgres
+-- Name: entity_signatories; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.entity_signatories (
@@ -7272,10 +7167,8 @@ CREATE TABLE public.entity_signatories (
 );
 
 
-ALTER TABLE public.entity_signatories OWNER TO postgres;
-
 --
--- Name: exchange_rates; Type: TABLE; Schema: public; Owner: postgres
+-- Name: exchange_rates; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.exchange_rates (
@@ -7294,31 +7187,71 @@ CREATE TABLE public.exchange_rates (
 );
 
 
-ALTER TABLE public.exchange_rates OWNER TO postgres;
-
 --
--- Name: TABLE exchange_rates; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE exchange_rates; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.exchange_rates IS 'Company-scoped exchange rate history. Never delete historical rates — deactivate via effective_date or add a new rate.';
 
 
 --
--- Name: COLUMN exchange_rates.rate; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN exchange_rates.rate; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.exchange_rates.rate IS 'Rate: 1 unit of from_currency = rate units of to_currency. Must be > 0.';
 
 
 --
--- Name: COLUMN exchange_rates.effective_date; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN exchange_rates.effective_date; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.exchange_rates.effective_date IS 'The date from which this rate is valid. Use most recent rate on or before the transaction date.';
 
 
 --
--- Name: hrga_approval_configs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: goods_receipt_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.goods_receipt_items (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    goods_receipt_id uuid NOT NULL,
+    product_id uuid NOT NULL,
+    qty integer NOT NULL,
+    unit_cost numeric(15,2),
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT goods_receipt_items_qty_check CHECK ((qty > 0))
+);
+
+
+--
+-- Name: goods_receipts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.goods_receipts (
+    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
+    company_id uuid NOT NULL,
+    reference_no character varying(50) NOT NULL,
+    receipt_date date NOT NULL,
+    warehouse_id uuid NOT NULL,
+    receipt_type character varying(20) NOT NULL,
+    vendor_id uuid,
+    po_number character varying(50),
+    notes text,
+    status character varying(10) DEFAULT 'posted'::character varying NOT NULL,
+    voided_at timestamp with time zone,
+    voided_by uuid,
+    void_reason text,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT goods_receipts_status_check CHECK (((status)::text = ANY (ARRAY['posted'::text, 'void'::text]))),
+    CONSTRAINT goods_receipts_type_check CHECK (((receipt_type)::text = ANY (ARRAY['purchase_order'::text, 'restock_produksi'::text, 'transfer_masuk'::text, 'adjustment'::text])))
+);
+
+
+--
+-- Name: hrga_approval_configs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_approval_configs (
@@ -7336,10 +7269,8 @@ CREATE TABLE public.hrga_approval_configs (
 );
 
 
-ALTER TABLE public.hrga_approval_configs OWNER TO postgres;
-
 --
--- Name: hrga_notification_queue; Type: TABLE; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_notification_queue (
@@ -7359,10 +7290,8 @@ CREATE TABLE public.hrga_notification_queue (
 );
 
 
-ALTER TABLE public.hrga_notification_queue OWNER TO postgres;
-
 --
--- Name: hrga_offboarding_checklists; Type: TABLE; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_offboarding_checklists (
@@ -7384,10 +7313,8 @@ CREATE TABLE public.hrga_offboarding_checklists (
 );
 
 
-ALTER TABLE public.hrga_offboarding_checklists OWNER TO postgres;
-
 --
--- Name: hrga_offboarding_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_offboarding_items (
@@ -7408,10 +7335,8 @@ CREATE TABLE public.hrga_offboarding_items (
 );
 
 
-ALTER TABLE public.hrga_offboarding_items OWNER TO postgres;
-
 --
--- Name: hrga_request_approvals; Type: TABLE; Schema: public; Owner: postgres
+-- Name: hrga_request_approvals; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_request_approvals (
@@ -7429,10 +7354,8 @@ CREATE TABLE public.hrga_request_approvals (
 );
 
 
-ALTER TABLE public.hrga_request_approvals OWNER TO postgres;
-
 --
--- Name: hrga_request_attachments; Type: TABLE; Schema: public; Owner: postgres
+-- Name: hrga_request_attachments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_request_attachments (
@@ -7448,10 +7371,8 @@ CREATE TABLE public.hrga_request_attachments (
 );
 
 
-ALTER TABLE public.hrga_request_attachments OWNER TO postgres;
-
 --
--- Name: hrga_request_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: hrga_request_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_request_items (
@@ -7471,10 +7392,8 @@ CREATE TABLE public.hrga_request_items (
 );
 
 
-ALTER TABLE public.hrga_request_items OWNER TO postgres;
-
 --
--- Name: hrga_request_types; Type: TABLE; Schema: public; Owner: postgres
+-- Name: hrga_request_types; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_request_types (
@@ -7501,10 +7420,8 @@ CREATE TABLE public.hrga_request_types (
 );
 
 
-ALTER TABLE public.hrga_request_types OWNER TO postgres;
-
 --
--- Name: hrga_requests; Type: TABLE; Schema: public; Owner: postgres
+-- Name: hrga_requests; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.hrga_requests (
@@ -7541,10 +7458,8 @@ CREATE TABLE public.hrga_requests (
 );
 
 
-ALTER TABLE public.hrga_requests OWNER TO postgres;
-
 --
--- Name: inquiries; Type: TABLE; Schema: public; Owner: postgres
+-- Name: inquiries; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.inquiries (
@@ -7594,66 +7509,64 @@ CREATE TABLE public.inquiries (
 );
 
 
-ALTER TABLE public.inquiries OWNER TO postgres;
-
 --
--- Name: COLUMN inquiries.lost_reason; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiries.lost_reason; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiries.lost_reason IS 'DISUPERSEDI oleh loss_reason_id (master-based) sejak batch Pipeline CRM v3, 28 Agu 2026. Baris lama dibiarkan apa adanya; penulisan baru lewat loss_reason_id. Drop menyusul di batch pembersihan terpisah, setelah nol pembaca tersisa.';
 
 
 --
--- Name: COLUMN inquiries.owner_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiries.owner_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiries.owner_id IS 'Pemilik inquiry. Di-backfill dari created_by (batch persiapan CRM v3). Nullable: created_by sendiri nullable.';
 
 
 --
--- Name: COLUMN inquiries.closed_at; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiries.closed_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiries.closed_at IS 'Saat deal ditutup (WON/LOST/CANCELLED). Distempel otomatis trg_z_stamp_inquiry_closure; TIDAK ditimpa bila FE sudah mengirim nilainya sendiri.';
 
 
 --
--- Name: COLUMN inquiries.closed_by; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiries.closed_by; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiries.closed_by IS 'Pelaku penutupan (auth.uid()). NULL bila penutupan terjadi tanpa konteks user.';
 
 
 --
--- Name: COLUMN inquiries.loss_reason_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiries.loss_reason_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiries.loss_reason_id IS 'Alasan kalah berbasis master loss_reasons. Menggantikan kolom teks bebas lost_reason.';
 
 
 --
--- Name: COLUMN inquiries.competitor_name; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiries.competitor_name; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiries.competitor_name IS 'Nama pesaing. Diwajibkan FE hanya bila loss_reasons.code = PRICE atau COMPETITOR.';
 
 
 --
--- Name: COLUMN inquiries.competitor_price; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiries.competitor_price; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiries.competitor_price IS 'Harga pesaing. Diwajibkan FE hanya bila loss_reasons.code = PRICE atau COMPETITOR.';
 
 
 --
--- Name: COLUMN inquiries.cancel_reason; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiries.cancel_reason; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiries.cancel_reason IS 'Alasan pembatalan, teks bebas. SENGAJA bukan dari master: ini catatan operasional, bukan taksonomi kompetitif seperti alasan kalah.';
 
 
 --
--- Name: inquiry_comment_mentions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: inquiry_comment_mentions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.inquiry_comment_mentions (
@@ -7664,10 +7577,8 @@ CREATE TABLE public.inquiry_comment_mentions (
 );
 
 
-ALTER TABLE public.inquiry_comment_mentions OWNER TO postgres;
-
 --
--- Name: inquiry_comments; Type: TABLE; Schema: public; Owner: postgres
+-- Name: inquiry_comments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.inquiry_comments (
@@ -7682,10 +7593,8 @@ CREATE TABLE public.inquiry_comments (
 );
 
 
-ALTER TABLE public.inquiry_comments OWNER TO postgres;
-
 --
--- Name: inquiry_status_history; Type: TABLE; Schema: public; Owner: postgres
+-- Name: inquiry_status_history; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.inquiry_status_history (
@@ -7701,38 +7610,36 @@ CREATE TABLE public.inquiry_status_history (
 );
 
 
-ALTER TABLE public.inquiry_status_history OWNER TO postgres;
-
 --
--- Name: TABLE inquiry_status_history; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE inquiry_status_history; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.inquiry_status_history IS 'Riwayat perubahan inquiries.status. Audit-only: ditulis EKSKLUSIF oleh trg_z_log_inquiry_status_change (SECURITY DEFINER), nol policy tulis untuk authenticated.';
 
 
 --
--- Name: COLUMN inquiry_status_history.changed_by; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiry_status_history.changed_by; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiry_status_history.changed_by IS 'auth.uid() saat transisi. NULL bila transisi dipicu trigger tanpa konteks user (mis. WON otomatis dari sales_orders).';
 
 
 --
--- Name: COLUMN inquiry_status_history.reason; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiry_status_history.reason; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiry_status_history.reason IS 'Alasan bebas dari jalur manual. Diisi FE lewat kolom penutupan di inquiries; trigger menyalinnya bila tersedia.';
 
 
 --
--- Name: COLUMN inquiry_status_history.duration_seconds; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN inquiry_status_history.duration_seconds; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.inquiry_status_history.duration_seconds IS 'Lama inquiry berada di status SEBELUMNYA, dalam detik. NULL = tidak diketahui (baris backfill). JANGAN diisi mundur dengan angka karangan.';
 
 
 --
--- Name: journal_entries; Type: TABLE; Schema: public; Owner: postgres
+-- Name: journal_entries; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.journal_entries (
@@ -7748,17 +7655,15 @@ CREATE TABLE public.journal_entries (
 );
 
 
-ALTER TABLE public.journal_entries OWNER TO postgres;
-
 --
--- Name: TABLE journal_entries; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE journal_entries; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.journal_entries IS 'Jurnal AR minimal Fase 5. Auto-post tanpa approval. Tulis HANYA via RPC SECURITY DEFINER. Koreksi = jurnal pembalik, bukan UPDATE.';
 
 
 --
--- Name: journal_entry_lines; Type: TABLE; Schema: public; Owner: postgres
+-- Name: journal_entry_lines; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.journal_entry_lines (
@@ -7771,10 +7676,8 @@ CREATE TABLE public.journal_entry_lines (
 );
 
 
-ALTER TABLE public.journal_entry_lines OWNER TO postgres;
-
 --
--- Name: loss_reasons; Type: TABLE; Schema: public; Owner: postgres
+-- Name: loss_reasons; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.loss_reasons (
@@ -7794,17 +7697,15 @@ CREATE TABLE public.loss_reasons (
 );
 
 
-ALTER TABLE public.loss_reasons OWNER TO postgres;
-
 --
--- Name: TABLE loss_reasons; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE loss_reasons; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.loss_reasons IS 'Taksonomi GLOBAL alasan kalah (deal/akun). company_id selalu NULL — jangan difilter di FE (gotcha #18).';
 
 
 --
--- Name: meeting_moms; Type: TABLE; Schema: public; Owner: postgres
+-- Name: meeting_moms; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.meeting_moms (
@@ -7834,10 +7735,8 @@ CREATE TABLE public.meeting_moms (
 );
 
 
-ALTER TABLE public.meeting_moms OWNER TO postgres;
-
 --
--- Name: menu_actions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: menu_actions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.menu_actions (
@@ -7849,10 +7748,8 @@ CREATE TABLE public.menu_actions (
 );
 
 
-ALTER TABLE public.menu_actions OWNER TO postgres;
-
 --
--- Name: module_actions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: module_actions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.module_actions (
@@ -7864,10 +7761,8 @@ CREATE TABLE public.module_actions (
 );
 
 
-ALTER TABLE public.module_actions OWNER TO postgres;
-
 --
--- Name: module_menus; Type: TABLE; Schema: public; Owner: postgres
+-- Name: module_menus; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.module_menus (
@@ -7881,10 +7776,8 @@ CREATE TABLE public.module_menus (
 );
 
 
-ALTER TABLE public.module_menus OWNER TO postgres;
-
 --
--- Name: modules; Type: TABLE; Schema: public; Owner: postgres
+-- Name: modules; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.modules (
@@ -7897,10 +7790,8 @@ CREATE TABLE public.modules (
 );
 
 
-ALTER TABLE public.modules OWNER TO postgres;
-
 --
--- Name: mom_action_plans; Type: TABLE; Schema: public; Owner: postgres
+-- Name: mom_action_plans; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.mom_action_plans (
@@ -7920,10 +7811,8 @@ CREATE TABLE public.mom_action_plans (
 );
 
 
-ALTER TABLE public.mom_action_plans OWNER TO postgres;
-
 --
--- Name: mom_improvements; Type: TABLE; Schema: public; Owner: postgres
+-- Name: mom_improvements; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.mom_improvements (
@@ -7936,10 +7825,8 @@ CREATE TABLE public.mom_improvements (
 );
 
 
-ALTER TABLE public.mom_improvements OWNER TO postgres;
-
 --
--- Name: mom_issues; Type: TABLE; Schema: public; Owner: postgres
+-- Name: mom_issues; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.mom_issues (
@@ -7953,10 +7840,8 @@ CREATE TABLE public.mom_issues (
 );
 
 
-ALTER TABLE public.mom_issues OWNER TO postgres;
-
 --
--- Name: mom_progress_updates; Type: TABLE; Schema: public; Owner: postgres
+-- Name: mom_progress_updates; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.mom_progress_updates (
@@ -7971,10 +7856,8 @@ CREATE TABLE public.mom_progress_updates (
 );
 
 
-ALTER TABLE public.mom_progress_updates OWNER TO postgres;
-
 --
--- Name: notification_rules; Type: TABLE; Schema: public; Owner: postgres
+-- Name: notification_rules; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.notification_rules (
@@ -7997,10 +7880,8 @@ CREATE TABLE public.notification_rules (
 );
 
 
-ALTER TABLE public.notification_rules OWNER TO postgres;
-
 --
--- Name: notifications; Type: TABLE; Schema: public; Owner: postgres
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.notifications (
@@ -8018,10 +7899,8 @@ CREATE TABLE public.notifications (
 );
 
 
-ALTER TABLE public.notifications OWNER TO postgres;
-
 --
--- Name: payment_terms; Type: TABLE; Schema: public; Owner: postgres
+-- Name: payment_terms; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.payment_terms (
@@ -8040,24 +7919,22 @@ CREATE TABLE public.payment_terms (
 );
 
 
-ALTER TABLE public.payment_terms OWNER TO postgres;
-
 --
--- Name: TABLE payment_terms; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE payment_terms; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.payment_terms IS 'Company-scoped payment term templates. Standardizes due-date calculation for customers, vendors, and invoices.';
 
 
 --
--- Name: COLUMN payment_terms.days_due; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN payment_terms.days_due; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.payment_terms.days_due IS 'Number of days from invoice date until payment is due. 0 = COD (cash on delivery).';
 
 
 --
--- Name: permissions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: permissions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.permissions (
@@ -8069,31 +7946,29 @@ CREATE TABLE public.permissions (
 );
 
 
-ALTER TABLE public.permissions OWNER TO postgres;
-
 --
--- Name: TABLE permissions; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE permissions; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.permissions IS 'Global permission catalog. Every {module}.{action} combination that can be granted to a role. Managed by Super Admin only.';
 
 
 --
--- Name: COLUMN permissions.module; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN permissions.module; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.permissions.module IS 'Module slug, e.g. companies, customers, sales_orders, invoices, users.';
 
 
 --
--- Name: COLUMN permissions.action; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN permissions.action; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.permissions.action IS 'Action code: view, create, edit, delete, restore, approve, submit, export, import, print, config.';
 
 
 --
--- Name: picking_list_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: picking_list_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.picking_list_items (
@@ -8113,10 +7988,8 @@ CREATE TABLE public.picking_list_items (
 );
 
 
-ALTER TABLE public.picking_list_items OWNER TO postgres;
-
 --
--- Name: picking_list_materials; Type: TABLE; Schema: public; Owner: postgres
+-- Name: picking_list_materials; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.picking_list_materials (
@@ -8131,10 +8004,8 @@ CREATE TABLE public.picking_list_materials (
 );
 
 
-ALTER TABLE public.picking_list_materials OWNER TO postgres;
-
 --
--- Name: picking_lists; Type: TABLE; Schema: public; Owner: postgres
+-- Name: picking_lists; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.picking_lists (
@@ -8158,10 +8029,8 @@ CREATE TABLE public.picking_lists (
 );
 
 
-ALTER TABLE public.picking_lists OWNER TO postgres;
-
 --
--- Name: positions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: positions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.positions (
@@ -8180,38 +8049,36 @@ CREATE TABLE public.positions (
 );
 
 
-ALTER TABLE public.positions OWNER TO postgres;
-
 --
--- Name: TABLE positions; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE positions; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.positions IS 'Company-scoped job position registry. Levels drive approval matrix thresholds.';
 
 
 --
--- Name: COLUMN positions.department_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN positions.department_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.positions.department_id IS 'Optional department assignment. NULL = position spans multiple departments.';
 
 
 --
--- Name: COLUMN positions.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN positions.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.positions.code IS 'Position code, unique per company. e.g. STAFF, SPV, MGR, HEAD, DIR.';
 
 
 --
--- Name: COLUMN positions.level; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN positions.level; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.positions.level IS 'Seniority level: Staff, Supervisor, Manager, Head, Director. Used for approval threshold matching.';
 
 
 --
--- Name: prf; Type: TABLE; Schema: public; Owner: postgres
+-- Name: prf; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.prf (
@@ -8287,10 +8154,8 @@ CREATE TABLE public.prf (
 );
 
 
-ALTER TABLE public.prf OWNER TO postgres;
-
 --
--- Name: prf_cost_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: prf_cost_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.prf_cost_items (
@@ -8313,10 +8178,8 @@ CREATE TABLE public.prf_cost_items (
 );
 
 
-ALTER TABLE public.prf_cost_items OWNER TO postgres;
-
 --
--- Name: prf_vendor_offers; Type: TABLE; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.prf_vendor_offers (
@@ -8337,10 +8200,8 @@ CREATE TABLE public.prf_vendor_offers (
 );
 
 
-ALTER TABLE public.prf_vendor_offers OWNER TO postgres;
-
 --
--- Name: product_price_history; Type: TABLE; Schema: public; Owner: postgres
+-- Name: product_price_history; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.product_price_history (
@@ -8360,10 +8221,8 @@ CREATE TABLE public.product_price_history (
 );
 
 
-ALTER TABLE public.product_price_history OWNER TO postgres;
-
 --
--- Name: product_warehouse_location; Type: TABLE; Schema: public; Owner: postgres
+-- Name: product_warehouse_location; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.product_warehouse_location (
@@ -8378,10 +8237,8 @@ CREATE TABLE public.product_warehouse_location (
 );
 
 
-ALTER TABLE public.product_warehouse_location OWNER TO postgres;
-
 --
--- Name: products; Type: TABLE; Schema: public; Owner: postgres
+-- Name: products; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.products (
@@ -8422,59 +8279,57 @@ CREATE TABLE public.products (
 );
 
 
-ALTER TABLE public.products OWNER TO postgres;
-
 --
--- Name: TABLE products; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE products; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.products IS 'Company-scoped product and service catalog. Used in quotations, sales orders, invoices, and purchase orders.';
 
 
 --
--- Name: COLUMN products.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN products.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.products.code IS 'Product/service code, unique per company. e.g. SRV-0001 for services, PRD-0001 for goods.';
 
 
 --
--- Name: COLUMN products.is_service; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN products.is_service; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.products.is_service IS 'True = billable service (most MSI/JCI items). False = physical goods (SBI trading).';
 
 
 --
--- Name: COLUMN products.default_price; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN products.default_price; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.products.default_price IS 'Default unit price. Overridable at transaction level.';
 
 
 --
--- Name: COLUMN products.cogs_account_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN products.cogs_account_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.products.cogs_account_id IS 'Nullable FK to chart_of_accounts for COGS mapping. Set in Phase 3 when COA is configured.';
 
 
 --
--- Name: COLUMN products.revenue_account_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN products.revenue_account_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.products.revenue_account_id IS 'Nullable FK to chart_of_accounts for revenue mapping. Set in Phase 3 when COA is configured.';
 
 
 --
--- Name: COLUMN products.reorder_point; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN products.reorder_point; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.products.reorder_point IS 'Reorder point / ROP per produk (unit). Nullable = belum ditentukan. Diisi manual sesuai SOP Storbit (Finance/Warehouse Controller), bukan dihitung sistem. Terpisah dari min_order_qty (text bebas).';
 
 
 --
--- Name: profiles; Type: TABLE; Schema: public; Owner: postgres
+-- Name: profiles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.profiles (
@@ -8506,66 +8361,64 @@ CREATE TABLE public.profiles (
 );
 
 
-ALTER TABLE public.profiles OWNER TO postgres;
-
 --
--- Name: TABLE profiles; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE profiles; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.profiles IS 'Legacy user profile table. One row per auth.users entry, created by the on_auth_user_created trigger. Extended by migration 007 with ERP fields. role column maps to user_role_legacy enum; migrated to user_roles table in Phase 1.0F.';
 
 
 --
--- Name: COLUMN profiles.active; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN profiles.active; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.profiles.active IS 'False = user is disabled. AuthContext checks profile.active before granting isAuthenticated = true.';
 
 
 --
--- Name: COLUMN profiles.company_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN profiles.company_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.profiles.company_id IS 'ERP business entity this user belongs to. NULL until Phase 1.0F migration assigns company_id.';
 
 
 --
--- Name: COLUMN profiles.branch_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN profiles.branch_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.profiles.branch_id IS 'Branch assignment. Optional. NULL = no branch restriction.';
 
 
 --
--- Name: COLUMN profiles.department_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN profiles.department_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.profiles.department_id IS 'Department assignment. Optional. NULL = no department restriction.';
 
 
 --
--- Name: COLUMN profiles.position_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN profiles.position_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.profiles.position_id IS 'Job position. Nullable FK to positions (added in migration 9). NULL = no position assigned.';
 
 
 --
--- Name: COLUMN profiles.last_login_at; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN profiles.last_login_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.profiles.last_login_at IS 'Timestamp of most recent successful login. Updated by auth trigger or application layer.';
 
 
 --
--- Name: COLUMN profiles.mfa_required; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN profiles.mfa_required; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.profiles.mfa_required IS 'True = MFA is mandatory for this user. Enforced by auth policy. Default false; set true for finance_controller, bod, admin, super_admin.';
 
 
 --
--- Name: quotation_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: quotation_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.quotation_items (
@@ -8587,10 +8440,8 @@ CREATE TABLE public.quotation_items (
 );
 
 
-ALTER TABLE public.quotation_items OWNER TO postgres;
-
 --
--- Name: quotations; Type: TABLE; Schema: public; Owner: postgres
+-- Name: quotations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.quotations (
@@ -8644,45 +8495,43 @@ CREATE TABLE public.quotations (
 );
 
 
-ALTER TABLE public.quotations OWNER TO postgres;
-
 --
--- Name: COLUMN quotations.exchange_rates; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN quotations.exchange_rates; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.quotations.exchange_rates IS 'Tabel kurs manual per-quotation: {"USD":16200,"SGD":12000}. IDR implisit = 1 (tak disimpan). Sumber kebenaran kurs; quotation_items.exchange_rate = salinan materialized (write-through) yang dibaca Detail & PDF. Input manual, tanpa lookup FX.';
 
 
 --
--- Name: COLUMN quotations.prf_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN quotations.prf_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.quotations.prf_id IS 'PRF yang jadi dasar harga quotation ini. Boleh null untuk quotation yang dibuat manual tanpa PRF.';
 
 
 --
--- Name: COLUMN quotations.accepted_at; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN quotations.accepted_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.quotations.accepted_at IS 'Kapan customer menyetujui quotation ini. HANYA ditulis set_quotation_outcome().';
 
 
 --
--- Name: COLUMN quotations.accepted_by; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN quotations.accepted_by; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.quotations.accepted_by IS 'Siapa (user Nexus) yang MENCATAT persetujuan customer — bukan customer-nya. HANYA ditulis set_quotation_outcome().';
 
 
 --
--- Name: COLUMN quotations.rejection_reason; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN quotations.rejection_reason; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.quotations.rejection_reason IS 'Alasan customer menolak. WAJIB terisi saat status REJECTED. HANYA ditulis set_quotation_outcome().';
 
 
 --
--- Name: rate_sheets; Type: TABLE; Schema: public; Owner: postgres
+-- Name: rate_sheets; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.rate_sheets (
@@ -8699,10 +8548,8 @@ CREATE TABLE public.rate_sheets (
 );
 
 
-ALTER TABLE public.rate_sheets OWNER TO postgres;
-
 --
--- Name: role_menu_permissions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: role_menu_permissions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.role_menu_permissions (
@@ -8716,10 +8563,8 @@ CREATE TABLE public.role_menu_permissions (
 );
 
 
-ALTER TABLE public.role_menu_permissions OWNER TO postgres;
-
 --
--- Name: role_permission_templates; Type: TABLE; Schema: public; Owner: postgres
+-- Name: role_permission_templates; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.role_permission_templates (
@@ -8731,10 +8576,8 @@ CREATE TABLE public.role_permission_templates (
 );
 
 
-ALTER TABLE public.role_permission_templates OWNER TO postgres;
-
 --
--- Name: role_permissions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: role_permissions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.role_permissions (
@@ -8747,17 +8590,15 @@ CREATE TABLE public.role_permissions (
 );
 
 
-ALTER TABLE public.role_permissions OWNER TO postgres;
-
 --
--- Name: TABLE role_permissions; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE role_permissions; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.role_permissions IS 'Links roles to permissions. No soft delete — revoke by deleting the row. Full matrix seed in Phase 1.0C.';
 
 
 --
--- Name: roles; Type: TABLE; Schema: public; Owner: postgres
+-- Name: roles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.roles (
@@ -8777,45 +8618,43 @@ CREATE TABLE public.roles (
 );
 
 
-ALTER TABLE public.roles OWNER TO postgres;
-
 --
--- Name: TABLE roles; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE roles; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.roles IS 'Named permission sets, company-scoped. System roles are pre-seeded and cannot be modified by company Admins.';
 
 
 --
--- Name: COLUMN roles.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN roles.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.roles.code IS 'Role code slug: super_admin, admin, bod, finance_controller, etc. Unique per company.';
 
 
 --
--- Name: COLUMN roles.is_system_role; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN roles.is_system_role; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.roles.is_system_role IS 'True = seeded by platform, cannot be renamed or deleted by company admin.';
 
 
 --
--- Name: COLUMN roles.deleted_at; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN roles.deleted_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.roles.deleted_at IS 'Soft delete. Custom roles only — system roles may not be deleted.';
 
 
 --
--- Name: COLUMN roles.level; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN roles.level; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.roles.level IS 'Tingkat wewenang lintas modul (bukan katalog nama): 0 super_admin/admin · 1 ceo · 2 gm/gm_bd · 4 manager · 6 supervisor · 7 staf (sales/finance/finance_controller/operations/procurement/hrga/it) · 99 viewer (di luar hierarki). "Manager ke atas" = level <= 6 — dipakai is_manager_or_above(), is_manager_or_above_in(), prf_release, prf_select_offer, mark_delivery_delivered dan src/lib/roles.js. finance_controller SENGAJA 7, bukan 4 seperti hierarki org di 04_ROLE_PERMISSION_MATRIX: guard-guard itu tidak pernah memasukkannya (regression check 11 Sep 2026). Migrasi 20260911000004.';
 
 
 --
--- Name: sales_calls; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sales_calls; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sales_calls (
@@ -8840,10 +8679,8 @@ CREATE TABLE public.sales_calls (
 );
 
 
-ALTER TABLE public.sales_calls OWNER TO postgres;
-
 --
--- Name: sales_orders; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sales_orders; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sales_orders (
@@ -8867,24 +8704,22 @@ CREATE TABLE public.sales_orders (
 );
 
 
-ALTER TABLE public.sales_orders OWNER TO postgres;
-
 --
--- Name: COLUMN sales_orders.external_ref; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sales_orders.external_ref; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sales_orders.external_ref IS 'Nomor referensi SO ini di sistem operasional (Odoo). Nullable, belum dipakai UI mana pun — kunci sambungan disiapkan lebih dulu supaya rekonsiliasi tidak perlu mencari padanan manual nanti.';
 
 
 --
--- Name: COLUMN sales_orders.booking_no; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sales_orders.booking_no; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sales_orders.booking_no IS 'Nomor booking ke carrier. Nullable, belum dipakai UI mana pun.';
 
 
 --
--- Name: sales_targets; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sales_targets; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sales_targets (
@@ -8909,31 +8744,29 @@ CREATE TABLE public.sales_targets (
 );
 
 
-ALTER TABLE public.sales_targets OWNER TO postgres;
-
 --
--- Name: TABLE sales_targets; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE sales_targets; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.sales_targets IS 'Target penjualan per salesperson per bulan. Dipakai Dashboard CRM untuk menghitung quota attainment. Granularity per-orang (keputusan Den 30 Agu 2026) — tak ada baris tingkat entitas.';
 
 
 --
--- Name: COLUMN sales_targets.target_value; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sales_targets.target_value; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sales_targets.target_value IS 'Kuota nilai (rupiah). NULL = belum ditetapkan, BUKAN nol — attainment atas target NULL harus tampil "—", bukan dibagi nol.';
 
 
 --
--- Name: COLUMN sales_targets.target_deals; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sales_targets.target_deals; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sales_targets.target_deals IS 'Kuota jumlah deal WON. NULL = belum ditetapkan, BUKAN nol. Metrik ini tidak bergantung pada inquiries.estimated_value, jadi sudah bermakna sejak hari pertama.';
 
 
 --
--- Name: sales_visit_logs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sales_visit_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sales_visit_logs (
@@ -8947,10 +8780,8 @@ CREATE TABLE public.sales_visit_logs (
 );
 
 
-ALTER TABLE public.sales_visit_logs OWNER TO postgres;
-
 --
--- Name: sales_visits; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sales_visits; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sales_visits (
@@ -8973,10 +8804,8 @@ CREATE TABLE public.sales_visits (
 );
 
 
-ALTER TABLE public.sales_visits OWNER TO postgres;
-
 --
--- Name: sla_policies; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sla_policies; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sla_policies (
@@ -9014,31 +8843,29 @@ CREATE TABLE public.sla_policies (
 );
 
 
-ALTER TABLE public.sla_policies OWNER TO postgres;
-
 --
--- Name: TABLE sla_policies; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE sla_policies; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.sla_policies IS 'Kebijakan SLA per entitas. Tiga policy_type: prf_response (sumbu moda), deal_aging (sumbu inquiries.status), account_dormancy (sumbu pre_customer/customer).';
 
 
 --
--- Name: COLUMN sla_policies.inherits_from; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sla_policies.inherits_from; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sla_policies.inherits_from IS 'Dipakai baris IN_REVIEW: ambang batasnya mengikuti baris prf_response moda yang bersangkutan.';
 
 
 --
--- Name: COLUMN sla_policies.requires_human; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sla_policies.requires_human; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sla_policies.requires_human IS 'true = sistem hanya MENGUSULKAN, tidak pernah mengeksekusi sendiri.';
 
 
 --
--- Name: sp_btb; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_btb; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_btb (
@@ -9059,10 +8886,8 @@ CREATE TABLE public.sp_btb (
 );
 
 
-ALTER TABLE public.sp_btb OWNER TO postgres;
-
 --
--- Name: sp_btbs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_btbs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_btbs (
@@ -9074,10 +8899,8 @@ CREATE TABLE public.sp_btbs (
 );
 
 
-ALTER TABLE public.sp_btbs OWNER TO postgres;
-
 --
--- Name: sp_invoice_lines; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_invoice_lines (
@@ -9092,10 +8915,8 @@ CREATE TABLE public.sp_invoice_lines (
 );
 
 
-ALTER TABLE public.sp_invoice_lines OWNER TO postgres;
-
 --
--- Name: sp_invoices; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_invoices; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_invoices (
@@ -9120,10 +8941,8 @@ CREATE TABLE public.sp_invoices (
 );
 
 
-ALTER TABLE public.sp_invoices OWNER TO postgres;
-
 --
--- Name: sp_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_items (
@@ -9169,38 +8988,36 @@ CREATE TABLE public.sp_items (
 );
 
 
-ALTER TABLE public.sp_items OWNER TO postgres;
-
 --
--- Name: TABLE sp_items; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE sp_items; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.sp_items IS 'SP (Surat Pesanan) line items — core freight manifest. Multiple rows share the same sp_no and are grouped in the app by groupBySP(). customer_id FK ON DELETE SET NULL preserves rows if customer is deleted.';
 
 
 --
--- Name: COLUMN sp_items.inv; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_items.inv; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_items.inv IS 'Invoice document issued flag.';
 
 
 --
--- Name: COLUMN sp_items.fp; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_items.fp; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_items.fp IS 'Faktur Pajak (tax invoice) issued flag.';
 
 
 --
--- Name: COLUMN sp_items.email_status; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_items.email_status; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_items.email_status IS 'Stored as text (not date). App renders it in a date input (type=date) but treats it as a string. Empty string stored as NULL.';
 
 
 --
--- Name: sp_manifest_staging_20260810; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_manifest_staging_20260810; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_manifest_staging_20260810 (
@@ -9214,10 +9031,8 @@ CREATE TABLE public.sp_manifest_staging_20260810 (
 );
 
 
-ALTER TABLE public.sp_manifest_staging_20260810 OWNER TO postgres;
-
 --
--- Name: sp_order_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_order_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_order_items (
@@ -9244,10 +9059,8 @@ CREATE TABLE public.sp_order_items (
 );
 
 
-ALTER TABLE public.sp_order_items OWNER TO postgres;
-
 --
--- Name: sp_orders; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_orders; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_orders (
@@ -9288,59 +9101,57 @@ CREATE TABLE public.sp_orders (
 );
 
 
-ALTER TABLE public.sp_orders OWNER TO postgres;
-
 --
--- Name: COLUMN sp_orders.price_category; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.price_category; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_orders.price_category IS 'Tipe SP level header: semester/tahunan/project. NULL = belum/tidak dikategorikan. Sengaja senama dgn sp_order_items.price_category (kategori harga per item) — berhubungan tapi tidak wajib sama. BUKAN sp_orders.sp_category, yang artinya kategori produk (reguler/loyang/trolly).';
 
 
 --
--- Name: COLUMN sp_orders.inv; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.inv; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_orders.inv IS 'Status dokumen level SP (promosi 2 Sep 2026). SUMBER KEBENARAN; sp_items.inv disinkronkan turun oleh set_sp_finance_docs(). Jangan tulis langsung.';
 
 
 --
--- Name: COLUMN sp_orders.fp; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.fp; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_orders.fp IS 'Faktur Pajak, level SP. Sumber kebenaran — lihat catatan sp_orders.inv.';
 
 
 --
--- Name: COLUMN sp_orders.submit; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.submit; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_orders.submit IS 'Submit ke customer, level SP. Sumber kebenaran — lihat catatan sp_orders.inv.';
 
 
 --
--- Name: COLUMN sp_orders.kirim; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.kirim; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_orders.kirim IS 'Kirim dokumen, level SP. Sumber kebenaran — lihat catatan sp_orders.inv.';
 
 
 --
--- Name: COLUMN sp_orders.submit_date; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.submit_date; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_orders.submit_date IS 'Tanggal submit dokumen, level SP. Sumber kebenaran — lihat sp_orders.inv.';
 
 
 --
--- Name: COLUMN sp_orders.email_status; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.email_status; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_orders.email_status IS 'Status email ke customer, level SP. Teks bebas (sama seperti sp_items, sengaja tanpa CHECK). Sumber kebenaran — lihat catatan sp_orders.inv.';
 
 
 --
--- Name: sp_payments; Type: TABLE; Schema: public; Owner: postgres
+-- Name: sp_payments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sp_payments (
@@ -9357,24 +9168,22 @@ CREATE TABLE public.sp_payments (
 );
 
 
-ALTER TABLE public.sp_payments OWNER TO postgres;
-
 --
--- Name: COLUMN sp_payments.bukti_potong_url; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_payments.bukti_potong_url; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_payments.bukti_potong_url IS 'Tautan scan bukti potong (Drive/Storage). Interim: URL manual.';
 
 
 --
--- Name: COLUMN sp_payments.bukti_potong_no; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN sp_payments.bukti_potong_no; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.sp_payments.bukti_potong_no IS 'Nomor bukti potong PPh 23 dari customer.';
 
 
 --
--- Name: status_catalog; Type: TABLE; Schema: public; Owner: postgres
+-- Name: status_catalog; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.status_catalog (
@@ -9392,45 +9201,43 @@ CREATE TABLE public.status_catalog (
 );
 
 
-ALTER TABLE public.status_catalog OWNER TO postgres;
-
 --
--- Name: TABLE status_catalog; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE status_catalog; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.status_catalog IS 'Global registry of all valid status values. Reference only — document tables store status as varchar, not as FK. See docs/workflow/status-lifecycle.md.';
 
 
 --
--- Name: COLUMN status_catalog.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN status_catalog.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.status_catalog.code IS 'Snake_case status code, e.g. draft, submitted, under_review. Globally unique.';
 
 
 --
--- Name: COLUMN status_catalog.color_class; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN status_catalog.color_class; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.status_catalog.color_class IS 'Tailwind CSS class string for UI badges, e.g. bg-yellow-100 text-yellow-800.';
 
 
 --
--- Name: COLUMN status_catalog.applicable_modules; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN status_catalog.applicable_modules; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.status_catalog.applicable_modules IS 'JSON array of module slugs this status applies to. NULL means applicable to all modules.';
 
 
 --
--- Name: COLUMN status_catalog.is_terminal; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN status_catalog.is_terminal; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.status_catalog.is_terminal IS 'If true, no further status transition is allowed from this state (rejected, cancelled, archived, completed).';
 
 
 --
--- Name: stock_ledger; Type: TABLE; Schema: public; Owner: postgres
+-- Name: stock_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.stock_ledger (
@@ -9452,10 +9259,8 @@ CREATE TABLE public.stock_ledger (
 );
 
 
-ALTER TABLE public.stock_ledger OWNER TO postgres;
-
 --
--- Name: stock_summary; Type: VIEW; Schema: public; Owner: postgres
+-- Name: stock_summary; Type: VIEW; Schema: public; Owner: -
 --
 
 CREATE VIEW public.stock_summary WITH (security_invoker='true') AS
@@ -9486,10 +9291,8 @@ CREATE VIEW public.stock_summary WITH (security_invoker='true') AS
   GROUP BY product_id, warehouse_id, company_id;
 
 
-ALTER VIEW public.stock_summary OWNER TO postgres;
-
 --
--- Name: taxes; Type: TABLE; Schema: public; Owner: postgres
+-- Name: taxes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.taxes (
@@ -9512,38 +9315,36 @@ CREATE TABLE public.taxes (
 );
 
 
-ALTER TABLE public.taxes OWNER TO postgres;
-
 --
--- Name: TABLE taxes; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE taxes; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.taxes IS 'Company-scoped tax code registry. Indonesian context: PPN (VAT), PPh23, PPh21. Never modify rate on a code used in posted transactions — deactivate and create new instead.';
 
 
 --
--- Name: COLUMN taxes.rate; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN taxes.rate; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.taxes.rate IS 'Tax rate as a percentage value: 11.0000 = 11%. For fixed type, this is the fixed amount per unit.';
 
 
 --
--- Name: COLUMN taxes.is_inclusive; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN taxes.is_inclusive; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.taxes.is_inclusive IS 'True = tax is already included in the price (tax-inclusive). False = tax is added on top of the base price.';
 
 
 --
--- Name: COLUMN taxes.gl_account_id; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN taxes.gl_account_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.taxes.gl_account_id IS 'Nullable FK to chart_of_accounts. Set during Phase 3 when COA is configured.';
 
 
 --
--- Name: top_requests; Type: TABLE; Schema: public; Owner: postgres
+-- Name: top_requests; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.top_requests (
@@ -9610,10 +9411,8 @@ CREATE TABLE public.top_requests (
 );
 
 
-ALTER TABLE public.top_requests OWNER TO postgres;
-
 --
--- Name: user_login_logs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: user_login_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_login_logs (
@@ -9627,10 +9426,8 @@ CREATE TABLE public.user_login_logs (
 );
 
 
-ALTER TABLE public.user_login_logs OWNER TO postgres;
-
 --
--- Name: user_menu_permissions; Type: TABLE; Schema: public; Owner: postgres
+-- Name: user_menu_permissions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_menu_permissions (
@@ -9648,10 +9445,8 @@ CREATE TABLE public.user_menu_permissions (
 );
 
 
-ALTER TABLE public.user_menu_permissions OWNER TO postgres;
-
 --
--- Name: user_roles; Type: TABLE; Schema: public; Owner: postgres
+-- Name: user_roles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_roles (
@@ -9669,31 +9464,29 @@ CREATE TABLE public.user_roles (
 );
 
 
-ALTER TABLE public.user_roles OWNER TO postgres;
-
 --
--- Name: TABLE user_roles; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE user_roles; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.user_roles IS 'User-to-role assignments. A user may have multiple roles within one company. valid_from/until enables time-bound grants.';
 
 
 --
--- Name: COLUMN user_roles.valid_until; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN user_roles.valid_until; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.user_roles.valid_until IS 'NULL = no expiry. If set, role should be checked against current date at permission evaluation.';
 
 
 --
--- Name: COLUMN user_roles.is_active; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN user_roles.is_active; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.user_roles.is_active IS 'False = role revoked. Row is kept for audit history.';
 
 
 --
--- Name: vendors; Type: TABLE; Schema: public; Owner: postgres
+-- Name: vendors; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.vendors (
@@ -9726,38 +9519,36 @@ CREATE TABLE public.vendors (
 );
 
 
-ALTER TABLE public.vendors OWNER TO postgres;
-
 --
--- Name: TABLE vendors; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE vendors; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.vendors IS 'Company-scoped vendor master. Covers suppliers, shipping lines, truckers, customs agents, and sub-contractors.';
 
 
 --
--- Name: COLUMN vendors.code; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN vendors.code; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.vendors.code IS 'Vendor code, unique per company. e.g. VND-0001.';
 
 
 --
--- Name: COLUMN vendors.vendor_type; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN vendors.vendor_type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.vendors.vendor_type IS 'Classification: Shipping Line, Trucker, Customs Agent, Supplier, Sub-contractor, General.';
 
 
 --
--- Name: COLUMN vendors.bank_account; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: COLUMN vendors.bank_account; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.vendors.bank_account IS 'SENSITIVE: Display only last 4 digits to non-Finance roles. Full value stored for AP payment processing.';
 
 
 --
--- Name: warehouses; Type: TABLE; Schema: public; Owner: postgres
+-- Name: warehouses; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.warehouses (
@@ -9773,10 +9564,8 @@ CREATE TABLE public.warehouses (
 );
 
 
-ALTER TABLE public.warehouses OWNER TO postgres;
-
 --
--- Name: weekly_meeting_items; Type: TABLE; Schema: public; Owner: postgres
+-- Name: weekly_meeting_items; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.weekly_meeting_items (
@@ -9792,10 +9581,8 @@ CREATE TABLE public.weekly_meeting_items (
 );
 
 
-ALTER TABLE public.weekly_meeting_items OWNER TO postgres;
-
 --
--- Name: weekly_meetings; Type: TABLE; Schema: public; Owner: postgres
+-- Name: weekly_meetings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.weekly_meetings (
@@ -9811,10 +9598,8 @@ CREATE TABLE public.weekly_meetings (
 );
 
 
-ALTER TABLE public.weekly_meetings OWNER TO postgres;
-
 --
--- Name: account_lifecycle_history account_lifecycle_history_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: account_lifecycle_history account_lifecycle_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.account_lifecycle_history
@@ -9822,7 +9607,7 @@ ALTER TABLE ONLY public.account_lifecycle_history
 
 
 --
--- Name: activities activities_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: activities activities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activities
@@ -9830,7 +9615,7 @@ ALTER TABLE ONLY public.activities
 
 
 --
--- Name: activity_logs activity_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: activity_logs activity_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activity_logs
@@ -9838,7 +9623,7 @@ ALTER TABLE ONLY public.activity_logs
 
 
 --
--- Name: app_settings app_settings_company_id_category_key_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: app_settings app_settings_company_id_category_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_settings
@@ -9846,7 +9631,7 @@ ALTER TABLE ONLY public.app_settings
 
 
 --
--- Name: app_settings app_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: app_settings app_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_settings
@@ -9854,7 +9639,7 @@ ALTER TABLE ONLY public.app_settings
 
 
 --
--- Name: approval_delegations approval_delegations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_delegations approval_delegations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_delegations
@@ -9862,7 +9647,7 @@ ALTER TABLE ONLY public.approval_delegations
 
 
 --
--- Name: approval_logs approval_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_logs approval_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_logs
@@ -9870,7 +9655,7 @@ ALTER TABLE ONLY public.approval_logs
 
 
 --
--- Name: approval_rules approval_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_rules
@@ -9878,7 +9663,7 @@ ALTER TABLE ONLY public.approval_rules
 
 
 --
--- Name: approval_workflow_steps approval_workflow_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_workflow_steps approval_workflow_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_workflow_steps
@@ -9886,7 +9671,7 @@ ALTER TABLE ONLY public.approval_workflow_steps
 
 
 --
--- Name: approval_workflow_steps approval_workflow_steps_workflow_id_step_order_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_workflow_steps approval_workflow_steps_workflow_id_step_order_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_workflow_steps
@@ -9894,7 +9679,7 @@ ALTER TABLE ONLY public.approval_workflow_steps
 
 
 --
--- Name: approval_workflows approval_workflows_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_workflows approval_workflows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_workflows
@@ -9902,7 +9687,7 @@ ALTER TABLE ONLY public.approval_workflows
 
 
 --
--- Name: ar_btbs ar_btbs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ar_btbs ar_btbs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ar_btbs
@@ -9910,7 +9695,7 @@ ALTER TABLE ONLY public.ar_btbs
 
 
 --
--- Name: ar_ttfs ar_ttfs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ar_ttfs
@@ -9918,7 +9703,7 @@ ALTER TABLE ONLY public.ar_ttfs
 
 
 --
--- Name: asset_categories asset_categories_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_categories asset_categories_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_categories
@@ -9926,7 +9711,7 @@ ALTER TABLE ONLY public.asset_categories
 
 
 --
--- Name: asset_categories asset_categories_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_categories asset_categories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_categories
@@ -9934,7 +9719,7 @@ ALTER TABLE ONLY public.asset_categories
 
 
 --
--- Name: asset_fuel_logs asset_fuel_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs asset_fuel_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_fuel_logs
@@ -9942,7 +9727,7 @@ ALTER TABLE ONLY public.asset_fuel_logs
 
 
 --
--- Name: asset_locations asset_locations_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_locations asset_locations_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_locations
@@ -9950,7 +9735,7 @@ ALTER TABLE ONLY public.asset_locations
 
 
 --
--- Name: asset_locations asset_locations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_locations asset_locations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_locations
@@ -9958,7 +9743,7 @@ ALTER TABLE ONLY public.asset_locations
 
 
 --
--- Name: asset_maintenance_records asset_maintenance_records_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records asset_maintenance_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_maintenance_records
@@ -9966,7 +9751,7 @@ ALTER TABLE ONLY public.asset_maintenance_records
 
 
 --
--- Name: asset_network asset_network_asset_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_network asset_network_asset_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_network
@@ -9974,7 +9759,7 @@ ALTER TABLE ONLY public.asset_network
 
 
 --
--- Name: asset_network asset_network_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_network asset_network_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_network
@@ -9982,7 +9767,7 @@ ALTER TABLE ONLY public.asset_network
 
 
 --
--- Name: asset_software_licenses asset_software_licenses_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_software_licenses asset_software_licenses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_software_licenses
@@ -9990,7 +9775,7 @@ ALTER TABLE ONLY public.asset_software_licenses
 
 
 --
--- Name: asset_specifications asset_specifications_asset_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_specifications asset_specifications_asset_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_specifications
@@ -9998,7 +9783,7 @@ ALTER TABLE ONLY public.asset_specifications
 
 
 --
--- Name: asset_specifications asset_specifications_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_specifications asset_specifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_specifications
@@ -10006,7 +9791,7 @@ ALTER TABLE ONLY public.asset_specifications
 
 
 --
--- Name: assets assets_company_no_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_company_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -10014,7 +9799,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -10022,7 +9807,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs
@@ -10030,7 +9815,7 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
--- Name: bnf_authorized_users bnf_authorized_users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users bnf_authorized_users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_authorized_users
@@ -10038,7 +9823,7 @@ ALTER TABLE ONLY public.bnf_authorized_users
 
 
 --
--- Name: bnf_department_scopes bnf_department_scopes_department_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes bnf_department_scopes_department_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_department_scopes
@@ -10046,7 +9831,7 @@ ALTER TABLE ONLY public.bnf_department_scopes
 
 
 --
--- Name: bnf_department_scopes bnf_department_scopes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes bnf_department_scopes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_department_scopes
@@ -10054,7 +9839,7 @@ ALTER TABLE ONLY public.bnf_department_scopes
 
 
 --
--- Name: bnf_departments bnf_departments_division_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_division_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_departments
@@ -10062,7 +9847,7 @@ ALTER TABLE ONLY public.bnf_departments
 
 
 --
--- Name: bnf_departments bnf_departments_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_departments
@@ -10070,7 +9855,7 @@ ALTER TABLE ONLY public.bnf_departments
 
 
 --
--- Name: bnf_division_scopes bnf_division_scopes_division_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes bnf_division_scopes_division_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_division_scopes
@@ -10078,7 +9863,7 @@ ALTER TABLE ONLY public.bnf_division_scopes
 
 
 --
--- Name: bnf_division_scopes bnf_division_scopes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes bnf_division_scopes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_division_scopes
@@ -10086,7 +9871,7 @@ ALTER TABLE ONLY public.bnf_division_scopes
 
 
 --
--- Name: bnf_divisions bnf_divisions_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_divisions bnf_divisions_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_divisions
@@ -10094,7 +9879,7 @@ ALTER TABLE ONLY public.bnf_divisions
 
 
 --
--- Name: bnf_divisions bnf_divisions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_divisions bnf_divisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_divisions
@@ -10102,7 +9887,7 @@ ALTER TABLE ONLY public.bnf_divisions
 
 
 --
--- Name: bnf_report_action_items bnf_report_action_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items bnf_report_action_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_action_items
@@ -10110,7 +9895,7 @@ ALTER TABLE ONLY public.bnf_report_action_items
 
 
 --
--- Name: bnf_report_logs bnf_report_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_logs bnf_report_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_logs
@@ -10118,7 +9903,7 @@ ALTER TABLE ONLY public.bnf_report_logs
 
 
 --
--- Name: bnf_report_related_departments bnf_report_related_departments_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments bnf_report_related_departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_related_departments
@@ -10126,7 +9911,7 @@ ALTER TABLE ONLY public.bnf_report_related_departments
 
 
 --
--- Name: bnf_report_related_departments bnf_report_related_departments_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments bnf_report_related_departments_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_related_departments
@@ -10134,7 +9919,7 @@ ALTER TABLE ONLY public.bnf_report_related_departments
 
 
 --
--- Name: bnf_reports bnf_reports_company_report_no_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_company_report_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_reports
@@ -10142,7 +9927,7 @@ ALTER TABLE ONLY public.bnf_reports
 
 
 --
--- Name: bnf_reports bnf_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_reports
@@ -10150,7 +9935,7 @@ ALTER TABLE ONLY public.bnf_reports
 
 
 --
--- Name: branches branches_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: branches branches_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.branches
@@ -10158,7 +9943,7 @@ ALTER TABLE ONLY public.branches
 
 
 --
--- Name: branches branches_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: branches branches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.branches
@@ -10166,7 +9951,7 @@ ALTER TABLE ONLY public.branches
 
 
 --
--- Name: channel_types channel_types_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: channel_types channel_types_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.channel_types
@@ -10174,7 +9959,7 @@ ALTER TABLE ONLY public.channel_types
 
 
 --
--- Name: chart_of_accounts chart_of_accounts_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: chart_of_accounts chart_of_accounts_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.chart_of_accounts
@@ -10182,7 +9967,7 @@ ALTER TABLE ONLY public.chart_of_accounts
 
 
 --
--- Name: chart_of_accounts chart_of_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: chart_of_accounts chart_of_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.chart_of_accounts
@@ -10190,7 +9975,7 @@ ALTER TABLE ONLY public.chart_of_accounts
 
 
 --
--- Name: code_counters code_counters_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: code_counters code_counters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.code_counters
@@ -10198,7 +9983,7 @@ ALTER TABLE ONLY public.code_counters
 
 
 --
--- Name: companies companies_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: companies companies_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.companies
@@ -10206,7 +9991,7 @@ ALTER TABLE ONLY public.companies
 
 
 --
--- Name: companies companies_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: companies companies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.companies
@@ -10214,7 +9999,7 @@ ALTER TABLE ONLY public.companies
 
 
 --
--- Name: contacts contacts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: contacts contacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.contacts
@@ -10222,7 +10007,7 @@ ALTER TABLE ONLY public.contacts
 
 
 --
--- Name: cost_centers cost_centers_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cost_centers
@@ -10230,7 +10015,7 @@ ALTER TABLE ONLY public.cost_centers
 
 
 --
--- Name: cost_centers cost_centers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cost_centers
@@ -10238,7 +10023,7 @@ ALTER TABLE ONLY public.cost_centers
 
 
 --
--- Name: currencies currencies_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: currencies currencies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.currencies
@@ -10246,15 +10031,7 @@ ALTER TABLE ONLY public.currencies
 
 
 --
--- Name: customers customers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_pkey PRIMARY KEY (id);
-
-
---
--- Name: daily_report_items daily_report_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.daily_report_items
@@ -10262,7 +10039,7 @@ ALTER TABLE ONLY public.daily_report_items
 
 
 --
--- Name: dc_master dc_master_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: dc_master dc_master_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dc_master
@@ -10270,7 +10047,7 @@ ALTER TABLE ONLY public.dc_master
 
 
 --
--- Name: deal_handovers deal_handovers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: deal_handovers deal_handovers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deal_handovers
@@ -10278,7 +10055,7 @@ ALTER TABLE ONLY public.deal_handovers
 
 
 --
--- Name: delivery_incidents delivery_incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_incidents
@@ -10286,7 +10063,7 @@ ALTER TABLE ONLY public.delivery_incidents
 
 
 --
--- Name: delivery_note_items delivery_note_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_note_items delivery_note_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_note_items
@@ -10294,7 +10071,7 @@ ALTER TABLE ONLY public.delivery_note_items
 
 
 --
--- Name: delivery_notes delivery_notes_do_no_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_notes delivery_notes_do_no_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_notes
@@ -10302,7 +10079,7 @@ ALTER TABLE ONLY public.delivery_notes
 
 
 --
--- Name: delivery_notes delivery_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_notes delivery_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_notes
@@ -10310,7 +10087,7 @@ ALTER TABLE ONLY public.delivery_notes
 
 
 --
--- Name: departments departments_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: departments departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.departments
@@ -10318,7 +10095,7 @@ ALTER TABLE ONLY public.departments
 
 
 --
--- Name: document_numbering document_numbering_company_id_document_type_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_numbering document_numbering_company_id_document_type_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_numbering
@@ -10326,7 +10103,7 @@ ALTER TABLE ONLY public.document_numbering
 
 
 --
--- Name: document_numbering document_numbering_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_numbering document_numbering_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_numbering
@@ -10334,7 +10111,7 @@ ALTER TABLE ONLY public.document_numbering
 
 
 --
--- Name: document_sequences document_sequences_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_sequences document_sequences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_sequences
@@ -10342,7 +10119,7 @@ ALTER TABLE ONLY public.document_sequences
 
 
 --
--- Name: document_sequences document_sequences_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_sequences document_sequences_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_sequences
@@ -10350,7 +10127,7 @@ ALTER TABLE ONLY public.document_sequences
 
 
 --
--- Name: document_templates document_templates_company_id_document_type_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_templates document_templates_company_id_document_type_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_templates
@@ -10358,7 +10135,7 @@ ALTER TABLE ONLY public.document_templates
 
 
 --
--- Name: document_templates document_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_templates document_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_templates
@@ -10366,7 +10143,7 @@ ALTER TABLE ONLY public.document_templates
 
 
 --
--- Name: document_types document_types_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_types document_types_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_types
@@ -10374,7 +10151,7 @@ ALTER TABLE ONLY public.document_types
 
 
 --
--- Name: document_types document_types_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_types document_types_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_types
@@ -10382,7 +10159,7 @@ ALTER TABLE ONLY public.document_types
 
 
 --
--- Name: dropdown_options dropdown_options_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: dropdown_options dropdown_options_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dropdown_options
@@ -10390,7 +10167,7 @@ ALTER TABLE ONLY public.dropdown_options
 
 
 --
--- Name: entity_bank_accounts entity_bank_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_bank_accounts entity_bank_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_bank_accounts
@@ -10398,7 +10175,7 @@ ALTER TABLE ONLY public.entity_bank_accounts
 
 
 --
--- Name: entity_finance_settings entity_finance_settings_company_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_finance_settings entity_finance_settings_company_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_finance_settings
@@ -10406,7 +10183,7 @@ ALTER TABLE ONLY public.entity_finance_settings
 
 
 --
--- Name: entity_finance_settings entity_finance_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_finance_settings entity_finance_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_finance_settings
@@ -10414,7 +10191,7 @@ ALTER TABLE ONLY public.entity_finance_settings
 
 
 --
--- Name: entity_signatories entity_signatories_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_signatories entity_signatories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_signatories
@@ -10422,7 +10199,7 @@ ALTER TABLE ONLY public.entity_signatories
 
 
 --
--- Name: exchange_rates exchange_rates_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: exchange_rates exchange_rates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exchange_rates
@@ -10430,7 +10207,7 @@ ALTER TABLE ONLY public.exchange_rates
 
 
 --
--- Name: exchange_rates exchange_rates_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: exchange_rates exchange_rates_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exchange_rates
@@ -10438,7 +10215,23 @@ ALTER TABLE ONLY public.exchange_rates
 
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: goods_receipt_items goods_receipt_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.goods_receipt_items
+    ADD CONSTRAINT goods_receipt_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: goods_receipts goods_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.goods_receipts
+    ADD CONSTRAINT goods_receipts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: hrga_approval_configs hrga_approval_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_approval_configs
@@ -10446,7 +10239,7 @@ ALTER TABLE ONLY public.hrga_approval_configs
 
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_type_level_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs hrga_approval_configs_type_level_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_approval_configs
@@ -10454,7 +10247,7 @@ ALTER TABLE ONLY public.hrga_approval_configs
 
 
 --
--- Name: hrga_notification_queue hrga_notification_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue hrga_notification_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_notification_queue
@@ -10462,7 +10255,7 @@ ALTER TABLE ONLY public.hrga_notification_queue
 
 
 --
--- Name: hrga_offboarding_checklists hrga_offboarding_checklists_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists hrga_offboarding_checklists_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_offboarding_checklists
@@ -10470,7 +10263,7 @@ ALTER TABLE ONLY public.hrga_offboarding_checklists
 
 
 --
--- Name: hrga_offboarding_items hrga_offboarding_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items hrga_offboarding_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_offboarding_items
@@ -10478,7 +10271,7 @@ ALTER TABLE ONLY public.hrga_offboarding_items
 
 
 --
--- Name: hrga_request_approvals hrga_request_approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_approvals hrga_request_approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_approvals
@@ -10486,7 +10279,7 @@ ALTER TABLE ONLY public.hrga_request_approvals
 
 
 --
--- Name: hrga_request_attachments hrga_request_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_attachments hrga_request_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_attachments
@@ -10494,7 +10287,7 @@ ALTER TABLE ONLY public.hrga_request_attachments
 
 
 --
--- Name: hrga_request_items hrga_request_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_items hrga_request_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_items
@@ -10502,7 +10295,7 @@ ALTER TABLE ONLY public.hrga_request_items
 
 
 --
--- Name: hrga_request_types hrga_request_types_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_types hrga_request_types_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_types
@@ -10510,7 +10303,7 @@ ALTER TABLE ONLY public.hrga_request_types
 
 
 --
--- Name: hrga_request_types hrga_request_types_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_types hrga_request_types_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_types
@@ -10518,7 +10311,7 @@ ALTER TABLE ONLY public.hrga_request_types
 
 
 --
--- Name: hrga_requests hrga_requests_document_no_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_document_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -10526,7 +10319,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: hrga_requests hrga_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -10534,7 +10327,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: inquiries inquiries_inquiry_no_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_inquiry_no_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -10542,7 +10335,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiries inquiries_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -10550,7 +10343,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiry_comment_mentions inquiry_comment_mentions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_comment_mentions
@@ -10558,7 +10351,7 @@ ALTER TABLE ONLY public.inquiry_comment_mentions
 
 
 --
--- Name: inquiry_comments inquiry_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_comments inquiry_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_comments
@@ -10566,7 +10359,7 @@ ALTER TABLE ONLY public.inquiry_comments
 
 
 --
--- Name: inquiry_status_history inquiry_status_history_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_status_history inquiry_status_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_status_history
@@ -10574,7 +10367,7 @@ ALTER TABLE ONLY public.inquiry_status_history
 
 
 --
--- Name: journal_entries journal_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: journal_entries journal_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.journal_entries
@@ -10582,7 +10375,7 @@ ALTER TABLE ONLY public.journal_entries
 
 
 --
--- Name: journal_entry_lines journal_entry_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: journal_entry_lines journal_entry_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.journal_entry_lines
@@ -10590,7 +10383,7 @@ ALTER TABLE ONLY public.journal_entry_lines
 
 
 --
--- Name: loss_reasons loss_reasons_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: loss_reasons loss_reasons_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.loss_reasons
@@ -10598,7 +10391,7 @@ ALTER TABLE ONLY public.loss_reasons
 
 
 --
--- Name: meeting_moms meeting_moms_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meeting_moms meeting_moms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meeting_moms
@@ -10606,7 +10399,7 @@ ALTER TABLE ONLY public.meeting_moms
 
 
 --
--- Name: menu_actions menu_actions_menu_id_action_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: menu_actions menu_actions_menu_id_action_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.menu_actions
@@ -10614,7 +10407,7 @@ ALTER TABLE ONLY public.menu_actions
 
 
 --
--- Name: menu_actions menu_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: menu_actions menu_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.menu_actions
@@ -10622,7 +10415,7 @@ ALTER TABLE ONLY public.menu_actions
 
 
 --
--- Name: module_actions module_actions_module_id_action_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: module_actions module_actions_module_id_action_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_actions
@@ -10630,7 +10423,7 @@ ALTER TABLE ONLY public.module_actions
 
 
 --
--- Name: module_actions module_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: module_actions module_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_actions
@@ -10638,7 +10431,7 @@ ALTER TABLE ONLY public.module_actions
 
 
 --
--- Name: module_menus module_menus_key_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: module_menus module_menus_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_menus
@@ -10646,7 +10439,7 @@ ALTER TABLE ONLY public.module_menus
 
 
 --
--- Name: module_menus module_menus_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: module_menus module_menus_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_menus
@@ -10654,7 +10447,7 @@ ALTER TABLE ONLY public.module_menus
 
 
 --
--- Name: modules modules_key_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: modules modules_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.modules
@@ -10662,7 +10455,7 @@ ALTER TABLE ONLY public.modules
 
 
 --
--- Name: modules modules_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: modules modules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.modules
@@ -10670,7 +10463,7 @@ ALTER TABLE ONLY public.modules
 
 
 --
--- Name: mom_action_plans mom_action_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: mom_action_plans mom_action_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mom_action_plans
@@ -10678,7 +10471,7 @@ ALTER TABLE ONLY public.mom_action_plans
 
 
 --
--- Name: mom_improvements mom_improvements_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: mom_improvements mom_improvements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mom_improvements
@@ -10686,7 +10479,7 @@ ALTER TABLE ONLY public.mom_improvements
 
 
 --
--- Name: mom_issues mom_issues_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: mom_issues mom_issues_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mom_issues
@@ -10694,7 +10487,7 @@ ALTER TABLE ONLY public.mom_issues
 
 
 --
--- Name: mom_progress_updates mom_progress_updates_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: mom_progress_updates mom_progress_updates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mom_progress_updates
@@ -10702,7 +10495,7 @@ ALTER TABLE ONLY public.mom_progress_updates
 
 
 --
--- Name: notification_rules notification_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: notification_rules notification_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notification_rules
@@ -10710,7 +10503,7 @@ ALTER TABLE ONLY public.notification_rules
 
 
 --
--- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notifications
@@ -10718,7 +10511,7 @@ ALTER TABLE ONLY public.notifications
 
 
 --
--- Name: payment_terms payment_terms_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: payment_terms payment_terms_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.payment_terms
@@ -10726,7 +10519,7 @@ ALTER TABLE ONLY public.payment_terms
 
 
 --
--- Name: payment_terms payment_terms_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: payment_terms payment_terms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.payment_terms
@@ -10734,7 +10527,7 @@ ALTER TABLE ONLY public.payment_terms
 
 
 --
--- Name: permissions permissions_module_action_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: permissions permissions_module_action_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.permissions
@@ -10742,7 +10535,7 @@ ALTER TABLE ONLY public.permissions
 
 
 --
--- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.permissions
@@ -10750,7 +10543,7 @@ ALTER TABLE ONLY public.permissions
 
 
 --
--- Name: picking_list_items picking_list_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_list_items picking_list_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_list_items
@@ -10758,7 +10551,7 @@ ALTER TABLE ONLY public.picking_list_items
 
 
 --
--- Name: picking_list_materials picking_list_materials_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_list_materials picking_list_materials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_list_materials
@@ -10766,7 +10559,7 @@ ALTER TABLE ONLY public.picking_list_materials
 
 
 --
--- Name: picking_lists picking_lists_picking_no_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_picking_no_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_lists
@@ -10774,7 +10567,7 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
--- Name: picking_lists picking_lists_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_lists
@@ -10782,7 +10575,7 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
--- Name: positions positions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: positions positions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.positions
@@ -10790,7 +10583,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- Name: prf_cost_items prf_cost_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_cost_items
@@ -10798,7 +10591,7 @@ ALTER TABLE ONLY public.prf_cost_items
 
 
 --
--- Name: prf prf_no_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -10806,7 +10599,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf prf_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -10814,7 +10607,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf_vendor_offers prf_vendor_offers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers prf_vendor_offers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_vendor_offers
@@ -10822,7 +10615,7 @@ ALTER TABLE ONLY public.prf_vendor_offers
 
 
 --
--- Name: product_price_history product_price_history_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: product_price_history product_price_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.product_price_history
@@ -10830,7 +10623,7 @@ ALTER TABLE ONLY public.product_price_history
 
 
 --
--- Name: product_warehouse_location product_warehouse_location_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: product_warehouse_location product_warehouse_location_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.product_warehouse_location
@@ -10838,7 +10631,7 @@ ALTER TABLE ONLY public.product_warehouse_location
 
 
 --
--- Name: products products_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products products_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
@@ -10846,7 +10639,7 @@ ALTER TABLE ONLY public.products
 
 
 --
--- Name: products products_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products products_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
@@ -10854,7 +10647,7 @@ ALTER TABLE ONLY public.products
 
 
 --
--- Name: profiles profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: profiles profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.profiles
@@ -10862,7 +10655,7 @@ ALTER TABLE ONLY public.profiles
 
 
 --
--- Name: accounts prospects_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -10870,7 +10663,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: product_warehouse_location pwl_uniq; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: product_warehouse_location pwl_uniq; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.product_warehouse_location
@@ -10878,7 +10671,7 @@ ALTER TABLE ONLY public.product_warehouse_location
 
 
 --
--- Name: quotation_items quotation_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotation_items quotation_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotation_items
@@ -10886,7 +10679,7 @@ ALTER TABLE ONLY public.quotation_items
 
 
 --
--- Name: quotations quotations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -10894,7 +10687,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_quotation_no_revision_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_quotation_no_revision_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -10902,7 +10695,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: rate_sheets rate_sheets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: rate_sheets rate_sheets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.rate_sheets
@@ -10910,7 +10703,7 @@ ALTER TABLE ONLY public.rate_sheets
 
 
 --
--- Name: role_menu_permissions role_menu_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_menu_permissions role_menu_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_menu_permissions
@@ -10918,7 +10711,7 @@ ALTER TABLE ONLY public.role_menu_permissions
 
 
 --
--- Name: role_permission_templates role_permission_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permission_templates role_permission_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permission_templates
@@ -10926,7 +10719,7 @@ ALTER TABLE ONLY public.role_permission_templates
 
 
 --
--- Name: role_permission_templates role_permission_templates_role_id_menu_action_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permission_templates role_permission_templates_role_id_menu_action_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permission_templates
@@ -10934,7 +10727,7 @@ ALTER TABLE ONLY public.role_permission_templates
 
 
 --
--- Name: role_permissions role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permissions role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permissions
@@ -10942,7 +10735,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- Name: role_permissions role_permissions_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permissions role_permissions_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permissions
@@ -10950,7 +10743,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- Name: roles roles_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: roles roles_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -10958,7 +10751,7 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -10966,7 +10759,7 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- Name: sales_calls sales_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_calls
@@ -10974,7 +10767,7 @@ ALTER TABLE ONLY public.sales_calls
 
 
 --
--- Name: sales_orders sales_orders_no_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_orders
@@ -10982,7 +10775,7 @@ ALTER TABLE ONLY public.sales_orders
 
 
 --
--- Name: sales_orders sales_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_orders
@@ -10990,7 +10783,7 @@ ALTER TABLE ONLY public.sales_orders
 
 
 --
--- Name: sales_targets sales_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_targets sales_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_targets
@@ -10998,7 +10791,7 @@ ALTER TABLE ONLY public.sales_targets
 
 
 --
--- Name: sales_visit_logs sales_visit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_visit_logs sales_visit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_visit_logs
@@ -11006,7 +10799,7 @@ ALTER TABLE ONLY public.sales_visit_logs
 
 
 --
--- Name: sales_visits sales_visits_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_visits
@@ -11014,7 +10807,7 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
--- Name: sla_policies sla_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sla_policies sla_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sla_policies
@@ -11022,7 +10815,7 @@ ALTER TABLE ONLY public.sla_policies
 
 
 --
--- Name: sp_btb sp_btb_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_btb
@@ -11030,7 +10823,7 @@ ALTER TABLE ONLY public.sp_btb
 
 
 --
--- Name: sp_btbs sp_btbs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_btbs sp_btbs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_btbs
@@ -11038,7 +10831,7 @@ ALTER TABLE ONLY public.sp_btbs
 
 
 --
--- Name: sp_invoice_lines sp_invoice_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines sp_invoice_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_invoice_lines
@@ -11046,7 +10839,7 @@ ALTER TABLE ONLY public.sp_invoice_lines
 
 
 --
--- Name: sp_invoices sp_invoice_one_per_sp; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_invoices sp_invoice_one_per_sp; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_invoices
@@ -11054,7 +10847,7 @@ ALTER TABLE ONLY public.sp_invoices
 
 
 --
--- Name: sp_invoices sp_invoices_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_invoices sp_invoices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_invoices
@@ -11062,7 +10855,7 @@ ALTER TABLE ONLY public.sp_invoices
 
 
 --
--- Name: sp_items sp_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_items
@@ -11070,7 +10863,7 @@ ALTER TABLE ONLY public.sp_items
 
 
 --
--- Name: sp_order_items sp_order_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_order_items sp_order_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_order_items
@@ -11078,7 +10871,7 @@ ALTER TABLE ONLY public.sp_order_items
 
 
 --
--- Name: sp_orders sp_orders_no_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_no_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_orders
@@ -11086,7 +10879,7 @@ ALTER TABLE ONLY public.sp_orders
 
 
 --
--- Name: sp_orders sp_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_orders
@@ -11094,7 +10887,7 @@ ALTER TABLE ONLY public.sp_orders
 
 
 --
--- Name: sp_payments sp_payments_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_payments sp_payments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_payments
@@ -11102,7 +10895,7 @@ ALTER TABLE ONLY public.sp_payments
 
 
 --
--- Name: status_catalog status_catalog_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: status_catalog status_catalog_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.status_catalog
@@ -11110,7 +10903,7 @@ ALTER TABLE ONLY public.status_catalog
 
 
 --
--- Name: status_catalog status_catalog_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: status_catalog status_catalog_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.status_catalog
@@ -11118,7 +10911,7 @@ ALTER TABLE ONLY public.status_catalog
 
 
 --
--- Name: stock_ledger stock_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: stock_ledger stock_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.stock_ledger
@@ -11126,7 +10919,7 @@ ALTER TABLE ONLY public.stock_ledger
 
 
 --
--- Name: taxes taxes_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: taxes taxes_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.taxes
@@ -11134,7 +10927,7 @@ ALTER TABLE ONLY public.taxes
 
 
 --
--- Name: taxes taxes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: taxes taxes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.taxes
@@ -11142,7 +10935,7 @@ ALTER TABLE ONLY public.taxes
 
 
 --
--- Name: top_requests top_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: top_requests top_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.top_requests
@@ -11150,7 +10943,7 @@ ALTER TABLE ONLY public.top_requests
 
 
 --
--- Name: user_login_logs user_login_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_login_logs user_login_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_login_logs
@@ -11158,7 +10951,7 @@ ALTER TABLE ONLY public.user_login_logs
 
 
 --
--- Name: user_menu_permissions user_menu_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_menu_permissions user_menu_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_menu_permissions
@@ -11166,7 +10959,7 @@ ALTER TABLE ONLY public.user_menu_permissions
 
 
 --
--- Name: user_menu_permissions user_menu_permissions_user_id_menu_action_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_menu_permissions user_menu_permissions_user_id_menu_action_id_company_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_menu_permissions
@@ -11174,7 +10967,7 @@ ALTER TABLE ONLY public.user_menu_permissions
 
 
 --
--- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -11182,7 +10975,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- Name: user_roles user_roles_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -11190,7 +10983,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- Name: vendors vendors_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: vendors vendors_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendors
@@ -11198,7 +10991,7 @@ ALTER TABLE ONLY public.vendors
 
 
 --
--- Name: vendors vendors_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: vendors vendors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendors
@@ -11206,7 +10999,7 @@ ALTER TABLE ONLY public.vendors
 
 
 --
--- Name: warehouses warehouses_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: warehouses warehouses_company_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.warehouses
@@ -11214,7 +11007,7 @@ ALTER TABLE ONLY public.warehouses
 
 
 --
--- Name: warehouses warehouses_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: warehouses warehouses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.warehouses
@@ -11222,7 +11015,7 @@ ALTER TABLE ONLY public.warehouses
 
 
 --
--- Name: weekly_meeting_items weekly_meeting_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: weekly_meeting_items weekly_meeting_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.weekly_meeting_items
@@ -11230,7 +11023,7 @@ ALTER TABLE ONLY public.weekly_meeting_items
 
 
 --
--- Name: weekly_meetings weekly_meetings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: weekly_meetings weekly_meetings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.weekly_meetings
@@ -11238,2065 +11031,2044 @@ ALTER TABLE ONLY public.weekly_meetings
 
 
 --
--- Name: accounts_code_unique; Type: INDEX; Schema: public; Owner: postgres
+-- Name: accounts_code_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX accounts_code_unique ON public.accounts USING btree (code) WHERE (code IS NOT NULL);
 
 
 --
--- Name: channel_types_company_code_line_uidx; Type: INDEX; Schema: public; Owner: postgres
+-- Name: channel_types_company_code_line_uidx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX channel_types_company_code_line_uidx ON public.channel_types USING btree (company_id, code, COALESCE(service_line, '__ALL__'::character varying)) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: departments_company_code_active_uidx; Type: INDEX; Schema: public; Owner: postgres
+-- Name: departments_company_code_active_uidx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX departments_company_code_active_uidx ON public.departments USING btree (COALESCE(company_id, '00000000-0000-0000-0000-000000000000'::uuid), code) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: dropdown_options_entity_unique; Type: INDEX; Schema: public; Owner: postgres
+-- Name: dropdown_options_entity_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX dropdown_options_entity_unique ON public.dropdown_options USING btree (company_id, list_key, value) WHERE (company_id IS NOT NULL);
 
 
 --
--- Name: dropdown_options_global_unique; Type: INDEX; Schema: public; Owner: postgres
+-- Name: dropdown_options_global_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX dropdown_options_global_unique ON public.dropdown_options USING btree (list_key, value) WHERE (company_id IS NULL);
 
 
 --
--- Name: idx_activities_account; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_activities_account; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_activities_account ON public.activities USING btree (account_id);
 
 
 --
--- Name: idx_activities_assigned; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_activities_assigned; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_activities_assigned ON public.activities USING btree (assigned_to);
 
 
 --
--- Name: idx_activities_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_activities_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_activities_company ON public.activities USING btree (company_id);
 
 
 --
--- Name: idx_activities_contact; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_activities_contact; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_activities_contact ON public.activities USING btree (contact_id);
 
 
 --
--- Name: idx_activities_sched; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_activities_sched; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_activities_sched ON public.activities USING btree (scheduled_for);
 
 
 --
--- Name: idx_activities_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_activities_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_activities_status ON public.activities USING btree (status);
 
 
 --
--- Name: idx_activities_type; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_activities_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_activities_type ON public.activities USING btree (type);
 
 
 --
--- Name: idx_activity_logs_activity; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_activity_logs_activity; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_activity_logs_activity ON public.activity_logs USING btree (activity_id);
 
 
 --
--- Name: idx_alh_account_changed; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_alh_account_changed; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_alh_account_changed ON public.account_lifecycle_history USING btree (account_id, changed_at DESC);
 
 
 --
--- Name: idx_app_settings_category; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_app_settings_category; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_app_settings_category ON public.app_settings USING btree (category, key);
 
 
 --
--- Name: idx_app_settings_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_app_settings_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_app_settings_company ON public.app_settings USING btree (company_id);
 
 
 --
--- Name: idx_approval_delegations_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_delegations_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_delegations_company_id ON public.approval_delegations USING btree (company_id);
 
 
 --
--- Name: idx_approval_delegations_delegate; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_delegations_delegate; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_delegations_delegate ON public.approval_delegations USING btree (delegate_id, valid_from, valid_until) WHERE (is_active = true);
 
 
 --
--- Name: idx_approval_delegations_delegator; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_delegations_delegator; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_delegations_delegator ON public.approval_delegations USING btree (delegator_id);
 
 
 --
--- Name: idx_approval_logs_acted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_logs_acted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_logs_acted_at ON public.approval_logs USING btree (company_id, acted_at DESC);
 
 
 --
--- Name: idx_approval_logs_actor_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_logs_actor_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_logs_actor_id ON public.approval_logs USING btree (actor_id);
 
 
 --
--- Name: idx_approval_logs_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_logs_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_logs_company_id ON public.approval_logs USING btree (company_id);
 
 
 --
--- Name: idx_approval_logs_document; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_logs_document; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_logs_document ON public.approval_logs USING btree (company_id, document_type, document_id);
 
 
 --
--- Name: idx_approval_rules_company_doctype; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_rules_company_doctype; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_rules_company_doctype ON public.approval_rules USING btree (company_id, document_type) WHERE (is_active = true);
 
 
 --
--- Name: idx_approval_rules_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_approval_rules_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_approval_rules_company_id ON public.approval_rules USING btree (company_id);
 
 
 --
--- Name: idx_ar_btbs_ttf_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_ar_btbs_ttf_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ar_btbs_ttf_id ON public.ar_btbs USING btree (ttf_id, "position");
 
 
 --
--- Name: idx_ar_ttfs_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_ar_ttfs_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ar_ttfs_company_id ON public.ar_ttfs USING btree (company_id);
 
 
 --
--- Name: idx_ar_ttfs_customer_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_ar_ttfs_customer_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ar_ttfs_customer_id ON public.ar_ttfs USING btree (customer_id);
 
 
 --
--- Name: idx_ar_ttfs_invoice_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_ar_ttfs_invoice_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ar_ttfs_invoice_id ON public.ar_ttfs USING btree (invoice_id);
 
 
 --
--- Name: idx_ar_ttfs_sp_order_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_ar_ttfs_sp_order_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ar_ttfs_sp_order_id ON public.ar_ttfs USING btree (sp_order_id);
 
 
 --
--- Name: idx_ar_ttfs_tanggal_ttf; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_ar_ttfs_tanggal_ttf; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ar_ttfs_tanggal_ttf ON public.ar_ttfs USING btree (tanggal_ttf DESC NULLS LAST);
 
 
 --
--- Name: idx_ar_ttfs_tgl_pembayaran; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_ar_ttfs_tgl_pembayaran; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ar_ttfs_tgl_pembayaran ON public.ar_ttfs USING btree (tgl_pembayaran);
 
 
 --
--- Name: idx_asset_categories_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_categories_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_categories_company_id ON public.asset_categories USING btree (company_id);
 
 
 --
--- Name: idx_asset_categories_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_categories_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_categories_deleted_at ON public.asset_categories USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_asset_fuel_logs_asset_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_fuel_logs_asset_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_fuel_logs_asset_id ON public.asset_fuel_logs USING btree (asset_id, fill_date DESC) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_asset_fuel_logs_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_fuel_logs_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_fuel_logs_company_id ON public.asset_fuel_logs USING btree (company_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_asset_locations_branch_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_locations_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_locations_branch_id ON public.asset_locations USING btree (branch_id);
 
 
 --
--- Name: idx_asset_locations_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_locations_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_locations_company_id ON public.asset_locations USING btree (company_id);
 
 
 --
--- Name: idx_asset_locations_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_locations_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_locations_deleted_at ON public.asset_locations USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_asset_maintenance_asset_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_maintenance_asset_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_maintenance_asset_id ON public.asset_maintenance_records USING btree (asset_id, maintenance_date DESC) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_asset_maintenance_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_maintenance_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_maintenance_company_id ON public.asset_maintenance_records USING btree (company_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_asset_network_asset_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_network_asset_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_network_asset_id ON public.asset_network USING btree (asset_id);
 
 
 --
--- Name: idx_asset_network_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_network_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_network_company_id ON public.asset_network USING btree (company_id);
 
 
 --
--- Name: idx_asset_software_asset_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_software_asset_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_software_asset_id ON public.asset_software_licenses USING btree (asset_id, status) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_asset_software_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_software_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_software_company_id ON public.asset_software_licenses USING btree (company_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_asset_specifications_asset_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_specifications_asset_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_specifications_asset_id ON public.asset_specifications USING btree (asset_id);
 
 
 --
--- Name: idx_asset_specifications_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_asset_specifications_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_asset_specifications_company_id ON public.asset_specifications USING btree (company_id);
 
 
 --
--- Name: idx_assets_asset_code; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_assets_asset_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_assets_asset_code ON public.assets USING btree (company_id, asset_code) WHERE ((asset_code IS NOT NULL) AND (deleted_at IS NULL));
 
 
 --
--- Name: idx_assets_asset_subtype; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_assets_asset_subtype; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_assets_asset_subtype ON public.assets USING btree (company_id, asset_subtype) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_assets_category_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_assets_category_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_assets_category_id ON public.assets USING btree (category_id);
 
 
 --
--- Name: idx_assets_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_assets_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_assets_company_id ON public.assets USING btree (company_id);
 
 
 --
--- Name: idx_assets_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_assets_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_assets_deleted_at ON public.assets USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_assets_plate_number; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_assets_plate_number; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_assets_plate_number ON public.assets USING btree (company_id, plate_number) WHERE ((plate_number IS NOT NULL) AND (deleted_at IS NULL));
 
 
 --
--- Name: idx_assets_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_assets_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_assets_status ON public.assets USING btree (company_id, status);
 
 
 --
--- Name: idx_audit_logs_action; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_audit_logs_action; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_action ON public.audit_logs USING btree (action);
 
 
 --
--- Name: idx_audit_logs_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_audit_logs_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_company ON public.audit_logs USING btree (company_id);
 
 
 --
--- Name: idx_audit_logs_created_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_audit_logs_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_created_at ON public.audit_logs USING btree (created_at DESC);
 
 
 --
--- Name: idx_audit_logs_entity; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_audit_logs_entity; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_entity ON public.audit_logs USING btree (entity_type, entity_id);
 
 
 --
--- Name: idx_audit_logs_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_audit_logs_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_user_id ON public.audit_logs USING btree (user_id);
 
 
 --
--- Name: idx_bank_accounts_default; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_bank_accounts_default; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_bank_accounts_default ON public.entity_bank_accounts USING btree (company_id, currency) WHERE (is_default = true);
 
 
 --
--- Name: idx_bnf_departments_division; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_bnf_departments_division; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_bnf_departments_division ON public.bnf_departments USING btree (division_id);
 
 
 --
--- Name: idx_bnf_report_logs_report; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_bnf_report_logs_report; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_bnf_report_logs_report ON public.bnf_report_logs USING btree (report_id);
 
 
 --
--- Name: idx_bnf_report_related_departments_report; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_bnf_report_related_departments_report; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_bnf_report_related_departments_report ON public.bnf_report_related_departments USING btree (report_id);
 
 
 --
--- Name: idx_bnf_reports_company_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_bnf_reports_company_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_bnf_reports_company_status ON public.bnf_reports USING btree (company_id, status);
 
 
 --
--- Name: idx_bnf_reports_created_by; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_bnf_reports_created_by; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_bnf_reports_created_by ON public.bnf_reports USING btree (created_by);
 
 
 --
--- Name: idx_bnf_reports_division; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_bnf_reports_division; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_bnf_reports_division ON public.bnf_reports USING btree (division_id);
 
 
 --
--- Name: idx_branches_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_branches_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_branches_company_id ON public.branches USING btree (company_id);
 
 
 --
--- Name: idx_branches_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_branches_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_branches_deleted_at ON public.branches USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_coa_account_type; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_coa_account_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_coa_account_type ON public.chart_of_accounts USING btree (company_id, account_type);
 
 
 --
--- Name: idx_coa_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_coa_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_coa_company_id ON public.chart_of_accounts USING btree (company_id);
 
 
 --
--- Name: idx_coa_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_coa_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_coa_deleted_at ON public.chart_of_accounts USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_coa_parent_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_coa_parent_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_coa_parent_id ON public.chart_of_accounts USING btree (parent_id) WHERE (parent_id IS NOT NULL);
 
 
 --
--- Name: idx_companies_code; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_companies_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_companies_code ON public.companies USING btree (code);
 
 
 --
--- Name: idx_companies_is_active; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_companies_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_companies_is_active ON public.companies USING btree (is_active);
 
 
 --
--- Name: idx_contacts_account; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_contacts_account; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_contacts_account ON public.contacts USING btree (account_id);
 
 
 --
--- Name: idx_contacts_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_contacts_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_contacts_company ON public.contacts USING btree (company_id);
 
 
 --
--- Name: idx_cost_centers_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_cost_centers_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_cost_centers_company_id ON public.cost_centers USING btree (company_id);
 
 
 --
--- Name: idx_cost_centers_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_cost_centers_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_cost_centers_deleted_at ON public.cost_centers USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_customers_active; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_customers_active ON public.customers USING btree (active);
-
-
---
--- Name: idx_customers_company_code; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_customers_company_code ON public.customers USING btree (company_id, code) WHERE ((company_id IS NOT NULL) AND (code IS NOT NULL));
-
-
---
--- Name: idx_customers_company_id; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_customers_company_id ON public.customers USING btree (company_id) WHERE (company_id IS NOT NULL);
-
-
---
--- Name: idx_customers_deleted_at; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_customers_deleted_at ON public.customers USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
-
-
---
--- Name: idx_customers_name; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_customers_name ON public.customers USING btree (name);
-
-
---
--- Name: idx_delivery_incidents_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_delivery_incidents_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_delivery_incidents_company ON public.delivery_incidents USING btree (company_id);
 
 
 --
--- Name: idx_delivery_incidents_dn; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_delivery_incidents_dn; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_delivery_incidents_dn ON public.delivery_incidents USING btree (delivery_note_id);
 
 
 --
--- Name: idx_delivery_incidents_open; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_delivery_incidents_open; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_delivery_incidents_open ON public.delivery_incidents USING btree (status) WHERE (status = 'open'::text);
 
 
 --
--- Name: idx_delivery_note_items_dn; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_delivery_note_items_dn; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_delivery_note_items_dn ON public.delivery_note_items USING btree (delivery_note_id);
 
 
 --
--- Name: idx_delivery_notes_picking; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_delivery_notes_picking; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_delivery_notes_picking ON public.delivery_notes USING btree (picking_list_id);
 
 
 --
--- Name: idx_delivery_notes_sp_no; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_delivery_notes_sp_no; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_delivery_notes_sp_no ON public.delivery_notes USING btree (sp_no);
 
 
 --
--- Name: idx_delivery_notes_sp_order; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_delivery_notes_sp_order; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_delivery_notes_sp_order ON public.delivery_notes USING btree (sp_order_id) WHERE (sp_order_id IS NOT NULL);
 
 
 --
--- Name: idx_delivery_notes_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_delivery_notes_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_delivery_notes_status ON public.delivery_notes USING btree (status);
 
 
 --
--- Name: idx_departments_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_departments_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_departments_company_id ON public.departments USING btree (company_id);
 
 
 --
--- Name: idx_departments_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_departments_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_departments_deleted_at ON public.departments USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_departments_parent_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_departments_parent_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_departments_parent_id ON public.departments USING btree (parent_id);
 
 
 --
--- Name: idx_document_sequences_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_document_sequences_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_document_sequences_company_id ON public.document_sequences USING btree (company_id);
 
 
 --
--- Name: idx_document_sequences_lookup; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_document_sequences_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_document_sequences_lookup ON public.document_sequences USING btree (company_id, document_type, department_code, year, month);
 
 
 --
--- Name: idx_document_types_company_code; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_document_types_company_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_document_types_company_code ON public.document_types USING btree (company_id, code);
 
 
 --
--- Name: idx_document_types_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_document_types_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_document_types_company_id ON public.document_types USING btree (company_id);
 
 
 --
--- Name: idx_dropdown_options_group; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_dropdown_options_group; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_dropdown_options_group ON public.dropdown_options USING btree (group_key);
 
 
 --
--- Name: idx_dropdown_options_list; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_dropdown_options_list; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_dropdown_options_list ON public.dropdown_options USING btree (list_key, is_active);
 
 
 --
--- Name: idx_exchange_rates_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_exchange_rates_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_exchange_rates_company_id ON public.exchange_rates USING btree (company_id);
 
 
 --
--- Name: idx_exchange_rates_lookup; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_exchange_rates_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_exchange_rates_lookup ON public.exchange_rates USING btree (company_id, from_currency, to_currency, effective_date DESC);
 
 
 --
--- Name: idx_hrga_approval_configs_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_goods_receipt_items_receipt; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_goods_receipt_items_receipt ON public.goods_receipt_items USING btree (goods_receipt_id);
+
+
+--
+-- Name: idx_goods_receipts_company_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_goods_receipts_company_date ON public.goods_receipts USING btree (company_id, receipt_date);
+
+
+--
+-- Name: idx_goods_receipts_reference_no; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_goods_receipts_reference_no ON public.goods_receipts USING btree (company_id, reference_no);
+
+
+--
+-- Name: idx_hrga_approval_configs_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_approval_configs_company ON public.hrga_approval_configs USING btree (company_id);
 
 
 --
--- Name: idx_hrga_approval_configs_type; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_approval_configs_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_approval_configs_type ON public.hrga_approval_configs USING btree (request_type_id) WHERE (is_active = true);
 
 
 --
--- Name: idx_hrga_notification_queue_pending; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_notification_queue_pending; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_notification_queue_pending ON public.hrga_notification_queue USING btree (created_at) WHERE ((status)::text = 'pending'::text);
 
 
 --
--- Name: idx_hrga_notification_queue_request; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_notification_queue_request; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_notification_queue_request ON public.hrga_notification_queue USING btree (request_id);
 
 
 --
--- Name: idx_hrga_offboarding_checklists_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_offboarding_checklists_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_offboarding_checklists_company ON public.hrga_offboarding_checklists USING btree (company_id) WHERE ((deleted_at IS NULL) AND (is_active = true));
 
 
 --
--- Name: idx_hrga_offboarding_items_request; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_offboarding_items_request; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_offboarding_items_request ON public.hrga_offboarding_items USING btree (request_id);
 
 
 --
--- Name: idx_hrga_request_approvals_approver; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_request_approvals_approver; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_request_approvals_approver ON public.hrga_request_approvals USING btree (approver_id);
 
 
 --
--- Name: idx_hrga_request_approvals_request; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_request_approvals_request; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_request_approvals_request ON public.hrga_request_approvals USING btree (request_id);
 
 
 --
--- Name: idx_hrga_request_attachments_request; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_request_attachments_request; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_request_attachments_request ON public.hrga_request_attachments USING btree (request_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_hrga_request_items_request; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_request_items_request; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_request_items_request ON public.hrga_request_items USING btree (request_id);
 
 
 --
--- Name: idx_hrga_request_types_category; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_request_types_category; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_request_types_category ON public.hrga_request_types USING btree (company_id, category_code) WHERE ((deleted_at IS NULL) AND (is_active = true));
 
 
 --
--- Name: idx_hrga_request_types_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_request_types_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_request_types_company ON public.hrga_request_types USING btree (company_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_hrga_requests_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_requests_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_requests_company ON public.hrga_requests USING btree (company_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_hrga_requests_company_created; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_requests_company_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_requests_company_created ON public.hrga_requests USING btree (company_id, created_at DESC) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_hrga_requests_company_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_requests_company_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_requests_company_status ON public.hrga_requests USING btree (company_id, status) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_hrga_requests_current_level; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_requests_current_level; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_requests_current_level ON public.hrga_requests USING btree (company_id, current_level, status) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_hrga_requests_requester; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_requests_requester; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_requests_requester ON public.hrga_requests USING btree (requester_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_hrga_requests_type; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_hrga_requests_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hrga_requests_type ON public.hrga_requests USING btree (request_type_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_inquiries_closed_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiries_closed_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiries_closed_at ON public.inquiries USING btree (closed_at DESC) WHERE (closed_at IS NOT NULL);
 
 
 --
--- Name: idx_inquiries_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiries_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiries_company_id ON public.inquiries USING btree (company_id);
 
 
 --
--- Name: idx_inquiries_contact; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiries_contact; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiries_contact ON public.inquiries USING btree (contact_id);
 
 
 --
--- Name: idx_inquiries_owner_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiries_owner_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiries_owner_id ON public.inquiries USING btree (owner_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_inquiries_prospect_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiries_prospect_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiries_prospect_id ON public.inquiries USING btree (prospect_id);
 
 
 --
--- Name: idx_inquiry_comment_mentions_comment_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiry_comment_mentions_comment_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiry_comment_mentions_comment_id ON public.inquiry_comment_mentions USING btree (comment_id);
 
 
 --
--- Name: idx_inquiry_comment_mentions_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiry_comment_mentions_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiry_comment_mentions_user_id ON public.inquiry_comment_mentions USING btree (user_id);
 
 
 --
--- Name: idx_inquiry_comments_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiry_comments_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiry_comments_company_id ON public.inquiry_comments USING btree (company_id);
 
 
 --
--- Name: idx_inquiry_comments_inquiry_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_inquiry_comments_inquiry_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_inquiry_comments_inquiry_id ON public.inquiry_comments USING btree (inquiry_id, created_at DESC);
 
 
 --
--- Name: idx_ish_inquiry_changed; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_ish_inquiry_changed; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ish_inquiry_changed ON public.inquiry_status_history USING btree (inquiry_id, changed_at DESC);
 
 
 --
--- Name: idx_je_company_date; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_je_company_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_je_company_date ON public.journal_entries USING btree (company_id, entry_date);
 
 
 --
--- Name: idx_je_reference; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_je_reference; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_je_reference ON public.journal_entries USING btree (reference_type, reference_id);
 
 
 --
--- Name: idx_jel_account; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_jel_account; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_jel_account ON public.journal_entry_lines USING btree (account_id);
 
 
 --
--- Name: idx_jel_entry; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_jel_entry; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_jel_entry ON public.journal_entry_lines USING btree (journal_entry_id);
 
 
 --
--- Name: idx_meeting_moms_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_meeting_moms_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_meeting_moms_company ON public.meeting_moms USING btree (company_id);
 
 
 --
--- Name: idx_meeting_moms_created_by; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_meeting_moms_created_by; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_meeting_moms_created_by ON public.meeting_moms USING btree (created_by);
 
 
 --
--- Name: idx_meeting_moms_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_meeting_moms_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_meeting_moms_status ON public.meeting_moms USING btree (status);
 
 
 --
--- Name: idx_mom_action_plans_mom_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_mom_action_plans_mom_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_mom_action_plans_mom_id ON public.mom_action_plans USING btree (mom_id);
 
 
 --
--- Name: idx_mom_improvements_mom_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_mom_improvements_mom_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_mom_improvements_mom_id ON public.mom_improvements USING btree (mom_id);
 
 
 --
--- Name: idx_mom_issues_mom_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_mom_issues_mom_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_mom_issues_mom_id ON public.mom_issues USING btree (mom_id);
 
 
 --
--- Name: idx_mom_progress_updates_mom_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_mom_progress_updates_mom_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_mom_progress_updates_mom_id ON public.mom_progress_updates USING btree (mom_id);
 
 
 --
--- Name: idx_notifications_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_notifications_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_notifications_user_id ON public.notifications USING btree (user_id, is_read, created_at DESC);
 
 
 --
--- Name: idx_payment_terms_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_payment_terms_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_payment_terms_company_id ON public.payment_terms USING btree (company_id);
 
 
 --
--- Name: idx_payment_terms_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_payment_terms_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_payment_terms_deleted_at ON public.payment_terms USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_permissions_module; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_permissions_module; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_permissions_module ON public.permissions USING btree (module);
 
 
 --
--- Name: idx_picking_list_items_pl; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_picking_list_items_pl; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_picking_list_items_pl ON public.picking_list_items USING btree (picking_list_id);
 
 
 --
--- Name: idx_picking_lists_sp_no; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_picking_lists_sp_no; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_picking_lists_sp_no ON public.picking_lists USING btree (sp_no);
 
 
 --
--- Name: idx_picking_lists_sp_order; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_picking_lists_sp_order; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_picking_lists_sp_order ON public.picking_lists USING btree (sp_order_id) WHERE (sp_order_id IS NOT NULL);
 
 
 --
--- Name: idx_picking_lists_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_picking_lists_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_picking_lists_status ON public.picking_lists USING btree (status);
 
 
 --
--- Name: idx_plm_picking; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_plm_picking; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_plm_picking ON public.picking_list_materials USING btree (picking_list_id);
 
 
 --
--- Name: idx_positions_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_positions_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_positions_company_id ON public.positions USING btree (company_id);
 
 
 --
--- Name: idx_positions_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_positions_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_positions_deleted_at ON public.positions USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_pph_product_changed; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_pph_product_changed; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_pph_product_changed ON public.product_price_history USING btree (product_id, changed_at DESC);
 
 
 --
--- Name: idx_prf_acknowledged_by; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prf_acknowledged_by; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_acknowledged_by ON public.prf USING btree (acknowledged_by) WHERE (acknowledged_by IS NOT NULL);
 
 
 --
--- Name: idx_prf_cost_items_offer; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prf_cost_items_offer; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_cost_items_offer ON public.prf_cost_items USING btree (offer_id);
 
 
 --
--- Name: idx_prf_cost_items_prf_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prf_cost_items_prf_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_cost_items_prf_id ON public.prf_cost_items USING btree (prf_id);
 
 
 --
--- Name: idx_prf_inquiry_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prf_inquiry_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_inquiry_id ON public.prf USING btree (inquiry_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_prf_selected_offer; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prf_selected_offer; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_selected_offer ON public.prf USING btree (selected_offer_id) WHERE (selected_offer_id IS NOT NULL);
 
 
 --
--- Name: idx_prf_vendor_offers_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prf_vendor_offers_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_vendor_offers_company ON public.prf_vendor_offers USING btree (company_id);
 
 
 --
--- Name: idx_prf_vendor_offers_prf; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prf_vendor_offers_prf; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_vendor_offers_prf ON public.prf_vendor_offers USING btree (prf_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_prf_vendor_offers_vendor; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prf_vendor_offers_vendor; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prf_vendor_offers_vendor ON public.prf_vendor_offers USING btree (vendor_id);
 
 
 --
--- Name: idx_products_company_code; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_products_company_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_products_company_code ON public.products USING btree (company_id, code);
 
 
 --
--- Name: idx_products_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_products_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_products_company_id ON public.products USING btree (company_id);
 
 
 --
--- Name: idx_products_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_products_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_products_deleted_at ON public.products USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_profiles_branch_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_profiles_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_profiles_branch_id ON public.profiles USING btree (branch_id) WHERE (branch_id IS NOT NULL);
 
 
 --
--- Name: idx_profiles_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_profiles_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_profiles_company_id ON public.profiles USING btree (company_id) WHERE (company_id IS NOT NULL);
 
 
 --
--- Name: idx_profiles_department_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_profiles_department_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_profiles_department_id ON public.profiles USING btree (department_id) WHERE (department_id IS NOT NULL);
 
 
 --
--- Name: idx_profiles_reports_to; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_profiles_reports_to; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_profiles_reports_to ON public.profiles USING btree (reports_to);
 
 
 --
--- Name: idx_prospects_assigned_to; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prospects_assigned_to; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prospects_assigned_to ON public.accounts USING btree (assigned_to);
 
 
 --
--- Name: idx_prospects_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prospects_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prospects_company_id ON public.accounts USING btree (company_id);
 
 
 --
--- Name: idx_prospects_pipeline_stage; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_prospects_pipeline_stage; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_prospects_pipeline_stage ON public.accounts USING btree (pipeline_stage);
 
 
 --
--- Name: idx_pwl_product; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_pwl_product; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_pwl_product ON public.product_warehouse_location USING btree (product_id);
 
 
 --
--- Name: idx_pwl_warehouse; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_pwl_warehouse; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_pwl_warehouse ON public.product_warehouse_location USING btree (warehouse_id);
 
 
 --
--- Name: idx_quotations_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_quotations_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_quotations_company_id ON public.quotations USING btree (company_id);
 
 
 --
--- Name: idx_quotations_inquiry_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_quotations_inquiry_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_quotations_inquiry_id ON public.quotations USING btree (inquiry_id) WHERE (inquiry_id IS NOT NULL);
 
 
 --
--- Name: idx_quotations_prf_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_quotations_prf_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_quotations_prf_id ON public.quotations USING btree (prf_id) WHERE (prf_id IS NOT NULL);
 
 
 --
--- Name: idx_quotations_prospect_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_quotations_prospect_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_quotations_prospect_id ON public.quotations USING btree (prospect_id);
 
 
 --
--- Name: idx_quotations_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_quotations_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_quotations_status ON public.quotations USING btree (status);
 
 
 --
--- Name: idx_role_menu_permissions_menu_action_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_role_menu_permissions_menu_action_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_role_menu_permissions_menu_action_id ON public.role_menu_permissions USING btree (menu_action_id);
 
 
 --
--- Name: idx_role_menu_permissions_module_action_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_role_menu_permissions_module_action_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_role_menu_permissions_module_action_id ON public.role_menu_permissions USING btree (module_action_id);
 
 
 --
--- Name: idx_role_menu_permissions_role_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_role_menu_permissions_role_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_role_menu_permissions_role_id ON public.role_menu_permissions USING btree (role_id);
 
 
 --
--- Name: idx_role_permissions_permission_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_role_permissions_permission_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_role_permissions_permission_id ON public.role_permissions USING btree (permission_id);
 
 
 --
--- Name: idx_role_permissions_role_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_role_permissions_role_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_role_permissions_role_id ON public.role_permissions USING btree (role_id);
 
 
 --
--- Name: idx_roles_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_roles_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_roles_company_id ON public.roles USING btree (company_id);
 
 
 --
--- Name: idx_roles_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_roles_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_roles_deleted_at ON public.roles USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_sales_orders_account_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sales_orders_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sales_orders_account_id ON public.sales_orders USING btree (account_id);
 
 
 --
--- Name: idx_sales_orders_company_created; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sales_orders_company_created; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sales_orders_company_created ON public.sales_orders USING btree (company_id, created_at DESC);
 
 
 --
--- Name: idx_sales_targets_period; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sales_targets_period; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sales_targets_period ON public.sales_targets USING btree (company_id, period_year, period_month) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_sales_targets_user; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sales_targets_user; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sales_targets_user ON public.sales_targets USING btree (user_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_sp_btb_sp_order_live; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sp_btb_sp_order_live; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sp_btb_sp_order_live ON public.sp_btb USING btree (sp_order_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_sp_items_customer_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sp_items_customer_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sp_items_customer_id ON public.sp_items USING btree (customer_id);
 
 
 --
--- Name: idx_sp_items_product_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sp_items_product_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sp_items_product_id ON public.sp_items USING btree (product_id);
 
 
 --
--- Name: idx_sp_items_sp_date; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sp_items_sp_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sp_items_sp_date ON public.sp_items USING btree (sp_date DESC NULLS LAST);
 
 
 --
--- Name: idx_sp_items_sp_no; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sp_items_sp_no; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sp_items_sp_no ON public.sp_items USING btree (sp_no);
 
 
 --
--- Name: idx_sp_orders_company_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_sp_orders_company_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sp_orders_company_status ON public.sp_orders USING btree (company_id, status) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: idx_status_catalog_is_active; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_status_catalog_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_status_catalog_is_active ON public.status_catalog USING btree (is_active);
 
 
 --
--- Name: idx_stock_ledger_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_stock_ledger_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_stock_ledger_company ON public.stock_ledger USING btree (company_id);
 
 
 --
--- Name: idx_stock_ledger_created_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_stock_ledger_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_stock_ledger_created_at ON public.stock_ledger USING btree (created_at DESC);
 
 
 --
--- Name: idx_stock_ledger_product; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_stock_ledger_product; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_stock_ledger_product ON public.stock_ledger USING btree (product_id);
 
 
 --
--- Name: idx_stock_ledger_warehouse; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_stock_ledger_warehouse; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_stock_ledger_warehouse ON public.stock_ledger USING btree (warehouse_id);
 
 
 --
--- Name: idx_taxes_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_taxes_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_taxes_company_id ON public.taxes USING btree (company_id);
 
 
 --
--- Name: idx_taxes_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_taxes_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_taxes_deleted_at ON public.taxes USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_user_login_logs_time; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_user_login_logs_time; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_login_logs_time ON public.user_login_logs USING btree (logged_in_at DESC);
 
 
 --
--- Name: idx_user_login_logs_user; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_user_login_logs_user; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_login_logs_user ON public.user_login_logs USING btree (user_id);
 
 
 --
--- Name: idx_user_roles_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_user_roles_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_roles_company_id ON public.user_roles USING btree (company_id);
 
 
 --
--- Name: idx_user_roles_role_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_user_roles_role_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_roles_role_id ON public.user_roles USING btree (role_id);
 
 
 --
--- Name: idx_user_roles_user_company; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_user_roles_user_company; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_roles_user_company ON public.user_roles USING btree (user_id, company_id) WHERE (is_active = true);
 
 
 --
--- Name: idx_user_roles_user_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_user_roles_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_roles_user_id ON public.user_roles USING btree (user_id);
 
 
 --
--- Name: idx_vendors_company_code; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_vendors_company_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_vendors_company_code ON public.vendors USING btree (company_id, code);
 
 
 --
--- Name: idx_vendors_company_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_vendors_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_vendors_company_id ON public.vendors USING btree (company_id);
 
 
 --
--- Name: idx_vendors_deleted_at; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_vendors_deleted_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_vendors_deleted_at ON public.vendors USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 
 
 --
--- Name: idx_vendors_is_active; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_vendors_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_vendors_is_active ON public.vendors USING btree (is_active);
 
 
 --
--- Name: loss_reasons_code_uidx; Type: INDEX; Schema: public; Owner: postgres
+-- Name: loss_reasons_code_uidx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX loss_reasons_code_uidx ON public.loss_reasons USING btree (code) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: positions_company_code_active_uidx; Type: INDEX; Schema: public; Owner: postgres
+-- Name: positions_company_code_active_uidx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX positions_company_code_active_uidx ON public.positions USING btree (COALESCE(company_id, '00000000-0000-0000-0000-000000000000'::uuid), code) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: role_menu_permissions_role_menu_action_unique; Type: INDEX; Schema: public; Owner: postgres
+-- Name: role_menu_permissions_role_menu_action_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX role_menu_permissions_role_menu_action_unique ON public.role_menu_permissions USING btree (role_id, menu_action_id) WHERE (menu_action_id IS NOT NULL);
 
 
 --
--- Name: role_menu_permissions_role_module_action_unique; Type: INDEX; Schema: public; Owner: postgres
+-- Name: role_menu_permissions_role_module_action_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX role_menu_permissions_role_module_action_unique ON public.role_menu_permissions USING btree (role_id, module_action_id) WHERE (module_action_id IS NOT NULL);
 
 
 --
--- Name: roles_company_code_active_uidx; Type: INDEX; Schema: public; Owner: postgres
+-- Name: roles_company_code_active_uidx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX roles_company_code_active_uidx ON public.roles USING btree (COALESCE(company_id, '00000000-0000-0000-0000-000000000000'::uuid), code) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: sales_orders_inquiry_unique_live; Type: INDEX; Schema: public; Owner: postgres
+-- Name: sales_orders_inquiry_unique_live; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX sales_orders_inquiry_unique_live ON public.sales_orders USING btree (inquiry_id) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: sales_targets_unique_active; Type: INDEX; Schema: public; Owner: postgres
+-- Name: sales_targets_unique_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX sales_targets_unique_active ON public.sales_targets USING btree (company_id, user_id, period_year, period_month) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: sla_policies_company_code_uidx; Type: INDEX; Schema: public; Owner: postgres
+-- Name: sla_policies_company_code_uidx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX sla_policies_company_code_uidx ON public.sla_policies USING btree (company_id, code) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: sp_btb_no_unique_live; Type: INDEX; Schema: public; Owner: postgres
+-- Name: sp_btb_no_unique_live; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX sp_btb_no_unique_live ON public.sp_btb USING btree (customer_id, btb_no) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: uq_accounts_norm_name_per_entitas; Type: INDEX; Schema: public; Owner: postgres
+-- Name: uq_accounts_norm_name_per_entitas; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_accounts_norm_name_per_entitas ON public.accounts USING btree (company_id, public.normalize_account_name(name)) WHERE (deleted_at IS NULL);
 
 
 --
--- Name: uq_contacts_one_primary; Type: INDEX; Schema: public; Owner: postgres
+-- Name: uq_contacts_one_primary; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_contacts_one_primary ON public.contacts USING btree (account_id) WHERE (is_primary AND (deleted_at IS NULL));
 
 
 --
--- Name: delivery_incidents set_delivery_incidents_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: delivery_incidents set_delivery_incidents_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_delivery_incidents_updated_at BEFORE UPDATE ON public.delivery_incidents FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: hrga_approval_configs set_hrga_approval_configs_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs set_hrga_approval_configs_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_hrga_approval_configs_updated_at BEFORE UPDATE ON public.hrga_approval_configs FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: hrga_offboarding_checklists set_hrga_offboarding_checklists_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists set_hrga_offboarding_checklists_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_hrga_offboarding_checklists_updated_at BEFORE UPDATE ON public.hrga_offboarding_checklists FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: hrga_offboarding_items set_hrga_offboarding_items_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items set_hrga_offboarding_items_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_hrga_offboarding_items_updated_at BEFORE UPDATE ON public.hrga_offboarding_items FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: hrga_request_items set_hrga_request_items_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: hrga_request_items set_hrga_request_items_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_hrga_request_items_updated_at BEFORE UPDATE ON public.hrga_request_items FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: hrga_request_types set_hrga_request_types_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: hrga_request_types set_hrga_request_types_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_hrga_request_types_updated_at BEFORE UPDATE ON public.hrga_request_types FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: hrga_requests set_hrga_requests_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: hrga_requests set_hrga_requests_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_hrga_requests_updated_at BEFORE UPDATE ON public.hrga_requests FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: prf_cost_items set_prf_cost_items_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: prf_cost_items set_prf_cost_items_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_prf_cost_items_updated_at BEFORE UPDATE ON public.prf_cost_items FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: prf set_prf_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: prf set_prf_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_prf_updated_at BEFORE UPDATE ON public.prf FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: sales_orders set_sales_orders_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: sales_orders set_sales_orders_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_sales_orders_updated_at BEFORE UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: sales_targets set_sales_targets_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: sales_targets set_sales_targets_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER set_sales_targets_updated_at BEFORE UPDATE ON public.sales_targets FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: accounts trg_a_sync_lifecycle_columns; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: accounts trg_a_sync_lifecycle_columns; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_a_sync_lifecycle_columns BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.sync_lifecycle_columns();
 
 
 --
--- Name: approval_delegations trg_approval_delegations_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: approval_delegations trg_approval_delegations_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_approval_delegations_updated_at BEFORE UPDATE ON public.approval_delegations FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: approval_rules trg_approval_rules_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: approval_rules trg_approval_rules_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_approval_rules_updated_at BEFORE UPDATE ON public.approval_rules FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: ar_ttfs trg_ar_ttfs_set_company; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: ar_ttfs trg_ar_ttfs_set_company; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_ar_ttfs_set_company BEFORE INSERT ON public.ar_ttfs FOR EACH ROW EXECUTE FUNCTION public.ar_ttfs_set_company();
 
 
 --
--- Name: ar_ttfs trg_ar_ttfs_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: ar_ttfs trg_ar_ttfs_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_ar_ttfs_updated_at BEFORE UPDATE ON public.ar_ttfs FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: asset_categories trg_asset_categories_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: asset_categories trg_asset_categories_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_asset_categories_updated_at BEFORE UPDATE ON public.asset_categories FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: asset_fuel_logs trg_asset_fuel_logs_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs trg_asset_fuel_logs_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_asset_fuel_logs_updated_at BEFORE UPDATE ON public.asset_fuel_logs FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: asset_locations trg_asset_locations_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: asset_locations trg_asset_locations_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_asset_locations_updated_at BEFORE UPDATE ON public.asset_locations FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: asset_maintenance_records trg_asset_maintenance_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records trg_asset_maintenance_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_asset_maintenance_updated_at BEFORE UPDATE ON public.asset_maintenance_records FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: asset_network trg_asset_network_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: asset_network trg_asset_network_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_asset_network_updated_at BEFORE UPDATE ON public.asset_network FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: asset_software_licenses trg_asset_software_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: asset_software_licenses trg_asset_software_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_asset_software_updated_at BEFORE UPDATE ON public.asset_software_licenses FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: asset_specifications trg_asset_specifications_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: asset_specifications trg_asset_specifications_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_asset_specifications_updated_at BEFORE UPDATE ON public.asset_specifications FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: assets trg_assets_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: assets trg_assets_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_assets_updated_at BEFORE UPDATE ON public.assets FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: branches trg_branches_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: branches trg_branches_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_branches_updated_at BEFORE UPDATE ON public.branches FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: chart_of_accounts trg_chart_of_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: chart_of_accounts trg_chart_of_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_chart_of_accounts_updated_at BEFORE UPDATE ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: companies trg_companies_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: companies trg_companies_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_companies_updated_at BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: cost_centers trg_cost_centers_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: cost_centers trg_cost_centers_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_cost_centers_updated_at BEFORE UPDATE ON public.cost_centers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: currencies trg_currencies_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: currencies trg_currencies_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_currencies_updated_at BEFORE UPDATE ON public.currencies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: customers trg_customers_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
---
-
-CREATE TRIGGER trg_customers_updated_at BEFORE UPDATE ON public.customers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: delivery_notes trg_delivery_notes_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: delivery_notes trg_delivery_notes_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_delivery_notes_updated_at BEFORE UPDATE ON public.delivery_notes FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: departments trg_departments_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: departments trg_departments_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_departments_updated_at BEFORE UPDATE ON public.departments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: document_sequences trg_document_sequences_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: document_sequences trg_document_sequences_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_document_sequences_updated_at BEFORE UPDATE ON public.document_sequences FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: document_types trg_document_types_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: document_types trg_document_types_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_document_types_updated_at BEFORE UPDATE ON public.document_types FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: exchange_rates trg_exchange_rates_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: exchange_rates trg_exchange_rates_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_exchange_rates_updated_at BEFORE UPDATE ON public.exchange_rates FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: accounts trg_gen_customer_code_ins; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: accounts trg_gen_customer_code_ins; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_gen_customer_code_ins BEFORE INSERT ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.generate_customer_code();
 
 
 --
--- Name: bnf_department_scopes trg_guard_bnf_department_scope_not_home; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes trg_guard_bnf_department_scope_not_home; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_guard_bnf_department_scope_not_home BEFORE INSERT OR UPDATE ON public.bnf_department_scopes FOR EACH ROW EXECUTE FUNCTION public.guard_bnf_department_scope_not_home();
 
 
 --
--- Name: bnf_division_scopes trg_guard_bnf_division_scope_not_home; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes trg_guard_bnf_division_scope_not_home; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_guard_bnf_division_scope_not_home BEFORE INSERT OR UPDATE ON public.bnf_division_scopes FOR EACH ROW EXECUTE FUNCTION public.guard_bnf_division_scope_not_home();
 
 
 --
--- Name: bnf_reports trg_guard_bnf_reports_update; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: bnf_reports trg_guard_bnf_reports_update; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_guard_bnf_reports_update BEFORE UPDATE ON public.bnf_reports FOR EACH ROW EXECUTE FUNCTION public.guard_bnf_reports_field_update();
 
 
 --
--- Name: daily_report_items trg_guard_daily_report_items_field_update; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: daily_report_items trg_guard_daily_report_items_field_update; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_guard_daily_report_items_field_update BEFORE UPDATE ON public.daily_report_items FOR EACH ROW EXECUTE FUNCTION public.guard_daily_report_items_field_update();
 
 
 --
--- Name: quotations trg_inquiry_quoted; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: quotations trg_inquiry_quoted; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_inquiry_quoted AFTER INSERT OR UPDATE OF status ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.set_inquiry_quoted_on_quotation_sent();
 
 
 --
--- Name: prf trg_inquiry_review; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: prf trg_inquiry_review; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_inquiry_review AFTER INSERT OR UPDATE OF status ON public.prf FOR EACH ROW EXECUTE FUNCTION public.set_inquiry_review_on_prf_submit();
 
 
 --
--- Name: sales_orders trg_inquiry_won; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: sales_orders trg_inquiry_won; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_inquiry_won AFTER INSERT OR UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION public.set_inquiry_won_on_so();
 
 
 --
--- Name: payment_terms trg_payment_terms_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: payment_terms trg_payment_terms_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_payment_terms_updated_at BEFORE UPDATE ON public.payment_terms FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: picking_lists trg_picking_lists_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: picking_lists trg_picking_lists_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_picking_lists_updated_at BEFORE UPDATE ON public.picking_lists FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: positions trg_positions_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: positions trg_positions_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_positions_updated_at BEFORE UPDATE ON public.positions FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: prf_vendor_offers trg_prf_vendor_offers_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers trg_prf_vendor_offers_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_prf_vendor_offers_updated_at BEFORE UPDATE ON public.prf_vendor_offers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: product_warehouse_location trg_product_warehouse_location_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: product_warehouse_location trg_product_warehouse_location_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_product_warehouse_location_updated_at BEFORE UPDATE ON public.product_warehouse_location FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: products trg_products_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: products trg_products_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_products_updated_at BEFORE UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: profiles trg_profiles_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: profiles trg_profiles_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: quotations trg_quotation_prf_consistency; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: quotations trg_quotation_prf_consistency; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_quotation_prf_consistency BEFORE INSERT OR UPDATE ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.guard_quotation_prf_consistency();
 
 
 --
--- Name: roles trg_roles_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: roles trg_roles_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_roles_updated_at BEFORE UPDATE ON public.roles FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: inquiries trg_set_customer_on_inquiry_won; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: inquiries trg_set_customer_on_inquiry_won; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_set_customer_on_inquiry_won AFTER INSERT OR UPDATE ON public.inquiries FOR EACH ROW EXECUTE FUNCTION public.set_customer_on_inquiry_won();
 
 
 --
--- Name: accounts trg_set_customer_on_won; Type: TRIGGER; Schema: public; Owner: postgres
---
-
-CREATE TRIGGER trg_set_customer_on_won BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.set_customer_on_won();
-
-
---
--- Name: daily_report_items trg_set_daily_report_items_defaults; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: daily_report_items trg_set_daily_report_items_defaults; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_set_daily_report_items_defaults BEFORE INSERT ON public.daily_report_items FOR EACH ROW EXECUTE FUNCTION public.set_daily_report_items_defaults();
 
 
 --
--- Name: inquiries trg_set_prospect_on_inquiry; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: inquiries trg_set_prospect_on_inquiry; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_set_prospect_on_inquiry AFTER INSERT ON public.inquiries FOR EACH ROW EXECUTE FUNCTION public.set_prospect_on_inquiry();
 
 
 --
--- Name: sp_items trg_sp_items_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: sp_items trg_sp_items_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_sp_items_updated_at BEFORE UPDATE ON public.sp_items FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: status_catalog trg_status_catalog_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: status_catalog trg_status_catalog_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_status_catalog_updated_at BEFORE UPDATE ON public.status_catalog FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: taxes trg_taxes_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: stock_ledger trg_stock_ledger_recompute_sp; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_stock_ledger_recompute_sp AFTER INSERT ON public.stock_ledger FOR EACH ROW EXECUTE FUNCTION public.trg_stock_ledger_recompute_sp();
+
+
+--
+-- Name: taxes trg_taxes_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_taxes_updated_at BEFORE UPDATE ON public.taxes FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: vendors trg_vendors_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: vendors trg_vendors_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_vendors_updated_at BEFORE UPDATE ON public.vendors FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: warehouses trg_warehouses_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: warehouses trg_warehouses_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_warehouses_updated_at BEFORE UPDATE ON public.warehouses FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
--- Name: accounts trg_z_gen_customer_code_upd; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: accounts trg_z_gen_customer_code_upd; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_gen_customer_code_upd BEFORE UPDATE ON public.accounts FOR EACH ROW WHEN ((((new.code IS NULL) OR (new.code = ''::text)) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION public.generate_customer_code();
 
 
 --
--- Name: quotations trg_z_inquiry_negotiation_on_revision; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: quotations trg_z_inquiry_negotiation_on_revision; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_inquiry_negotiation_on_revision AFTER UPDATE OF status ON public.quotations FOR EACH ROW EXECUTE FUNCTION public.set_inquiry_negotiation_on_quotation_revision();
 
 
 --
--- Name: inquiries trg_z_lock_inquiry_owner; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: inquiries trg_z_lock_inquiry_owner; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_lock_inquiry_owner BEFORE UPDATE OF owner_id ON public.inquiries FOR EACH ROW EXECUTE FUNCTION public.lock_inquiry_owner_when_closed();
 
 
 --
--- Name: inquiries trg_z_log_inquiry_status_change; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: inquiries trg_z_log_inquiry_status_change; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_log_inquiry_status_change AFTER UPDATE ON public.inquiries FOR EACH ROW WHEN (((new.status)::text IS DISTINCT FROM (old.status)::text)) EXECUTE FUNCTION public.log_inquiry_status_change();
 
 
 --
--- Name: accounts trg_z_log_lifecycle_change; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: accounts trg_z_log_lifecycle_change; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_log_lifecycle_change AFTER UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.log_lifecycle_change();
 
 
 --
--- Name: products trg_z_products_price_history; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: products trg_z_products_price_history; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_products_price_history AFTER UPDATE OF default_price ON public.products FOR EACH ROW WHEN ((old.default_price IS DISTINCT FROM new.default_price)) EXECUTE FUNCTION public.log_product_price_change();
 
 
 --
--- Name: inquiries trg_z_stamp_inquiry_closure; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: inquiries trg_z_stamp_inquiry_closure; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_stamp_inquiry_closure BEFORE UPDATE ON public.inquiries FOR EACH ROW WHEN ((((new.status)::text = ANY ((ARRAY['WON'::character varying, 'LOST'::character varying, 'CANCELLED'::character varying])::text[])) AND ((old.status)::text IS DISTINCT FROM (new.status)::text))) EXECUTE FUNCTION public.stamp_inquiry_closure();
 
 
 --
--- Name: activities trg_z_sync_last_activity; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: activities trg_z_sync_last_activity; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_sync_last_activity AFTER INSERT OR DELETE OR UPDATE ON public.activities FOR EACH ROW EXECUTE FUNCTION public.sync_last_activity_on_account();
 
 
 --
--- Name: profiles trg_z_sync_profile_email; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: profiles trg_z_sync_profile_email; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_sync_profile_email BEFORE INSERT OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.sync_profile_email();
 
 
 --
--- Name: accounts trg_z_track_stage_change; Type: TRIGGER; Schema: public; Owner: postgres
+-- Name: accounts trg_z_track_stage_change; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_z_track_stage_change BEFORE UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.track_stage_change();
 
 
 --
--- Name: accounts accounts_pull_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts accounts_pull_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -13304,7 +13076,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: activities activities_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: activities activities_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activities
@@ -13312,7 +13084,7 @@ ALTER TABLE ONLY public.activities
 
 
 --
--- Name: activities activities_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: activities activities_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activities
@@ -13320,7 +13092,7 @@ ALTER TABLE ONLY public.activities
 
 
 --
--- Name: activities activities_contact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: activities activities_contact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activities
@@ -13328,7 +13100,7 @@ ALTER TABLE ONLY public.activities
 
 
 --
--- Name: activities activities_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: activities activities_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activities
@@ -13336,7 +13108,7 @@ ALTER TABLE ONLY public.activities
 
 
 --
--- Name: activities activities_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: activities activities_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activities
@@ -13344,7 +13116,7 @@ ALTER TABLE ONLY public.activities
 
 
 --
--- Name: activity_logs activity_logs_activity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: activity_logs activity_logs_activity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activity_logs
@@ -13352,7 +13124,7 @@ ALTER TABLE ONLY public.activity_logs
 
 
 --
--- Name: account_lifecycle_history alh_account_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: account_lifecycle_history alh_account_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.account_lifecycle_history
@@ -13360,7 +13132,7 @@ ALTER TABLE ONLY public.account_lifecycle_history
 
 
 --
--- Name: account_lifecycle_history alh_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: account_lifecycle_history alh_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.account_lifecycle_history
@@ -13368,7 +13140,7 @@ ALTER TABLE ONLY public.account_lifecycle_history
 
 
 --
--- Name: app_settings app_settings_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: app_settings app_settings_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_settings
@@ -13376,7 +13148,7 @@ ALTER TABLE ONLY public.app_settings
 
 
 --
--- Name: app_settings app_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: app_settings app_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.app_settings
@@ -13384,7 +13156,7 @@ ALTER TABLE ONLY public.app_settings
 
 
 --
--- Name: approval_delegations approval_delegations_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_delegations approval_delegations_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_delegations
@@ -13392,7 +13164,7 @@ ALTER TABLE ONLY public.approval_delegations
 
 
 --
--- Name: approval_delegations approval_delegations_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_delegations approval_delegations_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_delegations
@@ -13400,7 +13172,7 @@ ALTER TABLE ONLY public.approval_delegations
 
 
 --
--- Name: approval_delegations approval_delegations_delegate_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_delegations approval_delegations_delegate_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_delegations
@@ -13408,7 +13180,7 @@ ALTER TABLE ONLY public.approval_delegations
 
 
 --
--- Name: approval_delegations approval_delegations_delegator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_delegations approval_delegations_delegator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_delegations
@@ -13416,7 +13188,7 @@ ALTER TABLE ONLY public.approval_delegations
 
 
 --
--- Name: approval_logs approval_logs_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_logs approval_logs_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_logs
@@ -13424,7 +13196,7 @@ ALTER TABLE ONLY public.approval_logs
 
 
 --
--- Name: approval_logs approval_logs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_logs approval_logs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_logs
@@ -13432,7 +13204,7 @@ ALTER TABLE ONLY public.approval_logs
 
 
 --
--- Name: approval_rules approval_rules_approver_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_approver_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_rules
@@ -13440,7 +13212,7 @@ ALTER TABLE ONLY public.approval_rules
 
 
 --
--- Name: approval_rules approval_rules_approver_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_approver_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_rules
@@ -13448,7 +13220,7 @@ ALTER TABLE ONLY public.approval_rules
 
 
 --
--- Name: approval_rules approval_rules_backup_approver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_backup_approver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_rules
@@ -13456,7 +13228,7 @@ ALTER TABLE ONLY public.approval_rules
 
 
 --
--- Name: approval_rules approval_rules_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_rules
@@ -13464,7 +13236,7 @@ ALTER TABLE ONLY public.approval_rules
 
 
 --
--- Name: approval_rules approval_rules_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_rules
@@ -13472,7 +13244,7 @@ ALTER TABLE ONLY public.approval_rules
 
 
 --
--- Name: approval_rules approval_rules_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_rules
@@ -13480,7 +13252,7 @@ ALTER TABLE ONLY public.approval_rules
 
 
 --
--- Name: approval_workflow_steps approval_workflow_steps_approver_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_workflow_steps approval_workflow_steps_approver_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_workflow_steps
@@ -13488,7 +13260,7 @@ ALTER TABLE ONLY public.approval_workflow_steps
 
 
 --
--- Name: approval_workflow_steps approval_workflow_steps_workflow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_workflow_steps approval_workflow_steps_workflow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_workflow_steps
@@ -13496,7 +13268,7 @@ ALTER TABLE ONLY public.approval_workflow_steps
 
 
 --
--- Name: approval_workflows approval_workflows_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_workflows approval_workflows_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_workflows
@@ -13504,7 +13276,7 @@ ALTER TABLE ONLY public.approval_workflows
 
 
 --
--- Name: approval_workflows approval_workflows_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: approval_workflows approval_workflows_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.approval_workflows
@@ -13512,7 +13284,7 @@ ALTER TABLE ONLY public.approval_workflows
 
 
 --
--- Name: ar_btbs ar_btbs_ttf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ar_btbs ar_btbs_ttf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ar_btbs
@@ -13520,7 +13292,7 @@ ALTER TABLE ONLY public.ar_btbs
 
 
 --
--- Name: ar_ttfs ar_ttfs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ar_ttfs
@@ -13528,7 +13300,7 @@ ALTER TABLE ONLY public.ar_ttfs
 
 
 --
--- Name: ar_ttfs ar_ttfs_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ar_ttfs
@@ -13536,7 +13308,7 @@ ALTER TABLE ONLY public.ar_ttfs
 
 
 --
--- Name: ar_ttfs ar_ttfs_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ar_ttfs
@@ -13544,7 +13316,7 @@ ALTER TABLE ONLY public.ar_ttfs
 
 
 --
--- Name: ar_ttfs ar_ttfs_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ar_ttfs
@@ -13552,7 +13324,7 @@ ALTER TABLE ONLY public.ar_ttfs
 
 
 --
--- Name: asset_categories asset_categories_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_categories asset_categories_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_categories
@@ -13560,7 +13332,7 @@ ALTER TABLE ONLY public.asset_categories
 
 
 --
--- Name: asset_categories asset_categories_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_categories asset_categories_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_categories
@@ -13568,7 +13340,7 @@ ALTER TABLE ONLY public.asset_categories
 
 
 --
--- Name: asset_fuel_logs asset_fuel_logs_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs asset_fuel_logs_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_fuel_logs
@@ -13576,7 +13348,7 @@ ALTER TABLE ONLY public.asset_fuel_logs
 
 
 --
--- Name: asset_fuel_logs asset_fuel_logs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs asset_fuel_logs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_fuel_logs
@@ -13584,7 +13356,7 @@ ALTER TABLE ONLY public.asset_fuel_logs
 
 
 --
--- Name: asset_fuel_logs asset_fuel_logs_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs asset_fuel_logs_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_fuel_logs
@@ -13592,7 +13364,7 @@ ALTER TABLE ONLY public.asset_fuel_logs
 
 
 --
--- Name: asset_locations asset_locations_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_locations asset_locations_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_locations
@@ -13600,7 +13372,7 @@ ALTER TABLE ONLY public.asset_locations
 
 
 --
--- Name: asset_locations asset_locations_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_locations asset_locations_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_locations
@@ -13608,7 +13380,7 @@ ALTER TABLE ONLY public.asset_locations
 
 
 --
--- Name: asset_locations asset_locations_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_locations asset_locations_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_locations
@@ -13616,7 +13388,7 @@ ALTER TABLE ONLY public.asset_locations
 
 
 --
--- Name: asset_maintenance_records asset_maintenance_records_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records asset_maintenance_records_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_maintenance_records
@@ -13624,7 +13396,7 @@ ALTER TABLE ONLY public.asset_maintenance_records
 
 
 --
--- Name: asset_maintenance_records asset_maintenance_records_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records asset_maintenance_records_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_maintenance_records
@@ -13632,7 +13404,7 @@ ALTER TABLE ONLY public.asset_maintenance_records
 
 
 --
--- Name: asset_maintenance_records asset_maintenance_records_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records asset_maintenance_records_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_maintenance_records
@@ -13640,7 +13412,7 @@ ALTER TABLE ONLY public.asset_maintenance_records
 
 
 --
--- Name: asset_network asset_network_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_network asset_network_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_network
@@ -13648,7 +13420,7 @@ ALTER TABLE ONLY public.asset_network
 
 
 --
--- Name: asset_network asset_network_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_network asset_network_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_network
@@ -13656,7 +13428,7 @@ ALTER TABLE ONLY public.asset_network
 
 
 --
--- Name: asset_software_licenses asset_software_licenses_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_software_licenses asset_software_licenses_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_software_licenses
@@ -13664,7 +13436,7 @@ ALTER TABLE ONLY public.asset_software_licenses
 
 
 --
--- Name: asset_software_licenses asset_software_licenses_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_software_licenses asset_software_licenses_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_software_licenses
@@ -13672,7 +13444,7 @@ ALTER TABLE ONLY public.asset_software_licenses
 
 
 --
--- Name: asset_software_licenses asset_software_licenses_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_software_licenses asset_software_licenses_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_software_licenses
@@ -13680,7 +13452,7 @@ ALTER TABLE ONLY public.asset_software_licenses
 
 
 --
--- Name: asset_specifications asset_specifications_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_specifications asset_specifications_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_specifications
@@ -13688,7 +13460,7 @@ ALTER TABLE ONLY public.asset_specifications
 
 
 --
--- Name: asset_specifications asset_specifications_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: asset_specifications asset_specifications_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.asset_specifications
@@ -13696,7 +13468,7 @@ ALTER TABLE ONLY public.asset_specifications
 
 
 --
--- Name: assets assets_assigned_to_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_assigned_to_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13704,7 +13476,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13712,7 +13484,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_coa_asset_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_coa_asset_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13720,7 +13492,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_coa_depreciation_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_coa_depreciation_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13728,7 +13500,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_coa_expense_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_coa_expense_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13736,7 +13508,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13744,7 +13516,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13752,7 +13524,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13760,7 +13532,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13768,7 +13540,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: assets assets_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: assets assets_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.assets
@@ -13776,7 +13548,7 @@ ALTER TABLE ONLY public.assets
 
 
 --
--- Name: audit_logs audit_logs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: audit_logs audit_logs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs
@@ -13784,7 +13556,7 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
--- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs
@@ -13792,7 +13564,7 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
--- Name: bnf_authorized_users bnf_authorized_users_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users bnf_authorized_users_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_authorized_users
@@ -13800,7 +13572,7 @@ ALTER TABLE ONLY public.bnf_authorized_users
 
 
 --
--- Name: bnf_authorized_users bnf_authorized_users_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users bnf_authorized_users_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_authorized_users
@@ -13808,7 +13580,7 @@ ALTER TABLE ONLY public.bnf_authorized_users
 
 
 --
--- Name: bnf_authorized_users bnf_authorized_users_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users bnf_authorized_users_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_authorized_users
@@ -13816,7 +13588,7 @@ ALTER TABLE ONLY public.bnf_authorized_users
 
 
 --
--- Name: bnf_department_scopes bnf_department_scopes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes bnf_department_scopes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_department_scopes
@@ -13824,7 +13596,7 @@ ALTER TABLE ONLY public.bnf_department_scopes
 
 
 --
--- Name: bnf_department_scopes bnf_department_scopes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes bnf_department_scopes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_department_scopes
@@ -13832,7 +13604,7 @@ ALTER TABLE ONLY public.bnf_department_scopes
 
 
 --
--- Name: bnf_department_scopes bnf_department_scopes_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes bnf_department_scopes_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_department_scopes
@@ -13840,7 +13612,7 @@ ALTER TABLE ONLY public.bnf_department_scopes
 
 
 --
--- Name: bnf_departments bnf_departments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_departments
@@ -13848,7 +13620,7 @@ ALTER TABLE ONLY public.bnf_departments
 
 
 --
--- Name: bnf_departments bnf_departments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_departments
@@ -13856,7 +13628,7 @@ ALTER TABLE ONLY public.bnf_departments
 
 
 --
--- Name: bnf_departments bnf_departments_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_departments
@@ -13864,7 +13636,7 @@ ALTER TABLE ONLY public.bnf_departments
 
 
 --
--- Name: bnf_departments bnf_departments_head_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_head_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_departments
@@ -13872,7 +13644,7 @@ ALTER TABLE ONLY public.bnf_departments
 
 
 --
--- Name: bnf_division_scopes bnf_division_scopes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes bnf_division_scopes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_division_scopes
@@ -13880,7 +13652,7 @@ ALTER TABLE ONLY public.bnf_division_scopes
 
 
 --
--- Name: bnf_division_scopes bnf_division_scopes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes bnf_division_scopes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_division_scopes
@@ -13888,7 +13660,7 @@ ALTER TABLE ONLY public.bnf_division_scopes
 
 
 --
--- Name: bnf_division_scopes bnf_division_scopes_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes bnf_division_scopes_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_division_scopes
@@ -13896,7 +13668,7 @@ ALTER TABLE ONLY public.bnf_division_scopes
 
 
 --
--- Name: bnf_divisions bnf_divisions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_divisions bnf_divisions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_divisions
@@ -13904,7 +13676,7 @@ ALTER TABLE ONLY public.bnf_divisions
 
 
 --
--- Name: bnf_divisions bnf_divisions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_divisions bnf_divisions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_divisions
@@ -13912,7 +13684,7 @@ ALTER TABLE ONLY public.bnf_divisions
 
 
 --
--- Name: bnf_divisions bnf_divisions_director_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_divisions bnf_divisions_director_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_divisions
@@ -13920,7 +13692,7 @@ ALTER TABLE ONLY public.bnf_divisions
 
 
 --
--- Name: bnf_report_action_items bnf_report_action_items_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items bnf_report_action_items_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_action_items
@@ -13928,7 +13700,7 @@ ALTER TABLE ONLY public.bnf_report_action_items
 
 
 --
--- Name: bnf_report_action_items bnf_report_action_items_completed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items bnf_report_action_items_completed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_action_items
@@ -13936,7 +13708,7 @@ ALTER TABLE ONLY public.bnf_report_action_items
 
 
 --
--- Name: bnf_report_action_items bnf_report_action_items_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items bnf_report_action_items_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_action_items
@@ -13944,7 +13716,7 @@ ALTER TABLE ONLY public.bnf_report_action_items
 
 
 --
--- Name: bnf_report_action_items bnf_report_action_items_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items bnf_report_action_items_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_action_items
@@ -13952,7 +13724,7 @@ ALTER TABLE ONLY public.bnf_report_action_items
 
 
 --
--- Name: bnf_report_logs bnf_report_logs_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_logs bnf_report_logs_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_logs
@@ -13960,7 +13732,7 @@ ALTER TABLE ONLY public.bnf_report_logs
 
 
 --
--- Name: bnf_report_logs bnf_report_logs_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_logs bnf_report_logs_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_logs
@@ -13968,7 +13740,7 @@ ALTER TABLE ONLY public.bnf_report_logs
 
 
 --
--- Name: bnf_report_related_departments bnf_report_related_departments_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments bnf_report_related_departments_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_related_departments
@@ -13976,7 +13748,7 @@ ALTER TABLE ONLY public.bnf_report_related_departments
 
 
 --
--- Name: bnf_report_related_departments bnf_report_related_departments_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments bnf_report_related_departments_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_report_related_departments
@@ -13984,7 +13756,7 @@ ALTER TABLE ONLY public.bnf_report_related_departments
 
 
 --
--- Name: bnf_reports bnf_reports_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_reports
@@ -13992,7 +13764,7 @@ ALTER TABLE ONLY public.bnf_reports
 
 
 --
--- Name: bnf_reports bnf_reports_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_reports
@@ -14000,7 +13772,7 @@ ALTER TABLE ONLY public.bnf_reports
 
 
 --
--- Name: bnf_reports bnf_reports_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_reports
@@ -14008,7 +13780,7 @@ ALTER TABLE ONLY public.bnf_reports
 
 
 --
--- Name: bnf_reports bnf_reports_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_division_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_reports
@@ -14016,7 +13788,7 @@ ALTER TABLE ONLY public.bnf_reports
 
 
 --
--- Name: bnf_reports bnf_reports_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bnf_reports
@@ -14024,7 +13796,7 @@ ALTER TABLE ONLY public.bnf_reports
 
 
 --
--- Name: branches branches_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: branches branches_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.branches
@@ -14032,7 +13804,7 @@ ALTER TABLE ONLY public.branches
 
 
 --
--- Name: branches branches_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: branches branches_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.branches
@@ -14040,7 +13812,7 @@ ALTER TABLE ONLY public.branches
 
 
 --
--- Name: channel_types channel_types_company_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: channel_types channel_types_company_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.channel_types
@@ -14048,7 +13820,7 @@ ALTER TABLE ONLY public.channel_types
 
 
 --
--- Name: channel_types channel_types_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: channel_types channel_types_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.channel_types
@@ -14056,7 +13828,7 @@ ALTER TABLE ONLY public.channel_types
 
 
 --
--- Name: chart_of_accounts chart_of_accounts_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: chart_of_accounts chart_of_accounts_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.chart_of_accounts
@@ -14064,7 +13836,7 @@ ALTER TABLE ONLY public.chart_of_accounts
 
 
 --
--- Name: chart_of_accounts chart_of_accounts_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: chart_of_accounts chart_of_accounts_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.chart_of_accounts
@@ -14072,7 +13844,7 @@ ALTER TABLE ONLY public.chart_of_accounts
 
 
 --
--- Name: chart_of_accounts chart_of_accounts_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: chart_of_accounts chart_of_accounts_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.chart_of_accounts
@@ -14080,7 +13852,7 @@ ALTER TABLE ONLY public.chart_of_accounts
 
 
 --
--- Name: contacts contacts_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: contacts contacts_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.contacts
@@ -14088,7 +13860,7 @@ ALTER TABLE ONLY public.contacts
 
 
 --
--- Name: cost_centers cost_centers_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cost_centers
@@ -14096,7 +13868,7 @@ ALTER TABLE ONLY public.cost_centers
 
 
 --
--- Name: cost_centers cost_centers_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cost_centers
@@ -14104,7 +13876,7 @@ ALTER TABLE ONLY public.cost_centers
 
 
 --
--- Name: cost_centers cost_centers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cost_centers
@@ -14112,7 +13884,7 @@ ALTER TABLE ONLY public.cost_centers
 
 
 --
--- Name: cost_centers cost_centers_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cost_centers
@@ -14120,71 +13892,7 @@ ALTER TABLE ONLY public.cost_centers
 
 
 --
--- Name: customers customers_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_assigned_to_fkey FOREIGN KEY (assigned_to) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: customers customers_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
-
-
---
--- Name: customers customers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
-
-
---
--- Name: customers customers_currency_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_currency_code_fkey FOREIGN KEY (currency_code) REFERENCES public.currencies(code);
-
-
---
--- Name: customers customers_payment_terms_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_payment_terms_id_fkey FOREIGN KEY (payment_terms_id) REFERENCES public.payment_terms(id);
-
-
---
--- Name: customers customers_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_prospect_id_fkey FOREIGN KEY (prospect_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
-
-
---
--- Name: customers customers_source_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_source_company_id_fkey FOREIGN KEY (source_company_id) REFERENCES public.companies(id) ON DELETE SET NULL;
-
-
---
--- Name: customers customers_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.customers
-    ADD CONSTRAINT customers_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id);
-
-
---
--- Name: daily_report_items daily_report_items_carried_from_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_carried_from_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.daily_report_items
@@ -14192,7 +13900,7 @@ ALTER TABLE ONLY public.daily_report_items
 
 
 --
--- Name: daily_report_items daily_report_items_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.daily_report_items
@@ -14200,7 +13908,7 @@ ALTER TABLE ONLY public.daily_report_items
 
 
 --
--- Name: daily_report_items daily_report_items_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.daily_report_items
@@ -14208,7 +13916,7 @@ ALTER TABLE ONLY public.daily_report_items
 
 
 --
--- Name: daily_report_items daily_report_items_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.daily_report_items
@@ -14216,7 +13924,7 @@ ALTER TABLE ONLY public.daily_report_items
 
 
 --
--- Name: daily_report_items daily_report_items_pulled_to_bnf_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_pulled_to_bnf_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.daily_report_items
@@ -14224,7 +13932,7 @@ ALTER TABLE ONLY public.daily_report_items
 
 
 --
--- Name: daily_report_items daily_report_items_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.daily_report_items
@@ -14232,7 +13940,7 @@ ALTER TABLE ONLY public.daily_report_items
 
 
 --
--- Name: dc_master dc_master_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: dc_master dc_master_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dc_master
@@ -14240,7 +13948,7 @@ ALTER TABLE ONLY public.dc_master
 
 
 --
--- Name: dc_master dc_master_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: dc_master dc_master_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dc_master
@@ -14248,7 +13956,7 @@ ALTER TABLE ONLY public.dc_master
 
 
 --
--- Name: deal_handovers deal_handovers_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: deal_handovers deal_handovers_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deal_handovers
@@ -14256,7 +13964,7 @@ ALTER TABLE ONLY public.deal_handovers
 
 
 --
--- Name: deal_handovers deal_handovers_approved_by_finance_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: deal_handovers deal_handovers_approved_by_finance_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deal_handovers
@@ -14264,7 +13972,7 @@ ALTER TABLE ONLY public.deal_handovers
 
 
 --
--- Name: deal_handovers deal_handovers_approved_by_ops_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: deal_handovers deal_handovers_approved_by_ops_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deal_handovers
@@ -14272,7 +13980,7 @@ ALTER TABLE ONLY public.deal_handovers
 
 
 --
--- Name: deal_handovers deal_handovers_approved_by_sales_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: deal_handovers deal_handovers_approved_by_sales_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deal_handovers
@@ -14280,7 +13988,7 @@ ALTER TABLE ONLY public.deal_handovers
 
 
 --
--- Name: deal_handovers deal_handovers_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: deal_handovers deal_handovers_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deal_handovers
@@ -14288,7 +13996,7 @@ ALTER TABLE ONLY public.deal_handovers
 
 
 --
--- Name: deal_handovers deal_handovers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: deal_handovers deal_handovers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deal_handovers
@@ -14296,7 +14004,7 @@ ALTER TABLE ONLY public.deal_handovers
 
 
 --
--- Name: deal_handovers deal_handovers_kam_assigned_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: deal_handovers deal_handovers_kam_assigned_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deal_handovers
@@ -14304,7 +14012,7 @@ ALTER TABLE ONLY public.deal_handovers
 
 
 --
--- Name: delivery_incidents delivery_incidents_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_incidents
@@ -14312,7 +14020,7 @@ ALTER TABLE ONLY public.delivery_incidents
 
 
 --
--- Name: delivery_incidents delivery_incidents_delivery_note_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_delivery_note_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_incidents
@@ -14320,7 +14028,7 @@ ALTER TABLE ONLY public.delivery_incidents
 
 
 --
--- Name: delivery_incidents delivery_incidents_reported_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_reported_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_incidents
@@ -14328,7 +14036,7 @@ ALTER TABLE ONLY public.delivery_incidents
 
 
 --
--- Name: delivery_incidents delivery_incidents_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_incidents
@@ -14336,7 +14044,7 @@ ALTER TABLE ONLY public.delivery_incidents
 
 
 --
--- Name: delivery_note_items delivery_note_items_delivery_note_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_note_items delivery_note_items_delivery_note_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_note_items
@@ -14344,7 +14052,7 @@ ALTER TABLE ONLY public.delivery_note_items
 
 
 --
--- Name: delivery_note_items delivery_note_items_picking_list_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_note_items delivery_note_items_picking_list_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_note_items
@@ -14352,7 +14060,7 @@ ALTER TABLE ONLY public.delivery_note_items
 
 
 --
--- Name: delivery_note_items delivery_note_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_note_items delivery_note_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_note_items
@@ -14360,7 +14068,7 @@ ALTER TABLE ONLY public.delivery_note_items
 
 
 --
--- Name: delivery_note_items delivery_note_items_sp_order_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_note_items delivery_note_items_sp_order_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_note_items
@@ -14368,7 +14076,7 @@ ALTER TABLE ONLY public.delivery_note_items
 
 
 --
--- Name: delivery_notes delivery_notes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_notes delivery_notes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_notes
@@ -14376,7 +14084,7 @@ ALTER TABLE ONLY public.delivery_notes
 
 
 --
--- Name: delivery_notes delivery_notes_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_notes delivery_notes_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_notes
@@ -14384,7 +14092,7 @@ ALTER TABLE ONLY public.delivery_notes
 
 
 --
--- Name: delivery_notes delivery_notes_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_notes delivery_notes_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_notes
@@ -14392,7 +14100,7 @@ ALTER TABLE ONLY public.delivery_notes
 
 
 --
--- Name: delivery_notes delivery_notes_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: delivery_notes delivery_notes_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.delivery_notes
@@ -14400,7 +14108,7 @@ ALTER TABLE ONLY public.delivery_notes
 
 
 --
--- Name: departments departments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: departments departments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.departments
@@ -14408,7 +14116,7 @@ ALTER TABLE ONLY public.departments
 
 
 --
--- Name: departments departments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: departments departments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.departments
@@ -14416,7 +14124,7 @@ ALTER TABLE ONLY public.departments
 
 
 --
--- Name: departments departments_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: departments departments_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.departments
@@ -14424,7 +14132,7 @@ ALTER TABLE ONLY public.departments
 
 
 --
--- Name: document_numbering document_numbering_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_numbering document_numbering_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_numbering
@@ -14432,7 +14140,7 @@ ALTER TABLE ONLY public.document_numbering
 
 
 --
--- Name: document_numbering document_numbering_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_numbering document_numbering_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_numbering
@@ -14440,7 +14148,7 @@ ALTER TABLE ONLY public.document_numbering
 
 
 --
--- Name: document_sequences document_sequences_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_sequences document_sequences_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_sequences
@@ -14448,7 +14156,7 @@ ALTER TABLE ONLY public.document_sequences
 
 
 --
--- Name: document_templates document_templates_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_templates document_templates_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_templates
@@ -14456,7 +14164,7 @@ ALTER TABLE ONLY public.document_templates
 
 
 --
--- Name: document_templates document_templates_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_templates document_templates_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_templates
@@ -14464,7 +14172,7 @@ ALTER TABLE ONLY public.document_templates
 
 
 --
--- Name: document_types document_types_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_types document_types_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_types
@@ -14472,7 +14180,7 @@ ALTER TABLE ONLY public.document_types
 
 
 --
--- Name: document_types document_types_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: document_types document_types_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_types
@@ -14480,7 +14188,7 @@ ALTER TABLE ONLY public.document_types
 
 
 --
--- Name: dropdown_options dropdown_options_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: dropdown_options dropdown_options_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dropdown_options
@@ -14488,7 +14196,7 @@ ALTER TABLE ONLY public.dropdown_options
 
 
 --
--- Name: entity_bank_accounts entity_bank_accounts_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_bank_accounts entity_bank_accounts_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_bank_accounts
@@ -14496,7 +14204,7 @@ ALTER TABLE ONLY public.entity_bank_accounts
 
 
 --
--- Name: entity_bank_accounts entity_bank_accounts_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_bank_accounts entity_bank_accounts_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_bank_accounts
@@ -14504,7 +14212,7 @@ ALTER TABLE ONLY public.entity_bank_accounts
 
 
 --
--- Name: entity_finance_settings entity_finance_settings_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_finance_settings entity_finance_settings_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_finance_settings
@@ -14512,7 +14220,7 @@ ALTER TABLE ONLY public.entity_finance_settings
 
 
 --
--- Name: entity_finance_settings entity_finance_settings_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_finance_settings entity_finance_settings_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_finance_settings
@@ -14520,7 +14228,7 @@ ALTER TABLE ONLY public.entity_finance_settings
 
 
 --
--- Name: entity_finance_settings entity_finance_settings_default_payment_term_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_finance_settings entity_finance_settings_default_payment_term_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_finance_settings
@@ -14528,7 +14236,7 @@ ALTER TABLE ONLY public.entity_finance_settings
 
 
 --
--- Name: entity_signatories entity_signatories_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_signatories entity_signatories_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_signatories
@@ -14536,7 +14244,7 @@ ALTER TABLE ONLY public.entity_signatories
 
 
 --
--- Name: entity_signatories entity_signatories_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: entity_signatories entity_signatories_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entity_signatories
@@ -14544,7 +14252,7 @@ ALTER TABLE ONLY public.entity_signatories
 
 
 --
--- Name: exchange_rates exchange_rates_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: exchange_rates exchange_rates_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exchange_rates
@@ -14552,7 +14260,7 @@ ALTER TABLE ONLY public.exchange_rates
 
 
 --
--- Name: exchange_rates exchange_rates_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: exchange_rates exchange_rates_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exchange_rates
@@ -14560,7 +14268,7 @@ ALTER TABLE ONLY public.exchange_rates
 
 
 --
--- Name: exchange_rates exchange_rates_from_currency_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: exchange_rates exchange_rates_from_currency_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exchange_rates
@@ -14568,7 +14276,7 @@ ALTER TABLE ONLY public.exchange_rates
 
 
 --
--- Name: exchange_rates exchange_rates_to_currency_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: exchange_rates exchange_rates_to_currency_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exchange_rates
@@ -14576,7 +14284,7 @@ ALTER TABLE ONLY public.exchange_rates
 
 
 --
--- Name: products fk_products_cogs_account; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products fk_products_cogs_account; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
@@ -14584,7 +14292,7 @@ ALTER TABLE ONLY public.products
 
 
 --
--- Name: products fk_products_revenue_account; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products fk_products_revenue_account; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
@@ -14592,7 +14300,7 @@ ALTER TABLE ONLY public.products
 
 
 --
--- Name: profiles fk_profiles_position_id; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: profiles fk_profiles_position_id; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.profiles
@@ -14600,7 +14308,7 @@ ALTER TABLE ONLY public.profiles
 
 
 --
--- Name: taxes fk_taxes_gl_account; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: taxes fk_taxes_gl_account; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.taxes
@@ -14608,7 +14316,47 @@ ALTER TABLE ONLY public.taxes
 
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_approver_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: goods_receipt_items goods_receipt_items_product_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.goods_receipt_items
+    ADD CONSTRAINT goods_receipt_items_product_fk FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
+-- Name: goods_receipt_items goods_receipt_items_receipt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.goods_receipt_items
+    ADD CONSTRAINT goods_receipt_items_receipt_fk FOREIGN KEY (goods_receipt_id) REFERENCES public.goods_receipts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: goods_receipts goods_receipts_company_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.goods_receipts
+    ADD CONSTRAINT goods_receipts_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id);
+
+
+--
+-- Name: goods_receipts goods_receipts_vendor_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.goods_receipts
+    ADD CONSTRAINT goods_receipts_vendor_fk FOREIGN KEY (vendor_id) REFERENCES public.vendors(id);
+
+
+--
+-- Name: goods_receipts goods_receipts_warehouse_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.goods_receipts
+    ADD CONSTRAINT goods_receipts_warehouse_fk FOREIGN KEY (warehouse_id) REFERENCES public.warehouses(id);
+
+
+--
+-- Name: hrga_approval_configs hrga_approval_configs_approver_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_approval_configs
@@ -14616,7 +14364,7 @@ ALTER TABLE ONLY public.hrga_approval_configs
 
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs hrga_approval_configs_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_approval_configs
@@ -14624,7 +14372,7 @@ ALTER TABLE ONLY public.hrga_approval_configs
 
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs hrga_approval_configs_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_approval_configs
@@ -14632,7 +14380,7 @@ ALTER TABLE ONLY public.hrga_approval_configs
 
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_request_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs hrga_approval_configs_request_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_approval_configs
@@ -14640,7 +14388,7 @@ ALTER TABLE ONLY public.hrga_approval_configs
 
 
 --
--- Name: hrga_notification_queue hrga_notification_queue_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue hrga_notification_queue_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_notification_queue
@@ -14648,7 +14396,7 @@ ALTER TABLE ONLY public.hrga_notification_queue
 
 
 --
--- Name: hrga_notification_queue hrga_notification_queue_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue hrga_notification_queue_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_notification_queue
@@ -14656,7 +14404,7 @@ ALTER TABLE ONLY public.hrga_notification_queue
 
 
 --
--- Name: hrga_notification_queue hrga_notification_queue_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue hrga_notification_queue_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_notification_queue
@@ -14664,7 +14412,7 @@ ALTER TABLE ONLY public.hrga_notification_queue
 
 
 --
--- Name: hrga_offboarding_checklists hrga_offboarding_checklists_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists hrga_offboarding_checklists_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_offboarding_checklists
@@ -14672,7 +14420,7 @@ ALTER TABLE ONLY public.hrga_offboarding_checklists
 
 
 --
--- Name: hrga_offboarding_checklists hrga_offboarding_checklists_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists hrga_offboarding_checklists_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_offboarding_checklists
@@ -14680,7 +14428,7 @@ ALTER TABLE ONLY public.hrga_offboarding_checklists
 
 
 --
--- Name: hrga_offboarding_checklists hrga_offboarding_checklists_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists hrga_offboarding_checklists_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_offboarding_checklists
@@ -14688,7 +14436,7 @@ ALTER TABLE ONLY public.hrga_offboarding_checklists
 
 
 --
--- Name: hrga_offboarding_items hrga_offboarding_items_checklist_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items hrga_offboarding_items_checklist_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_offboarding_items
@@ -14696,7 +14444,7 @@ ALTER TABLE ONLY public.hrga_offboarding_items
 
 
 --
--- Name: hrga_offboarding_items hrga_offboarding_items_completed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items hrga_offboarding_items_completed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_offboarding_items
@@ -14704,7 +14452,7 @@ ALTER TABLE ONLY public.hrga_offboarding_items
 
 
 --
--- Name: hrga_offboarding_items hrga_offboarding_items_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items hrga_offboarding_items_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_offboarding_items
@@ -14712,7 +14460,7 @@ ALTER TABLE ONLY public.hrga_offboarding_items
 
 
 --
--- Name: hrga_request_approvals hrga_request_approvals_approver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_approvals hrga_request_approvals_approver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_approvals
@@ -14720,7 +14468,7 @@ ALTER TABLE ONLY public.hrga_request_approvals
 
 
 --
--- Name: hrga_request_approvals hrga_request_approvals_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_approvals hrga_request_approvals_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_approvals
@@ -14728,7 +14476,7 @@ ALTER TABLE ONLY public.hrga_request_approvals
 
 
 --
--- Name: hrga_request_attachments hrga_request_attachments_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_attachments hrga_request_attachments_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_attachments
@@ -14736,7 +14484,7 @@ ALTER TABLE ONLY public.hrga_request_attachments
 
 
 --
--- Name: hrga_request_attachments hrga_request_attachments_uploaded_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_attachments hrga_request_attachments_uploaded_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_attachments
@@ -14744,7 +14492,7 @@ ALTER TABLE ONLY public.hrga_request_attachments
 
 
 --
--- Name: hrga_request_items hrga_request_items_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_items hrga_request_items_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_items
@@ -14752,7 +14500,7 @@ ALTER TABLE ONLY public.hrga_request_items
 
 
 --
--- Name: hrga_request_types hrga_request_types_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_types hrga_request_types_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_types
@@ -14760,7 +14508,7 @@ ALTER TABLE ONLY public.hrga_request_types
 
 
 --
--- Name: hrga_request_types hrga_request_types_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_types hrga_request_types_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_types
@@ -14768,7 +14516,7 @@ ALTER TABLE ONLY public.hrga_request_types
 
 
 --
--- Name: hrga_request_types hrga_request_types_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_request_types hrga_request_types_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_request_types
@@ -14776,7 +14524,7 @@ ALTER TABLE ONLY public.hrga_request_types
 
 
 --
--- Name: hrga_requests hrga_requests_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -14784,7 +14532,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: hrga_requests hrga_requests_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -14792,7 +14540,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: hrga_requests hrga_requests_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -14800,7 +14548,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: hrga_requests hrga_requests_currency_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_currency_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -14808,7 +14556,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: hrga_requests hrga_requests_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -14816,7 +14564,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: hrga_requests hrga_requests_request_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_request_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -14824,7 +14572,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: hrga_requests hrga_requests_requester_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_requester_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -14832,7 +14580,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: hrga_requests hrga_requests_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.hrga_requests
@@ -14840,7 +14588,7 @@ ALTER TABLE ONLY public.hrga_requests
 
 
 --
--- Name: inquiries inquiries_closed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_closed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -14848,7 +14596,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiries inquiries_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -14856,7 +14604,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiries inquiries_contact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_contact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -14864,7 +14612,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiries inquiries_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -14872,7 +14620,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiries inquiries_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -14880,7 +14628,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiries inquiries_loss_reason_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_loss_reason_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -14888,7 +14636,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiries inquiries_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -14896,7 +14644,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiries inquiries_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiries
@@ -14904,7 +14652,7 @@ ALTER TABLE ONLY public.inquiries
 
 
 --
--- Name: inquiry_comment_mentions inquiry_comment_mentions_comment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_comment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_comment_mentions
@@ -14912,7 +14660,7 @@ ALTER TABLE ONLY public.inquiry_comment_mentions
 
 
 --
--- Name: inquiry_comment_mentions inquiry_comment_mentions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_comment_mentions
@@ -14920,7 +14668,7 @@ ALTER TABLE ONLY public.inquiry_comment_mentions
 
 
 --
--- Name: inquiry_comments inquiry_comments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_comments inquiry_comments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_comments
@@ -14928,7 +14676,7 @@ ALTER TABLE ONLY public.inquiry_comments
 
 
 --
--- Name: inquiry_comments inquiry_comments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_comments inquiry_comments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_comments
@@ -14936,7 +14684,7 @@ ALTER TABLE ONLY public.inquiry_comments
 
 
 --
--- Name: inquiry_comments inquiry_comments_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_comments inquiry_comments_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_comments
@@ -14944,7 +14692,7 @@ ALTER TABLE ONLY public.inquiry_comments
 
 
 --
--- Name: inquiry_status_history ish_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_status_history ish_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_status_history
@@ -14952,7 +14700,7 @@ ALTER TABLE ONLY public.inquiry_status_history
 
 
 --
--- Name: inquiry_status_history ish_inquiry_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: inquiry_status_history ish_inquiry_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inquiry_status_history
@@ -14960,7 +14708,7 @@ ALTER TABLE ONLY public.inquiry_status_history
 
 
 --
--- Name: journal_entries journal_entries_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: journal_entries journal_entries_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.journal_entries
@@ -14968,7 +14716,7 @@ ALTER TABLE ONLY public.journal_entries
 
 
 --
--- Name: journal_entry_lines journal_entry_lines_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: journal_entry_lines journal_entry_lines_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.journal_entry_lines
@@ -14976,7 +14724,7 @@ ALTER TABLE ONLY public.journal_entry_lines
 
 
 --
--- Name: journal_entry_lines journal_entry_lines_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: journal_entry_lines journal_entry_lines_journal_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.journal_entry_lines
@@ -14984,7 +14732,7 @@ ALTER TABLE ONLY public.journal_entry_lines
 
 
 --
--- Name: loss_reasons loss_reasons_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: loss_reasons loss_reasons_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.loss_reasons
@@ -14992,7 +14740,7 @@ ALTER TABLE ONLY public.loss_reasons
 
 
 --
--- Name: meeting_moms meeting_moms_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meeting_moms meeting_moms_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meeting_moms
@@ -15000,7 +14748,7 @@ ALTER TABLE ONLY public.meeting_moms
 
 
 --
--- Name: meeting_moms meeting_moms_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meeting_moms meeting_moms_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meeting_moms
@@ -15008,7 +14756,7 @@ ALTER TABLE ONLY public.meeting_moms
 
 
 --
--- Name: meeting_moms meeting_moms_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meeting_moms meeting_moms_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meeting_moms
@@ -15016,7 +14764,7 @@ ALTER TABLE ONLY public.meeting_moms
 
 
 --
--- Name: meeting_moms meeting_moms_notulis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: meeting_moms meeting_moms_notulis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.meeting_moms
@@ -15024,7 +14772,7 @@ ALTER TABLE ONLY public.meeting_moms
 
 
 --
--- Name: menu_actions menu_actions_menu_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: menu_actions menu_actions_menu_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.menu_actions
@@ -15032,7 +14780,7 @@ ALTER TABLE ONLY public.menu_actions
 
 
 --
--- Name: module_actions module_actions_module_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: module_actions module_actions_module_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_actions
@@ -15040,7 +14788,7 @@ ALTER TABLE ONLY public.module_actions
 
 
 --
--- Name: module_menus module_menus_module_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: module_menus module_menus_module_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.module_menus
@@ -15048,7 +14796,7 @@ ALTER TABLE ONLY public.module_menus
 
 
 --
--- Name: mom_action_plans mom_action_plans_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: mom_action_plans mom_action_plans_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mom_action_plans
@@ -15056,7 +14804,7 @@ ALTER TABLE ONLY public.mom_action_plans
 
 
 --
--- Name: mom_improvements mom_improvements_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: mom_improvements mom_improvements_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mom_improvements
@@ -15064,7 +14812,7 @@ ALTER TABLE ONLY public.mom_improvements
 
 
 --
--- Name: mom_issues mom_issues_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: mom_issues mom_issues_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mom_issues
@@ -15072,7 +14820,7 @@ ALTER TABLE ONLY public.mom_issues
 
 
 --
--- Name: mom_progress_updates mom_progress_updates_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: mom_progress_updates mom_progress_updates_mom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.mom_progress_updates
@@ -15080,7 +14828,7 @@ ALTER TABLE ONLY public.mom_progress_updates
 
 
 --
--- Name: notification_rules notification_rules_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: notification_rules notification_rules_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notification_rules
@@ -15088,7 +14836,7 @@ ALTER TABLE ONLY public.notification_rules
 
 
 --
--- Name: notification_rules notification_rules_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: notification_rules notification_rules_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notification_rules
@@ -15096,7 +14844,7 @@ ALTER TABLE ONLY public.notification_rules
 
 
 --
--- Name: notification_rules notification_rules_recipient_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: notification_rules notification_rules_recipient_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notification_rules
@@ -15104,7 +14852,7 @@ ALTER TABLE ONLY public.notification_rules
 
 
 --
--- Name: notifications notifications_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: notifications notifications_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notifications
@@ -15112,7 +14860,7 @@ ALTER TABLE ONLY public.notifications
 
 
 --
--- Name: notifications notifications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: notifications notifications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notifications
@@ -15120,7 +14868,7 @@ ALTER TABLE ONLY public.notifications
 
 
 --
--- Name: payment_terms payment_terms_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: payment_terms payment_terms_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.payment_terms
@@ -15128,7 +14876,7 @@ ALTER TABLE ONLY public.payment_terms
 
 
 --
--- Name: payment_terms payment_terms_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: payment_terms payment_terms_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.payment_terms
@@ -15136,7 +14884,7 @@ ALTER TABLE ONLY public.payment_terms
 
 
 --
--- Name: picking_list_items picking_list_items_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_list_items picking_list_items_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_list_items
@@ -15144,7 +14892,7 @@ ALTER TABLE ONLY public.picking_list_items
 
 
 --
--- Name: picking_list_items picking_list_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_list_items picking_list_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_list_items
@@ -15152,7 +14900,7 @@ ALTER TABLE ONLY public.picking_list_items
 
 
 --
--- Name: picking_list_items picking_list_items_sp_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_list_items picking_list_items_sp_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_list_items
@@ -15160,7 +14908,7 @@ ALTER TABLE ONLY public.picking_list_items
 
 
 --
--- Name: picking_list_materials picking_list_materials_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_list_materials picking_list_materials_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_list_materials
@@ -15168,7 +14916,7 @@ ALTER TABLE ONLY public.picking_list_materials
 
 
 --
--- Name: picking_list_materials picking_list_materials_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_list_materials picking_list_materials_picking_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_list_materials
@@ -15176,7 +14924,7 @@ ALTER TABLE ONLY public.picking_list_materials
 
 
 --
--- Name: picking_list_materials picking_list_materials_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_list_materials picking_list_materials_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_list_materials
@@ -15184,7 +14932,7 @@ ALTER TABLE ONLY public.picking_list_materials
 
 
 --
--- Name: picking_lists picking_lists_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_lists
@@ -15192,7 +14940,7 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
--- Name: picking_lists picking_lists_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_lists
@@ -15200,7 +14948,7 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
--- Name: picking_lists picking_lists_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_lists
@@ -15208,7 +14956,7 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
--- Name: picking_lists picking_lists_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_lists
@@ -15216,7 +14964,7 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
--- Name: picking_lists picking_lists_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.picking_lists
@@ -15224,7 +14972,7 @@ ALTER TABLE ONLY public.picking_lists
 
 
 --
--- Name: positions positions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: positions positions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.positions
@@ -15232,7 +14980,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- Name: positions positions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: positions positions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.positions
@@ -15240,7 +14988,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- Name: positions positions_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: positions positions_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.positions
@@ -15248,7 +14996,7 @@ ALTER TABLE ONLY public.positions
 
 
 --
--- Name: product_price_history pph_product_fk; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: product_price_history pph_product_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.product_price_history
@@ -15256,7 +15004,7 @@ ALTER TABLE ONLY public.product_price_history
 
 
 --
--- Name: prf prf_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15264,7 +15012,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf prf_acknowledged_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_acknowledged_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15272,7 +15020,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf prf_answered_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_answered_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15280,7 +15028,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf prf_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15288,7 +15036,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf_cost_items prf_cost_items_currency_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_currency_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_cost_items
@@ -15296,7 +15044,7 @@ ALTER TABLE ONLY public.prf_cost_items
 
 
 --
--- Name: prf_cost_items prf_cost_items_offer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_offer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_cost_items
@@ -15304,7 +15052,7 @@ ALTER TABLE ONLY public.prf_cost_items
 
 
 --
--- Name: prf_cost_items prf_cost_items_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_cost_items
@@ -15312,7 +15060,7 @@ ALTER TABLE ONLY public.prf_cost_items
 
 
 --
--- Name: prf_cost_items prf_cost_items_vendor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_vendor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_cost_items
@@ -15320,7 +15068,7 @@ ALTER TABLE ONLY public.prf_cost_items
 
 
 --
--- Name: prf prf_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15328,7 +15076,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf prf_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15336,7 +15084,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf prf_selected_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_selected_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15344,7 +15092,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf prf_selected_offer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_selected_offer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15352,7 +15100,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf prf_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf prf_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf
@@ -15360,7 +15108,7 @@ ALTER TABLE ONLY public.prf
 
 
 --
--- Name: prf_vendor_offers prf_vendor_offers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers prf_vendor_offers_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_vendor_offers
@@ -15368,7 +15116,7 @@ ALTER TABLE ONLY public.prf_vendor_offers
 
 
 --
--- Name: prf_vendor_offers prf_vendor_offers_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers prf_vendor_offers_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_vendor_offers
@@ -15376,7 +15124,7 @@ ALTER TABLE ONLY public.prf_vendor_offers
 
 
 --
--- Name: prf_vendor_offers prf_vendor_offers_vendor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers prf_vendor_offers_vendor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prf_vendor_offers
@@ -15384,7 +15132,7 @@ ALTER TABLE ONLY public.prf_vendor_offers
 
 
 --
--- Name: products products_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products products_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
@@ -15392,7 +15140,7 @@ ALTER TABLE ONLY public.products
 
 
 --
--- Name: products products_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products products_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
@@ -15400,7 +15148,7 @@ ALTER TABLE ONLY public.products
 
 
 --
--- Name: products products_tax_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products products_tax_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
@@ -15408,7 +15156,7 @@ ALTER TABLE ONLY public.products
 
 
 --
--- Name: products products_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: products products_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
@@ -15416,7 +15164,7 @@ ALTER TABLE ONLY public.products
 
 
 --
--- Name: profiles profiles_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: profiles profiles_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.profiles
@@ -15424,7 +15172,7 @@ ALTER TABLE ONLY public.profiles
 
 
 --
--- Name: profiles profiles_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: profiles profiles_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.profiles
@@ -15432,7 +15180,7 @@ ALTER TABLE ONLY public.profiles
 
 
 --
--- Name: profiles profiles_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: profiles profiles_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.profiles
@@ -15440,7 +15188,7 @@ ALTER TABLE ONLY public.profiles
 
 
 --
--- Name: profiles profiles_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: profiles profiles_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.profiles
@@ -15448,7 +15196,7 @@ ALTER TABLE ONLY public.profiles
 
 
 --
--- Name: profiles profiles_reports_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: profiles profiles_reports_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.profiles
@@ -15456,7 +15204,7 @@ ALTER TABLE ONLY public.profiles
 
 
 --
--- Name: accounts prospects_assigned_profile_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_assigned_profile_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -15464,7 +15212,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: accounts prospects_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -15472,7 +15220,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: accounts prospects_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -15480,7 +15228,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: accounts prospects_converted_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_converted_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -15488,7 +15236,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: accounts prospects_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -15496,7 +15244,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: accounts prospects_owner_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_owner_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -15504,7 +15252,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: accounts prospects_payment_terms_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_payment_terms_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -15512,7 +15260,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: accounts prospects_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: accounts prospects_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
@@ -15520,7 +15268,7 @@ ALTER TABLE ONLY public.accounts
 
 
 --
--- Name: product_warehouse_location pwl_product_fk; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: product_warehouse_location pwl_product_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.product_warehouse_location
@@ -15528,7 +15276,7 @@ ALTER TABLE ONLY public.product_warehouse_location
 
 
 --
--- Name: product_warehouse_location pwl_warehouse_fk; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: product_warehouse_location pwl_warehouse_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.product_warehouse_location
@@ -15536,7 +15284,7 @@ ALTER TABLE ONLY public.product_warehouse_location
 
 
 --
--- Name: quotation_items quotation_items_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotation_items quotation_items_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotation_items
@@ -15544,7 +15292,7 @@ ALTER TABLE ONLY public.quotation_items
 
 
 --
--- Name: quotations quotations_accepted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_accepted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15552,7 +15300,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15560,7 +15308,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15568,7 +15316,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15576,7 +15324,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15584,7 +15332,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_payment_terms_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_payment_terms_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15592,7 +15340,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_prf_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15600,7 +15348,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15608,7 +15356,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: quotations quotations_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: quotations quotations_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.quotations
@@ -15616,7 +15364,7 @@ ALTER TABLE ONLY public.quotations
 
 
 --
--- Name: rate_sheets rate_sheets_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: rate_sheets rate_sheets_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.rate_sheets
@@ -15624,7 +15372,7 @@ ALTER TABLE ONLY public.rate_sheets
 
 
 --
--- Name: rate_sheets rate_sheets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: rate_sheets rate_sheets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.rate_sheets
@@ -15632,7 +15380,7 @@ ALTER TABLE ONLY public.rate_sheets
 
 
 --
--- Name: role_menu_permissions role_menu_permissions_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_menu_permissions role_menu_permissions_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_menu_permissions
@@ -15640,7 +15388,7 @@ ALTER TABLE ONLY public.role_menu_permissions
 
 
 --
--- Name: role_menu_permissions role_menu_permissions_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_menu_permissions role_menu_permissions_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_menu_permissions
@@ -15648,7 +15396,7 @@ ALTER TABLE ONLY public.role_menu_permissions
 
 
 --
--- Name: role_menu_permissions role_menu_permissions_module_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_menu_permissions role_menu_permissions_module_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_menu_permissions
@@ -15656,7 +15404,7 @@ ALTER TABLE ONLY public.role_menu_permissions
 
 
 --
--- Name: role_menu_permissions role_menu_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_menu_permissions role_menu_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_menu_permissions
@@ -15664,7 +15412,7 @@ ALTER TABLE ONLY public.role_menu_permissions
 
 
 --
--- Name: role_permission_templates role_permission_templates_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permission_templates role_permission_templates_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permission_templates
@@ -15672,7 +15420,7 @@ ALTER TABLE ONLY public.role_permission_templates
 
 
 --
--- Name: role_permission_templates role_permission_templates_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permission_templates role_permission_templates_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permission_templates
@@ -15680,7 +15428,7 @@ ALTER TABLE ONLY public.role_permission_templates
 
 
 --
--- Name: role_permissions role_permissions_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permissions role_permissions_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permissions
@@ -15688,7 +15436,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- Name: role_permissions role_permissions_permission_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permissions role_permissions_permission_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permissions
@@ -15696,7 +15444,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- Name: role_permissions role_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: role_permissions role_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_permissions
@@ -15704,7 +15452,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- Name: roles roles_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: roles roles_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -15712,7 +15460,7 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- Name: roles roles_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: roles roles_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -15720,7 +15468,7 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- Name: sales_calls sales_calls_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_calls
@@ -15728,7 +15476,7 @@ ALTER TABLE ONLY public.sales_calls
 
 
 --
--- Name: sales_calls sales_calls_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_calls
@@ -15736,7 +15484,7 @@ ALTER TABLE ONLY public.sales_calls
 
 
 --
--- Name: sales_calls sales_calls_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_calls
@@ -15744,7 +15492,7 @@ ALTER TABLE ONLY public.sales_calls
 
 
 --
--- Name: sales_calls sales_calls_salesperson_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_salesperson_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_calls
@@ -15752,7 +15500,7 @@ ALTER TABLE ONLY public.sales_calls
 
 
 --
--- Name: sales_orders sales_orders_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_orders
@@ -15760,7 +15508,7 @@ ALTER TABLE ONLY public.sales_orders
 
 
 --
--- Name: sales_orders sales_orders_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_orders
@@ -15768,7 +15516,7 @@ ALTER TABLE ONLY public.sales_orders
 
 
 --
--- Name: sales_orders sales_orders_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_orders
@@ -15776,7 +15524,7 @@ ALTER TABLE ONLY public.sales_orders
 
 
 --
--- Name: sales_orders sales_orders_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_inquiry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_orders
@@ -15784,7 +15532,7 @@ ALTER TABLE ONLY public.sales_orders
 
 
 --
--- Name: sales_orders sales_orders_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_orders
@@ -15792,7 +15540,7 @@ ALTER TABLE ONLY public.sales_orders
 
 
 --
--- Name: sales_targets sales_targets_company_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_targets sales_targets_company_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_targets
@@ -15800,7 +15548,7 @@ ALTER TABLE ONLY public.sales_targets
 
 
 --
--- Name: sales_targets sales_targets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_targets sales_targets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_targets
@@ -15808,7 +15556,7 @@ ALTER TABLE ONLY public.sales_targets
 
 
 --
--- Name: sales_targets sales_targets_user_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_targets sales_targets_user_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_targets
@@ -15816,7 +15564,7 @@ ALTER TABLE ONLY public.sales_targets
 
 
 --
--- Name: sales_visit_logs sales_visit_logs_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_visit_logs sales_visit_logs_changed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_visit_logs
@@ -15824,7 +15572,7 @@ ALTER TABLE ONLY public.sales_visit_logs
 
 
 --
--- Name: sales_visit_logs sales_visit_logs_visit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_visit_logs sales_visit_logs_visit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_visit_logs
@@ -15832,7 +15580,7 @@ ALTER TABLE ONLY public.sales_visit_logs
 
 
 --
--- Name: sales_visits sales_visits_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_visits
@@ -15840,7 +15588,7 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
--- Name: sales_visits sales_visits_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_visits
@@ -15848,7 +15596,7 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
--- Name: sales_visits sales_visits_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_prospect_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_visits
@@ -15856,7 +15604,7 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
--- Name: sales_visits sales_visits_salesperson_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_salesperson_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_visits
@@ -15864,7 +15612,7 @@ ALTER TABLE ONLY public.sales_visits
 
 
 --
--- Name: sla_policies sla_policies_company_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sla_policies sla_policies_company_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sla_policies
@@ -15872,7 +15620,7 @@ ALTER TABLE ONLY public.sla_policies
 
 
 --
--- Name: sla_policies sla_policies_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sla_policies sla_policies_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sla_policies
@@ -15880,7 +15628,7 @@ ALTER TABLE ONLY public.sla_policies
 
 
 --
--- Name: sla_policies sla_policies_inherits_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sla_policies sla_policies_inherits_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sla_policies
@@ -15888,7 +15636,7 @@ ALTER TABLE ONLY public.sla_policies
 
 
 --
--- Name: sp_btb sp_btb_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_btb
@@ -15896,7 +15644,7 @@ ALTER TABLE ONLY public.sp_btb
 
 
 --
--- Name: sp_btb sp_btb_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_btb
@@ -15904,7 +15652,7 @@ ALTER TABLE ONLY public.sp_btb
 
 
 --
--- Name: sp_btb sp_btb_delivery_note_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_delivery_note_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_btb
@@ -15912,7 +15660,7 @@ ALTER TABLE ONLY public.sp_btb
 
 
 --
--- Name: sp_btb sp_btb_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_btb
@@ -15920,7 +15668,7 @@ ALTER TABLE ONLY public.sp_btb
 
 
 --
--- Name: sp_invoice_lines sp_invoice_lines_btb_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines sp_invoice_lines_btb_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_invoice_lines
@@ -15928,7 +15676,7 @@ ALTER TABLE ONLY public.sp_invoice_lines
 
 
 --
--- Name: sp_invoice_lines sp_invoice_lines_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines sp_invoice_lines_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_invoice_lines
@@ -15936,7 +15684,7 @@ ALTER TABLE ONLY public.sp_invoice_lines
 
 
 --
--- Name: sp_invoice_lines sp_invoice_lines_sp_order_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines sp_invoice_lines_sp_order_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_invoice_lines
@@ -15944,7 +15692,7 @@ ALTER TABLE ONLY public.sp_invoice_lines
 
 
 --
--- Name: sp_invoices sp_invoices_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_invoices sp_invoices_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_invoices
@@ -15952,7 +15700,7 @@ ALTER TABLE ONLY public.sp_invoices
 
 
 --
--- Name: sp_invoices sp_invoices_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_invoices sp_invoices_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_invoices
@@ -15960,7 +15708,7 @@ ALTER TABLE ONLY public.sp_invoices
 
 
 --
--- Name: sp_items sp_items_cancelled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_cancelled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_items
@@ -15968,7 +15716,7 @@ ALTER TABLE ONLY public.sp_items
 
 
 --
--- Name: sp_items sp_items_confirmed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_confirmed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_items
@@ -15976,7 +15724,7 @@ ALTER TABLE ONLY public.sp_items
 
 
 --
--- Name: sp_items sp_items_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_items
@@ -15984,7 +15732,7 @@ ALTER TABLE ONLY public.sp_items
 
 
 --
--- Name: sp_items sp_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_items
@@ -15992,7 +15740,7 @@ ALTER TABLE ONLY public.sp_items
 
 
 --
--- Name: sp_order_items sp_order_items_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_order_items sp_order_items_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_order_items
@@ -16000,7 +15748,7 @@ ALTER TABLE ONLY public.sp_order_items
 
 
 --
--- Name: sp_order_items sp_order_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_order_items sp_order_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_order_items
@@ -16008,7 +15756,7 @@ ALTER TABLE ONLY public.sp_order_items
 
 
 --
--- Name: sp_order_items sp_order_items_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_order_items sp_order_items_sp_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_order_items
@@ -16016,7 +15764,7 @@ ALTER TABLE ONLY public.sp_order_items
 
 
 --
--- Name: sp_orders sp_orders_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_orders
@@ -16024,7 +15772,7 @@ ALTER TABLE ONLY public.sp_orders
 
 
 --
--- Name: sp_orders sp_orders_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_orders
@@ -16032,7 +15780,7 @@ ALTER TABLE ONLY public.sp_orders
 
 
 --
--- Name: sp_orders sp_orders_dc_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_dc_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_orders
@@ -16040,7 +15788,7 @@ ALTER TABLE ONLY public.sp_orders
 
 
 --
--- Name: sp_payments sp_payments_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: sp_payments sp_payments_invoice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sp_payments
@@ -16048,7 +15796,7 @@ ALTER TABLE ONLY public.sp_payments
 
 
 --
--- Name: stock_ledger stock_ledger_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: stock_ledger stock_ledger_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.stock_ledger
@@ -16056,7 +15804,7 @@ ALTER TABLE ONLY public.stock_ledger
 
 
 --
--- Name: stock_ledger stock_ledger_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: stock_ledger stock_ledger_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.stock_ledger
@@ -16064,7 +15812,7 @@ ALTER TABLE ONLY public.stock_ledger
 
 
 --
--- Name: stock_ledger stock_ledger_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: stock_ledger stock_ledger_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.stock_ledger
@@ -16072,7 +15820,7 @@ ALTER TABLE ONLY public.stock_ledger
 
 
 --
--- Name: stock_ledger stock_ledger_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: stock_ledger stock_ledger_warehouse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.stock_ledger
@@ -16080,7 +15828,7 @@ ALTER TABLE ONLY public.stock_ledger
 
 
 --
--- Name: taxes taxes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: taxes taxes_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.taxes
@@ -16088,7 +15836,7 @@ ALTER TABLE ONLY public.taxes
 
 
 --
--- Name: taxes taxes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: taxes taxes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.taxes
@@ -16096,7 +15844,7 @@ ALTER TABLE ONLY public.taxes
 
 
 --
--- Name: top_requests top_requests_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: top_requests top_requests_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.top_requests
@@ -16104,7 +15852,7 @@ ALTER TABLE ONLY public.top_requests
 
 
 --
--- Name: top_requests top_requests_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: top_requests top_requests_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.top_requests
@@ -16112,7 +15860,7 @@ ALTER TABLE ONLY public.top_requests
 
 
 --
--- Name: top_requests top_requests_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: top_requests top_requests_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.top_requests
@@ -16120,7 +15868,7 @@ ALTER TABLE ONLY public.top_requests
 
 
 --
--- Name: top_requests top_requests_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: top_requests top_requests_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.top_requests
@@ -16128,7 +15876,7 @@ ALTER TABLE ONLY public.top_requests
 
 
 --
--- Name: user_menu_permissions user_menu_permissions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_menu_permissions user_menu_permissions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_menu_permissions
@@ -16136,7 +15884,7 @@ ALTER TABLE ONLY public.user_menu_permissions
 
 
 --
--- Name: user_menu_permissions user_menu_permissions_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_menu_permissions user_menu_permissions_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_menu_permissions
@@ -16144,7 +15892,7 @@ ALTER TABLE ONLY public.user_menu_permissions
 
 
 --
--- Name: user_menu_permissions user_menu_permissions_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_menu_permissions user_menu_permissions_menu_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_menu_permissions
@@ -16152,7 +15900,7 @@ ALTER TABLE ONLY public.user_menu_permissions
 
 
 --
--- Name: user_menu_permissions user_menu_permissions_module_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_menu_permissions user_menu_permissions_module_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_menu_permissions
@@ -16160,7 +15908,7 @@ ALTER TABLE ONLY public.user_menu_permissions
 
 
 --
--- Name: user_menu_permissions user_menu_permissions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_menu_permissions user_menu_permissions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_menu_permissions
@@ -16168,7 +15916,7 @@ ALTER TABLE ONLY public.user_menu_permissions
 
 
 --
--- Name: user_roles user_roles_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -16176,7 +15924,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- Name: user_roles user_roles_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -16184,7 +15932,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- Name: user_roles user_roles_revoked_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_revoked_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -16192,7 +15940,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- Name: user_roles user_roles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -16200,7 +15948,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -16208,7 +15956,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- Name: vendors vendors_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: vendors vendors_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendors
@@ -16216,7 +15964,7 @@ ALTER TABLE ONLY public.vendors
 
 
 --
--- Name: vendors vendors_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: vendors vendors_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendors
@@ -16224,7 +15972,7 @@ ALTER TABLE ONLY public.vendors
 
 
 --
--- Name: vendors vendors_currency_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: vendors vendors_currency_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendors
@@ -16232,7 +15980,7 @@ ALTER TABLE ONLY public.vendors
 
 
 --
--- Name: vendors vendors_payment_terms_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: vendors vendors_payment_terms_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendors
@@ -16240,7 +15988,7 @@ ALTER TABLE ONLY public.vendors
 
 
 --
--- Name: vendors vendors_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: vendors vendors_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendors
@@ -16248,7 +15996,7 @@ ALTER TABLE ONLY public.vendors
 
 
 --
--- Name: warehouses warehouses_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: warehouses warehouses_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.warehouses
@@ -16256,7 +16004,7 @@ ALTER TABLE ONLY public.warehouses
 
 
 --
--- Name: weekly_meeting_items weekly_meeting_items_bnf_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: weekly_meeting_items weekly_meeting_items_bnf_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.weekly_meeting_items
@@ -16264,7 +16012,7 @@ ALTER TABLE ONLY public.weekly_meeting_items
 
 
 --
--- Name: weekly_meeting_items weekly_meeting_items_daily_report_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: weekly_meeting_items weekly_meeting_items_daily_report_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.weekly_meeting_items
@@ -16272,7 +16020,7 @@ ALTER TABLE ONLY public.weekly_meeting_items
 
 
 --
--- Name: weekly_meeting_items weekly_meeting_items_weekly_meeting_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: weekly_meeting_items weekly_meeting_items_weekly_meeting_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.weekly_meeting_items
@@ -16280,7 +16028,7 @@ ALTER TABLE ONLY public.weekly_meeting_items
 
 
 --
--- Name: weekly_meetings weekly_meetings_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: weekly_meetings weekly_meetings_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.weekly_meetings
@@ -16288,7 +16036,7 @@ ALTER TABLE ONLY public.weekly_meetings
 
 
 --
--- Name: weekly_meetings weekly_meetings_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: weekly_meetings weekly_meetings_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.weekly_meetings
@@ -16296,7 +16044,7 @@ ALTER TABLE ONLY public.weekly_meetings
 
 
 --
--- Name: weekly_meetings weekly_meetings_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: weekly_meetings weekly_meetings_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.weekly_meetings
@@ -16304,66 +16052,66 @@ ALTER TABLE ONLY public.weekly_meetings
 
 
 --
--- Name: account_lifecycle_history; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: account_lifecycle_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.account_lifecycle_history ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: accounts; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: accounts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: accounts accounts_delete_superadmin; Type: POLICY; Schema: public; Owner: postgres
+-- Name: accounts accounts_delete_superadmin; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY accounts_delete_superadmin ON public.accounts FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: activities; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: activities; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: activities activities_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: activities activities_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY activities_delete ON public.activities FOR DELETE TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: activities activities_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: activities activities_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY activities_insert ON public.activities FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
--- Name: activities activities_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: activities activities_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY activities_select ON public.activities FOR SELECT TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: activities activities_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: activities activities_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY activities_update ON public.activities FOR UPDATE TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: activity_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: activity_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: activity_logs activity_logs_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: activity_logs activity_logs_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY activity_logs_delete ON public.activity_logs FOR DELETE TO authenticated USING (((EXISTS ( SELECT 1
@@ -16372,7 +16120,7 @@ CREATE POLICY activity_logs_delete ON public.activity_logs FOR DELETE TO authent
 
 
 --
--- Name: activity_logs activity_logs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: activity_logs activity_logs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY activity_logs_insert ON public.activity_logs FOR INSERT TO authenticated WITH CHECK (((EXISTS ( SELECT 1
@@ -16381,7 +16129,7 @@ CREATE POLICY activity_logs_insert ON public.activity_logs FOR INSERT TO authent
 
 
 --
--- Name: activity_logs activity_logs_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: activity_logs activity_logs_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY activity_logs_select ON public.activity_logs FOR SELECT TO authenticated USING (((EXISTS ( SELECT 1
@@ -16390,7 +16138,7 @@ CREATE POLICY activity_logs_select ON public.activity_logs FOR SELECT TO authent
 
 
 --
--- Name: activity_logs activity_logs_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: activity_logs activity_logs_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY activity_logs_update ON public.activity_logs FOR UPDATE TO authenticated USING (((EXISTS ( SELECT 1
@@ -16401,7 +16149,7 @@ CREATE POLICY activity_logs_update ON public.activity_logs FOR UPDATE TO authent
 
 
 --
--- Name: account_lifecycle_history alh_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: account_lifecycle_history alh_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY alh_read ON public.account_lifecycle_history FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
@@ -16410,114 +16158,114 @@ CREATE POLICY alh_read ON public.account_lifecycle_history FOR SELECT TO authent
 
 
 --
--- Name: app_settings; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: app_settings; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: app_settings app_settings_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: app_settings app_settings_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY app_settings_read ON public.app_settings FOR SELECT USING (public.is_admin_or_above());
 
 
 --
--- Name: app_settings app_settings_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: app_settings app_settings_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY app_settings_update ON public.app_settings FOR UPDATE USING (public.is_admin_or_above());
 
 
 --
--- Name: app_settings app_settings_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: app_settings app_settings_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY app_settings_write ON public.app_settings FOR INSERT WITH CHECK (public.is_admin_or_above());
 
 
 --
--- Name: approval_delegations; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: approval_delegations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.approval_delegations ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: approval_delegations approval_delegations_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_delegations approval_delegations_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_delegations_insert ON public.approval_delegations FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND ((delegator_id = auth.uid()) OR public.is_admin_or_above())));
 
 
 --
--- Name: approval_delegations approval_delegations_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_delegations approval_delegations_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_delegations_read ON public.approval_delegations FOR SELECT TO authenticated USING (((delegator_id = auth.uid()) OR (delegate_id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_manager_or_above())) OR public.is_super_admin()));
 
 
 --
--- Name: approval_delegations approval_delegations_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_delegations approval_delegations_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_delegations_update ON public.approval_delegations FOR UPDATE TO authenticated USING ((company_id = public.get_user_company_id())) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: approval_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: approval_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.approval_logs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: approval_logs approval_logs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_logs approval_logs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_logs_insert ON public.approval_logs FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (actor_id = auth.uid())));
 
 
 --
--- Name: approval_logs approval_logs_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_logs approval_logs_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_logs_read ON public.approval_logs FOR SELECT TO authenticated USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: approval_rules; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: approval_rules; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.approval_rules ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: approval_rules approval_rules_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_rules_insert ON public.approval_rules FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: approval_rules approval_rules_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_rules_read ON public.approval_rules FOR SELECT TO authenticated USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: approval_rules approval_rules_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_rules approval_rules_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_rules_update ON public.approval_rules FOR UPDATE TO authenticated USING ((company_id = public.get_user_company_id())) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: approval_workflow_steps; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: approval_workflow_steps; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.approval_workflow_steps ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: approval_workflow_steps approval_workflow_steps_access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_workflow_steps approval_workflow_steps_access; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_workflow_steps_access ON public.approval_workflow_steps TO authenticated USING ((EXISTS ( SELECT 1
@@ -16528,26 +16276,26 @@ CREATE POLICY approval_workflow_steps_access ON public.approval_workflow_steps T
 
 
 --
--- Name: approval_workflows; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: approval_workflows; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.approval_workflows ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: approval_workflows approval_workflows_access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: approval_workflows approval_workflows_access; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY approval_workflows_access ON public.approval_workflows TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: ar_btbs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: ar_btbs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.ar_btbs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: ar_btbs ar_btbs_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: ar_btbs ar_btbs_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ar_btbs_delete ON public.ar_btbs FOR DELETE TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -16556,7 +16304,7 @@ CREATE POLICY ar_btbs_delete ON public.ar_btbs FOR DELETE TO authenticated USING
 
 
 --
--- Name: ar_btbs ar_btbs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: ar_btbs ar_btbs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ar_btbs_insert ON public.ar_btbs FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -16565,7 +16313,7 @@ CREATE POLICY ar_btbs_insert ON public.ar_btbs FOR INSERT TO authenticated WITH 
 
 
 --
--- Name: ar_btbs ar_btbs_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: ar_btbs ar_btbs_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ar_btbs_read ON public.ar_btbs FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -16574,298 +16322,298 @@ CREATE POLICY ar_btbs_read ON public.ar_btbs FOR SELECT TO authenticated USING (
 
 
 --
--- Name: ar_ttfs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: ar_ttfs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.ar_ttfs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: ar_ttfs ar_ttfs_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ar_ttfs_delete ON public.ar_ttfs FOR DELETE TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))));
 
 
 --
--- Name: ar_ttfs ar_ttfs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ar_ttfs_insert ON public.ar_ttfs FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))));
 
 
 --
--- Name: ar_ttfs ar_ttfs_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ar_ttfs_read ON public.ar_ttfs FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))));
 
 
 --
--- Name: ar_ttfs ar_ttfs_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: ar_ttfs ar_ttfs_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ar_ttfs_update ON public.ar_ttfs FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('ceo'::text) OR public.has_role('finance_controller'::text) OR public.has_role('finance'::text)))));
 
 
 --
--- Name: asset_categories; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: asset_categories; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.asset_categories ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: asset_categories asset_categories_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_categories asset_categories_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY asset_categories_insert ON public.asset_categories FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: asset_categories asset_categories_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_categories asset_categories_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY asset_categories_read ON public.asset_categories FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
--- Name: asset_categories asset_categories_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_categories asset_categories_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY asset_categories_update ON public.asset_categories FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND public.is_admin_or_above())) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: asset_fuel_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.asset_fuel_logs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: asset_locations; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: asset_locations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.asset_locations ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: asset_locations asset_locations_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_locations asset_locations_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY asset_locations_insert ON public.asset_locations FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: asset_locations asset_locations_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_locations asset_locations_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY asset_locations_read ON public.asset_locations FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
--- Name: asset_locations asset_locations_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_locations asset_locations_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY asset_locations_update ON public.asset_locations FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND public.is_admin_or_above())) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: asset_maintenance_records; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.asset_maintenance_records ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: asset_network; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: asset_network; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.asset_network ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: asset_software_licenses; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: asset_software_licenses; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.asset_software_licenses ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: asset_specifications; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: asset_specifications; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.asset_specifications ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: assets; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: assets; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.assets ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: assets assets_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: assets assets_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY assets_insert ON public.assets FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: assets assets_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: assets assets_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY assets_read ON public.assets FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
--- Name: assets assets_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: assets assets_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY assets_update ON public.assets FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND public.is_admin_or_above())) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: audit_logs audit_logs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: audit_logs audit_logs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY audit_logs_insert ON public.audit_logs FOR INSERT WITH CHECK ((auth.uid() IS NOT NULL));
 
 
 --
--- Name: audit_logs audit_logs_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: audit_logs audit_logs_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY audit_logs_read ON public.audit_logs FOR SELECT USING (public.is_admin_or_above());
 
 
 --
--- Name: backfill_sp_order_items_20260808; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backfill_sp_order_items_20260808; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backfill_sp_order_items_20260808 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_b4_inquiries_20260725; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_b4_inquiries_20260725; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_b4_inquiries_20260725 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_dedup_accounts_20260725; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_dedup_accounts_20260725; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_dedup_accounts_20260725 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_dedup_activities_20260725; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_dedup_activities_20260725; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_dedup_activities_20260725 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_dedup_alliance_20260725; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_dedup_alliance_20260725; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_dedup_alliance_20260725 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_dedup_inquiries_20260725; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_dedup_inquiries_20260725; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_dedup_inquiries_20260725 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_dedup_quotations_20260725; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_dedup_quotations_20260725; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_dedup_quotations_20260725 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_leadpool_c1_won_20260724; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_leadpool_c1_won_20260724; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_leadpool_c1_won_20260724 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_leadpool_trap_20260724; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_leadpool_trap_20260724; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_leadpool_trap_20260724 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_prf_20260727; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_prf_20260727; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_prf_20260727 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: backup_prf_cost_items_20260727; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: backup_prf_cost_items_20260727; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.backup_prf_cost_items_20260727 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_authorized_users; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_authorized_users ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_authorized_users bnf_authorized_users_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users bnf_authorized_users_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_authorized_users_insert ON public.bnf_authorized_users FOR INSERT WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: bnf_authorized_users bnf_authorized_users_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users bnf_authorized_users_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_authorized_users_read ON public.bnf_authorized_users FOR SELECT USING (public.is_super_admin());
 
 
 --
--- Name: bnf_authorized_users bnf_authorized_users_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_authorized_users bnf_authorized_users_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_authorized_users_update ON public.bnf_authorized_users FOR UPDATE USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: bnf_department_scopes; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_department_scopes ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_department_scopes bnf_department_scopes_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes bnf_department_scopes_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_department_scopes_read ON public.bnf_department_scopes FOR SELECT USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
--- Name: bnf_department_scopes bnf_department_scopes_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_department_scopes bnf_department_scopes_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_department_scopes_write ON public.bnf_department_scopes USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: bnf_departments; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_departments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_departments ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_departments bnf_departments_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_departments_insert ON public.bnf_departments FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: bnf_departments bnf_departments_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_departments_read ON public.bnf_departments FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR ((deleted_at IS NULL) AND (EXISTS ( SELECT 1
@@ -16874,47 +16622,47 @@ CREATE POLICY bnf_departments_read ON public.bnf_departments FOR SELECT USING ((
 
 
 --
--- Name: bnf_departments bnf_departments_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_departments bnf_departments_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_departments_update ON public.bnf_departments FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: bnf_division_scopes; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_division_scopes ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_division_scopes bnf_division_scopes_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes bnf_division_scopes_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_division_scopes_read ON public.bnf_division_scopes FOR SELECT USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
--- Name: bnf_division_scopes bnf_division_scopes_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_division_scopes bnf_division_scopes_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_division_scopes_write ON public.bnf_division_scopes USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: bnf_divisions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_divisions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_divisions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_divisions bnf_divisions_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_divisions bnf_divisions_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_divisions_insert ON public.bnf_divisions FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: bnf_divisions bnf_divisions_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_divisions bnf_divisions_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_divisions_read ON public.bnf_divisions FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR ((deleted_at IS NULL) AND (EXISTS ( SELECT 1
@@ -16923,20 +16671,20 @@ CREATE POLICY bnf_divisions_read ON public.bnf_divisions FOR SELECT USING ((publ
 
 
 --
--- Name: bnf_divisions bnf_divisions_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_divisions bnf_divisions_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_divisions_update ON public.bnf_divisions FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: bnf_report_action_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_report_action_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_report_action_items bnf_report_action_items_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items bnf_report_action_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_report_action_items_insert ON public.bnf_report_action_items FOR INSERT WITH CHECK ((public.is_bnf_authorized() AND (public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -16947,7 +16695,7 @@ CREATE POLICY bnf_report_action_items_insert ON public.bnf_report_action_items F
 
 
 --
--- Name: bnf_report_action_items bnf_report_action_items_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items bnf_report_action_items_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_report_action_items_read ON public.bnf_report_action_items FOR SELECT USING ((public.is_bnf_authorized() AND (public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -16958,7 +16706,7 @@ CREATE POLICY bnf_report_action_items_read ON public.bnf_report_action_items FOR
 
 
 --
--- Name: bnf_report_action_items bnf_report_action_items_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_report_action_items bnf_report_action_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_report_action_items_update ON public.bnf_report_action_items FOR UPDATE USING ((public.is_bnf_authorized() AND (public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -16973,13 +16721,13 @@ CREATE POLICY bnf_report_action_items_update ON public.bnf_report_action_items F
 
 
 --
--- Name: bnf_report_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_report_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_report_logs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_report_logs bnf_report_logs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_report_logs bnf_report_logs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_report_logs_insert ON public.bnf_report_logs FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -16988,7 +16736,7 @@ CREATE POLICY bnf_report_logs_insert ON public.bnf_report_logs FOR INSERT TO aut
 
 
 --
--- Name: bnf_report_logs bnf_report_logs_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_report_logs bnf_report_logs_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_report_logs_read ON public.bnf_report_logs FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -16997,13 +16745,13 @@ CREATE POLICY bnf_report_logs_read ON public.bnf_report_logs FOR SELECT TO authe
 
 
 --
--- Name: bnf_report_related_departments; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_report_related_departments ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_report_related_departments bnf_report_related_departments_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments bnf_report_related_departments_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_report_related_departments_delete ON public.bnf_report_related_departments FOR DELETE TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -17012,7 +16760,7 @@ CREATE POLICY bnf_report_related_departments_delete ON public.bnf_report_related
 
 
 --
--- Name: bnf_report_related_departments bnf_report_related_departments_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments bnf_report_related_departments_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_report_related_departments_insert ON public.bnf_report_related_departments FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -17021,7 +16769,7 @@ CREATE POLICY bnf_report_related_departments_insert ON public.bnf_report_related
 
 
 --
--- Name: bnf_report_related_departments bnf_report_related_departments_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_report_related_departments bnf_report_related_departments_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_report_related_departments_read ON public.bnf_report_related_departments FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -17030,155 +16778,155 @@ CREATE POLICY bnf_report_related_departments_read ON public.bnf_report_related_d
 
 
 --
--- Name: bnf_reports; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bnf_reports; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.bnf_reports ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: bnf_reports bnf_reports_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_reports_insert ON public.bnf_reports FOR INSERT WITH CHECK (((company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND public.is_bnf_authorized()));
 
 
 --
--- Name: bnf_reports bnf_reports_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_reports_select ON public.bnf_reports FOR SELECT USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL) AND public.is_bnf_authorized())));
 
 
 --
--- Name: bnf_reports bnf_reports_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: bnf_reports bnf_reports_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY bnf_reports_update ON public.bnf_reports FOR UPDATE USING ((((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR public.is_super_admin()));
 
 
 --
--- Name: branches; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: branches; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: branches branches_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: branches branches_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY branches_insert ON public.branches FOR INSERT WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: branches branches_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: branches branches_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY branches_read ON public.branches FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
 
 
 --
--- Name: branches branches_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: branches branches_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY branches_update ON public.branches FOR UPDATE USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: channel_types; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: channel_types; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.channel_types ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: channel_types channel_types_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: channel_types channel_types_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY channel_types_delete ON public.channel_types FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: channel_types channel_types_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: channel_types channel_types_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY channel_types_insert ON public.channel_types FOR INSERT TO authenticated WITH CHECK (((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_admin_or_above()));
 
 
 --
--- Name: channel_types channel_types_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: channel_types channel_types_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY channel_types_read ON public.channel_types FOR SELECT TO authenticated USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (deleted_at IS NULL)) OR public.is_super_admin()));
 
 
 --
--- Name: channel_types channel_types_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: channel_types channel_types_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY channel_types_update ON public.channel_types FOR UPDATE TO authenticated USING (((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin())) WITH CHECK ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: chart_of_accounts; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: chart_of_accounts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.chart_of_accounts ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: chart_of_accounts chart_of_accounts_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: chart_of_accounts chart_of_accounts_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY chart_of_accounts_insert ON public.chart_of_accounts FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (public.has_role('finance_controller'::text) OR public.is_super_admin())));
 
 
 --
--- Name: chart_of_accounts chart_of_accounts_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: chart_of_accounts chart_of_accounts_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY chart_of_accounts_read ON public.chart_of_accounts FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
--- Name: chart_of_accounts chart_of_accounts_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: chart_of_accounts chart_of_accounts_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY chart_of_accounts_update ON public.chart_of_accounts FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND (public.has_role('finance_controller'::text) OR public.is_super_admin()))) WITH CHECK (((company_id = public.get_user_company_id()) AND (public.has_role('finance_controller'::text) OR public.is_super_admin())));
 
 
 --
--- Name: companies; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: companies; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: companies companies_read_own; Type: POLICY; Schema: public; Owner: postgres
+-- Name: companies companies_read_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY companies_read_own ON public.companies FOR SELECT TO authenticated USING (((id = public.get_user_company_id()) OR (id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin()));
 
 
 --
--- Name: companies companies_super_admin_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: companies companies_super_admin_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY companies_super_admin_write ON public.companies TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: contacts; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: contacts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: contacts contacts_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: contacts contacts_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY contacts_delete ON public.contacts FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: contacts contacts_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: contacts contacts_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY contacts_insert ON public.contacts FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
@@ -17187,7 +16935,7 @@ CREATE POLICY contacts_insert ON public.contacts FOR INSERT TO authenticated WIT
 
 
 --
--- Name: contacts contacts_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: contacts contacts_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY contacts_select ON public.contacts FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
@@ -17196,7 +16944,7 @@ CREATE POLICY contacts_select ON public.contacts FOR SELECT TO authenticated USI
 
 
 --
--- Name: contacts contacts_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: contacts contacts_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY contacts_update ON public.contacts FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
@@ -17205,607 +16953,638 @@ CREATE POLICY contacts_update ON public.contacts FOR UPDATE TO authenticated USI
 
 
 --
--- Name: cost_centers; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: cost_centers; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.cost_centers ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: cost_centers cost_centers_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY cost_centers_insert ON public.cost_centers FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: cost_centers cost_centers_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY cost_centers_read ON public.cost_centers FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) OR public.is_super_admin()));
 
 
 --
--- Name: cost_centers cost_centers_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: cost_centers cost_centers_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY cost_centers_update ON public.cost_centers FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND public.is_admin_or_above())) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: currencies; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: currencies; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.currencies ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: currencies currencies_read_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: currencies currencies_read_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY currencies_read_all ON public.currencies FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: currencies currencies_super_admin_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: currencies currencies_super_admin_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY currencies_super_admin_write ON public.currencies TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: customers; Type: ROW SECURITY; Schema: public; Owner: postgres
---
-
-ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
-
---
--- Name: customers customers_insert; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY customers_insert ON public.customers FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
-
-
---
--- Name: customers customers_read; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY customers_read ON public.customers FOR SELECT USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin())));
-
-
---
--- Name: customers customers_update; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY customers_update ON public.customers FOR UPDATE USING ((company_id = public.get_user_company_id()));
-
-
---
--- Name: daily_report_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: daily_report_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.daily_report_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: daily_report_items daily_report_items_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY daily_report_items_insert ON public.daily_report_items FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()))));
 
 
 --
--- Name: daily_report_items daily_report_items_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY daily_report_items_read ON public.daily_report_items FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: daily_report_items daily_report_items_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: daily_report_items daily_report_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY daily_report_items_update ON public.daily_report_items FOR UPDATE USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()))) WITH CHECK ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: dc_master; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: dc_master; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.dc_master ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: dc_master dc_master_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: dc_master dc_master_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dc_master_delete ON public.dc_master FOR DELETE USING (public.is_super_admin());
 
 
 --
--- Name: dc_master dc_master_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: dc_master dc_master_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dc_master_insert ON public.dc_master FOR INSERT WITH CHECK ((public.is_super_admin() OR (((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: dc_master dc_master_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: dc_master dc_master_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dc_master_read ON public.dc_master FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: dc_master dc_master_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: dc_master dc_master_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dc_master_update ON public.dc_master FOR UPDATE USING ((public.is_super_admin() OR (((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: deal_handovers; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: deal_handovers; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.deal_handovers ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: delivery_incidents; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: delivery_incidents; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.delivery_incidents ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: delivery_incidents delivery_incidents_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY delivery_incidents_delete ON public.delivery_incidents FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: delivery_incidents delivery_incidents_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY delivery_incidents_insert ON public.delivery_incidents FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: delivery_incidents delivery_incidents_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY delivery_incidents_read ON public.delivery_incidents FOR SELECT TO authenticated USING ((public.is_super_admin() OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: delivery_incidents delivery_incidents_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_incidents delivery_incidents_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY delivery_incidents_update ON public.delivery_incidents FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.has_role('operations'::text))))) WITH CHECK ((public.is_super_admin() OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: delivery_note_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: delivery_note_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.delivery_note_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: delivery_notes; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: delivery_notes; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.delivery_notes ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: departments; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: departments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: departments departments_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: departments departments_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY departments_insert ON public.departments FOR INSERT WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: departments departments_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: departments departments_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY departments_read ON public.departments FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
 
 
 --
--- Name: departments departments_select_global; Type: POLICY; Schema: public; Owner: postgres
+-- Name: departments departments_select_global; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY departments_select_global ON public.departments FOR SELECT TO authenticated USING (((company_id IS NULL) AND (deleted_at IS NULL)));
 
 
 --
--- Name: departments departments_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: departments departments_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY departments_update ON public.departments FOR UPDATE USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: delivery_notes dn_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_notes dn_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dn_delete ON public.delivery_notes FOR DELETE TO authenticated USING (true);
 
 
 --
--- Name: delivery_notes dn_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_notes dn_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dn_insert ON public.delivery_notes FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: delivery_notes dn_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_notes dn_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dn_read ON public.delivery_notes FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: delivery_notes dn_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_notes dn_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dn_update ON public.delivery_notes FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
--- Name: delivery_note_items dni_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_note_items dni_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dni_delete ON public.delivery_note_items FOR DELETE TO authenticated USING (true);
 
 
 --
--- Name: delivery_note_items dni_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_note_items dni_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dni_insert ON public.delivery_note_items FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: delivery_note_items dni_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_note_items dni_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dni_read ON public.delivery_note_items FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: delivery_note_items dni_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: delivery_note_items dni_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dni_update ON public.delivery_note_items FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
--- Name: document_numbering; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: document_numbering; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.document_numbering ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: document_numbering document_numbering_access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: document_numbering document_numbering_access; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY document_numbering_access ON public.document_numbering TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: document_sequences; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: document_sequences; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.document_sequences ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: document_sequences document_sequences_increment; Type: POLICY; Schema: public; Owner: postgres
+-- Name: document_sequences document_sequences_increment; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY document_sequences_increment ON public.document_sequences FOR UPDATE TO authenticated USING ((company_id = public.get_user_company_id())) WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: document_sequences document_sequences_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: document_sequences document_sequences_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY document_sequences_insert ON public.document_sequences FOR INSERT TO authenticated WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: POLICY document_sequences_insert ON document_sequences; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: POLICY document_sequences_insert ON document_sequences; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON POLICY document_sequences_insert ON public.document_sequences IS 'Any authenticated company user may insert a new sequence row. Atomic increment is handled by increment_document_sequence() RPC (SECURITY DEFINER). Policy relaxed from admin-only in migration 023 to support first-document-of-year by non-admin staff across all document types.';
 
 
 --
--- Name: document_sequences document_sequences_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: document_sequences document_sequences_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY document_sequences_read ON public.document_sequences FOR SELECT TO authenticated USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: document_templates; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: document_templates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.document_templates ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: document_templates document_templates_access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: document_templates document_templates_access; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY document_templates_access ON public.document_templates TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: document_types; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: document_types; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.document_types ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: document_types document_types_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: document_types document_types_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY document_types_insert ON public.document_types FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: document_types document_types_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: document_types document_types_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY document_types_read ON public.document_types FOR SELECT TO authenticated USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: document_types document_types_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: document_types document_types_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY document_types_update ON public.document_types FOR UPDATE TO authenticated USING ((company_id = public.get_user_company_id())) WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: dropdown_options; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: dropdown_options; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.dropdown_options ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: dropdown_options dropdown_options_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: dropdown_options dropdown_options_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dropdown_options_delete ON public.dropdown_options FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: dropdown_options dropdown_options_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: dropdown_options dropdown_options_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dropdown_options_insert ON public.dropdown_options FOR INSERT TO authenticated WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: dropdown_options dropdown_options_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: dropdown_options dropdown_options_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dropdown_options_read ON public.dropdown_options FOR SELECT TO authenticated USING (((deleted_at IS NULL) AND ((company_id IS NULL) OR (company_id = public.get_user_company_id()) OR public.is_super_admin())));
 
 
 --
--- Name: dropdown_options dropdown_options_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: dropdown_options dropdown_options_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY dropdown_options_update ON public.dropdown_options FOR UPDATE TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: entity_bank_accounts; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: entity_bank_accounts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.entity_bank_accounts ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: entity_bank_accounts entity_bank_accounts_access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: entity_bank_accounts entity_bank_accounts_access; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY entity_bank_accounts_access ON public.entity_bank_accounts TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: entity_bank_accounts entity_bank_accounts_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: entity_bank_accounts entity_bank_accounts_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY entity_bank_accounts_read ON public.entity_bank_accounts FOR SELECT TO authenticated USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: POLICY entity_bank_accounts_read ON entity_bank_accounts; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: POLICY entity_bank_accounts_read ON entity_bank_accounts; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON POLICY entity_bank_accounts_read ON public.entity_bank_accounts IS 'Baca rekening entitas tempat user punya role aktif (atau home company). Dipisah dari entity_bank_accounts_access (FOR ALL, admin-only) supaya izin BACA tidak lagi disamakan dengan izin TULIS — TD-254. Migrasi 20260911000001.';
 
 
 --
--- Name: entity_finance_settings; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: entity_finance_settings; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.entity_finance_settings ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: entity_finance_settings entity_finance_settings_access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: entity_finance_settings entity_finance_settings_access; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY entity_finance_settings_access ON public.entity_finance_settings TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: entity_signatories; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: entity_signatories; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.entity_signatories ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: entity_signatories entity_signatories_access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: entity_signatories entity_signatories_access; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY entity_signatories_access ON public.entity_signatories TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: exchange_rates; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: exchange_rates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.exchange_rates ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: exchange_rates exchange_rates_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: exchange_rates exchange_rates_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY exchange_rates_insert ON public.exchange_rates FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('finance_controller'::text))));
 
 
 --
--- Name: exchange_rates exchange_rates_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: exchange_rates exchange_rates_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY exchange_rates_read ON public.exchange_rates FOR SELECT TO authenticated USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: asset_fuel_logs fuel_logs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs fuel_logs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY fuel_logs_insert ON public.asset_fuel_logs FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: asset_fuel_logs fuel_logs_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs fuel_logs_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY fuel_logs_select ON public.asset_fuel_logs FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: asset_fuel_logs fuel_logs_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_fuel_logs fuel_logs_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY fuel_logs_update ON public.asset_fuel_logs FOR UPDATE USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: deal_handovers handover_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: goods_receipt_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.goods_receipt_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: goods_receipt_items goods_receipt_items_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY goods_receipt_items_delete ON public.goods_receipt_items FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: goods_receipt_items goods_receipt_items_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY goods_receipt_items_insert ON public.goods_receipt_items FOR INSERT WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.goods_receipts gr
+  WHERE ((gr.id = goods_receipt_items.goods_receipt_id) AND (gr.company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))))));
+
+
+--
+-- Name: goods_receipt_items goods_receipt_items_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY goods_receipt_items_read ON public.goods_receipt_items FOR SELECT USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
+   FROM public.goods_receipts gr
+  WHERE ((gr.id = goods_receipt_items.goods_receipt_id) AND (gr.company_id = public.get_user_company_id()))))));
+
+
+--
+-- Name: goods_receipts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.goods_receipts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: goods_receipts goods_receipts_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY goods_receipts_delete ON public.goods_receipts FOR DELETE USING (public.is_super_admin());
+
+
+--
+-- Name: goods_receipts goods_receipts_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY goods_receipts_insert ON public.goods_receipts FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
+
+
+--
+-- Name: goods_receipts goods_receipts_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY goods_receipts_read ON public.goods_receipts FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
+
+
+--
+-- Name: deal_handovers handover_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY handover_read ON public.deal_handovers FOR SELECT USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: deal_handovers handover_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: deal_handovers handover_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY handover_update ON public.deal_handovers FOR UPDATE USING (((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))));
 
 
 --
--- Name: deal_handovers handover_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: deal_handovers handover_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY handover_write ON public.deal_handovers FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: hrga_approval_configs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_approval_configs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs hrga_approval_configs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_approval_configs_insert ON public.hrga_approval_configs FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text)))));
+CREATE POLICY hrga_approval_configs_insert ON public.hrga_approval_configs FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional()))));
 
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs hrga_approval_configs_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_approval_configs_read ON public.hrga_approval_configs FOR SELECT TO authenticated USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: hrga_approval_configs hrga_approval_configs_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_approval_configs hrga_approval_configs_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_approval_configs_update ON public.hrga_approval_configs FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text)))));
+CREATE POLICY hrga_approval_configs_update ON public.hrga_approval_configs FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional())))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional()))));
 
 
 --
--- Name: hrga_notification_queue; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_notification_queue ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_notification_queue hrga_notification_queue_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue hrga_notification_queue_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_notification_queue_insert ON public.hrga_notification_queue FOR INSERT TO authenticated WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: hrga_notification_queue hrga_notification_queue_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue hrga_notification_queue_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_notification_queue_read ON public.hrga_notification_queue FOR SELECT TO authenticated USING ((((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_manager_or_above())) OR public.is_super_admin()));
 
 
 --
--- Name: hrga_notification_queue hrga_notification_queue_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_notification_queue hrga_notification_queue_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_notification_queue_update ON public.hrga_notification_queue FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above()))) WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: hrga_offboarding_checklists; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_offboarding_checklists ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_offboarding_checklists hrga_offboarding_checklists_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists hrga_offboarding_checklists_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_offboarding_checklists_insert ON public.hrga_offboarding_checklists FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text)))));
+CREATE POLICY hrga_offboarding_checklists_insert ON public.hrga_offboarding_checklists FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional()))));
 
 
 --
--- Name: hrga_offboarding_checklists hrga_offboarding_checklists_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists hrga_offboarding_checklists_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_offboarding_checklists_read ON public.hrga_offboarding_checklists FOR SELECT TO authenticated USING (((deleted_at IS NULL) AND (public.is_super_admin() OR (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: hrga_offboarding_checklists hrga_offboarding_checklists_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_checklists hrga_offboarding_checklists_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_offboarding_checklists_update ON public.hrga_offboarding_checklists FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text)))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text)))));
+CREATE POLICY hrga_offboarding_checklists_update ON public.hrga_offboarding_checklists FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional()))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional()))));
 
 
 --
--- Name: hrga_offboarding_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_offboarding_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_offboarding_items hrga_offboarding_items_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items hrga_offboarding_items_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_offboarding_items_delete ON public.hrga_offboarding_items FOR DELETE TO authenticated USING (((EXISTS ( SELECT 1
@@ -17814,7 +17593,7 @@ CREATE POLICY hrga_offboarding_items_delete ON public.hrga_offboarding_items FOR
 
 
 --
--- Name: hrga_offboarding_items hrga_offboarding_items_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items hrga_offboarding_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_offboarding_items_insert ON public.hrga_offboarding_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
@@ -17823,7 +17602,7 @@ CREATE POLICY hrga_offboarding_items_insert ON public.hrga_offboarding_items FOR
 
 
 --
--- Name: hrga_offboarding_items hrga_offboarding_items_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items hrga_offboarding_items_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_offboarding_items_read ON public.hrga_offboarding_items FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
@@ -17832,24 +17611,24 @@ CREATE POLICY hrga_offboarding_items_read ON public.hrga_offboarding_items FOR S
 
 
 --
--- Name: hrga_offboarding_items hrga_offboarding_items_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_offboarding_items hrga_offboarding_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_offboarding_items_update ON public.hrga_offboarding_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public.hrga_requests r
-  WHERE ((r.id = hrga_offboarding_items.request_id) AND (r.deleted_at IS NULL) AND (r.company_id = public.get_user_company_id()) AND (public.is_super_admin() OR public.is_admin_or_above() OR public.has_role('hrga'::text) OR public.has_role('it'::text) OR public.has_role('finance'::text)))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((r.id = hrga_offboarding_items.request_id) AND (r.deleted_at IS NULL) AND (r.company_id = public.get_user_company_id()) AND (public.is_super_admin() OR public.is_admin_or_above() OR public.is_hcga_functional() OR public.has_role('it'::text) OR public.has_role('finance'::text)))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.hrga_requests r
   WHERE ((r.id = hrga_offboarding_items.request_id) AND (r.company_id = public.get_user_company_id())))));
 
 
 --
--- Name: hrga_request_approvals; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_request_approvals; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_request_approvals ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_request_approvals hrga_request_approvals_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_approvals hrga_request_approvals_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_approvals_insert ON public.hrga_request_approvals FOR INSERT TO authenticated WITH CHECK (((approver_id = auth.uid()) AND (EXISTS ( SELECT 1
@@ -17858,7 +17637,7 @@ CREATE POLICY hrga_request_approvals_insert ON public.hrga_request_approvals FOR
 
 
 --
--- Name: hrga_request_approvals hrga_request_approvals_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_approvals hrga_request_approvals_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_approvals_read ON public.hrga_request_approvals FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
@@ -17867,13 +17646,13 @@ CREATE POLICY hrga_request_approvals_read ON public.hrga_request_approvals FOR S
 
 
 --
--- Name: hrga_request_attachments; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_request_attachments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_request_attachments ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_request_attachments hrga_request_attachments_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_attachments hrga_request_attachments_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_attachments_insert ON public.hrga_request_attachments FOR INSERT TO authenticated WITH CHECK (((uploaded_by = auth.uid()) AND (EXISTS ( SELECT 1
@@ -17882,7 +17661,7 @@ CREATE POLICY hrga_request_attachments_insert ON public.hrga_request_attachments
 
 
 --
--- Name: hrga_request_attachments hrga_request_attachments_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_attachments hrga_request_attachments_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_attachments_read ON public.hrga_request_attachments FOR SELECT TO authenticated USING (((deleted_at IS NULL) AND (EXISTS ( SELECT 1
@@ -17891,24 +17670,24 @@ CREATE POLICY hrga_request_attachments_read ON public.hrga_request_attachments F
 
 
 --
--- Name: hrga_request_attachments hrga_request_attachments_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_attachments hrga_request_attachments_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_attachments_update ON public.hrga_request_attachments FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (EXISTS ( SELECT 1
    FROM public.hrga_requests r
-  WHERE ((r.id = hrga_request_attachments.request_id) AND (r.company_id = public.get_user_company_id())))) AND (public.is_super_admin() OR public.is_admin_or_above() OR public.has_role('hrga'::text) OR (uploaded_by = auth.uid())))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((r.id = hrga_request_attachments.request_id) AND (r.company_id = public.get_user_company_id())))) AND (public.is_super_admin() OR public.is_admin_or_above() OR public.is_hcga_functional() OR (uploaded_by = auth.uid())))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.hrga_requests r
   WHERE ((r.id = hrga_request_attachments.request_id) AND (r.company_id = public.get_user_company_id())))));
 
 
 --
--- Name: hrga_request_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_request_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_request_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_request_items hrga_request_items_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_items hrga_request_items_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_items_delete ON public.hrga_request_items FOR DELETE TO authenticated USING (((EXISTS ( SELECT 1
@@ -17917,7 +17696,7 @@ CREATE POLICY hrga_request_items_delete ON public.hrga_request_items FOR DELETE 
 
 
 --
--- Name: hrga_request_items hrga_request_items_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_items hrga_request_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_items_insert ON public.hrga_request_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
@@ -17926,14 +17705,14 @@ CREATE POLICY hrga_request_items_insert ON public.hrga_request_items FOR INSERT 
 
 
 --
--- Name: POLICY hrga_request_items_insert ON hrga_request_items; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: POLICY hrga_request_items_insert ON hrga_request_items; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON POLICY hrga_request_items_insert ON public.hrga_request_items IS 'Requester can insert line items while parent request is draft or submitted. Items are created atomically with the header in submitHrgaRequest(). Status guard prevents adding items to requests already under_review or approved.';
 
 
 --
--- Name: hrga_request_items hrga_request_items_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_items hrga_request_items_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_items_read ON public.hrga_request_items FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
@@ -17942,7 +17721,7 @@ CREATE POLICY hrga_request_items_read ON public.hrga_request_items FOR SELECT TO
 
 
 --
--- Name: hrga_request_items hrga_request_items_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_items hrga_request_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_items_update ON public.hrga_request_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
@@ -17953,103 +17732,103 @@ CREATE POLICY hrga_request_items_update ON public.hrga_request_items FOR UPDATE 
 
 
 --
--- Name: hrga_request_types; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_request_types; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_request_types ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_request_types hrga_request_types_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_types hrga_request_types_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_request_types_insert ON public.hrga_request_types FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text)))));
+CREATE POLICY hrga_request_types_insert ON public.hrga_request_types FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional()))));
 
 
 --
--- Name: hrga_request_types hrga_request_types_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_types hrga_request_types_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_request_types_read ON public.hrga_request_types FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
 
 
 --
--- Name: hrga_request_types hrga_request_types_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_request_types hrga_request_types_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_request_types_update ON public.hrga_request_types FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('hrga'::text)))));
+CREATE POLICY hrga_request_types_update ON public.hrga_request_types FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional())))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_hcga_functional()))));
 
 
 --
--- Name: hrga_requests; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: hrga_requests; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.hrga_requests ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: hrga_requests hrga_requests_cancel_own; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_cancel_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_requests_cancel_own ON public.hrga_requests FOR UPDATE TO authenticated USING (((requester_id = auth.uid()) AND ((status)::text = 'submitted'::text))) WITH CHECK (((requester_id = auth.uid()) AND ((status)::text = 'cancelled'::text)));
 
 
 --
--- Name: hrga_requests hrga_requests_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_requests_insert ON public.hrga_requests FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (requester_id = auth.uid())));
 
 
 --
--- Name: hrga_requests hrga_requests_read_own; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_read_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY hrga_requests_read_own ON public.hrga_requests FOR SELECT TO authenticated USING (((requester_id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_manager_or_above() OR public.has_role('hrga'::text) OR public.has_role('it'::text) OR public.has_role('finance'::text))) OR public.is_super_admin()));
+CREATE POLICY hrga_requests_read_own ON public.hrga_requests FOR SELECT TO authenticated USING (((requester_id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.is_manager_or_above() OR public.is_hcga_functional() OR public.has_role('it'::text) OR public.has_role('finance'::text))) OR public.is_super_admin()));
 
 
 --
--- Name: hrga_requests hrga_requests_update_draft; Type: POLICY; Schema: public; Owner: postgres
+-- Name: hrga_requests hrga_requests_update_draft; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY hrga_requests_update_draft ON public.hrga_requests FOR UPDATE TO authenticated USING (((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND (requester_id = auth.uid()) AND ((status)::text = ANY ((ARRAY['draft'::character varying, 'revision_requested'::character varying])::text[])))) WITH CHECK (((company_id = public.get_user_company_id()) AND (requester_id = auth.uid())));
 
 
 --
--- Name: inquiries; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: inquiries; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.inquiries ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: inquiries inquiries_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY inquiries_insert ON public.inquiries FOR INSERT WITH CHECK ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)));
 
 
 --
--- Name: inquiries inquiries_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (created_by = auth.uid()) OR (public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
+CREATE POLICY inquiries_read ON public.inquiries FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (owner_id = auth.uid()) OR (public.is_procurement_functional() AND (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.inquiry_id = inquiries.id) AND (p.company_id = inquiries.company_id) AND (p.deleted_at IS NULL)))))))));
 
 
 --
--- Name: inquiries inquiries_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiries inquiries_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY inquiries_update ON public.inquiries FOR UPDATE USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (created_by = auth.uid()))) OR public.is_super_admin()));
+CREATE POLICY inquiries_update ON public.inquiries FOR UPDATE USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (owner_id = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (owner_id = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: inquiry_comment_mentions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: inquiry_comment_mentions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.inquiry_comment_mentions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: inquiry_comment_mentions inquiry_comment_mentions_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY inquiry_comment_mentions_insert ON public.inquiry_comment_mentions FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
@@ -18058,7 +17837,7 @@ CREATE POLICY inquiry_comment_mentions_insert ON public.inquiry_comment_mentions
 
 
 --
--- Name: inquiry_comment_mentions inquiry_comment_mentions_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiry_comment_mentions inquiry_comment_mentions_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY inquiry_comment_mentions_read ON public.inquiry_comment_mentions FOR SELECT USING ((EXISTS ( SELECT 1
@@ -18068,13 +17847,13 @@ CREATE POLICY inquiry_comment_mentions_read ON public.inquiry_comment_mentions F
 
 
 --
--- Name: inquiry_comments; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: inquiry_comments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.inquiry_comments ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: inquiry_comments inquiry_comments_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiry_comments inquiry_comments_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY inquiry_comments_insert ON public.inquiry_comments FOR INSERT WITH CHECK (((created_by = auth.uid()) AND (EXISTS ( SELECT 1
@@ -18083,7 +17862,7 @@ CREATE POLICY inquiry_comments_insert ON public.inquiry_comments FOR INSERT WITH
 
 
 --
--- Name: inquiry_comments inquiry_comments_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiry_comments inquiry_comments_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY inquiry_comments_read ON public.inquiry_comments FOR SELECT USING ((EXISTS ( SELECT 1
@@ -18092,20 +17871,20 @@ CREATE POLICY inquiry_comments_read ON public.inquiry_comments FOR SELECT USING 
 
 
 --
--- Name: inquiry_comments inquiry_comments_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiry_comments inquiry_comments_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY inquiry_comments_update ON public.inquiry_comments FOR UPDATE USING ((created_by = auth.uid())) WITH CHECK ((created_by = auth.uid()));
 
 
 --
--- Name: inquiry_status_history; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: inquiry_status_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.inquiry_status_history ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: inquiry_status_history inquiry_status_history_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: inquiry_status_history inquiry_status_history_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY inquiry_status_history_read ON public.inquiry_status_history FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
@@ -18114,26 +17893,26 @@ CREATE POLICY inquiry_status_history_read ON public.inquiry_status_history FOR S
 
 
 --
--- Name: journal_entries; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: journal_entries; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.journal_entries ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: journal_entries journal_entries_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: journal_entries journal_entries_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY journal_entries_read ON public.journal_entries FOR SELECT TO authenticated USING ((public.is_super_admin() OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: journal_entry_lines; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: journal_entry_lines; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.journal_entry_lines ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: journal_entry_lines journal_entry_lines_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: journal_entry_lines journal_entry_lines_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY journal_entry_lines_read ON public.journal_entry_lines FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -18142,154 +17921,154 @@ CREATE POLICY journal_entry_lines_read ON public.journal_entry_lines FOR SELECT 
 
 
 --
--- Name: loss_reasons; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: loss_reasons; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.loss_reasons ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: loss_reasons loss_reasons_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: loss_reasons loss_reasons_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY loss_reasons_delete ON public.loss_reasons FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: loss_reasons loss_reasons_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: loss_reasons loss_reasons_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY loss_reasons_insert ON public.loss_reasons FOR INSERT TO authenticated WITH CHECK (public.is_admin_or_above());
 
 
 --
--- Name: loss_reasons loss_reasons_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: loss_reasons loss_reasons_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY loss_reasons_read ON public.loss_reasons FOR SELECT TO authenticated USING (((deleted_at IS NULL) OR public.is_super_admin()));
 
 
 --
--- Name: loss_reasons loss_reasons_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: loss_reasons loss_reasons_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY loss_reasons_update ON public.loss_reasons FOR UPDATE TO authenticated USING (public.is_admin_or_above()) WITH CHECK (public.is_admin_or_above());
 
 
 --
--- Name: asset_maintenance_records maintenance_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records maintenance_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY maintenance_insert ON public.asset_maintenance_records FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: asset_maintenance_records maintenance_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records maintenance_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY maintenance_select ON public.asset_maintenance_records FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: asset_maintenance_records maintenance_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_maintenance_records maintenance_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY maintenance_update ON public.asset_maintenance_records FOR UPDATE USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: meeting_moms; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: meeting_moms; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.meeting_moms ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: menu_actions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: menu_actions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.menu_actions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: menu_actions menu_actions_admin_only; Type: POLICY; Schema: public; Owner: postgres
+-- Name: menu_actions menu_actions_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY menu_actions_admin_only ON public.menu_actions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: menu_actions menu_actions_read_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: menu_actions menu_actions_read_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY menu_actions_read_all ON public.menu_actions FOR SELECT USING (true);
 
 
 --
--- Name: module_actions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: module_actions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.module_actions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: module_actions module_actions_admin_only; Type: POLICY; Schema: public; Owner: postgres
+-- Name: module_actions module_actions_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY module_actions_admin_only ON public.module_actions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: module_actions module_actions_read_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: module_actions module_actions_read_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY module_actions_read_all ON public.module_actions FOR SELECT USING (true);
 
 
 --
--- Name: module_menus; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: module_menus; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.module_menus ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: module_menus module_menus_admin_only; Type: POLICY; Schema: public; Owner: postgres
+-- Name: module_menus module_menus_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY module_menus_admin_only ON public.module_menus TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: module_menus module_menus_read_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: module_menus module_menus_read_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY module_menus_read_all ON public.module_menus FOR SELECT USING (true);
 
 
 --
--- Name: modules; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: modules; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.modules ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: modules modules_admin_only; Type: POLICY; Schema: public; Owner: postgres
+-- Name: modules modules_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY modules_admin_only ON public.modules TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: modules modules_read_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: modules modules_read_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY modules_read_all ON public.modules FOR SELECT USING (true);
 
 
 --
--- Name: mom_action_plans; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: mom_action_plans; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.mom_action_plans ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: mom_action_plans mom_children_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_action_plans mom_children_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_children_delete ON public.mom_action_plans FOR DELETE USING ((EXISTS ( SELECT 1
@@ -18298,7 +18077,7 @@ CREATE POLICY mom_children_delete ON public.mom_action_plans FOR DELETE USING ((
 
 
 --
--- Name: mom_action_plans mom_children_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_action_plans mom_children_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_children_insert ON public.mom_action_plans FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
@@ -18307,7 +18086,7 @@ CREATE POLICY mom_children_insert ON public.mom_action_plans FOR INSERT WITH CHE
 
 
 --
--- Name: mom_action_plans mom_children_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_action_plans mom_children_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_children_read ON public.mom_action_plans FOR SELECT USING ((EXISTS ( SELECT 1
@@ -18316,7 +18095,7 @@ CREATE POLICY mom_children_read ON public.mom_action_plans FOR SELECT USING ((EX
 
 
 --
--- Name: mom_action_plans mom_children_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_action_plans mom_children_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_children_update ON public.mom_action_plans FOR UPDATE USING ((EXISTS ( SELECT 1
@@ -18325,13 +18104,13 @@ CREATE POLICY mom_children_update ON public.mom_action_plans FOR UPDATE USING ((
 
 
 --
--- Name: mom_improvements; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: mom_improvements; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.mom_improvements ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: mom_improvements mom_improvements_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_improvements mom_improvements_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_improvements_delete ON public.mom_improvements FOR DELETE USING ((EXISTS ( SELECT 1
@@ -18340,7 +18119,7 @@ CREATE POLICY mom_improvements_delete ON public.mom_improvements FOR DELETE USIN
 
 
 --
--- Name: mom_improvements mom_improvements_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_improvements mom_improvements_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_improvements_insert ON public.mom_improvements FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
@@ -18349,7 +18128,7 @@ CREATE POLICY mom_improvements_insert ON public.mom_improvements FOR INSERT WITH
 
 
 --
--- Name: mom_improvements mom_improvements_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_improvements mom_improvements_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_improvements_read ON public.mom_improvements FOR SELECT USING ((EXISTS ( SELECT 1
@@ -18358,7 +18137,7 @@ CREATE POLICY mom_improvements_read ON public.mom_improvements FOR SELECT USING 
 
 
 --
--- Name: mom_improvements mom_improvements_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_improvements mom_improvements_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_improvements_update ON public.mom_improvements FOR UPDATE USING ((EXISTS ( SELECT 1
@@ -18367,13 +18146,13 @@ CREATE POLICY mom_improvements_update ON public.mom_improvements FOR UPDATE USIN
 
 
 --
--- Name: mom_issues; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: mom_issues; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.mom_issues ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: mom_issues mom_issues_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_issues mom_issues_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_issues_delete ON public.mom_issues FOR DELETE USING ((EXISTS ( SELECT 1
@@ -18382,7 +18161,7 @@ CREATE POLICY mom_issues_delete ON public.mom_issues FOR DELETE USING ((EXISTS (
 
 
 --
--- Name: mom_issues mom_issues_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_issues mom_issues_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_issues_insert ON public.mom_issues FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
@@ -18391,7 +18170,7 @@ CREATE POLICY mom_issues_insert ON public.mom_issues FOR INSERT WITH CHECK ((EXI
 
 
 --
--- Name: mom_issues mom_issues_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_issues mom_issues_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_issues_read ON public.mom_issues FOR SELECT USING ((EXISTS ( SELECT 1
@@ -18400,7 +18179,7 @@ CREATE POLICY mom_issues_read ON public.mom_issues FOR SELECT USING ((EXISTS ( S
 
 
 --
--- Name: mom_issues mom_issues_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_issues mom_issues_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_issues_update ON public.mom_issues FOR UPDATE USING ((EXISTS ( SELECT 1
@@ -18409,7 +18188,7 @@ CREATE POLICY mom_issues_update ON public.mom_issues FOR UPDATE USING ((EXISTS (
 
 
 --
--- Name: mom_progress_updates mom_progress_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_progress_updates mom_progress_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_progress_delete ON public.mom_progress_updates FOR DELETE USING ((EXISTS ( SELECT 1
@@ -18418,7 +18197,7 @@ CREATE POLICY mom_progress_delete ON public.mom_progress_updates FOR DELETE USIN
 
 
 --
--- Name: mom_progress_updates mom_progress_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_progress_updates mom_progress_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_progress_insert ON public.mom_progress_updates FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
@@ -18427,7 +18206,7 @@ CREATE POLICY mom_progress_insert ON public.mom_progress_updates FOR INSERT WITH
 
 
 --
--- Name: mom_progress_updates mom_progress_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_progress_updates mom_progress_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_progress_read ON public.mom_progress_updates FOR SELECT USING ((EXISTS ( SELECT 1
@@ -18436,7 +18215,7 @@ CREATE POLICY mom_progress_read ON public.mom_progress_updates FOR SELECT USING 
 
 
 --
--- Name: mom_progress_updates mom_progress_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: mom_progress_updates mom_progress_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY mom_progress_update ON public.mom_progress_updates FOR UPDATE USING ((EXISTS ( SELECT 1
@@ -18445,547 +18224,547 @@ CREATE POLICY mom_progress_update ON public.mom_progress_updates FOR UPDATE USIN
 
 
 --
--- Name: mom_progress_updates; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: mom_progress_updates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.mom_progress_updates ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: meeting_moms moms_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: meeting_moms moms_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY moms_delete ON public.meeting_moms FOR DELETE USING (public.is_super_admin());
 
 
 --
--- Name: meeting_moms moms_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: meeting_moms moms_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY moms_insert ON public.meeting_moms FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: meeting_moms moms_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: meeting_moms moms_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY moms_read ON public.meeting_moms FOR SELECT USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: meeting_moms moms_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: meeting_moms moms_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY moms_update ON public.meeting_moms FOR UPDATE USING (((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))));
 
 
 --
--- Name: asset_network network_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_network network_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY network_insert ON public.asset_network FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: asset_network network_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_network network_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY network_select ON public.asset_network FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: asset_network network_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_network network_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY network_update ON public.asset_network FOR UPDATE USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: notification_rules; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: notification_rules; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.notification_rules ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: notification_rules notification_rules_access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: notification_rules notification_rules_access; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY notification_rules_access ON public.notification_rules TO authenticated USING ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK ((((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: notifications notifications_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: notifications notifications_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY notifications_delete ON public.notifications FOR DELETE TO authenticated USING ((user_id = auth.uid()));
 
 
 --
--- Name: notifications notifications_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: notifications notifications_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY notifications_insert ON public.notifications FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: notifications notifications_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: notifications notifications_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY notifications_read ON public.notifications FOR SELECT TO authenticated USING ((user_id = auth.uid()));
 
 
 --
--- Name: notifications notifications_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: notifications notifications_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY notifications_update ON public.notifications FOR UPDATE TO authenticated USING ((user_id = auth.uid()));
 
 
 --
--- Name: payment_terms; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: payment_terms; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.payment_terms ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: payment_terms payment_terms_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: payment_terms payment_terms_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY payment_terms_insert ON public.payment_terms FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('finance_controller'::text))));
 
 
 --
--- Name: payment_terms payment_terms_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: payment_terms payment_terms_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY payment_terms_read ON public.payment_terms FOR SELECT TO authenticated USING ((((company_id = public.get_user_company_id()) AND (deleted_at IS NULL)) OR public.is_super_admin()));
 
 
 --
--- Name: payment_terms payment_terms_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: payment_terms payment_terms_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY payment_terms_update ON public.payment_terms FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin()))) WITH CHECK (((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('finance_controller'::text))));
 
 
 --
--- Name: permissions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: permissions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.permissions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: permissions permissions_read_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: permissions permissions_read_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY permissions_read_all ON public.permissions FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: permissions permissions_super_admin_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: permissions permissions_super_admin_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY permissions_super_admin_write ON public.permissions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: picking_list_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: picking_list_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.picking_list_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: picking_list_materials; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: picking_list_materials; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.picking_list_materials ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: picking_lists; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: picking_lists; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.picking_lists ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: picking_lists picking_lists_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY picking_lists_delete ON public.picking_lists FOR DELETE TO authenticated USING (true);
 
 
 --
--- Name: picking_lists picking_lists_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY picking_lists_insert ON public.picking_lists FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: picking_lists picking_lists_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY picking_lists_read ON public.picking_lists FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: picking_lists picking_lists_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_lists picking_lists_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY picking_lists_update ON public.picking_lists FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
--- Name: picking_list_items pli_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_list_items pli_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pli_delete ON public.picking_list_items FOR DELETE TO authenticated USING (true);
 
 
 --
--- Name: picking_list_items pli_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_list_items pli_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pli_insert ON public.picking_list_items FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: picking_list_items pli_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_list_items pli_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pli_read ON public.picking_list_items FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: picking_list_items pli_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_list_items pli_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pli_update ON public.picking_list_items FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
--- Name: picking_list_materials plm_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_list_materials plm_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY plm_delete ON public.picking_list_materials FOR DELETE TO authenticated USING (true);
 
 
 --
--- Name: picking_list_materials plm_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_list_materials plm_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY plm_insert ON public.picking_list_materials FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: picking_list_materials plm_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_list_materials plm_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY plm_read ON public.picking_list_materials FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: picking_list_materials plm_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: picking_list_materials plm_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY plm_update ON public.picking_list_materials FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
--- Name: positions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: positions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.positions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: positions positions_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: positions positions_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY positions_insert ON public.positions FOR INSERT WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: positions positions_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: positions positions_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY positions_read ON public.positions FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (deleted_at IS NULL))));
 
 
 --
--- Name: positions positions_select_global; Type: POLICY; Schema: public; Owner: postgres
+-- Name: positions positions_select_global; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY positions_select_global ON public.positions FOR SELECT TO authenticated USING (((company_id IS NULL) AND (deleted_at IS NULL)));
 
 
 --
--- Name: positions positions_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: positions positions_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY positions_update ON public.positions FOR UPDATE USING ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id())))) WITH CHECK ((public.is_super_admin() OR (public.is_admin_or_above() AND (company_id = public.get_user_company_id()))));
 
 
 --
--- Name: product_price_history pph_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: product_price_history pph_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pph_read ON public.product_price_history FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: prf; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: prf; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.prf ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: prf_cost_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: prf_cost_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.prf_cost_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: prf_cost_items prf_cost_items_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY prf_cost_items_delete ON public.prf_cost_items FOR DELETE USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional() AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
--- Name: prf_cost_items prf_cost_items_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY prf_cost_items_insert ON public.prf_cost_items FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional() AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
--- Name: prf_cost_items prf_cost_items_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY prf_cost_items_select ON public.prf_cost_items FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND ((p.created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above())))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND ((p.created_by = auth.uid()) OR public.is_procurement_functional() OR public.is_manager_or_above())))))));
 
 
 --
--- Name: prf_cost_items prf_cost_items_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf_cost_items prf_cost_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY prf_cost_items_update ON public.prf_cost_items FOR UPDATE USING ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid())))))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional() AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid())))))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
+  WHERE ((p.id = prf_cost_items.prf_id) AND (public.is_super_admin() OR ((p.deleted_at IS NULL) AND (p.company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional() AND ((p.status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((p.acknowledged_by IS NULL) OR (p.acknowledged_by = auth.uid()))))))));
 
 
 --
--- Name: prf prf_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf prf_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_insert ON public.prf FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (created_by = auth.uid()) AND (public.has_role('sales'::text) OR public.has_role('gm_bd'::text)))));
-
-
---
--- Name: prf prf_select; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY prf_select ON public.prf FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND ((created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above()))));
+CREATE POLICY prf_insert ON public.prf FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (created_by = auth.uid()) AND (public.is_sales_functional() OR public.has_role('gm_bd'::text)))));
 
 
 --
--- Name: prf prf_update_draft; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf prf_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY prf_select ON public.prf FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND ((created_by = auth.uid()) OR public.is_procurement_functional() OR public.is_manager_or_above()))));
+
+
+--
+-- Name: prf prf_update_draft; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY prf_update_draft ON public.prf FOR UPDATE USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (created_by = auth.uid()) AND ((status)::text = 'DRAFT'::text)))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (created_by = auth.uid()))));
 
 
 --
--- Name: prf prf_update_status; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf prf_update_status; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_update_status ON public.prf FOR UPDATE USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND ((status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((acknowledged_by IS NULL) OR (acknowledged_by = auth.uid()))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text))));
+CREATE POLICY prf_update_status ON public.prf FOR UPDATE USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional() AND ((status)::text = ANY (ARRAY['SUBMITTED'::text, 'ACKNOWLEDGED'::text, 'QUOTED'::text])) AND ((acknowledged_by IS NULL) OR (acknowledged_by = auth.uid()))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional())));
 
 
 --
--- Name: prf_vendor_offers; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.prf_vendor_offers ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: prf_vendor_offers prf_vendor_offers_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers prf_vendor_offers_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY prf_vendor_offers_delete ON public.prf_vendor_offers FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: prf_vendor_offers prf_vendor_offers_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers prf_vendor_offers_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_vendor_offers_insert ON public.prf_vendor_offers FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND (created_by = auth.uid()) AND (EXISTS ( SELECT 1
+CREATE POLICY prf_vendor_offers_insert ON public.prf_vendor_offers FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional() AND (created_by = auth.uid()) AND (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid())))))));
 
 
 --
--- Name: prf_vendor_offers prf_vendor_offers_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers prf_vendor_offers_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_vendor_offers_select ON public.prf_vendor_offers FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.has_role('procurement'::text) OR public.is_manager_or_above() OR (EXISTS ( SELECT 1
+CREATE POLICY prf_vendor_offers_select ON public.prf_vendor_offers FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_procurement_functional() OR public.is_manager_or_above() OR (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.created_by = auth.uid()))))))));
 
 
 --
--- Name: prf_vendor_offers prf_vendor_offers_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: prf_vendor_offers prf_vendor_offers_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prf_vendor_offers_update ON public.prf_vendor_offers FOR UPDATE USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
+CREATE POLICY prf_vendor_offers_update ON public.prf_vendor_offers FOR UPDATE USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional() AND (EXISTS ( SELECT 1
    FROM public.prf p
-  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid()))))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.has_role('procurement'::text) AND (EXISTS ( SELECT 1
+  WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid()))))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_procurement_functional() AND (EXISTS ( SELECT 1
    FROM public.prf p
   WHERE ((p.id = prf_vendor_offers.prf_id) AND (p.acknowledged_by = auth.uid())))))));
 
 
 --
--- Name: product_price_history; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: product_price_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.product_price_history ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: product_warehouse_location; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: product_warehouse_location; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.product_warehouse_location ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: products; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: products; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: products products_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: products products_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY products_insert ON public.products FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND public.is_admin_or_above()));
 
 
 --
--- Name: products products_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: products products_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY products_read ON public.products FOR SELECT USING ((public.is_super_admin() OR (((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))) AND ((deleted_at IS NULL) OR public.is_super_admin()))));
 
 
 --
--- Name: products products_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: products products_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY products_update ON public.products FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin())))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above())));
 
 
 --
--- Name: profiles; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: profiles; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: profiles profiles_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: profiles profiles_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY profiles_read ON public.profiles FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: profiles profiles_read_own; Type: POLICY; Schema: public; Owner: postgres
+-- Name: profiles profiles_read_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY profiles_read_own ON public.profiles FOR SELECT USING ((auth.uid() = id));
 
 
 --
--- Name: profiles profiles_service_role_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: profiles profiles_service_role_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY profiles_service_role_read ON public.profiles FOR SELECT USING ((auth.role() = 'service_role'::text));
 
 
 --
--- Name: profiles profiles_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: profiles profiles_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY profiles_update ON public.profiles FOR UPDATE TO authenticated USING (((id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin())) WITH CHECK (((id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: accounts prospects_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: accounts prospects_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY prospects_insert ON public.accounts FOR INSERT WITH CHECK ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)));
 
 
 --
--- Name: accounts prospects_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: accounts prospects_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()) OR (public.has_role('operations'::text) AND ((account_status)::text = 'customer'::text)) OR ((public.has_role('finance'::text) OR public.has_role('finance_controller'::text)) AND ((account_status)::text = 'customer'::text)) OR public.has_role('procurement'::text)))));
+CREATE POLICY prospects_read ON public.accounts FOR SELECT USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()) OR (public.has_role('operations'::text) AND ((account_status)::text = 'customer'::text)) OR ((public.has_role('finance'::text) OR public.has_role('finance_controller'::text)) AND ((account_status)::text = 'customer'::text)) OR public.is_procurement_functional()))));
 
 
 --
--- Name: accounts prospects_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: accounts prospects_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY prospects_update ON public.accounts FOR UPDATE USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (assigned_to = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: product_warehouse_location pwl_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: product_warehouse_location pwl_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pwl_delete ON public.product_warehouse_location FOR DELETE TO authenticated USING (true);
 
 
 --
--- Name: product_warehouse_location pwl_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: product_warehouse_location pwl_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pwl_insert ON public.product_warehouse_location FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: product_warehouse_location pwl_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: product_warehouse_location pwl_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pwl_read ON public.product_warehouse_location FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: product_warehouse_location pwl_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: product_warehouse_location pwl_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY pwl_update ON public.product_warehouse_location FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
--- Name: quotation_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: quotation_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.quotation_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: quotation_items quotation_items_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: quotation_items quotation_items_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY quotation_items_delete ON public.quotation_items FOR DELETE USING ((EXISTS ( SELECT 1
@@ -18994,7 +18773,7 @@ CREATE POLICY quotation_items_delete ON public.quotation_items FOR DELETE USING 
 
 
 --
--- Name: quotation_items quotation_items_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: quotation_items quotation_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY quotation_items_insert ON public.quotation_items FOR INSERT TO authenticated WITH CHECK ((EXISTS ( SELECT 1
@@ -19003,7 +18782,7 @@ CREATE POLICY quotation_items_insert ON public.quotation_items FOR INSERT TO aut
 
 
 --
--- Name: quotation_items quotation_items_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: quotation_items quotation_items_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY quotation_items_read ON public.quotation_items FOR SELECT USING ((EXISTS ( SELECT 1
@@ -19012,7 +18791,7 @@ CREATE POLICY quotation_items_read ON public.quotation_items FOR SELECT USING ((
 
 
 --
--- Name: quotation_items quotation_items_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: quotation_items quotation_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY quotation_items_update ON public.quotation_items FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
@@ -19023,75 +18802,75 @@ CREATE POLICY quotation_items_update ON public.quotation_items FOR UPDATE TO aut
 
 
 --
--- Name: quotations; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: quotations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.quotations ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: quotations quotations_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: quotations quotations_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY quotations_insert ON public.quotations FOR INSERT TO authenticated WITH CHECK (((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin()));
 
 
 --
--- Name: quotations quotations_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: quotations quotations_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY quotations_read ON public.quotations FOR SELECT USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above_in(company_id) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: quotations quotations_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: quotations quotations_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY quotations_update ON public.quotations FOR UPDATE USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above_in(company_id) OR (created_by = auth.uid()))) OR public.is_super_admin())) WITH CHECK ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above_in(company_id) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: rate_sheets; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: rate_sheets; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.rate_sheets ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: rate_sheets rate_sheets_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: rate_sheets rate_sheets_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY rate_sheets_delete ON public.rate_sheets FOR DELETE TO authenticated USING (((created_by = auth.uid()) OR public.is_manager_or_above()));
 
 
 --
--- Name: rate_sheets rate_sheets_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: rate_sheets rate_sheets_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY rate_sheets_insert ON public.rate_sheets FOR INSERT TO authenticated WITH CHECK ((created_by = auth.uid()));
 
 
 --
--- Name: rate_sheets rate_sheets_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: rate_sheets rate_sheets_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY rate_sheets_select ON public.rate_sheets FOR SELECT TO authenticated USING (((created_by = auth.uid()) OR public.is_manager_or_above()));
 
 
 --
--- Name: rate_sheets rate_sheets_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: rate_sheets rate_sheets_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY rate_sheets_update ON public.rate_sheets FOR UPDATE TO authenticated USING ((((created_by = auth.uid()) OR public.is_manager_or_above()) AND ((valid_until IS NULL) OR (valid_until >= CURRENT_DATE)))) WITH CHECK ((((created_by = auth.uid()) OR public.is_manager_or_above()) AND ((valid_until IS NULL) OR (valid_until >= CURRENT_DATE))));
 
 
 --
--- Name: role_menu_permissions rmp_admin_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: role_menu_permissions rmp_admin_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY rmp_admin_all ON public.role_menu_permissions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: role_menu_permissions rmp_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: role_menu_permissions rmp_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY rmp_select ON public.role_menu_permissions FOR SELECT USING ((EXISTS ( SELECT 1
@@ -19100,25 +18879,25 @@ CREATE POLICY rmp_select ON public.role_menu_permissions FOR SELECT USING ((EXIS
 
 
 --
--- Name: role_menu_permissions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: role_menu_permissions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.role_menu_permissions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: role_permission_templates; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: role_permission_templates; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.role_permission_templates ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: role_permissions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: role_permissions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: role_permissions role_permissions_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: role_permissions role_permissions_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY role_permissions_delete ON public.role_permissions FOR DELETE TO authenticated USING (((EXISTS ( SELECT 1
@@ -19127,7 +18906,7 @@ CREATE POLICY role_permissions_delete ON public.role_permissions FOR DELETE TO a
 
 
 --
--- Name: role_permissions role_permissions_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: role_permissions role_permissions_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY role_permissions_insert ON public.role_permissions FOR INSERT TO authenticated WITH CHECK (((EXISTS ( SELECT 1
@@ -19136,7 +18915,7 @@ CREATE POLICY role_permissions_insert ON public.role_permissions FOR INSERT TO a
 
 
 --
--- Name: role_permissions role_permissions_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: role_permissions role_permissions_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY role_permissions_read ON public.role_permissions FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
@@ -19145,326 +18924,326 @@ CREATE POLICY role_permissions_read ON public.role_permissions FOR SELECT TO aut
 
 
 --
--- Name: roles; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: roles; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: roles roles_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: roles roles_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY roles_insert ON public.roles FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above())));
 
 
 --
--- Name: roles roles_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: roles roles_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY roles_read ON public.roles FOR SELECT TO authenticated USING (((((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))) AND (deleted_at IS NULL)) OR public.is_super_admin()));
 
 
 --
--- Name: roles roles_select_global; Type: POLICY; Schema: public; Owner: postgres
+-- Name: roles roles_select_global; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY roles_select_global ON public.roles FOR SELECT TO authenticated USING (((company_id IS NULL) AND (deleted_at IS NULL)));
 
 
 --
--- Name: roles roles_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: roles roles_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY roles_update ON public.roles FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above()))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above())));
 
 
 --
--- Name: role_permission_templates rpt_admin_only; Type: POLICY; Schema: public; Owner: postgres
+-- Name: role_permission_templates rpt_admin_only; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY rpt_admin_only ON public.role_permission_templates TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: role_permission_templates rpt_read_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: role_permission_templates rpt_read_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY rpt_read_all ON public.role_permission_templates FOR SELECT USING (true);
 
 
 --
--- Name: sales_calls; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sales_calls; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sales_calls ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sales_calls sales_calls_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_calls_delete ON public.sales_calls FOR DELETE USING (((company_id = public.get_user_company_id()) AND public.is_manager_or_above()));
 
 
 --
--- Name: sales_calls sales_calls_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_calls_insert ON public.sales_calls FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: sales_calls sales_calls_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_calls_read ON public.sales_calls FOR SELECT USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (salesperson_id = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: sales_calls sales_calls_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_calls sales_calls_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_calls_update ON public.sales_calls FOR UPDATE USING (((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (salesperson_id = auth.uid()) OR (created_by = auth.uid()))));
 
 
 --
--- Name: sales_orders; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sales_orders; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sales_orders ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sales_orders sales_orders_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_orders_delete ON public.sales_orders FOR DELETE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()))));
 
 
 --
--- Name: sales_orders sales_orders_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY sales_orders_insert ON public.sales_orders FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()) AND (public.has_role('sales'::text) OR public.has_role('gm_bd'::text)))));
-
-
---
--- Name: sales_orders sales_orders_select; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY sales_orders_select ON public.sales_orders FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND ((created_by = auth.uid()) OR public.has_role('procurement'::text) OR public.is_manager_or_above()))));
+CREATE POLICY sales_orders_insert ON public.sales_orders FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (created_by = auth.uid()) AND (public.is_sales_functional() OR public.has_role('gm_bd'::text)))));
 
 
 --
--- Name: sales_orders sales_orders_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_orders sales_orders_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY sales_orders_select ON public.sales_orders FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND ((created_by = auth.uid()) OR public.is_procurement_functional() OR public.is_manager_or_above()))));
+
+
+--
+-- Name: sales_orders sales_orders_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_orders_update ON public.sales_orders FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id = public.get_user_company_id()) AND (created_by = auth.uid())))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (created_by = auth.uid()))));
 
 
 --
--- Name: sales_targets; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sales_targets; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sales_targets ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sales_targets sales_targets_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_targets sales_targets_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_targets_insert ON public.sales_targets FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_manager_or_above())));
 
 
 --
--- Name: sales_targets sales_targets_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_targets sales_targets_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_targets_read ON public.sales_targets FOR SELECT TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR (user_id = auth.uid())))));
 
 
 --
--- Name: sales_targets sales_targets_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_targets sales_targets_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_targets_update ON public.sales_targets FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_manager_or_above()))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_manager_or_above())));
 
 
 --
--- Name: sales_visit_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sales_visit_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sales_visit_logs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sales_visits; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sales_visits; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sales_visits ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sales_visits sales_visits_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_visits_delete ON public.sales_visits FOR DELETE USING (((company_id = public.get_user_company_id()) AND public.is_manager_or_above()));
 
 
 --
--- Name: sales_visits sales_visits_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_visits_insert ON public.sales_visits FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: sales_visits sales_visits_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_visits_read ON public.sales_visits FOR SELECT USING ((((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (salesperson_id = auth.uid()) OR (created_by = auth.uid()))) OR public.is_super_admin()));
 
 
 --
--- Name: sales_visits sales_visits_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_visits sales_visits_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sales_visits_update ON public.sales_visits FOR UPDATE USING (((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (salesperson_id = auth.uid()) OR (created_by = auth.uid()))));
 
 
 --
--- Name: sla_policies; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sla_policies; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sla_policies ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sla_policies sla_policies_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sla_policies sla_policies_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sla_policies_delete ON public.sla_policies FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: sla_policies sla_policies_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sla_policies sla_policies_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sla_policies_insert ON public.sla_policies FOR INSERT TO authenticated WITH CHECK (((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_admin_or_above()));
 
 
 --
--- Name: sla_policies sla_policies_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sla_policies sla_policies_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sla_policies_read ON public.sla_policies FOR SELECT TO authenticated USING ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (deleted_at IS NULL)) OR public.is_super_admin()));
 
 
 --
--- Name: sla_policies sla_policies_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sla_policies sla_policies_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sla_policies_update ON public.sla_policies FOR UPDATE TO authenticated USING (((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) OR public.is_super_admin())) WITH CHECK ((((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND public.is_admin_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: asset_software_licenses software_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_software_licenses software_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY software_insert ON public.asset_software_licenses FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: asset_software_licenses software_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_software_licenses software_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY software_select ON public.asset_software_licenses FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: asset_software_licenses software_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_software_licenses software_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY software_update ON public.asset_software_licenses FOR UPDATE USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: sp_btb; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_btb; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_btb ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_btb sp_btb_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_btb_delete ON public.sp_btb FOR DELETE USING (public.is_super_admin());
 
 
 --
--- Name: sp_btb sp_btb_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_btb_insert ON public.sp_btb FOR INSERT WITH CHECK ((public.is_super_admin() OR (((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: sp_btb sp_btb_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_btb_read ON public.sp_btb FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: sp_btb sp_btb_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_btb sp_btb_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_btb_update ON public.sp_btb FOR UPDATE USING ((public.is_super_admin() OR (((company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: sp_btbs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_btbs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_btbs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_btbs sp_btbs_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_btbs sp_btbs_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_btbs_delete ON public.sp_btbs FOR DELETE TO authenticated USING (true);
 
 
 --
--- Name: sp_btbs sp_btbs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_btbs sp_btbs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_btbs_insert ON public.sp_btbs FOR INSERT WITH CHECK ((auth.uid() IS NOT NULL));
 
 
 --
--- Name: sp_btbs sp_btbs_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_btbs sp_btbs_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_btbs_read ON public.sp_btbs FOR SELECT USING (true);
 
 
 --
--- Name: sp_btbs sp_btbs_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_btbs sp_btbs_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_btbs_update ON public.sp_btbs FOR UPDATE USING ((auth.uid() IS NOT NULL));
 
 
 --
--- Name: sp_invoice_lines; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_invoice_lines ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_invoice_lines sp_invoice_lines_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines sp_invoice_lines_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_invoice_lines_delete ON public.sp_invoice_lines FOR DELETE USING (public.is_super_admin());
 
 
 --
--- Name: sp_invoice_lines sp_invoice_lines_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines sp_invoice_lines_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_invoice_lines_insert ON public.sp_invoice_lines FOR INSERT WITH CHECK ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -19473,7 +19252,7 @@ CREATE POLICY sp_invoice_lines_insert ON public.sp_invoice_lines FOR INSERT WITH
 
 
 --
--- Name: sp_invoice_lines sp_invoice_lines_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines sp_invoice_lines_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_invoice_lines_read ON public.sp_invoice_lines FOR SELECT USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -19482,7 +19261,7 @@ CREATE POLICY sp_invoice_lines_read ON public.sp_invoice_lines FOR SELECT USING 
 
 
 --
--- Name: sp_invoice_lines sp_invoice_lines_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_invoice_lines sp_invoice_lines_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_invoice_lines_update ON public.sp_invoice_lines FOR UPDATE USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -19491,162 +19270,162 @@ CREATE POLICY sp_invoice_lines_update ON public.sp_invoice_lines FOR UPDATE USIN
 
 
 --
--- Name: sp_invoices; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_invoices; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_invoices ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_invoices sp_invoices_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_invoices sp_invoices_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_invoices_delete ON public.sp_invoices FOR DELETE USING (public.is_super_admin());
 
 
 --
--- Name: sp_invoices sp_invoices_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_invoices sp_invoices_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_invoices_insert ON public.sp_invoices FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))));
 
 
 --
--- Name: sp_invoices sp_invoices_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_invoices sp_invoices_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_invoices_read ON public.sp_invoices FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: sp_invoices sp_invoices_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_invoices sp_invoices_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_invoices_update ON public.sp_invoices FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('finance_controller'::text)))));
 
 
 --
--- Name: sp_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_items sp_items_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_items_delete ON public.sp_items FOR DELETE TO authenticated USING ((public.is_super_admin() OR public.is_sp_item_writer()));
 
 
 --
--- Name: sp_items sp_items_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_items_insert ON public.sp_items FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
--- Name: sp_items sp_items_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_items_read ON public.sp_items FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: sp_items sp_items_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_items sp_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_items_update ON public.sp_items FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
--- Name: sp_manifest_staging_20260810; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_manifest_staging_20260810; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_manifest_staging_20260810 ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_order_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_order_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_order_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_order_items sp_order_items_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_order_items sp_order_items_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_order_items_delete ON public.sp_order_items FOR DELETE USING (public.is_super_admin());
 
 
 --
--- Name: sp_order_items sp_order_items_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_order_items sp_order_items_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_order_items_insert ON public.sp_order_items FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: sp_order_items sp_order_items_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_order_items sp_order_items_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_order_items_read ON public.sp_order_items FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: sp_order_items sp_order_items_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_order_items sp_order_items_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_order_items_update ON public.sp_order_items FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: sp_orders; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_orders; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_orders ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_orders sp_orders_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_orders_delete ON public.sp_orders FOR DELETE USING (public.is_super_admin());
 
 
 --
--- Name: sp_orders sp_orders_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_orders_insert ON public.sp_orders FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: sp_orders sp_orders_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_orders_read ON public.sp_orders FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id()) OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: sp_orders sp_orders_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_orders sp_orders_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_orders_update ON public.sp_orders FOR UPDATE USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR public.has_role('operations'::text)))));
 
 
 --
--- Name: sp_payments; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: sp_payments; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.sp_payments ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: sp_payments sp_payments_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_payments sp_payments_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_payments_delete ON public.sp_payments FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: sp_payments sp_payments_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_payments sp_payments_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_payments_read ON public.sp_payments FOR SELECT TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -19655,7 +19434,7 @@ CREATE POLICY sp_payments_read ON public.sp_payments FOR SELECT TO authenticated
 
 
 --
--- Name: sp_payments sp_payments_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sp_payments sp_payments_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY sp_payments_update ON public.sp_payments FOR UPDATE TO authenticated USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -19666,149 +19445,149 @@ CREATE POLICY sp_payments_update ON public.sp_payments FOR UPDATE TO authenticat
 
 
 --
--- Name: asset_specifications specs_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_specifications specs_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY specs_insert ON public.asset_specifications FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: asset_specifications specs_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_specifications specs_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY specs_select ON public.asset_specifications FOR SELECT USING ((public.is_super_admin() OR (company_id = public.get_user_company_id())));
 
 
 --
--- Name: asset_specifications specs_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: asset_specifications specs_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY specs_update ON public.asset_specifications FOR UPDATE USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: status_catalog; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: status_catalog; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.status_catalog ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: status_catalog status_catalog_read_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: status_catalog status_catalog_read_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY status_catalog_read_all ON public.status_catalog FOR SELECT TO authenticated USING (true);
 
 
 --
--- Name: status_catalog status_catalog_super_admin_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: status_catalog status_catalog_super_admin_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY status_catalog_super_admin_write ON public.status_catalog TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: stock_ledger; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: stock_ledger; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.stock_ledger ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: stock_ledger stock_ledger_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: stock_ledger stock_ledger_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY stock_ledger_insert ON public.stock_ledger FOR INSERT WITH CHECK ((auth.uid() IS NOT NULL));
 
 
 --
--- Name: stock_ledger stock_ledger_modify; Type: POLICY; Schema: public; Owner: postgres
+-- Name: stock_ledger stock_ledger_modify; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY stock_ledger_modify ON public.stock_ledger FOR UPDATE USING (public.is_super_admin());
 
 
 --
--- Name: stock_ledger stock_ledger_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: stock_ledger stock_ledger_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY stock_ledger_select ON public.stock_ledger FOR SELECT USING (true);
 
 
 --
--- Name: taxes; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: taxes; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.taxes ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: taxes taxes_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: taxes taxes_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY taxes_insert ON public.taxes FOR INSERT TO authenticated WITH CHECK (((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('finance_controller'::text))));
 
 
 --
--- Name: taxes taxes_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: taxes taxes_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY taxes_read ON public.taxes FOR SELECT TO authenticated USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin())));
 
 
 --
--- Name: taxes taxes_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: taxes taxes_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY taxes_update ON public.taxes FOR UPDATE TO authenticated USING (((company_id = public.get_user_company_id()) AND ((deleted_at IS NULL) OR public.is_super_admin()))) WITH CHECK (((company_id = public.get_user_company_id()) AND (public.is_admin_or_above() OR public.has_role('finance_controller'::text))));
 
 
 --
--- Name: top_requests top_request_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: top_requests top_request_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY top_request_read ON public.top_requests FOR SELECT USING ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: top_requests top_request_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: top_requests top_request_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY top_request_update ON public.top_requests FOR UPDATE USING (((company_id = public.get_user_company_id()) AND (public.is_manager_or_above() OR (created_by = auth.uid()))));
 
 
 --
--- Name: top_requests top_request_write; Type: POLICY; Schema: public; Owner: postgres
+-- Name: top_requests top_request_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY top_request_write ON public.top_requests FOR INSERT WITH CHECK ((company_id = public.get_user_company_id()));
 
 
 --
--- Name: top_requests; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: top_requests; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.top_requests ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: user_menu_permissions ump_admin_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: user_menu_permissions ump_admin_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ump_admin_all ON public.user_menu_permissions TO authenticated USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
 
 --
--- Name: user_menu_permissions ump_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: user_menu_permissions ump_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY ump_select ON public.user_menu_permissions FOR SELECT USING ((user_id = auth.uid()));
 
 
 --
--- Name: user_login_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: user_login_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.user_login_logs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: user_login_logs user_login_logs_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: user_login_logs user_login_logs_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY user_login_logs_read ON public.user_login_logs FOR SELECT TO authenticated USING ((public.is_super_admin() OR (user_id = auth.uid()) OR (public.is_manager_or_above() AND (EXISTS ( SELECT 1
@@ -19817,74 +19596,74 @@ CREATE POLICY user_login_logs_read ON public.user_login_logs FOR SELECT TO authe
 
 
 --
--- Name: user_menu_permissions; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: user_menu_permissions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.user_menu_permissions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: user_roles; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: user_roles; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: user_roles user_roles_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_insert; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY user_roles_insert ON public.user_roles FOR INSERT TO authenticated WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above() AND (NOT public.is_admin_tier_role(role_id)))));
 
 
 --
--- Name: user_roles user_roles_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_read; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY user_roles_read ON public.user_roles FOR SELECT TO authenticated USING (((user_id = auth.uid()) OR ((company_id = public.get_user_company_id()) AND public.is_manager_or_above()) OR public.is_super_admin()));
 
 
 --
--- Name: user_roles user_roles_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: user_roles user_roles_update; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY user_roles_update ON public.user_roles FOR UPDATE TO authenticated USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above() AND (NOT public.is_admin_tier_role(role_id))))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_admin_or_above() AND (NOT public.is_admin_tier_role(role_id)))));
 
 
 --
--- Name: vendors; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: vendors; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.vendors ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: vendors vendors_delete; Type: POLICY; Schema: public; Owner: postgres
+-- Name: vendors vendors_delete; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY vendors_delete ON public.vendors FOR DELETE TO authenticated USING (public.is_super_admin());
 
 
 --
--- Name: vendors vendors_insert; Type: POLICY; Schema: public; Owner: postgres
+-- Name: vendors vendors_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY vendors_insert ON public.vendors FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.has_role('procurement'::text)))));
+CREATE POLICY vendors_insert ON public.vendors FOR INSERT WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.is_procurement_functional()))));
 
 
 --
--- Name: vendors vendors_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: vendors vendors_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY vendors_select ON public.vendors FOR SELECT USING ((public.is_super_admin() OR (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids))));
 
 
 --
--- Name: vendors vendors_update; Type: POLICY; Schema: public; Owner: postgres
+-- Name: vendors vendors_update; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY vendors_update ON public.vendors FOR UPDATE USING ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (deleted_at IS NULL) AND (public.is_manager_or_above() OR public.has_role('procurement'::text))))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.has_role('procurement'::text)))));
+CREATE POLICY vendors_update ON public.vendors FOR UPDATE USING ((public.is_super_admin() OR ((deleted_at IS NULL) AND (company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.is_procurement_functional())))) WITH CHECK ((public.is_super_admin() OR ((company_id IN ( SELECT public.get_user_company_ids() AS get_user_company_ids)) AND (public.is_manager_or_above() OR public.is_procurement_functional()))));
 
 
 --
--- Name: sales_visit_logs visit_logs_company; Type: POLICY; Schema: public; Owner: postgres
+-- Name: sales_visit_logs visit_logs_company; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY visit_logs_company ON public.sales_visit_logs USING ((visit_id IN ( SELECT sales_visits.id
@@ -19893,33 +19672,33 @@ CREATE POLICY visit_logs_company ON public.sales_visit_logs USING ((visit_id IN 
 
 
 --
--- Name: warehouses; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: warehouses; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.warehouses ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: warehouses warehouses_modify; Type: POLICY; Schema: public; Owner: postgres
+-- Name: warehouses warehouses_modify; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY warehouses_modify ON public.warehouses USING (public.is_super_admin());
 
 
 --
--- Name: warehouses warehouses_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: warehouses warehouses_select; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY warehouses_select ON public.warehouses FOR SELECT USING (true);
 
 
 --
--- Name: weekly_meeting_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: weekly_meeting_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.weekly_meeting_items ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: weekly_meeting_items weekly_meeting_items_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: weekly_meeting_items weekly_meeting_items_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY weekly_meeting_items_all ON public.weekly_meeting_items USING ((public.is_super_admin() OR (EXISTS ( SELECT 1
@@ -19930,20 +19709,20 @@ CREATE POLICY weekly_meeting_items_all ON public.weekly_meeting_items USING ((pu
 
 
 --
--- Name: weekly_meetings; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: weekly_meetings; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.weekly_meetings ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: weekly_meetings weekly_meetings_all; Type: POLICY; Schema: public; Owner: postgres
+-- Name: weekly_meetings weekly_meetings_all; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY weekly_meetings_all ON public.weekly_meetings USING ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_bnf_authorized()))) WITH CHECK ((public.is_super_admin() OR ((company_id = public.get_user_company_id()) AND public.is_bnf_authorized())));
 
 
 --
--- Name: SCHEMA public; Type: ACL; Schema: -; Owner: pg_database_owner
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
 --
 
 GRANT USAGE ON SCHEMA public TO postgres;
@@ -19953,21 +19732,21 @@ GRANT USAGE ON SCHEMA public TO service_role;
 
 
 --
--- Name: FUNCTION add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.add_picking_material(p_picking_list_id uuid, p_product_id uuid, p_qty integer) TO authenticated;
 
 
 --
--- Name: FUNCTION attach_price_contract_info(p_history_id uuid, p_contract_no text, p_valid_from date, p_valid_until date); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION attach_price_contract_info(p_history_id uuid, p_contract_no text, p_valid_from date, p_valid_until date); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.attach_price_contract_info(p_history_id uuid, p_contract_no text, p_valid_from date, p_valid_until date) TO authenticated;
 
 
 --
--- Name: FUNCTION bulk_update_product_prices(p_rows jsonb); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION bulk_update_product_prices(p_rows jsonb); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.bulk_update_product_prices(p_rows jsonb) TO authenticated;
@@ -19975,42 +19754,50 @@ GRANT ALL ON FUNCTION public.bulk_update_product_prices(p_rows jsonb) TO service
 
 
 --
--- Name: FUNCTION cancel_delivery(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION cancel_delivery(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.cancel_delivery(p_delivery_note_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION cancel_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION cancel_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.cancel_picking(p_picking_list_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION check_similar_accounts(p_name text, p_company_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION check_similar_accounts(p_name text, p_company_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.check_similar_accounts(p_name text, p_company_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION complete_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION complete_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.complete_picking(p_picking_list_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION create_invoice(p_sp_order_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION create_goods_receipt(p_reference_no character varying, p_receipt_date date, p_warehouse_id uuid, p_receipt_type character varying, p_vendor_id uuid, p_po_number character varying, p_notes text, p_items jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_goods_receipt(p_reference_no character varying, p_receipt_date date, p_warehouse_id uuid, p_receipt_type character varying, p_vendor_id uuid, p_po_number character varying, p_notes text, p_items jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_goods_receipt(p_reference_no character varying, p_receipt_date date, p_warehouse_id uuid, p_receipt_type character varying, p_vendor_id uuid, p_po_number character varying, p_notes text, p_items jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION create_invoice(p_sp_order_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.create_invoice(p_sp_order_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION create_quotation_revision(p_quotation_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION create_quotation_revision(p_quotation_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.create_quotation_revision(p_quotation_id uuid) FROM PUBLIC;
@@ -20018,14 +19805,14 @@ GRANT ALL ON FUNCTION public.create_quotation_revision(p_quotation_id uuid) TO a
 
 
 --
--- Name: FUNCTION create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.create_sp_order_dual(p_company_id uuid, p_customer_id uuid, p_sp_no text, p_sp_date date, p_dc_id uuid, p_status text, p_expired_date date, p_notes text, p_items jsonb) TO authenticated;
 
 
 --
--- Name: FUNCTION crm_lead_source_distribution(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION crm_lead_source_distribution(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.crm_lead_source_distribution(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone) FROM PUBLIC;
@@ -20033,7 +19820,7 @@ GRANT ALL ON FUNCTION public.crm_lead_source_distribution(p_company_id uuid, p_s
 
 
 --
--- Name: FUNCTION crm_lifecycle_funnel(p_company_id uuid, p_scope_own boolean); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION crm_lifecycle_funnel(p_company_id uuid, p_scope_own boolean); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.crm_lifecycle_funnel(p_company_id uuid, p_scope_own boolean) FROM PUBLIC;
@@ -20041,7 +19828,7 @@ GRANT ALL ON FUNCTION public.crm_lifecycle_funnel(p_company_id uuid, p_scope_own
 
 
 --
--- Name: FUNCTION crm_mql_conversion(p_company_id uuid, p_scope_own boolean); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION crm_mql_conversion(p_company_id uuid, p_scope_own boolean); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.crm_mql_conversion(p_company_id uuid, p_scope_own boolean) FROM PUBLIC;
@@ -20049,7 +19836,7 @@ GRANT ALL ON FUNCTION public.crm_mql_conversion(p_company_id uuid, p_scope_own b
 
 
 --
--- Name: FUNCTION crm_report_window(p_start date, p_end date); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION crm_report_window(p_start date, p_end date); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.crm_report_window(p_start date, p_end date) FROM PUBLIC;
@@ -20057,7 +19844,7 @@ GRANT ALL ON FUNCTION public.crm_report_window(p_start date, p_end date) TO auth
 
 
 --
--- Name: FUNCTION crm_stage_age(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION crm_stage_age(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.crm_stage_age(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone) FROM PUBLIC;
@@ -20065,7 +19852,7 @@ GRANT ALL ON FUNCTION public.crm_stage_age(p_company_id uuid, p_scope_own boolea
 
 
 --
--- Name: FUNCTION crm_stage_conversion(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION crm_stage_conversion(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.crm_stage_conversion(p_company_id uuid, p_scope_own boolean, p_start timestamp with time zone, p_end timestamp with time zone) FROM PUBLIC;
@@ -20073,21 +19860,21 @@ GRANT ALL ON FUNCTION public.crm_stage_conversion(p_company_id uuid, p_scope_own
 
 
 --
--- Name: FUNCTION delete_picking_material(p_material_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION delete_picking_material(p_material_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.delete_picking_material(p_material_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION delete_sp_dual(p_customer_id uuid, p_sp_no text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION delete_sp_dual(p_customer_id uuid, p_sp_no text); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.delete_sp_dual(p_customer_id uuid, p_sp_no text) TO authenticated;
 
 
 --
--- Name: FUNCTION delete_sp_item_dual(p_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION delete_sp_item_dual(p_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.delete_sp_item_dual(p_id uuid) FROM PUBLIC;
@@ -20095,14 +19882,14 @@ GRANT ALL ON FUNCTION public.delete_sp_item_dual(p_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION dispatch_delivery(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION dispatch_delivery(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.dispatch_delivery(p_delivery_note_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION exec_sql(sql text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION exec_sql(sql text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.exec_sql(sql text) FROM PUBLIC;
@@ -20110,21 +19897,21 @@ GRANT ALL ON FUNCTION public.exec_sql(sql text) TO service_role;
 
 
 --
--- Name: FUNCTION generate_delivery_from_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION generate_delivery_from_picking(p_picking_list_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.generate_delivery_from_picking(p_picking_list_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.generate_picking_from_sp(p_sp_no text, p_customer_id uuid, p_warehouse_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION get_storbit_dashboard_stats(p_customer_id uuid, p_price_category text, p_company_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_dashboard_stats(p_customer_id uuid, p_price_category text, p_company_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_storbit_dashboard_stats(p_customer_id uuid, p_price_category text, p_company_id uuid) FROM PUBLIC;
@@ -20132,7 +19919,7 @@ GRANT ALL ON FUNCTION public.get_storbit_dashboard_stats(p_customer_id uuid, p_p
 
 
 --
--- Name: FUNCTION get_storbit_outstanding_summary(p_company_id uuid, p_customer_id uuid, p_price_category text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_outstanding_summary(p_company_id uuid, p_customer_id uuid, p_price_category text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_storbit_outstanding_summary(p_company_id uuid, p_customer_id uuid, p_price_category text) FROM PUBLIC;
@@ -20140,7 +19927,7 @@ GRANT ALL ON FUNCTION public.get_storbit_outstanding_summary(p_company_id uuid, 
 
 
 --
--- Name: FUNCTION get_storbit_product_report(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_product_report(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_storbit_product_report(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date) FROM PUBLIC;
@@ -20148,7 +19935,7 @@ GRANT ALL ON FUNCTION public.get_storbit_product_report(p_product_id uuid, p_com
 
 
 --
--- Name: FUNCTION get_storbit_product_sp_list(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date, p_limit integer); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_product_sp_list(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_storbit_product_sp_list(p_product_id uuid, p_company_id uuid, p_date_from date, p_date_to date, p_limit integer) FROM PUBLIC;
@@ -20156,7 +19943,7 @@ GRANT ALL ON FUNCTION public.get_storbit_product_sp_list(p_product_id uuid, p_co
 
 
 --
--- Name: FUNCTION get_storbit_rekap_per_customer(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_rekap_per_customer(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_storbit_rekap_per_customer(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer) FROM PUBLIC;
@@ -20164,7 +19951,7 @@ GRANT ALL ON FUNCTION public.get_storbit_rekap_per_customer(p_category text, p_c
 
 
 --
--- Name: FUNCTION get_storbit_sp_drilldown(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_sp_drilldown(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_storbit_sp_drilldown(p_category text, p_customer_id uuid, p_price_category text, p_company_id uuid, p_limit integer) FROM PUBLIC;
@@ -20172,7 +19959,7 @@ GRANT ALL ON FUNCTION public.get_storbit_sp_drilldown(p_category text, p_custome
 
 
 --
--- Name: FUNCTION get_storbit_stock_drilldown(p_category text, p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_stock_drilldown(p_category text, p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_storbit_stock_drilldown(p_category text, p_company_id uuid, p_limit integer) FROM PUBLIC;
@@ -20180,7 +19967,7 @@ GRANT ALL ON FUNCTION public.get_storbit_stock_drilldown(p_category text, p_comp
 
 
 --
--- Name: FUNCTION get_storbit_top_outstanding_products(p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_storbit_top_outstanding_products(p_company_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_storbit_top_outstanding_products(p_company_id uuid, p_limit integer) FROM PUBLIC;
@@ -20188,7 +19975,7 @@ GRANT ALL ON FUNCTION public.get_storbit_top_outstanding_products(p_company_id u
 
 
 --
--- Name: FUNCTION get_table_columns(p_table text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_table_columns(p_table text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.get_table_columns(p_table text) FROM PUBLIC;
@@ -20197,14 +19984,14 @@ GRANT ALL ON FUNCTION public.get_table_columns(p_table text) TO authenticated;
 
 
 --
--- Name: FUNCTION get_user_company_ids(); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION get_user_company_ids(); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.get_user_company_ids() TO authenticated;
 
 
 --
--- Name: FUNCTION hrga_submit_approval(p_request_id uuid, p_action text, p_comment text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION hrga_submit_approval(p_request_id uuid, p_action text, p_comment text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.hrga_submit_approval(p_request_id uuid, p_action text, p_comment text) FROM PUBLIC;
@@ -20212,7 +19999,7 @@ GRANT ALL ON FUNCTION public.hrga_submit_approval(p_request_id uuid, p_action te
 
 
 --
--- Name: FUNCTION indomarco_dashboard_stats(p_customer_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION indomarco_dashboard_stats(p_customer_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) TO anon;
@@ -20221,7 +20008,15 @@ GRANT ALL ON FUNCTION public.indomarco_dashboard_stats(p_customer_id uuid) TO se
 
 
 --
--- Name: FUNCTION is_manager_or_above_in(p_company_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION is_hcga_functional(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.is_hcga_functional() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.is_hcga_functional() TO authenticated;
+
+
+--
+-- Name: FUNCTION is_manager_or_above_in(p_company_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) FROM PUBLIC;
@@ -20229,7 +20024,31 @@ GRANT ALL ON FUNCTION public.is_manager_or_above_in(p_company_id uuid) TO authen
 
 
 --
--- Name: FUNCTION is_sp_item_writer(); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION is_procurement_functional(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.is_procurement_functional() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.is_procurement_functional() TO authenticated;
+
+
+--
+-- Name: FUNCTION is_procurement_functional_in(p_company_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.is_procurement_functional_in(p_company_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.is_procurement_functional_in(p_company_id uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION is_sales_functional(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.is_sales_functional() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.is_sales_functional() TO authenticated;
+
+
+--
+-- Name: FUNCTION is_sp_item_writer(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.is_sp_item_writer() FROM PUBLIC;
@@ -20237,21 +20056,29 @@ GRANT ALL ON FUNCTION public.is_sp_item_writer() TO authenticated;
 
 
 --
--- Name: FUNCTION mark_delivery_delivered(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION mark_delivery_delivered(p_delivery_note_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.mark_delivery_delivered(p_delivery_note_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION mark_inquiry_won(p_inquiry_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION mark_delivery_delivered(p_delivery_note_id uuid, p_signed_date date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.mark_delivery_delivered(p_delivery_note_id uuid, p_signed_date date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.mark_delivery_delivered(p_delivery_note_id uuid, p_signed_date date) TO authenticated;
+
+
+--
+-- Name: FUNCTION mark_inquiry_won(p_inquiry_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.mark_inquiry_won(p_inquiry_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text, p_notes text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text, p_notes text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.mark_ttf_received(p_invoice_id uuid, p_received_by text, p_ttf_no text, p_notes text) FROM PUBLIC;
@@ -20259,35 +20086,35 @@ GRANT ALL ON FUNCTION public.mark_ttf_received(p_invoice_id uuid, p_received_by 
 
 
 --
--- Name: FUNCTION prf_claim(p_prf_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION prf_claim(p_prf_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.prf_claim(p_prf_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION prf_mark_quoted(p_prf_id uuid, p_waiver_reason text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION prf_mark_quoted(p_prf_id uuid, p_waiver_reason text); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.prf_mark_quoted(p_prf_id uuid, p_waiver_reason text) TO authenticated;
 
 
 --
--- Name: FUNCTION prf_release(p_prf_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION prf_release(p_prf_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.prf_release(p_prf_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION prf_select_offer(p_prf_id uuid, p_offer_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION prf_select_offer(p_prf_id uuid, p_offer_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.prf_select_offer(p_prf_id uuid, p_offer_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_reference text, p_pph numeric, p_bukti_potong_url text, p_bukti_potong_no text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_reference text, p_pph numeric, p_bukti_potong_url text, p_bukti_potong_no text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric, p_payment_date date, p_reference text, p_pph numeric, p_bukti_potong_url text, p_bukti_potong_no text) FROM PUBLIC;
@@ -20295,28 +20122,28 @@ GRANT ALL ON FUNCTION public.record_payment(p_invoice_id uuid, p_amount numeric,
 
 
 --
--- Name: FUNCTION save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.save_prf_pricing(p_prf_id uuid, p_header jsonb, p_items jsonb) TO authenticated;
 
 
 --
--- Name: FUNCTION save_quotation(p_quotation_id uuid, p_header jsonb, p_items jsonb); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION save_quotation(p_quotation_id uuid, p_header jsonb, p_items jsonb); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.save_quotation(p_quotation_id uuid, p_header jsonb, p_items jsonb) TO authenticated;
 
 
 --
--- Name: FUNCTION set_product_category_prices(p_product_id uuid, p_semester numeric, p_tahunan numeric, p_project numeric); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION set_product_category_prices(p_product_id uuid, p_semester numeric, p_tahunan numeric, p_project numeric); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.set_product_category_prices(p_product_id uuid, p_semester numeric, p_tahunan numeric, p_project numeric) TO authenticated;
 
 
 --
--- Name: FUNCTION set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcome text, p_reason text) FROM PUBLIC;
@@ -20324,7 +20151,7 @@ GRANT ALL ON FUNCTION public.set_quotation_outcome(p_quotation_id uuid, p_outcom
 
 
 --
--- Name: FUNCTION set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.set_sp_expired_date(p_customer_id uuid, p_sp_no text, p_expired_date date) FROM PUBLIC;
@@ -20332,7 +20159,7 @@ GRANT ALL ON FUNCTION public.set_sp_expired_date(p_customer_id uuid, p_sp_no tex
 
 
 --
--- Name: FUNCTION set_sp_finance_docs(p_customer_id uuid, p_sp_no text, p_inv boolean, p_fp boolean, p_submit boolean, p_kirim boolean, p_submit_date date, p_email_status text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION set_sp_finance_docs(p_customer_id uuid, p_sp_no text, p_inv boolean, p_fp boolean, p_submit boolean, p_kirim boolean, p_submit_date date, p_email_status text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.set_sp_finance_docs(p_customer_id uuid, p_sp_no text, p_inv boolean, p_fp boolean, p_submit boolean, p_kirim boolean, p_submit_date date, p_email_status text) FROM PUBLIC;
@@ -20340,35 +20167,35 @@ GRANT ALL ON FUNCTION public.set_sp_finance_docs(p_customer_id uuid, p_sp_no tex
 
 
 --
--- Name: FUNCTION set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.set_sp_status(p_sp_no text, p_status text, p_reason text, p_customer_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION sp_delete_btb(p_btb_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION sp_delete_btb(p_btb_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.sp_delete_btb(p_btb_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION sp_issue_btb(p_customer_id uuid, p_sp_no text, p_btb_no text, p_qty integer, p_btb_date date, p_delivery_note_id uuid, p_remarks text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION sp_issue_btb(p_customer_id uuid, p_sp_no text, p_btb_no text, p_qty integer, p_btb_date date, p_delivery_note_id uuid, p_remarks text); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.sp_issue_btb(p_customer_id uuid, p_sp_no text, p_btb_no text, p_qty integer, p_btb_date date, p_delivery_note_id uuid, p_remarks text) TO authenticated;
 
 
 --
--- Name: FUNCTION sp_recompute_status(p_customer_id uuid, p_sp_no text); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION sp_recompute_status(p_customer_id uuid, p_sp_no text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.sp_recompute_status(p_customer_id uuid, p_sp_no text) FROM PUBLIC;
 
 
 --
--- Name: FUNCTION storbit_sp_customers(); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION storbit_sp_customers(); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.storbit_sp_customers() TO anon;
@@ -20377,21 +20204,29 @@ GRANT ALL ON FUNCTION public.storbit_sp_customers() TO service_role;
 
 
 --
--- Name: FUNCTION submit_invoice(p_invoice_id uuid); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION submit_invoice(p_invoice_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.submit_invoice(p_invoice_id uuid) TO authenticated;
 
 
 --
--- Name: FUNCTION update_sp_item_dual(p_id uuid, p_item jsonb); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION update_sp_item_dual(p_id uuid, p_item jsonb); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.update_sp_item_dual(p_id uuid, p_item jsonb) TO authenticated;
 
 
 --
--- Name: TABLE account_lifecycle_history; Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION void_goods_receipt(p_id uuid, p_reason text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.void_goods_receipt(p_id uuid, p_reason text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.void_goods_receipt(p_id uuid, p_reason text) TO authenticated;
+
+
+--
+-- Name: TABLE account_lifecycle_history; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.account_lifecycle_history TO anon;
@@ -20400,7 +20235,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.account_lifecycle_his
 
 
 --
--- Name: TABLE accounts; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE accounts; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.accounts TO authenticated;
@@ -20408,7 +20243,7 @@ GRANT ALL ON TABLE public.accounts TO service_role;
 
 
 --
--- Name: TABLE activities; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE activities; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.activities TO anon;
@@ -20417,7 +20252,7 @@ GRANT ALL ON TABLE public.activities TO service_role;
 
 
 --
--- Name: TABLE activity_logs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE activity_logs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.activity_logs TO anon;
@@ -20426,7 +20261,7 @@ GRANT ALL ON TABLE public.activity_logs TO service_role;
 
 
 --
--- Name: TABLE app_settings; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE app_settings; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.app_settings TO anon;
@@ -20435,7 +20270,7 @@ GRANT ALL ON TABLE public.app_settings TO service_role;
 
 
 --
--- Name: TABLE approval_delegations; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE approval_delegations; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_delegations TO anon;
@@ -20444,7 +20279,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_delegations 
 
 
 --
--- Name: TABLE approval_logs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE approval_logs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_logs TO anon;
@@ -20453,7 +20288,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_logs TO serv
 
 
 --
--- Name: TABLE approval_rules; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE approval_rules; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_rules TO anon;
@@ -20462,7 +20297,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.approval_rules TO ser
 
 
 --
--- Name: TABLE approval_workflow_steps; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE approval_workflow_steps; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.approval_workflow_steps TO authenticated;
@@ -20470,7 +20305,7 @@ GRANT ALL ON TABLE public.approval_workflow_steps TO service_role;
 
 
 --
--- Name: TABLE approval_workflows; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE approval_workflows; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.approval_workflows TO authenticated;
@@ -20478,7 +20313,7 @@ GRANT ALL ON TABLE public.approval_workflows TO service_role;
 
 
 --
--- Name: TABLE ar_btbs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE ar_btbs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.ar_btbs TO anon;
@@ -20487,7 +20322,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.ar_btbs TO service_ro
 
 
 --
--- Name: TABLE ar_ttfs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE ar_ttfs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.ar_ttfs TO anon;
@@ -20496,7 +20331,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.ar_ttfs TO service_ro
 
 
 --
--- Name: TABLE asset_categories; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE asset_categories; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_categories TO anon;
@@ -20505,7 +20340,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_categories TO s
 
 
 --
--- Name: TABLE asset_fuel_logs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE asset_fuel_logs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_fuel_logs TO anon;
@@ -20514,7 +20349,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_fuel_logs TO se
 
 
 --
--- Name: TABLE asset_locations; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE asset_locations; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_locations TO anon;
@@ -20523,7 +20358,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_locations TO se
 
 
 --
--- Name: TABLE asset_maintenance_records; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE asset_maintenance_records; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_maintenance_records TO anon;
@@ -20532,7 +20367,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_maintenance_rec
 
 
 --
--- Name: TABLE asset_network; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE asset_network; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_network TO anon;
@@ -20541,7 +20376,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_network TO serv
 
 
 --
--- Name: TABLE asset_software_licenses; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE asset_software_licenses; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_software_licenses TO anon;
@@ -20550,7 +20385,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_software_licens
 
 
 --
--- Name: TABLE asset_specifications; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE asset_specifications; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_specifications TO anon;
@@ -20559,7 +20394,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.asset_specifications 
 
 
 --
--- Name: TABLE assets; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE assets; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.assets TO anon;
@@ -20568,7 +20403,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.assets TO service_rol
 
 
 --
--- Name: TABLE audit_logs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE audit_logs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.audit_logs TO anon;
@@ -20577,7 +20412,7 @@ GRANT ALL ON TABLE public.audit_logs TO service_role;
 
 
 --
--- Name: TABLE backfill_sp_order_items_20260808; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backfill_sp_order_items_20260808; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backfill_sp_order_items_20260808 TO anon;
@@ -20586,7 +20421,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backfill_sp_order_ite
 
 
 --
--- Name: TABLE backup_b4_inquiries_20260725; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_b4_inquiries_20260725; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_b4_inquiries_20260725 TO anon;
@@ -20595,7 +20430,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_b4_inquiries_2
 
 
 --
--- Name: TABLE backup_dedup_accounts_20260725; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_dedup_accounts_20260725; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_accounts_20260725 TO anon;
@@ -20604,7 +20439,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_accounts
 
 
 --
--- Name: TABLE backup_dedup_activities_20260725; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_dedup_activities_20260725; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_activities_20260725 TO anon;
@@ -20613,7 +20448,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_activiti
 
 
 --
--- Name: TABLE backup_dedup_alliance_20260725; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_dedup_alliance_20260725; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_alliance_20260725 TO anon;
@@ -20622,7 +20457,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_alliance
 
 
 --
--- Name: TABLE backup_dedup_inquiries_20260725; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_dedup_inquiries_20260725; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_inquiries_20260725 TO anon;
@@ -20631,7 +20466,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_inquirie
 
 
 --
--- Name: TABLE backup_dedup_quotations_20260725; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_dedup_quotations_20260725; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_quotations_20260725 TO anon;
@@ -20640,7 +20475,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_dedup_quotatio
 
 
 --
--- Name: TABLE backup_leadpool_c1_won_20260724; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_leadpool_c1_won_20260724; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_c1_won_20260724 TO anon;
@@ -20649,7 +20484,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_c1_wo
 
 
 --
--- Name: TABLE backup_leadpool_trap_20260724; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_leadpool_trap_20260724; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_trap_20260724 TO anon;
@@ -20658,7 +20493,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_leadpool_trap_
 
 
 --
--- Name: TABLE backup_prf_20260727; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_prf_20260727; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_20260727 TO anon;
@@ -20667,7 +20502,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_20260727 T
 
 
 --
--- Name: TABLE backup_prf_cost_items_20260727; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE backup_prf_cost_items_20260727; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_cost_items_20260727 TO anon;
@@ -20676,7 +20511,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.backup_prf_cost_items
 
 
 --
--- Name: TABLE bnf_authorized_users; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_authorized_users; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_authorized_users TO anon;
@@ -20685,7 +20520,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_authorized_users 
 
 
 --
--- Name: TABLE bnf_department_scopes; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_department_scopes; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_department_scopes TO anon;
@@ -20694,7 +20529,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_department_scopes
 
 
 --
--- Name: TABLE bnf_departments; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_departments; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_departments TO anon;
@@ -20703,7 +20538,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_department
 
 
 --
--- Name: TABLE bnf_division_scopes; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_division_scopes; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_division_scopes TO anon;
@@ -20712,7 +20547,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_division_scopes T
 
 
 --
--- Name: TABLE bnf_divisions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_divisions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_divisions TO anon;
@@ -20721,7 +20556,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_divisions TO serv
 
 
 --
--- Name: TABLE bnf_report_action_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_report_action_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_action_items TO anon;
@@ -20730,7 +20565,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_action_ite
 
 
 --
--- Name: TABLE bnf_report_logs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_report_logs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_logs TO anon;
@@ -20739,7 +20574,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_logs TO se
 
 
 --
--- Name: TABLE bnf_report_related_departments; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_report_related_departments; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_related_departments TO anon;
@@ -20748,7 +20583,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_report_related_de
 
 
 --
--- Name: TABLE bnf_reports; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE bnf_reports; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_reports TO anon;
@@ -20757,7 +20592,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.bnf_reports TO
 
 
 --
--- Name: TABLE branches; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE branches; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.branches TO anon;
@@ -20766,7 +20601,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.branches TO service_r
 
 
 --
--- Name: TABLE channel_types; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE channel_types; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.channel_types TO anon;
@@ -20775,7 +20610,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.channel_types TO serv
 
 
 --
--- Name: TABLE chart_of_accounts; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE chart_of_accounts; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.chart_of_accounts TO anon;
@@ -20784,7 +20619,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.chart_of_accounts TO 
 
 
 --
--- Name: TABLE code_counters; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE code_counters; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.code_counters TO anon;
@@ -20793,7 +20628,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.code_counters TO serv
 
 
 --
--- Name: TABLE companies; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE companies; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.companies TO anon;
@@ -20802,7 +20637,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.companies TO s
 
 
 --
--- Name: TABLE contacts; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE contacts; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.contacts TO anon;
@@ -20811,7 +20646,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.contacts TO service_r
 
 
 --
--- Name: TABLE cost_centers; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE cost_centers; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.cost_centers TO anon;
@@ -20820,7 +20655,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.cost_centers TO servi
 
 
 --
--- Name: TABLE currencies; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE currencies; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.currencies TO anon;
@@ -20829,16 +20664,16 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.currencies TO service
 
 
 --
--- Name: TABLE customers; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE customers_backup_20260614; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers TO anon;
-GRANT ALL ON TABLE public.customers TO authenticated;
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers TO service_role;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers_backup_20260614 TO anon;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers_backup_20260614 TO authenticated;
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.customers_backup_20260614 TO service_role;
 
 
 --
--- Name: TABLE daily_report_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE daily_report_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.daily_report_items TO anon;
@@ -20847,7 +20682,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.daily_report_items TO
 
 
 --
--- Name: TABLE dc_master; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE dc_master; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.dc_master TO anon;
@@ -20856,7 +20691,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.dc_master TO s
 
 
 --
--- Name: TABLE deal_handovers; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE deal_handovers; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.deal_handovers TO anon;
@@ -20865,7 +20700,7 @@ GRANT ALL ON TABLE public.deal_handovers TO service_role;
 
 
 --
--- Name: TABLE delivery_incidents; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE delivery_incidents; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.delivery_incidents TO anon;
@@ -20874,105 +20709,105 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.delivery_incidents TO
 
 
 --
--- Name: COLUMN delivery_incidents.company_id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.company_id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(company_id) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.delivery_note_id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.delivery_note_id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(delivery_note_id) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.incident_type; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.incident_type; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(incident_type),UPDATE(incident_type) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.severity; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.severity; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(severity),UPDATE(severity) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.description; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.description; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(description),UPDATE(description) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.occurred_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.occurred_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(occurred_at),UPDATE(occurred_at) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.reported_by; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.reported_by; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(reported_by) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.status; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.status; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(status) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.resolution; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.resolution; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(resolution) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.resolved_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.resolved_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(resolved_at) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.resolved_by; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.resolved_by; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(resolved_by) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.delay_minutes; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.delay_minutes; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(delay_minutes),UPDATE(delay_minutes) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.vendor_name; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.vendor_name; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT INSERT(vendor_name),UPDATE(vendor_name) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: COLUMN delivery_incidents.deleted_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN delivery_incidents.deleted_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(deleted_at) ON TABLE public.delivery_incidents TO authenticated;
 
 
 --
--- Name: TABLE delivery_note_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE delivery_note_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.delivery_note_items TO anon;
@@ -20981,7 +20816,7 @@ GRANT ALL ON TABLE public.delivery_note_items TO service_role;
 
 
 --
--- Name: TABLE delivery_notes; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE delivery_notes; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.delivery_notes TO anon;
@@ -20990,7 +20825,7 @@ GRANT ALL ON TABLE public.delivery_notes TO service_role;
 
 
 --
--- Name: TABLE departments; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE departments; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.departments TO anon;
@@ -20999,7 +20834,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.departments TO servic
 
 
 --
--- Name: TABLE document_numbering; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE document_numbering; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.document_numbering TO authenticated;
@@ -21007,7 +20842,7 @@ GRANT ALL ON TABLE public.document_numbering TO service_role;
 
 
 --
--- Name: TABLE document_sequences; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE document_sequences; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.document_sequences TO anon;
@@ -21016,7 +20851,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.document_sequences TO
 
 
 --
--- Name: TABLE document_templates; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE document_templates; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.document_templates TO authenticated;
@@ -21024,7 +20859,7 @@ GRANT ALL ON TABLE public.document_templates TO service_role;
 
 
 --
--- Name: TABLE document_types; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE document_types; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.document_types TO anon;
@@ -21033,7 +20868,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.document_types TO ser
 
 
 --
--- Name: TABLE dropdown_options; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE dropdown_options; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.dropdown_options TO anon;
@@ -21042,7 +20877,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.dropdown_options TO s
 
 
 --
--- Name: TABLE entity_bank_accounts; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE entity_bank_accounts; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.entity_bank_accounts TO authenticated;
@@ -21050,7 +20885,7 @@ GRANT ALL ON TABLE public.entity_bank_accounts TO service_role;
 
 
 --
--- Name: TABLE entity_finance_settings; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE entity_finance_settings; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.entity_finance_settings TO authenticated;
@@ -21058,7 +20893,7 @@ GRANT ALL ON TABLE public.entity_finance_settings TO service_role;
 
 
 --
--- Name: TABLE entity_signatories; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE entity_signatories; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.entity_signatories TO authenticated;
@@ -21066,7 +20901,7 @@ GRANT ALL ON TABLE public.entity_signatories TO service_role;
 
 
 --
--- Name: TABLE exchange_rates; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE exchange_rates; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.exchange_rates TO anon;
@@ -21075,7 +20910,25 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.exchange_rates TO ser
 
 
 --
--- Name: TABLE hrga_approval_configs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE goods_receipt_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.goods_receipt_items TO anon;
+GRANT SELECT,INSERT,MAINTAIN ON TABLE public.goods_receipt_items TO authenticated;
+GRANT ALL ON TABLE public.goods_receipt_items TO service_role;
+
+
+--
+-- Name: TABLE goods_receipts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.goods_receipts TO anon;
+GRANT SELECT,INSERT,MAINTAIN ON TABLE public.goods_receipts TO authenticated;
+GRANT ALL ON TABLE public.goods_receipts TO service_role;
+
+
+--
+-- Name: TABLE hrga_approval_configs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_approval_configs TO anon;
@@ -21084,7 +20937,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_approval_configs
 
 
 --
--- Name: TABLE hrga_notification_queue; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE hrga_notification_queue; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_notification_queue TO anon;
@@ -21093,7 +20946,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_notification_que
 
 
 --
--- Name: TABLE hrga_offboarding_checklists; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE hrga_offboarding_checklists; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_offboarding_checklists TO anon;
@@ -21102,7 +20955,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_offboarding_chec
 
 
 --
--- Name: TABLE hrga_offboarding_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE hrga_offboarding_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_offboarding_items TO anon;
@@ -21111,7 +20964,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_offboarding_item
 
 
 --
--- Name: TABLE hrga_request_approvals; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE hrga_request_approvals; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_approvals TO anon;
@@ -21120,7 +20973,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_approval
 
 
 --
--- Name: TABLE hrga_request_attachments; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE hrga_request_attachments; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_attachments TO anon;
@@ -21129,7 +20982,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_attachme
 
 
 --
--- Name: TABLE hrga_request_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE hrga_request_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_items TO anon;
@@ -21138,7 +20991,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_items TO
 
 
 --
--- Name: TABLE hrga_request_types; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE hrga_request_types; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_types TO anon;
@@ -21147,7 +21000,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_request_types TO
 
 
 --
--- Name: TABLE hrga_requests; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE hrga_requests; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_requests TO anon;
@@ -21156,7 +21009,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.hrga_requests TO serv
 
 
 --
--- Name: TABLE inquiries; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE inquiries; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.inquiries TO authenticated;
@@ -21164,7 +21017,7 @@ GRANT ALL ON TABLE public.inquiries TO service_role;
 
 
 --
--- Name: TABLE inquiry_comment_mentions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE inquiry_comment_mentions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comment_mentions TO anon;
@@ -21173,7 +21026,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comment_menti
 
 
 --
--- Name: TABLE inquiry_comments; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE inquiry_comments; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comments TO anon;
@@ -21182,7 +21035,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_comments TO s
 
 
 --
--- Name: TABLE inquiry_status_history; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE inquiry_status_history; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_status_history TO anon;
@@ -21191,7 +21044,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.inquiry_status_histor
 
 
 --
--- Name: TABLE journal_entries; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE journal_entries; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entries TO anon;
@@ -21200,7 +21053,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entries TO se
 
 
 --
--- Name: TABLE journal_entry_lines; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE journal_entry_lines; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entry_lines TO anon;
@@ -21209,7 +21062,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.journal_entry_lines T
 
 
 --
--- Name: TABLE loss_reasons; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE loss_reasons; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.loss_reasons TO anon;
@@ -21218,7 +21071,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.loss_reasons TO servi
 
 
 --
--- Name: TABLE meeting_moms; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE meeting_moms; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.meeting_moms TO anon;
@@ -21227,7 +21080,7 @@ GRANT ALL ON TABLE public.meeting_moms TO service_role;
 
 
 --
--- Name: TABLE menu_actions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE menu_actions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.menu_actions TO authenticated;
@@ -21235,7 +21088,7 @@ GRANT ALL ON TABLE public.menu_actions TO service_role;
 
 
 --
--- Name: TABLE module_actions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE module_actions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.module_actions TO authenticated;
@@ -21243,7 +21096,7 @@ GRANT ALL ON TABLE public.module_actions TO service_role;
 
 
 --
--- Name: TABLE module_menus; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE module_menus; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.module_menus TO authenticated;
@@ -21251,7 +21104,7 @@ GRANT ALL ON TABLE public.module_menus TO service_role;
 
 
 --
--- Name: TABLE modules; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE modules; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.modules TO authenticated;
@@ -21259,7 +21112,7 @@ GRANT ALL ON TABLE public.modules TO service_role;
 
 
 --
--- Name: TABLE mom_action_plans; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE mom_action_plans; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.mom_action_plans TO anon;
@@ -21268,7 +21121,7 @@ GRANT ALL ON TABLE public.mom_action_plans TO service_role;
 
 
 --
--- Name: TABLE mom_improvements; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE mom_improvements; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.mom_improvements TO anon;
@@ -21277,7 +21130,7 @@ GRANT ALL ON TABLE public.mom_improvements TO service_role;
 
 
 --
--- Name: TABLE mom_issues; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE mom_issues; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.mom_issues TO anon;
@@ -21286,7 +21139,7 @@ GRANT ALL ON TABLE public.mom_issues TO service_role;
 
 
 --
--- Name: TABLE mom_progress_updates; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE mom_progress_updates; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.mom_progress_updates TO anon;
@@ -21295,7 +21148,7 @@ GRANT ALL ON TABLE public.mom_progress_updates TO service_role;
 
 
 --
--- Name: TABLE notification_rules; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE notification_rules; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.notification_rules TO authenticated;
@@ -21303,7 +21156,7 @@ GRANT ALL ON TABLE public.notification_rules TO service_role;
 
 
 --
--- Name: TABLE notifications; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE notifications; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.notifications TO authenticated;
@@ -21311,7 +21164,7 @@ GRANT ALL ON TABLE public.notifications TO service_role;
 
 
 --
--- Name: TABLE payment_terms; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE payment_terms; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.payment_terms TO anon;
@@ -21320,7 +21173,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.payment_terms TO serv
 
 
 --
--- Name: TABLE permissions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE permissions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.permissions TO anon;
@@ -21329,7 +21182,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.permissions TO servic
 
 
 --
--- Name: TABLE picking_list_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE picking_list_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.picking_list_items TO anon;
@@ -21338,7 +21191,7 @@ GRANT ALL ON TABLE public.picking_list_items TO service_role;
 
 
 --
--- Name: TABLE picking_list_materials; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE picking_list_materials; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.picking_list_materials TO anon;
@@ -21347,7 +21200,7 @@ GRANT ALL ON TABLE public.picking_list_materials TO service_role;
 
 
 --
--- Name: TABLE picking_lists; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE picking_lists; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.picking_lists TO anon;
@@ -21356,7 +21209,7 @@ GRANT ALL ON TABLE public.picking_lists TO service_role;
 
 
 --
--- Name: TABLE positions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE positions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.positions TO anon;
@@ -21365,7 +21218,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.positions TO service_
 
 
 --
--- Name: TABLE prf; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE prf; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.prf TO anon;
@@ -21374,7 +21227,7 @@ GRANT ALL ON TABLE public.prf TO service_role;
 
 
 --
--- Name: TABLE prf_cost_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE prf_cost_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.prf_cost_items TO anon;
@@ -21383,7 +21236,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.prf_cost_items TO ser
 
 
 --
--- Name: TABLE prf_vendor_offers; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE prf_vendor_offers; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.prf_vendor_offers TO anon;
@@ -21392,7 +21245,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.prf_vendor_offers TO 
 
 
 --
--- Name: TABLE product_price_history; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE product_price_history; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_price_history TO anon;
@@ -21401,7 +21254,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_price_history
 
 
 --
--- Name: TABLE product_warehouse_location; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE product_warehouse_location; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_warehouse_location TO anon;
@@ -21410,7 +21263,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.product_warehouse_loc
 
 
 --
--- Name: TABLE products; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE products; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.products TO authenticated;
@@ -21418,7 +21271,7 @@ GRANT ALL ON TABLE public.products TO service_role;
 
 
 --
--- Name: TABLE profiles; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.profiles TO authenticated;
@@ -21426,7 +21279,7 @@ GRANT ALL ON TABLE public.profiles TO service_role;
 
 
 --
--- Name: TABLE quotation_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE quotation_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.quotation_items TO authenticated;
@@ -21434,7 +21287,7 @@ GRANT ALL ON TABLE public.quotation_items TO service_role;
 
 
 --
--- Name: TABLE quotations; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE quotations; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.quotations TO authenticated;
@@ -21442,7 +21295,7 @@ GRANT ALL ON TABLE public.quotations TO service_role;
 
 
 --
--- Name: TABLE rate_sheets; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE rate_sheets; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.rate_sheets TO anon;
@@ -21451,7 +21304,7 @@ GRANT ALL ON TABLE public.rate_sheets TO service_role;
 
 
 --
--- Name: TABLE role_menu_permissions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE role_menu_permissions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.role_menu_permissions TO anon;
@@ -21460,7 +21313,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.role_menu_permissions
 
 
 --
--- Name: TABLE role_permission_templates; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE role_permission_templates; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.role_permission_templates TO authenticated;
@@ -21468,7 +21321,7 @@ GRANT ALL ON TABLE public.role_permission_templates TO service_role;
 
 
 --
--- Name: TABLE role_permissions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE role_permissions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.role_permissions TO anon;
@@ -21477,7 +21330,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.role_permissions TO s
 
 
 --
--- Name: TABLE roles; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE roles; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.roles TO anon;
@@ -21486,7 +21339,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.roles TO servi
 
 
 --
--- Name: TABLE sales_calls; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sales_calls; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.sales_calls TO authenticated;
@@ -21494,7 +21347,7 @@ GRANT ALL ON TABLE public.sales_calls TO service_role;
 
 
 --
--- Name: TABLE sales_orders; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sales_orders; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_orders TO anon;
@@ -21503,7 +21356,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_orders TO servi
 
 
 --
--- Name: TABLE sales_targets; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sales_targets; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_targets TO anon;
@@ -21512,7 +21365,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sales_targets TO serv
 
 
 --
--- Name: TABLE sales_visit_logs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sales_visit_logs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.sales_visit_logs TO authenticated;
@@ -21520,7 +21373,7 @@ GRANT ALL ON TABLE public.sales_visit_logs TO service_role;
 
 
 --
--- Name: TABLE sales_visits; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sales_visits; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.sales_visits TO authenticated;
@@ -21528,7 +21381,7 @@ GRANT ALL ON TABLE public.sales_visits TO service_role;
 
 
 --
--- Name: TABLE sla_policies; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sla_policies; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sla_policies TO anon;
@@ -21537,7 +21390,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sla_policies TO servi
 
 
 --
--- Name: TABLE sp_btb; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_btb; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_btb TO anon;
@@ -21546,7 +21399,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_btb TO serv
 
 
 --
--- Name: TABLE sp_btbs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_btbs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.sp_btbs TO authenticated;
@@ -21554,7 +21407,7 @@ GRANT ALL ON TABLE public.sp_btbs TO service_role;
 
 
 --
--- Name: TABLE sp_invoice_lines; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_invoice_lines; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoice_lines TO anon;
@@ -21563,7 +21416,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoice_lines TO s
 
 
 --
--- Name: TABLE sp_invoices; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_invoices; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoices TO anon;
@@ -21572,77 +21425,77 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_invoices TO
 
 
 --
--- Name: COLUMN sp_invoices.id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(id) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.company_id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.company_id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(company_id) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.sp_order_id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.sp_order_id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(sp_order_id) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.faktur_no; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.faktur_no; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(faktur_no) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.invoice_date; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.invoice_date; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(invoice_date) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.submit_ref; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.submit_ref; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(submit_ref) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.created_by; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.created_by; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(created_by) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.created_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.created_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(created_at) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.updated_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.updated_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(updated_at) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: COLUMN sp_invoices.deleted_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_invoices.deleted_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(deleted_at) ON TABLE public.sp_invoices TO authenticated;
 
 
 --
--- Name: TABLE sp_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_items TO anon;
@@ -21651,7 +21504,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_items TO service_r
 
 
 --
--- Name: TABLE sp_manifest_staging_20260810; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_manifest_staging_20260810; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_manifest_staging_20260810 TO anon;
@@ -21660,7 +21513,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_manifest_staging_2
 
 
 --
--- Name: TABLE sp_order_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_order_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_order_items TO anon;
@@ -21669,7 +21522,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_order_items
 
 
 --
--- Name: TABLE sp_orders; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_orders; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_orders TO anon;
@@ -21678,182 +21531,182 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_orders TO s
 
 
 --
--- Name: COLUMN sp_orders.id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(id) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.company_id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.company_id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(company_id) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.customer_id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.customer_id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(customer_id) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.sp_no; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.sp_no; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(sp_no) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.sp_date; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.sp_date; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(sp_date) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.dc_id; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.dc_id; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(dc_id) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.is_disputed; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.is_disputed; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(is_disputed) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.dispute_reason; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.dispute_reason; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(dispute_reason) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.disputed_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.disputed_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(disputed_at) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.disputed_by; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.disputed_by; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(disputed_by) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.expired_date; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.expired_date; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(expired_date) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.sp_category; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.sp_category; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(sp_category) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.external_url; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.external_url; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(external_url) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.notes; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.notes; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(notes) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.confirmed_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.confirmed_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(confirmed_at) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.confirmed_by; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.confirmed_by; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(confirmed_by) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.cancelled_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.cancelled_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(cancelled_at) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.cancelled_by; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.cancelled_by; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(cancelled_by) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.cancel_reason; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.cancel_reason; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(cancel_reason) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.created_by; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.created_by; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(created_by) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.created_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.created_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(created_at) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.updated_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.updated_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(updated_at) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.deleted_at; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.deleted_at; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(deleted_at) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.had_cancelled_picking; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.had_cancelled_picking; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(had_cancelled_picking) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: COLUMN sp_orders.price_category; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_orders.price_category; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(price_category) ON TABLE public.sp_orders TO authenticated;
 
 
 --
--- Name: TABLE sp_payments; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE sp_payments; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_payments TO anon;
@@ -21862,28 +21715,28 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.sp_payments TO
 
 
 --
--- Name: COLUMN sp_payments.reference; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_payments.reference; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(reference) ON TABLE public.sp_payments TO authenticated;
 
 
 --
--- Name: COLUMN sp_payments.bukti_potong_url; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_payments.bukti_potong_url; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(bukti_potong_url) ON TABLE public.sp_payments TO authenticated;
 
 
 --
--- Name: COLUMN sp_payments.bukti_potong_no; Type: ACL; Schema: public; Owner: postgres
+-- Name: COLUMN sp_payments.bukti_potong_no; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT UPDATE(bukti_potong_no) ON TABLE public.sp_payments TO authenticated;
 
 
 --
--- Name: TABLE status_catalog; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE status_catalog; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.status_catalog TO anon;
@@ -21892,7 +21745,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.status_catalog TO ser
 
 
 --
--- Name: TABLE stock_ledger; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE stock_ledger; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.stock_ledger TO authenticated;
@@ -21900,7 +21753,7 @@ GRANT ALL ON TABLE public.stock_ledger TO service_role;
 
 
 --
--- Name: TABLE stock_summary; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE stock_summary; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.stock_summary TO authenticated;
@@ -21908,7 +21761,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.stock_summary 
 
 
 --
--- Name: TABLE taxes; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE taxes; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.taxes TO anon;
@@ -21917,7 +21770,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.taxes TO service_role
 
 
 --
--- Name: TABLE top_requests; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE top_requests; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.top_requests TO anon;
@@ -21926,7 +21779,7 @@ GRANT ALL ON TABLE public.top_requests TO service_role;
 
 
 --
--- Name: TABLE user_login_logs; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE user_login_logs; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.user_login_logs TO anon;
@@ -21935,7 +21788,7 @@ GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.user_login_log
 
 
 --
--- Name: TABLE user_menu_permissions; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE user_menu_permissions; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.user_menu_permissions TO authenticated;
@@ -21943,7 +21796,7 @@ GRANT ALL ON TABLE public.user_menu_permissions TO service_role;
 
 
 --
--- Name: TABLE user_roles; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE user_roles; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.user_roles TO anon;
@@ -21952,7 +21805,7 @@ GRANT ALL ON TABLE public.user_roles TO service_role;
 
 
 --
--- Name: TABLE vendors; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE vendors; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.vendors TO authenticated;
@@ -21960,7 +21813,7 @@ GRANT ALL ON TABLE public.vendors TO service_role;
 
 
 --
--- Name: TABLE warehouses; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE warehouses; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON TABLE public.warehouses TO authenticated;
@@ -21968,7 +21821,7 @@ GRANT ALL ON TABLE public.warehouses TO service_role;
 
 
 --
--- Name: TABLE weekly_meeting_items; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE weekly_meeting_items; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.weekly_meeting_items TO anon;
@@ -21977,7 +21830,7 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.weekly_meeting_items 
 
 
 --
--- Name: TABLE weekly_meetings; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE weekly_meetings; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.weekly_meetings TO anon;
@@ -21986,14 +21839,14 @@ GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.weekly_meetings TO se
 
 
 --
--- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: postgres
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
 
 
 --
--- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
@@ -22003,14 +21856,14 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON S
 
 
 --
--- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: postgres
+-- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
 
 
 --
--- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
+-- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
@@ -22020,7 +21873,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON F
 
 
 --
--- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: postgres
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO postgres;
@@ -22030,7 +21883,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT REFERENCES,TRI
 
 
 --
--- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: supabase_admin
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO postgres;
@@ -22043,5 +21896,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Ok9hwvGHBnkoE3DWbNAGD69C6qZO8g3aitNiXJE5fV011JebBIgwq0vVanZrhuF
+\unrestrict mhQRzv3KZFENqvoESpR0Lk8cgcCQHckvDYQsc8RijddgJDC6lLDGuNsMwYJbtWi
 
