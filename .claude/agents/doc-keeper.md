@@ -39,6 +39,7 @@ Konflik -> kode + schema menang. Dokumen salah diperbaiki agar match kode.
 | Tech debt baru / debt selesai | docs/Governance/08_TECH_DEBT.md |
 | Fase selesai / prioritas / next berubah | docs/Governance/09_ROADMAP.md + 10_TASK_BREAKDOWN.md |
 | Milestone / fitur / menu baru | docs/Governance/00_DEV_JOURNEY.md |
+| Desain / kit UI / token warna-font / komponen bersama (src/kit, kit CRM v3, AdminKit, print kit) / rencana Batch DS | docs/DESIGN_SYSTEM_REFERENCE.md (Bagian A + status tabel A.4.3) + docs/Governance/02_RULES_GOVERNANCE.md §5 (brand) + docs/Governance/06_UI_UX_FLOW.md |
 | Tiap unit kerja selesai (dev log) | PROGRESS.md — APPEND entri baru (jangan rombak lama) |
 | State / recent yang dibaca AI tiap sesi | CLAUDE.md — update bagian state/recent saja |
 
