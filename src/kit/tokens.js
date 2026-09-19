@@ -84,29 +84,38 @@ export const SIZE = { btnMd: 40, btnSm: 32, btnXs: 28, input: 44, inputFloating:
    4. PALET STATUS/DATA — kelas terpisah dari identitas (#60 b).
    ========================================================================= */
 
-/* SEMANTIC — trio fg/bg/bd yang sudah dipakai 40+ file warm-beige (`C.ok`,
-   `C.warn`, …), dipindahkan apa adanya (keputusan #3); `neutral` diturunkan
-   ulang dari sage (INK_SOFT di atas HEAD_BG, 4,70:1).
-   ⚠️ Terukur 20 Sep 2026: `ok` 4,30:1 dan `warn` 3,99:1 di bawah AA 4,5:1
-   untuk teks badge 11,5px (danger 4,91 · info 5,89 lolos). Nilainya SENGAJA
-   tidak digeser di sini — itu keputusan Den (preseden: dua hex STATUS_META
-   digeser demi AA, 2 Sep 2026). Lihat laporan Batch DS 1. */
+/* SEMANTIC — trio fg/bg/bd dari palet warm-beige yang dipakai 40+ file
+   (`C.ok`, `C.warn`, …); `neutral` diturunkan ulang dari sage (INK_SOFT di
+   atas HEAD_BG, 4,70:1). bg/bd persis warm-beige.
+   ⚠️ DUA fg DIGESER demi AA (Keputusan #62, Den 20 Sep 2026 — JANGAN
+   dikembalikan ke hex warm-beige): teks badge 11,5px = teks normal, butuh
+   4,5:1. `ok` 4,30 → `#2D794D` (4,53) · `warn` 3,99 → `#8E620D` (4,58);
+   danger 4,91 · info 5,89 sudah lolos. Hex lama tercatat di `09_ROADMAP.md`
+   #62 (sengaja tidak ditulis di sini supaya grep gate hex lama bersih).
+   Preseden: dua hex
+   STATUS_META digeser demi AA 2 Sep 2026. Konsekuensi: `SEMANTIC.ok/warn`
+   kit ≠ `C.ok/C.warn` warm-beige di file lama — beda 3–8 % gelap, bukan
+   hue baru; file lama ikut nilai kit saat dimigrasi. */
 export const SEMANTIC = {
-  ok:      { fg: '#2E7D4F', bg: '#E4F0E5', bd: '#BFDDC4' },
-  warn:    { fg: '#9A6B0E', bg: '#F8ECCF', bd: '#E6CE94' },
+  ok:      { fg: '#2D794D', bg: '#E4F0E5', bd: '#BFDDC4' }, // fg digeser 3 % (#62)
+  warn:    { fg: '#8E620D', bg: '#F8ECCF', bd: '#E6CE94' }, // fg digeser 8 % (#62)
   danger:  { fg: '#B23227', bg: '#F6E0DB', bd: '#E6BBB2' },
   info:    { fg: '#2A5B8C', bg: '#E1ECF5', bd: '#BAD2E6' },
   neutral: { fg: INK_SOFT,  bg: HEAD_BG,   bd: LINE },
 };
 
-/* TONE — satu sumbu warna untuk StatusBar/lajur papan, EMPAT saja (v3, apa
-   adanya): slate = belum mulai / tak aktif · orange = sedang berjalan ·
-   navy = tuntas positif · brick = ditutup (bukan alarm merah).
-   ⚠️ Terukur: slate 4,23 · orange 3,23 (di bawah 4,5 untuk teks 11,5px);
-   navy 8,22 · brick 4,61. Dibawa apa adanya dari v3 — lihat laporan. */
+/* TONE — satu sumbu warna untuk StatusBar/lajur papan, EMPAT saja (dari v3):
+   slate = belum mulai / tak aktif · orange = sedang berjalan · navy = tuntas
+   positif · brick = ditutup (bukan alarm merah). bg/bd persis v3.
+   ⚠️ DUA fg DIGESER demi AA (Keputusan #62, Den 20 Sep 2026 — JANGAN
+   dikembalikan ke nilai v3): `slate` 4,23 → `#676D7B` (4,54) · `orange` 3,23
+   → `#BE4A19` (4,57); navy 8,22 · brick 4,61 sudah lolos. Hex lama tercatat
+   di `09_ROADMAP.md` #62. `crm/v3/tokens.js` TONE tetap nilai lama sampai
+   dihapus Batch DS 3 — dua salinan sementara, yang di kit ini yang berlaku
+   ke depan. Sejak geseran ini nol hex oranye brand lama di kit. */
 export const TONE = {
-  slate:  { fg: '#6B7280', bg: '#EDF0F4', bd: '#D8DEE7' },
-  orange: { fg: '#E85A1E', bg: '#FEF2EC', bd: '#F6CDB6' },
+  slate:  { fg: '#676D7B', bg: '#EDF0F4', bd: '#D8DEE7' }, // fg digeser 4 % (#62)
+  orange: { fg: '#BE4A19', bg: '#FEF2EC', bd: '#F6CDB6' }, // fg digeser 18 % (#62)
   navy:   { fg: '#144682', bg: '#EAF0F8', bd: '#C3D3E8' },
   brick:  { fg: '#A8503C', bg: '#F7EAE6', bd: '#E3C4BB' },
 };
