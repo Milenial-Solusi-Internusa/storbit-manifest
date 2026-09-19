@@ -157,25 +157,32 @@
 
 ---
 
-## 5. Brand & Design System (MSI Brand Guideline v1.0)
+## 5. Brand & Design System — palet APLIKASI (keputusan Den 19 Sep 2026)
+
+> ⛔ **STATUS: KEBIJAKAN SUDAH DIPUTUSKAN, KODE BELUM DIUBAH.** Seluruh isi §5 ini adalah **arah/kebijakan**; kode aplikasi hari ini masih memakai palet navy/oranye lama, dua tumpukan font legacy, Oswald `.kpi-value`, dan pengecualian KPI hero (inventaris lengkapnya: `docs/DESIGN_SYSTEM_REFERENCE.md`). **Implementasi (penyatuan kit tunggal + ganti warna/font + TD-269/TD-270) sengaja DITUNDA menunggu instruksi Den.** Jangan mengimplementasikannya sepihak, dan jangan membaca dokumen ini sebagai "kode sudah sesuai".
+
+**Palet resmi tampilan aplikasi internal Nexus — "sage":**
 
 | Token | Hex | Pakai |
 |-------|-----|-------|
-| MSI Navy | `#144682` | Sidebar, header chart, dominan |
-| Navy Dark | `#0f3366` | Hover navy, gradient end |
-| MSI Orange | `#E85A1E` | Accent, CTA, active item |
-| Orange Dark | `#c44d18` | Hover orange |
-| Coral | `#F08C7D` | Header tabel quotation, badge SOA |
-| Cream | `#F6EFE3` | (legacy surface; app shell kini `#ffffff` sejak 2.10F) |
-| accentSoft | `#FEF2EC` | Icon container, hover highlight |
+| Latar halaman | `#F6F8F3` | background shell / halaman |
+| Latar kartu | `#EEF3EA` | kartu, panel, surface |
+| Aksen utama | `#C3D9B8` | tombol utama, item aktif, highlight — **hover `#AFC9A0`** |
+| Aksen kedua | `#D7C9B0` | aksi sekunder, penanda pendukung — **hover `#C9B896`** |
+| Border | `#D8E0D2` | garis, pembatas, border kartu/input |
+| Teks utama | `#33422B` | heading, body |
+| Teks sekunder | `#5C6B52` | label, subtitle, teks redup |
 
-- **Font:** heading `Montserrat`, body/UI `Inter`, angka/nomor dokumen `IBM Plex Mono` (Google Fonts, di-load `index.html`). **`Oswald` (600/700) = font KEEMPAT, TAMBAHAN bukan pengganti** — dipakai HANYA di `.kpi-value` (angka 4 KPI hero tile CRM Dashboard). PDF: Helvetica built-in (Montserrat upgrade pending).
+- Palet sage **menggantikan seluruh navy dan oranye lama sebagai warna aplikasi** — tidak ada lagi navy/oranye "resmi" untuk UI. Warna di luar tujuh token ini tidak boleh dipakai di UI tanpa keputusan tercatat.
+- ⚠️ **Palet sage KHUSUS tampilan aplikasi internal Nexus.** Dokumen yang dikirim ke customer — **Print kit** (`src/modules/logistics/printKit.jsx` + `printTokens.js`), **PDF Storbit** (Picking List, Surat Jalan, Invoice, Laporan Storbit), Quotation PDF — **tetap memakai warna brand entitas MSI/JCI/SOA yang asli, TIDAK ikut berubah, dan TIDAK disentuh keputusan ini.** Print kit juga **dikecualikan** dari penyatuan kit (`docs/DESIGN_SYSTEM_REFERENCE.md` §Arah Penyatuan).
+- **Font resmi TIGA saja:** heading/display **`Montserrat`** · body **`Inter`** · angka & kode **`IBM Plex Mono`** (Google Fonts, di-load `index.html`). **Font lain apa pun tidak resmi** — termasuk font legacy yang hari ini masih dimuat oleh kode (`TD-70`, ditunda). **Satu-satunya pengecualian yang tercatat: Oswald `.kpi-value` (angka 4 KPI hero CRM Dashboard) DIPERTAHANKAN untuk saat ini** — keputusan sadar Den 20 Sep 2026 yang sengaja ditunda, **bukan kelupaan dan bukan pelanggaran** kebijakan tiga font; jangan dicatat sebagai pelanggaran saat audit ulang, dan jangan diperluas ke elemen lain (#60 c, `09_ROADMAP.md`). Cormorant Garamond/Lora yang dipakai dua halaman **web** Storbit (`SalesOrderDetailPage.jsx`, `StorbitDashboardPage.jsx`) **bukan** pengecualian: keduanya ikut penyatuan ke tiga font (#60 a, BELUM DIKERJAKAN). PDF: font milik masing-masing kit cetak (Helvetica built-in di Quotation; Lora + Cormorant Garamond di print kit Storbit) — di luar aturan ini.
 - **Ikon:** **Lucide only**. Tidak ada inline-SVG icon ad-hoc untuk hal yang ada di Lucide.
 - **LARANGAN:**
   - ❌ **No emoji** di UI.
-  - ❌ **No dark green** — `#1a3a2a`, `#2d5a3d`, `#0F2A23`, `#173D34`, `#2F6B3F`, `#E7EFE2` semua deprecated. (Teal/hijau-status tertentu mis. `#1F8B4D` WON, `#0F766E` Head boleh.)
-  - ❌ `Plus Jakarta Sans` (diganti Inter+Montserrat).
-- **⚠️ PENGECUALIAN PALET YANG DISETUJUI (jangan dibaca sebagai pelanggaran di atas):** 4 tile KPI hero CRM Dashboard (`src/modules/crm/CRMDashboardPage.jsx`, kelas `.kpi`) memakai `#5C6070`, `#EE9A7E`, `#B4E0F2`, `#7FBBDA`, `#5A9CC3` — semuanya **di luar palet resmi**, *approved* dan **ber-scope ke komponen itu saja**. Jangan disalin ke komponen lain, jangan dibalikkan ke palet standar. Detail + alasan implementasi CSS: `06_UI_UX_FLOW.md §1`.
+  - ❌ **No dark green** — `#1a3a2a`, `#2d5a3d`, `#0F2A23`, `#173D34`, `#2F6B3F`, `#E7EFE2` semua deprecated (⚠️ `#2F6B3F`/`#E7EFE2` **masih hidup di 5 file** — `TD-269`, belum diperbaiki). Hijau-status lama (`#1F8B4D`, `#0F766E`) = keadaan kode, bukan bagian palet sage; nasibnya ikut penyatuan kit.
+  - ❌ Font di luar tiga font resmi.
+- **Warna status/data ≠ warna identitas aplikasi (keputusan Den 20 Sep 2026, #60 b).** Palet sage mengatur **identitas** aplikasi (latar, kartu, aksen, border, teks). **Warna status/data** — termasuk **5 warna 4 tile KPI hero CRM Dashboard** (`src/modules/crm/CRMDashboardPage.jsx` kelas `.kpi`: `#5C6070`/~~`#EE9A7E`~~ **`#EEAA8D`** *[koreksi doc-keeper 20 Sep 2026: kode `CRMDashboardPage.jsx:3548` memakai `#EEAA8D` sejak `a709bd5` 31 Agu 2026; `#EE9A7E` nol hit di `src/`]*/`#B4E0F2`/`#7FBBDA`/`#5A9CC3`) — **TETAP warna-warni dan TIDAK diseragamkan ke sage**: warna status harus tetap **kontras satu sama lain** (merah tetap beda dari hijau) supaya sinyalnya tidak kabur. Ini **bukan pengecualian yang lupa diseragamkan**, melainkan kelas warna yang memang tidak tunduk pada palet identitas — keputusan final, bukan pekerjaan tertunda. Scope KPI hero tetap komponen itu saja (jangan disalin sebagai palet umum). Hex konkret palet status di kit tunggal ditetapkan saat penyatuan. Detail implementasi CSS-nya: `06_UI_UX_FLOW.md §1`.
+- **Halaman/fitur baru selama masa tunggu penyatuan (keputusan Den 20 Sep 2026, #61 — DISETUJUI):** ikut kit/token yang **sudah ada** (peta per modul: `docs/DESIGN_SYSTEM_REFERENCE.md` §0), **bukan langsung sage** — supaya tidak lahir palet kelima di kode. Berlaku sampai `tokens.js` sage bersama + kit tunggal tersedia dan instruksi implementasi turun.
 
 ---
 

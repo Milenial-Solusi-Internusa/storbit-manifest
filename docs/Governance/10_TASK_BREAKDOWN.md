@@ -2,7 +2,7 @@
 
 > Breakdown task aktif & backlog jadi unit yang bisa langsung dikerjakan Claude Code. Sumber: `docs/09_ROADMAP.md` (Next Up), `docs/08_TECH_DEBT.md`. Update saat task selesai / prioritas berubah.
 >
-> ⚠️ **[PENANDA KESEGARAN, doc-keeper 7 Sep 2026] DOKUMEN INI BASI — jangan dipakai sebagai daftar kerja tanpa memeriksa sumbernya dulu.** Pembaruan terakhirnya **12 Agu 2026**; sejak itu ada **sepuluh** sesi kerja (18/20/21/24/26 Agu · 31 Agu · 2/5/6/7 Sep) yang **tidak pernah dipecah ke sini**, termasuk **TD-200…TD-235** dan **Keputusan Terbuka #28–#41**. **[Diperbarui doc-keeper 18 Sep 2026: kini ~~sepuluh~~ dua puluhan sesi (s/d 18 Sep — CRM v3 LIVE produksi, `signed_date` SJ, Penerimaan Barang RPC, drop `customers`), TD s/d **TD-266**, Keputusan Terbuka s/d **#59**; penanda ini tetap berlaku, dokumen belum disusul.]** **Sumber prioritas yang HIDUP:** `09_ROADMAP.md` §Next Up + §Keputusan Terbuka, dan `08_TECH_DEBT.md` §Prioritas Fix. ⛔ **Sengaja TIDAK ditambal sepotong** — menambahkan satu sesi ke dokumen yang ketinggalan sepuluh justru membuatnya tampak segar padahal tidak. Perbaikannya = satu pass menyusul penuh, dan itu pekerjaan tersendiri.
+> ⚠️ **[PENANDA KESEGARAN, doc-keeper 7 Sep 2026] DOKUMEN INI BASI — jangan dipakai sebagai daftar kerja tanpa memeriksa sumbernya dulu.** Pembaruan terakhirnya **12 Agu 2026**; sejak itu ada **sepuluh** sesi kerja (18/20/21/24/26 Agu · 31 Agu · 2/5/6/7 Sep) yang **tidak pernah dipecah ke sini**, termasuk **TD-200…TD-235** dan **Keputusan Terbuka #28–#41**. **[Diperbarui doc-keeper 18 Sep 2026: kini ~~sepuluh~~ dua puluhan sesi (s/d 18 Sep — CRM v3 LIVE produksi, `signed_date` SJ, Penerimaan Barang RPC, drop `customers`), TD s/d **TD-266**, Keputusan Terbuka s/d **#59**; penanda ini tetap berlaku, dokumen belum disusul.]** **[Diperbarui doc-keeper 19 Sep 2026: TD s/d **TD-270** (register `08` sebenarnya sudah TD-268 pada 18 Sep — angka "266" di atas kurang dua), Keputusan Terbuka s/d **#61**; +keputusan design system 19 Sep (palet sage / tiga font / kit tunggal — `09_ROADMAP.md` §Design System) yang **belum dijadwalkan** dan sengaja tidak dipecah ke sini.]** **Sumber prioritas yang HIDUP:** `09_ROADMAP.md` §Next Up + §Keputusan Terbuka, dan `08_TECH_DEBT.md` §Prioritas Fix. ⛔ **Sengaja TIDAK ditambal sepotong** — menambahkan satu sesi ke dokumen yang ketinggalan sepuluh justru membuatnya tampak segar padahal tidak. Perbaikannya = satu pass menyusul penuh, dan itu pekerjaan tersendiri.
 >
 > **Diperbarui 2026-08-12 — +section J (BNF/Briefing Harian/Meeting Mingguan follow-up, dari 11 TD baru TD-184…TD-194).** Modul BNF diperluas 4-lapis (Layer 0-4, 10 & 12 Agu 2026) — kode+SQL semua live, NOL tes runtime independen doc-keeper (Den lapor smoke test Passed). Detail: §J di bawah + `08_TECH_DEBT.md` TD-184…TD-194 + `09_ROADMAP.md` + `PROGRESS.md` 2026-08-10 & 2026-08-12.
 >
@@ -213,7 +213,7 @@
 **Maintainability (low-risk, oportunistik):**
 - Ekstrak `PASTEL` → `src/lib/tokens.js`, `ENTITY_IDS` → `config/entities.js`, helper `isSuperAdmin()` (TD-14).
 - Hapus dead code `*.legacy.jsx` (~1.206 baris) setelah konfirmasi 0 ref (TD-15).
-- Ganti 5 hijau terlarang + emoji sisa → token brand + Lucide (TD-17).
+- Ganti 5 hijau terlarang + emoji sisa → token brand + Lucide (~~TD-17~~ → **TD-269**, digabung 20 Sep 2026; angka terukur & lokasi ada di sana; dikerjakan bersama penyatuan kit sage, ditunda).
 - Hapus dead DOM `#quotation-print-area` (TD-16).
 - `.single()`→`.maybeSingle()` sisa (TD-10); tambah `.limit()` ke ~97 query (TD-11).
 - React warning input read-only (TD-27).

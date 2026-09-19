@@ -35,6 +35,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | `docs/08_TECH_DEBT.md` | Daftar tech debt (TD-01…TD-31) + prioritas fix | 2026-06-22 |
 | `docs/09_ROADMAP.md` | Status modul, milestone, next up | 2026-06-22 |
 | `docs/10_TASK_BREAKDOWN.md` | Task aktif & backlog konkret + template task baru | 2026-06-22 |
+| `docs/DESIGN_SYSTEM_REFERENCE.md` | **Rujukan design system** (audit read-only 19 Sep 2026): Bagian A = kebijakan palet aplikasi "sage" + tiga font + arah satu kit tunggal (⛔ **BELUM dikerjakan**); §0–§18 = inventaris kit/token yang ADA di kode (kit CRM v3, AdminKit, print kit, token lokal), angka warna/font/spacing/radius/bayangan per kit, breakpoint, checklist menerjemahkan mockup AI, divergensi (§17) | 2026-09-19 |
 | `docs/architecture/`, `docs/database/`, `docs/security/`, `docs/workflow/`, `docs/integration/`, `docs/performance/`, `docs/operations/`, `docs/modules/` | (pre-existing, Fase 0.1) blueprint, baseline, dll — lihat "Required Reading" di `AGENTS.md` | [TODO: verifikasi keberadaan/isi tiap file referenced di AGENTS.md] |
 
 > **Dokumen 11-18 sudah diserap ke canon 00-10 lalu diarsipkan** ke `docs/archive/audits/` (konsolidasi governance, 17 Jul 2026): **11**→`02 §8` (QA Checklist), **12**→`10` (Template Change Request) + rollback CR-002 di `08` TD-01, **13-18** (audit CRM/SP/input/pending)→diserap jadi TD di `08` / task di `10` / keputusan di `09`. File aslinya tetap bisa dibaca di `docs/archive/audits/` sebagai rekaman historis.
@@ -49,7 +50,7 @@ Lalu sesuai tipe task (lihat "Cara Pakai" di bawah).
 | **Mulai task fitur baru** | `CLAUDE.md` → `docs/02_RULES_GOVERNANCE.md` → `docs/10_TASK_BREAKDOWN.md` → `docs/05_WORKFLOW_MAP.md` (modul terkait) → `docs/06_UI_UX_FLOW.md` |
 | **Task bug/audit** | `CLAUDE.md` → `docs/08_TECH_DEBT.md` → `docs/03_DATA_MODEL.md` (gotchas) → `docs/07_API_REPOSITORY.md` (error patterns) |
 | **DB / schema / RLS change** | `docs/02_RULES_GOVERNANCE.md §4` → `docs/03_DATA_MODEL.md` → `docs/04_ROLE_PERMISSION_MATRIX.md` → `docs/02_RULES_GOVERNANCE.md §4` + `§7` (DB Change Checklist) → `docs/10_TASK_BREAKDOWN.md` (Template Change Request) |
-| **Kerja UI / styling / PDF** | `docs/06_UI_UX_FLOW.md` → `docs/02_RULES_GOVERNANCE.md §5` |
+| **Kerja UI / styling / PDF** | `docs/06_UI_UX_FLOW.md` → `docs/02_RULES_GOVERNANCE.md §5` → `docs/DESIGN_SYSTEM_REFERENCE.md` (kit mana yang berlaku + angka persisnya; ⚠️ kebijakan sage BELUM di kode — ikuti tabel §0 sampai ada instruksi) |
 | **Sebelum push/deploy** | `docs/02_RULES_GOVERNANCE.md §8` (QA Checklist) |
 | **Cari histori implementasi fase lama** | `docs/00_DEV_JOURNEY.md` (Bagian 3 arsip) + git history `CLAUDE.md` + `PROGRESS.md` |
 

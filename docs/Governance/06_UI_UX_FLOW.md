@@ -1,10 +1,12 @@
 # UI/UX FLOW & DESIGN SYSTEM — Nexus by MSI
 
 > Design system & pola UI. Sumber: `CLAUDE.md` (Brand System), `docs/02_RULES_GOVERNANCE.md §5`, phase notes. Brand = MSI Brand Guideline v1.0.
+>
+> ⛔ **[19 Sep 2026] KEBIJAKAN BARU — palet APLIKASI = "sage" + TIGA font resmi (Montserrat · Inter · IBM Plex Mono); KODE BELUM DIUBAH.** Keputusan Den 19 Sep 2026 (`CLAUDE.md` Brand · `02_RULES_GOVERNANCE.md §5`): seluruh navy/oranye lama **berhenti menjadi warna aplikasi**, digantikan palet sage (`#F6F8F3` latar halaman · `#EEF3EA` latar kartu · `#C3D9B8`/hover `#AFC9A0` aksen utama · `#D7C9B0`/hover `#C9B896` aksen kedua · `#D8E0D2` border · `#33422B` teks utama · `#5C6B52` teks sekunder), dan arah akhirnya **SATU kit tunggal** untuk seluruh aplikasi (`docs/DESIGN_SYSTEM_REFERENCE.md` §Arah Penyatuan). **Dokumen customer (print kit, PDF Storbit, Quotation PDF) TIDAK ikut berubah** — §5 di bawah tetap berlaku. **Tabel token §1, pola sidebar, peta warna status, dan pengecualian KPI hero di bawah ini = KEADAAN KODE HARI INI (belum dimigrasi)**, dipertahankan karena kodenya memang masih begitu — bukan kebijakan yang berlaku untuk halaman baru. Implementasi **sengaja DITUNDA menunggu instruksi Den**. **Keputusan final 20 Sep 2026 (#60/#61 DIJAWAB, `09_ROADMAP.md`):** halaman/fitur baru selama masa tunggu **ikut kit/token yang ada, bukan sage duluan** (DISETUJUI, #61 — supaya tidak lahir palet kelima) · dua halaman **web** Storbit ber-ungu/serif (`SalesOrderDetailPage.jsx`, `StorbitDashboardPage.jsx`) **ikut penyatuan ke sage + tiga font** (bukan pengecualian dokumen customer; BELUM DIKERJAKAN) · **5 warna KPI hero CRM Dashboard TETAP** (warna status/data ≠ warna identitas, harus tetap saling kontras — final, bukan pengecualian yang lupa diseragamkan) · **Oswald `.kpi-value` dipertahankan** untuk saat ini (sadar ditunda, bukan pelanggaran tiga font).
 
 ---
 
-## 1. Brand Tokens
+## 1. Brand Tokens (⚠️ keadaan kode per 19 Sep 2026 — palet LAMA, akan digantikan palet sage; lihat banner di atas)
 
 | Token | Hex | Konteks |
 |-------|-----|---------|
@@ -14,16 +16,16 @@
 | MSI Orange | `#E85A1E` | Accent, CTA, active item, highlight (10%) |
 | Orange Dark | `#c44d18` | Hover orange |
 | Coral | `#F08C7D` | Header tabel item quotation (teks navy di atasnya), badge SOA, accent |
-| White | `#ffffff` | Background utama app shell (sejak fase 2.10F; sebelumnya cream/gradient) |
+| White | `#ffffff` | Kartu & sidebar. ⚠️ Bukan lagi latar shell — `<main>`/`body` = `#F2F5F9` sejak rebrand 1 Jul 2026 (catatan "shell putih sejak 2.10F" basi; dikoreksi 19 Sep 2026) |
 | Cream | `#F6EFE3` | Legacy surface (deprecated untuk shell; masih dipakai sbg token `C.bg` di beberapa modul CRM warm-beige) |
 | Light Gray | `#F7F7F8` | Card/secondary bg (sebagian) |
 | accentSoft | `#FEF2EC` | Icon container, hover highlight |
 | Status WON | `#1F8B4D` | Hijau-status (BUKAN dark green terlarang) |
 | Status LOST | `#C0392B` | Merah |
 
-**Sidebar:** `linear-gradient(165deg, #144682 0%, #0f3366 100%)`. Active item: bg `rgba(255,255,255,0.13)`, left-border `rgba(255,212,184,0.7)`, icon `#FFB899`. Primary button: `#E85A1E` → hover `#c44d18`.
+**Sidebar (keadaan kode, dikoreksi 19 Sep 2026 — versi "gradient navy" sudah basi sejak rebrand `368a10d` 1 Jul 2026):** `NexusSidebar` (`App.jsx:1542`) latar **`#FFFFFF`**, `borderRight: 1px solid var(--line)`, lebar 248px desktop / drawer 264px; item aktif bg `var(--p-blue)` + teks `var(--navy)` (`#1B4D8A`), hover `#F5F7FA`; bubble ikon 30×30 radius 9 dari `NAV_TONES`. Tombol primer AdminKit: `#E85A1E` → hover `#D14E18` (kit v3: navy solid `#144682`). Semua ini palet LAMA — akan digantikan palet sage saat implementasi.
 
-**⚠️ APPROVED EXCEPTION — KPI hero tile (CRM Dashboard).** 4 tile KPI baris atas `src/modules/crm/CRMDashboardPage.jsx` (komponen `KpiCard`) memakai **5 warna di luar tabel di atas**: `#5C6070` (slate gelap) + `#EE9A7E` (peach) untuk latar gradasi diagonal 135° (hard split 50/50, bukan blend halus), `#B4E0F2`/`#7FBBDA`/`#5A9CC3` untuk blob radial berukuran RELATIF (`width:158.5%` + `aspect-ratio:1/1`, `left:-29.25%`, `top:36%`) — sengaja bukan px, karena lebar tile fluid (±218px @1280 s/d ±386px @1920). Hasil eksplorasi desain di Claude Design, **sudah di-approve Den** — ini **bukan** pelanggaran §4 / "no dark green". **Scope: komponen ini saja** — JANGAN dipakai di komponen lain, dan JANGAN "dibetulkan" balik ke palet standar oleh sesi berikutnya.
+**⚠️ APPROVED EXCEPTION — KPI hero tile (CRM Dashboard).** 4 tile KPI baris atas `src/modules/crm/CRMDashboardPage.jsx` (komponen `KpiCard`) memakai **5 warna di luar tabel di atas**: `#5C6070` (slate gelap) + ~~`#EE9A7E`~~ **`#EEAA8D`** *[koreksi doc-keeper 20 Sep 2026: kode `CRMDashboardPage.jsx:3548` memakai `#EEAA8D` sejak `a709bd5` 31 Agu 2026; `#EE9A7E` nol hit di `src/`]* (peach) untuk latar gradasi diagonal 135° (hard split 50/50, bukan blend halus), `#B4E0F2`/`#7FBBDA`/`#5A9CC3` untuk blob radial berukuran RELATIF (`width:158.5%` + `aspect-ratio:1/1`, `left:-29.25%`, `top:36%`) — sengaja bukan px, karena lebar tile fluid (±218px @1280 s/d ±386px @1920). Hasil eksplorasi desain di Claude Design, **sudah di-approve Den** — ini **bukan** pelanggaran §4 / "no dark green". **Scope: komponen ini saja** — JANGAN dipakai di komponen lain, dan JANGAN "dibetulkan" balik ke palet standar oleh sesi berikutnya. ✅ **[20 Sep 2026 — DITEGASKAN ULANG di bawah palet sage (#60 b): kelima warna TETAP, TIDAK diseragamkan ke sage.** Alasannya: warna status/data dan warna identitas aplikasi adalah dua kelas warna yang berbeda tugas — warna status harus tetap kontras satu sama lain (merah tetap beda dari hijau) supaya sinyalnya tidak kabur; ini **bukan pengecualian yang lupa diseragamkan**. Font Oswald `.kpi-value` di tile yang sama **dipertahankan untuk saat ini** — keputusan sadar yang ditunda, bukan pelanggaran kebijakan tiga font (#60 c).]
 - Implementasi = kelas CSS `.kpi` / `.kpi::before` (scrim gelap pita bawah) / `.kpi::after` (blob) di blok `<style>` inline file itu, **bukan** objek style `D` — karena butuh pseudo-element yang tak bisa diekspresikan lewat inline style React. Teks tile putih.
 - **Card lain di Dashboard TIDAK berubah** (funnel, tabel, chart, kalender tetap kit v3 terang: `cardHead` bar `#F7F8FA` + judul `#16243A`). Hero card = exception di luar kit v3 standar, bukan arah baru untuk semua card.
 
@@ -47,14 +49,14 @@
 
 **Brand mark "Nexus" + "BY MSI" (sidebar `NexusSidebar` + header mobile, 2 Sep 2026):** teks **Nexus `#144682`** + **BY MSI `#E85A1E`**, ditulis **hex LITERAL** — **BUKAN** lewat `var(--ink)`/`var(--faint)`, dan itu keputusan sadar: kedua variabel itu mewarnai teks umum chrome sidebar di **~15 titik lain** (label nav, ikon, judul grup, item disabled, nama user, termasuk `color` dasar `<aside>` yang diwarisi seluruh isinya). ⚠️ **JANGAN "merapikannya" balik jadi variabel** — mengubah definisinya di `index.css` akan menavykan & mengoranyekan 15 titik yang tak dimaksud. `src/index.css` nol perubahan. Kotak placeholder **"N" masih `var(--navy)` `#1B4D8A`** (menunggu file logo asli) sehingga bersebelahan dengan teks `#144682` — konsekuensi yang **sudah diketahui**. Kontras "BY MSI" di atas putih naik 2.23 → **3.55:1**, **masih di bawah AA** untuk 9.5px → **TD-227**.
 
-**Font:**
+**Font (resmi TIGA saja — keputusan 19 Sep 2026):**
 | Font | Pakai |
 |------|-------|
-| **Montserrat** | Heading, judul, nama, label penting |
+| **Montserrat** | Heading/display, judul, nama, label penting |
 | **Inter** | Body / UI default |
 | **IBM Plex Mono** | Angka, nomor dokumen, SKU, code, jam, tanggal mono |
-| **Oswald** (600/700) | **Font resmi KEEMPAT — TAMBAHAN, bukan pengganti.** Dipakai HANYA di `.kpi-value` (angka 46px, 4 KPI hero tile CRM Dashboard). Di-load di `index.html` (rantai `&family=` yang sama + `display=swap`). Jangan diterapkan ke elemen lain. |
-| JetBrains Mono | `.font-mono` utility (sebagian) |
+
+Font lain apa pun **tidak resmi**. Yang hari ini masih ada di kode dan **belum dibersihkan** (BELUM dikerjakan, ditunda): tumpukan font legacy yang masih di-`@import` `index.css`/`App.jsx` + kelas `.font-display`/`.font-numeric`/`.font-mono` (**TD-70**; ⚠️ kelas `.font-mono` ≠ IBM Plex Mono — untuk nomor dokumen pakai token `FONT_MONO`), dan **Oswald** 600/700 di `.kpi-value` (angka 46px, 4 KPI hero tile CRM Dashboard; di-load `index.html`) yang **DIPERTAHANKAN untuk saat ini** — keputusan sadar Den 20 Sep 2026 yang sengaja ditunda (#60 c), **bukan kelupaan dan bukan pelanggaran**; jangan dicatat sebagai pelanggaran saat audit ulang. Cormorant Garamond/Lora di dua halaman **web** Storbit (`salesOrderDetail.module.css`) **bukan** pengecualian — ikut penyatuan ke tiga font (#60 a, BELUM DIKERJAKAN). Jangan menambah pemakaian font legacy maupun Oswald ke elemen lain.
 
 **Ikon:** **Lucide React only**. Tidak ada inline-SVG ad-hoc untuk ikon yang tersedia di Lucide. PDF: ikon di-skip / pakai bentuk View (react-pdf tak render Lucide).
 
@@ -63,7 +65,7 @@
 ## 2. Layout Patterns
 
 - **AppShell** (`App.jsx`): `<div className="flex flex-col lg:flex-row min-h-screen">` → mobile stack, desktop row. Sidebar (`hidden lg:flex` static sticky) + `<main className="nexus-shell-bg flex-1 min-w-0 overflow-x-hidden">`.
-- **`.nexus-shell-bg`** — background `<main>` (kini `#ffffff` global sejak 2.10F).
+- **`.nexus-shell-bg`** — background `<main>`: **`#F2F5F9`** (`App.jsx:2824`; root & `body` juga `#F2F5F9` sejak rebrand 1 Jul 2026 — catatan lama "`#ffffff` sejak 2.10F" basi, dikoreksi 19 Sep 2026; yang putih = kartu & sidebar). Target palet sage: latar halaman `#F6F8F3` (belum diimplementasikan).
 - **`.nexus-main-surface`** — div pembungkus konten modul, padding `px-5 sm:px-7 xl:px-9 py-6 lg:py-7`; di-`display:none` saat di App Launcher.
 - **`ModuleSidebar`** — vertical nav per modul (Option B: sidebar-after-launcher). Desktop static; mobile = **drawer** (`asDrawer`/`isOpen`/`onClose`, slide-in dari kiri, overlay) dibuka via hamburger di topbar.
 - **App Launcher** — bento module grid (full-width saat `!activeModule`); card per grup, permission-gated, restricted modal.
@@ -97,7 +99,7 @@
 
 - ❌ **No dark green.** Deprecated: `#1a3a2a`, `#2d5a3d`, `#0F2A23`, `#173D34`, `#2F6B3F`, `#E7EFE2`. (Teal/hijau-status tertentu mis. `#1F8B4D` WON, `#0F766E` Head, `#166534` Manager-level OK.)
 - ❌ **No emoji** di UI (✓/× untuk close diganti Lucide `Check`/`X`).
-- ❌ **No `Plus Jakarta Sans`** (diganti Inter + Montserrat).
+- ❌ **Font di luar tiga font resmi** (Montserrat · Inter · IBM Plex Mono) — sisa font legacy di kode = TD-70, jangan ditambah pemakaiannya.
 - ❌ Jangan redesign UI kecuali task memintanya. Jangan ubah komponen tak terkait.
 - ❌ Jangan tambah npm package tanpa approval.
 - ⚠️ Inline-style untuk warna brand boleh (banyak modul pakai token `C`/`D`/`S` inline); konsistenkan ke palet — jangan warna acak di luar palet. **Pengecualian tercatat & disetujui:** 5 warna KPI hero tile CRM Dashboard (§1) — di luar palet, tapi *approved* dan ber-scope ke komponen itu saja.
