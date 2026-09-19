@@ -1,6 +1,6 @@
 # PRD — Nexus by MSI
 
-> Product Requirements Document. Sumber: `AGENTS.md` (arah produk), `CLAUDE.md`, `docs/09_ROADMAP.md`. Untuk status implementasi detail lihat ROADMAP; untuk struktur data lihat `docs/03_DATA_MODEL.md`.
+> Product Requirements Document. Sumber: `AGENTS.md` (arah produk), `CLAUDE.md`, `docs/Governance/09_ROADMAP.md`. Untuk status implementasi detail lihat ROADMAP; untuk struktur data lihat `docs/Governance/03_DATA_MODEL.md`.
 
 ---
 
@@ -29,7 +29,7 @@
 
 Platform **multi-company by design**: setiap tabel business scoped `company_id`/`owner_company_id`; konsolidasi grup hanya untuk role yang diizinkan (super_admin lintas-entitas). Tiap entitas bisa punya proses berbeda tapi tetap terhubung di level grup.
 
-UUID entitas: lihat `docs/03_DATA_MODEL.md §2`.
+UUID entitas: lihat `docs/Governance/03_DATA_MODEL.md §2`.
 
 ---
 
@@ -49,7 +49,7 @@ UUID entitas: lihat `docs/03_DATA_MODEL.md §2`.
 | **Procurement / PO / Vendor** | Pengadaan | Tabel `vendors` ada; modul belum dibangun | 📋 | Procurement |
 | **App Launcher** | Bento grid modul + gating | Card per modul, permission-gated, restricted modal | ✅ Live | semua |
 
-Detail status sub-fitur: `docs/09_ROADMAP.md`.
+Detail status sub-fitur: `docs/Governance/09_ROADMAP.md`.
 
 ---
 

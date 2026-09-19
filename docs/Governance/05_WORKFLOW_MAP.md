@@ -1,6 +1,6 @@
 # WORKFLOW MAP — Nexus by MSI
 
-> Alur bisnis per modul live. Sumber: `CLAUDE.md` (CRM Flow, phase notes), `docs/03_DATA_MODEL.md`. Notasi: **[role]** = pelaku, **⚙** = trigger/otomatis DB.
+> Alur bisnis per modul live. Sumber: `CLAUDE.md` (CRM Flow, phase notes), `docs/Governance/03_DATA_MODEL.md`. Notasi: **[role]** = pelaku, **⚙** = trigger/otomatis DB.
 >
 > **Diperbarui 2026-09-18 (tiga alur berubah, semuanya LIVE produksi; dua di antaranya lewat SQL manual/migrasi hari-merge):** **(1) §CRM/Sales — kepemilikan deal = `inquiries.owner_id` (LIVE 18 Sep, `20260830000003` + `20260917000002`, serempak):** sales melihat/mengubah inquiry yang ia **miliki** (bukan yang ia buat), manager-ke-atas seluruh entitasnya, procurement yang ber-PRF; "Ganti Pemilik" di Detail Deal = aksi manager-ke-atas (WITH CHECK ikut `owner_id`); owner terkunci begitu deal WON/LOST/CANCELLED (`trg_z_lock_inquiry_owner`). Dashboard/Report `p_scope_own` mengikuti sumbu yang sama. ⚠️ Insiden 121 inquiry ber-`owner_id` NULL (7-17 Sep) sudah dibackfill 18 Sep — pertahanan lapis DB belum diputuskan (#58). **(2) §Logistics — "Tandai Terkirim" WAJIB tanggal SJ ditandatangani** (`delivery_notes.signed_date`, 17 Sep; RPC `mark_delivery_delivered(uuid, date)`: tidak masa depan, tidak sebelum berangkat; tombol FE disabled sampai terisi). ⚠️ Overload lama tanpa syarat tanggal masih hidup (TD-263/#59); **staging belum punya kolom & RPC-nya** (TD-265). **(3) §Logistics — tombol Generate Picking List kini juga muncul saat SP `BTB_TERBIT`** (17 Sep; SP yang BTB pertamanya terbit tapi masih ada sisa kirim — kasus SP 2290815, tombolnya sempat hilang permanen; RPC memang tak pernah mengecek status SP). `INVOICED`/`SUBMITTED` menunggu Finance (#57). **Juga:** `mark_inquiry_won` **berhenti** menulis `accounts.pipeline_stage='WON'` dan trigger lama `trg_set_customer_on_won` **dicabut** (`20260916000001`, LIVE 18 Sep) — konversi akun→customer tetap lewat `trg_set_customer_on_inquiry_won` (tak berubah); "Sumbu deal" di §CRM kini benar-benar tunggal. Detail: `PROGRESS.md` 2026-09-17 & 2026-09-18 · `03_DATA_MODEL.md` gotcha #37/#38.
 >
@@ -328,7 +328,7 @@ Konteks saat cron aging dinyalakan (10 Jul): rasio aktivitas tercatat per lead v
 
 ## Logistics (Storbit SP) Flow — Mesin Status 12 Tahap (LENGKAP: FASE 0-5 LIVE — FASE 5/LUNAS sejak 17 Agu 2026, snapshot refresh commit `35cb1d3`) + Dashboard Storbit (18 Agu 2026)
 
-Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_status(customer_id, sp_no)` (di-maintain otomatis oleh event, BUKAN diketik). Detail skema/RPC: `docs/03_DATA_MODEL.md §3 (Inventory & Logistics) + §5`.
+Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_status(customer_id, sp_no)` (di-maintain otomatis oleh event, BUKAN diketik). Detail skema/RPC: `docs/Governance/03_DATA_MODEL.md §3 (Inventory & Logistics) + §5`.
 
 ```
 [Sales/Operations] Input SP (single door: InputSPPage)
@@ -846,4 +846,4 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 
 ## [Modul lain]
 
-- **Finance (transaksi), Procurement/PO, Approval engine runtime, Billing/AR-AP, Reporting konsolidasi** — [TODO: belum cukup info / belum dibangun. Lihat `docs/09_ROADMAP.md` status 📋].
+- **Finance (transaksi), Procurement/PO, Approval engine runtime, Billing/AR-AP, Reporting konsolidasi** — [TODO: belum cukup info / belum dibangun. Lihat `docs/Governance/09_ROADMAP.md` status 📋].

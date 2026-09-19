@@ -6,7 +6,7 @@
 ## 1. APA INI
 Nexus by MSI — ERP/CRM multi-entity. Stack: React + Vite + Supabase + Tailwind.
 Deploy nexus.msigroup.co.id via Vercel (auto-deploy dari branch main).
-Repo: mhmmdjaelaniii/storbit-manifest.
+Repo: GitHub org Milenial-Solusi-Internusa/storbit-manifest (private; pindah dari akun pribadi mhmmdjaelaniii 10 Jul 2026).
 
 | Entitas | Nama | Bidang |
 |---|---|---|
@@ -47,18 +47,11 @@ Alur: Vira rancang -> Den relay ke CC -> CC balik PLAN -> Vira review -> CC ekse
 Keamanan: kalau password DB ter-paste di chat -> GANTI segera.
 
 ## 5. STATUS TERKINI — baca sumber hidup di repo, JANGAN cari di sini
-| Sumber | Isi |
-|---|---|
-| CLAUDE.md | acuan utama AI |
-| docs/Governance/09_ROADMAP.md | status modul, done, next |
-| docs/Governance/10_TASK_BREAKDOWN.md | task aktif & backlog |
-| docs/Governance/08_TECH_DEBT.md | tech debt open/resolved |
-| docs/Governance/00_DEV_JOURNEY.md | sejarah + inventaris fitur LIVE |
-| docs/Governance/03_DATA_MODEL.md | skema DB, RPC, mesin status |
-| docs/Governance/05_WORKFLOW_MAP.md | alur bisnis + gate/approval |
-| docs/Governance/04_ROLE_PERMISSION_MATRIX.md | RBAC, role, peta menu-role |
-| PROGRESS.md | dev log kronologis |
-| supabase/schema_snapshot.sql | struktur DB kanonik |
+Daftar lengkap 18 dokumen acuan tetap (isinya apa / buat siapa / kapan dibuka)
+hidup di SATU tempat: docs/Governance/00_INDEX_README.md §Daftar Dokumen
+(rumah resmi sejak 20 Sep 2026; tidak disalin ke sini supaya tidak melenceng).
+Titik masuk: CLAUDE.md (acuan utama AI, paling dinamis) -> index itu -> dokumen
+per tipe task. Struktur DB kanonik = supabase/schema_snapshot.sql. Dev log = PROGRESS.md.
 
 Di sesi baru: minta AI/CC baca CLAUDE.md + Governance relevan dulu SEBELUM kerja.
 
@@ -66,7 +59,7 @@ Di sesi baru: minta AI/CC baca CLAUDE.md + Governance relevan dulu SEBELUM kerja
 Sub-agent CC doc-keeper (.claude/agents/doc-keeper.md) jaga dokumentasi match kode.
 Model: NYATET + LAPOR. Dipanggil MANUAL di akhir unit kerja:
   "pakai agent doc-keeper — catat perubahan terakhir ke dokumentasi yang relevan"
-Jaga: 6 doc Governance + PROGRESS + state CLAUDE. Ingatkan hal manual (refresh
+Jaga: 13 doc docs/Governance/ + PROGRESS + state CLAUDE (+ docs/DESIGN_SYSTEM_REFERENCE.md). Ingatkan hal manual (refresh
 snapshot via pg_dump, rekam migrasi, commit).
 
 ## 7. FILE ATTACH DI PROJECT (timeless saja)

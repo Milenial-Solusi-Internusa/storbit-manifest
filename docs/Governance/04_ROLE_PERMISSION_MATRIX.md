@@ -1,6 +1,6 @@
 # ROLE PERMISSION MATRIX — Nexus by MSI
 
-> Matrix RBAC. Sumber: `CLAUDE.md` (Roles & Permission Structure, kini di `docs/00_DEV_JOURNEY.md`), `docs/03_DATA_MODEL.md` (RLS), `docs/08_TECH_DEBT.md` (gaps). ⚠️ RLS DB belum sepenuhnya sinkron dengan matrix UI — lihat §5.
+> Matrix RBAC. Sumber: `CLAUDE.md` (Roles & Permission Structure, kini di `docs/Governance/00_DEV_JOURNEY.md`), `docs/Governance/03_DATA_MODEL.md` (RLS), `docs/Governance/08_TECH_DEBT.md` (gaps). ⚠️ RLS DB belum sepenuhnya sinkron dengan matrix UI — lihat §5.
 
 ---
 

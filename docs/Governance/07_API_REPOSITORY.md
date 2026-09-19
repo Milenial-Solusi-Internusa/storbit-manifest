@@ -1,6 +1,6 @@
 # API & REPOSITORY — Nexus by MSI
 
-> Supabase client patterns, RPC, Edge Functions, query patterns, error handling. Sumber: `supabase/schema_snapshot.sql`, `docs/03_DATA_MODEL.md`, `docs/02_RULES_GOVERNANCE.md`.
+> Supabase client patterns, RPC, Edge Functions, query patterns, error handling. Sumber: `supabase/schema_snapshot.sql`, `docs/Governance/03_DATA_MODEL.md`, `docs/Governance/02_RULES_GOVERNANCE.md`.
 
 ---
 
