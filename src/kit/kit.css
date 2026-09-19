@@ -1,0 +1,56 @@
+/* =========================================================================
+   Nexus Kit — gaya global kit (keyframes, skeleton, scrollbar, focus-ring).
+   Pengganti `<KitStyles/>` AdminKit yang dulu dirender per halaman.
+
+   Diimpor SATU KALI di `src/main.jsx` (Batch DS 2). Selama Batch DS 1 belum ada
+   yang mengimpornya kecuali etalase `__demo/KitGallery.jsx` (impor sendiri,
+   supaya bisa di-mount tanpa menyentuh main.jsx).
+
+   Prefiks kelas `nk-` (Nexus Kit) — sengaja beda dari `ak-` AdminKit supaya
+   dua kit yang hidup bersamaan selama Batch DS 1–6 tidak saling menimpa.
+
+   ⚠️ Nilai warna di sini adalah CERMIN `tokens.js` (CSS statis tak bisa
+   mengimpor JS): --nk-line = LINE, --nk-line-soft = LINE_SOFT,
+   --nk-input-bg = INPUT_BG, --nk-focus = FOCUS_RING, --nk-faint = INK_FAINT.
+   Ubah di kedua tempat sekaligus.
+   ========================================================================= */
+
+:root {
+  --nk-line: #D8E0D2;
+  --nk-line-soft: #E3EADE;
+  --nk-input-bg: #F6F8F3;
+  --nk-faint: #838E7A;
+  --nk-focus: 0 0 0 3px rgba(92, 107, 82, .35);
+  --nk-ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+@keyframes nk-spin  { to { transform: rotate(360deg); } }
+@keyframes nk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes nk-pop   { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes nk-rise  { 0% { transform: translateY(9px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+@keyframes nk-fade  { from { opacity: 0; } to { opacity: 1; } }
+
+.nk-spin { animation: nk-spin .8s linear infinite; }
+.nk-skel { background: var(--nk-line-soft); border-radius: 8px; animation: nk-pulse 1.3s ease-in-out infinite; }
+.nk-rise { animation: nk-rise .32s var(--nk-ease) both; }
+.nk-fade { animation: nk-fade .2s ease both; }
+.nk-pop  { animation: nk-pop .4s ease both; }
+
+/* Kontrol form: outline bawaan browser dimatikan, diganti ring INK_SOFT yang
+   HANYA muncul saat fokus keyboard/klik (focus-visible), supaya klik mouse
+   tidak meninggalkan ring di tombol. Input teks tetap memberi ring pada
+   fokus apa pun — di sana ring adalah penanda "sedang mengetik". */
+.nk-input:focus, .nk-area:focus, .nk-select:focus { outline: none; box-shadow: var(--nk-focus); }
+.nk-focus:focus { outline: none; }
+.nk-focus:focus-visible { box-shadow: var(--nk-focus); }
+
+.nk-input::placeholder, .nk-area::placeholder { color: var(--nk-faint); opacity: 1; }
+
+.nk-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.nk-scroll::-webkit-scrollbar-thumb { background: var(--nk-line); border-radius: 20px; border: 3px solid var(--nk-input-bg); }
+.nk-scroll::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nk-rise, .nk-pop, .nk-fade { animation: none !important; }
+  .nk-skel { animation: none !important; }
+}

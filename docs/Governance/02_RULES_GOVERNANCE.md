@@ -159,7 +159,7 @@
 
 ## 5. Brand & Design System — palet APLIKASI (keputusan Den 19 Sep 2026)
 
-> ⛔ **STATUS: KEBIJAKAN SUDAH DIPUTUSKAN, KODE BELUM DIUBAH.** Seluruh isi §5 ini adalah **arah/kebijakan**; kode aplikasi hari ini masih memakai palet navy/oranye lama, dua tumpukan font legacy, Oswald `.kpi-value`, dan pengecualian KPI hero (inventaris lengkapnya: `docs/DESIGN_SYSTEM_REFERENCE.md`). **Implementasi (penyatuan kit tunggal + ganti warna/font + TD-269/TD-270) sengaja DITUNDA menunggu instruksi Den.** Jangan mengimplementasikannya sepihak, dan jangan membaca dokumen ini sebagai "kode sudah sesuai".
+> ⛔ **STATUS: KEBIJAKAN SUDAH DIPUTUSKAN, KODE BELUM DIUBAH.** Seluruh isi §5 ini adalah **arah/kebijakan**; kode aplikasi hari ini masih memakai palet navy/oranye lama, dua tumpukan font legacy, Oswald `.kpi-value`, dan pengecualian KPI hero (inventaris lengkapnya: `docs/DESIGN_SYSTEM_REFERENCE.md`). **Implementasi (penyatuan kit tunggal + ganti warna/font + TD-269/TD-270) sengaja DITUNDA menunggu instruksi Den.** **[20 Sep 2026 malam — Batch DS 1 selesai: kit tunggal `src/kit/` (`tokens.js` sage + komponen) + `src/lib/entities.js` sudah ADA sebagai KODE MATI, nol halaman memakainya; kalimat "kode aplikasi masih navy/oranye" tetap benar untuk semua halaman; Batch DS 2–7 belum mulai — `docs/DESIGN_SYSTEM_REFERENCE.md` A.4.3.]** Jangan mengimplementasikannya sepihak (termasuk mengimpor `src/kit` ke halaman di luar giliran Batch DS-nya — #61 tetap berlaku), dan jangan membaca dokumen ini sebagai "kode sudah sesuai".
 
 **Palet resmi tampilan aplikasi internal Nexus — "sage":**
 
