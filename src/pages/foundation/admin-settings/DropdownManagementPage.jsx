@@ -27,26 +27,9 @@ import {
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/useAuth";
-import { useToast } from "./kit";
+import { useToast } from '../../../kit';
+import { CARD, ACCENT, ACCENT_HOVER, LINE, INK, INK_SOFT, INK_FAINT, LINE_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, DISABLED_BG, DISABLED_INK, FOCUS_RING, SHADOW_1, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC } from '../../../kit/tokens';
 
-/* ---------- brand tokens ---------- */
-const NAVY = "#1B4D8A";
-const ORANGE = "#E85A1E";
-const ORANGE_DK = "#D14E18";
-const CREAM = "#F6EFE3";
-const SURFACE = "#FFFDF8";
-const LINE = "#E5E0D8";
-const LINE_SOFT = "#EFE9DD";
-const INK = "#16243A";
-const INK_SOFT = "#4A5360";
-const MUTED = "#6B7280";
-const FAINT = "#9CA3AF";
-const DANGER = "#DC2626";
-const GREEN = "#1F8B4D";
-const TINT = "#EAF0F8";
-const FONT_HEAD = "'Montserrat', system-ui, -apple-system, sans-serif";
-const FONT_BODY = "'Inter', system-ui, -apple-system, sans-serif";
-const FONT_MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
 /* ---------- group icon map ---------- */
 const GROUP_ICON = { Users, Coins, Ship, FileText };
@@ -146,7 +129,7 @@ function buildTree(ddRows, curRows, ptRows) {
 /* icon button with hover state */
 function IconBtn({ icon: IconCmp, title, onClick, danger, active }) {
   const [h, setH] = useState(false);
-  const c = danger ? DANGER : NAVY;
+  const c = danger ? SEMANTIC.danger.fg : INK;
   return (
     <button type="button" title={title} onClick={onClick}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
@@ -154,8 +137,8 @@ function IconBtn({ icon: IconCmp, title, onClick, danger, active }) {
         width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center",
         justifyContent: "center", cursor: "pointer", flex: "0 0 32px",
         border: "1px solid " + (h || active ? c : LINE),
-        background: h || active ? (danger ? "rgba(220,38,38,.07)" : TINT) : SURFACE,
-        color: h || active ? c : MUTED, transition: "all .15s",
+        background: h || active ? (danger ? SEMANTIC.danger.bg : ACCENT) : CARD,
+        color: h || active ? c : INK_SOFT, transition: "all .15s",
       }}>
       <IconCmp size={15} strokeWidth={1.8} />
     </button>
@@ -170,11 +153,11 @@ function Toggle({ on, onChange, title }) {
       style={{
         width: 40, height: 23, borderRadius: 20, border: "none", padding: 0,
         position: "relative", cursor: "pointer", flex: "0 0 40px",
-        background: on ? GREEN : "#CFC8BA", transition: "background .25s ease",
+        background: on ? ACCENT_HOVER : LINE, transition: "background .25s ease",
       }}>
       <span style={{
         position: "absolute", top: 3, left: 3, width: 17, height: 17, borderRadius: "50%",
-        background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.25)",
+        background: on ? INK : INPUT_BG, border: on ? "none" : "1px solid " + INK_FAINT, boxSizing: "border-box", boxShadow: SHADOW_1,
         transform: on ? "translateX(17px)" : "translateX(0)",
         transition: "transform .25s cubic-bezier(.22,1,.36,1)",
       }} />
@@ -202,10 +185,10 @@ function OptionEditor({ initial, onSave, onCancel }) {
       <input ref={refEl} value={val} placeholder={ph} onKeyDown={key}
         onChange={(e) => set(e.target.value)} onFocus={() => setF(true)} onBlur={() => setF(false)}
         style={{
-          width: "100%", height: 40, borderRadius: 9, border: "1px solid " + (f ? NAVY : LINE),
-          background: SURFACE, padding: "0 12px", fontFamily: mono ? FONT_MONO : FONT_BODY,
+          width: "100%", height: 40, borderRadius: 9, border: "1px solid " + (f ? INK_SOFT : LINE),
+          background: INPUT_BG, padding: "0 12px", fontFamily: mono ? FONT_MONO : FONT_BODY,
           fontSize: mono ? 12.5 : 13.5, fontWeight: 500, color: INK, outline: "none",
-          boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none",
+          boxShadow: f ? FOCUS_RING : "none",
           transition: "border-color .15s, box-shadow .15s",
         }} />
     );
@@ -214,10 +197,10 @@ function OptionEditor({ initial, onSave, onCancel }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 12, padding: "11px 14px",
-      borderRadius: 11, border: "1.5px solid " + NAVY, background: "#FAFCFF",
-      boxShadow: "0 4px 16px rgba(20,70,130,.12)",
+      borderRadius: 11, border: "1.5px solid " + INK_SOFT, background: INPUT_BG,
+      boxShadow: SHADOW_1,
     }}>
-      <span style={{ width: 24, color: FAINT, display: "flex", justifyContent: "center", flex: "0 0 24px" }}>
+      <span style={{ width: 24, color: INK_SOFT, display: "flex", justifyContent: "center", flex: "0 0 24px" }}>
         <Plus size={16} />
       </span>
       <div style={{ flex: "1 1 auto", minWidth: 0 }}>{field(label, onLabel, "Label opsi…", false, ref)}</div>
@@ -227,7 +210,7 @@ function OptionEditor({ initial, onSave, onCancel }) {
         <button type="button" onClick={submit} disabled={!canSave}
           style={{
             width: 36, height: 36, borderRadius: 9, border: "none", cursor: canSave ? "pointer" : "not-allowed",
-            background: canSave ? GREEN : "#B7D6C3", color: "#fff", display: "flex",
+            background: canSave ? ACCENT : DISABLED_BG, color: canSave ? INK : DISABLED_INK, display: "flex",
             alignItems: "center", justifyContent: "center", transition: "background .15s",
           }}>
           <Check size={17} />
@@ -235,7 +218,7 @@ function OptionEditor({ initial, onSave, onCancel }) {
         <button type="button" onClick={onCancel}
           style={{
             width: 36, height: 36, borderRadius: 9, border: "1px solid " + LINE, cursor: "pointer",
-            background: SURFACE, color: MUTED, display: "flex", alignItems: "center", justifyContent: "center",
+            background: CARD, color: INK_SOFT, display: "flex", alignItems: "center", justifyContent: "center",
           }}>
           <X size={17} />
         </button>
@@ -262,22 +245,22 @@ function OptionRow({ opt, index, editable, onEdit, onDelete, onToggle, dnd, pend
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
         display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 11,
-        border: "1px solid " + (isOver ? NAVY : h ? "#D8D0C2" : LINE_SOFT),
-        background: isDragging ? TINT : h ? "#FBF7EF" : SURFACE,
+        border: "1px solid " + (isOver ? INK : h ? LINE : LINE_SOFT),
+        background: isDragging ? ACCENT : h ? ROW_HOVER : CARD,
         opacity: isDragging ? 0.5 : opt.active ? 1 : 0.62,
-        boxShadow: isOver ? "0 -2px 0 " + NAVY + " inset, 0 4px 14px rgba(20,70,130,.12)" : "none",
+        boxShadow: isOver ? "0 -2px 0 " + INK_SOFT + " inset, " + SHADOW_1 : "none",
         transition: "border-color .15s, background .15s, box-shadow .15s", cursor: "default",
       }}>
       {editable ? (
         <span title="Seret untuk mengurutkan"
-          style={{ color: h ? NAVY : FAINT, cursor: "grab", display: "flex", flex: "0 0 auto", transition: "color .15s" }}>
+          style={{ color: h ? INK : INK_SOFT, cursor: "grab", display: "flex", flex: "0 0 auto", transition: "color .15s" }}>
           <GripVertical size={17} />
         </span>
       ) : (
         <span style={{ flex: "0 0 17px" }} />
       )}
       <span style={{
-        fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, color: MUTED, width: 22,
+        fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, color: INK_SOFT, width: 22,
         textAlign: "right", flex: "0 0 22px",
       }}>{index + 1}</span>
       <span style={{ flex: "1 1 auto", minWidth: 0, fontFamily: FONT_BODY, fontSize: 14, fontWeight: 600, color: INK }}>
@@ -285,21 +268,21 @@ function OptionRow({ opt, index, editable, onEdit, onDelete, onToggle, dnd, pend
       </span>
       <span style={{
         display: "inline-flex", alignItems: "center", gap: 6, flex: "0 0 auto",
-        fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600, color: NAVY,
-        background: TINT, border: "1px solid #D7E4F2", borderRadius: 7, padding: "4px 9px",
+        fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600, color: INK,
+        background: HEAD_BG, border: "1px solid " + LINE, borderRadius: 7, padding: "4px 9px",
       }}>
         <Tag size={12} />{opt.value}
       </span>
 
       {confirming ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
-          <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: DANGER }}>Hapus?</span>
+          <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: SEMANTIC.danger.fg }}>Hapus?</span>
           <button type="button" onClick={() => { onDelete(opt.id); setPendingDelete(null); }}
-            style={{ height: 32, padding: "0 12px", borderRadius: 8, border: "none", background: DANGER, color: "#fff", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+            style={{ height: 32, padding: "0 12px", borderRadius: 8, border: "1px solid " + SEMANTIC.danger.bd, background: SEMANTIC.danger.bg, color: SEMANTIC.danger.fg, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
             Ya
           </button>
           <button type="button" onClick={() => setPendingDelete(null)}
-            style={{ height: 32, padding: "0 12px", borderRadius: 8, border: "1px solid " + LINE, background: SURFACE, color: MUTED, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+            style={{ height: 32, padding: "0 12px", borderRadius: 8, border: "1px solid " + LINE, background: CARD, color: INK_SOFT, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
             Batal
           </button>
         </div>
@@ -508,27 +491,27 @@ export function DropdownManagementBody() {
     display: "grid", gridTemplateColumns: "320px 1fr", gap: 20,
     maxWidth: 1280, margin: "0 auto", alignItems: "start",
   };
-  const panel = { background: SURFACE, border: "1px solid " + LINE, borderRadius: 16, overflow: "hidden" };
+  const panel = { background: CARD, border: "1px solid " + LINE, borderRadius: 16, overflow: "hidden" };
 
   return (
     <div style={page}>
       <style>{`
         .dm-scroll::-webkit-scrollbar{width:10px;height:10px}
-        .dm-scroll::-webkit-scrollbar-thumb{background:#D8D0C2;border-radius:20px;border:3px solid ${SURFACE}}
+        .dm-scroll::-webkit-scrollbar-thumb{background:${LINE};border-radius:20px;border:3px solid ${CARD}}
         .dm-scroll::-webkit-scrollbar-track{background:transparent}
-        input::placeholder{color:${FAINT};opacity:1}
+        input::placeholder{color:${INK_SOFT};opacity:1}
         @keyframes dm-spin{to{transform:rotate(360deg)}}
-        .dm-spinner{width:34px;height:34px;border-radius:50%;border:3px solid ${LINE};border-top-color:${NAVY};animation:dm-spin .7s linear infinite}
+        .dm-spinner{width:34px;height:34px;border-radius:50%;border:3px solid ${LINE};border-top-color:${INK};animation:dm-spin .7s linear infinite}
         *{box-sizing:border-box}
       `}</style>
 
       {loading ? (
         <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: "80px 20px" }}>
           <div className="dm-spinner" />
-          <div style={{ color: MUTED, fontSize: 13.5 }}>Memuat data dropdown…</div>
+          <div style={{ color: INK_SOFT, fontSize: 13.5 }}>Memuat data dropdown…</div>
         </div>
       ) : error ? (
-        <div style={{ maxWidth: 1280, margin: "0 auto", textAlign: "center", color: DANGER, padding: "60px 20px", fontSize: 13.5 }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", textAlign: "center", color: SEMANTIC.danger.fg, padding: "60px 20px", fontSize: 13.5 }}>
           Gagal memuat data: {error}
         </div>
       ) : (
@@ -537,17 +520,17 @@ export function DropdownManagementBody() {
         <div style={panel}>
           <div style={{ padding: 14, borderBottom: "1px solid " + LINE_SOFT }}>
             <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none", display: "flex" }}>
+              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: INK_SOFT, pointerEvents: "none", display: "flex" }}>
                 <Search size={16} />
               </span>
               <input value={treeQuery} onChange={(e) => setTreeQuery(e.target.value)} placeholder="Cari daftar dropdown…"
                 style={{
-                  width: "100%", height: 42, borderRadius: 10, border: "1px solid " + LINE, background: CREAM,
+                  width: "100%", height: 42, borderRadius: 10, border: "1px solid " + LINE, background: HEAD_BG,
                   padding: "0 34px 0 36px", fontFamily: FONT_BODY, fontSize: 13.5, color: INK, outline: "none",
                 }} />
               {treeQuery && (
                 <button type="button" onClick={() => setTreeQuery("")}
-                  style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", color: MUTED, cursor: "pointer", display: "flex", padding: 4 }}>
+                  style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", color: INK_SOFT, cursor: "pointer", display: "flex", padding: 4 }}>
                   <X size={15} />
                 </button>
               )}
@@ -556,7 +539,7 @@ export function DropdownManagementBody() {
 
           <div className="dm-scroll" style={{ maxHeight: "calc(100vh - 230px)", overflowY: "auto", padding: 10 }}>
             {tree.length === 0 && (
-              <div style={{ padding: "32px 16px", textAlign: "center", color: FAINT, fontSize: 13 }}>
+              <div style={{ padding: "32px 16px", textAlign: "center", color: INK_SOFT, fontSize: 13 }}>
                 Tidak ada daftar yang cocok.
               </div>
             )}
@@ -572,12 +555,12 @@ export function DropdownManagementBody() {
                       fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700, color: INK_SOFT,
                       textTransform: "uppercase", letterSpacing: 0.6,
                     }}>
-                    <span style={{ display: "flex", color: FAINT, transition: "transform .2s", transform: open ? "rotate(0deg)" : "rotate(-90deg)" }}>
+                    <span style={{ display: "flex", color: INK_SOFT, transition: "transform .2s", transform: open ? "rotate(0deg)" : "rotate(-90deg)" }}>
                       <ChevronDown size={15} />
                     </span>
-                    <GIcon size={15} color={NAVY} />
+                    <GIcon size={15} color={INK} />
                     <span style={{ flex: 1, textAlign: "left" }}>{g.name}</span>
-                    <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: FAINT }}>{g.lists.length}</span>
+                    <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: INK_SOFT }}>{g.lists.length}</span>
                   </button>
 
                   {open && (
@@ -599,31 +582,31 @@ export function DropdownManagementBody() {
         {/* ===== RIGHT: OPTION EDITOR ===== */}
         <div style={panel}>
           {!selList ? (
-            <div style={{ padding: 60, textAlign: "center", color: FAINT }}>Pilih sebuah daftar dropdown.</div>
+            <div style={{ padding: 60, textAlign: "center", color: INK_SOFT }}>Pilih sebuah daftar dropdown.</div>
           ) : (
             <>
               {/* panel header */}
               <div style={{ padding: "20px 22px", borderBottom: "1px solid " + LINE_SOFT, display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5, flexWrap: "wrap" }}>
-                    <ListTree size={18} color={NAVY} style={{ flex: "0 0 auto" }} />
-                    <h2 style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: NAVY, margin: 0, letterSpacing: -0.2 }}>
+                    <ListTree size={18} color={INK} style={{ flex: "0 0 auto" }} />
+                    <h2 style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 700, color: INK, margin: 0, letterSpacing: -0.2 }}>
                       {selList.name}
                     </h2>
-                    <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: MUTED, background: CREAM, border: "1px solid " + LINE_SOFT, borderRadius: 6, padding: "2px 7px", flex: "0 0 auto" }}>
+                    <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: INK_SOFT, background: HEAD_BG, border: "1px solid " + LINE_SOFT, borderRadius: 6, padding: "2px 7px", flex: "0 0 auto" }}>
                       {selGroup.name}
                     </span>
                     {!listEditable && (
-                      <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: MUTED, background: "#F3EFE6", border: "1px solid " + LINE_SOFT, borderRadius: 6, padding: "2px 7px", flex: "0 0 auto" }}>
+                      <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: INK_SOFT, background: HEAD_BG, border: "1px solid " + LINE_SOFT, borderRadius: 6, padding: "2px 7px", flex: "0 0 auto" }}>
                         toggle saja
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>{selList.desc}</div>
+                  <div style={{ fontSize: 13, color: INK_SOFT, lineHeight: 1.5 }}>{selList.desc}</div>
                   <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
                     <Stat label="Total" value={selList.options.length} />
-                    <Stat label="Aktif" value={activeCount} color={GREEN} />
-                    <Stat label="Nonaktif" value={selList.options.length - activeCount} color={FAINT} />
+                    <Stat label="Aktif" value={activeCount} color={SEMANTIC.ok.fg} />
+                    <Stat label="Nonaktif" value={selList.options.length - activeCount} color={INK_SOFT} />
                   </div>
                 </div>
                 {listEditable && (
@@ -632,12 +615,12 @@ export function DropdownManagementBody() {
                     onMouseUp={(e) => (e.currentTarget.style.transform = "none")}
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 8, height: 44, padding: "0 18px",
-                      borderRadius: 11, border: "none", background: ORANGE, color: "#fff", fontFamily: FONT_HEAD,
+                      borderRadius: 10, border: "1px solid " + ACCENT, background: ACCENT, color: INK, fontFamily: FONT_HEAD,
                       fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
-                      boxShadow: "0 6px 16px rgba(232,90,30,.22)", transition: "transform .1s, background .2s",
+                      transition: "transform .1s, background .2s",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = ORANGE_DK)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = ORANGE)}>
+                    onMouseEnter={(e) => (e.currentTarget.style.background = ACCENT_HOVER)}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = ACCENT)}>
                     <Plus size={17} />Tambah Opsi
                   </button>
                 )}
@@ -646,12 +629,12 @@ export function DropdownManagementBody() {
               {/* option filter */}
               <div style={{ padding: "14px 22px 0" }}>
                 <div style={{ position: "relative", maxWidth: 320 }}>
-                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none", display: "flex" }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: INK_SOFT, pointerEvents: "none", display: "flex" }}>
                     <Search size={15} />
                   </span>
                   <input value={optQuery} onChange={(e) => setOptQuery(e.target.value)} placeholder="Saring opsi pada daftar ini…"
                     style={{
-                      width: "100%", height: 38, borderRadius: 9, border: "1px solid " + LINE, background: CREAM,
+                      width: "100%", height: 38, borderRadius: 9, border: "1px solid " + LINE, background: HEAD_BG,
                       padding: "0 12px 0 34px", fontFamily: FONT_BODY, fontSize: 13, color: INK, outline: "none",
                     }} />
                 </div>
@@ -676,7 +659,7 @@ export function DropdownManagementBody() {
 
                 {visibleOptions.length === 0 && !editor && (
                   <div style={{ padding: "44px 20px", textAlign: "center" }}>
-                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12, color: FAINT }}>
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12, color: INK_SOFT }}>
                       <Inbox size={34} />
                       <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600, color: INK_SOFT }}>
                         {optQuery ? "Tidak ada opsi yang cocok" : "Belum ada opsi"}
@@ -706,18 +689,18 @@ function TreeListItem({ list, selected, onClick }) {
       style={{
         width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "9px 11px",
         borderRadius: 9, cursor: "pointer", marginBottom: 2, textAlign: "left",
-        border: "1px solid " + (selected ? "#CBE0FB" : "transparent"),
-        background: selected ? TINT : h ? "#F4EEE2" : "transparent",
+        border: "1px solid " + (selected ? ACCENT_HOVER : "transparent"),
+        background: selected ? ACCENT : h ? ROW_HOVER : "transparent",
         transition: "all .15s",
       }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: selected ? NAVY : "transparent", flex: "0 0 6px" }} />
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: selected ? INK : "transparent", flex: "0 0 6px" }} />
       <span style={{
         flex: 1, minWidth: 0, fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: selected ? 700 : 500,
-        color: selected ? NAVY : INK_SOFT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        color: selected ? INK : INK_SOFT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>{list.name}</span>
       <span style={{
-        fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: selected ? NAVY : FAINT,
-        background: selected ? "#fff" : CREAM, borderRadius: 20, padding: "1px 8px", flex: "0 0 auto",
+        fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: selected ? INK : INK_SOFT,
+        background: selected ? INPUT_BG : HEAD_BG, borderRadius: 20, padding: "1px 8px", flex: "0 0 auto",
       }}>{list.options.length}</span>
     </button>
   );
@@ -727,8 +710,8 @@ function TreeListItem({ list, selected, onClick }) {
 function Stat({ label, value, color }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-      <span style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 800, color: color || NAVY, lineHeight: 1 }}>{value}</span>
-      <span style={{ fontFamily: FONT_BODY, fontSize: 12, color: MUTED }}>{label}</span>
+      <span style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 800, color: color || INK, lineHeight: 1 }}>{value}</span>
+      <span style={{ fontFamily: FONT_BODY, fontSize: 12, color: INK_SOFT }}>{label}</span>
     </div>
   );
 }

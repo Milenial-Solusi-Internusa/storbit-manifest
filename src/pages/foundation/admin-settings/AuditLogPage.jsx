@@ -15,14 +15,9 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../../lib/supabase";
 import { ACTION_TYPES, ENTITY_TYPES } from "../../../lib/auditLogger";
 import { getTodayWIB } from "../../../lib/dateUtils";
-import {
-  Icon, PageHeader, KitSelect, OutlineBtn, Card, useToast, KitStyles,
-} from "./kit";
-import {
-  NAVY, CREAM, SURFACE, LINE, LINE_SOFT, ROW_HOVER, INK, INK_SOFT, MUTED,
-  FAINT, DANGER, FONT_HEAD, FONT_BODY, FONT_MONO,
-} from "./tokens";
 
+import { Card, Icon, KitSelect, OutlineBtn, PageHeader, useToast } from '../../../kit';
+import { CARD, ACCENT, ACCENT_HOVER, LINE, INK, INK_SOFT, LINE_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, FOCUS_RING, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC, TONE } from '../../../kit/tokens';
 // Filter dropdown options, derived from the canonical action/entity catalogs.
 const AL_ACTIONS = [{ value: "all", label: "Semua Aksi" }, ...Object.values(ACTION_TYPES).map((a) => ({ value: a, label: a }))];
 const AL_ENTITIES = [{ value: "all", label: "Semua Entitas" }, ...Object.values(ENTITY_TYPES).map((e) => ({ value: e, label: e }))];
@@ -39,12 +34,13 @@ function kindOf(action) {
   return "update";
 }
 const AL_KIND_STYLE = {
-  create:  { bg: "#E8F3EC", fg: "#1F8B4D", icon: "plus" },
-  update:  { bg: "#EAF0F8", fg: "#1B4D8A", icon: "pencil" },
-  delete:  { bg: "#FBE3E3", fg: "#C0392B", icon: "trash" },
-  login:   { bg: "#E7EEF1", fg: "#2C6E73", icon: "lock" },
-  approve: { bg: "#E8F3EC", fg: "#1F8B4D", icon: "check" },
-  reject:  { bg: "#FBE3E3", fg: "#C0392B", icon: "x" },
+  // Kelas STATUS/DATA (jenis aksi log) — trio SEMANTIC/TONE kit, bukan warna identitas.
+  create:  { bg: SEMANTIC.ok.bg, fg: SEMANTIC.ok.fg, icon: "plus" },
+  update:  { bg: SEMANTIC.info.bg, fg: SEMANTIC.info.fg, icon: "pencil" },
+  delete:  { bg: SEMANTIC.danger.bg, fg: SEMANTIC.danger.fg, icon: "trash" },
+  login:   { bg: TONE.navy.bg, fg: TONE.navy.fg, icon: "lock" },
+  approve: { bg: SEMANTIC.ok.bg, fg: SEMANTIC.ok.fg, icon: "check" },
+  reject:  { bg: SEMANTIC.danger.bg, fg: SEMANTIC.danger.fg, icon: "x" },
 };
 
 const AL_PAGE_SIZE = 12;
@@ -73,7 +69,7 @@ function ALAvatar({ email }) {
   const sys = !email || email === "—";
   const init = sys ? "SY" : email.slice(0, 2).toUpperCase();
   return (
-    <span style={{ width: 30, height: 30, borderRadius: 9, background: sys ? "#E7E1D6" : "#EAF0F8", color: sys ? MUTED : NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 30px", fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700 }}>
+    <span style={{ width: 30, height: 30, borderRadius: 9, background: sys ? HEAD_BG : ACCENT, color: sys ? INK_SOFT : INK, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 30px", fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700 }}>
       {sys ? <Icon name="settings" size={15} /> : init}
     </span>
   );
@@ -178,7 +174,6 @@ export default function AuditLogPage({ onHome }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Admin Settings", onClick: onHome }, { label: "Audit Log" }]}
         title="Audit Log"
@@ -191,24 +186,24 @@ export default function AuditLogPage({ onHome }) {
       <Card pad={16} style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ position: "relative", flex: "1 1 240px", minWidth: 200 }}>
-            <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none" }}><Icon name="search" size={16} /></span>
+            <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: INK_SOFT, pointerEvents: "none" }}><Icon name="search" size={16} /></span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari user, aksi, entitas, catatan…"
               onFocus={() => setQFocus(true)} onBlur={() => setQFocus(false)}
-              style={{ width: "100%", height: 44, borderRadius: 11, border: "1px solid " + (qFocus ? NAVY : LINE), background: SURFACE, padding: "0 14px 0 38px", fontFamily: FONT_BODY, fontSize: 13.5, color: INK, outline: "none", boxShadow: qFocus ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }} />
+              style={{ width: "100%", height: 44, borderRadius: 11, border: "1px solid " + (qFocus ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 14px 0 38px", fontFamily: FONT_BODY, fontSize: 13.5, color: INK, outline: "none", boxShadow: qFocus ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }} />
           </div>
           <KitSelect value={userF} onChange={setUserF} options={AL_USERS} width={200} icon="user" />
           <KitSelect value={actionF} onChange={setActionF} options={AL_ACTIONS} width={190} icon="filter" />
           <KitSelect value={entityF} onChange={setEntityF} options={AL_ENTITIES} width={170} icon="layout" />
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {dateInput(from, setFrom, "Dari tanggal")}
-            <span style={{ color: FAINT, fontSize: 13 }}>—</span>
+            <span style={{ color: INK_SOFT, fontSize: 13 }}>—</span>
             {dateInput(to, setTo, "Sampai tanggal")}
           </div>
           {hasFilters && (
             <button type="button" onClick={resetFilters}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 44, padding: "0 14px", borderRadius: 11, border: "1px solid " + LINE, background: SURFACE, color: MUTED, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = DANGER; e.currentTarget.style.color = DANGER; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.color = MUTED; }}>
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 44, padding: "0 14px", borderRadius: 11, border: "1px solid " + LINE, background: CARD, color: INK_SOFT, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = SEMANTIC.danger.fg; e.currentTarget.style.color = SEMANTIC.danger.fg; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.color = INK_SOFT; }}>
               <Icon name="x" size={14} />Reset
             </button>
           )}
@@ -217,7 +212,7 @@ export default function AuditLogPage({ onHome }) {
 
       {/* RESULT META */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: "0 4px", flexWrap: "wrap", gap: 8 }}>
-        <span style={{ fontFamily: FONT_BODY, fontSize: 13, color: MUTED }}>
+        <span style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT }}>
           {loading
             ? "Memuat data…"
             : <>Menampilkan <strong style={{ color: INK }}>{filtered.length === 0 ? 0 : (curPage - 1) * AL_PAGE_SIZE + 1}–{Math.min(curPage * AL_PAGE_SIZE, filtered.length)}</strong> dari <strong style={{ color: INK }}>{filtered.length}</strong> entri</>}
@@ -226,10 +221,10 @@ export default function AuditLogPage({ onHome }) {
 
       {/* TABLE */}
       <Card pad={0} style={{ overflow: "hidden" }}>
-        <div className="ak-scroll" style={{ overflowX: "auto" }}>
+        <div className="nk-scroll" style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 940 }}>
             <thead>
-              <tr style={{ background: CREAM }}>
+              <tr style={{ background: HEAD_BG }}>
                 {["Waktu", "User", "Role", "Aksi", "Entitas", "Catatan"].map((h, i) => (
                   <th key={h} style={{ textAlign: "left", padding: "13px 18px", fontFamily: FONT_HEAD, fontSize: 11.5, fontWeight: 700, color: INK_SOFT, textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid " + LINE, whiteSpace: "nowrap", width: i === 5 ? "auto" : "1%" }}>{h}</th>
                 ))}
@@ -239,8 +234,8 @@ export default function AuditLogPage({ onHome }) {
               {loading && (
                 <tr>
                   <td colSpan={6} style={{ padding: "56px 20px", textAlign: "center" }}>
-                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12, color: FAINT }}>
-                      <span className="ak-spin" style={{ display: "inline-flex" }}><Icon name="loader" size={28} /></span>
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12, color: INK_SOFT }}>
+                      <span className="nk-spin" style={{ display: "inline-flex" }}><Icon name="loader" size={28} /></span>
                       <div style={{ fontFamily: FONT_BODY, fontSize: 13 }}>Memuat riwayat aktivitas…</div>
                     </div>
                   </td>
@@ -249,10 +244,10 @@ export default function AuditLogPage({ onHome }) {
               {!loading && error && (
                 <tr>
                   <td colSpan={6} style={{ padding: "56px 20px", textAlign: "center" }}>
-                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12, color: DANGER }}>
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12, color: SEMANTIC.danger.fg }}>
                       <Icon name="alert" size={30} />
                       <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600 }}>Gagal memuat audit log</div>
-                      <div style={{ fontSize: 13, color: MUTED }}>{error}</div>
+                      <div style={{ fontSize: 13, color: INK_SOFT }}>{error}</div>
                     </div>
                   </td>
                 </tr>
@@ -263,7 +258,7 @@ export default function AuditLogPage({ onHome }) {
               {!loading && !error && slice.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ padding: "56px 20px", textAlign: "center" }}>
-                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12, color: FAINT }}>
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12, color: INK_SOFT }}>
                       <Icon name="inbox" size={34} />
                       <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600, color: INK_SOFT }}>Tidak ada entri yang cocok</div>
                       <div style={{ fontSize: 13 }}>{hasFilters ? "Coba ubah atau reset filter pencarian." : "Belum ada aktivitas tercatat."}</div>
@@ -278,12 +273,12 @@ export default function AuditLogPage({ onHome }) {
         {/* PAGINATION */}
         {!loading && !error && filtered.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderTop: "1px solid " + LINE_SOFT, flexWrap: "wrap", gap: 10 }}>
-            <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: MUTED }}>Halaman {curPage} dari {pages}</span>
+            <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>Halaman {curPage} dari {pages}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <ALPageBtn icon="chevleft" disabled={curPage === 1} onClick={() => setPage(curPage - 1)} />
               {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
                 <button key={p} type="button" onClick={() => setPage(p)}
-                  style={{ minWidth: 36, height: 36, borderRadius: 9, border: "1px solid " + (p === curPage ? NAVY : LINE), background: p === curPage ? NAVY : SURFACE, color: p === curPage ? "#fff" : INK_SOFT, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}>
+                  style={{ minWidth: 36, height: 36, borderRadius: 9, border: "1px solid " + (p === curPage ? ACCENT_HOVER : LINE), background: p === curPage ? ACCENT : INPUT_BG, color: p === curPage ? INK : INK_SOFT, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}>
                   {p}
                 </button>
               ))}
@@ -302,7 +297,7 @@ function ALDateInput({ val, set, label }) {
   return (
     <input type="date" value={val} onChange={(e) => set(e.target.value)} aria-label={label}
       onFocus={() => setF(true)} onBlur={() => setF(false)}
-      style={{ height: 44, borderRadius: 11, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: "0 12px", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: val ? INK : FAINT, outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s", width: 150 }} />
+      style={{ height: 44, borderRadius: 11, border: "1px solid " + (f ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 12px", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: val ? INK : INK_SOFT, outline: "none", boxShadow: f ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s", width: 150 }} />
   );
 }
 
@@ -310,7 +305,7 @@ function ALRow({ r, zebra }) {
   const [h, setH] = useState(false);
   return (
     <tr onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ background: h ? ROW_HOVER : zebra ? "rgba(246,239,227,.5)" : "transparent", transition: "background .14s", borderBottom: "1px solid " + LINE_SOFT }}>
+      style={{ background: h ? ROW_HOVER : zebra ? HEAD_BG : "transparent", transition: "background .14s", borderBottom: "1px solid " + LINE_SOFT }}>
       <td style={{ padding: "13px 18px", fontFamily: FONT_MONO, fontSize: 12.5, color: INK_SOFT, whiteSpace: "nowrap" }}>{r.ts}</td>
       <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
@@ -319,14 +314,14 @@ function ALRow({ r, zebra }) {
         </span>
       </td>
       <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
-        <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: r.role ? INK_SOFT : FAINT }}>{r.role || "—"}</span>
+        <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: r.role ? INK_SOFT : INK_SOFT }}>{r.role || "—"}</span>
       </td>
       <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
         <ALActionBadge action={r.action} />
       </td>
       <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
         <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: NAVY, background: "#EAF0F8", borderRadius: 7, padding: "3px 9px", alignSelf: "flex-start" }}>{r.entityType || "—"}</span>
+          <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: INK, background: ACCENT, borderRadius: 7, padding: "3px 9px", alignSelf: "flex-start" }}>{r.entityType || "—"}</span>
           {r.entityLabel && <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{r.entityLabel}</span>}
         </span>
       </td>
@@ -338,9 +333,9 @@ function ALRow({ r, zebra }) {
 function ALPageBtn({ icon, disabled, onClick }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled}
-      style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid " + LINE, background: SURFACE, color: disabled ? FAINT : NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, transition: "all .15s" }}
-      onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.borderColor = NAVY; e.currentTarget.style.background = "#EAF0F8"; } }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.background = SURFACE; }}>
+      style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid " + LINE, background: CARD, color: disabled ? INK_SOFT : INK, display: "flex", alignItems: "center", justifyContent: "center", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, transition: "all .15s" }}
+      onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.borderColor = INK; e.currentTarget.style.background = ROW_HOVER; } }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.background = CARD; }}>
       <Icon name={icon} size={16} />
     </button>
   );

@@ -8,31 +8,23 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../../lib/supabase";
-import {
-  Icon, PageHeader, EntitySwitcher, Tabs, Toggle, SaveButton, Segmented,
-  OutlineBtn, Skel, Card, KitStyles, useToast,
-} from "./kit";
-import {
-  NAVY, CREAM, SURFACE, LINE, LINE_SOFT, ROW_HOVER, INK, INK_SOFT, MUTED,
-  FAINT, GREEN, DANGER, FONT_HEAD, FONT_BODY, FONT_MONO,
-} from "./tokens";
+import { ENTITIES } from "../../../lib/entities";
 
+import { Button, Card, EntitySwitcher, Icon, OutlineBtn, PageHeader, SaveButton, Segmented, Skel, Tabs, Toggle, useToast } from '../../../kit';
+import { CARD, ACCENT, ACCENT_HOVER, LINE, INK, INK_SOFT, LINE_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, FOCUS_RING, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC, TONE, DEAL_STATUS } from '../../../kit/tokens';
 /* ---------- entity code → companies.id ---------- */
-const ENTITY_IDS = {
-  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
-  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
-  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
-};
+const ENTITY_IDS = Object.fromEntries(ENTITIES.map((e) => [e.code, e.id]));
 
 const DOC_META = {
-  SP:        { icon: "filetext",     label: "Surat Penawaran",  tint: "#EAF0F8", fg: NAVY },
-  Inquiry:   { icon: "inbox",        label: "Inquiry",          tint: "#E5EDF7", fg: "#1E5894" },
-  Quotation: { icon: "quote",        label: "Quotation",        tint: "#EEE7F4", fg: "#6E4B8C" },
-  Invoice:   { icon: "receipt",      label: "Invoice",          tint: "#FBE6DA", fg: "#C8521B" },
-  ARTTF:     { icon: "banknote",     label: "AR-TTF",           tint: "#DEF0E4", fg: GREEN },
-  PO:        { icon: "shoppingcart", label: "Purchase Order",   tint: "#FBEFD3", fg: "#9A6B12" },
+  // Warna per jenis dokumen = kelas STATUS/DATA (kategori), dipetakan ke trio kit — bukan hex bebas.
+  SP:        { icon: "filetext",     label: "Surat Penawaran",  tint: TONE.navy.bg,          fg: TONE.navy.fg },
+  Inquiry:   { icon: "inbox",        label: "Inquiry",          tint: SEMANTIC.info.bg,      fg: SEMANTIC.info.fg },
+  Quotation: { icon: "quote",        label: "Quotation",        tint: DEAL_STATUS.QUOTED.bg, fg: DEAL_STATUS.QUOTED.fg },
+  Invoice:   { icon: "receipt",      label: "Invoice",          tint: TONE.orange.bg,        fg: TONE.orange.fg },
+  ARTTF:     { icon: "banknote",     label: "AR-TTF",           tint: SEMANTIC.ok.bg,        fg: SEMANTIC.ok.fg },
+  PO:        { icon: "shoppingcart", label: "Purchase Order",   tint: SEMANTIC.warn.bg,      fg: SEMANTIC.warn.fg },
 };
-const FALLBACK_META = { icon: "filetext", label: "—", tint: "#EAF0F8", fg: NAVY };
+const FALLBACK_META = { icon: "filetext", label: "—", tint: ACCENT, fg: INK };
 
 const RESET_OPTS = ["Tahunan", "Bulanan", "Tidak Pernah"];
 const SEP_OPTS = ["/", "-", "."];
@@ -75,9 +67,9 @@ function buildPreview(s, entity) {
 /* ---------- animated, character-by-character code preview ---------- */
 function AnimatedCode({ value, size = 14 }) {
   return (
-    <span style={{ fontFamily: FONT_MONO, fontSize: size, fontWeight: 700, color: NAVY, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+    <span style={{ fontFamily: FONT_MONO, fontSize: size, fontWeight: 700, color: INK, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
       {value.split("").map((ch, i) => (
-        <span key={i + ":" + ch} style={{ display: "inline-block", animation: "ak-charin .26s cubic-bezier(.22,1,.36,1) both" }}>
+        <span key={i + ":" + ch} style={{ display: "inline-block", animation: "nk-rise .26s cubic-bezier(.22,1,.36,1) both" }}>
           {ch === " " ? " " : ch}
         </span>
       ))}
@@ -90,7 +82,7 @@ function CellInput({ value, onChange, mono, width = 64, center }) {
   const [f, setF] = useState(false);
   return (
     <input value={value} onChange={(e) => onChange(e.target.value)} onFocus={() => setF(true)} onBlur={() => setF(false)}
-      style={{ width, height: 36, borderRadius: 8, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: "0 9px", textAlign: center ? "center" : "left", fontFamily: mono ? FONT_MONO : FONT_BODY, fontSize: 13, fontWeight: 500, color: INK, outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }} />
+      style={{ width, height: 36, borderRadius: 8, border: "1px solid " + (f ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 9px", textAlign: center ? "center" : "left", fontFamily: mono ? FONT_MONO : FONT_BODY, fontSize: 13, fontWeight: 500, color: INK, outline: "none", boxShadow: f ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }} />
   );
 }
 function CellSelect({ value, onChange, options, width = 110 }) {
@@ -98,25 +90,25 @@ function CellSelect({ value, onChange, options, width = 110 }) {
   return (
     <div style={{ position: "relative", width }}>
       <select value={value} onChange={(e) => onChange(e.target.value)} onFocus={() => setF(true)} onBlur={() => setF(false)}
-        style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: "0 28px 0 9px", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: INK, appearance: "none", WebkitAppearance: "none", cursor: "pointer", outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none" }}>
+        style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid " + (f ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 28px 0 9px", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: INK, appearance: "none", WebkitAppearance: "none", cursor: "pointer", outline: "none", boxShadow: f ? FOCUS_RING : "none" }}>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
-      <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none" }}><Icon name="chevdown" size={13} /></span>
+      <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: INK_SOFT, pointerEvents: "none" }}><Icon name="chevdown" size={13} /></span>
     </div>
   );
 }
 
-const dThStyle = { padding: "12px 14px", textAlign: "left", fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, color: MUTED, whiteSpace: "nowrap" };
+const dThStyle = { padding: "12px 14px", textAlign: "left", fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, color: INK_SOFT, whiteSpace: "nowrap" };
 const dTdStyle = { padding: "12px 14px", borderBottom: "1px solid " + LINE_SOFT, verticalAlign: "middle", whiteSpace: "nowrap" };
-const codeChip = { fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: NAVY };
+const codeChip = { fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: INK };
 
 /* ---------- empty state ---------- */
 function EmptyState({ icon, title, desc }) {
   return (
     <Card style={{ textAlign: "center", padding: "48px 32px" }}>
-      <div style={{ width: 72, height: 72, borderRadius: 20, background: CREAM, border: "1px solid " + LINE, display: "flex", alignItems: "center", justifyContent: "center", color: NAVY, margin: "0 auto 18px" }}><Icon name={icon} size={30} /></div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>{title}</div>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 0", lineHeight: 1.55, textWrap: "pretty" }}>{desc}</div>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: HEAD_BG, border: "1px solid " + LINE, display: "flex", alignItems: "center", justifyContent: "center", color: INK, margin: "0 auto 18px" }}><Icon name={icon} size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: INK }}>{title}</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: INK_SOFT, maxWidth: 420, margin: "8px auto 0", lineHeight: 1.55, textWrap: "pretty" }}>{desc}</div>
     </Card>
   );
 }
@@ -125,9 +117,9 @@ function EmptyState({ icon, title, desc }) {
 function ErrorState({ msg, onRetry }) {
   return (
     <Card style={{ textAlign: "center", padding: "48px 32px" }}>
-      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: SEMANTIC.danger.bg, border: "1px solid " + SEMANTIC.danger.bd, display: "flex", alignItems: "center", justifyContent: "center", color: SEMANTIC.danger.fg, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: INK }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: INK_SOFT, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
       <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
     </Card>
   );
@@ -138,7 +130,7 @@ function NumberingRow({ row, entity, editing, onEdit, onSave, onChange, onToggle
   const preview = buildPreview(row, entity);
   return (
     <tr onMouseEnter={() => onHover(row.id)} onMouseLeave={() => onHover(null)}
-      style={{ background: editing ? "rgba(20,70,130,.035)" : hovered ? ROW_HOVER : "transparent", transition: "background .15s" }}>
+      style={{ background: editing ? ROW_HOVER : hovered ? ROW_HOVER : "transparent", transition: "background .15s" }}>
       <td style={dTdStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
           <span style={{ width: 34, height: 34, borderRadius: 9, background: meta.tint, color: meta.fg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 34px" }}><Icon name={meta.icon} size={16} /></span>
@@ -146,24 +138,22 @@ function NumberingRow({ row, entity, editing, onEdit, onSave, onChange, onToggle
         </div>
       </td>
       <td style={dTdStyle}>{editing ? <CellInput value={row.prefix} onChange={(v) => onChange("prefix", v)} mono width={70} /> : <span style={codeChip}>{row.prefix || "—"}</span>}</td>
-      <td style={dTdStyle}>{editing ? <CellInput value={row.suffix} onChange={(v) => onChange("suffix", v)} mono width={64} /> : <span style={{ ...codeChip, color: row.suffix ? NAVY : FAINT }}>{row.suffix || "—"}</span>}</td>
+      <td style={dTdStyle}>{editing ? <CellInput value={row.suffix} onChange={(v) => onChange("suffix", v)} mono width={64} /> : <span style={{ ...codeChip, color: row.suffix ? INK : INK_SOFT }}>{row.suffix || "—"}</span>}</td>
       <td style={{ ...dTdStyle, textAlign: "center" }}>{editing ? <CellInput value={row.padding} onChange={(v) => onChange("padding", v.replace(/[^0-9]/g, ""))} mono width={48} center /> : <span style={{ fontFamily: FONT_MONO, fontSize: 13, color: INK_SOFT }}>{row.padding}</span>}</td>
       <td style={{ ...dTdStyle, textAlign: "center" }}>{editing ? <CellSelect value={row.separator} onChange={(v) => onChange("separator", v)} options={SEP_OPTS} width={64} /> : <span style={{ fontFamily: FONT_MONO, fontSize: 14, fontWeight: 700, color: INK_SOFT }}>{row.separator}</span>}</td>
-      <td style={dTdStyle}>{editing ? <CellSelect value={row.reset} onChange={(v) => onChange("reset", v)} options={RESET_OPTS} width={130} /> : <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: MUTED }}>{row.reset}</span>}</td>
+      <td style={dTdStyle}>{editing ? <CellSelect value={row.reset} onChange={(v) => onChange("reset", v)} options={RESET_OPTS} width={130} /> : <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{row.reset}</span>}</td>
       <td style={{ ...dTdStyle, textAlign: "right" }}><span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: INK_SOFT }}>{String(row.lastSeq).padStart(Number(row.padding) || 1, "0")}</span></td>
       <td style={dTdStyle}>
-        <span style={{ display: "inline-flex", alignItems: "center", background: "#EAF0F8", border: "1px solid #CFE0F2", borderRadius: 8, padding: "7px 12px" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", background: SEMANTIC.info.bg, border: "1px solid " + SEMANTIC.info.bd, borderRadius: 8, padding: "7px 12px" }}>
           <AnimatedCode value={preview} />
         </span>
       </td>
       <td style={{ ...dTdStyle, textAlign: "center" }}><div style={{ display: "flex", justifyContent: "center" }}><Toggle on={row.active} onChange={() => onToggle(row.id)} /></div></td>
       <td style={{ ...dTdStyle, textAlign: "right" }}>
         {editing ? (
-          <button type="button" onClick={() => onSave(row.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 36, padding: "0 14px", borderRadius: 9, border: "none", background: NAVY, color: "#fff", fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}><Icon name="check" size={14} />Simpan</button>
+          <SaveButton size="sm" label="Simpan" onSave={() => onSave(row.id)} style={{ minWidth: 0 }} />
         ) : (
-          <button type="button" onClick={() => onEdit(row.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 36, padding: "0 14px", borderRadius: 9, border: "1px solid " + LINE, background: SURFACE, color: NAVY, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = NAVY; e.currentTarget.style.background = "#EAF0F8"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.background = SURFACE; }}><Icon name="pencil" size={14} />Edit</button>
+          <Button variant="outline" size="sm" icon="pencil" onClick={() => onEdit(row.id)}>Edit</Button>
         )}
       </td>
     </tr>
@@ -206,7 +196,7 @@ function NumberingTab({ entity, fireToast }) {
       prefix: row.prefix, suffix: row.suffix, padding_digits: Number(row.padding) || 1,
       separator: row.separator, reset_cadence: row.reset, is_active: row.active,
     }).eq("id", row.dbId);
-    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return { error }; } // SaveButton kit: keadaan GAGAL
     setEditId(null);
     fireToast("Skema penomoran " + (DOC_META[id]?.label || id) + " disimpan");
     refetch();
@@ -214,9 +204,9 @@ function NumberingTab({ entity, fireToast }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 16, background: "#EAF0F8", border: "1px solid #CFE0F2", borderRadius: 12, padding: "12px 16px" }}>
-        <Icon name="info" size={17} color={NAVY} />
-        <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>Live preview diperbarui real-time saat Anda mengubah prefix, suffix, atau padding. Format: <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: NAVY }}>PREFIX/ENTITAS/TAHUN/URUTAN</span></span>
+      <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 16, background: SEMANTIC.info.bg, border: "1px solid " + SEMANTIC.info.bd, borderRadius: 12, padding: "12px 16px" }}>
+        <Icon name="info" size={17} color={INK} />
+        <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>Live preview diperbarui real-time saat Anda mengubah prefix, suffix, atau padding. Format: <span style={{ fontFamily: FONT_MONO, fontWeight: 600, color: INK }}>PREFIX/ENTITAS/TAHUN/URUTAN</span></span>
       </div>
 
       {state === "loading" ? (
@@ -227,10 +217,10 @@ function NumberingTab({ entity, fireToast }) {
         <EmptyState icon="hash" title="Belum ada skema penomoran" desc="Skema penomoran untuk entitas ini belum dikonfigurasi. Hubungi admin untuk menyiapkan jenis dokumen." />
       ) : (
         <Card pad={0} style={{ overflow: "hidden" }}>
-          <div className="ak-scroll" style={{ overflowX: "auto" }}>
+          <div className="nk-scroll" style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
               <thead>
-                <tr style={{ background: CREAM }}>
+                <tr style={{ background: HEAD_BG }}>
                   <th style={dThStyle}>Jenis Dokumen</th>
                   <th style={dThStyle}>Prefix</th>
                   <th style={dThStyle}>Suffix</th>
@@ -261,13 +251,13 @@ function AutoTextarea({ value, onChange, placeholder, minH = 70 }) {
   useEffect(() => { const el = ref.current; if (el) { el.style.height = "auto"; el.style.height = Math.max(minH, el.scrollHeight) + "px"; } }, [value, minH]);
   return (
     <textarea ref={ref} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
-      onFocus={() => setF(true)} onBlur={() => setF(false)} className="ak-area"
-      style={{ width: "100%", minHeight: minH, resize: "none", borderRadius: 11, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: "12px 14px", fontFamily: FONT_BODY, fontSize: 13.5, lineHeight: 1.55, color: INK, outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }} />
+      onFocus={() => setF(true)} onBlur={() => setF(false)} className="nk-area"
+      style={{ width: "100%", minHeight: minH, resize: "none", borderRadius: 11, border: "1px solid " + (f ? INK_SOFT : LINE), background: INPUT_BG, padding: "12px 14px", fontFamily: FONT_BODY, fontSize: 13.5, lineHeight: 1.55, color: INK, outline: "none", boxShadow: f ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }} />
   );
 }
 
 function Field({ label, children }) {
-  return <div><div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 8 }}>{label}</div>{children}</div>;
+  return <div><div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 8 }}>{label}</div>{children}</div>;
 }
 function ToggleField({ label, on, onChange }) {
   return <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Toggle on={on} onChange={onChange} /><span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: INK_SOFT }}>{label}</span></div>;
@@ -276,15 +266,15 @@ function ToggleField({ label, on, onChange }) {
 function TemplateAccordion({ id, data, open, onToggle, onChange, onSave }) {
   const meta = DOC_META[id] || FALLBACK_META;
   return (
-    <div style={{ background: SURFACE, border: "1px solid " + (open ? "#C9D8EC" : LINE), borderRadius: 14, overflow: "hidden", transition: "border-color .2s" }}>
+    <div style={{ background: CARD, border: "1px solid " + (open ? ACCENT_HOVER : LINE), borderRadius: 14, overflow: "hidden", transition: "border-color .2s" }}>
       <button type="button" onClick={onToggle}
-        style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", background: open ? "rgba(20,70,130,.03)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", transition: "background .2s" }}>
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", background: open ? ROW_HOVER : "transparent", border: "none", cursor: "pointer", textAlign: "left", transition: "background .2s" }}>
         <span style={{ width: 40, height: 40, borderRadius: 11, background: meta.tint, color: meta.fg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" }}><Icon name={meta.icon} size={19} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600, color: NAVY }}>{meta.label}</div>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: FAINT, marginTop: 2 }}>Terakhir disimpan: {data.saved}</div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 600, color: INK }}>{meta.label}</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 12, color: INK_SOFT, marginTop: 2 }}>Terakhir disimpan: {data.saved}</div>
         </div>
-        <span style={{ display: "inline-flex", color: MUTED, transform: open ? "rotate(180deg)" : "rotate(0)", transition: "transform .3s cubic-bezier(.22,1,.36,1)" }}><Icon name="chevdown" size={20} /></span>
+        <span style={{ display: "inline-flex", color: INK_SOFT, transform: open ? "rotate(180deg)" : "rotate(0)", transition: "transform .3s cubic-bezier(.22,1,.36,1)" }}><Icon name="chevdown" size={20} /></span>
       </button>
       <div style={{ display: "grid", gridTemplateRows: open ? "1fr" : "0fr", transition: "grid-template-rows .35s cubic-bezier(.22,1,.36,1)" }}>
         <div style={{ overflow: "hidden" }}>
@@ -297,7 +287,7 @@ function TemplateAccordion({ id, data, open, onToggle, onChange, onSave }) {
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 28, marginTop: 18 }}>
               <div>
-                <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 8 }}>Posisi Logo</div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 8 }}>Posisi Logo</div>
                 <Segmented value={data.logoPos} onChange={(v) => onChange("logoPos", v)} options={[{ value: "left", label: "Kiri", icon: "alignleft" }, { value: "center", label: "Tengah", icon: "aligncenter" }, { value: "right", label: "Kanan", icon: "alignright" }]} />
               </div>
               <div style={{ display: "flex", gap: 22 }}>
@@ -362,7 +352,7 @@ function TemplatesTab({ entity, fireToast }) {
       header_text: d.header, footer_text: d.footer, terms_and_conditions: d.tc,
       footnote: d.footnote, logo_position: d.logoPos, show_stamp: d.stamp, show_signature: d.sign,
     }, { onConflict: "company_id,document_type" });
-    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return { error }; } // SaveButton kit: keadaan GAGAL
     fireToast("Template " + (DOC_META[id]?.label || id) + " disimpan");
     refetch();
   };
@@ -383,7 +373,7 @@ function TemplatesTab({ entity, fireToast }) {
 function TableSkeleton() {
   return (
     <Card pad={0} style={{ overflow: "hidden" }}>
-      <div style={{ background: CREAM, height: 44 }} />
+      <div style={{ background: HEAD_BG, height: 44 }} />
       {[0, 1, 2, 3, 4].map((i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderBottom: "1px solid " + LINE_SOFT }}>
           <Skel w={34} h={34} r={9} /><Skel w={140} h={14} /><span style={{ flex: 1 }} /><Skel w={90} h={14} /><Skel w={150} h={30} r={8} />
@@ -411,7 +401,6 @@ export default function DocumentSettingsPage({ onHome }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Admin Settings", onClick: onHome }, { label: "Document Settings" }]}
         title="Document Settings" subtitle="Skema penomoran & template dokumen per entitas"
@@ -420,7 +409,7 @@ export default function DocumentSettingsPage({ onHome }) {
       />
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {loading ? <TableSkeleton /> : (
-        <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
+        <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "nk-rise"}>
           {tab === "numbering" && <NumberingTab entity={entity} fireToast={fireToast} />}
           {tab === "templates" && <TemplatesTab entity={entity} fireToast={fireToast} />}
         </div>

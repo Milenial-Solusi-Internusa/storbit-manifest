@@ -23,15 +23,9 @@ import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import ConfirmModal from '../../../components/ConfirmModal';
-import {
-  Icon, PageHeader, KitStyles, FloatingInput, FloatingSelect, Toggle,
-  PrimaryBtn, OutlineBtn, SectionLabel,
-} from '../../../pages/foundation/admin-settings/kit';
-import {
-  NAVY, CREAM, SURFACE, LINE, ROW_HOVER, INK, INK_SOFT, MUTED, DANGER, GREEN,
-  FONT_HEAD, FONT_BODY, FONT_MONO, fmtRp,
-} from '../../../pages/foundation/admin-settings/tokens';
 
+import { FloatingInput, FloatingSelect, Icon, OutlineBtn, PageHeader, PrimaryBtn, SectionLabel, Toggle } from '../../../kit';
+import { BG, CARD, ACCENT, LINE, INK, INK_SOFT, HEAD_BG, ROW_HOVER, SHADOW_2, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC, fmtRp } from '../../../kit/tokens';
 const MONTHS = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
@@ -64,22 +58,22 @@ function StatusBadge({ active }) {
       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wide"
       style={{
         fontFamily: FONT_HEAD, fontWeight: 700,
-        background: active ? `${GREEN}1A` : CREAM,
-        color: active ? GREEN : MUTED,
+        background: active ? `${SEMANTIC.ok.fg}1A` : HEAD_BG,
+        color: active ? SEMANTIC.ok.fg : INK_SOFT,
       }}
     >
-      <span className="w-1 h-1 rounded-full" style={{ background: active ? GREEN : MUTED }} />
+      <span className="w-1 h-1 rounded-full" style={{ background: active ? SEMANTIC.ok.fg : INK_SOFT }} />
       {active ? 'Active' : 'Inactive'}
     </span>
   );
 }
 
 function CompanyBadge({ company }) {
-  if (!company) return <span style={{ color: MUTED }}>—</span>;
+  if (!company) return <span style={{ color: INK_SOFT }}>—</span>;
   return (
     <span
       className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
+      style={{ fontFamily: FONT_MONO, background: ACCENT, color: INK }}
     >
       {company.code}
     </span>
@@ -90,7 +84,7 @@ function PeriodBadge({ year, month }) {
   return (
     <span
       className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
+      style={{ fontFamily: FONT_MONO, background: ACCENT, color: INK }}
     >
       {String(month).padStart(2, '0')}/{year}
     </span>
@@ -269,14 +263,13 @@ export default function SalesTargetsPage({ onHome }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: 'Foundation' }, { label: 'Master Data & Admin Settings', onClick: onHome }, { label: 'Sales Targets' }]}
         title="Sales Targets"
         subtitle="Target penjualan per salesperson per bulan. Dipakai Dashboard CRM untuk menghitung pencapaian kuota."
         onBack={onHome}
         right={!loading && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: `${NAVY}1A`, color: NAVY, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: ACCENT, color: INK, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
             {total.toLocaleString('id-ID')}
           </span>
         )}
@@ -302,7 +295,7 @@ export default function SalesTargetsPage({ onHome }) {
           type="button"
           onClick={refresh}
           className="p-2.5 rounded-xl border transition-opacity hover:opacity-70"
-          style={{ background: SURFACE, borderColor: LINE }}
+          style={{ background: CARD, borderColor: LINE }}
           title="Muat ulang"
         >
           <RefreshCw size={14} style={{ color: INK_SOFT }} />
@@ -312,10 +305,10 @@ export default function SalesTargetsPage({ onHome }) {
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border overflow-hidden" style={{ background: SURFACE, borderColor: LINE }}>
+      <div className="rounded-2xl border overflow-hidden" style={{ background: CARD, borderColor: LINE }}>
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
-          style={{ gridTemplateColumns: COLS, borderColor: LINE, background: CREAM, color: MUTED }}
+          style={{ gridTemplateColumns: COLS, borderColor: LINE, background: HEAD_BG, color: INK_SOFT }}
         >
           <div>Entitas</div>
           <div>Salesperson</div>
@@ -334,7 +327,7 @@ export default function SalesTargetsPage({ onHome }) {
           <EmptyState message="Belum ada target untuk filter ini." />
         ) : (
           data.map((row, i) => {
-            const zebra = i % 2 === 1 ? `${CREAM}80` : SURFACE;
+            const zebra = i % 2 === 1 ? `${HEAD_BG}80` : CARD;
             return (
               <div
                 key={row.id}
@@ -344,16 +337,16 @@ export default function SalesTargetsPage({ onHome }) {
                 onMouseLeave={(e) => (e.currentTarget.style.background = zebra)}
               >
                 <div><CompanyBadge company={row.companies} /></div>
-                <div className="font-medium" style={{ color: row.user_name ? INK : MUTED }}>
+                <div className="font-medium" style={{ color: row.user_name ? INK : INK_SOFT }}>
                   {row.user_name || '(tanpa nama)'}
                 </div>
                 <div><PeriodBadge year={row.period_year} month={row.period_month} /></div>
                 {/* NULL tampil "—", BUKAN Rp 0 — target belum ditetapkan beda
                     artinya dari target nol. */}
-                <div className="text-right" style={{ fontFamily: FONT_MONO, color: row.target_value == null ? MUTED : INK }}>
+                <div className="text-right" style={{ fontFamily: FONT_MONO, color: row.target_value == null ? INK_SOFT : INK }}>
                   {row.target_value == null ? '—' : fmtRp(Number(row.target_value))}
                 </div>
-                <div className="text-right" style={{ fontFamily: FONT_MONO, color: row.target_deals == null ? MUTED : INK }}>
+                <div className="text-right" style={{ fontFamily: FONT_MONO, color: row.target_deals == null ? INK_SOFT : INK }}>
                   {row.target_deals == null ? '—' : row.target_deals}
                 </div>
                 <div className="flex justify-end"><StatusBadge active={row.is_active} /></div>
@@ -362,7 +355,7 @@ export default function SalesTargetsPage({ onHome }) {
                     type="button"
                     onClick={() => openEdit(row)}
                     className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
-                    style={{ background: CREAM, color: INK_SOFT }}
+                    style={{ background: HEAD_BG, color: INK_SOFT }}
                   >
                     Edit
                   </button>
@@ -374,15 +367,15 @@ export default function SalesTargetsPage({ onHome }) {
 
         {!error && (
           <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${LINE}` }}>
-            <span className="text-xs" style={{ color: MUTED }}>
+            <span className="text-xs" style={{ color: INK_SOFT }}>
               {total === 0 ? 'Tidak ada data' : `Menampilkan ${from}–${to} dari ${total.toLocaleString('id-ID')}`}
             </span>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: CREAM }}>
+              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: HEAD_BG }}>
                 <ChevronLeft size={14} style={{ color: INK_SOFT }} />
               </button>
               <span className="px-3 text-xs font-medium" style={{ color: INK_SOFT }}>{page} / {totalPages}</span>
-              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: CREAM }}>
+              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: HEAD_BG }}>
                 <ChevronRight size={14} style={{ color: INK_SOFT }} />
               </button>
             </div>
@@ -414,12 +407,12 @@ export default function SalesTargetsPage({ onHome }) {
                 </div>
               ) : (
                 <div style={{ flex: '1 1 100%' }}>
-                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: NAVY, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Entitas</div>
-                  <div style={{ borderRadius: 11, border: '1px solid ' + LINE, background: CREAM, padding: '16px 14px', fontFamily: FONT_BODY, fontSize: 14, color: INK_SOFT }}>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: INK, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Entitas</div>
+                  <div style={{ borderRadius: 11, border: '1px solid ' + LINE, background: HEAD_BG, padding: '16px 14px', fontFamily: FONT_BODY, fontSize: 14, color: INK_SOFT }}>
                     {companies.find((c) => c.id === draft.company_id)
                       ? `${companies.find((c) => c.id === draft.company_id).code} — ${companies.find((c) => c.id === draft.company_id).name}`
                       : 'Memuat…'}
-                    <span style={{ marginLeft: 8, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED }}>(terkunci)</span>
+                    <span style={{ marginLeft: 8, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: INK_SOFT }}>(terkunci)</span>
                   </div>
                 </div>
               )}
@@ -432,7 +425,7 @@ export default function SalesTargetsPage({ onHome }) {
                 />
               </div>
             </div>
-            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: MUTED, marginTop: 8 }}>
+            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: INK_SOFT, marginTop: 8 }}>
               {isCreate
                 ? 'Daftar salesperson mengikuti entitas yang dipilih.'
                 : 'Entitas & salesperson terkunci saat edit — buat baris baru kalau targetnya untuk orang lain.'}
@@ -469,7 +462,7 @@ export default function SalesTargetsPage({ onHome }) {
                 disabled={saving} placeholder="0"
                 hint="Jumlah deal WON. Tidak bergantung nilai deal." />
             </div>
-            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: MUTED, marginTop: 8, lineHeight: 1.6 }}>
+            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: INK_SOFT, marginTop: 8, lineHeight: 1.6 }}>
               Isi minimal salah satu. Dikosongkan berarti <b>belum ditetapkan</b> — bukan target nol,
               dan pencapaiannya akan tampil “—” di Dashboard.
               <br />
@@ -488,13 +481,13 @@ export default function SalesTargetsPage({ onHome }) {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Toggle on={draft.is_active} onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))} disabled={saving} />
-              <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: draft.is_active ? GREEN : INK_SOFT }}>
+              <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: draft.is_active ? SEMANTIC.ok.fg : INK_SOFT }}>
                 {draft.is_active ? 'Aktif' : 'Nonaktif'}
               </span>
             </div>
 
             {saveError && (
-              <div style={{ marginTop: 24, borderRadius: 14, padding: '14px 16px', background: `${DANGER}0F`, border: `1px solid ${DANGER}40` }}>
+              <div style={{ marginTop: 24, borderRadius: 14, padding: '14px 16px', background: `${SEMANTIC.danger.fg}0F`, border: `1px solid ${SEMANTIC.danger.fg}40` }}>
                 <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 2 }}>Gagal menyimpan</div>
                 <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{saveError}</div>
               </div>
@@ -507,11 +500,11 @@ export default function SalesTargetsPage({ onHome }) {
       {toast && (
         <div style={{
           position: 'fixed', right: 24, bottom: 24, display: 'flex', alignItems: 'center', gap: 10,
-          background: INK, color: '#fff', padding: '13px 18px', borderRadius: 12,
+          background: INK, color: BG, padding: '13px 18px', borderRadius: 12,
           fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500,
-          boxShadow: '0 14px 34px rgba(10,20,40,.3)', zIndex: 200,
+          boxShadow: SHADOW_2, zIndex: 200,
         }}>
-          <Icon name={toast.type === 'error' ? 'alert' : 'checkcircle'} size={18} color={toast.type === 'error' ? '#FF9B9B' : '#7FD6A0'} />
+          <Icon name={toast.type === 'error' ? 'alert' : 'checkcircle'} size={18} color={toast.type === 'error' ? SEMANTIC.danger.bg : ACCENT} />
           {toast.msg}
         </div>
       )}

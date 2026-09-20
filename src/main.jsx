@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './kit/kit.css' // kit tunggal (Batch DS 2): keyframes/skeleton/focus-ring, menggantikan <KitStyles/> per halaman
 import App from './App.jsx'
 import { AuthProvider } from './contexts/AuthContext.jsx'
 import AuthGate from './components/AuthGate.jsx'

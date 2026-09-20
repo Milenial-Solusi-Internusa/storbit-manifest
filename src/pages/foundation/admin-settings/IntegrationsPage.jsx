@@ -15,15 +15,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import useAppSettings from "../../../hooks/useAppSettings";
-import {
-  Icon, PageHeader, Segmented, Toggle, PrimaryBtn, OutlineBtn,
-  SlideOver, Modal, useToast, KitStyles,
-} from "./kit";
-import {
-  NAVY, ORANGE, CREAM, SURFACE, LINE, LINE_SOFT, INK, INK_SOFT, MUTED,
-  FAINT, DANGER, GREEN, FONT_HEAD, FONT_BODY, FONT_MONO,
-} from "./tokens";
 
+import { Icon, Modal, OutlineBtn, PageHeader, PrimaryBtn, Segmented, SlideOver, Toggle, useToast } from '../../../kit';
+import { BG, CARD, ACCENT, LINE, INK, INK_SOFT, LINE_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, FOCUS_RING, SHADOW_1, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC, TONE, DEAL_STATUS } from '../../../kit/tokens';
 // app_settings keys (category 'integrations'). NOTE: wa.token / smtp.pass / API
 // keys are sensitive — TODO: migrate sensitive credentials to Supabase Vault /
 // Edge Function environment variables (do NOT keep them in app_settings jsonb).
@@ -32,15 +26,15 @@ const INT_KEYS = { wa: "wa", smtp: "smtp", hook: "hook", apikeys: "keys" };
 /* ---------- status pill ---------- */
 function INTStatus({ kind }) {
   const map = {
-    connected:  { bg: "#E8F3EC", fg: GREEN,     dot: GREEN,     label: "Terhubung" },
-    unconfig:   { bg: "#FBF0DD", fg: "#B45309",  dot: "#D9871F", label: "Belum dikonfigurasi" },
-    error:      { bg: "#FBE3E3", fg: "#C0392B",  dot: "#C0392B", label: "Gagal" },
-    testing:    { bg: "#EAF0F8", fg: NAVY,       dot: NAVY,      label: "Menguji…" },
+    connected:  { bg: SEMANTIC.ok.bg,     fg: SEMANTIC.ok.fg,     dot: SEMANTIC.ok.fg,     label: "Terhubung" },
+    unconfig:   { bg: SEMANTIC.warn.bg,   fg: SEMANTIC.warn.fg,   dot: SEMANTIC.warn.fg,   label: "Belum dikonfigurasi" },
+    error:      { bg: SEMANTIC.danger.bg, fg: SEMANTIC.danger.fg, dot: SEMANTIC.danger.fg, label: "Gagal" },
+    testing:    { bg: ACCENT, fg: INK,       dot: INK,      label: "Menguji…" },
   };
   const m = map[kind] || map.unconfig;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 26, padding: "0 11px", borderRadius: 20, background: m.bg, color: m.fg, fontFamily: FONT_HEAD, fontSize: 12, fontWeight: 700 }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: m.dot, boxShadow: kind === "connected" ? "0 0 0 3px rgba(31,139,77,.18)" : "none" }} />
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: m.dot, boxShadow: kind === "connected" ? "0 0 0 3px " + SEMANTIC.ok.bd : "none" }} />
       {m.label}
     </span>
   );
@@ -51,15 +45,15 @@ function INTServiceCard({ icon, iconBg, iconFg, name, tag, desc, status, childre
   const [h, setH] = useState(false);
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ background: SURFACE, border: "1px solid " + (h ? "#D8D0C2" : LINE), borderRadius: 16, padding: 0, overflow: "hidden", boxShadow: h ? "0 10px 28px rgba(20,40,70,.08)" : "0 1px 2px rgba(20,40,70,.03)", transition: "border-color .2s, box-shadow .2s", display: "flex", flexDirection: "column" }}>
+      style={{ background: CARD, border: "1px solid " + (h ? LINE : LINE), borderRadius: 16, padding: 0, overflow: "hidden", boxShadow: h ? SHADOW_1 : "none", transition: "border-color .2s, box-shadow .2s", display: "flex", flexDirection: "column" }}>
       <div style={{ padding: "20px 22px", display: "flex", alignItems: "flex-start", gap: 14 }}>
         <span style={{ width: 50, height: 50, borderRadius: 13, background: iconBg, color: iconFg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 50px" }}><Icon name={icon} size={25} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: FONT_HEAD, fontSize: 16.5, fontWeight: 700, color: NAVY, letterSpacing: -0.2 }}>{name}</span>
-            {tag && <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, fontWeight: 600, color: MUTED, background: CREAM, border: "1px solid " + LINE_SOFT, borderRadius: 6, padding: "2px 7px", letterSpacing: 0.3 }}>{tag}</span>}
+            <span style={{ fontFamily: FONT_HEAD, fontSize: 16.5, fontWeight: 700, color: INK, letterSpacing: -0.2 }}>{name}</span>
+            {tag && <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, fontWeight: 600, color: INK_SOFT, background: HEAD_BG, border: "1px solid " + LINE_SOFT, borderRadius: 6, padding: "2px 7px", letterSpacing: 0.3 }}>{tag}</span>}
           </div>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: MUTED, marginTop: 5, lineHeight: 1.5, textWrap: "pretty" }}>{desc}</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT, marginTop: 5, lineHeight: 1.5, textWrap: "pretty" }}>{desc}</div>
         </div>
         <INTStatus kind={status} />
       </div>
@@ -73,7 +67,7 @@ function INTServiceCard({ icon, iconBg, iconFg, name, tag, desc, status, childre
 function INTField({ label, value, mono }) {
   return (
     <div style={{ flex: "1 1 140px", minWidth: 0 }}>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: FAINT, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: INK_SOFT, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>{label}</div>
       <div style={{ fontFamily: mono ? FONT_MONO : FONT_BODY, fontSize: 13, fontWeight: 600, color: INK, wordBreak: "break-all" }}>{value}</div>
     </div>
   );
@@ -85,25 +79,25 @@ function INTInput({ label, value, onChange, placeholder, type = "text", mono, fu
   const flex = full ? "1 1 100%" : half ? "1 1 calc(50% - 7px)" : "1 1 100%";
   return (
     <div style={{ flex, minWidth: 0 }}>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 7 }}>{label}</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 7 }}>{label}</div>
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} type={type}
         onFocus={() => setF(true)} onBlur={() => setF(false)}
-        style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: "0 14px", fontFamily: mono ? FONT_MONO : FONT_BODY, fontSize: mono ? 13 : 14, fontWeight: 500, color: INK, outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }} />
+        style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (f ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 14px", fontFamily: mono ? FONT_MONO : FONT_BODY, fontSize: mono ? 13 : 14, fontWeight: 500, color: INK, outline: "none", boxShadow: f ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }} />
     </div>
   );
 }
 
 function INTLabel({ children }) {
-  return <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 8 }}>{children}</div>;
+  return <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 8 }}>{children}</div>;
 }
 
 /* ---------- small ghost / solid buttons ---------- */
 function INTGhostBtn({ children, icon, onClick, danger }) {
   const [h, setH] = useState(false);
-  const c = danger ? DANGER : NAVY;
+  const c = danger ? SEMANTIC.danger.fg : INK;
   return (
     <button type="button" onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 40, padding: "0 15px", borderRadius: 10, border: "1px solid " + (h ? c : LINE), background: h ? (danger ? "rgba(220,38,38,.06)" : "#EAF0F8") : SURFACE, color: c, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .18s" }}>
+      style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 40, padding: "0 15px", borderRadius: 10, border: "1px solid " + (h ? c : LINE), background: h ? (danger ? SEMANTIC.danger.bg : ACCENT) : CARD, color: c, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .18s" }}>
       {icon && <Icon name={icon} size={15} />}{children}
     </button>
   );
@@ -215,7 +209,6 @@ export default function IntegrationsPage({ onHome }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Admin Settings", onClick: onHome }, { label: "Integrations" }]}
         title="Integrations"
@@ -223,17 +216,17 @@ export default function IntegrationsPage({ onHome }) {
         onBack={onHome}
       />
 
-      {loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: MUTED, padding: "2px 2px 12px" }}>Memuat konfigurasi…</div>}
+      {loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT, padding: "2px 2px 12px" }}>Memuat konfigurasi…</div>}
 
-      <div className="ak-rise" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(440px, 1fr))", gap: 18 }}>
+      <div className="nk-rise" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(440px, 1fr))", gap: 18 }}>
         {/* WHATSAPP */}
-        <INTServiceCard icon="messagecircle" iconBg="#E6F4EA" iconFg="#1F8B4D" name="WhatsApp" tag={wa.provider === "waha" ? "WAHA" : "WABA"}
+        <INTServiceCard icon="messagecircle" iconBg={SEMANTIC.ok.bg} iconFg={SEMANTIC.ok.fg} name="WhatsApp" tag={wa.provider === "waha" ? "WAHA" : "WABA"}
           desc="Kirim notifikasi & dokumen ke pelanggan melalui WhatsApp." status="connected"
           footer={<>
             <PrimaryBtn icon="settings" onClick={openWa}>Konfigurasi</PrimaryBtn>
             <INTGhostBtn icon="signal" onClick={() => fireToast("Sesi WhatsApp aktif & tersinkron", "checkcircle")}>Tes Koneksi</INTGhostBtn>
           </>}>
-          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", padding: "14px 16px", borderRadius: 12, background: CREAM, border: "1px solid " + LINE_SOFT }}>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", padding: "14px 16px", borderRadius: 12, background: HEAD_BG, border: "1px solid " + LINE_SOFT }}>
             <INTField label="Provider" value={wa.provider === "waha" ? "Waha (self-hosted)" : "WhatsApp Business API"} />
             <INTField label="Sesi" value={wa.session} mono />
             <INTField label="Nomor" value={wa.number} mono />
@@ -241,20 +234,20 @@ export default function IntegrationsPage({ onHome }) {
         </INTServiceCard>
 
         {/* EMAIL SMTP */}
-        <INTServiceCard icon="mail" iconBg="#EAF0F8" iconFg={NAVY} name="Email SMTP" tag="SMTP"
+        <INTServiceCard icon="mail" iconBg={ACCENT} iconFg={INK} name="Email SMTP" tag="SMTP"
           desc="Server keluar untuk email notifikasi, invoice & laporan." status={smtp.configured ? "connected" : "unconfig"}
           footer={<>
             <PrimaryBtn icon="settings" onClick={openSmtp}>{smtp.configured ? "Ubah Konfigurasi" : "Konfigurasi"}</PrimaryBtn>
             {smtp.configured && <INTGhostBtn icon="zap" onClick={() => fireToast("Email uji dikirim ke admin", "mail")}>Kirim Email Uji</INTGhostBtn>}
           </>}>
           {smtp.configured ? (
-            <div style={{ display: "flex", gap: 18, flexWrap: "wrap", padding: "14px 16px", borderRadius: 12, background: CREAM, border: "1px solid " + LINE_SOFT }}>
+            <div style={{ display: "flex", gap: 18, flexWrap: "wrap", padding: "14px 16px", borderRadius: 12, background: HEAD_BG, border: "1px solid " + LINE_SOFT }}>
               <INTField label="Host" value={smtp.host + ":" + smtp.port} mono />
               <INTField label="Enkripsi" value={smtp.enc.toUpperCase()} />
               <INTField label="Pengirim" value={smtp.fromEmail} mono />
             </div>
           ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 12, background: "#FBF0DD", border: "1px solid #F0DCB6", color: "#92500B" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 12, background: SEMANTIC.warn.bg, border: "1px solid " + SEMANTIC.warn.bd, color: SEMANTIC.warn.fg }}>
               <Icon name="alert" size={17} />
               <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500 }}>Belum dikonfigurasi — notifikasi email nonaktif hingga SMTP diatur.</span>
             </div>
@@ -262,13 +255,13 @@ export default function IntegrationsPage({ onHome }) {
         </INTServiceCard>
 
         {/* N8N WEBHOOK */}
-        <INTServiceCard icon="webhook" iconBg="#F1ECFB" iconFg="#6D4AC4" name="n8n Webhook" tag="AUTOMATION"
+        <INTServiceCard icon="webhook" iconBg={DEAL_STATUS.QUOTED.bg} iconFg={DEAL_STATUS.QUOTED.fg} name="n8n Webhook" tag="AUTOMATION"
           desc="Teruskan event sistem ke alur kerja otomatis di n8n." status={hook.url && hook.active ? "connected" : "unconfig"}
           footer={<>
             <button type="button" onClick={testHook}
-              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, height: 44, minWidth: 130, padding: "0 18px", borderRadius: 11, border: "none", background: hookTest === "ok" ? GREEN : NAVY, color: "#fff", fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, cursor: hookTest === "testing" ? "default" : "pointer", boxShadow: "0 6px 16px rgba(20,70,130,.2)", transition: "background .3s" }}>
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, height: 44, minWidth: 130, padding: "0 18px", borderRadius: 10, border: hookTest === "ok" ? "1px solid " + SEMANTIC.ok.bd : "1px solid " + ACCENT, background: hookTest === "ok" ? SEMANTIC.ok.bg : ACCENT, color: hookTest === "ok" ? SEMANTIC.ok.fg : INK, fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, cursor: hookTest === "testing" ? "default" : "pointer", boxShadow: SHADOW_1, transition: "background .3s" }}>
               {hookTest === "idle" && <><Icon name="zap" size={16} />Tes Webhook</>}
-              {hookTest === "testing" && <><span className="ak-spin" style={{ display: "inline-flex" }}><Icon name="loader" size={16} /></span>Menguji…</>}
+              {hookTest === "testing" && <><span className="nk-spin" style={{ display: "inline-flex" }}><Icon name="loader" size={16} /></span>Menguji…</>}
               {hookTest === "ok" && <><Icon name="checkcircle" size={17} />200 OK</>}
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
@@ -279,16 +272,16 @@ export default function IntegrationsPage({ onHome }) {
           <div>
             <INTLabel>Webhook URL</INTLabel>
             <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none" }}><Icon name="link2" size={16} /></span>
+              <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: INK_SOFT, pointerEvents: "none" }}><Icon name="link2" size={16} /></span>
               <input value={hook.url} onChange={(e) => setHook((s) => ({ ...s, url: e.target.value }))} placeholder="https://n8n.example.com/webhook/…"
                 onFocus={() => setHookFocus(true)} onBlur={() => setHookFocus(false)}
-                style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (hookFocus ? NAVY : LINE), background: SURFACE, padding: "0 14px 0 38px", fontFamily: FONT_MONO, fontSize: 13, color: INK, outline: "none", boxShadow: hookFocus ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }} />
+                style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (hookFocus ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 14px 0 38px", fontFamily: FONT_MONO, fontSize: 13, color: INK, outline: "none", boxShadow: hookFocus ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }} />
             </div>
           </div>
         </INTServiceCard>
 
         {/* API KEYS */}
-        <INTServiceCard icon="key" iconBg="#FBEFE5" iconFg={ORANGE} name="API Keys" tag="REST API"
+        <INTServiceCard icon="key" iconBg={TONE.orange.bg} iconFg={TONE.orange.fg} name="API Keys" tag="REST API"
           desc="Kunci akses untuk integrasi pihak ketiga & aplikasi internal." status={keys.length ? "connected" : "unconfig"}
           footer={<PrimaryBtn icon="plus" onClick={() => { setNewKeyName(""); setKeyModal(true); }}>Buat Key Baru</PrimaryBtn>}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -296,7 +289,7 @@ export default function IntegrationsPage({ onHome }) {
               <INTKeyRow key={k.id} k={k} justMade={justMade} onReveal={() => setKeys((ks) => ks.map((x) => x.id === k.id ? { ...x, reveal: !x.reveal } : x))} onCopy={() => copyKey(k.key)} onRevoke={() => revokeKey(k.id)} />
             ))}
             {keys.length === 0 && (
-              <div style={{ padding: "26px", textAlign: "center", color: FAINT, fontFamily: FONT_BODY, fontSize: 13 }}>Belum ada API key. Buat key pertama Anda.</div>
+              <div style={{ padding: "26px", textAlign: "center", color: INK_SOFT, fontFamily: FONT_BODY, fontSize: 13 }}>Belum ada API key. Buat key pertama Anda.</div>
             )}
           </div>
         </INTServiceCard>
@@ -320,9 +313,9 @@ export default function IntegrationsPage({ onHome }) {
       <SlideOver open={smtpOpen} onClose={() => setSmtpOpen(false)} title="Konfigurasi Email SMTP" subtitle="Server keluar untuk seluruh email sistem" width={520}
         footer={<>
           <button type="button" onClick={testSmtp} disabled={smtpTest === "testing"}
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 44, padding: "0 18px", borderRadius: 11, border: "2px solid " + (smtpTest === "ok" ? GREEN : NAVY), background: "transparent", color: smtpTest === "ok" ? GREEN : NAVY, fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, cursor: smtpTest === "testing" ? "default" : "pointer", marginRight: "auto" }}>
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 44, padding: "0 18px", borderRadius: 11, border: "2px solid " + (smtpTest === "ok" ? SEMANTIC.ok.fg : INK), background: "transparent", color: smtpTest === "ok" ? SEMANTIC.ok.fg : INK, fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, cursor: smtpTest === "testing" ? "default" : "pointer", marginRight: "auto" }}>
             {smtpTest === "idle" && <><Icon name="zap" size={16} />Tes Koneksi</>}
-            {smtpTest === "testing" && <><span className="ak-spin" style={{ display: "inline-flex" }}><Icon name="loader" size={16} /></span>Menguji…</>}
+            {smtpTest === "testing" && <><span className="nk-spin" style={{ display: "inline-flex" }}><Icon name="loader" size={16} /></span>Menguji…</>}
             {smtpTest === "ok" && <><Icon name="checkcircle" size={17} />Berhasil</>}
           </button>
           <OutlineBtn onClick={() => setSmtpOpen(false)}>Batal</OutlineBtn>
@@ -347,7 +340,7 @@ export default function IntegrationsPage({ onHome }) {
       <Modal open={keyModal} onClose={() => setKeyModal(false)} title="Buat API Key Baru" subtitle="Beri nama yang menjelaskan penggunaannya" width={480}
         footer={<><OutlineBtn onClick={() => setKeyModal(false)}>Batal</OutlineBtn><PrimaryBtn icon="key" onClick={genKey}>Generate Key</PrimaryBtn></>}>
         <INTInput full label="Nama Key" value={newKeyName} onChange={setNewKeyName} placeholder="mis. Aplikasi Mobile, Power BI…" />
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 9, marginTop: 16, padding: "12px 14px", borderRadius: 11, background: "#FBF0DD", border: "1px solid #F0DCB6", color: "#92500B" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 9, marginTop: 16, padding: "12px 14px", borderRadius: 11, background: SEMANTIC.warn.bg, border: "1px solid " + SEMANTIC.warn.bd, color: SEMANTIC.warn.fg }}>
           <Icon name="info" size={16} />
           <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, lineHeight: 1.5 }}>Key hanya ditampilkan penuh satu kali setelah dibuat. Salin & simpan di tempat aman.</span>
         </div>
@@ -356,9 +349,9 @@ export default function IntegrationsPage({ onHome }) {
       {/* JUST-CREATED KEY REVEAL */}
       <Modal open={!!justMade} onClose={() => setJustMade(null)} title="API Key Berhasil Dibuat" subtitle="Salin sekarang — key ini tidak akan ditampilkan penuh lagi" width={520}
         footer={<PrimaryBtn icon="copy" onClick={() => { copyKey(justMade); setJustMade(null); }}>Salin & Tutup</PrimaryBtn>}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px", borderRadius: 12, background: "#0F2740", border: "1px solid #1C3A5C" }}>
-          <Icon name="key" size={18} color="#7FB2E8" />
-          <code style={{ flex: 1, fontFamily: FONT_MONO, fontSize: 13.5, fontWeight: 600, color: "#EAF2FB", wordBreak: "break-all" }}>{justMade}</code>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px", borderRadius: 12, background: INK, border: "1px solid " + INK_SOFT }}>
+          <Icon name="key" size={18} color={ACCENT} />
+          <code style={{ flex: 1, fontFamily: FONT_MONO, fontSize: 13.5, fontWeight: 600, color: BG, wordBreak: "break-all" }}>{justMade}</code>
         </div>
       </Modal>
 
@@ -373,13 +366,13 @@ function INTKeyRow({ k, justMade, onReveal, onCopy, onRevoke }) {
   const fresh = justMade && justMade === k.key;
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 15px", borderRadius: 12, border: "1px solid " + (fresh ? "#CFE0D6" : LINE), background: fresh ? "#F1F8F3" : h ? CREAM : SURFACE, transition: "all .16s" }}>
-      <span style={{ width: 38, height: 38, borderRadius: 10, background: "#FBEFE5", color: ORANGE, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 38px" }}><Icon name="key" size={18} /></span>
+      style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 15px", borderRadius: 12, border: "1px solid " + (fresh ? SEMANTIC.ok.bd : LINE), background: fresh ? SEMANTIC.ok.bg : h ? ROW_HOVER : CARD, transition: "all .16s" }}>
+      <span style={{ width: 38, height: 38, borderRadius: 10, background: TONE.orange.bg, color: TONE.orange.fg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 38px" }}><Icon name="key" size={18} /></span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 600, color: INK }}>{k.name}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
           <code style={{ fontFamily: FONT_MONO, fontSize: 12, color: INK_SOFT, letterSpacing: 0.2 }}>{k.reveal ? k.key : intMask(k.key)}</code>
-          <span style={{ fontFamily: FONT_BODY, fontSize: 11, color: FAINT }}>· dibuat {k.created} · dipakai {k.lastUsed}</span>
+          <span style={{ fontFamily: FONT_BODY, fontSize: 11, color: INK_SOFT }}>· dibuat {k.created} · dipakai {k.lastUsed}</span>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flex: "0 0 auto" }}>
@@ -393,10 +386,10 @@ function INTKeyRow({ k, justMade, onReveal, onCopy, onRevoke }) {
 
 function INTIconBtn({ icon, title, onClick, danger }) {
   const [h, setH] = useState(false);
-  const c = danger ? DANGER : NAVY;
+  const c = danger ? SEMANTIC.danger.fg : INK;
   return (
     <button type="button" title={title} onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ width: 34, height: 34, borderRadius: 9, border: "1px solid " + (h ? c : LINE), background: h ? (danger ? "rgba(220,38,38,.07)" : "#EAF0F8") : SURFACE, color: h ? c : MUTED, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all .15s" }}>
+      style={{ width: 34, height: 34, borderRadius: 9, border: "1px solid " + (h ? c : LINE), background: h ? (danger ? SEMANTIC.danger.bg : ACCENT) : CARD, color: h ? c : INK_SOFT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all .15s" }}>
       <Icon name={icon} size={15} />
     </button>
   );

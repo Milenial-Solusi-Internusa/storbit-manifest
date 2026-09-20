@@ -14,16 +14,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../../contexts/useAuth";
 import useAppSettings from "../../../hooks/useAppSettings";
-import {
-  Icon, PageHeader, EntitySwitcher, Tabs, Segmented, Toggle, KitSelect,
-  SaveButton, Card, useToast, KitStyles,
-} from "./kit";
-import { DropdownManagementBody } from "./DropdownManagementPage";
-import {
-  NAVY, ORANGE, CREAM, LINE, LINE_SOFT, INK, MUTED, GREEN,
-  FONT_HEAD, FONT_BODY,
-} from "./tokens";
 
+import { DropdownManagementBody } from "./DropdownManagementPage";
+
+import { Card, EntitySwitcher, Icon, KitSelect, PageHeader, SaveButton, Segmented, Tabs, Toggle, useToast } from '../../../kit';
+import { ACCENT, INK, INK_SOFT, LINE_SOFT, HEAD_BG, WHITE, FONT_HEAD, FONT_BODY, SEMANTIC, TONE } from '../../../kit/tokens';
 /* ---------- entity code ← companies.id (default selection from useAuth) ---------- */
 const ENTITY_CODE_BY_ID = {
   "0e1840d8-e6fb-4190-bd09-88338e68b492": "MSI",
@@ -62,12 +57,14 @@ const GP_CURR = [
   { value: "sym", label: "1.250.000" },
 ];
 const GP_MONTHS = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+// Katalog swatch preferensi (nilai DATA yang disimpan user, bukan warna identitas aplikasi):
+// warna diambil dari palet STATUS/DATA kit; teal/violet tidak punya padanan di kit dan dibiarkan literal.
 const GP_ACCENTS = [
-  { value: "orange", color: ORANGE, label: "Oranye" },
-  { value: "navy",   color: NAVY,   label: "Navy" },
-  { value: "teal",   color: "#0E8A8A", label: "Teal" },
-  { value: "green",  color: GREEN,  label: "Hijau" },
-  { value: "violet", color: "#6D4AC4", label: "Violet" },
+  { value: "orange", color: TONE.orange.fg, label: "Oranye" },
+  { value: "navy",   color: TONE.navy.fg,   label: "Navy" },
+  { value: "teal",   color: "#0E8A8A",      label: "Teal" },
+  { value: "green",  color: SEMANTIC.ok.fg, label: "Hijau" },
+  { value: "violet", color: "#6D4AC4",      label: "Violet" },
 ];
 
 /* ---------- default fallback values (when app_settings has no row) ---------- */
@@ -83,7 +80,7 @@ function GPRow({ title, desc, children, last }) {
     <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "17px 0", borderBottom: last ? "none" : "1px solid " + LINE_SOFT, flexWrap: "wrap" }}>
       <div style={{ flex: "1 1 280px", minWidth: 0 }}>
         <div style={{ fontFamily: FONT_BODY, fontSize: 14, fontWeight: 600, color: INK }}>{title}</div>
-        {desc && <div style={{ fontSize: 12.5, color: MUTED, marginTop: 3, lineHeight: 1.5, textWrap: "pretty" }}>{desc}</div>}
+        {desc && <div style={{ fontSize: 12.5, color: INK_SOFT, marginTop: 3, lineHeight: 1.5, textWrap: "pretty" }}>{desc}</div>}
       </div>
       <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "flex-end" }}>{children}</div>
     </div>
@@ -95,12 +92,12 @@ function GPSection({ icon, title, desc, children, onSave }) {
   return (
     <Card pad={0} style={{ marginBottom: 18, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "18px 22px", borderBottom: "1px solid " + LINE_SOFT }}>
-        <span style={{ width: 42, height: 42, borderRadius: 12, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 42px" }}><Icon name={icon} size={21} /></span>
+        <span style={{ width: 42, height: 42, borderRadius: 12, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 42px" }}><Icon name={icon} size={21} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 700, color: NAVY, letterSpacing: -0.2 }}>{title}</div>
-          {desc && <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{desc}</div>}
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 700, color: INK, letterSpacing: -0.2 }}>{title}</div>
+          {desc && <div style={{ fontSize: 12.5, color: INK_SOFT, marginTop: 2 }}>{desc}</div>}
         </div>
-        <SaveButton onSave={onSave} variant="navy" />
+        <SaveButton onSave={onSave} variant="secondary" />
       </div>
       <div style={{ padding: "6px 22px 16px" }}>{children}</div>
     </Card>
@@ -115,8 +112,8 @@ function GPAccent({ value, onChange }) {
         const active = a.value === value;
         return (
           <button key={a.value} type="button" onClick={() => onChange(a.value)} title={a.label}
-            style={{ width: 34, height: 34, borderRadius: 10, background: a.color, border: "2px solid " + (active ? INK : "transparent"), cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: active ? "0 0 0 3px " + CREAM + ", 0 0 0 4px " + a.color : "none", transition: "all .15s" }}>
-            {active && <Icon name="check" size={16} color="#fff" />}
+            style={{ width: 34, height: 34, borderRadius: 10, background: a.color, border: "2px solid " + (active ? INK : "transparent"), cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: active ? "0 0 0 3px " + HEAD_BG + ", 0 0 0 4px " + a.color : "none", transition: "all .15s" }}>
+            {active && <Icon name="check" size={16} color={WHITE} />}
           </button>
         );
       })}
@@ -187,15 +184,14 @@ export default function GeneralPreferencesPage({ onHome }) {
   const save = async (label) => {
     const payload = { lang, tz, dateFmt, timeFmt, numFmt, curr, theme, density, accent, sidebar, animations, firstDay, fiscalStart, weekend };
     const { error } = await saveSettings(payload);
-    if (error) fireToast('Gagal menyimpan: ' + (error.message || error), 'alert');
-    else fireToast(label + " disimpan untuk " + entity);
+    if (error) { fireToast('Gagal menyimpan: ' + (error.message || error), 'alert'); return { error }; } // SaveButton kit: keadaan GAGAL
+    fireToast(label + " disimpan untuk " + entity);
   };
 
   const [tab, setTab] = useState("prefs");
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Admin Settings", onClick: onHome }, { label: "General Preferences" }]}
         title="General Preferences"
@@ -210,10 +206,10 @@ export default function GeneralPreferencesPage({ onHome }) {
         onChange={setTab}
       />
 
-      {tab === "prefs" && loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: MUTED, padding: "2px 2px 12px" }}>Memuat pengaturan…</div>}
+      {tab === "prefs" && loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT, padding: "2px 2px 12px" }}>Memuat pengaturan…</div>}
 
       {tab === "prefs" && (
-      <div key={entity} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
+      <div key={entity} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "nk-rise"}>
         <GPSection icon="globe" title="Lokalisasi" desc="Bahasa, zona waktu, dan format regional" onSave={() => save("Lokalisasi")}>
           <GPRow title="Bahasa" desc="Bahasa antarmuka untuk seluruh pengguna entitas ini.">
             <KitSelect value={lang} onChange={setLang} options={GP_LANGS} width={240} icon="globe2" />

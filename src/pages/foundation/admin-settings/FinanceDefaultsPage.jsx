@@ -8,21 +8,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../../lib/supabase";
-import {
-  Icon, PageHeader, EntitySwitcher, NumberStepper, Segmented, OutlineBtn,
-  SaveButton, Tooltip, PillToggle, useToast, Skel, Card, KitStyles, KitSelect,
-} from "./kit";
-import {
-  NAVY, ORANGE, CREAM, SURFACE, LINE, LINE_SOFT, INK, INK_SOFT, MUTED,
-  FAINT, DANGER, FONT_HEAD, FONT_BODY, FONT_MONO, fmtRp,
-} from "./tokens";
+import { ENTITIES } from "../../../lib/entities";
 
+import { Card, EntitySwitcher, Icon, KitSelect, NumberStepper, OutlineBtn, PageHeader, PillToggle, SaveButton, Segmented, Skel, Tooltip, useToast } from '../../../kit';
+import { BG, CARD, ACCENT, ACCENT_HOVER, ACCENT_2, LINE, INK, INK_SOFT, LINE_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, FOCUS_RING, SHADOW_1, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC, fmtRp } from '../../../kit/tokens';
 /* ---------- entity code → companies.id ---------- */
-const ENTITY_IDS = {
-  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
-  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
-  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
-};
+const ENTITY_IDS = Object.fromEntries(ENTITIES.map((e) => [e.code, e.id]));
 
 const FIN_SEED = {
   ppnRate: 11,
@@ -90,17 +81,17 @@ function RadioCard({ selected, onClick, title, desc, locked, lockTip }) {
   const [h, setH] = useState(false);
   const inner = (
     <div onClick={() => !locked && onClick()} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ position: "relative", flex: "1 1 200px", border: "1.5px solid " + (selected ? NAVY : h && !locked ? "#C9D8EC" : LINE), background: selected ? "rgba(20,70,130,.04)" : locked ? CREAM : SURFACE, borderRadius: 13, padding: "14px 16px", cursor: locked ? "not-allowed" : "pointer", transition: "all .2s", opacity: locked ? 0.78 : 1 }}>
+      style={{ position: "relative", flex: "1 1 200px", border: "1.5px solid " + (selected ? INK : h && !locked ? ACCENT_HOVER : LINE), background: selected ? ROW_HOVER : locked ? HEAD_BG : CARD, borderRadius: 13, padding: "14px 16px", cursor: locked ? "not-allowed" : "pointer", transition: "all .2s", opacity: locked ? 0.78 : 1 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-        <span style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid " + (selected ? NAVY : "#CFC8BA"), background: selected ? NAVY : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 20px", marginTop: 1, transition: "all .2s" }}>
-          {selected && <Icon name="check" size={12} color="#fff" />}
+        <span style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid " + (selected ? INK : LINE), background: selected ? INK : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 20px", marginTop: 1, transition: "all .2s" }}>
+          {selected && <Icon name="check" size={12} color={BG} />}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, color: selected ? NAVY : INK }}>{title}</span>
-            {locked && <Icon name="lock" size={12} color={FAINT} />}
+            <span style={{ fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, color: INK }}>{title}</span>
+            {locked && <Icon name="lock" size={12} color={INK_SOFT} />}
           </div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: MUTED, marginTop: 4, letterSpacing: 0.2 }}>{desc}</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: INK_SOFT, marginTop: 4, letterSpacing: 0.2 }}>{desc}</div>
         </div>
       </div>
     </div>
@@ -122,18 +113,18 @@ function SearchableSelect({ value, onChange, groups }) {
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button type="button" onClick={() => setOpen((o) => !o)}
-        style={{ width: "100%", height: 46, display: "flex", alignItems: "center", gap: 8, borderRadius: 11, border: "1px solid " + (open ? NAVY : LINE), background: SURFACE, padding: "0 14px", cursor: "pointer", fontFamily: FONT_BODY, fontSize: 14, color: INK, boxShadow: open ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }}>
-        <Icon name="globe" size={16} color={NAVY} />
+        style={{ width: "100%", height: 46, display: "flex", alignItems: "center", gap: 8, borderRadius: 11, border: "1px solid " + (open ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 14px", cursor: "pointer", fontFamily: FONT_BODY, fontSize: 14, color: INK, boxShadow: open ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }}>
+        <Icon name="globe" size={16} color={INK} />
         <span style={{ flex: 1, textAlign: "left", fontWeight: 500 }}>{cur ? cur.l : "Pilih incoterm…"}</span>
-        <span style={{ color: MUTED, transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }}><Icon name="chevdown" size={16} /></span>
+        <span style={{ color: INK_SOFT, transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }}><Icon name="chevdown" size={16} /></span>
       </button>
       {open && (
-        <div className="ak-scroll ak-rise" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: SURFACE, border: "1px solid " + LINE, borderRadius: 13, boxShadow: "0 16px 40px rgba(20,40,70,.16)", zIndex: 40, maxHeight: 320, overflowY: "auto" }}>
-          <div style={{ position: "sticky", top: 0, background: SURFACE, padding: 10, borderBottom: "1px solid " + LINE_SOFT }}>
+        <div className="nk-scroll nk-rise" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: CARD, border: "1px solid " + LINE, borderRadius: 13, boxShadow: SHADOW_1, zIndex: 40, maxHeight: 320, overflowY: "auto" }}>
+          <div style={{ position: "sticky", top: 0, background: CARD, padding: 10, borderBottom: "1px solid " + LINE_SOFT }}>
             <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: FAINT }}><Icon name="search" size={15} /></span>
+              <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: INK_SOFT }}><Icon name="search" size={15} /></span>
               <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari incoterm…"
-                style={{ width: "100%", height: 38, borderRadius: 9, border: "1px solid " + LINE, background: CREAM, padding: "0 12px 0 34px", fontFamily: FONT_BODY, fontSize: 13, color: INK, outline: "none" }} />
+                style={{ width: "100%", height: 38, borderRadius: 9, border: "1px solid " + LINE, background: HEAD_BG, padding: "0 12px 0 34px", fontFamily: FONT_BODY, fontSize: 13, color: INK, outline: "none" }} />
             </div>
           </div>
           {groups.map((g) => {
@@ -141,17 +132,17 @@ function SearchableSelect({ value, onChange, groups }) {
             if (!items.length) return null;
             return (
               <div key={g.group} style={{ padding: "6px 0" }}>
-                <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, color: FAINT, padding: "6px 14px 4px" }}>{g.group}</div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, color: INK_SOFT, padding: "6px 14px 4px" }}>{g.group}</div>
                 {items.map((i) => {
                   const sel = i.v === value;
                   return (
                     <button key={i.v} type="button" onClick={() => { onChange(i.v); setOpen(false); setQ(""); }}
-                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", border: "none", background: sel ? "#EAF0F8" : "transparent", cursor: "pointer", textAlign: "left", transition: "background .12s" }}
-                      onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = CREAM; }}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", border: "none", background: sel ? ACCENT : "transparent", cursor: "pointer", textAlign: "left", transition: "background .12s" }}
+                      onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = HEAD_BG; }}
                       onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = "transparent"; }}>
-                      <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: NAVY, width: 38 }}>{i.v}</span>
+                      <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: INK, width: 38 }}>{i.v}</span>
                       <span style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT, flex: 1 }}>{i.l.split("· ")[1]}</span>
-                      {sel && <Icon name="check" size={15} color={NAVY} />}
+                      {sel && <Icon name="check" size={15} color={INK} />}
                     </button>
                   );
                 })}
@@ -169,7 +160,7 @@ function FLabel({ children, hint }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
       <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK_SOFT, whiteSpace: "nowrap" }}>{children}</span>
-      {hint && <Tooltip label={hint}><Icon name="info" size={14} color={FAINT} /></Tooltip>}
+      {hint && <Tooltip label={hint}><Icon name="info" size={14} color={INK_SOFT} /></Tooltip>}
     </div>
   );
 }
@@ -177,8 +168,8 @@ function FinSection({ icon, title, children }) {
   return (
     <Card style={{ marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 20 }}>
-        <span style={{ width: 36, height: 36, borderRadius: 10, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 36px" }}><Icon name={icon} size={18} /></span>
-        <span style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: NAVY }}>{title}</span>
+        <span style={{ width: 36, height: 36, borderRadius: 10, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 36px" }}><Icon name={icon} size={18} /></span>
+        <span style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: INK }}>{title}</span>
       </div>
       {children}
     </Card>
@@ -189,13 +180,13 @@ function FinSection({ icon, title, children }) {
 function SumLine({ label, value, strong, accent }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: strong ? "10px 0 2px" : "5px 0" }}>
-      <span style={{ fontFamily: FONT_BODY, fontSize: strong ? 13.5 : 12.5, fontWeight: strong ? 700 : 500, color: strong ? INK : MUTED, whiteSpace: "nowrap" }}>{label}</span>
-      <span style={{ fontFamily: FONT_MONO, fontSize: strong ? 17 : 13, fontWeight: strong ? 700 : 500, color: accent ? ORANGE : strong ? NAVY : INK_SOFT, whiteSpace: "nowrap" }}>{value}</span>
+      <span style={{ fontFamily: FONT_BODY, fontSize: strong ? 13.5 : 12.5, fontWeight: strong ? 700 : 500, color: strong ? INK : INK_SOFT, whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ fontFamily: FONT_MONO, fontSize: strong ? 17 : 13, fontWeight: strong ? 700 : 500, color: accent || strong ? INK : INK_SOFT, whiteSpace: "nowrap" }}>{value}</span>
     </div>
   );
 }
 function MetaChip({ label }) {
-  return <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: MUTED, background: CREAM, border: "1px solid " + LINE, borderRadius: 20, padding: "4px 10px", whiteSpace: "nowrap" }}>{label}</span>;
+  return <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: INK_SOFT, background: HEAD_BG, border: "1px solid " + LINE, borderRadius: 20, padding: "4px 10px", whiteSpace: "nowrap" }}>{label}</span>;
 }
 
 function LiveSummary({ form, paymentTermDays }) {
@@ -216,11 +207,11 @@ function LiveSummary({ form, paymentTermDays }) {
   return (
     <div style={{ position: "sticky", top: 18 }}>
       <Card pad={0} style={{ overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "16px 20px", background: NAVY, color: "#fff" }}>
-          <span className="ak-spin" style={{ display: "inline-flex", animationDuration: "6s" }}><Icon name="refresh" size={17} /></span>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "16px 20px", background: ACCENT, color: INK }}>
+          <span className="nk-spin" style={{ display: "inline-flex", animationDuration: "6s" }}><Icon name="refresh" size={17} /></span>
           <span style={{ fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 600, letterSpacing: 0.2 }}>Live Preview</span>
           <span style={{ flex: 1 }} />
-          <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,.16)", padding: "3px 9px", borderRadius: 20 }}>{form.taxMode === "inclusive" ? "Inclusive" : "Exclusive"}</span>
+          <span style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, background: INPUT_BG, padding: "3px 9px", borderRadius: 20 }}>{form.taxMode === "inclusive" ? "Inclusive" : "Exclusive"}</span>
         </div>
         <div style={{ padding: 20 }}>
           <div style={{ fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 700, color: INK, marginBottom: 12 }}>Contoh Kalkulasi SP</div>
@@ -232,9 +223,9 @@ function LiveSummary({ form, paymentTermDays }) {
           <SumLine label="Dasar PPN (DPP)" value={fmtRp(base)} />
           <SumLine label={"PPN (" + (form.ppnRate || 0) + "%)"} value={fmtRp(ppn)} accent />
           <div style={{ height: 1, background: LINE, margin: "10px 0" }} />
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#EAF0F8", border: "1px solid #CFE0F2", borderRadius: 12, padding: "13px 15px" }}>
-            <span style={{ fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 700, color: NAVY }}>Grand Total</span>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 19, fontWeight: 700, color: NAVY, letterSpacing: -0.3, whiteSpace: "nowrap" }}>{fmtRp(grand)}</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: SEMANTIC.info.bg, border: "1px solid " + SEMANTIC.info.bd, borderRadius: 12, padding: "13px 15px" }}>
+            <span style={{ fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 700, color: INK }}>Grand Total</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 19, fontWeight: 700, color: INK, letterSpacing: -0.3, whiteSpace: "nowrap" }}>{fmtRp(grand)}</span>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 14 }}>
             <MetaChip label={paymentTermDays != null ? `Termin ${paymentTermDays} hari` : "Termin belum dipilih"} />
@@ -265,9 +256,9 @@ function FinSkeleton() {
 function ErrorState({ msg, onRetry }) {
   return (
     <Card style={{ textAlign: "center", padding: "48px 32px" }}>
-      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: SEMANTIC.danger.bg, border: "1px solid " + SEMANTIC.danger.bd, display: "flex", alignItems: "center", justifyContent: "center", color: SEMANTIC.danger.fg, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: INK }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: INK_SOFT, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
       <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
     </Card>
   );
@@ -327,14 +318,13 @@ export default function FinanceDefaultsPage({ onHome }) {
   }
   const save = async () => {
     const { error } = await supabase.from("entity_finance_settings").upsert(formToFin(form, ENTITY_IDS[entity]), { onConflict: "company_id" });
-    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return { error }; } // SaveButton kit: keadaan GAGAL
     setPristine(form); setDirty(false);
     fireToast("Finance defaults " + entity + " tersimpan");
   };
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Admin Settings", onClick: onHome }, { label: "Finance Defaults" }]}
         title="Finance Defaults" subtitle="Konfigurasi pajak, mata uang & termin pembayaran per entitas"
@@ -343,7 +333,7 @@ export default function FinanceDefaultsPage({ onHome }) {
       />
 
       {state === "loading" ? <FinSkeleton /> : state === "error" ? <ErrorState msg={errMsg} onRetry={() => setReload((n) => n + 1)} /> : (
-        <div key={entity} className={`nx-grid-2 ${fade ? "" : "ak-rise"}`} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease", display: "grid", gridTemplateColumns: "minmax(0,1fr) 360px", gap: 22, alignItems: "start" }}>
+        <div key={entity} className={`nx-grid-2 ${fade ? "" : "nk-rise"}`} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease", display: "grid", gridTemplateColumns: "minmax(0,1fr) 360px", gap: 22, alignItems: "start" }}>
           {/* LEFT — form */}
           <div>
             <FinSection icon="percent" title="Konfigurasi Pajak">
@@ -377,8 +367,8 @@ export default function FinanceDefaultsPage({ onHome }) {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 28 }}>
                 <div>
                   <FLabel>Mata Uang Dasar</FLabel>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 9, height: 46, padding: "0 18px", borderRadius: 11, background: CREAM, border: "1px solid " + LINE, fontFamily: FONT_MONO, fontSize: 15, fontWeight: 700, color: NAVY }}>
-                    <Icon name="lock" size={15} color={MUTED} />IDR
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 9, height: 46, padding: "0 18px", borderRadius: 11, background: HEAD_BG, border: "1px solid " + LINE, fontFamily: FONT_MONO, fontSize: 15, fontWeight: 700, color: INK }}>
+                    <Icon name="lock" size={15} color={INK_SOFT} />IDR
                   </span>
                 </div>
               </div>
@@ -394,7 +384,7 @@ export default function FinanceDefaultsPage({ onHome }) {
                   <RadioCard selected={form.rateMode === "manual"} onClick={() => set("rateMode")("manual")} title="Manual" desc="Input kurs manual oleh finance" />
                   <div style={{ position: "relative", flex: "1 1 200px" }}>
                     <RadioCard selected={false} locked lockTip="Integrasi kurs harian otomatis — segera hadir." title="Daily" desc="Sinkron kurs otomatis harian" />
-                    <span style={{ position: "absolute", top: 12, right: 12, fontFamily: FONT_BODY, fontSize: 10, fontWeight: 600, color: "#fff", background: ORANGE, borderRadius: 20, padding: "3px 9px" }}>Segera Hadir</span>
+                    <span style={{ position: "absolute", top: 12, right: 12, fontFamily: FONT_BODY, fontSize: 10, fontWeight: 600, color: INK, background: ACCENT_2, borderRadius: 20, padding: "3px 9px" }}>Segera Hadir</span>
                   </div>
                 </div>
               </div>
@@ -407,7 +397,7 @@ export default function FinanceDefaultsPage({ onHome }) {
                   {paymentTermsLoading ? (
                     <Skel w={170} h={46} r={11} />
                   ) : paymentTermOptions.length === 0 ? (
-                    <div style={{ fontSize: 12, color: DANGER, maxWidth: 240, lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 12, color: SEMANTIC.danger.fg, maxWidth: 240, lineHeight: 1.5 }}>
                       Belum ada Payment Terms aktif untuk entitas ini. Tambahkan dulu di Master Data → Payment Terms.
                     </div>
                   ) : (
@@ -443,9 +433,9 @@ export default function FinanceDefaultsPage({ onHome }) {
 
       {/* sticky bottom save bar */}
       <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, display: "flex", justifyContent: "center", padding: 18, pointerEvents: "none", zIndex: 50 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 18, background: SURFACE, border: "1px solid " + LINE, borderRadius: 14, padding: "12px 14px 12px 22px", boxShadow: "0 16px 40px rgba(20,40,70,.16)", pointerEvents: "auto", maxWidth: 720, width: "calc(100% - 36px)", transform: dirty ? "translateY(0)" : "translateY(160%)", opacity: dirty ? 1 : 0, transition: "transform .42s cubic-bezier(.22,1,.36,1), opacity .3s" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 18, background: CARD, border: "1px solid " + LINE, borderRadius: 14, padding: "12px 14px 12px 22px", boxShadow: SHADOW_1, pointerEvents: "auto", maxWidth: 720, width: "calc(100% - 36px)", transform: dirty ? "translateY(0)" : "translateY(160%)", opacity: dirty ? 1 : 0, transition: "transform .42s cubic-bezier(.22,1,.36,1), opacity .3s" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500, color: INK }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: ORANGE }} />Ada perubahan belum disimpan
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: SEMANTIC.warn.fg }} />Ada perubahan belum disimpan
           </span>
           <span style={{ flex: 1 }} />
           <OutlineBtn onClick={() => { setForm(pristine); setDirty(false); }}>Buang</OutlineBtn>

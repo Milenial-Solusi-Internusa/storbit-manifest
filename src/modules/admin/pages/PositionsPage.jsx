@@ -28,15 +28,9 @@ import AdminFormModal from '../components/AdminFormModal';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
-import {
-  Icon, PageHeader, KitStyles, FloatingInput, FloatingSelect,
-  PrimaryBtn, OutlineBtn, SectionLabel,
-} from '../../../pages/foundation/admin-settings/kit';
-import {
-  NAVY, ORANGE, ORANGE_DK, CREAM, SURFACE, LINE, ROW_HOVER, INK, INK_SOFT,
-  MUTED, DANGER, GREEN, FONT_HEAD, FONT_BODY, FONT_MONO,
-} from '../../../pages/foundation/admin-settings/tokens';
 
+import { FloatingInput, FloatingSelect, Icon, OutlineBtn, PageHeader, PrimaryBtn, SectionLabel } from '../../../kit';
+import { BG, CARD, ACCENT, ACCENT_2, ACCENT_2_HOVER, LINE, INK, INK_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, FOCUS_RING, SHADOW_2, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC } from '../../../kit/tokens';
 // Entity list for the multi-select checkbox group below (keyed by company_id —
 // NOT the same id shape as kit's own ENTITIES export, which keys by short
 // code like "MSI"). handleSave's per-entity loop and the RLS pre-check query
@@ -50,15 +44,16 @@ const ENTITIES = [
 ];
 const ENTITY_IDS = ENTITIES.map((e) => e.id);
 
-// Graduated ORANGE ramp by seniority — one hue family (category badge, per
+// Graduated ACCENT_2 ramp by seniority — one hue family (category badge, per
 // the kit mapping rules) but with a lightness step per level so seniority is
 // still scannable at a glance instead of collapsing all 5 to one flat tint.
 const LEVEL_STYLE = {
-  Staff:      { bg: `${ORANGE}14`, color: ORANGE },
-  Supervisor: { bg: `${ORANGE}26`, color: ORANGE },
-  Manager:    { bg: `${ORANGE}40`, color: ORANGE_DK },
-  Head:       { bg: `${ORANGE}66`, color: ORANGE_DK },
-  Director:   { bg: ORANGE,        color: '#fff' },
+  // Ramp = turunan alpha ACCENT_2 (satu hue, keputusan #1: turunan tanpa hue baru); teks selalu INK.
+  Staff:      { bg: `${ACCENT_2}40`, color: INK },
+  Supervisor: { bg: `${ACCENT_2}73`, color: INK },
+  Manager:    { bg: `${ACCENT_2}A6`, color: INK },
+  Head:       { bg: ACCENT_2,        color: INK },
+  Director:   { bg: ACCENT_2_HOVER,  color: INK },
 };
 
 const GRID_COLS = '90px 1fr 110px 1fr 96px 60px';
@@ -68,7 +63,7 @@ const GRID_COLS = '90px 1fr 110px 1fr 96px 60px';
 // ─────────────────────────────────────────────────────────────
 
 function LevelBadge({ level }) {
-  const style = LEVEL_STYLE[level] || { bg: CREAM, color: MUTED };
+  const style = LEVEL_STYLE[level] || { bg: HEAD_BG, color: INK_SOFT };
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] whitespace-nowrap"
@@ -85,7 +80,7 @@ function EntityPill({ ent, present }) {
       className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-lg font-bold"
       style={{
         fontFamily: FONT_MONO,
-        ...(present ? { background: NAVY, color: '#fff' } : { background: CREAM, color: MUTED, opacity: 0.55 }),
+        ...(present ? { background: ACCENT, color: INK } : { background: HEAD_BG, color: INK_SOFT, opacity: 0.55 }),
       }}
       title={`${ent.code} — ${ent.name}${present ? '' : ' (tidak tersedia)'}`}
     >
@@ -100,11 +95,11 @@ function GroupStatusBadge({ full }) {
       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wide"
       style={{
         fontFamily: FONT_HEAD, fontWeight: 700,
-        background: full ? `${GREEN}1A` : `${ORANGE}1A`,
-        color: full ? GREEN : ORANGE,
+        background: full ? SEMANTIC.ok.bg : SEMANTIC.warn.bg,
+        color: full ? SEMANTIC.ok.fg : SEMANTIC.warn.fg,
       }}
     >
-      <span className="w-1 h-1 rounded-full" style={{ background: full ? GREEN : ORANGE }} />
+      <span className="w-1 h-1 rounded-full" style={{ background: full ? SEMANTIC.ok.fg : SEMANTIC.warn.fg }} />
       {full ? 'Active' : 'Partial'}
     </span>
   );
@@ -114,7 +109,7 @@ function CodeBadge({ children }) {
   return (
     <span
       className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
+      style={{ fontFamily: FONT_MONO, background: ACCENT, color: INK }}
     >
       {children}
     </span>
@@ -137,20 +132,20 @@ function EntityCheckbox({ ent, checked, onToggle, disabled }) {
       disabled={disabled}
       className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl border transition-colors disabled:opacity-50 text-left"
       style={{
-        borderColor: checked ? NAVY : LINE,
-        background: checked ? `${NAVY}0F` : SURFACE,
+        borderColor: checked ? INK : LINE,
+        background: checked ? ROW_HOVER : INPUT_BG,
       }}
     >
       <span
         className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
         style={{
-          background: checked ? NAVY : SURFACE,
-          border: `1.5px solid ${checked ? NAVY : LINE}`,
+          background: checked ? ACCENT : CARD,
+          border: `1.5px solid ${checked ? INK : LINE}`,
         }}
       >
-        {checked && <Icon name="check" size={13} color="#fff" />}
+        {checked && <Icon name="check" size={13} color={INK} />}
       </span>
-      <span className="text-[11px] px-2 py-0.5 rounded-lg font-bold" style={{ fontFamily: FONT_MONO, background: NAVY, color: '#fff' }}>
+      <span className="text-[11px] px-2 py-0.5 rounded-lg font-bold" style={{ fontFamily: FONT_MONO, background: ACCENT, color: INK }}>
         {ent.code}
       </span>
       <span className="text-sm" style={{ color: INK_SOFT }}>{ent.name}</span>
@@ -329,14 +324,13 @@ export default function PositionsPage({ onHome }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: 'Foundation' }, { label: 'Master Data & Admin Settings', onClick: onHome }, { label: 'Positions' }]}
         title="Positions"
         subtitle="Satu baris per kode jabatan, dengan ketersediaan per entitas (MSI / JCI / SOA)."
         onBack={onHome}
         right={!loading && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: `${NAVY}1A`, color: NAVY, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: ACCENT, color: INK, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
             {groups.length.toLocaleString('id-ID')}
           </span>
         )}
@@ -346,9 +340,9 @@ export default function PositionsPage({ onHome }) {
       <div className="flex items-center gap-3 mb-5">
         <div
           className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm transition-shadow"
-          style={{ background: SURFACE, borderColor: searchFocus ? NAVY : LINE, boxShadow: searchFocus ? `0 0 0 3px ${NAVY}29` : 'none' }}
+          style={{ background: INPUT_BG, borderColor: searchFocus ? INK_SOFT : LINE, boxShadow: searchFocus ? FOCUS_RING : 'none' }}
         >
-          <Search size={14} style={{ color: MUTED }} />
+          <Search size={14} style={{ color: INK_SOFT }} />
           <input
             type="text"
             placeholder="Search by name or code…"
@@ -364,7 +358,7 @@ export default function PositionsPage({ onHome }) {
           type="button"
           onClick={refresh}
           className="p-2.5 rounded-xl border transition-opacity hover:opacity-70"
-          style={{ background: SURFACE, borderColor: LINE }}
+          style={{ background: CARD, borderColor: LINE }}
           title="Refresh"
         >
           <RefreshCw size={14} style={{ color: INK_SOFT }} />
@@ -373,10 +367,10 @@ export default function PositionsPage({ onHome }) {
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border overflow-hidden" style={{ background: SURFACE, borderColor: LINE }}>
+      <div className="rounded-2xl border overflow-hidden" style={{ background: CARD, borderColor: LINE }}>
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
-          style={{ gridTemplateColumns: GRID_COLS, borderColor: LINE, background: CREAM, color: MUTED }}
+          style={{ gridTemplateColumns: GRID_COLS, borderColor: LINE, background: HEAD_BG, color: INK_SOFT }}
         >
           <div>Code</div>
           <div>Name</div>
@@ -395,7 +389,7 @@ export default function PositionsPage({ onHome }) {
         ) : (
           filteredGroups.map((g, i) => {
             const activeCount = ENTITIES.filter((e) => g.byCompany[e.id]).length;
-            const zebra = i % 2 === 1 ? `${CREAM}80` : SURFACE;
+            const zebra = i % 2 === 1 ? `${HEAD_BG}80` : CARD;
             return (
               <div
                 key={g.code}
@@ -418,7 +412,7 @@ export default function PositionsPage({ onHome }) {
                     type="button"
                     onClick={() => openEdit(g)}
                     className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
-                    style={{ background: CREAM, color: INK_SOFT }}
+                    style={{ background: HEAD_BG, color: INK_SOFT }}
                   >
                     Edit
                   </button>
@@ -449,10 +443,10 @@ export default function PositionsPage({ onHome }) {
                   disabled={saving} placeholder="e.g. MGR, SPV" />
               ) : (
                 <div style={{ flex: '1 1 calc(50% - 8px)', minWidth: 0 }}>
-                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: NAVY, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Code</div>
-                  <div style={{ borderRadius: 11, border: '1px solid ' + LINE, background: CREAM, padding: '16px 14px', fontFamily: FONT_MONO, fontSize: 14, color: INK_SOFT }}>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: INK, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Code</div>
+                  <div style={{ borderRadius: 11, border: '1px solid ' + LINE, background: HEAD_BG, padding: '16px 14px', fontFamily: FONT_MONO, fontSize: 14, color: INK_SOFT }}>
                     {draft.code}
-                    <span style={{ marginLeft: 8, fontSize: 10, fontFamily: FONT_BODY, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED }}>(locked)</span>
+                    <span style={{ marginLeft: 8, fontSize: 10, fontFamily: FONT_BODY, textTransform: 'uppercase', letterSpacing: '0.05em', color: INK_SOFT }}>(locked)</span>
                   </div>
                 </div>
               )}
@@ -472,7 +466,7 @@ export default function PositionsPage({ onHome }) {
                 options={POSITION_LEVELS}
               />
             </div>
-            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: MUTED, marginTop: 8 }}>
+            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: INK_SOFT, marginTop: 8 }}>
               Name &amp; level diterapkan ke semua entitas yang dicentang.
             </p>
 
@@ -491,12 +485,12 @@ export default function PositionsPage({ onHome }) {
                 />
               ))}
             </div>
-            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: MUTED, marginTop: 10 }}>
+            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: INK_SOFT, marginTop: 10 }}>
               Hapus centang → jabatan di entitas itu dinonaktifkan (is_active=false), bukan dihapus permanen.
             </p>
 
             {saveError && (
-              <div style={{ marginTop: 24, borderRadius: 14, padding: '14px 16px', background: `${DANGER}0F`, border: `1px solid ${DANGER}40` }}>
+              <div style={{ marginTop: 24, borderRadius: 14, padding: '14px 16px', background: `${SEMANTIC.danger.fg}0F`, border: `1px solid ${SEMANTIC.danger.fg}40` }}>
                 <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 2 }}>Save failed</div>
                 <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{saveError}</div>
               </div>
@@ -509,11 +503,11 @@ export default function PositionsPage({ onHome }) {
       {toast && (
         <div style={{
           position: 'fixed', right: 24, bottom: 24, display: 'flex', alignItems: 'center', gap: 10,
-          background: INK, color: '#fff', padding: '13px 18px', borderRadius: 12,
+          background: INK, color: BG, padding: '13px 18px', borderRadius: 12,
           fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500,
-          boxShadow: '0 14px 34px rgba(10,20,40,.3)', zIndex: 200,
+          boxShadow: SHADOW_2, zIndex: 200,
         }}>
-          <Icon name={toast.type === 'error' ? 'alert' : 'checkcircle'} size={18} color={toast.type === 'error' ? '#FF9B9B' : '#7FD6A0'} />
+          <Icon name={toast.type === 'error' ? 'alert' : 'checkcircle'} size={18} color={toast.type === 'error' ? SEMANTIC.danger.bg : ACCENT} />
           {toast.msg}
         </div>
       )}

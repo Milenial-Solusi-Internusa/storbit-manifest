@@ -13,15 +13,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../../contexts/useAuth";
 import useAppSettings from "../../../hooks/useAppSettings";
-import {
-  Icon, PageHeader, EntitySwitcher, NumberStepper, Toggle, Segmented,
-  SaveButton, Card, useToast, KitStyles,
-} from "./kit";
-import {
-  NAVY, CREAM, SURFACE, LINE, LINE_SOFT, INK, INK_SOFT, MUTED, FAINT,
-  DANGER, GREEN, FONT_HEAD, FONT_BODY,
-} from "./tokens";
 
+import { Card, EntitySwitcher, Icon, NumberStepper, PageHeader, SaveButton, Segmented, Toggle, useToast } from '../../../kit';
+import { CARD, ACCENT, LINE, INK, INK_SOFT, LINE_SOFT, HEAD_BG, ROW_HOVER, WHITE, FONT_HEAD, FONT_BODY, SEMANTIC } from '../../../kit/tokens';
 /* ---------- entity code ← companies.id (default selection from useAuth) ---------- */
 const ENTITY_CODE_BY_ID = {
   "0e1840d8-e6fb-4190-bd09-88338e68b492": "MSI",
@@ -59,7 +53,7 @@ function SECRow({ title, desc, children, last }) {
     <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "16px 0", borderBottom: last ? "none" : "1px solid " + LINE_SOFT, flexWrap: "wrap" }}>
       <div style={{ flex: "1 1 300px", minWidth: 0 }}>
         <div style={{ fontFamily: FONT_BODY, fontSize: 14, fontWeight: 600, color: INK }}>{title}</div>
-        {desc && <div style={{ fontSize: 12.5, color: MUTED, marginTop: 3, lineHeight: 1.5, textWrap: "pretty" }}>{desc}</div>}
+        {desc && <div style={{ fontSize: 12.5, color: INK_SOFT, marginTop: 3, lineHeight: 1.5, textWrap: "pretty" }}>{desc}</div>}
       </div>
       <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "flex-end" }}>{children}</div>
     </div>
@@ -71,12 +65,12 @@ function SECSection({ icon, title, desc, children, onSave }) {
   return (
     <Card pad={0} style={{ marginBottom: 18, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "18px 22px", borderBottom: "1px solid " + LINE_SOFT }}>
-        <span style={{ width: 42, height: 42, borderRadius: 12, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 42px" }}><Icon name={icon} size={21} /></span>
+        <span style={{ width: 42, height: 42, borderRadius: 12, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 42px" }}><Icon name={icon} size={21} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 700, color: NAVY, letterSpacing: -0.2 }}>{title}</div>
-          {desc && <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{desc}</div>}
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 700, color: INK, letterSpacing: -0.2 }}>{title}</div>
+          {desc && <div style={{ fontSize: 12.5, color: INK_SOFT, marginTop: 2 }}>{desc}</div>}
         </div>
-        <SaveButton onSave={onSave} variant="navy" />
+        <SaveButton onSave={onSave} variant="secondary" />
       </div>
       <div style={{ padding: "6px 22px 16px" }}>{children}</div>
     </Card>
@@ -92,16 +86,16 @@ function SECStrength({ minLen, upper, number, symbol }) {
   if (number) score++;
   if (symbol) score++;
   const pct = Math.min(100, Math.round((score / 6) * 100));
-  const tier = score <= 2 ? { c: DANGER, t: "Lemah" } : score <= 4 ? { c: "#D9871F", t: "Sedang" } : { c: GREEN, t: "Kuat" };
+  const tier = score <= 2 ? { c: SEMANTIC.danger.fg, t: "Lemah" } : score <= 4 ? { c: SEMANTIC.warn.fg, t: "Sedang" } : { c: SEMANTIC.ok.fg, t: "Kuat" };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8, padding: "13px 16px", borderRadius: 12, background: CREAM, border: "1px solid " + LINE }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8, padding: "13px 16px", borderRadius: 12, background: HEAD_BG, border: "1px solid " + LINE }}>
       <Icon name="shield" size={18} color={tier.c} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
           <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT }}>Estimasi kekuatan kebijakan</span>
           <span style={{ fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 700, color: tier.c }}>{tier.t}</span>
         </div>
-        <div style={{ height: 7, borderRadius: 99, background: "#E4DDD0", overflow: "hidden" }}>
+        <div style={{ height: 7, borderRadius: 99, background: LINE, overflow: "hidden" }}>
           <div style={{ width: pct + "%", height: "100%", borderRadius: 99, background: tier.c, transition: "width .3s ease, background .3s ease" }} />
         </div>
       </div>
@@ -114,13 +108,13 @@ function SEC2FARow({ role, on, onToggle, last }) {
   const [h, setH] = useState(false);
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 16px", borderRadius: 12, border: "1px solid " + (on ? "#CFE0D6" : LINE), background: on ? "#F1F8F3" : h ? CREAM : SURFACE, marginBottom: last ? 0 : 10, transition: "all .18s" }}>
-      <span style={{ width: 36, height: 36, borderRadius: 10, background: on ? GREEN : "#E7E1D6", color: on ? "#fff" : MUTED, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 36px", transition: "all .18s" }}><Icon name="user" size={18} /></span>
+      style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 16px", borderRadius: 12, border: "1px solid " + (on ? SEMANTIC.ok.bd : LINE), background: on ? SEMANTIC.ok.bg : h ? ROW_HOVER : CARD, marginBottom: last ? 0 : 10, transition: "all .18s" }}>
+      <span style={{ width: 36, height: 36, borderRadius: 10, background: on ? SEMANTIC.ok.fg : HEAD_BG, color: on ? WHITE : INK_SOFT, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 36px", transition: "all .18s" }}><Icon name="user" size={18} /></span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 600, color: INK }}>{role.label}</div>
-        <div style={{ fontSize: 12, color: MUTED, marginTop: 1 }}>{role.desc}</div>
+        <div style={{ fontSize: 12, color: INK_SOFT, marginTop: 1 }}>{role.desc}</div>
       </div>
-      <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: on ? GREEN : FAINT, marginRight: 4 }}>{on ? "Wajib" : "Opsional"}</span>
+      <span style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: on ? SEMANTIC.ok.fg : INK_SOFT, marginRight: 4 }}>{on ? "Wajib" : "Opsional"}</span>
       <Toggle on={on} onChange={onToggle} />
     </div>
   );
@@ -197,14 +191,13 @@ export default function SecurityPolicyPage({ onHome }) {
   const save = async (label) => {
     const payload = { minLen, reqUpper, reqNumber, reqSymbol, reuse, expiry, timeout, maxSessions, rememberMe, singleDevice, maxFails, lockout, captcha, notifyLock, twoFA, twoFAMethod, graceDays };
     const { error } = await saveSettings(payload);
-    if (error) fireToast('Gagal menyimpan: ' + (error.message || error), 'alert');
-    else fireToast(label + " disimpan untuk " + entity);
+    if (error) { fireToast('Gagal menyimpan: ' + (error.message || error), 'alert'); return { error }; } // SaveButton kit: keadaan GAGAL
+    fireToast(label + " disimpan untuk " + entity);
   };
   const enabled2FA = Object.values(twoFA).filter(Boolean).length;
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Admin Settings", onClick: onHome }, { label: "Security Policy" }]}
         title="Security Policy"
@@ -213,9 +206,9 @@ export default function SecurityPolicyPage({ onHome }) {
         right={<EntitySwitcher value={entity} onChange={switchEntity} />}
       />
 
-      {loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: MUTED, padding: "2px 2px 12px" }}>Memuat pengaturan…</div>}
+      {loading && <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT, padding: "2px 2px 12px" }}>Memuat pengaturan…</div>}
 
-      <div key={entity} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
+      <div key={entity} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "nk-rise"}>
         {/* PASSWORD POLICY */}
         <SECSection icon="lock" title="Kebijakan Kata Sandi" desc="Aturan kekuatan & masa berlaku kata sandi" onSave={() => save("Kebijakan kata sandi")}>
           <SECRow title="Panjang Minimum" desc="Jumlah karakter minimal untuk kata sandi baru.">
@@ -275,16 +268,16 @@ export default function SecurityPolicyPage({ onHome }) {
         <SECSection icon="smartphone" title="Autentikasi Dua Faktor (2FA)" desc={enabled2FA + " dari " + SEC_ROLES.length + " role mewajibkan 2FA"} onSave={() => save("Pengaturan 2FA")}>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", padding: "8px 0 16px", borderBottom: "1px solid " + LINE_SOFT, marginBottom: 16 }}>
             <div style={{ flex: "1 1 240px" }}>
-              <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 8 }}>Metode Verifikasi</div>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 8 }}>Metode Verifikasi</div>
               <Segmented value={twoFAMethod} onChange={setTwoFAMethod} full
                 options={[{ value: "app", label: "Aplikasi", icon: "smartphone" }, { value: "email", label: "Email", icon: "mail" }, { value: "sms", label: "SMS", icon: "phone" }]} />
             </div>
             <div style={{ flex: "0 0 auto" }}>
-              <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 8 }}>Masa Tenggang Pendaftaran</div>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 8 }}>Masa Tenggang Pendaftaran</div>
               <NumberStepper value={graceDays} onChange={setGraceDays} suffix="hari" min={0} max={30} width={150} />
             </div>
           </div>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 12 }}>Wajibkan 2FA per role</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 12 }}>Wajibkan 2FA per role</div>
           {SEC_ROLES.map((r, i) => (
             <SEC2FARow key={r.value} role={r} on={!!twoFA[r.value]} onToggle={(v) => setTwoFA((s) => ({ ...s, [r.value]: v }))} last={i === SEC_ROLES.length - 1} />
           ))}

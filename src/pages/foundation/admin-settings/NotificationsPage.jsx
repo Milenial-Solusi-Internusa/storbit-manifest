@@ -12,21 +12,12 @@
 import { useState, useEffect, useRef } from "react";
 import { User, Users, ExternalLink } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
-import {
-  Icon, PageHeader, EntitySwitcher, Tabs, Toggle, PrimaryBtn, OutlineBtn,
-  Modal, useToast, Skel, KitStyles,
-} from "./kit";
-import {
-  NAVY, ORANGE, CREAM, SURFACE, LINE, LINE_SOFT, ROW_HOVER, INK, INK_SOFT,
-  MUTED, FAINT, GREEN, DANGER, FONT_HEAD, FONT_BODY, FONT_MONO,
-} from "./tokens";
+import { ENTITIES } from "../../../lib/entities";
 
+import { EntitySwitcher, Icon, Modal, OutlineBtn, PageHeader, SaveButton, Skel, Tabs, Toggle, useToast } from '../../../kit';
+import { BG, CARD, ACCENT, ACCENT_HOVER, LINE, INK, INK_SOFT, LINE_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, FOCUS_RING, SHADOW_1, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC, TONE } from '../../../kit/tokens';
 /* ---------- entity code → companies.id ---------- */
-const ENTITY_IDS = {
-  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
-  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
-  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
-};
+const ENTITY_IDS = Object.fromEntries(ENTITIES.map((e) => [e.code, e.id]));
 
 const NOTIF_ROLES = [
   { value: "super_admin", label: "Super Admin" },
@@ -99,9 +90,10 @@ function GroupIcon({ name, size }) {
 /* ---------- channel badge ---------- */
 function NChannelBadge({ channel }) {
   const map = {
-    inapp: { bg: "#EAF0F8", fg: NAVY,      icon: "bell" },
-    email: { bg: "#FBE6DA", fg: "#C8521B", icon: "mail" },
-    both:  { bg: "#E7EEF1", fg: "#2C6E73", icon: "globe2" },
+    // kanal = kategori (kelas STATUS/DATA) → trio kit
+    inapp: { bg: SEMANTIC.info.bg,   fg: SEMANTIC.info.fg,   icon: "bell" },
+    email: { bg: TONE.orange.bg,     fg: TONE.orange.fg,     icon: "mail" },
+    both:  { bg: TONE.navy.bg,       fg: TONE.navy.fg,       icon: "globe2" },
   };
   const m = map[channel] || map.inapp;
   return (
@@ -113,19 +105,19 @@ function NChannelBadge({ channel }) {
 function NRecipientBadge({ rule }) {
   const isRole = rule.recipient === "role";
   const glyph = isRole
-    ? <Icon name="shield" size={12} color={MUTED} />
+    ? <Icon name="shield" size={12} color={INK_SOFT} />
     : rule.recipient === "created_by"
-      ? <User size={12} color={MUTED} strokeWidth={1.7} />
-      : <Users size={12} color={MUTED} strokeWidth={1.7} />;
+      ? <User size={12} color={INK_SOFT} strokeWidth={1.7} />
+      : <Users size={12} color={INK_SOFT} strokeWidth={1.7} />;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", borderRadius: 7, background: CREAM, border: "1px solid " + LINE_SOFT, color: INK_SOFT, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", borderRadius: 7, background: HEAD_BG, border: "1px solid " + LINE_SOFT, color: INK_SOFT, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600 }}>
       {glyph}
       {recipientText(rule)}
     </span>
   );
 }
 function NCodeBadge({ code }) {
-  return <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600, color: NAVY, background: "#EAF0F8", border: "1px solid #D7E4F2", borderRadius: 6, padding: "3px 8px", letterSpacing: 0.2 }}>{code}</span>;
+  return <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600, color: INK_SOFT, background: HEAD_BG, border: "1px solid " + LINE, borderRadius: 6, padding: "3px 8px", letterSpacing: 0.2 }}>{code}</span>;
 }
 
 /* ---------- one rule row ---------- */
@@ -133,7 +125,7 @@ function NRuleRow({ rule, zebra, onToggle, onEdit, locked }) {
   const [hover, setHover] = useState(false);
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", background: hover && !locked ? ROW_HOVER : zebra ? "rgba(246,239,227,.5)" : "transparent", borderBottom: "1px solid " + LINE_SOFT, transition: "background .15s", opacity: rule.active ? 1 : 0.62 }}>
+      style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", background: hover && !locked ? ROW_HOVER : zebra ? HEAD_BG : "transparent", borderBottom: "1px solid " + LINE_SOFT, transition: "background .15s", opacity: rule.active ? 1 : 0.62 }}>
       <div style={{ flex: "1 1 220px", minWidth: 180 }}>
         <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: INK, marginBottom: 5 }}>{rule.label}</div>
         <NCodeBadge code={rule.code} />
@@ -143,9 +135,9 @@ function NRuleRow({ rule, zebra, onToggle, onEdit, locked }) {
       <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 12, marginLeft: "auto" }}>
         <Toggle on={rule.active} onChange={() => onToggle(rule.id)} disabled={locked} />
         <button type="button" onClick={() => onEdit(rule)} disabled={locked}
-          style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid " + LINE, background: SURFACE, color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", cursor: locked ? "not-allowed" : "pointer", transition: "all .15s" }}
-          onMouseEnter={(e) => { if (!locked) { e.currentTarget.style.borderColor = NAVY; e.currentTarget.style.background = "#EAF0F8"; } }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.background = SURFACE; }}>
+          style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid " + LINE, background: CARD, color: INK, display: "flex", alignItems: "center", justifyContent: "center", cursor: locked ? "not-allowed" : "pointer", transition: "all .15s" }}
+          onMouseEnter={(e) => { if (!locked) { e.currentTarget.style.borderColor = INK; e.currentTarget.style.background = ROW_HOVER; } }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.background = CARD; }}>
           <Icon name="pencil" size={15} />
         </button>
       </div>
@@ -157,18 +149,18 @@ function NRuleRow({ rule, zebra, onToggle, onEdit, locked }) {
 function NGroupCard({ group, rules, onToggle, onEdit, onAdd, locked }) {
   const activeCount = rules.filter((r) => r.active).length;
   return (
-    <div style={{ background: SURFACE, border: "1px solid " + LINE, borderRadius: 16, overflow: "hidden" }}>
+    <div style={{ background: CARD, border: "1px solid " + LINE, borderRadius: 16, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 13, padding: "16px 18px", borderBottom: "1px solid " + LINE_SOFT }}>
-        <span style={{ width: 40, height: 40, borderRadius: 11, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" }}><GroupIcon name={group.icon} size={20} /></span>
+        <span style={{ width: 40, height: 40, borderRadius: 11, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" }}><GroupIcon name={group.icon} size={20} /></span>
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 11, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: FONT_HEAD, fontSize: 15.5, fontWeight: 700, color: NAVY }}>{group.name}</span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 22, padding: "0 9px", borderRadius: 11, background: "#E8F3EC", color: GREEN, fontFamily: FONT_BODY, fontSize: 11.5, fontWeight: 600 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: GREEN }} />{activeCount} aktif
+          <span style={{ fontFamily: FONT_HEAD, fontSize: 15.5, fontWeight: 700, color: INK }}>{group.name}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 22, padding: "0 9px", borderRadius: 11, background: SEMANTIC.ok.bg, color: SEMANTIC.ok.fg, fontFamily: FONT_BODY, fontSize: 11.5, fontWeight: 600 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: SEMANTIC.ok.fg }} />{activeCount} aktif
           </span>
         </div>
         <button type="button" onClick={() => onAdd(group.id)} disabled={locked}
-          style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 14px", borderRadius: 10, border: "2px solid " + NAVY, background: "transparent", color: NAVY, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: locked ? "not-allowed" : "pointer", transition: "background .2s" }}
-          onMouseEnter={(e) => { if (!locked) e.currentTarget.style.background = "rgba(20,70,130,.05)"; }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 14px", borderRadius: 10, border: "2px solid " + INK, background: "transparent", color: INK, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: locked ? "not-allowed" : "pointer", transition: "background .2s" }}
+          onMouseEnter={(e) => { if (!locked) e.currentTarget.style.background = ROW_HOVER; }}
           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
           <Icon name="plus" size={15} />Tambah Rule
         </button>
@@ -187,8 +179,8 @@ function NAutoTextarea({ value, onChange, placeholder, minH = 96 }) {
   useEffect(() => { const el = ref.current; if (el) { el.style.height = "auto"; el.style.height = Math.max(minH, el.scrollHeight) + "px"; } }, [value, minH]);
   return (
     <textarea ref={ref} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
-      onFocus={() => setF(true)} onBlur={() => setF(false)} className="ak-area"
-      style={{ width: "100%", minHeight: minH, resize: "none", borderRadius: 11, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: "12px 14px", fontFamily: FONT_BODY, fontSize: 13.5, lineHeight: 1.55, color: INK, outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }} />
+      onFocus={() => setF(true)} onBlur={() => setF(false)} className="nk-area"
+      style={{ width: "100%", minHeight: minH, resize: "none", borderRadius: 11, border: "1px solid " + (f ? INK_SOFT : LINE), background: INPUT_BG, padding: "12px 14px", fontFamily: FONT_BODY, fontSize: 13.5, lineHeight: 1.55, color: INK, outline: "none", boxShadow: f ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }} />
   );
 }
 
@@ -198,14 +190,14 @@ function NChannelCard({ kind, active, onClick }) {
   const warn = kind.value !== "inapp";
   return (
     <button type="button" onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ flex: 1, minWidth: 0, textAlign: "left", borderRadius: 12, border: "1.5px solid " + (active ? NAVY : h ? "#C9D8EC" : LINE), background: active ? "#EAF0F8" : SURFACE, padding: "13px 14px", cursor: "pointer", transition: "all .18s", position: "relative" }}>
+      style={{ flex: 1, minWidth: 0, textAlign: "left", borderRadius: 12, border: "1.5px solid " + (active ? ACCENT_HOVER : h ? ACCENT_HOVER : LINE), background: active ? ACCENT : INPUT_BG, padding: "13px 14px", cursor: "pointer", transition: "all .18s", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <span style={{ width: 30, height: 30, borderRadius: 8, background: active ? NAVY : CREAM, color: active ? "#fff" : MUTED, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 30px", transition: "all .18s" }}><Icon name={kind.icon} size={16} /></span>
-        <span style={{ fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, color: active ? NAVY : INK }}>{kind.label}</span>
-        {active && <span style={{ marginLeft: "auto", color: NAVY }}><Icon name="checkcircle" size={17} /></span>}
+        <span style={{ width: 30, height: 30, borderRadius: 8, background: active ? INK : HEAD_BG, color: active ? BG : INK_SOFT, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 30px", transition: "all .18s" }}><Icon name={kind.icon} size={16} /></span>
+        <span style={{ fontFamily: FONT_HEAD, fontSize: 13.5, fontWeight: 600, color: INK }}>{kind.label}</span>
+        {active && <span style={{ marginLeft: "auto", color: INK }}><Icon name="checkcircle" size={17} /></span>}
       </div>
       {warn && (
-        <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 8, fontFamily: FONT_BODY, fontSize: 10.5, fontWeight: 500, color: "#B45309" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 8, fontFamily: FONT_BODY, fontSize: 10.5, fontWeight: 500, color: SEMANTIC.warn.fg }}>
           <Icon name="alert" size={12} />Membutuhkan SMTP
         </div>
       )}
@@ -218,14 +210,14 @@ function NRecipientPill({ kind, active, onClick }) {
   const [h, setH] = useState(false);
   return (
     <button type="button" onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ flex: 1, height: 40, borderRadius: 10, border: "1.5px solid " + (active ? NAVY : LINE), background: active ? NAVY : h ? CREAM : SURFACE, color: active ? "#fff" : INK_SOFT, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer", transition: "all .18s", whiteSpace: "nowrap", padding: "0 10px" }}>
+      style={{ flex: 1, height: 40, borderRadius: 10, border: "1.5px solid " + (active ? ACCENT_HOVER : LINE), background: active ? ACCENT : h ? ROW_HOVER : INPUT_BG, color: active ? INK : INK_SOFT, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, cursor: "pointer", transition: "all .18s", whiteSpace: "nowrap", padding: "0 10px" }}>
       {kind.label}
     </button>
   );
 }
 
 function NEditLabel({ children }) {
-  return <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 8 }}>{children}</div>;
+  return <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 8 }}>{children}</div>;
 }
 
 /* ---------- edit modal ---------- */
@@ -242,19 +234,19 @@ function NRuleModal({ open, draft, onClose, onSave }) {
       subtitle={form._isNew ? "Buat aturan notifikasi baru" : form.label}
       footer={<>
         <OutlineBtn onClick={onClose}>Batal</OutlineBtn>
-        <PrimaryBtn icon="check" onClick={() => onSave(form)}>Simpan Rule</PrimaryBtn>
+        <SaveButton label="Simpan Rule" onSave={() => onSave(form)} />
       </>}>
       {/* event type (display / or input for new) */}
       <NEditLabel>Event Type</NEditLabel>
       {form._isNew ? (
         <input value={form.label} onChange={(e) => set("label", e.target.value)} placeholder="mis. SP Baru Dibuat"
           onFocus={() => setF1(true)} onBlur={() => setF1(false)}
-          style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (f1 ? NAVY : LINE), background: SURFACE, padding: "0 14px", fontFamily: FONT_BODY, fontSize: 14, color: INK, outline: "none", boxShadow: f1 ? "0 0 0 3px rgba(20,70,130,.14)" : "none", marginBottom: 6 }} />
+          style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (f1 ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 14px", fontFamily: FONT_BODY, fontSize: 14, color: INK, outline: "none", boxShadow: f1 ? FOCUS_RING : "none", marginBottom: 6 }} />
       ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 11, background: CREAM, border: "1px solid " + LINE }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 11, background: HEAD_BG, border: "1px solid " + LINE }}>
           <span style={{ fontFamily: FONT_BODY, fontSize: 14, fontWeight: 600, color: INK }}>{form.label}</span>
           <NCodeBadge code={form.code} />
-          <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, fontFamily: FONT_BODY, fontSize: 11.5, color: FAINT }}><Icon name="lock" size={12} />Tidak dapat diubah</span>
+          <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, fontFamily: FONT_BODY, fontSize: 11.5, color: INK_SOFT }}><Icon name="lock" size={12} />Tidak dapat diubah</span>
         </div>
       )}
 
@@ -276,7 +268,7 @@ function NRuleModal({ open, draft, onClose, onSave }) {
 
       {/* role (if recipient = role) */}
       {form.recipient === "role" && (
-        <div className="ak-rise" style={{ marginTop: 18 }}>
+        <div className="nk-rise" style={{ marginTop: 18 }}>
           <NEditLabel>Role Penerima</NEditLabel>
           <NSelect value={form.role || "manager"} onChange={(v) => set("role", v)} options={NOTIF_ROLES} />
         </div>
@@ -290,13 +282,13 @@ function NRuleModal({ open, draft, onClose, onSave }) {
       <div style={{ marginTop: 18 }}>
         <NEditLabel>Template Body</NEditLabel>
         <NAutoTextarea value={form.body} onChange={(v) => set("body", v)} placeholder="Isi pesan notifikasi…" />
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontFamily: FONT_BODY, fontSize: 11, color: FAINT }}>
-          <Icon name="info" size={12} color={FAINT} />Gunakan variabel seperti <span style={{ fontFamily: FONT_MONO, color: NAVY }}>{"{doc_number}"}</span>, <span style={{ fontFamily: FONT_MONO, color: NAVY }}>{"{actor}"}</span>.
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontFamily: FONT_BODY, fontSize: 11, color: INK_SOFT }}>
+          <Icon name="info" size={12} color={INK_SOFT} />Gunakan variabel seperti <span style={{ fontFamily: FONT_MONO, color: INK }}>{"{doc_number}"}</span>, <span style={{ fontFamily: FONT_MONO, color: INK }}>{"{actor}"}</span>.
         </div>
       </div>
 
       {/* active */}
-      <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 11, background: CREAM, border: "1px solid " + LINE }}>
+      <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 11, background: HEAD_BG, border: "1px solid " + LINE }}>
         <Toggle on={form.active} onChange={(v) => set("active", v)} />
         <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK_SOFT }}>Rule Aktif</span>
       </div>
@@ -309,7 +301,7 @@ function NSubjectInput({ value, onChange }) {
   return (
     <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Judul notifikasi…"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
-      style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: "0 14px", fontFamily: FONT_BODY, fontSize: 14, color: INK, outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }} />
+      style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (f ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 14px", fontFamily: FONT_BODY, fontSize: 14, color: INK, outline: "none", boxShadow: f ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }} />
   );
 }
 function NSelect({ value, onChange, options }) {
@@ -317,10 +309,10 @@ function NSelect({ value, onChange, options }) {
   return (
     <div style={{ position: "relative", width: "100%" }}>
       <select value={value} onChange={(e) => onChange(e.target.value)} onFocus={() => setF(true)} onBlur={() => setF(false)}
-        style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (f ? NAVY : LINE), background: SURFACE, padding: "0 34px 0 14px", fontFamily: FONT_BODY, fontSize: 14, fontWeight: 500, color: INK, appearance: "none", WebkitAppearance: "none", cursor: "pointer", outline: "none", boxShadow: f ? "0 0 0 3px rgba(20,70,130,.14)" : "none", transition: "border-color .2s, box-shadow .2s" }}>
+        style={{ width: "100%", height: 46, borderRadius: 11, border: "1px solid " + (f ? INK_SOFT : LINE), background: INPUT_BG, padding: "0 34px 0 14px", fontFamily: FONT_BODY, fontSize: 14, fontWeight: 500, color: INK, appearance: "none", WebkitAppearance: "none", cursor: "pointer", outline: "none", boxShadow: f ? FOCUS_RING : "none", transition: "border-color .2s, box-shadow .2s" }}>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      <span style={{ position: "absolute", right: 13, top: "50%", transform: "translateY(-50%)", color: MUTED, pointerEvents: "none" }}><Icon name="chevdown" size={15} /></span>
+      <span style={{ position: "absolute", right: 13, top: "50%", transform: "translateY(-50%)", color: INK_SOFT, pointerEvents: "none" }}><Icon name="chevdown" size={15} /></span>
     </div>
   );
 }
@@ -339,17 +331,17 @@ function NRulesBoard({ groups, onToggle, onEdit, onAdd, locked }) {
 /* ---------- Email coming-soon overlay ---------- */
 function NEmailLock() {
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 5, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "70px 24px", background: "rgba(246,239,227,.72)", backdropFilter: "blur(2.5px)", borderRadius: 16 }}>
-      <div className="ak-rise" style={{ maxWidth: 420, textAlign: "center", background: SURFACE, border: "1px solid " + LINE, borderRadius: 18, padding: "34px 30px", boxShadow: "0 22px 60px rgba(20,40,70,.16)" }}>
-        <div style={{ width: 66, height: 66, borderRadius: 18, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
+    <div style={{ position: "absolute", inset: 0, zIndex: 5, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "70px 24px", background: HEAD_BG, backdropFilter: "blur(2.5px)", borderRadius: 16 }}>
+      <div className="nk-rise" style={{ maxWidth: 420, textAlign: "center", background: CARD, border: "1px solid " + LINE, borderRadius: 18, padding: "34px 30px", boxShadow: SHADOW_1 }}>
+        <div style={{ width: 66, height: 66, borderRadius: 18, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
           <Icon name="lock" size={30} />
         </div>
-        <div style={{ fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 700, color: NAVY, letterSpacing: -0.3 }}>Email Notifications</div>
+        <div style={{ fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 700, color: INK, letterSpacing: -0.3 }}>Email Notifications</div>
         <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: INK_SOFT, marginTop: 10, lineHeight: 1.6, textWrap: "pretty" }}>
           Fitur ini akan tersedia setelah konfigurasi SMTP selesai. Hubungi administrator sistem untuk mengaktifkan.
         </div>
         <a href="#" onClick={(e) => e.preventDefault()}
-          style={{ display: "inline-flex", alignItems: "center", gap: 7, marginTop: 20, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, color: ORANGE, textDecoration: "none" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, marginTop: 20, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, color: INK, textDecoration: "underline", textDecorationColor: ACCENT_HOVER }}
           onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
           onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}>
           Pelajari cara setup SMTP <ExternalLink size={15} strokeWidth={1.7} />
@@ -366,10 +358,10 @@ let N_RULE_SEQ = 100;
 
 function NErrorState({ msg, onRetry }) {
   return (
-    <div style={{ background: SURFACE, border: "1px solid " + LINE, borderRadius: 16, textAlign: "center", padding: "48px 32px" }}>
-      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+    <div style={{ background: CARD, border: "1px solid " + LINE, borderRadius: 16, textAlign: "center", padding: "48px 32px" }}>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: SEMANTIC.danger.bg, border: "1px solid " + SEMANTIC.danger.bd, display: "flex", alignItems: "center", justifyContent: "center", color: SEMANTIC.danger.fg, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: INK }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: INK_SOFT, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
       <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
     </div>
   );
@@ -379,7 +371,7 @@ function NSkeleton() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {[0, 1].map((g) => (
-        <div key={g} style={{ background: SURFACE, border: "1px solid " + LINE, borderRadius: 16, overflow: "hidden" }}>
+        <div key={g} style={{ background: CARD, border: "1px solid " + LINE, borderRadius: 16, overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 13, padding: "16px 18px", borderBottom: "1px solid " + LINE_SOFT }}>
             <Skel w={40} h={40} r={11} /><Skel w={130} h={16} /><span style={{ flex: 1 }} /><Skel w={120} h={38} r={10} />
           </div>
@@ -481,6 +473,7 @@ export default function NotificationsPage({ onHome }) {
       refetch();
     } catch (e) {
       fireToast("Gagal menyimpan: " + e.message, "alert");
+      return { error: e }; // SaveButton kit: keadaan GAGAL
     }
   };
 
@@ -491,7 +484,6 @@ export default function NotificationsPage({ onHome }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Admin Settings", onClick: onHome }, { label: "Notification Settings" }]}
         title="Notification Settings"
@@ -501,7 +493,7 @@ export default function NotificationsPage({ onHome }) {
       />
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {state === "loading" ? <NSkeleton /> : state === "error" ? <NErrorState msg={errMsg} onRetry={refetch} /> : (
-        <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
+        <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "nk-rise"}>
           {tab === "inapp" ? (
             <NRulesBoard groups={data} onToggle={toggle} onEdit={openEdit} onAdd={openAdd} locked={false} />
           ) : (

@@ -14,23 +14,20 @@ import { useDebounce } from '../../../hooks/useDebounce';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
-import { PageHeader } from '../../../pages/foundation/admin-settings/kit';
-import {
-  NAVY, CREAM, SURFACE, LINE, ROW_HOVER, INK, INK_SOFT, MUTED, GREEN,
-  FONT_BODY, FONT_HEAD, FONT_MONO,
-} from '../../../pages/foundation/admin-settings/tokens';
 
+import { PageHeader } from '../../../kit';
+import { CARD, ACCENT, LINE, INK, INK_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, FOCUS_RING, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC } from '../../../kit/tokens';
 function StatusBadge({ active }) {
   return (
     <span
       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wide"
       style={{
         fontFamily: FONT_HEAD, fontWeight: 700,
-        background: active ? `${GREEN}1A` : CREAM,
-        color: active ? GREEN : MUTED,
+        background: active ? `${SEMANTIC.ok.fg}1A` : HEAD_BG,
+        color: active ? SEMANTIC.ok.fg : INK_SOFT,
       }}
     >
-      <span className="w-1 h-1 rounded-full" style={{ background: active ? GREEN : MUTED }} />
+      <span className="w-1 h-1 rounded-full" style={{ background: active ? SEMANTIC.ok.fg : INK_SOFT }} />
       {active ? 'Active' : 'Inactive'}
     </span>
   );
@@ -40,7 +37,7 @@ function CodeBadge({ children }) {
   return (
     <span
       className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
+      style={{ fontFamily: FONT_MONO, background: ACCENT, color: INK }}
     >
       {children}
     </span>
@@ -73,7 +70,7 @@ export default function CompaniesPage({ onHome }) {
         subtitle="MSI Group legal entities. Company scope anchors all master data."
         onBack={onHome}
         right={!loading && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: `${NAVY}1A`, color: NAVY, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: ACCENT, color: INK, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
             {total.toLocaleString('id-ID')}
           </span>
         )}
@@ -83,9 +80,9 @@ export default function CompaniesPage({ onHome }) {
       <div className="flex items-center gap-3 mb-5">
         <div
           className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm transition-shadow"
-          style={{ background: SURFACE, borderColor: searchFocus ? NAVY : LINE, boxShadow: searchFocus ? `0 0 0 3px ${NAVY}29` : 'none' }}
+          style={{ background: INPUT_BG, borderColor: searchFocus ? INK_SOFT : LINE, boxShadow: searchFocus ? FOCUS_RING : 'none' }}
         >
-          <Search size={14} style={{ color: MUTED }} />
+          <Search size={14} style={{ color: INK_SOFT }} />
           <input
             type="text"
             placeholder="Search by name or code…"
@@ -101,7 +98,7 @@ export default function CompaniesPage({ onHome }) {
           type="button"
           onClick={refresh}
           className="p-2.5 rounded-xl border transition-opacity hover:opacity-70"
-          style={{ background: SURFACE, borderColor: LINE }}
+          style={{ background: CARD, borderColor: LINE }}
           title="Refresh"
         >
           <RefreshCw size={14} style={{ color: INK_SOFT }} />
@@ -109,11 +106,11 @@ export default function CompaniesPage({ onHome }) {
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border overflow-hidden" style={{ background: SURFACE, borderColor: LINE }}>
+      <div className="rounded-2xl border overflow-hidden" style={{ background: CARD, borderColor: LINE }}>
         {/* Table header */}
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
-          style={{ gridTemplateColumns: '90px 1fr 1fr 80px', borderColor: LINE, background: CREAM, color: MUTED }}
+          style={{ gridTemplateColumns: '90px 1fr 1fr 80px', borderColor: LINE, background: HEAD_BG, color: INK_SOFT }}
         >
           <div>Code</div>
           <div>Name</div>
@@ -130,7 +127,7 @@ export default function CompaniesPage({ onHome }) {
           <EmptyState message={search ? 'No companies match your search.' : 'No companies found.'} />
         ) : (
           data.map((row, i) => {
-            const zebra = i % 2 === 1 ? `${CREAM}80` : SURFACE;
+            const zebra = i % 2 === 1 ? `${HEAD_BG}80` : CARD;
             return (
               <div
                 key={row.id}
@@ -146,7 +143,7 @@ export default function CompaniesPage({ onHome }) {
                   {row.name}
                 </div>
                 <div className="text-sm" style={{ color: INK_SOFT }}>
-                  {row.business_focus || <span style={{ color: MUTED }}>—</span>}
+                  {row.business_focus || <span style={{ color: INK_SOFT }}>—</span>}
                 </div>
                 <div className="flex justify-end">
                   <StatusBadge active={row.is_active} />
@@ -159,7 +156,7 @@ export default function CompaniesPage({ onHome }) {
         {/* Pagination footer */}
         {!error && (
           <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${LINE}` }}>
-            <span className="text-xs" style={{ color: MUTED }}>
+            <span className="text-xs" style={{ color: INK_SOFT }}>
               {total === 0 ? 'No records' : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
             </span>
             <div className="flex items-center gap-1">
@@ -168,7 +165,7 @@ export default function CompaniesPage({ onHome }) {
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1 || loading}
                 className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70"
-                style={{ background: CREAM }}
+                style={{ background: HEAD_BG }}
               >
                 <ChevronLeft size={14} style={{ color: INK_SOFT }} />
               </button>
@@ -180,7 +177,7 @@ export default function CompaniesPage({ onHome }) {
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages || loading}
                 className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70"
-                style={{ background: CREAM }}
+                style={{ background: HEAD_BG }}
               >
                 <ChevronRight size={14} style={{ color: INK_SOFT }} />
               </button>

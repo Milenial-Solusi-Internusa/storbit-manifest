@@ -9,22 +9,12 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
-import {
-  Icon, PageHeader, SectionLabel, EntitySwitcher, Tabs, FloatingInput,
-  FloatingSelect, Toggle, PrimaryBtn, OutlineBtn, SaveButton, SlideOver,
-  Modal, DropZone, UploadBox, PillToggle, useToast, Skel, Card, KitStyles,
-} from "./kit";
-import {
-  NAVY, ORANGE, CREAM, SURFACE, LINE, LINE_SOFT, ROW_HOVER, INK, INK_SOFT,
-  MUTED, FAINT, DANGER, GREEN, FONT_HEAD, FONT_BODY, FONT_MONO,
-} from "./tokens";
+import { ENTITIES } from "../../../lib/entities";
 
+import { Card, DropZone, EntitySwitcher, FloatingInput, FloatingSelect, Icon, Modal, OutlineBtn, PageHeader, PillToggle, PrimaryBtn, SaveButton, SectionLabel, Skel, SlideOver, Tabs, Toggle, UploadBox, useToast } from '../../../kit';
+import { BG, CARD, ACCENT, ACCENT_HOVER, LINE, INK, INK_SOFT, LINE_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, SHADOW_1, SHADOW_2, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC } from '../../../kit/tokens';
 /* ---------- entity code → companies.id ---------- */
-const ENTITY_IDS = {
-  MSI: "0e1840d8-e6fb-4190-bd09-88338e68b492",
-  JCI: "42569e7c-531b-4d2b-832a-d5a7268c455b",
-  SOA: "d2e5e565-5f67-4954-b8d9-5979a2a0c697",
-};
+const ENTITY_IDS = Object.fromEntries(ENTITIES.map((e) => [e.code, e.id]));
 
 const DOC_TYPES = [
   { id: "SP", label: "SP" },
@@ -97,15 +87,15 @@ async function uploadSignerAsset(companyId, signerId, kind, dataUrl) {
 }
 
 const tdStyle = { padding: "13px 16px", borderBottom: "1px solid " + LINE_SOFT, verticalAlign: "middle" };
-const thStyle = { padding: "12px 16px", textAlign: "left", fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.7, color: MUTED, whiteSpace: "nowrap" };
+const thStyle = { padding: "12px 16px", textAlign: "left", fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.7, color: INK_SOFT, whiteSpace: "nowrap" };
 
 /* ---------- shared small icon button ---------- */
 function IconBtn({ icon, onClick, danger }) {
   const [h, setH] = useState(false);
-  const c = danger ? DANGER : NAVY;
+  const c = danger ? SEMANTIC.danger.fg : INK;
   return (
     <button type="button" onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ width: 34, height: 34, borderRadius: 9, border: "1px solid " + (h ? c : "transparent"), background: h ? (danger ? "rgba(220,38,38,.08)" : "#EAF0F8") : "transparent", color: h ? c : MUTED, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "all .15s" }}>
+      style={{ width: 34, height: 34, borderRadius: 9, border: "1px solid " + (h ? c : "transparent"), background: h ? (danger ? SEMANTIC.danger.bg : ACCENT) : "transparent", color: h ? c : INK_SOFT, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "all .15s" }}>
       <Icon name={icon} size={16} />
     </button>
   );
@@ -115,9 +105,9 @@ function IconBtn({ icon, onClick, danger }) {
 function EmptyState({ icon, title, desc, cta, onCta }) {
   return (
     <Card style={{ textAlign: "center", padding: "48px 32px" }}>
-      <div style={{ width: 72, height: 72, borderRadius: 20, background: CREAM, border: "1px solid " + LINE, display: "flex", alignItems: "center", justifyContent: "center", color: NAVY, margin: "0 auto 18px" }}><Icon name={icon} size={30} /></div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>{title}</div>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 380, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{desc}</div>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: HEAD_BG, border: "1px solid " + LINE, display: "flex", alignItems: "center", justifyContent: "center", color: INK, margin: "0 auto 18px" }}><Icon name={icon} size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: INK }}>{title}</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: INK_SOFT, maxWidth: 380, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{desc}</div>
       <div style={{ display: "flex", justifyContent: "center" }}><PrimaryBtn icon="plus" onClick={onCta}>{cta}</PrimaryBtn></div>
     </Card>
   );
@@ -127,9 +117,9 @@ function EmptyState({ icon, title, desc, cta, onCta }) {
 function ErrorState({ msg, onRetry }) {
   return (
     <Card style={{ textAlign: "center", padding: "48px 32px" }}>
-      <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(220,38,38,.07)", border: "1px solid rgba(220,38,38,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: DANGER, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY }}>Gagal memuat data</div>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: MUTED, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: SEMANTIC.danger.bg, border: "1px solid " + SEMANTIC.danger.bd, display: "flex", alignItems: "center", justifyContent: "center", color: SEMANTIC.danger.fg, margin: "0 auto 18px" }}><Icon name="alert" size={30} /></div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: INK }}>Gagal memuat data</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13.5, color: INK_SOFT, maxWidth: 420, margin: "8px auto 22px", lineHeight: 1.55, textWrap: "pretty" }}>{msg || "Terjadi kesalahan saat mengambil data. Coba lagi."}</div>
       <div style={{ display: "flex", justifyContent: "center" }}><OutlineBtn icon="refresh" onClick={onRetry}>Coba Lagi</OutlineBtn></div>
     </Card>
   );
@@ -166,7 +156,7 @@ function CompanyProfileTab({ entity, onDirtyChange, fireToast }) {
 
   const save = async () => {
     const { error } = await supabase.from("companies").update(formToCompany(form)).eq("id", ENTITY_IDS[entity]);
-    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return { error }; } // SaveButton kit: keadaan GAGAL
     setPristine(form); setDirty(false);
     fireToast("Profil " + entity + " tersimpan");
   };
@@ -180,7 +170,7 @@ function CompanyProfileTab({ entity, onDirtyChange, fireToast }) {
         <SectionLabel style={{ marginBottom: 18 }}>Identitas Perusahaan</SectionLabel>
         <div style={{ display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ width: 220, flex: "0 0 220px" }}>
-            <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 9 }}>Logo Perusahaan</div>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 9 }}>Logo Perusahaan</div>
             <DropZone value={logo} onChange={setLogoD} />
           </div>
           <div style={{ flex: "1 1 420px", display: "flex", flexWrap: "wrap", gap: 16 }}>
@@ -218,14 +208,14 @@ function CompanyProfileTab({ entity, onDirtyChange, fireToast }) {
 
       {/* sticky unsaved banner */}
       <div style={{ position: "sticky", bottom: 18, marginTop: 20, display: "flex", justifyContent: "center", pointerEvents: "none", zIndex: 30 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, background: INK, color: "#fff", borderRadius: 14, padding: "12px 14px 12px 20px", boxShadow: "0 14px 36px rgba(16,24,40,.3)", pointerEvents: "auto", transform: dirty ? "translateY(0)" : "translateY(140%)", opacity: dirty ? 1 : 0, transition: "transform .4s cubic-bezier(.22,1,.36,1), opacity .3s" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, background: INK, color: BG, borderRadius: 14, padding: "12px 14px 12px 20px", boxShadow: SHADOW_2, pointerEvents: "auto", transform: dirty ? "translateY(0)" : "translateY(140%)", opacity: dirty ? 1 : 0, transition: "transform .4s cubic-bezier(.22,1,.36,1), opacity .3s" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: ORANGE }} />
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: ACCENT }} />
             Ada perubahan belum disimpan
           </span>
           <div style={{ display: "flex", gap: 9 }}>
             <button type="button" onClick={discard}
-              style={{ height: 40, padding: "0 16px", borderRadius: 10, border: "1.5px solid rgba(255,255,255,.3)", background: "transparent", color: "#fff", fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Buang</button>
+              style={{ height: 40, padding: "0 16px", borderRadius: 10, border: "1.5px solid " + INK_SOFT, background: "transparent", color: BG, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Buang</button>
             <SaveButton label="Simpan" onSave={save} />
           </div>
         </div>
@@ -242,11 +232,11 @@ function BankRow({ row, onToggle, onDefault, onDelete }) {
     <>
       <tr onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
         style={{ background: hover ? ROW_HOVER : "transparent", transition: "background .15s" }}>
-        <td style={tdStyle}><div style={{ display: "flex", alignItems: "center", gap: 11 }}><span style={{ width: 34, height: 34, borderRadius: 9, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 34px" }}><Icon name="bank" size={16} /></span><span style={{ fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: INK }}>{row.bank}</span></div></td>
+        <td style={tdStyle}><div style={{ display: "flex", alignItems: "center", gap: 11 }}><span style={{ width: 34, height: 34, borderRadius: 9, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 34px" }}><Icon name="bank" size={16} /></span><span style={{ fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, color: INK }}>{row.bank}</span></div></td>
         <td style={{ ...tdStyle, fontFamily: FONT_MONO, fontSize: 13, color: INK_SOFT, letterSpacing: 0.4 }}>{row.acc}</td>
         <td style={{ ...tdStyle, fontSize: 13, color: INK_SOFT }}>{row.holder}</td>
-        <td style={{ ...tdStyle, fontSize: 13, color: MUTED }}>{row.branch}</td>
-        <td style={tdStyle}><span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600, color: NAVY, background: "#EAF0F8", padding: "3px 9px", borderRadius: 6 }}>{row.currency}</span></td>
+        <td style={{ ...tdStyle, fontSize: 13, color: INK_SOFT }}>{row.branch}</td>
+        <td style={tdStyle}><span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 600, color: INK, background: ACCENT, padding: "3px 9px", borderRadius: 6 }}>{row.currency}</span></td>
         <td style={{ ...tdStyle, textAlign: "center" }}><div style={{ display: "flex", justifyContent: "center" }}><Toggle on={row.isDefault} onChange={() => onDefault(row.id)} /></div></td>
         <td style={{ ...tdStyle, textAlign: "center" }}><div style={{ display: "flex", justifyContent: "center" }}><Toggle on={row.active} onChange={() => onToggle(row.id)} /></div></td>
         <td style={{ ...tdStyle, textAlign: "right" }}>
@@ -259,11 +249,11 @@ function BankRow({ row, onToggle, onDefault, onDelete }) {
       <tr>
         <td colSpan={8} style={{ padding: 0, borderBottom: confirm ? "1px solid " + LINE : "none" }}>
           <div style={{ maxHeight: confirm ? 80 : 0, overflow: "hidden", transition: "max-height .3s cubic-bezier(.22,1,.36,1)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, background: "rgba(220,38,38,.05)", padding: "14px 20px", margin: "0" }}>
-              <Icon name="alert" size={18} color={DANGER} />
-              <span style={{ flex: 1, fontFamily: FONT_BODY, fontSize: 13, color: "#991B1B", fontWeight: 500 }}>Hapus rekening <strong>{row.bank}</strong> ({row.acc})? Tindakan ini tidak dapat dibatalkan.</span>
-              <button type="button" onClick={() => setConfirm(false)} style={{ height: 38, padding: "0 16px", borderRadius: 9, border: "1.5px solid " + LINE, background: SURFACE, color: INK_SOFT, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Batal</button>
-              <button type="button" onClick={() => { setConfirm(false); onDelete(row.id); }} style={{ height: 38, padding: "0 16px", borderRadius: 9, border: "none", background: DANGER, color: "#fff", fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}><Icon name="trash" size={14} />Konfirmasi Hapus</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, background: SEMANTIC.danger.bg, padding: "14px 20px", margin: "0" }}>
+              <Icon name="alert" size={18} color={SEMANTIC.danger.fg} />
+              <span style={{ flex: 1, fontFamily: FONT_BODY, fontSize: 13, color: SEMANTIC.danger.fg, fontWeight: 500 }}>Hapus rekening <strong>{row.bank}</strong> ({row.acc})? Tindakan ini tidak dapat dibatalkan.</span>
+              <button type="button" onClick={() => setConfirm(false)} style={{ height: 38, padding: "0 16px", borderRadius: 9, border: "1.5px solid " + LINE, background: INPUT_BG, color: INK_SOFT, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Batal</button>
+              <button type="button" onClick={() => { setConfirm(false); onDelete(row.id); }} style={{ height: 38, padding: "0 16px", borderRadius: 9, border: "1px solid " + SEMANTIC.danger.bd, background: SEMANTIC.danger.bg, color: SEMANTIC.danger.fg, fontFamily: FONT_HEAD, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}><Icon name="trash" size={14} />Konfirmasi Hapus</button>
             </div>
           </div>
         </td>
@@ -275,7 +265,7 @@ function BankRow({ row, onToggle, onDefault, onDelete }) {
 function ListSkeleton() {
   return (
     <Card pad={0} style={{ overflow: "hidden" }}>
-      <div style={{ background: CREAM, height: 44 }} />
+      <div style={{ background: HEAD_BG, height: 44 }} />
       {[0, 1, 2].map((i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderBottom: "1px solid " + LINE_SOFT }}>
           <Skel w={34} h={34} r={9} /><Skel w={150} h={14} /><span style={{ flex: 1 }} /><Skel w={90} h={14} /><Skel w={120} h={24} r={20} />
@@ -333,7 +323,7 @@ function BankAccountsTab({ entity, fireToast }) {
       account_holder: draft.holder, branch: draft.branch, currency: draft.currency,
       is_default: rows.length === 0, is_active: true,
     });
-    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return; }
+    if (error) { fireToast("Gagal menyimpan: " + error.message, "alert"); return { error }; } // SaveButton kit: keadaan GAGAL
     setOpen(false); setDraft({ bank: "", acc: "", holder: "", branch: "", currency: "IDR" });
     fireToast("Rekening bank ditambahkan"); refetch();
   };
@@ -343,7 +333,7 @@ function BankAccountsTab({ entity, fireToast }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-        <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: MUTED }}><strong style={{ color: INK, fontFamily: FONT_MONO }}>{rows.length}</strong> rekening terdaftar untuk entitas {entity}</div>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT }}><strong style={{ color: INK, fontFamily: FONT_MONO }}>{rows.length}</strong> rekening terdaftar untuk entitas {entity}</div>
         <PrimaryBtn icon="plus" onClick={() => setOpen(true)}>Tambah Rekening Bank</PrimaryBtn>
       </div>
 
@@ -353,10 +343,10 @@ function BankAccountsTab({ entity, fireToast }) {
         <EmptyState icon="bank" title="Belum ada rekening bank" desc="Tambahkan rekening bank entitas untuk dipakai pada invoice & dokumen pembayaran." cta="Tambah Rekening Bank" onCta={() => setOpen(true)} />
       ) : (
         <Card pad={0} style={{ overflow: "hidden" }}>
-          <div className="ak-scroll" style={{ overflowX: "auto" }}>
+          <div className="nk-scroll" style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920 }}>
               <thead>
-                <tr style={{ background: CREAM }}>
+                <tr style={{ background: HEAD_BG }}>
                   <th style={thStyle}>Nama Bank</th>
                   <th style={thStyle}>No. Rekening</th>
                   <th style={thStyle}>Atas Nama</th>
@@ -376,7 +366,7 @@ function BankAccountsTab({ entity, fireToast }) {
       )}
 
       <SlideOver open={open} onClose={() => setOpen(false)} title="Tambah Rekening Bank" subtitle={"Entitas " + entity}
-        footer={<><OutlineBtn onClick={() => setOpen(false)}>Batal</OutlineBtn><PrimaryBtn icon="check" onClick={add}>Simpan Rekening</PrimaryBtn></>}>
+        footer={<><OutlineBtn onClick={() => setOpen(false)}>Batal</OutlineBtn><SaveButton label="Simpan Rekening" onSave={add} /></>}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
           <FloatingInput label="Nama Bank" value={draft.bank} onChange={(v) => setDraft({ ...draft, bank: v })} full />
           <FloatingInput label="Nomor Rekening" value={draft.acc} onChange={(v) => setDraft({ ...draft, acc: v })} mono full />
@@ -394,18 +384,18 @@ function SignerCard({ signer, onToggle, onEdit, onDelete, onUpload }) {
   const [h, setH] = useState(false);
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ background: SURFACE, border: "1px solid " + (h ? "#C9D8EC" : LINE), borderRadius: 16, padding: 20, transition: "border-color .2s, box-shadow .2s", boxShadow: h ? "0 8px 22px rgba(20,40,70,.07)" : "none" }}>
+      style={{ background: CARD, border: "1px solid " + (h ? ACCENT_HOVER : LINE), borderRadius: 16, padding: 20, transition: "border-color .2s, box-shadow .2s", boxShadow: h ? SHADOW_1 : "none" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-        <div style={{ width: 46, height: 46, borderRadius: 12, background: "#EAF0F8", color: NAVY, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 46px", fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 16 }}>
+        <div style={{ width: 46, height: 46, borderRadius: 12, background: ACCENT, color: INK, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 46px", fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 16 }}>
           {signer.name.split(" ").filter((w) => !w.includes(".")).slice(0, 2).map((w) => w[0]).join("")}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 600, color: NAVY, letterSpacing: -0.2 }}>{signer.name}</div>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: MUTED, marginTop: 2 }}>{signer.title}</div>
+          <div style={{ fontFamily: FONT_HEAD, fontSize: 16, fontWeight: 600, color: INK, letterSpacing: -0.2 }}>{signer.name}</div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT, marginTop: 2 }}>{signer.title}</div>
         </div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 14 }}>
-        {signer.types.map((t) => <span key={t} style={{ fontFamily: FONT_BODY, fontSize: 11.5, fontWeight: 600, color: NAVY, border: "1px solid " + NAVY, borderRadius: 20, padding: "3px 11px" }}>{t}</span>)}
+        {signer.types.map((t) => <span key={t} style={{ fontFamily: FONT_BODY, fontSize: 11.5, fontWeight: 600, color: INK, border: "1px solid " + INK, borderRadius: 20, padding: "3px 11px" }}>{t}</span>)}
       </div>
       <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
         <UploadBox value={signer.sig} onChange={(v) => onUpload(signer.id, "sig", v)} label="Tanda Tangan" icon="pen" />
@@ -413,7 +403,7 @@ function SignerCard({ signer, onToggle, onEdit, onDelete, onUpload }) {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16, paddingTop: 14, borderTop: "1px solid " + LINE_SOFT }}>
         <Toggle on={signer.active} onChange={() => onToggle(signer.id)} />
-        <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: signer.active ? GREEN : FAINT }}>{signer.active ? "Aktif" : "Nonaktif"}</span>
+        <span style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: signer.active ? SEMANTIC.ok.fg : INK_SOFT }}>{signer.active ? "Aktif" : "Nonaktif"}</span>
         <span style={{ flex: 1 }} />
         <IconBtn icon="pencil" onClick={() => onEdit(signer)} />
         <IconBtn icon="trash" danger onClick={() => onDelete(signer.id)} />
@@ -493,14 +483,14 @@ function SignatoriesTab({ entity, fireToast }) {
       const mode = modal.mode;
       setModal(null); refetch();
       fireToast(mode === "add" ? "Penanda tangan ditambahkan" : "Penanda tangan diperbarui");
-    } catch (e) { fireToast("Gagal menyimpan: " + e.message, "alert"); }
+    } catch (e) { fireToast("Gagal menyimpan: " + e.message, "alert"); return { error: e }; } // SaveButton kit: keadaan GAGAL
   };
   const toggleType = (t) => setModal((m) => ({ ...m, data: { ...m.data, types: m.data.types.includes(t) ? m.data.types.filter((x) => x !== t) : [...m.data.types, t] } }));
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-        <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: MUTED }}><strong style={{ color: INK, fontFamily: FONT_MONO }}>{signers.length}</strong> penanda tangan untuk entitas {entity}</div>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT }}><strong style={{ color: INK, fontFamily: FONT_MONO }}>{signers.length}</strong> penanda tangan untuk entitas {entity}</div>
         <PrimaryBtn icon="plus" onClick={openAdd}>Tambah Penanda Tangan</PrimaryBtn>
       </div>
 
@@ -519,7 +509,7 @@ function SignatoriesTab({ entity, fireToast }) {
       )}
 
       <Modal open={!!modal} onClose={() => setModal(null)} title={modal && modal.mode === "add" ? "Tambah Penanda Tangan" : "Edit Penanda Tangan"} subtitle={"Entitas " + entity}
-        footer={modal && <><OutlineBtn onClick={() => setModal(null)}>Batal</OutlineBtn><PrimaryBtn icon="check" onClick={save}>Simpan</PrimaryBtn></>}>
+        footer={modal && <><OutlineBtn onClick={() => setModal(null)}>Batal</OutlineBtn><SaveButton label="Simpan" onSave={save} /></>}>
         {modal && (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
@@ -527,7 +517,7 @@ function SignatoriesTab({ entity, fireToast }) {
               <FloatingInput label="Jabatan" value={modal.data.title} onChange={(v) => setModal({ ...modal, data: { ...modal.data, title: v } })} full />
             </div>
             <div>
-              <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: MUTED, marginBottom: 10 }}>Jenis Dokumen</div>
+              <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 600, color: INK_SOFT, marginBottom: 10 }}>Jenis Dokumen</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
                 {DOC_TYPES.map((d) => <PillToggle key={d.id} label={d.label} active={modal.data.types.includes(d.id)} onClick={() => toggleType(d.id)} />)}
               </div>
@@ -584,7 +574,6 @@ export default function EntitySettingsPage({ onHome }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Admin Settings", onClick: onHome }, { label: "Entity Settings" }]}
         title="Entity Settings" subtitle="Profil perusahaan, rekening bank & penanda tangan per entitas"
@@ -595,7 +584,7 @@ export default function EntitySettingsPage({ onHome }) {
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
       {loading ? <ProfileSkeleton /> : (
-        <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "ak-rise"}>
+        <div key={entity + tab} style={{ opacity: fade ? 0 : 1, transition: "opacity .2s ease" }} className={fade ? "" : "nk-rise"}>
           {tab === "profile" && <CompanyProfileTab entity={entity} onDirtyChange={setDirty} fireToast={fireToast} />}
           {tab === "banks" && <BankAccountsTab entity={entity} fireToast={fireToast} />}
           {tab === "signers" && <SignatoriesTab entity={entity} fireToast={fireToast} />}

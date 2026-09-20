@@ -21,15 +21,9 @@ import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import ConfirmModal from '../../../components/ConfirmModal';
-import {
-  Icon, PageHeader, KitStyles, FloatingInput, FloatingSelect, Toggle,
-  PrimaryBtn, OutlineBtn, SectionLabel,
-} from '../../../pages/foundation/admin-settings/kit';
-import {
-  NAVY, CREAM, SURFACE, LINE, ROW_HOVER, INK, INK_SOFT, MUTED, DANGER, GREEN,
-  FONT_HEAD, FONT_BODY, FONT_MONO,
-} from '../../../pages/foundation/admin-settings/tokens';
 
+import { FloatingInput, FloatingSelect, Icon, OutlineBtn, PageHeader, PrimaryBtn, SectionLabel, Toggle } from '../../../kit';
+import { BG, CARD, ACCENT, LINE, INK, INK_SOFT, HEAD_BG, ROW_HOVER, INPUT_BG, FOCUS_RING, SHADOW_2, FONT_HEAD, FONT_BODY, FONT_MONO, SEMANTIC } from '../../../kit/tokens';
 const EMPTY_DRAFT = {
   id: null,
   company_id: '',
@@ -49,22 +43,22 @@ function StatusBadge({ active }) {
       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wide"
       style={{
         fontFamily: FONT_HEAD, fontWeight: 700,
-        background: active ? `${GREEN}1A` : CREAM,
-        color: active ? GREEN : MUTED,
+        background: active ? `${SEMANTIC.ok.fg}1A` : HEAD_BG,
+        color: active ? SEMANTIC.ok.fg : INK_SOFT,
       }}
     >
-      <span className="w-1 h-1 rounded-full" style={{ background: active ? GREEN : MUTED }} />
+      <span className="w-1 h-1 rounded-full" style={{ background: active ? SEMANTIC.ok.fg : INK_SOFT }} />
       {active ? 'Active' : 'Inactive'}
     </span>
   );
 }
 
 function CompanyBadge({ company }) {
-  if (!company) return <span style={{ color: MUTED }}>—</span>;
+  if (!company) return <span style={{ color: INK_SOFT }}>—</span>;
   return (
     <span
       className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
+      style={{ fontFamily: FONT_MONO, background: ACCENT, color: INK }}
     >
       {company.code}
     </span>
@@ -75,7 +69,7 @@ function CodeBadge({ children }) {
   return (
     <span
       className="text-[11px] px-2 py-0.5 rounded-lg font-semibold"
-      style={{ fontFamily: FONT_MONO, background: `${NAVY}1A`, color: NAVY }}
+      style={{ fontFamily: FONT_MONO, background: ACCENT, color: INK }}
     >
       {children}
     </span>
@@ -232,14 +226,13 @@ export default function DepartmentsPage({ onHome }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: 'Foundation' }, { label: 'Master Data & Admin Settings', onClick: onHome }, { label: 'Departments' }]}
         title="Departments"
         subtitle="Organizational units. Department codes appear in document numbers."
         onBack={onHome}
         right={!loading && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: `${NAVY}1A`, color: NAVY, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 20, background: ACCENT, color: INK, fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 700 }}>
             {total.toLocaleString('id-ID')}
           </span>
         )}
@@ -249,9 +242,9 @@ export default function DepartmentsPage({ onHome }) {
       <div className="flex items-center gap-3 mb-5">
         <div
           className="flex items-center gap-2 flex-1 max-w-xs px-3.5 py-2.5 rounded-xl border text-sm transition-shadow"
-          style={{ background: SURFACE, borderColor: searchFocus ? NAVY : LINE, boxShadow: searchFocus ? `0 0 0 3px ${NAVY}29` : 'none' }}
+          style={{ background: INPUT_BG, borderColor: searchFocus ? INK_SOFT : LINE, boxShadow: searchFocus ? FOCUS_RING : 'none' }}
         >
-          <Search size={14} style={{ color: MUTED }} />
+          <Search size={14} style={{ color: INK_SOFT }} />
           <input
             type="text"
             placeholder="Search by name or code…"
@@ -267,7 +260,7 @@ export default function DepartmentsPage({ onHome }) {
           type="button"
           onClick={refresh}
           className="p-2.5 rounded-xl border transition-opacity hover:opacity-70"
-          style={{ background: SURFACE, borderColor: LINE }}
+          style={{ background: CARD, borderColor: LINE }}
           title="Refresh"
         >
           <RefreshCw size={14} style={{ color: INK_SOFT }} />
@@ -276,14 +269,14 @@ export default function DepartmentsPage({ onHome }) {
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border overflow-hidden" style={{ background: SURFACE, borderColor: LINE }}>
+      <div className="rounded-2xl border overflow-hidden" style={{ background: CARD, borderColor: LINE }}>
         <div
           className="grid px-4 py-3 border-b text-[10px] uppercase tracking-[0.18em] font-semibold"
           style={{
             gridTemplateColumns: '70px 80px 1fr 80px 44px',
             borderColor: LINE,
-            background: CREAM,
-            color: MUTED,
+            background: HEAD_BG,
+            color: INK_SOFT,
           }}
         >
           <div>Company</div>
@@ -301,7 +294,7 @@ export default function DepartmentsPage({ onHome }) {
           <EmptyState message={search ? 'No departments match your search.' : 'No departments found.'} />
         ) : (
           data.map((row, i) => {
-            const zebra = i % 2 === 1 ? `${CREAM}80` : SURFACE;
+            const zebra = i % 2 === 1 ? `${HEAD_BG}80` : CARD;
             return (
               <div
                 key={row.id}
@@ -319,7 +312,7 @@ export default function DepartmentsPage({ onHome }) {
                     type="button"
                     onClick={() => openEdit(row)}
                     className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-70"
-                    style={{ background: CREAM, color: INK_SOFT }}
+                    style={{ background: HEAD_BG, color: INK_SOFT }}
                   >
                     Edit
                   </button>
@@ -331,15 +324,15 @@ export default function DepartmentsPage({ onHome }) {
 
         {!error && (
           <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${LINE}` }}>
-            <span className="text-xs" style={{ color: MUTED }}>
+            <span className="text-xs" style={{ color: INK_SOFT }}>
               {total === 0 ? 'No records' : `Showing ${from}–${to} of ${total.toLocaleString('id-ID')}`}
             </span>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: CREAM }}>
+              <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: HEAD_BG }}>
                 <ChevronLeft size={14} style={{ color: INK_SOFT }} />
               </button>
               <span className="px-3 text-xs font-medium" style={{ color: INK_SOFT }}>{page} / {totalPages}</span>
-              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: CREAM }}>
+              <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || loading} className="p-1.5 rounded-lg transition-opacity disabled:opacity-30 hover:opacity-70" style={{ background: HEAD_BG }}>
                 <ChevronRight size={14} style={{ color: INK_SOFT }} />
               </button>
             </div>
@@ -371,12 +364,12 @@ export default function DepartmentsPage({ onHome }) {
                 </div>
               ) : (
                 <div style={{ flex: '1 1 100%' }}>
-                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: NAVY, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Company</div>
-                  <div style={{ borderRadius: 11, border: '1px solid ' + LINE, background: CREAM, padding: '16px 14px', fontFamily: FONT_BODY, fontSize: 14, color: INK_SOFT }}>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600, color: INK, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Company</div>
+                  <div style={{ borderRadius: 11, border: '1px solid ' + LINE, background: HEAD_BG, padding: '16px 14px', fontFamily: FONT_BODY, fontSize: 14, color: INK_SOFT }}>
                     {companies.find((c) => c.id === draft.company_id)
                       ? `${companies.find((c) => c.id === draft.company_id).code} — ${companies.find((c) => c.id === draft.company_id).name}`
                       : 'Loading…'}
-                    <span style={{ marginLeft: 8, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED }}>(locked)</span>
+                    <span style={{ marginLeft: 8, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: INK_SOFT }}>(locked)</span>
                   </div>
                 </div>
               )}
@@ -402,7 +395,7 @@ export default function DepartmentsPage({ onHome }) {
                 />
               </div>
             </div>
-            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: MUTED, marginTop: 8 }}>
+            <p style={{ fontFamily: FONT_BODY, fontSize: 10.5, color: INK_SOFT, marginTop: 8 }}>
               Optional. Leave blank for top-level departments.
             </p>
 
@@ -412,13 +405,13 @@ export default function DepartmentsPage({ onHome }) {
             <SectionLabel style={{ marginBottom: 14 }}>Status</SectionLabel>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Toggle on={draft.is_active} onChange={(v) => setDraft((d) => ({ ...d, is_active: v }))} disabled={saving} />
-              <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: draft.is_active ? GREEN : INK_SOFT }}>
+              <span style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 500, color: draft.is_active ? SEMANTIC.ok.fg : INK_SOFT }}>
                 {draft.is_active ? 'Active' : 'Inactive'}
               </span>
             </div>
 
             {saveError && (
-              <div style={{ marginTop: 24, borderRadius: 14, padding: '14px 16px', background: `${DANGER}0F`, border: `1px solid ${DANGER}40` }}>
+              <div style={{ marginTop: 24, borderRadius: 14, padding: '14px 16px', background: `${SEMANTIC.danger.fg}0F`, border: `1px solid ${SEMANTIC.danger.fg}40` }}>
                 <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 700, color: INK, marginBottom: 2 }}>Save failed</div>
                 <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: INK_SOFT }}>{saveError}</div>
               </div>
@@ -431,11 +424,11 @@ export default function DepartmentsPage({ onHome }) {
       {toast && (
         <div style={{
           position: 'fixed', right: 24, bottom: 24, display: 'flex', alignItems: 'center', gap: 10,
-          background: INK, color: '#fff', padding: '13px 18px', borderRadius: 12,
+          background: INK, color: BG, padding: '13px 18px', borderRadius: 12,
           fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 500,
-          boxShadow: '0 14px 34px rgba(10,20,40,.3)', zIndex: 200,
+          boxShadow: SHADOW_2, zIndex: 200,
         }}>
-          <Icon name={toast.type === 'error' ? 'alert' : 'checkcircle'} size={18} color={toast.type === 'error' ? '#FF9B9B' : '#7FD6A0'} />
+          <Icon name={toast.type === 'error' ? 'alert' : 'checkcircle'} size={18} color={toast.type === 'error' ? SEMANTIC.danger.bg : ACCENT} />
           {toast.msg}
         </div>
       )}

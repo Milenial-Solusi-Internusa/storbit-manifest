@@ -21,9 +21,9 @@ import { useState, useCallback, lazy, Suspense } from "react";
 import { useAuth } from "../../contexts/useAuth";
 import { isAdminSettings, isSuperAdmin } from "../../lib/roles";
 import ErrorBoundary from "../../components/ErrorBoundary";
-import { Icon, PageHeader, SectionLabel, KitStyles } from "./admin-settings/kit";
-import { SURFACE, NAVY, LINE, ORANGE, FAINT, INK, MUTED, FONT_BODY, FONT_HEAD, FONT_MONO } from "./admin-settings/tokens";
 
+import { Icon, PageHeader, SectionLabel } from '../../kit';
+import { CARD, ACCENT, ACCENT_HOVER, LINE, INK, INK_SOFT, SEMANTIC, SHADOW_1, FONT_HEAD, FONT_BODY, FONT_MONO } from '../../kit/tokens';
 /* ---------- lazy imports — 12 eks-AdminShell (src/modules/admin/pages/*) ---------- */
 const CompaniesPage      = lazy(() => import("../../modules/admin/pages/CompaniesPage"));
 const BranchesPage       = lazy(() => import("../../modules/admin/pages/BranchesPage"));
@@ -132,17 +132,17 @@ const HUB_GROUPS = [
 function AccessDenied({ onBack }) {
   return (
     <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "3rem 1rem" }}>
-      <div style={{ maxWidth: 420, width: "100%", textAlign: "center", background: SURFACE, border: "1px solid " + LINE, borderRadius: 20, padding: "40px 32px", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
-        <div style={{ width: 60, height: 60, borderRadius: 16, background: "#EAF0F8", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
-          <Icon name="shield" size={28} color={NAVY} />
+      <div style={{ maxWidth: 420, width: "100%", textAlign: "center", background: CARD, border: "1px solid " + LINE, borderRadius: 20, padding: "40px 32px", boxShadow: "none" }}>
+        <div style={{ width: 60, height: 60, borderRadius: 16, background: ACCENT, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
+          <Icon name="shield" size={28} color={INK} />
         </div>
-        <h2 style={{ fontFamily: FONT_HEAD, fontSize: 21, fontWeight: 800, color: NAVY, margin: "0 0 8px" }}>Akses Ditolak</h2>
-        <p style={{ fontFamily: FONT_BODY, fontSize: 14, color: MUTED, margin: "0 0 24px", lineHeight: 1.5 }}>
+        <h2 style={{ fontFamily: FONT_HEAD, fontSize: 21, fontWeight: 800, color: INK, margin: "0 0 8px" }}>Akses Ditolak</h2>
+        <p style={{ fontFamily: FONT_BODY, fontSize: 14, color: INK_SOFT, margin: "0 0 24px", lineHeight: 1.5 }}>
           Anda tidak memiliki izin untuk mengakses halaman ini.
         </p>
         <button type="button" onClick={onBack}
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, background: NAVY, color: "#fff", border: "none", borderRadius: 12, padding: "10px 20px", fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-          <Icon name="arrowleft" size={16} color="#fff" /> Kembali
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, background: ACCENT, color: INK, border: "none", borderRadius: 10, padding: "10px 20px", fontFamily: FONT_HEAD, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+          <Icon name="arrowleft" size={16} /> Kembali
         </button>
       </div>
     </div>
@@ -154,9 +154,9 @@ function SectionShell({ label, onBack, children }) {
   return (
     <div>
       <button type="button" onClick={onBack}
-        style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "transparent", border: "none", padding: "4px 0", marginBottom: 14, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: MUTED }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = NAVY; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = MUTED; }}>
+        style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "transparent", border: "none", padding: "4px 0", marginBottom: 14, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: INK_SOFT }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = INK; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = INK_SOFT; }}>
         <Icon name="arrowleft" size={15} /> Foundation{label ? " / " + label : ""}
       </button>
       {children}
@@ -172,20 +172,20 @@ function HubCard({ card, onOpen }) {
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       onClick={() => onOpen(card.id)}
       style={{
-        position: "relative", background: SURFACE, border: "1px solid " + (h ? NAVY : LINE),
-        borderRadius: 16, padding: "22px 22px 20px 24px", cursor: "pointer",
+        position: "relative", background: CARD, border: "1px solid " + (h ? INK_SOFT : LINE),
+        borderRadius: 14, padding: "22px 22px 20px 24px", cursor: "pointer",
         overflow: "hidden", transition: "border-color .2s ease, box-shadow .2s ease, transform .2s ease",
         transform: h ? "translateY(-2px)" : "none",
-        boxShadow: h ? "0 10px 28px rgba(20,40,70,.1)" : "0 1px 2px rgba(20,40,70,.03)",
+        boxShadow: h ? SHADOW_1 : "none",
         height: "100%",
       }}>
-      <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: ORANGE, transform: h ? "scaleY(1)" : "scaleY(0)", transformOrigin: "center", transition: "transform .25s cubic-bezier(.22,1,.36,1)" }} />
-      <div style={{ width: 50, height: 50, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", background: h ? NAVY : "#EAF0F8", color: h ? "#fff" : NAVY, transition: "all .25s" }}>
+      <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: ACCENT_HOVER, transform: h ? "scaleY(1)" : "scaleY(0)", transformOrigin: "center", transition: "transform .25s cubic-bezier(.22,1,.36,1)" }} />
+      <div style={{ width: 50, height: 50, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", background: h ? ACCENT_HOVER : ACCENT, color: INK, transition: "all .25s" }}>
         <Icon name={card.icon} size={24} />
       </div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: NAVY, marginTop: 16, letterSpacing: -0.2 }}>{card.name}</div>
-      <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: MUTED, marginTop: 6, lineHeight: 1.5, textWrap: "pretty" }}>{card.desc}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 18, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: h ? ORANGE : NAVY, transition: "color .2s" }}>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 17, fontWeight: 700, color: INK, marginTop: 16, letterSpacing: -0.2 }}>{card.name}</div>
+      <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT, marginTop: 6, lineHeight: 1.5, textWrap: "pretty" }}>{card.desc}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 18, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600, color: h ? INK : INK_SOFT, transition: "color .2s" }}>
         Buka
         <span style={{ display: "inline-flex", transform: h ? "translateX(4px)" : "none", transition: "transform .25s cubic-bezier(.22,1,.36,1)" }}><Icon name="arrowright" size={15} /></span>
       </div>
@@ -193,7 +193,7 @@ function HubCard({ card, onOpen }) {
   );
 }
 
-const Loading = () => <div style={{ padding: 40, textAlign: "center", fontFamily: FONT_BODY, fontSize: 13, color: FAINT }}>Memuat…</div>;
+const Loading = () => <div style={{ padding: 40, textAlign: "center", fontFamily: FONT_BODY, fontSize: 13, color: INK_SOFT }}>Memuat…</div>;
 
 /* ===================== SHELL UTAMA ===================== */
 export default function AdminHub({ onExit, initialSection }) {
@@ -327,7 +327,6 @@ export default function AdminHub({ onExit, initialSection }) {
   if (activeSection !== "landing") {
     return (
       <div style={{ fontFamily: FONT_BODY, color: INK }}>
-        <KitStyles />
         {renderActive()}
         {toast && <ToastBar toast={toast} />}
       </div>
@@ -336,13 +335,12 @@ export default function AdminHub({ onExit, initialSection }) {
 
   return (
     <div style={{ fontFamily: FONT_BODY, color: INK }}>
-      <KitStyles />
       <PageHeader
         crumbs={[{ label: "Foundation" }, { label: "Master Data & Admin Settings" }]}
         title="Master Data & Admin Settings"
         subtitle="Satu pintu masuk untuk seluruh data master, konfigurasi, dan akses sistem."
         onBack={onExit}
-        right={<span style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 38, padding: "0 14px", borderRadius: 20, background: "#EAF0F8", color: NAVY, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600 }}><Icon name="shield" size={15} />Akses Terbatas</span>}
+        right={<span style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 38, padding: "0 14px", borderRadius: 20, background: ACCENT, color: INK, fontFamily: FONT_HEAD, fontSize: 12.5, fontWeight: 600 }}><Icon name="shield" size={15} />Akses Terbatas</span>}
       />
       {HUB_GROUPS.map((group, gi) => {
         const visibleCards = group.cards.filter((c) => G[c.id]?.view);
@@ -352,7 +350,7 @@ export default function AdminHub({ onExit, initialSection }) {
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
               <SectionLabel>{group.title}</SectionLabel>
               <span style={{ flex: 1, height: 1, background: LINE }} />
-              <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, color: FAINT }}>{visibleCards.length} menu</span>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, fontWeight: 600, color: INK_SOFT }}>{visibleCards.length} menu</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
               {visibleCards.map((c) => <HubCard key={c.id} card={c} onOpen={setActiveSection} />)}
@@ -370,9 +368,9 @@ function ToastBar({ toast }) {
     <div
       className="fixed bottom-6 right-6 rounded-2xl px-4 py-3 text-sm font-semibold shadow-lg flex items-center gap-2 z-[60]"
       style={{
-        background: toast.type === "error" || toast.type === "alert" ? "#FCE4E4" : "#DCF0E6",
+        background: toast.type === "error" || toast.type === "alert" ? SEMANTIC.danger.bg : SEMANTIC.ok.bg,
         color: INK,
-        border: "1px solid " + (toast.type === "error" || toast.type === "alert" ? "#E39A9A" : "#7FC9A0"),
+        border: "1px solid " + (toast.type === "error" || toast.type === "alert" ? SEMANTIC.danger.bd : SEMANTIC.ok.bd),
       }}
     >
       <Icon name="check" size={14} />
