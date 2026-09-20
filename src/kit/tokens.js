@@ -20,33 +20,35 @@
        "solid navy/oranye + teks putih" menjadi LATAR AKSEN + TEKS `INK`
        (7,13:1 di ACCENT · 6,58:1 di ACCENT_2). `INK_SOFT` di atas aksen pun
        gagal (3,79 / 3,50) — di permukaan aksen SELALU `INK`.
-     - Kartu vs halaman 1,05:1, border vs kartu 1,20:1 → hierarki bertumpu
-       pada border + bayangan turunan, bukan beda latar.
+     - Kartu vs halaman 1,07:1 (CARD putih, revisi Den 20 Sep 2026 malam —
+       semula #EEF3EA, 1,05:1), border vs kartu 1,35:1 → pemisah kartu dari
+       halaman = border LINE; sage tampil lewat teks, ikon, dan aksen, bukan
+       lewat latar kartu.
      - Aksen vs halaman hanya 1,41:1 → fokus ring memakai `INK_SOFT`, bukan aksen.
    ========================================================================= */
 
 /* ---------- 1. IDENTITAS — 9 hex kebijakan (A.1), persis ---------- */
 export const BG             = '#F6F8F3'; // latar halaman / shell
-export const CARD           = '#EEF3EA'; // kartu, panel, surface
+export const CARD           = '#FFFFFF'; // kartu, panel, surface — PUTIH POLOS (revisi Den 20 Sep 2026 malam, semula #EEF3EA); pemisah dari BG = border LINE
 export const ACCENT         = '#C3D9B8'; // aksen utama: tombol primer, item aktif, highlight
 export const ACCENT_HOVER   = '#AFC9A0';
 export const ACCENT_2       = '#D7C9B0'; // aksen kedua: aksi sekunder, penanda pendukung
 export const ACCENT_2_HOVER = '#C9B896';
 export const LINE           = '#D8E0D2'; // garis, pembatas, border kartu/input
 export const INK            = '#33422B'; // heading, body, DAN teks di atas aksen
-export const INK_SOFT       = '#5C6B52'; // label, subtitle, teks redup (5,34:1 di BG · 5,07 di CARD)
+export const INK_SOFT       = '#5C6B52'; // label, subtitle, teks redup (5,34:1 di BG · 5,71 di CARD)
 
 /* ---------- 1b. TURUNAN — dihitung dari 9 hex di atas, nol hue baru ----------
    Rumus: mix(a, b, t) = a + (b − a) × t per kanal sRGB (dibulatkan). */
-export const INK_FAINT    = '#838E7A'; // mix(INK_SOFT, BG, .25) → 3,21:1 di BG / 3,05 di CARD.
+export const INK_FAINT    = '#838E7A'; // mix(INK_SOFT, BG, .25) → 3,21:1 di BG / 3,43 di CARD.
                                        // HANYA placeholder, ikon dekoratif, border kontrol
                                        // (ambang non-teks 3:1). BUKAN untuk teks isi/hint —
                                        // teks pendukung tetap INK_SOFT.
-export const LINE_SOFT    = '#E3EADE'; // mix(LINE, CARD, .50) — border sel tabel, garis dalam kartu
-export const HEAD_BG      = '#E5EBE0'; // mix(CARD, LINE, .40) — thead, header kartu, track segmented
+export const LINE_SOFT    = '#ECF0E9'; // mix(LINE, CARD, .50) — border sel tabel, garis dalam kartu (dihitung ulang utk CARD putih)
+export const HEAD_BG      = '#EFF3ED'; // mix(CARD, LINE, .40) — thead, header kartu, track segmented (dihitung ulang utk CARD putih; INK_SOFT 5,09:1)
 export const ROW_HOVER    = '#E4EDDE'; // mix(BG, ACCENT, .35) — hover baris tabel / item daftar
-export const INPUT_BG     = BG;        // = BG, supaya input TIMBUL (lebih terang) di atas kartu
-export const DISABLED_BG  = '#E1E8DC'; // mix(CARD, LINE, .60)
+export const INPUT_BG     = BG;        // = BG: sejak CARD putih, input = bidang isian sage samar (1,07:1) di atas kartu — tetap dibedakan border LINE + fokus
+export const DISABLED_BG  = '#E8ECE4'; // mix(CARD, LINE, .60) (dihitung ulang utk CARD putih)
 export const DISABLED_INK = INK_FAINT; // kontrol nonaktif dikecualikan WCAG; nilai = INK_FAINT
 export const FOCUS_RING   = '0 0 0 3px rgba(92,107,82,.35)';   // INK_SOFT rgb(92,107,82) α .35
 export const BACKDROP     = 'rgba(51,66,43,.45)';              // INK rgb(51,66,43) α .45
@@ -86,7 +88,7 @@ export const SIZE = { btnMd: 40, btnSm: 32, btnXs: 28, input: 44, inputFloating:
 
 /* SEMANTIC — trio fg/bg/bd dari palet warm-beige yang dipakai 40+ file
    (`C.ok`, `C.warn`, …); `neutral` diturunkan ulang dari sage (INK_SOFT di
-   atas HEAD_BG, 4,70:1). bg/bd persis warm-beige.
+   atas HEAD_BG, 5,09:1 sejak CARD putih). bg/bd persis warm-beige.
    ⚠️ DUA fg DIGESER demi AA (Keputusan #62, Den 20 Sep 2026 — JANGAN
    dikembalikan ke hex warm-beige): teks badge 11,5px = teks normal, butuh
    4,5:1. `ok` 4,30 → `#2D794D` (4,53) · `warn` 3,99 → `#8E620D` (4,58);

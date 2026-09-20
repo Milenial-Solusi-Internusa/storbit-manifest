@@ -17,7 +17,7 @@
 
 :root {
   --nk-line: #D8E0D2;
-  --nk-line-soft: #E3EADE;
+  --nk-line-soft: #ECF0E9; /* LINE_SOFT dihitung ulang: CARD putih (20 Sep 2026 malam) */
   --nk-input-bg: #F6F8F3;
   --nk-faint: #838E7A;
   --nk-focus: 0 0 0 3px rgba(92, 107, 82, .35);
