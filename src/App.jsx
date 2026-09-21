@@ -39,7 +39,8 @@ import { getTodayWIB } from './lib/dateUtils';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 // Fase 1 unifikasi Master Data + Admin Settings — entry point permanen.
 // AdminShell.jsx & AdminSettingsHub.jsx (dan kesembilan sub-halamannya)
-// pensiun dari App.jsx — filenya dibiarkan di disk (orphan), 21 halaman yang
+// pensiun dari App.jsx; kedua file hub lama itu SUDAH DIHAPUS (AdminShell
+// 11 Sep 2026, AdminSettingsHub 21 Sep 2026 — Batch FS Fase 1). 21 halaman yang
 // dulu di-host keduanya kini di-lazy-import langsung oleh AdminHub sendiri.
 const AdminHub          = lazy(() => import('./pages/foundation/AdminHub'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));

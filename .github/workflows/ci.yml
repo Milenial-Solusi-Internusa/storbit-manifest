@@ -1,0 +1,47 @@
+# CI dasar Nexus by MSI — Batch FS Fase 2.5 G0.
+# Jalan otomatis tiap push / pull request ke `main`. Tiga gate, semuanya
+# deterministik dan tanpa akses DB (nol secret Supabase):
+#   1. build   — `npm run build` harus clean (Vite 8 / Rolldown)
+#   2. lint    — gate "net-zero" vs scripts/qa/lint-baseline.json
+#                (138 error / 21 warning warisan boleh ada, TIDAK boleh bertambah)
+#   3. routes  — kontrak URL: setiap id menu App.jsx punya path di
+#                src/routes/menu-paths.js, nol path ganda
+# Sweep runtime (scripts/qa/menu-sweep.mjs) SENGAJA tidak di sini: butuh akun
+# uji + DB staging; dijalankan lokal per giliran dan hasilnya dibandingkan
+# dengan baseline yang di-commit.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-lint:
+    name: build · lint-baseline · routes-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (lockfile persis)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint — tidak boleh lebih buruk dari baseline
+        run: node scripts/qa/lint-baseline.mjs
+
+      - name: Kontrak URL — setiap id menu punya path
+        run: node scripts/qa/check-menu-paths.mjs

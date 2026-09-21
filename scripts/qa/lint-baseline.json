@@ -1,0 +1,239 @@
+{
+  "generatedAt": "2026-09-21T05:28:09.745Z",
+  "errors": 138,
+  "warnings": 21,
+  "files": {
+    "src/App.jsx": {
+      "errors": 6,
+      "warnings": 0
+    },
+    "src/components/CustomFieldsSection.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/contexts/AuthContext.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/hooks/useAppSettings.js": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/hooks/useCustomFields.js": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/hooks/useDropdownOptions.js": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/hooks/useProducts.js": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/admin/pages/BranchesPage.jsx": {
+      "errors": 0,
+      "warnings": 1
+    },
+    "src/modules/admin/pages/DepartmentsPage.jsx": {
+      "errors": 0,
+      "warnings": 1
+    },
+    "src/modules/admin/pages/ProductDetailPage.jsx": {
+      "errors": 4,
+      "warnings": 1
+    },
+    "src/modules/admin/pages/ProductsPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/admin/pages/RoleDefaultsPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/admin/pages/SchemaManagerPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/modules/admin/pages/UserAccessPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/admin/pages/UserEditPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/assets/AssetShell.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/assets/pages/AddAssetPage.jsx": {
+      "errors": 3,
+      "warnings": 0
+    },
+    "src/modules/assets/pages/AssetDashboardPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/bnf/BNFListPage.jsx": {
+      "errors": 6,
+      "warnings": 0
+    },
+    "src/modules/bnf/BNFOrgRolesPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/crm/ActivitiesPage.jsx": {
+      "errors": 5,
+      "warnings": 3
+    },
+    "src/modules/crm/ActivityLogPage.jsx": {
+      "errors": 3,
+      "warnings": 0
+    },
+    "src/modules/crm/CRMDashboardPage.jsx": {
+      "errors": 6,
+      "warnings": 0
+    },
+    "src/modules/crm/CRMReportPage.jsx": {
+      "errors": 3,
+      "warnings": 0
+    },
+    "src/modules/crm/CustomerDetailPage.jsx": {
+      "errors": 6,
+      "warnings": 0
+    },
+    "src/modules/crm/CustomerListPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/crm/DealDetailPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/crm/DealPanels.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/crm/InquiryListPage.jsx": {
+      "errors": 13,
+      "warnings": 0
+    },
+    "src/modules/crm/LeadPoolApprovalPage.jsx": {
+      "errors": 4,
+      "warnings": 0
+    },
+    "src/modules/crm/LeadPoolPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/modules/crm/ProspectFormPage.jsx": {
+      "errors": 4,
+      "warnings": 1
+    },
+    "src/modules/crm/ProspectListPage.jsx": {
+      "errors": 3,
+      "warnings": 1
+    },
+    "src/modules/crm/QuotationDetailPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/modules/crm/QuotationFormPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/modules/crm/QuotationListPage.jsx": {
+      "errors": 3,
+      "warnings": 0
+    },
+    "src/modules/crm/RateListPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/foundation/OrgStructurePage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/hrga/pages/MyRequestsPage.jsx": {
+      "errors": 0,
+      "warnings": 1
+    },
+    "src/modules/inventory/pages/InventoryDashboardPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/modules/inventory/pages/PenerimaanBarangPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/inventory/pages/StokBarangPage.jsx": {
+      "errors": 3,
+      "warnings": 0
+    },
+    "src/modules/logistics/SalesOrderDetailPage.jsx": {
+      "errors": 1,
+      "warnings": 1
+    },
+    "src/modules/reporting/MOMDetailPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/reporting/MOMFormPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/modules/reporting/MOMListPage.jsx": {
+      "errors": 3,
+      "warnings": 0
+    },
+    "src/pages/foundation/admin-settings/ApprovalWorkflowsPage.jsx": {
+      "errors": 3,
+      "warnings": 2
+    },
+    "src/pages/foundation/admin-settings/AuditLogPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/pages/foundation/admin-settings/DocumentSettingsPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/pages/foundation/admin-settings/DropdownManagementPage.jsx": {
+      "errors": 5,
+      "warnings": 0
+    },
+    "src/pages/foundation/admin-settings/EntitySettingsPage.jsx": {
+      "errors": 3,
+      "warnings": 1
+    },
+    "src/pages/foundation/admin-settings/FinanceDefaultsPage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    },
+    "src/pages/foundation/admin-settings/GeneralPreferencesPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/pages/foundation/admin-settings/IntegrationsPage.jsx": {
+      "errors": 2,
+      "warnings": 4
+    },
+    "src/pages/foundation/admin-settings/kit.jsx": {
+      "errors": 6,
+      "warnings": 2
+    },
+    "src/pages/foundation/admin-settings/NotificationsPage.jsx": {
+      "errors": 2,
+      "warnings": 2
+    },
+    "src/pages/foundation/admin-settings/SecurityPolicyPage.jsx": {
+      "errors": 2,
+      "warnings": 0
+    },
+    "src/pages/profile/MyProfilePage.jsx": {
+      "errors": 1,
+      "warnings": 0
+    }
+  }
+}
