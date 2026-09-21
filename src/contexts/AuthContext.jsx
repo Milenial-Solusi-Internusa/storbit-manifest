@@ -57,6 +57,14 @@ export function AuthProvider({ children }) {
   const [menuPermissions,  setMenuPermissions]  = useState([]); // user_menu_permissions rows for this user
   const [roleMenuPermissions, setRoleMenuPermissions] = useState([]); // role_menu_permissions rows for all active roles (role-level default)
   const [permissionsLoading, setPermissionsLoading] = useState(true); // true while per-user menu permissions are loading
+  // TD-271 (hotfix 21 Sep 2026): true once erpRoles for the CURRENT user has been
+  // fetched (even if the result is empty). fetchMenuPermissions refuses to run —
+  // and permissionsLoading stays true — until this is set, so there is no window
+  // where permissionsLoading=false while the role-default (tier-3) permissions
+  // are still unknown. Before this flag, the first permissions fetch ran with
+  // erpRoles=[] and flipped permissionsLoading=false; App's ?menu= adoption and
+  // the FIX B restore guard then decided (and latched) against empty permissions.
+  const [rolesReady, setRolesReady] = useState(false);
   const [isBnfAuthorized, setIsBnfAuthorized] = useState(false); // is_bnf_authorized() RPC result — gates the 'bnf' menu item (see App.jsx canSeeMenuItem)
   const [bnfAuthLoading,  setBnfAuthLoading]  = useState(true);  // true while is_bnf_authorized() is loading — same defer-until-loaded discipline as permissionsLoading
   // null = no override, "active company" follows profile.company_id (home).
@@ -89,6 +97,7 @@ export function AuthProvider({ children }) {
     const safetyTimeout = setTimeout(() => {
       if (mounted) {
         setLoading(false);
+        setRolesReady(true); // roles unknown → treat as none (default-deny), never "loading forever"
       }
     }, 8000);
 
@@ -99,6 +108,7 @@ export function AuthProvider({ children }) {
 
       if (s?.user) {
         previousUserIdRef.current = s.user.id;
+        setRolesReady(false);
         // Defer profile fetch ke next tick (avoid deadlock with onAuthStateChange)
         setTimeout(() => {
           if (!mounted) return;
@@ -106,17 +116,25 @@ export function AuthProvider({ children }) {
             if (!mounted) return;
             setProfile(data);
             setErpRoles(roles || []);
+            setRolesReady(true);
+            setLoading(false);
+            clearTimeout(safetyTimeout);
+          }).catch(() => {
+            if (!mounted) return;
+            setRolesReady(true); // fetch failed → roles unknown → default-deny, not stuck loading
             setLoading(false);
             clearTimeout(safetyTimeout);
           });
         }, 0);
       } else {
         previousUserIdRef.current = null;
+        setRolesReady(true);
         setLoading(false);
         clearTimeout(safetyTimeout);
       }
     }).catch(() => {
       if (mounted) {
+        setRolesReady(true);
         setLoading(false);
         clearTimeout(safetyTimeout);
       }
@@ -134,6 +152,7 @@ export function AuthProvider({ children }) {
         setSession(s);
         setProfile(null);
         setErpRoles([]);
+        setRolesReady(false); // next login must wait for ITS roles before permissions resolve
         setActiveCompanyId(null); // clear any override so it can't leak to the next login
         return;
       }
@@ -161,6 +180,7 @@ export function AuthProvider({ children }) {
       // Only for SIGNED_IN: do NOT toggle loading on INITIAL_SESSION /
       // USER_UPDATED (would flash the loading screen).
       if (event === 'SIGNED_IN') setLoading(true);
+      setRolesReady(false);
       // Defer to next tick supaya gak block listener
       setTimeout(() => {
         if (!mounted) return;
@@ -168,9 +188,12 @@ export function AuthProvider({ children }) {
           if (!mounted) return;
           setProfile(data);
           setErpRoles(roles || []);
+          setRolesReady(true);
           if (event === 'SIGNED_IN') setLoading(false);
         }).catch(() => {
-          if (mounted && event === 'SIGNED_IN') setLoading(false);
+          if (!mounted) return;
+          setRolesReady(true);
+          if (event === 'SIGNED_IN') setLoading(false);
         });
       }, 0);
     });
@@ -246,6 +269,14 @@ export function AuthProvider({ children }) {
       setPermissionsLoading(false);
       return;
     }
+    // TD-271: roles for this user not fetched yet → keep (or re-assert) the
+    // loading state and wait. The effect below re-runs once rolesReady flips
+    // (it is a dependency of this callback), so the real fetch happens exactly
+    // once, with the complete active-role list.
+    if (!rolesReady) {
+      setPermissionsLoading(true);
+      return;
+    }
     setPermissionsLoading(true);
     try {
       // Only roles held in the active company feed the tier-3 (role default)
@@ -273,7 +304,7 @@ export function AuthProvider({ children }) {
     } finally {
       setPermissionsLoading(false);
     }
-  }, [erpRoles, activeCompanyId]);
+  }, [erpRoles, activeCompanyId, rolesReady]);
 
   // Re-fetch per-user + role-level menu permissions whenever session changes.
   // Also reacts to erpRoles/activeCompanyId changing: fetchMenuPermissions
@@ -360,7 +391,10 @@ export function AuthProvider({ children }) {
     // Per-user + role-level menu permission helpers
     menuPermissions,
     roleMenuPermissions,
-    permissionsLoading,
+    // TD-271: while a user is signed in but their roles are not yet known, report
+    // loading regardless of the internal flag — consumers (App ?menu= adoption,
+    // FIX B restore guard, canAccessActiveMenu) must not decide on empty tier-3.
+    permissionsLoading: permissionsLoading || (!!session?.user && !rolesReady),
     hasMenuPermission,
     // is_bnf_authorized() RPC result — see fetchBnfAuthorized above.
     isBnfAuthorized,
