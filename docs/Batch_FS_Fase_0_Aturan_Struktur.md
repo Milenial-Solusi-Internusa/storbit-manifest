@@ -21,7 +21,17 @@ Kenyataan sekarang berbeda dari peta itu. Contoh: Sales Order Management yang di
 
 Aturan resminya, mulai sekarang, folder modul bisnis baru wajib pakai nama dari sembilan modul itu, bukan nama baru yang muncul spontan. Pemetaan ulang folder yang sudah ada masuk Fase 3 dan 4, bukan bagian dari Fase 0 ini.
 
-Modul yang bukan modul bisnis (Admin/Foundation Settings, Home, Dashboard, Assets, keluarga BNF) dikelompokkan terpisah sebagai modul sistem/utilitas di bawah `modules/system/`, tidak dipaksa masuk sembilan modul bisnis kalau memang tidak cocok.
+Modul yang bukan modul bisnis (Admin/Foundation Settings, Home, Dashboard, Assets) dikelompokkan terpisah sebagai modul sistem/utilitas di bawah `modules/system/`, tidak dipaksa masuk sembilan modul bisnis kalau memang tidak cocok.
+
+---
+
+## 2a. Keputusan: BNF-family Dihapus Total, Bukan Digabung
+
+Tiga modul yang sebelumnya direncanakan digabung jadi satu keluarga (BNF, Briefing Harian, Meeting Mingguan) sudah diputuskan **DIHAPUS TOTAL**, bukan digabung. Alasan: ketiganya dianggap modul coba-coba yang sudah tidak relevan untuk MSI Group.
+
+"Dihapus total" berarti kode DAN data, bukan sekadar disembunyikan dari menu. Sebelum eksekusi, data yang ada (laporan insiden, riwayat eskalasi) diekspor dulu sebagai backup di luar aplikasi sebagai jaring pengaman, baru tabel database dan Edge Function terkait (termasuk cron job pengingat overdue) benar-benar dihapus.
+
+Modul ini tidak muncul lagi di manapun dalam Peta Struktur Target, termasuk sebagai bagian dari `modules/system/`.
 
 ---
 
@@ -51,7 +61,7 @@ src/
     it/
     quality-management/
     system/            payung modul non-bisnis: admin-settings, home,
-                       dashboard, assets, bnf-family
+                       dashboard, assets
 ```
 
 ---
@@ -84,7 +94,7 @@ Modul yang jumlah filenya banyak dan kompleks (contoh nyata sekarang: CRM, 45 fi
 
 **Pemisahan `pages/` vs `documents/`:** halaman interaktif (form, list, detail) masuk `pages/`; dokumen cetak (PDF, teknologinya beda, pakai react-pdf) masuk `documents/`. Isi dan tata letak tiap dokumen tetap boleh berbeda sesuai jenisnya (Invoice wajar beda dari Surat Jalan), yang perlu disatukan hanya bagian struktural yang seharusnya identik di semua dokumen (kop surat, footer bernomor halaman, blok tanda tangan, watermark status Draft) — lihat Bagian 9 soal audit ini.
 
-Contoh struktur CRM setelah dipecah (ilustrasi, eksekusi sebenarnya di Fase 7, bukan Fase 3/4, karena ini soal standarisasi struktur internal modul, bukan sekadar nama yang bentrok makna atau penggabungan keluarga BNF):
+Contoh struktur CRM setelah dipecah (ilustrasi, eksekusi sebenarnya di Fase 7, bukan Fase 3/4, karena ini soal standarisasi struktur internal modul, bukan sekadar nama yang bentrok makna atau penghapusan modul BNF-family):
 
 ```
 modules/crm/
@@ -178,6 +188,8 @@ Seluruh definisi rute (58 halaman dari `App.jsx`, 25 destinasi dari AdminHub, pl
 
 Modul non-bisnis di bawah `modules/system/` TIDAK perlu prefix `system` di URL-nya (itu detail organisasi kode saja, tidak perlu bocor ke user), cukup `/admin-settings/...`, `/home`, `/profile`.
 
+**Catatan keadaan kode (21 Sep 2026, eksekusi Fase 2.5):** Sebelum Fase 2.5, Nexus tidak memakai library routing berbasis path — navigasi = state `activeMenu` di memori yang dicerminkan ke satu parameter URL (`?menu=<id>`), bukan path sungguhan. Keputusan Den 21 Sep 2026: Fase 2.5 memasang routing berbasis path dengan `react-router` v7 (bukan v8), dikerjakan per giliran G0–G6. G0 sudah memasang dependency-nya dan kontrak URL `src/routes/menu-paths.js` (masih kode mati — nol pengimpor); `?menu=<id>` tetap mekanisme aktif sampai G1+ memindahkan rute ke `src/routes/`, dan `?menu=<id>` lama diharapkan ter-redirect ke path barunya. Jadi konvensi URL di atas BUKAN aspirasi — ia kontrak yang sedang diwujudkan bertahap; status per giliran ada di §Catatan Terbuka "Status Fase 2.5".
+
 ---
 
 ## 7. Path Alias
@@ -194,10 +206,10 @@ Bahasa    : file dan folder baru wajib Bahasa Inggris. File lama berbahasa
 Folder    : kebab-case (logistics-warehouse, sales-order)
 Komponen  : PascalCase.jsx (InquiryListPage.jsx)
 Helper/hook/konstanta : camelCase.js (quotationVersion.js, useSpItems.js)
-Akronim dalam PascalCase : huruf besar penuh (CRMDashboardPage, BNFListPage,
-            HRGARequestPage), bukan Crm/Bnf/Hrga
+Akronim dalam PascalCase : huruf besar penuh (CRMDashboardPage, PRFFormPage,
+            HRGARequestPage), bukan Crm/Prf/Hrga
 Akronim dalam camelCase  : huruf kecil penuh di awal gabungan kata
-            (bnfOrgScope, prfShared), ini sudah benar di kode sekarang
+            (prfShared, spCalc), ini sudah benar di kode sekarang
 Suffix    : semua file halaman penuh wajib akhiran Page. Shell/hub/router
             (AdminHub, AssetShell) boleh tanpa Page karena bukan halaman konten
 Sub-fitur : nama folder pendek (quotation/, bukan quotation-management/),
@@ -240,7 +252,7 @@ src/pages/foundation/ (AdminHub dan admin-settings/)
      dihapus total, tidak ada lagi dua rumah untuk halaman
 ```
 
-Sisanya (BNF-family, Dashboard yang kepencar tujuh tempat) diputuskan detail di Fase 4, bukan di Fase 0.
+BNF-family sudah final diputuskan dihapus total (lihat Bagian 2a), bukan lagi menunggu Fase 4. Sisanya (Dashboard yang kepencar tujuh tempat) tetap diputuskan detail di Fase 4.
 
 ---
 
@@ -344,15 +356,29 @@ G0 — fondasi TANPA perubahan perilaku (branch feat/fs-fase2-5-router):
       hash bukan teks; mode menu/restore/path) · baseline/menu-sweep +
       baseline/menu-sweep-restore = 5 akun × 162 tujuan × 2 mode dari build
       main + DB staging (884 KB)
+      -> DIBANGUN ULANG 21 Sep 2026 sore dari build main 7e3660c (sesudah
+         hotfix TD-271; 896 KB): perbedaan vs baseline pertama (46f249f) =
+         22 menu / 28 restore, SEMUANYA perbaikan (tier-3 kini mengadopsi
+         persis izin rolenya; 4 id legacy crm-customers-* dinormalkan), nol
+         tujuan hilang — dihitung ulang doc-keeper; ronde 2 build hasil
+         sinkron branch vs baseline baru IDENTIK 0/1.620
   [x] src/App.jsx:40-44 koreksi komentar basi (satu-satunya sentuhan App.jsx)
   Gate: build 2.997 modul (2.646 + 351 modul Sentry ter-tree-shake) ·
   lint 138/21 = baseline · check-menu-paths lolos · sweep G0 vs main
   IDENTIK (1.620 pembanding). Angka diukur ulang doc-keeper.
+  Persiapan G1 (21 Sep 2026 sore–malam, branch yang sama): branch
+  disinkronkan dengan main yang memuat hotfix TD-271 (kode yang masuk =
+  persis src/contexts/AuthContext.jsx +37/−3; 4 dokumen konflik dilebur);
+  gate hasil sinkron diukur ulang doc-keeper = 2.997 · 138/21 · 135 rute.
+  NOL kode aplikasi baru; G1 TETAP belum mulai.
 
 Temuan sweep yang BUKAN bagian Batch FS (register 08_TECH_DEBT.md):
-  TD-271 (HIGH, produksi) — deep-link ?menu= & restore menu terakhir gagal
-      untuk user tier-3 role-default (race permissionsLoading vs erpRoles);
-      bentuk perbaikan (hotfix main vs G1) = Keputusan Terbuka #63
+  TD-271 (HIGH, produksi; RESOLVED 21 Sep 2026 sore) — deep-link ?menu= & restore
+      menu terakhir gagal untuk user tier-3 role-default (race permissionsLoading
+      vs erpRoles); bentuk perbaikan (hotfix main vs G1) = Keputusan Terbuka #63
+      -> DIJAWAB 21 Sep 2026: (a) hotfix main (AuthContext.jsx, flag rolesReady),
+         LIVE produksi 16:05 WIB (deploy 7e3660c); baseline sweep dibangun ulang
+         dari build main 7e3660c; G1 tidak perlu menambal race ini sendiri
   TD-272 (LOW) — restore nexus_last_menu menembus gate untuk id di luar
       pohon / anak ber-prefix allow-list → syarat desain G1: gate berbasis
       kunci MENU_KEY_MAP, bukan keanggotaan pohon
@@ -390,4 +416,4 @@ Bagian struktural PDF (kop, footer, tanda tangan, watermark)
 
 ---
 
-*Dokumen ini adalah Fase 0 dari Batch FS (Folder Structure). Fase 1 dan seterusnya (buang dead code, satukan routing, rename yang bentrok makna, gabungkan keluarga BNF, bersihkan docs, bersihkan root, standarisasi struktur modul, standarisasi penamaan) mengeksekusi berdasarkan aturan di dokumen ini.*
+*Dokumen ini adalah Fase 0 dari Batch FS (Folder Structure). Fase 1 dan seterusnya (buang dead code termasuk hapus total BNF-family, satukan routing, rename yang bentrok makna, bersihkan docs, bersihkan root, standarisasi struktur modul, standarisasi penamaan) mengeksekusi berdasarkan aturan di dokumen ini.*

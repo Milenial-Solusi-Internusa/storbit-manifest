@@ -3,9 +3,9 @@
     "base": "http://localhost:4173",
     "project": "oovmlhilhqzejnawqkvt",
     "mode": "menu",
-    "label": "wh-main-menu",
+    "label": "main-baseline",
     "account": "zzztest.warehouse@msi.com",
-    "startedAt": "2026-09-21T06:50:52.929Z",
+    "startedAt": "2026-09-21T10:37:41.471Z",
     "targets": 162
   },
   "results": {
@@ -1214,20 +1214,23 @@
     },
     "reporting-mom": {
       "url": "http://localhost:4173/?menu=reporting-mom",
-      "bounced": true,
-      "finalSearch": "",
+      "bounced": false,
+      "finalSearch": "?menu=reporting-mom",
       "finalPath": "/",
-      "lastMenu": "home",
+      "lastMenu": "reporting-mom",
       "lastPath": null,
       "loginShown": false,
       "accessDenied": false,
       "comingSoon": false,
       "notFound": false,
-      "homeShown": true,
-      "headings": null,
+      "homeShown": false,
+      "headings": [
+        "Nexus by MSI",
+        "Minutes of Meeting"
+      ],
       "sidebarActive": null,
-      "surfaceHash": null,
-      "structHash": null,
+      "surfaceHash": "3e262735c39abe9d",
+      "structHash": "ed1ada2558711df8",
       "consoleErrors": 0,
       "consoleSample": [],
       "error": null

@@ -5,7 +5,7 @@
     "mode": "restore",
     "label": "main-baseline-restore",
     "account": "zzztest.procurement@msi.com",
-    "startedAt": "2026-09-21T06:30:33.284Z",
+    "startedAt": "2026-09-21T10:37:41.470Z",
     "targets": 162
   },
   "results": {
@@ -356,80 +356,92 @@
     },
     "proc-inquiry-fwd-msi": {
       "url": "http://localhost:4173/",
-      "bounced": true,
-      "finalSearch": "?menu=dashboard",
+      "bounced": false,
+      "finalSearch": "?menu=proc-inquiry-fwd-msi",
       "finalPath": "/",
-      "lastMenu": "dashboard",
+      "lastMenu": "proc-inquiry-fwd-msi",
       "lastPath": null,
       "loginShown": false,
       "accessDenied": false,
       "comingSoon": false,
       "notFound": false,
       "homeShown": false,
-      "headings": null,
+      "headings": [
+        "Nexus by MSI",
+        "Forwarding (MSI)"
+      ],
       "sidebarActive": null,
-      "surfaceHash": null,
-      "structHash": null,
+      "surfaceHash": "6567f0289820805b",
+      "structHash": "0b713360429fd888",
       "consoleErrors": 0,
       "consoleSample": [],
       "error": null
     },
     "prf": {
       "url": "http://localhost:4173/",
-      "bounced": true,
-      "finalSearch": "?menu=dashboard",
+      "bounced": false,
+      "finalSearch": "?menu=prf",
       "finalPath": "/",
-      "lastMenu": "dashboard",
+      "lastMenu": "prf",
       "lastPath": null,
       "loginShown": false,
       "accessDenied": false,
       "comingSoon": false,
       "notFound": false,
       "homeShown": false,
-      "headings": null,
+      "headings": [
+        "Nexus by MSI",
+        "Buat PRF Baru"
+      ],
       "sidebarActive": null,
-      "surfaceHash": null,
-      "structHash": null,
+      "surfaceHash": "c0b02c666cbcc95e",
+      "structHash": "eb6267aa39c6bc49",
       "consoleErrors": 0,
       "consoleSample": [],
       "error": null
     },
     "proc-vendor-list": {
       "url": "http://localhost:4173/",
-      "bounced": true,
-      "finalSearch": "?menu=dashboard",
+      "bounced": false,
+      "finalSearch": "?menu=proc-vendor-list",
       "finalPath": "/",
-      "lastMenu": "dashboard",
+      "lastMenu": "proc-vendor-list",
       "lastPath": null,
       "loginShown": false,
       "accessDenied": false,
       "comingSoon": false,
       "notFound": false,
       "homeShown": false,
-      "headings": null,
+      "headings": [
+        "Nexus by MSI",
+        "Master Vendor"
+      ],
       "sidebarActive": null,
-      "surfaceHash": null,
-      "structHash": null,
+      "surfaceHash": "a15a769aa9d4b794",
+      "structHash": "f6eff626c954fb36",
       "consoleErrors": 0,
       "consoleSample": [],
       "error": null
     },
     "proc-sales-order": {
       "url": "http://localhost:4173/",
-      "bounced": true,
-      "finalSearch": "?menu=dashboard",
+      "bounced": false,
+      "finalSearch": "?menu=proc-sales-order",
       "finalPath": "/",
-      "lastMenu": "dashboard",
+      "lastMenu": "proc-sales-order",
       "lastPath": null,
       "loginShown": false,
       "accessDenied": false,
       "comingSoon": false,
       "notFound": false,
       "homeShown": false,
-      "headings": null,
+      "headings": [
+        "Nexus by MSI",
+        "Sales Order"
+      ],
       "sidebarActive": null,
-      "surfaceHash": null,
-      "structHash": null,
+      "surfaceHash": "967bfc19a191896d",
+      "structHash": "f7b1310005c0a7a8",
       "consoleErrors": 0,
       "consoleSample": [],
       "error": null
@@ -530,8 +542,11 @@
       "sidebarActive": null,
       "surfaceHash": null,
       "structHash": null,
-      "consoleErrors": 0,
-      "consoleSample": [],
+      "consoleErrors": 2,
+      "consoleSample": [
+        "Failed to load resource: the server responded with a status of 404 ()",
+        "Failed to load resource: the server responded with a status of 404 ()"
+      ],
       "error": null
     },
     "shipment": {
@@ -592,7 +607,7 @@
       "structHash": null,
       "consoleErrors": 1,
       "consoleSample": [
-        "[StokBarangPage] fetch error: Error: Company SOA tidak ditemukan.\n    at http://localhost:4173/assets/StokBarangPage-BgDM3sBm.js:1:13257"
+        "[StokBarangPage] fetch error: Error: Company SOA tidak ditemukan.\n    at http://localhost:4173/assets/StokBarangPage-DvIZvE7E.js:1:13257"
       ],
       "error": null
     },
@@ -612,8 +627,10 @@
       "sidebarActive": null,
       "surfaceHash": null,
       "structHash": null,
-      "consoleErrors": 0,
-      "consoleSample": [],
+      "consoleErrors": 1,
+      "consoleSample": [
+        "[PenerimaanBarangPage] master fetch error: Error: Company SOA tidak ditemukan.\n    at http://localhost:4173/assets/PenerimaanBarangPage-Dyvl9FuC.js:1:16275"
+      ],
       "error": null
     },
     "finance": {
@@ -3302,8 +3319,10 @@
       "sidebarActive": null,
       "surfaceHash": null,
       "structHash": null,
-      "consoleErrors": 0,
-      "consoleSample": [],
+      "consoleErrors": 1,
+      "consoleSample": [
+        "[StokBarangPage] fetch error: Error: Company SOA tidak ditemukan.\n    at http://localhost:4173/assets/StokBarangPage-DvIZvE7E.js:1:13257"
+      ],
       "error": null
     },
     "crm-group": {

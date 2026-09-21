@@ -5,7 +5,7 @@
     "mode": "restore",
     "label": "main-baseline-restore",
     "account": "zzztest.restricted@msi.com",
-    "startedAt": "2026-09-21T06:30:33.284Z",
+    "startedAt": "2026-09-21T10:37:41.470Z",
     "targets": 162
   },
   "results": {
@@ -530,8 +530,11 @@
       "sidebarActive": null,
       "surfaceHash": null,
       "structHash": null,
-      "consoleErrors": 0,
-      "consoleSample": [],
+      "consoleErrors": 2,
+      "consoleSample": [
+        "Failed to load resource: the server responded with a status of 404 ()",
+        "Failed to load resource: the server responded with a status of 404 ()"
+      ],
       "error": null
     },
     "shipment": {
@@ -590,8 +593,10 @@
       "sidebarActive": null,
       "surfaceHash": null,
       "structHash": null,
-      "consoleErrors": 0,
-      "consoleSample": [],
+      "consoleErrors": 1,
+      "consoleSample": [
+        "[StokBarangPage] fetch error: Error: Company SOA tidak ditemukan.\n    at http://localhost:4173/assets/StokBarangPage-DvIZvE7E.js:1:13257"
+      ],
       "error": null
     },
     "inventory-penerimaan": {
@@ -610,8 +615,10 @@
       "sidebarActive": null,
       "surfaceHash": null,
       "structHash": null,
-      "consoleErrors": 0,
-      "consoleSample": [],
+      "consoleErrors": 1,
+      "consoleSample": [
+        "[PenerimaanBarangPage] master fetch error: Error: Company SOA tidak ditemukan.\n    at http://localhost:4173/assets/PenerimaanBarangPage-Dyvl9FuC.js:1:16275"
+      ],
       "error": null
     },
     "finance": {
@@ -3300,8 +3307,10 @@
       "sidebarActive": null,
       "surfaceHash": null,
       "structHash": null,
-      "consoleErrors": 0,
-      "consoleSample": [],
+      "consoleErrors": 1,
+      "consoleSample": [
+        "[StokBarangPage] fetch error: Error: Company SOA tidak ditemukan.\n    at http://localhost:4173/assets/StokBarangPage-DvIZvE7E.js:1:13257"
+      ],
       "error": null
     },
     "crm-group": {
