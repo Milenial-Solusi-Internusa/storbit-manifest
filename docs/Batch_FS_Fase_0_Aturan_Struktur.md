@@ -318,7 +318,7 @@ SENGAJA TIDAK DISENTUH Fase 1 — sudah punya jadwal sendiri (instruksi Den
       biasa (lihat butir Order Handover di bawah)
 ```
 
-### Status Fase 2.5 — routing berbasis path (React Router v7), giliran G0 (21 Sep 2026) + G1 (22 Sep 2026)
+### Status Fase 2.5 — routing berbasis path (React Router v7), giliran G0 (21 Sep 2026) + G1 (22 Sep 2026) + G2 (22 Sep 2026)
 
 ```
 DIPUTUSKAN Den 21 Sep 2026 (15 asumsi + 2 tambahan dijawab di chat; label
@@ -511,10 +511,225 @@ Untuk Den (bukan doc-keeper): §12 perlu +1 baris scripts/qa/; §6 pola nama
   di App.jsx); kalimat §6 "App.jsx ke depannya hanya me-render shell dan
   outlet" belum sepenuhnya tercapai (halaman keluar per G2–G6); §6 konvensi
   URL kebab-case punya pengecualian sementara /planned/<id> camelCase (32 id);
-  komentar kode src/routes/index.jsx:8 "135 rute kanonik" basi (167).
+  ~~komentar kode src/routes/index.jsx:8 "135 rute kanonik" basi (167)~~
+  [→ TERTUTUP di G2: komentar headernya ditulis ulang, nol hit "135 rute" di src/].
+  Tambahan sejak G2 (22 Sep 2026): §6 "satu file kecil per modul" mulai terwujud —
+  file modul PERTAMA ada (src/routes/logistics-warehouse.routes.jsx); nama file
+  mengikuti keputusan #11 (.routes.jsx, bukan .routes.js seperti tertulis §6).
+  ⚠️ Komentar kode App.jsx:1447 menyebut komponen "RequireMenu" yang TIDAK ADA di
+  src/ (sisa istilah rancangan G1) — koreksi komentar = ranah Den.
+
+G2 — modul PERTAMA keluar dari LegacyMenuOutlet: Logistics & Warehouse
+     (chain Storbit + Inventory), 22 Sep 2026, branch feat/fs-fase2-5-g2-logistics:
+  SELESAI di branch (dibuat dari main 1e2e97d, sesudah G1 LIVE). PRODUKSI BELUM
+  BERUBAH — G2 belum naik. Nol migrasi/SQL; nol DB; snapshot tidak terdampak;
+  NOL file halaman DIPINDAH lokasi fisik (pemindahan FILE = Fase 3/7); nol prop
+  komponen halaman berubah. Angka diukur ulang doc-keeper; detail per file +
+  dua bug yang diperkenalkan sendiri lalu ditutup: PROGRESS.md 2026-09-22
+  (entri G2, butir 8).
+  Keputusan Den 22 Sep 2026 (G2 sebelumnya TIDAK punya spesifikasi tertulis —
+  dokumen hanya menyebut "G2–G6 hanya atas instruksi Den"):
+    #1 cakupan = chain Storbit + Inventory (13 cabang render / 9 id menu),
+       BUKAN CRM (27 cabang), bukan 15 kelompok detail sekaligus — risiko
+       terkecil, alur paling sering dipakai gudang, handoff teruji di G1;
+       G3–G6 menyusul per modul
+    #2 bentuk = WRAPPER TIPIS per rute (useParams()+useAppShell() → render
+       komponen halaman apa adanya): nol prop berubah, file halaman tidak
+       disentuh (pengecualian sadar: #5)
+    #3 state pembawa DICABUT; tombol kembali → path daftar induk (bukan
+       navigate(-1): dari deep-link bisa melempar keluar aplikasi; bukan state
+       sebagai cermin: menghidupkan lagi dua sumber kebenaran yang baru dihapus
+       G1 untuk activeMenu)
+    #4 AdminHub / TD-129 TIDAK ikut G2 → giliran modul Admin/Foundation
+       (perbaikannya di dalam AdminHub.jsx, paling murah sekali jalan bersama
+       products/:id + user-access/:userId). MENGOREKSI catatan G1 yang menulis
+       "batas AdminHub masuk scope G2"
+    #5 penyatuan jalur Input SP (kontrak G0 #9) = "satu gate + tombol
+       disembunyikan"; biayanya disetujui eksplisit = satu file halaman
+       disentuh (SalesOrderPage.jsx, pembungkus render + komentar)
+  [x] src/routes/logistics-warehouse.routes.jsx (BARU, 340) — 12 rute + 12
+      wrapper; path dari kontrak G0 (MENU_PATHS + DETAIL_ROUTE_TEMPLATES → kini
+      DIPAKAI kode, bukan disalin). 9 id menu: manifest · input · picking ·
+      surat-jalan · storbit-dashboard · shipment · inventory-dashboard ·
+      inventory-stok · inventory-penerimaan. +3 RUTE DETAIL BARU:
+      …/sales-order/:customerId/:spNo · …/picking-packing/:id ·
+      …/delivery-note/:id (handle.menuId = id daftar INDUK → activeMenu,
+      sidebar, gate konten tetap benar). 11 lazy() halaman + handleGeneratePicking
+      + handleCreateDelivery pindah dari App.jsx (nol pemakai lain); helper
+      Boundary = ErrorBoundary+Suspense dengan fallback persis sama
+  [x] src/routes/ModuleShell.jsx (BARU, 36) — pembungkus WAJIB tiap rute modul:
+      bingkai .nexus-main-surface + gate konten (salinan persis penjaga lama,
+      termasuk sifat "selama izin belum settle halaman tetap dirender" = catatan
+      TD-271, bukan keputusan G2)
+  [x] src/routes/RecordNotFound.jsx (BARU, 33) — keadaan "record tidak ada" untuk
+      rute detail; dipakai wrapper Detail SP saja (Picking & SJ sudah punya)
+  [x] src/routes/route-table.jsx (BARU, 18) — SATU daftar childRoutes (modul +
+      legacy), dibaca index.jsx DAN IndexRedirect.jsx; G3–G6 cukup +1 baris
+  [x] src/App.jsx +60/−299 (5.718 → 5.479 baris — PERTAMA KALI TURUN, sudah di
+      bawah angka pra-G1 5.613): 13 cabang render dicabut · 4 state pembawa
+      dicabut (selectedSpId/selectedPickingId/selectedDeliveryId/showInputSP) ·
+      2 handler + 11 lazy() pindah · AccessDeniedPage & ShipmentPage di-export
+      (ShipmentPage = halaman inline yang FILE-nya tetap di App.jsx) ·
+      updateShipmentRow dibentuk di App supaya can() tak perlu di-export dan prop
+      ShipmentPage tidak berubah · loading: spLoading dari useSpItems diambil ·
+      shell 113 → 105 kunci, destructure LegacyMenuOutlet 113 → 94 (AST)
+  [x] legacy.routes.jsx MOVED_MENU_IDS (9 id) → 12 rute modul + 158 legacy = 170,
+      nol path ganda; index.jsx & IndexRedirect.jsx membaca childRoutes.
+      Konsekuensi sampingan: catatan G1 "komentar index.jsx:8 '135 rute' basi"
+      kini TERTUTUP (nol hit "135 rute" di src/)
+  [x] src/modules/logistics/SalesOrderPage.jsx +18/−11 — SATU-SATUNYA file
+      HALAMAN yang disentuh (keputusan #5): tombol "Input SP" dibungkus
+      {onAddSP && ( … )} → HILANG, bukan sekadar mati; prop onAddSP tidak
+      berubah, nol perubahan lain. Sebelumnya tombol itu TANPA GATE SAMA SEKALI
+      padahal menu `input` ber-gate canInputSP dan InputSPPage tak punya guard
+      sendiri = jalan pintas. Efek: role yang melihat daftar SP tanpa hak tulis
+      (mis. ceo/gm/finance) tak lagi melihat tombolnya — PENGETATAN DISENGAJA;
+      blast radius 5 akun uji = nol (hanya warehouse yang bisa membuka manifest,
+      dan ia lolos canInputSP)
+  [x] scripts/qa/detail-routes.mjs (BARU, 170, masuk repo) — uji checklist README
+      butir 2 (refresh di detail → konteks bertahan) & 4 (deep-link id tak sah →
+      keadaan wajar, bukan layar putih) + klik baris mengubah alamat, tombol
+      kembali → daftar, Back/Forward; opsi --suite <modul>, dipakai lagi G3–G6;
+      menolak jalan ke ref produksi, QA_PASSWORD dari env
+  DUA BUG YANG DIPERKENALKAN SENDIRI DI G2, ketemu & ditutup sebelum selesai —
+  pelajarannya berlaku untuk G3–G6:
+    (a) bingkai .nexus-main-surface HILANG untuk halaman yang dipindah — div itu
+        ikut terbawa ke DALAM LegacyMenuOutlet waktu G1 (App.jsx:3268), jadi yang
+        keluar kehilangan padding DAN dua aturan CSS yang menempel pada kelasnya
+        (.rounded-3xl box-shadow + table{min-width}, :2812-2817). Ketahuan dari
+        uji ronde 1 (2/6 lolos) lewat penanda panjang=0 di SEMUA kasus termasuk
+        yang tampak "lolos"; "daftar kosong" yang dilaporkan skrip = ARTEFAK
+        selector, bukan data staging kosong. -> memindahkan blok render keluar
+        dari LegacyMenuOutlet berarti ikut kehilangan pembungkus yang hidup DI
+        DALAMNYA: periksa pembungkusnya, bukan hanya isinya
+    (b) restore "kembali ke menu terakhir" akan RUSAK untuk seluruh path modul —
+        IndexRedirect (G1) memvalidasi nexus_last_path dengan
+        matchRoutes(legacyMenuRoutes, …); begitu modul keluar dari legacy, 12
+        path modul dianggap asing → /home. Ditemukan dari MEMBACA KODE sebelum
+        harness jalan. -> tiap pemindahan modul menggeser makna "daftar rute yang
+        dikenal"; pembacanya bukan cuma router
+  TEMUAN KETIGA (milik G2, bukan bug sesi): deep-link Detail SP dengan id palsu =
+  LAYAR KOSONG — SalesOrderDetailPage tak punya keadaan "tidak ditemukan" (beda
+  dari PickingListDetailPage/DeliveryNoteDetailPage). Ditangani di wrapper lewat
+  RecordNotFound, dengan spLoading ikut diuji supaya SP yang SAH tidak dituduh
+  hilang selama fetch pertama.
+  Gate (diukur ulang doc-keeper SESUDAH perubahan SalesOrderPage.jsx): build
+  clean 3.013 modul (G1 3.009; +4 file rute baru) · 128 chunk JS (= G1) ·
+  lint-baseline 137/21 ✔ = baseline persis · eslint 4 file rute + detail-routes
+  + SalesOrderPage = 0/0 (file peta rute memakai eslint-disable
+  react-refresh/only-export-components, preseden DealPanels.jsx:2) ·
+  check-menu-paths ✔ 176 id / 167 rute — TIDAK berubah (kontrak id tak disentuh),
+  tapi komposisinya bergeser: "id blok render" 48 → 39 = persis 9 id yang pindah.
+  Uji rute detail 18/18 LOLOS (laporan sesi; detail-routes.mjs, build G2 via vite
+  preview, staging, akun zzztest.warehouse) = 3 flow × 5 butir + 3 deep-link
+  palsu; struktur 3×5+3 diverifikasi doc-keeper dari isi skripnya.
+  CHECKLIST MANUAL butir 5 (role terbatas) — DIJALANKAN 23 Sep 2026, LOLOS 4/4
+  (laporan sesi; build G2 via vite preview, staging). Diuji dengan cara lain dari
+  yang diandaikan: bukan mencari akun ceo/gm/finance (tak ada di antara 5 akun
+  uji staging), melainkan GRANT MENU SEMENTARA ke akun viewer yang sudah ada —
+  zzztest.restricted diberi DUA grant view (logistics_sp + logistics_input,
+  company MSI), uji dijalankan, KEDUA GRANT DICABUT lagi; keadaan sebelum/sesudah
+  diverifikasi lewat query DB (user_menu_permissions: 0 → 2 → 0; pembanding
+  zzztest.warehouse tetap 74) sehingga data staging kembali ke keadaan semula dan
+  baseline sweep tetap sahih. Dua grant sekaligus supaya sebabnya tunggal: dengan
+  izin menu input ikut diberikan, satu-satunya sebab tombol bisa hilang adalah
+  ROLE (viewer tak ada di SP_ITEM_WRITER_ROLES). Hasil: (A) daftar SP terbuka
+  (heading "Sales Order / SP") · (B) tombol "Input SP" TIDAK ADA = pengetatan
+  keputusan #5 terbukti RUNTIME, bukan lagi deduksi kode · (C) path /new diketik
+  langsung → Akses Ditolak = gate rute ikut menjaga (dua lapis) · (D) pembanding
+  warehouse tetap melihat tombolnya. Alatnya DI-COMMIT sejak 23 Sep 2026
+  (keputusan Den): scripts/qa/butir5.mjs, sekelas detail-routes.mjs — dipindah
+  dari scripts/qa/out/ (gitignored) supaya G3-G6 mewarisi alat DAN dua pelajaran
+  asersinya; resep manualnya tetap di scripts/qa/README.md §Butir 5. Ronde pertama sempat
+  melaporkan "3/4 lolos" yang MENYESATKAN (asersi A terlalu longgar meloloskan
+  pentalan ke Command Center; akarnya grant tercentang tapi belum tersimpan) —
+  kelas yang sama dengan "identik palsu" menu-sweep.mjs: asersi lolos karena
+  prasyaratnya tak pernah terpenuhi. Sisa checklist G2 yang BELUM dijalankan:
+  butir 1 (masuk dari tiap titik) · 3 (Back/Forward 3× berturut) · 6 (login dari
+  path dalam — terbukti utk path G1 22 Sep, belum diulang utk path modul G2).
+  Detail: PROGRESS.md 2026-09-22 (entri G2, butir 12a/12b).
+  SWEEP — SELESAI, KETIGA MODE IDENTIK dengan baseline G1. 5 akun × 194 tujuan
+  × 3 mode = 2.910 pembanding, NOL gagal-muat, NOL loginShown. Dihitung ulang
+  doc-keeper dari JSON scripts/qa/out/ dan --diff dijalankan ulang sendiri:
+    menu    (label g2d-menu,   startedAt 16:07:35Z) vs baseline/menu-sweep
+            -> ✔ identik (5/5 akun); 970 · gagal-muat 0 · denied 0 · coming-soon 1
+    restore (label g2b-restore, 14:37:28Z) vs baseline/menu-sweep-restore
+            -> ✔ identik; 970 · gagal-muat 0 · denied 15 · coming-soon 57
+    path    (label g2b-path,    15:28:40Z) vs baseline/menu-sweep-path
+            -> ✔ identik; 970 · gagal-muat 0 · denied 15 · coming-soon 57
+  Ketiganya project staging oovmlhilhqzejnawqkvt, meta.targets 194.
+  Ekspektasi yang ditulis SEBELUM hasilnya ada TERBUKTI: memindahkan 9 id ke rute
+  modulnya sendiri tidak menggeser satu pun fingerprint halaman. Dua hal yang
+  layak digarisbawahi: (1) path = perbandingan PERTAMA terhadap
+  baseline/menu-sweep-path sejak folder itu lahir 22 Sep 2026, dan ia identik ->
+  12 rute modul + 3 rute detail nol menggeser fingerprint tujuan MENU (rute /:id
+  diuji terpisah); (2) restore identik sekaligus BUKTI bahwa perbaikan
+  IndexRedirect/route-table.jsx (bug (b) di atas) bekerja — tanpa itu 9 path
+  modul + 3 rute detail dianggap asing dan jatuh ke /home.
+  Catatan status sebelumnya ("mode menu BELUM SAH, ulangi sendirian") SUDAH
+  TERLAMPAUI — menu diulang bersih sebagai g2d-menu; jangan dihidupkan lagi.
+  CATATAN PROSES — dua run dibuang sebelum hasil yang sah (proses, bukan temuan
+  produk):
+    - Run mode menu yang pertama TERCEMAR, dan penyebabnya doc-keeper sendiri:
+      `npm run build` yang dijalankan agen dokumentasi di latar untuk mengukur
+      ulang gate MENIMPA dist/ yang sedang dilayani vite preview; nama chunk
+      ber-hash berubah -> 55 dari 970 tujuan gagal muat + 1 tujuan
+      (vendorPortal-invoice, akun hcga) bergejala sama = 56 "perbedaan" yang
+      seluruhnya artefak. Gejala: lastMenu/lastPath null, surfaceHash = hash
+      string kosong, consoleErrors melonjak, lalu cascade "page.goto: …
+      interrupted by another navigation"; satu akun menggantung >30 menit (node
+      0 % CPU) karena page.evaluate di ekor loop tak ber-timeout. Yang sah dari
+      run itu: 914 dari 970 pembanding nol perbedaan.
+      KOREKSI DIAGNOSIS: catatan pertama menduga penyebabnya KONTENSI (menu +
+      restore paralel, 10 konteks browser ke satu server). Itu bukan akarnya —
+      restore yang jalan berbarengan justru BERSIH, dan 404 atas chunk tertentu
+      adalah tanda khas dist/ ditimpa, bukan tanda beban. PELAJARAN YANG BENAR
+      untuk G3–G6: jangan menjalankan build — termasuk lewat agen/alat lain —
+      selama vite preview melayani dist/. Saran "mode dijalankan berurutan"
+      tetap berguna sebagai kehati-hatian, tapi BUKAN obat kelas kegagalan ini.
+    - Run berikutnya gagal login kelima akun (invalid_credentials), DAN skrip
+      tetap mencetak "✔ identik dengan baseline" padahal NOL data terkumpul —
+      kesimpulan persis terbalik dari kenyataan. Itulah pemicu pengerasan alat.
+  ALAT DIPERKERAS (scripts/qa/menu-sweep.mjs +22/−3, dibaca doc-keeper — bukan
+  kode aplikasi): (a) compare() mengembalikan -1 bila nol akun menghasilkan data
+  -> "✖ pembandingan DIBATALKAN — nol data" + exit 1 (nol data = TIDAK ADA
+  pembanding, bukan nol perbedaan); (b) jalur sweep selalu menyebut cakupan
+  ("✔ identik dengan baseline (5/5 akun)" / "✖ … (HANYA 3/5 akun)") dan exit
+  code gagal juga saat nol perbedaan tapi akun tak lengkap; (c) jalur --diff
+  ikut diselaraskan. Nuansa: baris cakupan hanya dicetak jalur sweep
+  (--compare); jalur --diff dua folder tetap mencetak "✔ identik" polos.
+  Cacat harness sesi (bukan file repo, tidak diperbaiki): output sweep lewat
+  `| tail -18` menyembunyikan progres ±15 menit — untuk G3–G6 pakai tee penuh.
+  Register: +TD-273 (MEDIUM, lihat blok di bawah), nol Keputusan Terbuka baru.
+  TD-12 (App.jsx pertama kali BERKURANG; LegacyMenuOutlet 48 → 39 id) · TD-129 (3 detail Storbit kini punya
+  alamat + refresh-safe; 18 → 14 state cabang render; sisanya G3–G6; AdminHub
+  tetap di luar per #4) · TD-272 TETAP OPEN (gate tidak diubah) · TD-08 tetap
+  (Boundary = ErrorBoundary lama, bukan Sentry) · TD-181 (b) nomor baris bergeser
+  (App.jsx:3414/:3427/:3440).
+  +TD-273 (MEDIUM, BARU — satu-satunya TD dari G2; dinomori atas keputusan Den
+  22 Sep 2026, sebelumnya catatan kandidat di ekor TD-272): GATE KONTEN +
+  bingkai .nexus-main-surface punya DUA salinan selama G2-G6 — App.jsx:3272
+  (39 id yang masih di LegacyMenuOutlet) dan src/routes/ModuleShell.jsx:30
+  (12 rute / 9 id menu modul yang sudah keluar, termasuk 3 rute detail :id).
+  Duplikasi transisional yang DISENGAJA; salinan App.jsx mati sendiri di G6.
+  Gagalnya SENYAP (nol error build/lint/runtime; jumlah rute & id tak bergeser).
+  MENGIKAT: kalau TD-272 dikerjakan SEBELUM G6, kedua salinan wajib diubah dalam
+  SATU perubahan yang sama — menambal satu sisi menutup celah untuk separuh
+  aplikasi dan membiarkannya terbuka untuk separuh lain. Berlaku juga untuk
+  perubahan lain pada penjaga ini (perilaku "selama izin belum settle halaman
+  tetap dirender" = efek samping TD-271; tujuan onGoHome).
+  G3-G6: JANGAN bikin salinan KETIGA — pakai ModuleShell yang sudah ada.
+  Kandidat/tindak lanjut (belum bernomor): cabut dual-write nexus_last_menu +
+  overlay location.state 3 id sintetis saat detail modul lain dapat /:id — masih
+  relevan, karena product-detail justru DIPAKAI wrapper StorbitDashboardRoute
+  untuk drill-down produk (pola lama sengaja dipertahankan: Products belum
+  pindah) · komentar kode App.jsx:1447 menyebut
+  "RequireMenu" yang TIDAK ADA di src/ (sisa istilah rancangan G1; ranah Den,
+  bukan doc-keeper).
 
 G1: SELESAI — di-merge & LIVE di produksi 22 Sep 2026 (merge commit 0efec44).
-  G2–G6: BELUM mulai; hanya atas instruksi Den.
+  G2: SELESAI di branch (chain Storbit + Inventory keluar dari LegacyMenuOutlet;
+      produksi belum berubah). G3–G6: BELUM mulai; hanya atas instruksi Den.
 ```
 
 ```

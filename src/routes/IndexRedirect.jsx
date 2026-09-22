@@ -5,15 +5,17 @@
 // atau — bila belum ada (sesi lama / browser lama) — id `nexus_last_menu`
 // DITERJEMAHKAN ke path lewat pathFor(). Tanpa keduanya → /home.
 //
-// Path tersimpan divalidasi ke tabel rute dulu (matchRoutes): nilai asing/basi
-// tidak boleh mengirim ke rute `*` yang balik lagi ke `/` (loop). Tidak menunggu
+// Path tersimpan divalidasi ke tabel rute LENGKAP dulu (matchRoutes atas
+// `childRoutes`, bukan legacy saja — sejak G2 sebagian modul punya rutenya
+// sendiri): nilai asing/basi tidak boleh mengirim ke rute `*` yang balik lagi
+// ke `/` (loop), dan path modul yang sah tidak boleh dikira asing. Tidak menunggu
 // izin di sini — persis seperti restore lama yang langsung merender menu terakhir;
 // validasi aksesnya tetap milik FIX B guard di App.jsx (menunggu
 // permissionsLoading/bnfAuthLoading sebelum memental).
 import { useState } from 'react';
 import { Navigate, matchRoutes } from 'react-router';
 import { pathFor } from './menu-paths.js';
-import { legacyMenuRoutes } from './legacy.routes.jsx';
+import { childRoutes } from './route-table.jsx';
 
 function readLastPath() {
   let path;
@@ -22,7 +24,7 @@ function readLastPath() {
   } catch {
     return '/home';   // localStorage tidak tersedia (mode privat ketat) → seperti tanpa riwayat
   }
-  if (!path || !path.startsWith('/') || !matchRoutes(legacyMenuRoutes, path)) return '/home';
+  if (!path || !path.startsWith('/') || !matchRoutes(childRoutes, path)) return '/home';
   return path;
 }
 

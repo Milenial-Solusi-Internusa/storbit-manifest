@@ -16,7 +16,7 @@ import {
 import { useAuth } from './contexts/useAuth';
 import useMyApproverScope, { approverKey, HRGA_PENDING_STATUSES } from './hooks/useMyApproverScope';
 import { supabase } from './lib/supabase';
-import { generatePickingFromSp, generateDeliveryFromPicking, listSpOrderStatuses, getSpOrderStatus, setSpFinanceDocs } from './lib/db';
+import { listSpOrderStatuses, getSpOrderStatus, setSpFinanceDocs } from './lib/db';
 import { useCustomers } from './hooks/useCustomers';
 import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
@@ -53,13 +53,8 @@ const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManager
 const HomeDashboard  = lazy(() => import('./modules/home/HomeDashboard'));
 const AssetShell     = lazy(() => import('./modules/assets/AssetShell'));
 const HrgaShell      = lazy(() => import('./modules/hrga/HrgaShell'));
-const SalesOrderPage       = lazy(() => import('./modules/logistics/SalesOrderPage'));
-const SalesOrderDetailPage = lazy(() => import('./modules/logistics/SalesOrderDetailPage'));
-const InputSPPage          = lazy(() => import('./modules/logistics/InputSPPage'));
-const PickingListPage       = lazy(() => import('./modules/logistics/PickingListPage'));
-const PickingListDetailPage = lazy(() => import('./modules/logistics/PickingListDetailPage'));
-const DeliveryNotePage       = lazy(() => import('./modules/logistics/DeliveryNotePage'));
-const DeliveryNoteDetailPage = lazy(() => import('./modules/logistics/DeliveryNoteDetailPage'));
+// 11 halaman Storbit/Inventory di-lazy-import oleh modulnya sendiri sejak
+// Batch FS Fase 2.5 G2 — src/routes/logistics-warehouse.routes.jsx.
 const ProspectListPage     = lazy(() => import('./modules/crm/ProspectListPage'));
 const ProspectFormPage     = lazy(() => import('./modules/crm/ProspectFormPage'));
 const InquiryListPage      = lazy(() => import('./modules/crm/InquiryListPage'));
@@ -97,10 +92,6 @@ const LeadPoolApprovalPage = lazy(() => import('./modules/crm/LeadPoolApprovalPa
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const BulkEditPricePage    = lazy(() => import('./modules/admin/pages/BulkEditPricePage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
-const StorbitDashboardPage   = lazy(() => import('./modules/logistics/StorbitDashboardPage'));
-const InventoryDashboardPage = lazy(() => import('./modules/inventory/pages/InventoryDashboardPage'));
-const StokBarangPage         = lazy(() => import('./modules/inventory/pages/StokBarangPage'));
-const PenerimaanBarangPage   = lazy(() => import('./modules/inventory/pages/PenerimaanBarangPage'));
 const MyProfilePage          = lazy(() => import('./pages/profile/MyProfilePage'));
 
 // ============================
@@ -1453,7 +1444,9 @@ function findMenuItemById(id) {
 
 // AccessDeniedPage — shown in the content area when the current user has no
 // access to activeMenu (Fix C content-level gate / defense-in-depth).
-function AccessDeniedPage({ onGoHome }) {
+// Di-export sejak Batch FS Fase 2.5 G2: dipakai ModuleShell + wrapper rute di
+// src/routes/ untuk halaman yang sudah keluar dari LegacyMenuOutlet.
+export function AccessDeniedPage({ onGoHome }) {
   return (
     <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem 1rem' }}>
       <div style={{ maxWidth: 420, width: '100%', textAlign: 'center', background: 'white', border: '1px solid #E5E7EB', borderRadius: 20, padding: '40px 32px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -1827,6 +1820,10 @@ export default function StorbitManifest() {
   const { customers, saveCustomer: dbSaveCustomer, removeCustomer: dbRemoveCustomer } = useCustomers();
   const {
     rows,
+    // spLoading: dipakai wrapper rute Detail SP (G2) untuk membedakan "SP tidak
+    // ada" dari "data SP belum selesai dimuat" — tanpa itu, deep-link ke SP yang
+    // SAH akan dituduh tidak ditemukan selama fetch pertama.
+    loading: spLoading,
     refresh: refreshSp,
     saveRow: dbSaveRow,
     removeRow: dbRemoveRow,
@@ -1862,11 +1859,12 @@ export default function StorbitManifest() {
   // Lihat PRF dari tab Dokumen Detail Account — jalur TERPISAH dari customerPrfInquiryId
   // (yang untuk BUAT PRF baru dari tab Riwayat). Balik → clear → CustomerDetailPage remount.
   const [customerPrfViewId,     setCustomerPrfViewId]     = useState(null); // prf id → PRFDetailPage (dari tab Dokumen)
-  const [selectedSpId, setSelectedSpId]   = useState(null);  // SP detail page
+  // selectedSpId / selectedPickingId / selectedDeliveryId / showInputSP DICABUT
+  // di Batch FS Fase 2.5 G2: keempat halaman itu kini punya alamat sendiri
+  // (src/routes/logistics-warehouse.routes.jsx), jadi id record dibaca dari URL
+  // lewat useParams — bukan dari state di sini (keputusan Den: URL = sumber
+  // tunggal, pola yang sama dengan activeMenu di G1).
   const [spOrderMap, setSpOrderMap]       = useState({});    // FASE 2E L0: uid → {status, hadCancelledPicking}
-  const [selectedPickingId, setSelectedPickingId] = useState(null);  // picking detail page
-  const [selectedDeliveryId, setSelectedDeliveryId] = useState(null);  // surat jalan detail page
-  const [showInputSP,  setShowInputSP]    = useState(false); // Input SP form
   const [prevAssetMenu, setPrevAssetMenu] = useState('assets-it'); // where to go back from detail
   // CRM module state
   const [showProspectForm,  setShowProspectForm]  = useState(false);
@@ -2113,8 +2111,6 @@ export default function StorbitManifest() {
     setSoFormOpen(false);
     setReportingMomMode('list');
     setReportingMomId(null);
-    setSelectedPickingId(null);
-    setSelectedDeliveryId(null);
   }, [setActiveMenu]);
 
   // Navigate to asset detail — called by list pages on row click.
@@ -2449,37 +2445,6 @@ export default function StorbitManifest() {
     if (dest) navigateTo(dest);
   }, [navigateTo, showToast, setActiveMenu]);
 
-  // Generate a picking list from a confirmed SP, then jump to its detail.
-  // Errors from the RPC (belum confirmed / tidak ada outstanding / sudah ada)
-  // surface as a toast instead of crashing.
-  const handleGeneratePicking = async (spNo, customerId) => {
-    const { data, error } = await generatePickingFromSp(spNo, customerId);
-    if (error) {
-      showToast(error.message || 'Gagal membuat picking list', 'error');
-      return;
-    }
-    if (!data?.picking_list_id) {
-      showToast('Picking list gagal dibuat', 'error');
-      return;
-    }
-    showToast(`Picking list ${data.picking_no} dibuat`);
-    setSelectedSpId(null);        // leave the SP-detail view cleanly
-    setActiveMenu('picking');
-    setSelectedPickingId(data.picking_list_id);
-  };
-
-  // Generate a surat jalan (delivery note) from a DONE picking list, then jump
-  // to its detail. RPC errors (picking belum done / sudah ada) → toast.
-  const handleCreateDelivery = async (picking) => {
-    const { data, error } = await generateDeliveryFromPicking(picking?.id);
-    if (error) { showToast(error.message || 'Gagal membuat surat jalan', 'error'); return; }
-    if (!data?.delivery_note_id) { showToast('Surat jalan gagal dibuat', 'error'); return; }
-    showToast(`Surat jalan ${data.do_no} dibuat`);
-    setSelectedPickingId(null);
-    setActiveMenu('surat-jalan');
-    setSelectedDeliveryId(data.delivery_note_id);
-  };
-
   // ============================
   // Derived
   // ============================
@@ -2795,30 +2760,34 @@ export default function StorbitManifest() {
   // dibutuhkan LegacyMenuRedirect. Objek baru tiap render: region ini memang
   // ikut re-render pada setiap render App sejak dulu (dulu inline), jadi tidak
   // ada perubahan frekuensi render. Kunci = nama variabel lokal apa adanya.
+  // updateShipmentRow — callback siap pakai untuk prop `onUpdate` ShipmentPage
+  // yang kini dirender rute modulnya. Dibentuk di sini karena `can()` helper
+  // module-level App.jsx: dengan begitu prop ShipmentPage tidak berubah DAN
+  // `can` tak perlu ikut di-export.
+  const updateShipmentRow = (r) => can(role, 'shipment') && setShipmentRow(r);
+
   const shell = {
-    activeAssetId, activeCustomerId, activeMenu, activeModule, adminInitialSection, arData,
-    arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail, backFromCustomerDetail,
-    bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canInputSP, canManageTtf, canRenderPage,
-    crmDealInquiry, crmQuotationDetail, currentRoleLabel, customerBySpNo, customerByUid,
-    customerDetailTab, customerInquiryEdit, customerPrfInquiryId, customerPrfViewId,
-    customerQuotationView, customers, dbRemoveRowsBySp, dbSaveRow, dcList, duplicatingQuotation,
-    editingProspect, editingQuotation, enrichedRows, exportCSV, filterMonth, groupedSP,
-    handleCreateDelivery, handleDelete, handleDeleteCustomer, handleGeneratePicking,
-    hasMenuPermission, inquiryPrefill, isBnfAuthorized, monthList, navigateTo,
-    navigateToAssetDetail, navigateToCustomerDetail, permissionsLoading, prfPrefillInquiryId,
-    procPrfDetailId, procPrfEditId, profile, quotationFromInquiryId, quotationFromPrf, refreshSp,
-    reportingMomId, reportingMomMode, role, rows, selectedDeliveryId, selectedPickingId,
-    selectedProduct, selectedSpId, setActiveMenu, setArFilterCustomer, setArFilterStatus,
-    setArSearch, setCrmDealInquiry, setCrmQuotationDetail, setCustomerDetailTab,
-    setCustomerInquiryEdit, setCustomerPrfInquiryId, setCustomerPrfViewId,
-    setCustomerQuotationView, setDuplicatingQuotation, setEditingCustomer, setEditingProspect,
-    setEditingQuotation, setFilterMonth, setFinanceRow, setInquiryPrefill, setPrfPrefillInquiryId,
-    setProcPrfDetailId, setProcPrfEditId, setQuotationFromInquiryId, setQuotationFromPrf,
-    setReportingMomId, setReportingMomMode, setSelectedDeliveryId, setSelectedPickingId,
-    setSelectedProduct, setSelectedSpId, setShipmentRow, setShowAddAR, setShowAddCustomer,
-    setShowInputSP, setShowInquiryForm, setShowProspectForm, setShowQuotationForm, setSoDetailId,
-    setSoFormOpen, setViewingAR, setViewingProfileId, showInputSP, showInquiryForm,
-    showProspectForm, showQuotationForm, showToast, soDetailId, soFormOpen, stats,
+    ShipmentPage, activeAssetId, activeCustomerId, activeMenu, activeModule, adminInitialSection,
+    arData, arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail,
+    backFromCustomerDetail, bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canInputSP,
+    canManageTtf, canRenderPage, crmDealInquiry, crmQuotationDetail, currentRoleLabel,
+    customerBySpNo, customerByUid, customerDetailTab, customerInquiryEdit, customerPrfInquiryId,
+    customerPrfViewId, customerQuotationView, customers, dbRemoveRowsBySp, dbSaveRow, dcList,
+    duplicatingQuotation, editingProspect, editingQuotation, enrichedRows, exportCSV, filterMonth,
+    groupedSP, handleDelete, handleDeleteCustomer, hasMenuPermission, inquiryPrefill,
+    isBnfAuthorized, monthList, navigateTo, navigateToAssetDetail, navigateToCustomerDetail,
+    permissionsLoading, prfPrefillInquiryId, procPrfDetailId, procPrfEditId, profile,
+    quotationFromInquiryId, quotationFromPrf, refreshSp, reportingMomId, reportingMomMode, role,
+    rows, selectedProduct, setActiveMenu, setArFilterCustomer, setArFilterStatus, setArSearch,
+    setCrmDealInquiry, setCrmQuotationDetail, setCustomerDetailTab, setCustomerInquiryEdit,
+    setCustomerPrfInquiryId, setCustomerPrfViewId, setCustomerQuotationView,
+    setDuplicatingQuotation, setEditingCustomer, setEditingProspect, setEditingQuotation,
+    setFilterMonth, setFinanceRow, setInquiryPrefill, setPrfPrefillInquiryId, setProcPrfDetailId,
+    setProcPrfEditId, setQuotationFromInquiryId, setQuotationFromPrf, setReportingMomId,
+    setReportingMomMode, setSelectedProduct, setShowAddAR, setShowAddCustomer, setShowInquiryForm,
+    setShowProspectForm, setShowQuotationForm, setSoDetailId, setSoFormOpen, setViewingAR,
+    setViewingProfileId, showInquiryForm, showProspectForm, showQuotationForm, showToast,
+    soDetailId, soFormOpen, spLoading, stats, updateShipmentRow,
   };
 
   return (
@@ -3266,27 +3235,23 @@ export function LegacyMenuOutlet() {
   const {
     activeAssetId, activeCustomerId, activeMenu, activeModule, adminInitialSection, arData,
     arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail, backFromCustomerDetail,
-    bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canInputSP, canManageTtf, canRenderPage,
-    crmDealInquiry, crmQuotationDetail, currentRoleLabel, customerBySpNo, customerByUid,
-    customerDetailTab, customerInquiryEdit, customerPrfInquiryId, customerPrfViewId,
-    customerQuotationView, customers, dbRemoveRowsBySp, dbSaveRow, dcList, duplicatingQuotation,
-    editingProspect, editingQuotation, enrichedRows, exportCSV, filterMonth, groupedSP,
-    handleCreateDelivery, handleDelete, handleDeleteCustomer, handleGeneratePicking,
-    hasMenuPermission, inquiryPrefill, isBnfAuthorized, monthList, navigateTo,
-    navigateToAssetDetail, navigateToCustomerDetail, permissionsLoading, prfPrefillInquiryId,
-    procPrfDetailId, procPrfEditId, profile, quotationFromInquiryId, quotationFromPrf, refreshSp,
-    reportingMomId, reportingMomMode, role, rows, selectedDeliveryId, selectedPickingId,
-    selectedProduct, selectedSpId, setActiveMenu, setArFilterCustomer, setArFilterStatus,
-    setArSearch, setCrmDealInquiry, setCrmQuotationDetail, setCustomerDetailTab,
-    setCustomerInquiryEdit, setCustomerPrfInquiryId, setCustomerPrfViewId,
+    bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canManageTtf, canRenderPage,
+    crmDealInquiry, crmQuotationDetail, currentRoleLabel, customerDetailTab, customerInquiryEdit,
+    customerPrfInquiryId, customerPrfViewId, customerQuotationView, customers, dcList,
+    duplicatingQuotation, editingProspect, editingQuotation, enrichedRows, filterMonth, groupedSP,
+    handleDeleteCustomer, hasMenuPermission, inquiryPrefill, isBnfAuthorized, monthList,
+    navigateTo, navigateToAssetDetail, navigateToCustomerDetail, permissionsLoading,
+    prfPrefillInquiryId, procPrfDetailId, procPrfEditId, profile, quotationFromInquiryId,
+    quotationFromPrf, reportingMomId, reportingMomMode, role, rows, selectedProduct, setActiveMenu,
+    setArFilterCustomer, setArFilterStatus, setArSearch, setCrmDealInquiry, setCrmQuotationDetail,
+    setCustomerDetailTab, setCustomerInquiryEdit, setCustomerPrfInquiryId, setCustomerPrfViewId,
     setCustomerQuotationView, setDuplicatingQuotation, setEditingCustomer, setEditingProspect,
     setEditingQuotation, setFilterMonth, setFinanceRow, setInquiryPrefill, setPrfPrefillInquiryId,
     setProcPrfDetailId, setProcPrfEditId, setQuotationFromInquiryId, setQuotationFromPrf,
-    setReportingMomId, setReportingMomMode, setSelectedDeliveryId, setSelectedPickingId,
-    setSelectedProduct, setSelectedSpId, setShipmentRow, setShowAddAR, setShowAddCustomer,
-    setShowInputSP, setShowInquiryForm, setShowProspectForm, setShowQuotationForm, setSoDetailId,
-    setSoFormOpen, setViewingAR, setViewingProfileId, showInputSP, showInquiryForm,
-    showProspectForm, showQuotationForm, showToast, soDetailId, soFormOpen, stats,
+    setReportingMomId, setReportingMomMode, setSelectedProduct, setShowAddAR, setShowAddCustomer,
+    setShowInquiryForm, setShowProspectForm, setShowQuotationForm, setSoDetailId, setSoFormOpen,
+    setViewingAR, setViewingProfileId, showInquiryForm, showProspectForm, showQuotationForm,
+    showToast, soDetailId, soFormOpen, stats,
   } = useAppShell();
 
   return (
@@ -3373,143 +3338,6 @@ export function LegacyMenuOutlet() {
               capabilities={['Planned for a future ERP phase', 'Part of the Nexus roadmap']}
             />
           )}
-          {activeMenu === 'manifest' && !selectedSpId && !showInputSP && (
-            <ErrorBoundary title="Sales Order section temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <SalesOrderPage
-                  groupedSP={groupedSP}
-                  customers={customers}
-                  dcList={dcList}
-                  role={role}
-                  onSelectSP={(g) => setSelectedSpId({ spNo: g.spNo, customerId: g.customerId })}
-                  onAddSP={() => setShowInputSP(true)}
-                  onExport={exportCSV}
-                  onRefresh={refreshSp}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'manifest' && !selectedSpId && showInputSP && (
-            <ErrorBoundary title="Input SP section temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <InputSPPage
-                  onBack={() => setShowInputSP(false)}
-                  customers={customers}
-                  dcList={dcList}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'manifest' && selectedSpId && (
-            <ErrorBoundary title="SP Detail section temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <SalesOrderDetailPage
-                  key={`${selectedSpId.customerId}|${selectedSpId.spNo}`}
-                  spNo={selectedSpId.spNo}
-                  items={enrichedRows.filter(r => r.spNo === selectedSpId.spNo && r.customerId === selectedSpId.customerId)}
-                  group={groupedSP.find(g => g.uid === `${selectedSpId.customerId}|${selectedSpId.spNo}`) || null}
-                  onBack={() => setSelectedSpId(null)}
-                  onSaveItem={dbSaveRow}
-                  onDeleteItem={handleDelete}
-                  onDeleteSP={async (spNo, customerId) => {
-                    await dbRemoveRowsBySp(spNo, customerId);
-                    setSelectedSpId(null);
-                    showToast(`SP ${spNo} dihapus`);
-                  }}
-                  onGeneratePicking={handleGeneratePicking}
-                  onRefresh={refreshSp}
-                  onOpenPicking={(pid) => { setSelectedSpId(null); setActiveMenu('picking'); setSelectedPickingId(pid); }}
-                  onOpenDelivery={(did) => { setSelectedSpId(null); setActiveMenu('surat-jalan'); setSelectedDeliveryId(did); }}
-                  showToast={showToast}
-                  role={role}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'picking' && !selectedPickingId && (
-            <ErrorBoundary title="Picking List section temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <PickingListPage
-                  customerByUid={customerByUid}
-                  onOpenDetail={(id) => setSelectedPickingId(id)}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'picking' && selectedPickingId && (
-            <ErrorBoundary title="Picking Detail section temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <PickingListDetailPage
-                  pickingListId={selectedPickingId}
-                  onBack={() => setSelectedPickingId(null)}
-                  onCreateDelivery={handleCreateDelivery}
-                  onGoToSp={(spNo, customerId) => { setSelectedPickingId(null); setActiveMenu('manifest'); setSelectedSpId({ spNo, customerId }); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'surat-jalan' && !selectedDeliveryId && (
-            <ErrorBoundary title="Surat Jalan section temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <DeliveryNotePage
-                  customerBySpNo={customerBySpNo}
-                  onOpenDetail={(id) => setSelectedDeliveryId(id)}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'surat-jalan' && selectedDeliveryId && (
-            <ErrorBoundary title="Surat Jalan Detail section temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <DeliveryNoteDetailPage
-                  deliveryNoteId={selectedDeliveryId}
-                  onBack={() => setSelectedDeliveryId(null)}
-                  onGoToPicking={(pid) => { setSelectedDeliveryId(null); setActiveMenu('picking'); setSelectedPickingId(pid); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'input' && (canInputSP ? (
-            <ErrorBoundary title="Input SP section temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <InputSPPage
-                  onBack={() => setActiveMenu('manifest')}
-                  customers={customers}
-                  dcList={dcList}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          ) : (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          ))}
-          {activeMenu === 'shipment' && (canRenderPage('shipment') ? (
-            <ShipmentPage rows={enrichedRows} onUpdate={(r) => can(role,'shipment') && setShipmentRow(r)} role={role}/>
-          ) : (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          ))}
           {activeMenu === 'finance' && (canRenderPage('finance') ? (
             <FinancePage rows={enrichedRows} onUpdate={(r) => can(role,'finance') && setFinanceRow(r)} role={role}/>
           ) : (
@@ -3648,76 +3476,6 @@ export function LegacyMenuOutlet() {
                 </div>
               }>
                 <HrgaShell activePage={activeMenu} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── Storbit: Dashboard ─────────────────────────────────────────── */}
-          {activeMenu === 'storbit-dashboard' && (
-            <ErrorBoundary title="Dashboard Storbit temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <StorbitDashboardPage
-                  customers={customers}
-                  showToast={showToast}
-                  // Navigasi baris tabel drill-down — meniru verbatim dua
-                  // callback yang sudah ada: onSelectSP di SalesOrderPage
-                  // (setSelectedSpId dgn komposit spNo+customerId) dan
-                  // onSelectProduct di ProductsPage (setSelectedProduct + pindah
-                  // menu). Bedanya cuma satu: dashboard hidup di activeMenu
-                  // 'storbit-dashboard', jadi setActiveMenu WAJIB ikut dipanggil
-                  // — detail SP hanya dirender di bawah activeMenu 'manifest'.
-                  onSelectSP={(r) => {
-                    setSelectedSpId({ spNo: r.sp_no, customerId: r.customer_id });
-                    setActiveMenu('manifest');
-                  }}
-                  onSelectProduct={(r) => {
-                    setSelectedProduct({ id: r.product_id });
-                    setActiveMenu('product-detail');
-                  }}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── Inventory: Dashboard ───────────────────────────────────────── */}
-          {activeMenu === 'inventory-dashboard' && (
-            <ErrorBoundary title="Dashboard Inventory temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <InventoryDashboardPage />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── Inventory: Stok Barang ─────────────────────────────────────── */}
-          {activeMenu === 'inventory-stok' && (
-            <ErrorBoundary title="Stok Barang temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <StokBarangPage setActiveMenu={setActiveMenu}/>
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── Inventory: Penerimaan Barang ───────────────────────────────── */}
-          {activeMenu === 'inventory-penerimaan' && (
-            <ErrorBoundary title="Penerimaan Barang temporarily unavailable">
-              <Suspense fallback={
-                <div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>
-                  Loading...
-                </div>
-              }>
-                <PenerimaanBarangPage setActiveMenu={setActiveMenu}/>
               </Suspense>
             </ErrorBoundary>
           )}
@@ -4449,7 +4207,10 @@ function DocChip({ label, active }) {
 // ============================
 // Shipment page
 // ============================
-function ShipmentPage({ rows, onUpdate, role }) {
+// Di-export sejak Batch FS Fase 2.5 G2 — dirender oleh rute modulnya
+// (src/routes/logistics-warehouse.routes.jsx), bukan lagi oleh LegacyMenuOutlet.
+// Halaman ini masih tinggal di App.jsx; pemindahan FILE-nya = Fase 3/7.
+export function ShipmentPage({ rows, onUpdate, role }) {
   const pending = rows.filter(r => r.status !== 'Closed');
   return (
     <div className="space-y-5 animate-fade-in">
