@@ -374,12 +374,14 @@ G0 — fondasi TANPA perubahan perilaku (branch feat/fs-fase2-5-router):
   NOL kode aplikasi baru; G1 TETAP belum mulai [→ G1 dikerjakan 22 Sep 2026,
   blok berikut].
 
-G1 — mekanisme alamat ditukar: `?menu=<id>` → PATH (22 Sep 2026, branch yang sama):
-  KODE SELESAI + terverifikasi lokal/staging, MENUNGGU REVIEW Den (Vercel
-  Preview + staging). Nol migrasi/SQL; produksi tidak berubah sampai main
-  di-deploy; NOL halaman pindah lokasi fisik; NOL prop komponen halaman
-  berubah — hanya bentuk alamat + sumber activeMenu (state → URL). Angka diukur
-  ulang doc-keeper (working tree); detail per file: PROGRESS.md 2026-09-22.
+G1 — mekanisme alamat ditukar: `?menu=<id>` → PATH (22 Sep 2026):
+  SELESAI, DIREVIEW Den, DI-MERGE, dan LIVE DI PRODUKSI 22 Sep 2026 (PR #31 →
+  main lewat MERGE COMMIT 0efec44 — keputusan Den: bukan squash/rebase, supaya
+  3 commit c729d99 / 2df30f8 / 76beb9a tetap bisa ditelusuri satu-satu; branch
+  feat/fs-fase2-5-router tidak dihapus). Nol migrasi/SQL; NOL halaman pindah
+  lokasi fisik; NOL prop komponen halaman berubah — hanya bentuk alamat +
+  sumber activeMenu (state → URL). Angka diukur ulang doc-keeper; detail per
+  file + bukti merge/CI/deploy: PROGRESS.md 2026-09-22 (butir 14).
   [x] src/main.jsx: <RouterProvider router={router} useTransitions={false}/>
       di dalam AuthProvider; root route = <AuthGate><App/></AuthGate> (urutan
       pembungkus tetap). useTransitions={false} = prop resmi react-router 7.18
@@ -434,10 +436,9 @@ G1 — mekanisme alamat ditukar: `?menu=<id>` → PATH (22 Sep 2026, branch yang
   Uji interaktif super_admin (laporan sesi): sidebar, alur detail/handoff,
   Back/Forward, `/?menu=` → path, `/foo/bar` → `/`, drawer mobile, logout —
   lolos. BELUM saat itu: login dari path dalam · akun sales via sidebar ·
-  Vercel Preview — diputuskan Den 22 Sep: branch di-push ke origin (tanpa
-  merge) supaya Preview terbentuk (status push = git, tidak dicatat di sini).
-  [→ Preview TERBUKTI + login dari path dalam LOLOS, lihat ekor blok ini;
-  sisa: uji akun sales via sidebar + CI run pertama.]
+  Vercel Preview. [→ Preview + login dari path dalam LOLOS, CI hijau, deploy
+  produksi terverifikasi — lihat ekor blok ini; sisa: uji akun sales via
+  sidebar.]
   Register: nol TD baru, nol Keputusan Terbuka baru (TD-12 tetap; TD-272 TETAP
   OPEN — gate tidak diubah; TD-08 ErrorBoundary Sentry sengaja tidak
   dikerjakan) — keduanya DIKONFIRMASI Den 22 Sep 2026: tetap di luar scope G1.
@@ -455,10 +456,23 @@ G1 — mekanisme alamat ditukar: `?menu=<id>` → PATH (22 Sep 2026, branch yang
   `url` yang dibuka berbeda). Sejak ini tiap mode ↔ baseline mode-nya sendiri,
   --ignore tidak wajib (scripts/qa/README.md, diperbarui sesi).
   Vercel Preview TERBUKTI (laporan sesi + uji Den): rewrite vercel.json jalan
-  (/crm/dashboard, /crm/quotation terbuka; path dalam → 200 text/html index
-  yang sama, /icons.svg & /assets/*.js tetap aset) dan LOGIN DARI PATH DALAM
-  mendarat di Quotation List, bukan Home (butir 6 checklist README tertutup).
-  Den memberi lampu hijau merge (PR akan dibuka) — status merge/CI = git.
+  dan LOGIN DARI PATH DALAM mendarat di Quotation List, bukan Home (butir 6
+  checklist README tertutup) → lampu hijau merge dari Den.
+  PRODUKSI (22 Sep 2026, laporan sesi — HTTP, nol login): deploy terverifikasi
+  (index.html sha + chunk index berubah); 8 path dalam → 200 text/html
+  byte-identik root, termasuk /planned/jobCosting dan /foo/bar; aset tetap
+  aset (application/javascript · image/svg+xml · image/png); chunk
+  vendor-router-* ter-deploy (react-router masuk bundle produksi, bukan
+  tree-shaken seperti G0). Sebelum merge /crm/dashboard = 404 text/plain →
+  inilah bukti vercel.json bekerja di produksi (§6/G0 "belum terbukti" sudah
+  terlampaui). CI GitHub Actions jalan PERTAMA kali sejak dibuat di G0: dua
+  run HIJAU (PR + pasca-merge), angkanya cocok pengukuran doc-keeper (build
+  3.009 · lint 137/21 · 176 id). Anotasi untuk Den (bukan kegagalan):
+  actions/checkout@v4 + setup-node@v4 menargetkan Node 20 yang deprecated;
+  ubuntu-latest → Ubuntu 26 mulai 19 Okt 2026 = housekeeping workflow.
+  Baseline sweep scripts/qa/baseline/* kini mencerminkan kode yang LIVE di
+  produksi → sweep berikutnya dibandingkan ke perilaku produksi, bukan ke
+  main pra-G1. BELUM: uji interaktif akun sales lewat sidebar.
   BATAS G1 YANG DISENGAJA (bukan temuan/gap baru; koreksi atas dugaan saat uji
   Preview): halaman detail & form yang dibuka DARI dalam satu menu — Detail
   Deal, Detail Quotation, Detail PRF, Detail SP, Detail Picking/Surat Jalan,
@@ -499,8 +513,8 @@ Untuk Den (bukan doc-keeper): §12 perlu +1 baris scripts/qa/; §6 pola nama
   URL kebab-case punya pengecualian sementara /planned/<id> camelCase (32 id);
   komentar kode src/routes/index.jsx:8 "135 rute kanonik" basi (167).
 
-G1: SELESAI (kode), menunggu review Den. G2–G6: BELUM mulai; hanya atas
-  instruksi Den, setelah review G1.
+G1: SELESAI — di-merge & LIVE di produksi 22 Sep 2026 (merge commit 0efec44).
+  G2–G6: BELUM mulai; hanya atas instruksi Den.
 ```
 
 ```
