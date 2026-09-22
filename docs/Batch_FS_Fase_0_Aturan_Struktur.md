@@ -623,6 +623,30 @@ G2 — modul PERTAMA keluar dari LegacyMenuOutlet: Logistics & Warehouse
   Uji rute detail 18/18 LOLOS (laporan sesi; detail-routes.mjs, build G2 via vite
   preview, staging, akun zzztest.warehouse) = 3 flow × 5 butir + 3 deep-link
   palsu; struktur 3×5+3 diverifikasi doc-keeper dari isi skripnya.
+  CHECKLIST MANUAL butir 5 (role terbatas) — DIJALANKAN 23 Sep 2026, LOLOS 4/4
+  (laporan sesi; build G2 via vite preview, staging). Diuji dengan cara lain dari
+  yang diandaikan: bukan mencari akun ceo/gm/finance (tak ada di antara 5 akun
+  uji staging), melainkan GRANT MENU SEMENTARA ke akun viewer yang sudah ada —
+  zzztest.restricted diberi DUA grant view (logistics_sp + logistics_input,
+  company MSI), uji dijalankan, KEDUA GRANT DICABUT lagi; keadaan sebelum/sesudah
+  diverifikasi lewat query DB (user_menu_permissions: 0 → 2 → 0; pembanding
+  zzztest.warehouse tetap 74) sehingga data staging kembali ke keadaan semula dan
+  baseline sweep tetap sahih. Dua grant sekaligus supaya sebabnya tunggal: dengan
+  izin menu input ikut diberikan, satu-satunya sebab tombol bisa hilang adalah
+  ROLE (viewer tak ada di SP_ITEM_WRITER_ROLES). Hasil: (A) daftar SP terbuka
+  (heading "Sales Order / SP") · (B) tombol "Input SP" TIDAK ADA = pengetatan
+  keputusan #5 terbukti RUNTIME, bukan lagi deduksi kode · (C) path /new diketik
+  langsung → Akses Ditolak = gate rute ikut menjaga (dua lapis) · (D) pembanding
+  warehouse tetap melihat tombolnya. Alatnya (scripts/qa/out/butir5.mjs) SENGAJA
+  di luar repo (folder gitignored) — resep manualnya di scripts/qa/README.md
+  §Checklist; masuk-repo atau tidak = keputusan Den. Ronde pertama sempat
+  melaporkan "3/4 lolos" yang MENYESATKAN (asersi A terlalu longgar meloloskan
+  pentalan ke Command Center; akarnya grant tercentang tapi belum tersimpan) —
+  kelas yang sama dengan "identik palsu" menu-sweep.mjs: asersi lolos karena
+  prasyaratnya tak pernah terpenuhi. Sisa checklist G2 yang BELUM dijalankan:
+  butir 1 (masuk dari tiap titik) · 3 (Back/Forward 3× berturut) · 6 (login dari
+  path dalam — terbukti utk path G1 22 Sep, belum diulang utk path modul G2).
+  Detail: PROGRESS.md 2026-09-22 (entri G2, butir 12a/12b).
   SWEEP — SELESAI, KETIGA MODE IDENTIK dengan baseline G1. 5 akun × 194 tujuan
   × 3 mode = 2.910 pembanding, NOL gagal-muat, NOL loginShown. Dihitung ulang
   doc-keeper dari JSON scripts/qa/out/ dan --diff dijalankan ulang sendiri:

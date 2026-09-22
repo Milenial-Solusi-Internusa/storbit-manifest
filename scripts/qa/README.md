@@ -46,12 +46,32 @@ Sweep hanya membuktikan "buka langsung + identitas halaman". Per giliran, uji ma
 6. **Login dari path dalam** (bukan `/`): setelah login mendarat di path itu.
 7. Catat hasil di `PROGRESS.md` giliran tersebut (lolos/gagal per butir, akun yang dipakai).
 
-Butir **2** dan **4** punya alat sendiri sejak G2 — jalankan `detail-routes.mjs` untuk modul yang baru dipindah, lalu tetap lakukan butir 1/3/5/6 manual:
+Butir **2** dan **4** punya alat sendiri sejak G2 — jalankan `detail-routes.mjs` untuk modul yang baru dipindah, lalu tetap lakukan butir **1/3/6** manual (butir **5** punya resep sendiri di bawah):
 
 ```bash
 QA_PASSWORD='<password bersama akun uji>' node scripts/qa/detail-routes.mjs \
   --base http://localhost:4173 \
   --account zzztest.warehouse@msi.com --suite logistics-warehouse
 ```
+
+### Butir 5 (role terbatas) — resep konkret sejak 23 Sep 2026
+
+Masalahnya berulang: gate yang mau diuji sering menolak **role** yang **tidak ada di antara 5 akun uji** (G2: `canInputSP` menolak `ceo`/`gm`/`finance`; kelima akun uji hanya mencakup sales/warehouse/hcga/procurement/viewer). Yang dipakai di G2 — dan boleh ditiru per giliran — adalah **membalik arah**: bukan membuat/mencari akun ber-role lain, tapi **memberi grant menu SEMENTARA ke akun `viewer` yang sudah ada**.
+
+1. **Beri grant lewat User Access** ke `zzztest.restricted@msi.com` (role `viewer`, level 99, normalnya nol grant): **semua menu yang dibutuhkan alur**, termasuk menu tujuan yang digerbangi role. Contoh G2: `logistics_sp` **dan** `logistics_input`. ⭐ **Beri yang kedua juga** — dengan izin menu lengkap, satu-satunya sebab tombol/halaman bisa tertutup adalah **ROLE**-nya; kalau izin menunya sengaja dikurangi, dua sebab bercampur dan tesnya tumpul.
+2. **Verifikasi grant TERSIMPAN lewat DB, bukan dari layar** — `select … from user_menu_permissions where user_id = …` sebelum uji (harus naik dari 0) dan sesudah dicabut (harus balik 0). Centang di form ≠ baris di tabel; lihat pelajaran di bawah.
+3. Jalankan ujinya (build yang diukur via `vite preview` + DB staging, pola pengaman sama dengan skrip lain: `QA_PASSWORD` dari env, menolak ref produksi).
+4. ⛔ **CABUT kembali semua grant sementara.** Data staging wajib kembali ke keadaan semula — kalau tidak, `scripts/qa/baseline/*` (yang direkam dari akun-akun ini) berhenti sahih dan sweep berikutnya melaporkan "regresi" palsu.
+5. Sertakan **pembanding**: akun yang memang berhak (G2: `zzztest.warehouse`) harus tetap melihat tombol/halamannya — tanpa itu, "hilang" bisa berarti "rusak untuk semua orang".
+6. Uji **dua lapis**, bukan satu: tombol/menu disembunyikan **dan** path-nya diketik langsung → `AccessDenied`.
+
+⚠️ Alat uji butir 5 G2 (`scripts/qa/out/butir5.mjs`) **sengaja TIDAK masuk repo** — `scripts/qa/out/` di-gitignore, beda dari `menu-sweep.mjs`/`detail-routes.mjs` yang di-commit. Resep di atas ditulis supaya butir 5 tetap bisa diulang tanpa skrip itu; **memindahkannya ke repo = keputusan Den**, bukan diputuskan sendiri saat giliran berikutnya.
+
+⭐ **Pelajaran lintas-alat (23 Sep 2026) — asersi yang lolos karena PRASYARATNYA tak pernah terpenuhi.** Ronde pertama uji butir 5 melaporkan **"3/4 lolos"**, dan angka itu **menyesatkan**: asersi "halaman terbuka" ditulis terlalu longgar (`tidak ditolak && panjang teks > 200`), sehingga **pentalan ke Command Center lolos sebagai "halaman SP terbuka"** — lalu asersi berikutnya ("tombol X tidak ada") ikut "lolos" **karena alasan yang salah**, tombol itu memang tak ada di dashboard. Akarnya: grant baru **tercentang di layar tapi belum tersimpan**. Ini **kelas yang sama** dengan "identik palsu" `menu-sweep.mjs` di atas (nol data dibaca sebagai nol perbedaan). Dua aturan yang berlaku untuk **semua** alat QA di sini:
+
+- **Asersi identitas harus menyebut yang spesifik** (heading halaman yang dituju), bukan sekadar "tidak error / ada isinya".
+- **Kalau asersi PRASYARAT gagal, asersi turunannya JANGAN dijalankan** — berhenti dengan exit code gagal + petunjuk apa yang harus dicek. Lebih baik nol angka daripada angka yang terbaca seperti keberhasilan.
+
+Jejak: `PROGRESS.md` 2026-09-22 butir 12a/12b (butir 5 G2, LOLOS 4/4) & butir 13b (pengerasan `menu-sweep.mjs`). Ini **pelajaran proses, sengaja bukan TD** (keputusan Den).
 
 Akun uji staging & pola aksesnya: `PROGRESS.md` 2026-09-21 (password bersama — tanya Den, tidak ditulis di repo).
