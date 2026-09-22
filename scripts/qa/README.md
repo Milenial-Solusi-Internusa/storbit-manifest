@@ -22,6 +22,7 @@ QA_PASSWORD='<password bersama akun uji>' node scripts/qa/menu-sweep.mjs \
 ```
 
 - `--mode menu` (default, G0): buka `?menu=<id>`. `--mode path` (sejak G1): buka `pathFor(id)`, dan `?menu=<id>` lama diharapkan ter-redirect.
+- **Sejak G1 (22 Sep 2026)** alamat berbentuk path, jadi field `finalSearch`/`finalPath`/`lastPath` PASTI berbeda dari baseline lama — kecualikan dengan `--ignore finalSearch,finalPath,lastPath`. Pembanding per mode: `menu` → `baseline/menu-sweep` (gate adopsi `?menu=` lama direplikasi persis), `restore` → `baseline/menu-sweep-restore`, dan **`path` → `baseline/menu-sweep-restore`** juga (path yang dibuka langsung = "activeMenu sudah X sejak awal", semantik yang sama dengan restore: validasi FIX B, bukan gate adopsi). Perbedaan yang diharapkan G1 dicatat di `PROGRESS.md` 2026-09-22.
 - Output per akun → `scripts/qa/out/<label>/<email>.json` (di-gitignore). Baseline resmi → `scripts/qa/baseline/menu-sweep/<email>.json` (di-commit; hash saja, nol data halaman).
 - Fingerprint per tujuan: `finalSearch`/`finalPath` (adopsi vs scrub URL), `lastMenu`, penanda `loginShown`/`accessDenied`/`comingSoon`/`notFound`/`homeShown`, `headings` (angka dimask), `surfaceHash` + `structHash` (sha256 teks & struktur `.nexus-main-surface`, angka dimask), jumlah console error.
 - Perbedaan yang **diharapkan** saat baseline diperbarui (mis. G1: `finalSearch` kosong karena URL jadi path) harus disebut eksplisit di PROGRESS.md; selain itu = regresi.

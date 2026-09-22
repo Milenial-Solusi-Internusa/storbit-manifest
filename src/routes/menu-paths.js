@@ -1,8 +1,9 @@
 // src/routes/menu-paths.js
 // ============================================================================
-// Batch FS Fase 2.5 — KONTRAK URL (G0: tabel ini lahir sebagai KODE MATI;
-// belum diimpor siapa pun di src/. Pemakai pertamanya = G1, saat mekanisme
-// `?menu=<id>` ditukar ke path React Router).
+// Batch FS Fase 2.5 — KONTRAK URL. Lahir di G0 sebagai kode mati; sejak G1
+// (22 Sep 2026) DIPAKAI: src/routes/legacy.routes.jsx membangun rute dari
+// MENU_PATHS ∪ PLANNED, App.jsx memanggil pathFor() di setActiveMenu/FIX B,
+// LegacyMenuRedirect/IndexRedirect menerjemahkan `?menu=<id>` & nexus_last_menu.
 //
 // Satu sumber untuk tiga hal:
 //   1. MENU_PATHS      — id menu yang bisa dicapai hari ini (pohon ERP_MENU_GROUPS
@@ -127,7 +128,8 @@ export const MENU_PATHS = Object.freeze({
 });
 
 /** Template rute detail/aksi yang akan lahir saat modulnya dipindah (G2–G6).
- *  Dokumentasi kontrak; belum dipakai kode mana pun di G0. */
+ *  Dokumentasi kontrak; belum dipakai kode mana pun (G1: detail sintetis masih
+ *  dibawa lewat location.state di path daftar induknya). */
 export const DETAIL_ROUTE_TEMPLATES = Object.freeze({
   'crm-inquiry':        ['/crm/inquiry/new', '/crm/inquiry/:id', '/crm/inquiry/:id/edit'],
   'quotation-draft':    ['/crm/quotation/new', '/crm/quotation/:id', '/crm/quotation/:id/edit'],
@@ -161,7 +163,8 @@ export const ADMIN_SECTION_IDS = Object.freeze([
 ]);
 
 /** Id pohon menu yang hari ini merender ComingSoon (PLANNED_MODULES / catch-all
- *  di App.jsx) — 71 id. Path sementara `/planned/<id>` (keputusan #3). */
+ *  di App.jsx) — 71 id kebab-case + 32 id camelCase (di bawah). Path sementara
+ *  `/planned/<id>` (keputusan #3). */
 export const PLANNED_MENU_IDS = Object.freeze([
   // Core › Command Center children
   'dashboard-tasks', 'dashboard-notifications', 'dashboard-activity',
@@ -190,6 +193,22 @@ export const PLANNED_MENU_IDS = Object.freeze([
   'reporting-form-report',
   'audit', 'audit-activity', 'audit-compliance', 'audit-log',
   'performance', 'performance-system', 'performance-cache',
+  // ── 32 id camelCase (ditambahkan G1, 22 Sep 2026) ────────────────────────
+  // Terlewat di G0: regex gate check-menu-paths.mjs hanya menyapu id kebab-case,
+  // padahal pohon ERP_MENU_GROUPS memuat id camelCase ini. Dua di antaranya
+  // (jobCosting, cashBank) = leaf sidebar Finance yang bisa diklik — tanpa entri
+  // ini setActiveMenu('jobCosting') tidak punya path dan klik-nya diam.
+  // Id dipakai VERBATIM di path (/planned/jobCosting) sesuai #3 — bukan kebab —
+  // supaya PLANNED_MODULES[activeMenu] (ComingSoon spesifik) tetap cocok tanpa
+  // mengubah pohon menu; rename ke kebab-case = kandidat Fase 3/8 Batch FS.
+  'jobCosting', 'cashBank',
+  'procRequest', 'procRequest-buat', 'procRequest-semua', 'procRequest-pending', 'procRequest-arsip',
+  'purchaseOrder', 'purchaseOrder-buat', 'purchaseOrder-semua', 'purchaseOrder-pending', 'purchaseOrder-history',
+  'docMgmt', 'docMgmt-upload', 'docMgmt-semua', 'docMgmt-kategori', 'docMgmt-arsip',
+  'apiCenter', 'apiCenter-keys', 'apiCenter-webhook', 'apiCenter-log',
+  'publicTracking', 'publicTracking-page', 'publicTracking-settings',
+  'customerPortal', 'customerPortal-dashboard', 'customerPortal-tracking', 'customerPortal-history',
+  'vendorPortal', 'vendorPortal-dashboard', 'vendorPortal-po', 'vendorPortal-invoice',
 ]);
 
 export const PLANNED_PREFIX = '/planned';

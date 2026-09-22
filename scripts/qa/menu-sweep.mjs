@@ -22,7 +22,9 @@
 //   node scripts/qa/menu-sweep.mjs … --compare scripts/qa/baseline/menu-sweep
 // Opsi: --env .env.local (sumber VITE_SUPABASE_URL/KEY) · --mode menu|restore|path · --diff <dirA> <dirB> ·
 //       --out <dir> (default scripts/qa/out/<label>) · --ids a,b (subset) ·
-//       --settle <ms> (default 1200) · --headed
+//       --settle <ms> (default 1200) · --headed ·
+//       --ignore a,b (field fingerprint yang SENGAJA dikecualikan dari pembanding, mis. G1:
+//         finalSearch,finalPath,lastPath — alamat berubah bentuk by design; sebutkan di PROGRESS.md)
 // Butuh Google Chrome lokal (playwright-core channel 'chrome', tanpa unduh browser).
 
 import { chromium } from 'playwright-core';
@@ -48,6 +50,7 @@ const SETTLE_MS = Number(opt('settle', '1200'));
 const COMPARE = opt('compare', null);
 const ACCOUNTS = (opt('accounts', '') || '').split(',').map(s => s.trim()).filter(Boolean);
 const ONLY_IDS = (opt('ids', '') || '').split(',').map(s => s.trim()).filter(Boolean);
+const IGNORE_EXTRA = (opt('ignore', '') || '').split(',').map(s => s.trim()).filter(Boolean);
 const PASSWORD = process.env.QA_PASSWORD;
 if (!has('diff')) {
   if (!ACCOUNTS.length) { console.error('--accounts wajib (daftar email dipisah koma)'); process.exit(2); }
@@ -224,7 +227,7 @@ async function sweepAccount(browser, email) {
 // ── compare ────────────────────────────────────────────────────────────────
 // consoleErrors dikeluarkan dari pembanding: 404 RPC/aset di staging terbukti intermiten
 // (muncul di satu run, hilang di run berikutnya); tetap DIREKAM untuk dibaca manual.
-const IGNORE_FIELDS = new Set(['url', 'consoleSample', 'consoleErrors']);
+const IGNORE_FIELDS = new Set(['url', 'consoleSample', 'consoleErrors', ...IGNORE_EXTRA]);
 function compare(baseDir, curByAccount) {
   let diffs = 0;
   for (const [email, cur] of Object.entries(curByAccount)) {
@@ -247,7 +250,7 @@ if (has('diff')) {
   const [a, b] = [resolve(ROOT, argv[i + 1] || ''), resolve(ROOT, argv[i + 2] || '')];
   const cur = {};
   for (const f of (existsSync(b) ? readdirSync(b) : []).filter(x => x.endsWith('.json'))) cur[f.replace(/\.json$/, '')] = JSON.parse(readFileSync(join(b, f), 'utf8')).results;
-  console.log(`diff ${a}  vs  ${b}`);
+  console.log(`diff ${a}  vs  ${b}${IGNORE_EXTRA.length ? ` (abaikan: ${IGNORE_EXTRA.join(', ')})` : ''}`);
   const d = compare(a, cur);
   console.log(d ? `✖ ${d} perbedaan` : '✔ identik');
   process.exit(d ? 1 : 0);
@@ -273,7 +276,7 @@ if (has('diff')) {
   }));
   await browser.close();
   if (COMPARE) {
-    console.log(`\nbanding dengan ${COMPARE}:`);
+    console.log(`\nbanding dengan ${COMPARE}${IGNORE_EXTRA.length ? ` (abaikan: ${IGNORE_EXTRA.join(', ')})` : ''}:`);
     const d = compare(resolve(ROOT, COMPARE), all);
     console.log(d ? `✖ ${d} perbedaan` : '✔ identik dengan baseline');
     if (d) process.exitCode = 1;

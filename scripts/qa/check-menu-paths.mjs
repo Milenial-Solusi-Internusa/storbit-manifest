@@ -30,12 +30,14 @@ function sliceBetween(src, startMarker, endMarker) {
 //    (CRM_MENU_ITEMS di-spread ke ERP_MENU_GROUPS; ACCOUNT_TABS/ACTIVITY_TABS ikut
 //    tersapu tapi id-nya sudah ada di CRM_MENU_ITEMS).
 const treeSrc = sliceBetween(app, 'const CRM_MENU_ITEMS = [', 'const NEXUS_NAV = [');
-const treeIds = [...new Set([...treeSrc.matchAll(/\bid:\s*'([a-z0-9-]+)'/g)].map(m => m[1]))].sort();
+// [A-Za-z0-9-]: pohon memuat id camelCase (jobCosting, cashBank, procRequest-*, …) — regex
+// kebab-only di G0 melewatkan 32 id itu (ketahuan G1: klik Job Costing tidak berpindah).
+const treeIds = [...new Set([...treeSrc.matchAll(/\bid:\s*'([A-Za-z0-9-]+)'/g)].map(m => m[1]))].sort();
 
 // 2) Id sintetis + id yang punya blok render tapi di luar pohon
 const synthLine = app.match(/const SYNTHETIC_MENU_IDS = \[([^\]]*)\]/);
-const synthIds = synthLine ? [...synthLine[1].matchAll(/'([a-z0-9-]+)'/g)].map(m => m[1]) : [];
-const renderIds = [...new Set([...app.matchAll(/activeMenu === '([a-z0-9-]+)'/g)].map(m => m[1]))];
+const synthIds = synthLine ? [...synthLine[1].matchAll(/'([A-Za-z0-9-]+)'/g)].map(m => m[1]) : [];
+const renderIds = [...new Set([...app.matchAll(/activeMenu === '([A-Za-z0-9-]+)'/g)].map(m => m[1]))];
 
 const reachable = [...new Set([...treeIds, ...synthIds, ...renderIds])].sort();
 

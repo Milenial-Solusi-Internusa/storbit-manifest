@@ -238,6 +238,7 @@ export function AuthProvider({ children }) {
     // by user id and survive logout otherwise).
     localStorage.removeItem('nexus_last_menu');
     localStorage.removeItem('nexus_last_module');
+    localStorage.removeItem('nexus_last_path');   // G1 (Batch FS 2.5): path terakhir, dibaca IndexRedirect di `/`
     await supabase.auth.signOut();
   };
 
