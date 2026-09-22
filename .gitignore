@@ -53,3 +53,6 @@ accounts_soa_seed.csv
 dc_master_soa_seed.csv
 products_soa_seed.csv
 menu_catalog_seed.sql
+
+# QA sweep output (hasil run lokal; baseline yang di-commit ada di scripts/qa/baseline/)
+scripts/qa/out/

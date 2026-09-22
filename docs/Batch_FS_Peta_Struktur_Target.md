@@ -130,7 +130,6 @@ src/
       admin-settings/
       home/
       dashboard/
-      bnf-family/
       profile/
 ```
 
@@ -168,7 +167,6 @@ supabase/
   config.toml
   functions/
     aging-pipeline/
-    bnf-overdue-reminder/
     create-user/
     delete-user/
     manage-schema/

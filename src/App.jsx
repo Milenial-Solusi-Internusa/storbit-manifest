@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
+import { Outlet, Navigate, useNavigate, useLocation, useMatches, useSearchParams } from 'react-router';
 import {
   LayoutDashboard, FileText, Plus, Truck, Wallet, Clock,
   Search, Download, Upload, Edit3, Trash2, X,
@@ -21,11 +22,16 @@ import { useSpItems } from './hooks/useSpItems';
 import { useTtfs } from './hooks/useTtfs';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useCustomFields, STANDARD_COLUMNS } from './hooks/useCustomFields';
-import { useUrlState } from './hooks/useUrlState';
 import CustomFieldsSection from './components/CustomFieldsSection';
 import ProfileMiniView from './components/ProfileMiniView';
 import CompanySwitcher from './components/CompanySwitcher';
 import { SP_ITEM_WRITER_ROLES, NO_ROLE_LABEL, hasAnyRole, isAdminSettings, isSuperAdmin } from './lib/roles';
+// Batch FS Fase 2.5 G1 — routing berbasis path: activeMenu diturunkan dari rute
+// (handle.menuId, src/routes/legacy.routes.jsx); setActiveMenu = navigate(pathFor(id)).
+import { pathFor, ADMIN_SECTION_IDS } from './routes/menu-paths';
+import { AppShellContext } from './contexts/appShellCtx';
+import { useAppShell } from './contexts/useAppShell';
+import LegacyMenuRedirect from './routes/LegacyMenuRedirect';
 // Logo Nexus (hexagon N) untuk brand mark sidebar — sumber: Supabase Storage
 // assets/Nexus Logo.png (1254², 888 KB). Di-crop ke BENTUK YANG TERLIHAT
 // (bbox alpha>128 + 4 px tepi anti-alias), bukan ke bbox alpha>0 — yang
@@ -39,7 +45,8 @@ import { getTodayWIB } from './lib/dateUtils';
 const Dashboard      = lazy(() => import('./modules/dashboard/Dashboard'));
 // Fase 1 unifikasi Master Data + Admin Settings — entry point permanen.
 // AdminShell.jsx & AdminSettingsHub.jsx (dan kesembilan sub-halamannya)
-// pensiun dari App.jsx — filenya dibiarkan di disk (orphan), 21 halaman yang
+// pensiun dari App.jsx; kedua file hub lama itu SUDAH DIHAPUS (AdminShell
+// 11 Sep 2026, AdminSettingsHub 21 Sep 2026 — Batch FS Fase 1). 21 halaman yang
 // dulu di-host keduanya kini di-lazy-import langsung oleh AdminHub sendiri.
 const AdminHub          = lazy(() => import('./pages/foundation/AdminHub'));
 const SchemaManagerPage = lazy(() => import('./modules/admin/pages/SchemaManagerPage'));
@@ -1390,6 +1397,11 @@ const MENU_KEY_MAP = {
 // yang sudah ber-gate — selalu dianggap valid oleh redirect-guard MAUPUN
 // content-gate. Dulu daftar ini disalin di dua tempat (bug audit R5).
 const SYNTHETIC_MENU_IDS = ['home', 'users', 'customer-detail', 'assets-detail', 'product-detail', 'user-edit'];
+// Subset SYNTHETIC yang dinavigasi programatik lewat setActiveMenu (G1): tidak
+// punya path sendiri di kontrak URL → dibawa sebagai location.state.menu di path
+// daftar induknya (lihat blok "activeMenu = turunan URL" di StorbitManifest).
+// 'user-edit' tidak ada di sini: nol pemanggil setActiveMenu('user-edit').
+const DETAIL_OVERLAY_IDS = ['customer-detail', 'assets-detail', 'product-detail'];
 
 // canSeeMenuItem — priority: public → hasMenuPermission (MENU_KEY_MAP) →
 // DEFAULT-DENY. SATU rezim gate sejak 11 Sep 2026: fallback `item.role`
@@ -1825,27 +1837,11 @@ export default function StorbitManifest() {
   const [activeModule, setActiveModule] = useState(
     localStorage.getItem('nexus_last_module') || null
   ); // null = app launcher
-  const [activeMenu, setActiveMenu] = useState(
-    localStorage.getItem('nexus_last_menu') || 'home'
-  );
+  // activeMenu: sejak Batch FS Fase 2.5 G1 BUKAN state lagi — turunan URL, lihat
+  // blok "activeMenu = turunan URL" di bawah (setelah deklarasi state detail yang
+  // menjadi payload-nya). setActiveMenu tetap ada dengan nama & tanda tangan yang
+  // sama (pengganti yang memanggil navigate()).
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile module-menu drawer
-  // Which AdminHub section to land on when activeMenu next becomes 'admin-hub'
-  // — set by the legacy-id redirect below (Fase 1 Tahap B) so e.g. the old
-  // 'users' bookmark opens straight to User Access instead of AdminHub's own
-  // landing (card grid). Cleared once activeMenu leaves 'admin-hub' again so a
-  // later, unrelated visit to Master Data & Admin Settings doesn't inherit a
-  // stale target.
-  const [adminInitialSection, setAdminInitialSection] = useState(null);
-  // Consume adminInitialSection once activeMenu leaves 'admin-hub' again, so it
-  // can't leak into a later, unrelated visit (e.g. clicking the normal sidebar
-  // item after having used one of the legacy redirects once). Deferred via
-  // setTimeout (mirrors AuthContext.jsx's "defer to next tick" pattern) rather
-  // than setState directly in the effect body.
-  useEffect(() => {
-    if (activeMenu === 'admin-hub') return undefined;
-    const t = setTimeout(() => setAdminInitialSection(null), 0);
-    return () => clearTimeout(t);
-  }, [activeMenu]);
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
   const [activeCustomerId, setActiveCustomerId] = useState(null); // for customer-detail page
   const [prevCustomerMenu, setPrevCustomerMenu] = useState('crm-customers'); // back target
@@ -1894,6 +1890,70 @@ export default function StorbitManifest() {
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
+
+  // ── Batch FS Fase 2.5 G1: activeMenu = turunan URL ─────────────────────────
+  // Sebelum G1, activeMenu adalah state independen (diinisialisasi dari
+  // localStorage `nexus_last_menu`, dicerminkan ke `?menu=<id>` lewat useUrlState +
+  // 3 effect adopsi/mirror/popstate — semuanya dicabut). Kini SUMBER-nya rute:
+  // tiap path di src/routes/legacy.routes.jsx membawa `handle.menuId`; App hanya
+  // membacanya (Back/Forward, deep link, restore = semuanya jalur react-router).
+  // Tiga id sintetis DETAIL (customer-detail / assets-detail / product-detail)
+  // tidak punya path sendiri (kontrak menu-paths.js: mendarat di daftar induknya)
+  // — mereka dibawa sebagai `location.state.menu` oleh setActiveMenu di bawah,
+  // dan hanya berlaku selama payload detailnya masih ada (activeCustomerId /
+  // activeAssetId / selectedProduct): Back/Forward ke entri riwayat yang
+  // payload-nya sudah dikosongkan, atau refresh, jatuh ke daftar induk — bukan
+  // halaman detail ber-id null (keputusan Den 22 Sep 2026). Fallback 'home' hanya
+  // untuk rute tanpa handle (index `/` dan `*`, keduanya langsung redirect).
+  const navigate = useNavigate();
+  const location = useLocation();
+  const matches = useMatches();
+  const [searchParams] = useSearchParams();
+  const legacyMenuId = searchParams.get('menu');   // alamat lama `?menu=<id>` → LegacyMenuRedirect
+  const routeMenuId = useMemo(() => {
+    for (let i = matches.length - 1; i >= 0; i -= 1) {
+      const id = matches[i].handle?.menuId;
+      if (id) return id;
+    }
+    return null;
+  }, [matches]);
+  const stateMenu = location.state?.menu ?? null;
+  const detailPayloadPresent =
+    stateMenu === 'customer-detail' ? !!activeCustomerId :
+    stateMenu === 'assets-detail'   ? !!activeAssetId :
+    stateMenu === 'product-detail'  ? !!selectedProduct : false;
+  const activeMenu = detailPayloadPresent ? stateMenu : (routeMenuId ?? 'home');
+  // Sub-seksi AdminHub dari sub-path `/admin-settings/<section>` (rute splat
+  // `/admin-settings/*`) — menggantikan state adminInitialSection yang dulu hanya
+  // diisi blok redirect id legacy 'users' (kini LEGACY_MENU_PATHS memetakannya ke
+  // /admin-settings/user-access). Dibaca AdminHub sekali saat mount (initialSection).
+  const adminInitialSection = useMemo(() => {
+    if (routeMenuId !== 'admin-hub') return null;
+    const section = matches[matches.length - 1]?.params?.['*'] || '';
+    return ADMIN_SECTION_IDS.includes(section) ? section : null;
+  }, [routeMenuId, matches]);
+  // Pengganti setter useState `setActiveMenu` — nama & tanda tangan dipertahankan
+  // supaya ~40 pemanggil (region render/LegacyMenuOutlet, navigateTo, handler,
+  // prop StokBarangPage/PenerimaanBarangPage/ActivitiesPage) tidak berubah, dan
+  // identitasnya stabil seperti setter yang ia gantikan (hanya bergantung pada
+  // `navigate`, yang stabil di data router). Tujuan yang sama dengan lokasi
+  // sekarang memakai `replace` (klik ulang menu aktif / buka-tutup detail tidak
+  // menumpuk entri riwayat) — pathname dibaca dari window.location di dalam
+  // handler (bukan dependency `location`, yang akan membuat identitasnya berubah
+  // tiap navigasi; bukan ref, yang ditolak react-hooks/refs saat dipropagasi ke
+  // closure render). Id tanpa path (mustahil untuk id pohon — dijaga
+  // scripts/qa/check-menu-paths.mjs) diabaikan + warn, bukan crash.
+  const setActiveMenu = useCallback((menuId) => {
+    const path = pathFor(menuId);
+    if (!path) {
+      console.warn(`[routes] setActiveMenu: id "${menuId}" tidak punya path di src/routes/menu-paths.js — navigasi diabaikan`);
+      return;
+    }
+    navigate(path, {
+      replace: window.location.pathname === path,
+      state: DETAIL_OVERLAY_IDS.includes(menuId) ? { menu: menuId } : undefined,
+    });
+  }, [navigate]);
   const { role: authRole, erpRoles: authErpRoles, profile, signOut, hasMenuPermission, permissionsLoading, isBnfAuthorized, bnfAuthLoading } = useAuth();
   // `role` = role UTAMA di entitas aktif, atau NULL kalau user tak punya role
   // di sana — state eksplisit (11 Sep 2026), menggantikan fallback lama
@@ -2055,7 +2115,7 @@ export default function StorbitManifest() {
     setReportingMomId(null);
     setSelectedPickingId(null);
     setSelectedDeliveryId(null);
-  }, []);
+  }, [setActiveMenu]);
 
   // Navigate to asset detail — called by list pages on row click.
   const navigateToAssetDetail = useCallback((assetId) => {
@@ -2067,13 +2127,13 @@ export default function StorbitManifest() {
     );
     if (group) setActiveModule(group.label);
     setActiveMenu('assets-detail');
-  }, [activeMenu]);
+  }, [activeMenu, setActiveMenu]);
 
   // Go back from asset detail to the previous asset list page.
   const backFromAssetDetail = useCallback(() => {
     setActiveAssetId(null);
     setActiveMenu(prevAssetMenu);
-  }, [prevAssetMenu]);
+  }, [prevAssetMenu, setActiveMenu]);
 
   // Customer list → detail page (state swap, mirrors asset pattern).
   const navigateToCustomerDetail = useCallback((customerId) => {
@@ -2094,11 +2154,11 @@ export default function StorbitManifest() {
     setCustomerDetailTab('info');
     setInquiryPrefill(null);
     setActiveMenu('customer-detail');
-  }, [activeMenu]);
+  }, [activeMenu, setActiveMenu]);
   const backFromCustomerDetail = useCallback(() => {
     setActiveCustomerId(null);
     setActiveMenu(prevCustomerMenu);
-  }, [prevCustomerMenu]);
+  }, [prevCustomerMenu, setActiveMenu]);
 
   // ── Navbar: Notifications bell ──────────────────────────────────────────────
   // NOTE: declared AFTER navigateTo/navigateToAssetDetail/navigateToCustomerDetail
@@ -2210,6 +2270,15 @@ export default function StorbitManifest() {
   useEffect(() => {
     localStorage.setItem('nexus_last_menu', activeMenu);
   }, [activeMenu]);
+  // G1: path terakhir = sumber "kembali ke menu terakhir" (IndexRedirect di `/`).
+  // `nexus_last_menu` di atas TETAP ditulis (keputusan Den 22 Sep 2026: keduanya
+  // ditulis di G1 — id-nya dipakai sebagai fallback terjemahan restore & sebagai
+  // penanda identitas di sweep QA; dicabut di giliran berikutnya). Hanya rute
+  // menu (punya handle) yang dicatat — `/` dan `*` tidak, supaya restore tidak
+  // pernah menunjuk rute redirect. Dibersihkan saat sign-out (AuthContext.jsx).
+  useEffect(() => {
+    if (routeMenuId) localStorage.setItem('nexus_last_path', location.pathname);
+  }, [routeMenuId, location.pathname]);
   useEffect(() => {
     if (activeModule) {
       localStorage.setItem('nexus_last_module', activeModule);
@@ -2220,6 +2289,11 @@ export default function StorbitManifest() {
   // activeMenu is initialised from localStorage, which may belong to a previous
   // user in this browser. If the restored menu isn't permitted for this user,
   // redirect to the first visible menu so they don't land on an inaccessible page.
+  // G1: activeMenu kini turunan URL — "restore" = IndexRedirect menuju
+  // `nexus_last_path` (bisa milik user lain di browser ini), plus deep link path
+  // & Back/Forward lewat jalur yang sama. Guard ini tetap satu-satunya validasi
+  // aksesnya: MENUNGGU permissionsLoading/bnfAuthLoading (di bawah) sebelum
+  // menolak, dan pentalannya kini navigate(replace) alih-alih setActiveMenu.
   useEffect(() => {
     if (!profile) return;
 
@@ -2270,10 +2344,10 @@ export default function StorbitManifest() {
       .filter(it => !it.section && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized));
     if (visFlat.length === 0) return;
     // Intentional, self-terminating redirect: after switching to a valid menu the
-    // guard passes on the next run, so this does not loop.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setActiveMenu(visFlat[0]?.id || 'home');
-  }, [profile, hasMenuPermission, permissionsLoading, activeMenu, isBnfAuthorized, bnfAuthLoading]);
+    // guard passes on the next run, so this does not loop. `replace`: alamat yang
+    // ditolak tidak tertinggal sebagai entri riwayat.
+    navigate(pathFor(visFlat[0]?.id || 'home') ?? '/home', { replace: true });
+  }, [profile, hasMenuPermission, permissionsLoading, activeMenu, isBnfAuthorized, bnfAuthLoading, navigate]);
 
   // Close profile dropdown on Escape
   useEffect(() => {
@@ -2284,89 +2358,29 @@ export default function StorbitManifest() {
   }, [profileDropdownOpen]);
 
   // Redirect inventory parent → default sub-page (Stok Barang)
+  // G1: tak lagi terjangkau — id `inventory` tidak punya rute (LEGACY_MENU_PATHS
+  // memetakannya ke Stok Barang di batas URL: LegacyMenuRedirect / IndexRedirect);
+  // dibiarkan apa adanya (keputusan Den 22 Sep 2026), tidak berbahaya.
   useEffect(() => {
     if (activeMenu === 'inventory') setActiveMenu('inventory-stok');
-  }, [activeMenu]);
+  }, [activeMenu, setActiveMenu]);
 
   // Tahap 2a: legacy Master Customer sub-menu ids merged into a single
   // 'crm-customers'. Normalize any stale value (localStorage last-menu / old
   // deep-link) so it doesn't land on a now-removed id with no render block.
+  // G1: tak lagi terjangkau (keempat id ada di LEGACY_MENU_PATHS → /crm/customer);
+  // dibiarkan apa adanya (keputusan Den 22 Sep 2026). Direktif eslint-disable
+  // set-state-in-effect dicabut karena setActiveMenu bukan setter useState lagi.
   useEffect(() => {
     if (['crm-customers-msi', 'crm-customers-jci', 'crm-customers-soa', 'crm-customers-free'].includes(activeMenu)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveMenu('crm-customers');
     }
-  }, [activeMenu]);
+  }, [activeMenu, setActiveMenu]);
 
-  // URL <-> activeMenu sync (query param `menu`). activeMenu stays the single
-  // source of truth; the URL is kept as a bookmarkable/refreshable mirror of
-  // it via useUrlState (src/hooks/useUrlState.js). 'home' matches the
-  // useState initializer's own default above (`localStorage.getItem
-  // ('nexus_last_menu') || 'home'`) — it's the unconditional fallback used by
-  // every AccessDeniedPage onGoHome in this file and is exempt from the FIX B
-  // guard's SYNTHETIC allow-list above, so it's confirmed universally
-  // accessible regardless of role.
-  const [urlMenu, setUrlMenu] = useUrlState('menu', 'home');
-  const [urlMenuReady, setUrlMenuReady] = useState(false);
-
-  // 1) Adopt the URL's *initial* ?menu= value into activeMenu — exactly once,
-  //    and only if the param was actually present (a bare '/' with no ?menu=
-  //    reads back as 'home' from the hook too, same as an explicit
-  //    '?menu=home' — checking the raw URL here keeps that case from
-  //    overwriting a legitimately-restored localStorage menu on every load
-  //    that simply has no menu param yet). Gated on the SAME permsLoaded
-  //    timing as the FIX B guard above (waiting avoids wrongly rejecting a
-  //    genuinely-allowed menu during the brief post-login fetch window).
-  //    Validated with canRenderPage — the same existence+permission gate
-  //    every page render in this file already uses — so a typo'd/forbidden
-  //    id is never adopted; activeMenu keeps whatever it already resolved to,
-  //    and effect (2) below scrubs the bad value out of the URL once it
-  //    starts running (triggered by urlMenuReady flipping true).
-  useEffect(() => {
-    if (urlMenuReady) return;
-    // Same authoritative signal as the FIX B guard above. bnfAuthLoading is
-    // included here too because canRenderPage('bnf' / 'meeting-mingguan')
-    // resolves through isBnfAuthorized — running before that RPC settles would
-    // reject a legitimate ?menu=bnf deep-link and then latch that rejection
-    // permanently via setUrlMenuReady(true) below.
-    if (permissionsLoading || bnfAuthLoading) return;
-    const hasUrlParam = new URLSearchParams(window.location.search).has('menu');
-    if (hasUrlParam && urlMenu !== activeMenu && canRenderPage(urlMenu)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setActiveMenu(urlMenu);
-    }
-    setUrlMenuReady(true);
-  }, [permissionsLoading, bnfAuthLoading, urlMenuReady, urlMenu, activeMenu, canRenderPage]);
-
-  // 2) Keep the URL mirroring activeMenu (write side) — gated on (1) having
-  //    resolved so it never fires with a not-yet-adopted activeMenu and
-  //    clobbers the URL's initial value before it gets validated. Also the
-  //    cleanup path for effect (1): if the URL had a bad/forbidden value,
-  //    urlMenuReady flipping true fires this and overwrites it with whatever
-  //    activeMenu actually is (removing the param entirely if that's 'home').
-  useEffect(() => {
-    if (!urlMenuReady) return;
-    setUrlMenu(activeMenu);
-  }, [activeMenu, urlMenuReady, setUrlMenu]);
-
-  // 3) Back/Forward: adopt a later external change to the URL, validated the
-  //    same way as (1). Deliberately reacts to `urlMenu` only — NOT
-  //    `activeMenu` (read fresh via closure instead) — because depending on
-  //    activeMenu here would also re-run this on ordinary in-app navigation
-  //    (effect 2 hasn't mirrored the new value into urlMenu yet in that same
-  //    pass), which would misread the still-stale urlMenu as an "external"
-  //    change and revert the user's own navigation.
-  useEffect(() => {
-    if (!urlMenuReady) return;
-    if (urlMenu === activeMenu) return;
-    if (canRenderPage(urlMenu)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setActiveMenu(urlMenu);
-    } else {
-      setUrlMenu(activeMenu);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlMenu, urlMenuReady, canRenderPage, setUrlMenu]);
+  // URL <-> activeMenu sync lama (useUrlState `?menu=` + 3 effect adopsi/mirror/
+  // popstate) DICABUT di Batch FS Fase 2.5 G1 — perannya kini: rute react-router
+  // (sumber activeMenu), LegacyMenuRedirect (adopsi `?menu=` lama dengan gate yang
+  // sama: tunggu izin lalu canRenderPage), dan history browser (Back/Forward).
 
   // useCallback with an empty dependency array — showToast only closes over
   // setToast (a useState setter, guaranteed referentially stable by React)
@@ -2433,7 +2447,7 @@ export default function StorbitManifest() {
                : n.reference_type === 'mom'           ? 'reporting-mom'
                : null;
     if (dest) navigateTo(dest);
-  }, [navigateTo, showToast]);
+  }, [navigateTo, showToast, setActiveMenu]);
 
   // Generate a picking list from a confirmed SP, then jump to its detail.
   // Errors from the RPC (belum confirmed / tidak ada outstanding / sudah ada)
@@ -2776,7 +2790,39 @@ export default function StorbitManifest() {
     return isMenuAccessible(activeMenu, hasMenuPermission, isBnfAuthorized);
   })();
 
+  // AppShellContext (Batch FS Fase 2.5 G1) — seluruh state/setter/handler yang
+  // dirujuk region render lama (kini LegacyMenuOutlet, anak rute) plus yang
+  // dibutuhkan LegacyMenuRedirect. Objek baru tiap render: region ini memang
+  // ikut re-render pada setiap render App sejak dulu (dulu inline), jadi tidak
+  // ada perubahan frekuensi render. Kunci = nama variabel lokal apa adanya.
+  const shell = {
+    activeAssetId, activeCustomerId, activeMenu, activeModule, adminInitialSection, arData,
+    arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail, backFromCustomerDetail,
+    bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canInputSP, canManageTtf, canRenderPage,
+    crmDealInquiry, crmQuotationDetail, currentRoleLabel, customerBySpNo, customerByUid,
+    customerDetailTab, customerInquiryEdit, customerPrfInquiryId, customerPrfViewId,
+    customerQuotationView, customers, dbRemoveRowsBySp, dbSaveRow, dcList, duplicatingQuotation,
+    editingProspect, editingQuotation, enrichedRows, exportCSV, filterMonth, groupedSP,
+    handleCreateDelivery, handleDelete, handleDeleteCustomer, handleGeneratePicking,
+    hasMenuPermission, inquiryPrefill, isBnfAuthorized, monthList, navigateTo,
+    navigateToAssetDetail, navigateToCustomerDetail, permissionsLoading, prfPrefillInquiryId,
+    procPrfDetailId, procPrfEditId, profile, quotationFromInquiryId, quotationFromPrf, refreshSp,
+    reportingMomId, reportingMomMode, role, rows, selectedDeliveryId, selectedPickingId,
+    selectedProduct, selectedSpId, setActiveMenu, setArFilterCustomer, setArFilterStatus,
+    setArSearch, setCrmDealInquiry, setCrmQuotationDetail, setCustomerDetailTab,
+    setCustomerInquiryEdit, setCustomerPrfInquiryId, setCustomerPrfViewId,
+    setCustomerQuotationView, setDuplicatingQuotation, setEditingCustomer, setEditingProspect,
+    setEditingQuotation, setFilterMonth, setFinanceRow, setInquiryPrefill, setPrfPrefillInquiryId,
+    setProcPrfDetailId, setProcPrfEditId, setQuotationFromInquiryId, setQuotationFromPrf,
+    setReportingMomId, setReportingMomMode, setSelectedDeliveryId, setSelectedPickingId,
+    setSelectedProduct, setSelectedSpId, setShipmentRow, setShowAddAR, setShowAddCustomer,
+    setShowInputSP, setShowInquiryForm, setShowProspectForm, setShowQuotationForm, setSoDetailId,
+    setSoFormOpen, setViewingAR, setViewingProfileId, showInputSP, showInquiryForm,
+    showProspectForm, showQuotationForm, showToast, soDetailId, soFormOpen, stats,
+  };
+
   return (
+    <AppShellContext.Provider value={shell}>
     <div className="min-h-screen" style={{ background: PASTEL.cream, color: PASTEL.ink, fontFamily: "'Inter', system-ui, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -3128,6 +3174,123 @@ export default function StorbitManifest() {
           {/* ── MINI PROFIL rekan kerja (read-only, klik nama — mis. Header DealDetailPage) ── */}
           <ProfileMiniView userId={viewingProfileId} onClose={() => setViewingProfileId(null)} />
 
+          {/* ── KONTEN HALAMAN (Batch FS Fase 2.5 G1) ── Region render lama (blok
+              `activeMenu === '<id>'`, ±970 baris: Home, Command Center, Storbit,
+              Inventory, CRM, Procurement, HRGA, Assets, BNF, Reporting, AdminHub)
+              pindah UTUH ke LegacyMenuOutlet di bawah file ini — dirender lewat
+              <Outlet/> sebagai anak rute dari SETIAP path kontrak URL
+              (src/routes/legacy.routes.jsx) dan membaca state lewat AppShellContext.
+              Alamat lama `?menu=<id>` diselesaikan LegacyMenuRedirect MENGGANTIKAN
+              Outlet, jadi tidak ada halaman yang mount sebelum tujuannya pasti. */}
+          {legacyMenuId !== null
+            ? <LegacyMenuRedirect menuId={legacyMenuId} />
+            : <Outlet />}
+        </main>
+      </div>
+
+      {/* MODALS */}
+      {(editingCustomer || showAddCustomer) && (
+        <CustomerModal
+          initial={editingCustomer}
+          existingCustomers={customers}
+          dcList={dcList}
+          companyId={profile?.company_id}
+          onClose={() => { setEditingCustomer(null); setShowAddCustomer(false); }}
+          onSave={handleSaveCustomer}
+        />
+      )}
+      {viewingAR && (
+        <ARSidePanel
+          ttf={viewingAR}
+          onClose={() => setViewingAR(null)}
+          onEdit={() => { setEditingAR(viewingAR); setViewingAR(null); }}
+          onDelete={() => handleDeleteAR(viewingAR.id)}
+          canManageTtf={canManageTtf}
+        />
+      )}
+      {(editingAR || showAddAR) && (
+        <ARModal
+          initial={editingAR}
+          customers={customers}
+          onClose={() => { setEditingAR(null); setShowAddAR(false); }}
+          onSave={handleSaveAR}
+        />
+      )}
+      {shipmentRow && <ShipmentModal row={shipmentRow} onClose={() => setShipmentRow(null)} onSave={handleSave}/>}
+      {/* onSave -> onSaved: FinanceModal kini memanggil RPC set_sp_finance_docs
+          sendiri (level SP), bukan lagi menumpang dbSaveRow milik handleSave
+          yang bermuara di update_sp_item_dual. ShipmentModal di atas TIDAK
+          diubah — masih jalur item, masih handleSave. */}
+      {financeRow && (
+        <FinanceModal
+          row={financeRow}
+          showToast={showToast}
+          onClose={() => setFinanceRow(null)}
+          onSaved={async () => { await refreshSp(); setFinanceRow(null); }}
+        />
+      )}
+
+      {/* TOAST */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[70] px-5 py-3 rounded-2xl shadow-xl text-sm font-medium animate-slide-up"
+          style={{
+            background: toast.type === 'error' ? PASTEL.rose : PASTEL.mint,
+            color: PASTEL.ink,
+            border: `1px solid ${toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep}`
+          }}>
+          <div className="flex items-center gap-2">
+            {toast.type === 'error' ? <AlertTriangle size={16}/> : <CheckCircle2 size={16}/>}
+            {toast.msg}
+          </div>
+        </div>
+      )}
+    </div>
+    </AppShellContext.Provider>
+  );
+}
+
+// ============================
+// LegacyMenuOutlet — Batch FS Fase 2.5 G1
+// ============================
+// Region render lama App.jsx (blok `activeMenu === '<id>'` untuk SEMUA halaman),
+// dipindah UTUH ke komponen ini — isi JSX-nya byte-identik dengan sebelum G1
+// kecuali satu blok: IIFE redirect 12 id legacy → <Navigate/> (butir 7 G1).
+// Dirender <Outlet/> App.jsx sebagai elemen SETIAP rute di
+// src/routes/legacy.routes.jsx (satu instance elemen dibagi semua rute → pindah
+// rute tidak me-remount komponen ini). Semua state detail tetap milik
+// StorbitManifest dan datang lewat AppShellContext — nol prop komponen halaman
+// berubah, nol halaman pindah lokasi. Halaman dipindah dari sini ke
+// src/routes/<modul>.routes.jsx satu per satu di G2–G6; blok yang sudah pindah
+// dihapus dari sini pada gilirannya.
+export function LegacyMenuOutlet() {
+  const {
+    activeAssetId, activeCustomerId, activeMenu, activeModule, adminInitialSection, arData,
+    arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail, backFromCustomerDetail,
+    bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canInputSP, canManageTtf, canRenderPage,
+    crmDealInquiry, crmQuotationDetail, currentRoleLabel, customerBySpNo, customerByUid,
+    customerDetailTab, customerInquiryEdit, customerPrfInquiryId, customerPrfViewId,
+    customerQuotationView, customers, dbRemoveRowsBySp, dbSaveRow, dcList, duplicatingQuotation,
+    editingProspect, editingQuotation, enrichedRows, exportCSV, filterMonth, groupedSP,
+    handleCreateDelivery, handleDelete, handleDeleteCustomer, handleGeneratePicking,
+    hasMenuPermission, inquiryPrefill, isBnfAuthorized, monthList, navigateTo,
+    navigateToAssetDetail, navigateToCustomerDetail, permissionsLoading, prfPrefillInquiryId,
+    procPrfDetailId, procPrfEditId, profile, quotationFromInquiryId, quotationFromPrf, refreshSp,
+    reportingMomId, reportingMomMode, role, rows, selectedDeliveryId, selectedPickingId,
+    selectedProduct, selectedSpId, setActiveMenu, setArFilterCustomer, setArFilterStatus,
+    setArSearch, setCrmDealInquiry, setCrmQuotationDetail, setCustomerDetailTab,
+    setCustomerInquiryEdit, setCustomerPrfInquiryId, setCustomerPrfViewId,
+    setCustomerQuotationView, setDuplicatingQuotation, setEditingCustomer, setEditingProspect,
+    setEditingQuotation, setFilterMonth, setFinanceRow, setInquiryPrefill, setPrfPrefillInquiryId,
+    setProcPrfDetailId, setProcPrfEditId, setQuotationFromInquiryId, setQuotationFromPrf,
+    setReportingMomId, setReportingMomMode, setSelectedDeliveryId, setSelectedPickingId,
+    setSelectedProduct, setSelectedSpId, setShipmentRow, setShowAddAR, setShowAddCustomer,
+    setShowInputSP, setShowInquiryForm, setShowProspectForm, setShowQuotationForm, setSoDetailId,
+    setSoFormOpen, setViewingAR, setViewingProfileId, showInputSP, showInquiryForm,
+    showProspectForm, showQuotationForm, showToast, soDetailId, soFormOpen, stats,
+  } = useAppShell();
+
+  return (
+    <>
           {/* ── HOME DASHBOARD (replaces the old app launcher) ── */}
           {activeMenu === 'home' && (
             <ErrorBoundary title="Beranda tidak tersedia">
@@ -3391,11 +3554,13 @@ export default function StorbitManifest() {
               redirect eksplisit ini. 'users' tetap dapat initialSection
               spesifik (User Access); 10 id lain cukup mendarat di landing hub. */}
           {['users','admin','admin-settings','admin-settings-entity','admin-settings-documents','admin-settings-finance','admin-settings-approvals','admin-settings-notifications','admin-settings-security','admin-settings-audit','admin-settings-general','admin-settings-integrations'].includes(activeMenu) && (
-            (() => {
-              if (activeMenu === 'users') setAdminInitialSection('user-access');
-              navigateTo('admin-hub');
-              return null;
-            })()
+            /* G1: IIFE yang memanggil navigateTo() SAAT RENDER diganti <Navigate/>
+               (react-router menolak navigate() di dalam render). Tujuan = path dari
+               LEGACY_MENU_PATHS (mis. 'users' → /admin-settings/user-access; sub-path
+               itu jadi initialSection AdminHub lewat rute splat). Praktis tak lagi
+               terjangkau: activeMenu turunan rute, dan ke-12 id ini tidak punya rute
+               — alamat lamanya sudah diselesaikan LegacyMenuRedirect/IndexRedirect. */
+            <Navigate to={pathFor(activeMenu) || '/admin-settings'} replace />
           )}
           {(activeMenu === 'products' || activeMenu === 'product-detail') && (!canRenderPage('products') ? (
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
@@ -4101,66 +4266,7 @@ export default function StorbitManifest() {
           )}
 
           </div>
-        </main>
-      </div>
-
-      {/* MODALS */}
-      {(editingCustomer || showAddCustomer) && (
-        <CustomerModal
-          initial={editingCustomer}
-          existingCustomers={customers}
-          dcList={dcList}
-          companyId={profile?.company_id}
-          onClose={() => { setEditingCustomer(null); setShowAddCustomer(false); }}
-          onSave={handleSaveCustomer}
-        />
-      )}
-      {viewingAR && (
-        <ARSidePanel
-          ttf={viewingAR}
-          onClose={() => setViewingAR(null)}
-          onEdit={() => { setEditingAR(viewingAR); setViewingAR(null); }}
-          onDelete={() => handleDeleteAR(viewingAR.id)}
-          canManageTtf={canManageTtf}
-        />
-      )}
-      {(editingAR || showAddAR) && (
-        <ARModal
-          initial={editingAR}
-          customers={customers}
-          onClose={() => { setEditingAR(null); setShowAddAR(false); }}
-          onSave={handleSaveAR}
-        />
-      )}
-      {shipmentRow && <ShipmentModal row={shipmentRow} onClose={() => setShipmentRow(null)} onSave={handleSave}/>}
-      {/* onSave -> onSaved: FinanceModal kini memanggil RPC set_sp_finance_docs
-          sendiri (level SP), bukan lagi menumpang dbSaveRow milik handleSave
-          yang bermuara di update_sp_item_dual. ShipmentModal di atas TIDAK
-          diubah — masih jalur item, masih handleSave. */}
-      {financeRow && (
-        <FinanceModal
-          row={financeRow}
-          showToast={showToast}
-          onClose={() => setFinanceRow(null)}
-          onSaved={async () => { await refreshSp(); setFinanceRow(null); }}
-        />
-      )}
-
-      {/* TOAST */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-[70] px-5 py-3 rounded-2xl shadow-xl text-sm font-medium animate-slide-up"
-          style={{
-            background: toast.type === 'error' ? PASTEL.rose : PASTEL.mint,
-            color: PASTEL.ink,
-            border: `1px solid ${toast.type === 'error' ? PASTEL.roseDeep : PASTEL.mintDeep}`
-          }}>
-          <div className="flex items-center gap-2">
-            {toast.type === 'error' ? <AlertTriangle size={16}/> : <CheckCircle2 size={16}/>}
-            {toast.msg}
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 

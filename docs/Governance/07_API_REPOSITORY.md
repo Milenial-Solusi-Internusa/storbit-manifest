@@ -53,6 +53,8 @@ Folder `supabase/functions/`. Pola umum: CORS const + `json()` helper + **two-cl
 
 **Deploy:** `supabase functions deploy delete-user reset-password manage-schema create-user`. Pastikan `SUPABASE_ANON_KEY` ter-set di env (manage-schema pakai `MSI_DB_KEY` untuk service). EF tidak masuk Vite build/lint — verifikasi syntax saat deploy.
 
+> **[21 Sep 2026, doc-keeper — STAGING]** Tabel di atas memotret PRODUKSI dan hanya memuat 4 dari 8 folder `supabase/functions/` (`aging-pipeline` · `bnf-overdue-reminder` · `notify-sp-milestone` · `send-email` belum masuk — TD-44). Di **STAGING** (`nexus-staging`) EF pertama kali dideploy 21 Sep 2026: **`create-user` + `reset-password`** (Supabase MCP `deploy_edge_function`, kode verbatim repo — sha256 cocok; v1 ACTIVE, `verify_jwt: true`; laporan sesi), `delete-user` tidak. Status kolom "deploy pending (TD-21)" untuk **produksi tidak diverifikasi** dan bertentangan dengan `00_DEV_JOURNEY.md` §Integrasi ("`reset-password` (LIVE)") — perlu konfirmasi Den. Pemanggil FE ketiganya: `src/hooks/useUserAccess.js:141` (`create-user`) · `:170` (`delete-user`) · `:198` (`reset-password`). Detail: `PROGRESS.md` 2026-09-21 (entri kedua).
+
 ---
 
 ## 4. Query Patterns (contoh per tipe data)

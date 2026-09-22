@@ -21,7 +21,17 @@ Kenyataan sekarang berbeda dari peta itu. Contoh: Sales Order Management yang di
 
 Aturan resminya, mulai sekarang, folder modul bisnis baru wajib pakai nama dari sembilan modul itu, bukan nama baru yang muncul spontan. Pemetaan ulang folder yang sudah ada masuk Fase 3 dan 4, bukan bagian dari Fase 0 ini.
 
-Modul yang bukan modul bisnis (Admin/Foundation Settings, Home, Dashboard, Assets, keluarga BNF) dikelompokkan terpisah sebagai modul sistem/utilitas di bawah `modules/system/`, tidak dipaksa masuk sembilan modul bisnis kalau memang tidak cocok.
+Modul yang bukan modul bisnis (Admin/Foundation Settings, Home, Dashboard, Assets) dikelompokkan terpisah sebagai modul sistem/utilitas di bawah `modules/system/`, tidak dipaksa masuk sembilan modul bisnis kalau memang tidak cocok.
+
+---
+
+## 2a. Keputusan: BNF-family Dihapus Total, Bukan Digabung
+
+Tiga modul yang sebelumnya direncanakan digabung jadi satu keluarga (BNF, Briefing Harian, Meeting Mingguan) sudah diputuskan **DIHAPUS TOTAL**, bukan digabung. Alasan: ketiganya dianggap modul coba-coba yang sudah tidak relevan untuk MSI Group.
+
+"Dihapus total" berarti kode DAN data, bukan sekadar disembunyikan dari menu. Sebelum eksekusi, data yang ada (laporan insiden, riwayat eskalasi) diekspor dulu sebagai backup di luar aplikasi sebagai jaring pengaman, baru tabel database dan Edge Function terkait (termasuk cron job pengingat overdue) benar-benar dihapus.
+
+Modul ini tidak muncul lagi di manapun dalam Peta Struktur Target, termasuk sebagai bagian dari `modules/system/`.
 
 ---
 
@@ -51,7 +61,7 @@ src/
     it/
     quality-management/
     system/            payung modul non-bisnis: admin-settings, home,
-                       dashboard, assets, bnf-family
+                       dashboard, assets
 ```
 
 ---
@@ -84,7 +94,7 @@ Modul yang jumlah filenya banyak dan kompleks (contoh nyata sekarang: CRM, 45 fi
 
 **Pemisahan `pages/` vs `documents/`:** halaman interaktif (form, list, detail) masuk `pages/`; dokumen cetak (PDF, teknologinya beda, pakai react-pdf) masuk `documents/`. Isi dan tata letak tiap dokumen tetap boleh berbeda sesuai jenisnya (Invoice wajar beda dari Surat Jalan), yang perlu disatukan hanya bagian struktural yang seharusnya identik di semua dokumen (kop surat, footer bernomor halaman, blok tanda tangan, watermark status Draft) — lihat Bagian 9 soal audit ini.
 
-Contoh struktur CRM setelah dipecah (ilustrasi, eksekusi sebenarnya di Fase 7, bukan Fase 3/4, karena ini soal standarisasi struktur internal modul, bukan sekadar nama yang bentrok makna atau penggabungan keluarga BNF):
+Contoh struktur CRM setelah dipecah (ilustrasi, eksekusi sebenarnya di Fase 7, bukan Fase 3/4, karena ini soal standarisasi struktur internal modul, bukan sekadar nama yang bentrok makna atau penghapusan modul BNF-family):
 
 ```
 modules/crm/
@@ -178,6 +188,8 @@ Seluruh definisi rute (58 halaman dari `App.jsx`, 25 destinasi dari AdminHub, pl
 
 Modul non-bisnis di bawah `modules/system/` TIDAK perlu prefix `system` di URL-nya (itu detail organisasi kode saja, tidak perlu bocor ke user), cukup `/admin-settings/...`, `/home`, `/profile`.
 
+**Catatan keadaan kode (21 Sep 2026, eksekusi Fase 2.5):** Sebelum Fase 2.5, Nexus tidak memakai library routing berbasis path — navigasi = state `activeMenu` di memori yang dicerminkan ke satu parameter URL (`?menu=<id>`), bukan path sungguhan. Keputusan Den 21 Sep 2026: Fase 2.5 memasang routing berbasis path dengan `react-router` v7 (bukan v8), dikerjakan per giliran G0–G6. G0 sudah memasang dependency-nya dan kontrak URL `src/routes/menu-paths.js` (masih kode mati — nol pengimpor); `?menu=<id>` tetap mekanisme aktif sampai G1+ memindahkan rute ke `src/routes/`, dan `?menu=<id>` lama diharapkan ter-redirect ke path barunya. Jadi konvensi URL di atas BUKAN aspirasi — ia kontrak yang sedang diwujudkan bertahap; status per giliran ada di §Catatan Terbuka "Status Fase 2.5".
+
 ---
 
 ## 7. Path Alias
@@ -194,10 +206,10 @@ Bahasa    : file dan folder baru wajib Bahasa Inggris. File lama berbahasa
 Folder    : kebab-case (logistics-warehouse, sales-order)
 Komponen  : PascalCase.jsx (InquiryListPage.jsx)
 Helper/hook/konstanta : camelCase.js (quotationVersion.js, useSpItems.js)
-Akronim dalam PascalCase : huruf besar penuh (CRMDashboardPage, BNFListPage,
-            HRGARequestPage), bukan Crm/Bnf/Hrga
+Akronim dalam PascalCase : huruf besar penuh (CRMDashboardPage, PRFFormPage,
+            HRGARequestPage), bukan Crm/Prf/Hrga
 Akronim dalam camelCase  : huruf kecil penuh di awal gabungan kata
-            (bnfOrgScope, prfShared), ini sudah benar di kode sekarang
+            (prfShared, spCalc), ini sudah benar di kode sekarang
 Suffix    : semua file halaman penuh wajib akhiran Page. Shell/hub/router
             (AdminHub, AssetShell) boleh tanpa Page karena bukan halaman konten
 Sub-fitur : nama folder pendek (quotation/, bukan quotation-management/),
@@ -240,7 +252,7 @@ src/pages/foundation/ (AdminHub dan admin-settings/)
      dihapus total, tidak ada lagi dua rumah untuk halaman
 ```
 
-Sisanya (BNF-family, Dashboard yang kepencar tujuh tempat) diputuskan detail di Fase 4, bukan di Fase 0.
+BNF-family sudah final diputuskan dihapus total (lihat Bagian 2a), bukan lagi menunggu Fase 4. Sisanya (Dashboard yang kepencar tujuh tempat) tetap diputuskan detail di Fase 4.
 
 ---
 
@@ -306,6 +318,191 @@ SENGAJA TIDAK DISENTUH Fase 1 — sudah punya jadwal sendiri (instruksi Den
       biasa (lihat butir Order Handover di bawah)
 ```
 
+### Status Fase 2.5 — routing berbasis path (React Router v7), giliran G0 (21 Sep 2026) + G1 (22 Sep 2026)
+
+```
+DIPUTUSKAN Den 21 Sep 2026 (15 asumsi + 2 tambahan dijawab di chat; label
+"Fase 2.5" milik Den). Pelaksanaan §6 dipecah per giliran G0–G6; G0 menunggu
+review Den sebelum giliran berikutnya. Blok ini = status, ditulis doc-keeper;
+§1–§14 tidak diubah.
+
+G0 — fondasi TANPA perubahan perilaku (branch feat/fs-fase2-5-router):
+  SELESAI, menunggu review Den. Nol halaman/route pindah; `?menu=<id>` tetap
+  mekanisme aktif; nol migrasi/SQL; tampilan tidak berubah.
+  [x] dependency: react-router ^7.18.4 (v7, bukan v8 — keputusan #4; belum
+      diimpor siapa pun → tree-shaken), @sentry/react ^10.75.0,
+      dev playwright-core ^1.63.0; npm audit tetap 2 moderate lama (TD-220)
+  [x] vite.config.js alias `@/` → src/ (regex ^@/, §7; nol pemakai dulu) +
+      chunk vendor-router / vendor-sentry · jsconfig.json (IntelliSense) ·
+      vercel.json rewrite SPA → /index.html kecuali assets/, favicon-,
+      icons.svg, apple-touch-icon (BELUM terbukti di Vercel — butuh push)
+  [x] src/routes/menu-paths.js = KONTRAK URL (kode mati di G0): MENU_PATHS 68
+      (termasuk 4 id sintetis detail → daftar induk) · PLANNED_MENU_IDS 71 →
+      /planned/<id> (#3) · LEGACY_MENU_PATHS 20 · DETAIL_ROUTE_TEMPLATES ·
+      ADMIN_SECTION_IDS 26 (komentar kode masih "25" — basi) · pathFor() ·
+      menuIdForPath() · KNOWN_MENU_IDS 159. Nama modul = TARGET Peta, bukan
+      folder hari ini (#1 prefix /logistics-warehouse/warehouse/… tetap;
+      #2 leaf /crm/lead, /finance-accounting/*, /hcga/service-request/*,
+      /bnf/*, /reporting/mom, /assets/*, /admin-settings/*, /profile)
+  [x] src/main.jsx: Sentry init MINIMAL hanya bila VITE_SENTRY_DSN terisi
+      (tanpa DSN nol request); ErrorBoundary BELUM diintegrasikan → G1
+      [→ G1 (22 Sep) SENGAJA tidak mengerjakannya — di luar 8 butir G1; TD-08 tetap]
+  [x] .github/workflows/ci.yml: build → scripts/qa/lint-baseline.mjs →
+      scripts/qa/check-menu-paths.mjs (Node 22, nol secret; run pertama
+      menunggu push)
+  [x] scripts/qa/ (masuk repo, tidak di-gitignore — #12): README (cara pakai + checklist manual per
+      giliran) · check-menu-paths.mjs (144 id tercakup, 135 rute kanonik
+      unik) · lint-baseline.mjs + .json (138 error / 21 warning / 58 file) ·
+      menu-sweep.mjs (Playwright; QA_PASSWORD env; menolak ref produksi;
+      hash bukan teks; mode menu/restore/path) · baseline/menu-sweep +
+      baseline/menu-sweep-restore = 5 akun × 162 tujuan × 2 mode dari build
+      main + DB staging (884 KB)
+      -> DIBANGUN ULANG 21 Sep 2026 sore dari build main 7e3660c (sesudah
+         hotfix TD-271; 896 KB): perbedaan vs baseline pertama (46f249f) =
+         22 menu / 28 restore, SEMUANYA perbaikan (tier-3 kini mengadopsi
+         persis izin rolenya; 4 id legacy crm-customers-* dinormalkan), nol
+         tujuan hilang — dihitung ulang doc-keeper; ronde 2 build hasil
+         sinkron branch vs baseline baru IDENTIK 0/1.620
+  [x] src/App.jsx:40-44 koreksi komentar basi (satu-satunya sentuhan App.jsx)
+  Gate: build 2.997 modul (2.646 + 351 modul Sentry ter-tree-shake) ·
+  lint 138/21 = baseline · check-menu-paths lolos · sweep G0 vs main
+  IDENTIK (1.620 pembanding). Angka diukur ulang doc-keeper.
+  Persiapan G1 (21 Sep 2026 sore–malam, branch yang sama): branch
+  disinkronkan dengan main yang memuat hotfix TD-271 (kode yang masuk =
+  persis src/contexts/AuthContext.jsx +37/−3; 4 dokumen konflik dilebur);
+  gate hasil sinkron diukur ulang doc-keeper = 2.997 · 138/21 · 135 rute.
+  NOL kode aplikasi baru; G1 TETAP belum mulai [→ G1 dikerjakan 22 Sep 2026,
+  blok berikut].
+
+G1 — mekanisme alamat ditukar: `?menu=<id>` → PATH (22 Sep 2026, branch yang sama):
+  KODE SELESAI + terverifikasi lokal/staging, MENUNGGU REVIEW Den (Vercel
+  Preview + staging). Nol migrasi/SQL; produksi tidak berubah sampai main
+  di-deploy; NOL halaman pindah lokasi fisik; NOL prop komponen halaman
+  berubah — hanya bentuk alamat + sumber activeMenu (state → URL). Angka diukur
+  ulang doc-keeper (working tree); detail per file: PROGRESS.md 2026-09-22.
+  [x] src/main.jsx: <RouterProvider router={router} useTransitions={false}/>
+      di dalam AuthProvider; root route = <AuthGate><App/></AuthGate> (urutan
+      pembungkus tetap). useTransitions={false} = prop resmi react-router 7.18
+      (handoff setState+navigate tetap satu commit) — asumsi teknis sesi
+  [x] src/routes/index.jsx (peta rute tunggal; §6 mulai terwujud): index →
+      IndexRedirect (nexus_last_path | pathFor(nexus_last_menu) | /home,
+      divalidasi matchRoutes; tak menunggu izin = restore lama) ·
+      ...legacyMenuRoutes · `*` → `/` (menu terakhir/home, BUKAN NotFound —
+      keputusan Den #2; NOT_FOUND_PATH tetap tak dipakai)
+  [x] src/routes/legacy.routes.jsx: 167 rute `${path}/*` (MENU_PATHS
+      non-sintetis 64 + PLANNED 103), handle.menuId, SATU instance
+      <LegacyMenuOutlet/> dibagi semua rute (pindah rute tak me-remount).
+      Nama .routes.jsx = keputusan #11; file per modul (crm.routes.jsx …)
+      lahir di G2–G6
+  [x] src/routes/LegacyMenuRedirect.jsx: `?menu=<id>` lama → path barunya,
+      dirender App.jsx MENGGANTIKAN <Outlet/> selama param ada; gate = replika
+      persis effect adopsi lama (tunggu permissionsLoading/bnfAuthLoading →
+      canRenderPage → lolos pathFor, gagal `/`)
+  [x] src/contexts/appShellCtx.js + useAppShell.js (jembatan state App →
+      anak rute) · src/hooks/useUrlState.js DIHAPUS (keputusan Den #4)
+  [x] src/App.jsx +273/−168 (5.613 → 5.718 baris): state activeMenu DIHAPUS →
+      turunan handle.menuId (useMatches); 3 id sintetis detail
+      (customer-detail/assets-detail/product-detail) dibawa location.state.menu
+      di path daftar induk, berlaku hanya bila payload ada (keputusan Den #1) ·
+      setActiveMenu = useCallback → navigate(pathFor(id), {replace bila path
+      sama, state}) — nama/tanda tangan tetap · adminInitialSection = turunan
+      splat /admin-settings/<section> (ADMIN_SECTION_IDS) · nexus_last_path
+      ditulis + nexus_last_menu TETAP ditulis (keputusan Den #3) · FIX B guard
+      tetap, pentalan → navigate(replace) · 3 effect URL-sync lama (71 baris)
+      dicabut; 2 effect normalisasi id lama dibiarkan (#4) · region render
+      (973 baris) pindah UTUH ke `export function LegacyMenuOutlet()`
+      (App.jsx:3265-4271, 113 kunci via useAppShell) — byte-identik kecuali
+      IIFE redirect 12 id legacy → <Navigate/>
+  [x] ⚠️ KONTRAK URL BERUBAH: +32 id camelCase ke PLANNED_MENU_IDS (jobCosting,
+      cashBank, procRequest+4, purchaseOrder+4, docMgmt+4, apiCenter+3,
+      publicTracking+2, customerPortal+3, vendorPortal+3) → PLANNED 71 → 103 ·
+      KNOWN_MENU_IDS 159 → 191 · rute kanonik 135 → 167. Path /planned/<id>
+      VERBATIM camelCase (bukan kebab; supaya PLANNED_MODULES[activeMenu] tetap
+      cocok) — rename ke kebab = kandidat Fase 3/8, belum diputuskan. Akar:
+      regex gate G0 [a-z0-9-] melewatkan id camelCase (kini [A-Za-z0-9-]; id
+      tercakup 144 → 176); ketahuan karena klik Job Costing / Cash-Bank diam
+  [x] scripts/qa: check-menu-paths regex 3 tempat · menu-sweep `--ignore a,b` ·
+      lint-baseline.json 138 → 137 (App.jsx 6 → 5, --update sadar) · README
+      +aturan pembanding (menu↔menu · restore↔restore · path↔RESTORE)
+  Gate: build 3.009 modul (+vendor-router 96,66 kB) · lint 137/21 = baseline
+  baru · check-menu-paths ✔ 176 id / 167 rute. Sweep final (5 akun × 194 × 3
+  mode, staging, dihitung ulang doc-keeper): menu 2 perbedaan (hash drift data,
+  hash identik dengan build main hari ini) · restore 39 (10 probe → /home · 20
+  id sintetis detail → daftar induk/pentalan · 7 kontainer CRM → tab pertama ·
+  2 hash) — semua disengaja · path 39 yang PERSIS sama (= semantik restore) ·
+  +160 tujuan baru (32 id × 5) identik 160/160 vs main · nol gagal-muat.
+  Uji interaktif super_admin (laporan sesi): sidebar, alur detail/handoff,
+  Back/Forward, `/?menu=` → path, `/foo/bar` → `/`, drawer mobile, logout —
+  lolos. BELUM saat itu: login dari path dalam · akun sales via sidebar ·
+  Vercel Preview — diputuskan Den 22 Sep: branch di-push ke origin (tanpa
+  merge) supaya Preview terbentuk (status push = git, tidak dicatat di sini).
+  [→ Preview TERBUKTI + login dari path dalam LOLOS, lihat ekor blok ini;
+  sisa: uji akun sales via sidebar + CI run pertama.]
+  Register: nol TD baru, nol Keputusan Terbuka baru (TD-12 tetap; TD-272 TETAP
+  OPEN — gate tidak diubah; TD-08 ErrorBoundary Sentry sengaja tidak
+  dikerjakan) — keduanya DIKONFIRMASI Den 22 Sep 2026: tetap di luar scope G1.
+  Kandidat (keputusan Den): rename 32 id camelCase → kebab (Fase 3/8) · cabut
+  dual-write nexus_last_menu + overlay location.state saat detail dapat /:id
+  (G2+). → G2 (keputusan Den 22 Sep): AdminHub masih state lokal — sub-path
+  /admin-settings/<section> hanya dibaca saat mount, klik kartu di hub tidak
+  mengubah URL (sama seperti sebelum G1); TD-129 tetap OPEN.
+  Tindak lanjut 22 Sep 2026 (keputusan Den; nol kode aplikasi): BASELINE SWEEP
+  RESMI DIGANTI dengan hasil G1 — baseline/menu-sweep ← out/g1f-menu ·
+  menu-sweep-restore ← g1f-restore · menu-sweep-path (BARU) ← g1f-path; 5 akun
+  × 194 tujuan, build G1 (c729d99) + staging; byte-identik out/g1f-*
+  (diverifikasi doc-keeper); lama→baru: menu 162 (2 hash drift + 160 baru) ·
+  restore 199 (39 + 160 baru) · path = folder baru, isinya ≡ restore (hanya
+  `url` yang dibuka berbeda). Sejak ini tiap mode ↔ baseline mode-nya sendiri,
+  --ignore tidak wajib (scripts/qa/README.md, diperbarui sesi).
+  Vercel Preview TERBUKTI (laporan sesi + uji Den): rewrite vercel.json jalan
+  (/crm/dashboard, /crm/quotation terbuka; path dalam → 200 text/html index
+  yang sama, /icons.svg & /assets/*.js tetap aset) dan LOGIN DARI PATH DALAM
+  mendarat di Quotation List, bukan Home (butir 6 checklist README tertutup).
+  Den memberi lampu hijau merge (PR akan dibuka) — status merge/CI = git.
+  BATAS G1 YANG DISENGAJA (bukan temuan/gap baru; koreksi atas dugaan saat uji
+  Preview): halaman detail & form yang dibuka DARI dalam satu menu — Detail
+  Deal, Detail Quotation, Detail PRF, Detail SP, Detail Picking/Surat Jalan,
+  Detail MOM, seluruh form — TIDAK punya alamat sendiri: 18 state jadi kondisi
+  cabang render di LegacyMenuOutlet (+ payload spt editingQuotation) yang tak
+  pernah menyentuh URL, persis seperti sebelum G1 (kondisi render Detail Deal
+  byte-identik main 7e3660c). Ini BUKAN "id sintetis detail" — id sintetis
+  tetap 4 (customer-detail/product-detail/assets-detail/user-edit); string
+  `deal-detail` nol hit di kode (src/, scripts/) dan nol kunci di baseline
+  sweep — id itu tidak pernah ada. Diselesaikan
+  G2+ lewat rute ber-:id (DETAIL_ROUTE_TEMPLATES), sekaligus mencabut overlay
+  location.state untuk 3 id sintetis.
+
+Temuan sweep yang BUKAN bagian Batch FS (register 08_TECH_DEBT.md):
+  TD-271 (HIGH, produksi; RESOLVED 21 Sep 2026 sore) — deep-link ?menu= & restore
+      menu terakhir gagal untuk user tier-3 role-default (race permissionsLoading
+      vs erpRoles); bentuk perbaikan (hotfix main vs G1) = Keputusan Terbuka #63
+      -> DIJAWAB 21 Sep 2026: (a) hotfix main (AuthContext.jsx, flag rolesReady),
+         LIVE produksi 16:05 WIB (deploy 7e3660c); baseline sweep dibangun ulang
+         dari build main 7e3660c; G1 tidak perlu menambal race ini sendiri
+  TD-272 (LOW) — restore nexus_last_menu menembus gate untuk id di luar
+      pohon / anak ber-prefix allow-list → syarat desain G1: gate berbasis
+      kunci MENU_KEY_MAP, bukan keanggotaan pohon
+
+Kandidat item Fase 3 (keputusan Den 21 Sep: DITAHAN, bukan sekarang):
+  rename istilah HRGA → HCGA di kode/menu id (hrga-*, svc_hrga_*,
+  modules/hrga/)
+
+Untuk Den (bukan doc-keeper): §12 perlu +1 baris scripts/qa/; §6 pola nama
+  file rute .routes.js → .jsx (keputusan #11); angka "25 destinasi" §6 basi
+  (AdminHub 26 kartu sejak 30 Agu 2026); project Sentry + VITE_SENTRY_DSN /
+  VITE_APP_ENV di Vercel Production & Preview; push branch supaya CI jalan
+  pertama kali & Preview membuktikan vercel.json.
+  Tambahan sejak G1 (22 Sep 2026): §6 kini TERWUJUD SEBAGIAN — routing tunggal
+  src/routes/ aktif, App.jsx = shell + region legacy (LegacyMenuOutlet, masih
+  di App.jsx); kalimat §6 "App.jsx ke depannya hanya me-render shell dan
+  outlet" belum sepenuhnya tercapai (halaman keluar per G2–G6); §6 konvensi
+  URL kebab-case punya pengecualian sementara /planned/<id> camelCase (32 id);
+  komentar kode src/routes/index.jsx:8 "135 rute kanonik" basi (167).
+
+G1: SELESAI (kode), menunggu review Den. G2–G6: BELUM mulai; hanya atas
+  instruksi Den, setelah review G1.
+```
+
 ```
 Dua Chatter (InquiryChatter dipakai, v3/Chatter.jsx 554 baris nol pemakai)
   -> dead code; semula dijadwalkan Fase 1, DIGESER ke Batch DS 3 bersama
@@ -326,4 +523,4 @@ Bagian struktural PDF (kop, footer, tanda tangan, watermark)
 
 ---
 
-*Dokumen ini adalah Fase 0 dari Batch FS (Folder Structure). Fase 1 dan seterusnya (buang dead code, satukan routing, rename yang bentrok makna, gabungkan keluarga BNF, bersihkan docs, bersihkan root, standarisasi struktur modul, standarisasi penamaan) mengeksekusi berdasarkan aturan di dokumen ini.*
+*Dokumen ini adalah Fase 0 dari Batch FS (Folder Structure). Fase 1 dan seterusnya (buang dead code termasuk hapus total BNF-family, satukan routing, rename yang bentrok makna, bersihkan docs, bersihkan root, standarisasi struktur modul, standarisasi penamaan) mengeksekusi berdasarkan aturan di dokumen ini.*

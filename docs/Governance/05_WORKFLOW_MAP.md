@@ -767,6 +767,8 @@ Status headline = **`sp_orders.status`**, **fact-derived** via `sp_recompute_sta
 
 ## BNF (Bad News First) / Briefing Harian / Meeting Mingguan Flow (Layer 0-4 LIVE 10 & 12 Agu 2026)
 
+> ⛔ **[21 Sep 2026] KEPUTUSAN Den: ketiga modul DIHAPUS TOTAL (kode + data), bukan digabung — `docs/Batch_FS_Fase_0_Aturan_Struktur.md` §2a. BELUM DIEKSEKUSI, fase pelaksanaan belum dipatok; alur di section ini masih LIVE hari ini dan dipertahankan sebagai dokumentasi sampai eksekusi (prasyarat §2a: ekspor data laporan insiden/riwayat eskalasi sebagai backup di luar aplikasi dulu). Inventaris objek yang akan hilang: `03_DATA_MODEL.md` §BNF (callout 21 Sep).**
+
 > Tiga menu top-level terkait, satu grup sidebar "Reporting & Governance" › section "Governance": **Briefing Harian** (entry harian, terbuka semua staff login), **BNF** (eskalasi insiden formal, terbatas `is_bnf_authorized()`), **Meeting Mingguan** (rollup mingguan per departemen, terbatas `is_bnf_authorized()` juga). **Net-new section** — dokumen ini sebelumnya nol mendokumentasikan modul BNF, termasuk fondasinya (3-5 Agu 2026). Skema lengkap: `03_DATA_MODEL.md` §"BNF (Bad News First), Briefing Harian & Meeting Mingguan".
 
 **Briefing Harian — isi harian + carry-forward:**

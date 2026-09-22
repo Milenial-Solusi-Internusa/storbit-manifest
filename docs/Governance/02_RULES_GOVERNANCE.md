@@ -28,9 +28,9 @@
 - **Hook:** `useXxx.js` di `src/hooks/`. Helper murni: `camelCase.js` (mis. `spCalc.js`, `bant.js`, `activityFeed.js`).
 - **Komponen React:** PascalCase. **Handler:** `handleXxx`. **Boolean state:** `isXxx`/`showXxx`. **Setter:** `setXxx`.
 - **Design tokens per modul:** objek `C` (CRM warm-beige), `D` (asset/dashboard), `S` (style tokens) — inline-style. Global app pakai `PASTEL`.
-- **Import lokal** (relative path), bukan alias. Lucide untuk SEMUA ikon.
+- **Import lokal** (relative path), bukan alias. Lucide untuk SEMUA ikon. **[21 Sep 2026, Batch FS Fase 2.5 G0]** Alias **`@/` → `src/`** kini ADA (`vite.config.js` regex `^@/` + `jsconfig.json`; Fase 0 §7) tapi **hanya untuk `src/routes/*` dulu** — file lain tetap impor relatif sampai giliran Batch FS-nya; ~~hari ini nol pemakai~~ **[22 Sep 2026, G1]** pemakai pertama = `src/routes/index.jsx` (`@/App.jsx`, `@/components/AuthGate.jsx`), `legacy.routes.jsx` (`@/App.jsx`), `LegacyMenuRedirect.jsx` (`@/contexts/useAppShell`); `App.jsx`/`main.jsx` tetap relatif. Jangan mulai mengganti impor relatif ke `@/` sepihak.
 - **react-refresh:** file yang export komponen JANGAN sekaligus export hook/util non-komponen — pisah ke file `.js` (pola `bant.js` + `BantScoreBar.jsx`). Token plain → `.js`, komponen → `.jsx`.
-- **Lint baseline:** repo punya error baseline yang ditoleransi (set-state-in-effect untuk fetch, memoization-skip). Target tiap task = **net-zero** (jumlah error sebelum == sesudah), bukan nol absolut.
+- **Lint baseline:** repo punya error baseline yang ditoleransi (set-state-in-effect untuk fetch, memoization-skip). Target tiap task = **net-zero** (jumlah error sebelum == sesudah), bukan nol absolut. **[21 Sep 2026]** Gate-nya kini **mekanis**: `node scripts/qa/lint-baseline.mjs` membandingkan hasil eslint dengan `scripts/qa/lint-baseline.json` (~~138~~ **137 error / 21 warning / 58 file** sejak G1 22 Sep 2026 — `App.jsx` 6 → 5, `--update` sadar) dan GAGAL bila total ATAU angka per-file naik (penurunan di file lain tidak boleh menutupi regresi); dijalankan CI (`.github/workflows/ci.yml`) tiap push/PR ke `main`. Angka turun → perbarui baseline **sadar** dengan `--update` di commit yang sama; jangan diam-diam.
 
 ---
 
@@ -210,7 +210,7 @@
 
 ## 7. Workflow Development
 
-**Per task (urutan wajib):** Inspect (branch, git status, file terkait) → Plan (scope kecil) → Edit (hanya file yg perlu) → Verify (`npm run build`, lint net-zero) → Summarize (Summary / Files changed / Verification / Risk / Not changed / Next step).
+**Per task (urutan wajib):** Inspect (branch, git status, file terkait) → Plan (scope kecil) → Edit (hanya file yg perlu) → Verify (`npm run build`, lint net-zero — sejak 21 Sep 2026 lewat `node scripts/qa/lint-baseline.mjs`; bila menyentuh menu/route juga `node scripts/qa/check-menu-paths.mjs`; keduanya = isi CI. **Bila menyentuh routing/gate navigasi (sejak G1 22 Sep 2026):** jalankan sweep `scripts/qa/menu-sweep.mjs` 3 mode terhadap build yang diukur + DB staging dan bandingkan tiap mode ke baseline mode-nya sendiri — **`menu` ↔ `baseline/menu-sweep`, `restore` ↔ `baseline/menu-sweep-restore`, `path` ↔ `baseline/menu-sweep-path`** (ketiganya = hasil build G1 sejak 22 Sep 2026, keputusan Den; `--ignore` tidak wajib lagi — hanya bila sengaja mengecualikan field); perbedaan yang diharapkan saat baseline diganti wajib disebut eksplisit di `PROGRESS.md`, selain itu = regresi — aturan lengkap `scripts/qa/README.md`) → Summarize (Summary / Files changed / Verification / Risk / Not changed / Next step).
 
 **DB change flow:**
 1. State: tabel apa, kenapa, data/query terdampak. **Tunggu approval eksplisit.**
@@ -231,7 +231,7 @@
 
 ## 8. QA Checklist
 
-> Checklist manual sebelum deploy/push (belum ada test otomatis — TD-07). **Pre-deploy & DB-change checklist = lihat §4 (Pola Wajib Database), §6 (Do/Don't), §7 (Workflow Development)** — tak diulang di sini. Bagian ini fokus ke checklist per-modul + PDF quotation.
+> Checklist manual sebelum deploy/push (belum ada test otomatis — TD-07; **sejak 21 Sep 2026 ada CI** `.github/workflows/ci.yml` = build + lint-baseline + kontrak URL — gate regresi, BUKAN unit test — plus sweep runtime lokal `scripts/qa/menu-sweep.mjs` — 3 mode `menu`/`restore`/`path` dengan baseline per mode di `scripts/qa/baseline/` (hasil build G1 sejak 22 Sep 2026) — dengan checklist manual per giliran Batch FS di `scripts/qa/README.md`). **Pre-deploy & DB-change checklist = lihat §4 (Pola Wajib Database), §6 (Do/Don't), §7 (Workflow Development)** — tak diulang di sini. Bagian ini fokus ke checklist per-modul + PDF quotation.
 
 ### Per-Modul (fitur kritis + edge case pernah kena bug)
 
