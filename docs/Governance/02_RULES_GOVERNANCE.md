@@ -210,7 +210,7 @@
 
 ## 7. Workflow Development
 
-**Per task (urutan wajib):** Inspect (branch, git status, file terkait) → Plan (scope kecil) → Edit (hanya file yg perlu) → Verify (`npm run build`, lint net-zero — sejak 21 Sep 2026 lewat `node scripts/qa/lint-baseline.mjs`; bila menyentuh menu/route juga `node scripts/qa/check-menu-paths.mjs`; keduanya = isi CI. **Bila menyentuh routing/gate navigasi (sejak G1 22 Sep 2026):** jalankan sweep `scripts/qa/menu-sweep.mjs` 3 mode terhadap build yang diukur + DB staging dan bandingkan **`menu` ↔ `baseline/menu-sweep`, `restore` ↔ `baseline/menu-sweep-restore`, `path` ↔ `baseline/menu-sweep-restore`** (path langsung = semantik restore/FIX B, bukan gate adopsi) dengan `--ignore finalSearch,finalPath,lastPath` (alamat berubah bentuk by design); perbedaan yang diharapkan wajib disebut eksplisit di `PROGRESS.md`, selain itu = regresi — aturan lengkap `scripts/qa/README.md`) → Summarize (Summary / Files changed / Verification / Risk / Not changed / Next step).
+**Per task (urutan wajib):** Inspect (branch, git status, file terkait) → Plan (scope kecil) → Edit (hanya file yg perlu) → Verify (`npm run build`, lint net-zero — sejak 21 Sep 2026 lewat `node scripts/qa/lint-baseline.mjs`; bila menyentuh menu/route juga `node scripts/qa/check-menu-paths.mjs`; keduanya = isi CI. **Bila menyentuh routing/gate navigasi (sejak G1 22 Sep 2026):** jalankan sweep `scripts/qa/menu-sweep.mjs` 3 mode terhadap build yang diukur + DB staging dan bandingkan tiap mode ke baseline mode-nya sendiri — **`menu` ↔ `baseline/menu-sweep`, `restore` ↔ `baseline/menu-sweep-restore`, `path` ↔ `baseline/menu-sweep-path`** (ketiganya = hasil build G1 sejak 22 Sep 2026, keputusan Den; `--ignore` tidak wajib lagi — hanya bila sengaja mengecualikan field); perbedaan yang diharapkan saat baseline diganti wajib disebut eksplisit di `PROGRESS.md`, selain itu = regresi — aturan lengkap `scripts/qa/README.md`) → Summarize (Summary / Files changed / Verification / Risk / Not changed / Next step).
 
 **DB change flow:**
 1. State: tabel apa, kenapa, data/query terdampak. **Tunggu approval eksplisit.**
@@ -231,7 +231,7 @@
 
 ## 8. QA Checklist
 
-> Checklist manual sebelum deploy/push (belum ada test otomatis — TD-07; **sejak 21 Sep 2026 ada CI** `.github/workflows/ci.yml` = build + lint-baseline + kontrak URL — gate regresi, BUKAN unit test — plus sweep runtime lokal `scripts/qa/menu-sweep.mjs` — 3 mode `menu`/`restore`/`path` sejak G1 22 Sep 2026, `--ignore` untuk field alamat — dengan checklist manual per giliran Batch FS di `scripts/qa/README.md`). **Pre-deploy & DB-change checklist = lihat §4 (Pola Wajib Database), §6 (Do/Don't), §7 (Workflow Development)** — tak diulang di sini. Bagian ini fokus ke checklist per-modul + PDF quotation.
+> Checklist manual sebelum deploy/push (belum ada test otomatis — TD-07; **sejak 21 Sep 2026 ada CI** `.github/workflows/ci.yml` = build + lint-baseline + kontrak URL — gate regresi, BUKAN unit test — plus sweep runtime lokal `scripts/qa/menu-sweep.mjs` — 3 mode `menu`/`restore`/`path` dengan baseline per mode di `scripts/qa/baseline/` (hasil build G1 sejak 22 Sep 2026) — dengan checklist manual per giliran Batch FS di `scripts/qa/README.md`). **Pre-deploy & DB-change checklist = lihat §4 (Pola Wajib Database), §6 (Do/Don't), §7 (Workflow Development)** — tak diulang di sini. Bagian ini fokus ke checklist per-modul + PDF quotation.
 
 ### Per-Modul (fitur kritis + edge case pernah kena bug)
 

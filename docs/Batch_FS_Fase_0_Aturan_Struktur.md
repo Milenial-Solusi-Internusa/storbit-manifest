@@ -434,15 +434,26 @@ G1 — mekanisme alamat ditukar: `?menu=<id>` → PATH (22 Sep 2026, branch yang
   Uji interaktif super_admin (laporan sesi): sidebar, alur detail/handoff,
   Back/Forward, `/?menu=` → path, `/foo/bar` → `/`, drawer mobile, logout —
   lolos. BELUM: login dari path dalam · akun sales via sidebar · Vercel
-  Preview (vercel.json masih belum terbukti — butuh push; CI run pertama juga).
+  Preview (vercel.json masih belum terbukti; CI run pertama juga) —
+  diputuskan Den 22 Sep: branch di-push ke origin (tanpa merge) supaya Preview
+  terbentuk; vercel.json belum terbukti sampai Preview dicek (status push =
+  git, tidak dicatat di sini).
   Register: nol TD baru, nol Keputusan Terbuka baru (TD-12 tetap; TD-272 TETAP
-  OPEN — gate tidak diubah; TD-08 ErrorBoundary Sentry sengaja tidak dikerjakan).
+  OPEN — gate tidak diubah; TD-08 ErrorBoundary Sentry sengaja tidak
+  dikerjakan) — keduanya DIKONFIRMASI Den 22 Sep 2026: tetap di luar scope G1.
   Kandidat (keputusan Den): rename 32 id camelCase → kebab (Fase 3/8) · cabut
   dual-write nexus_last_menu + overlay location.state saat detail dapat /:id
-  (G2+) · baseline resmi scripts/qa/baseline/* belum diganti ke hasil G1
-  (kandidat out/g1f-*). Batas G1: AdminHub tetap state lokal — sub-path hanya
-  dibaca saat mount, klik kartu di hub tidak mengubah URL (sama seperti
-  sebelum G1).
+  (G2+). → G2 (keputusan Den 22 Sep): AdminHub masih state lokal — sub-path
+  /admin-settings/<section> hanya dibaca saat mount, klik kartu di hub tidak
+  mengubah URL (sama seperti sebelum G1); TD-129 tetap OPEN.
+  Tindak lanjut 22 Sep 2026 (keputusan Den; nol kode aplikasi): BASELINE SWEEP
+  RESMI DIGANTI dengan hasil G1 — baseline/menu-sweep ← out/g1f-menu ·
+  menu-sweep-restore ← g1f-restore · menu-sweep-path (BARU) ← g1f-path; 5 akun
+  × 194 tujuan, build G1 (c729d99) + staging; byte-identik out/g1f-*
+  (diverifikasi doc-keeper); lama→baru: menu 162 (2 hash drift + 160 baru) ·
+  restore 199 (39 + 160 baru) · path = folder baru, isinya ≡ restore (hanya
+  `url` yang dibuka berbeda). Sejak ini tiap mode ↔ baseline mode-nya sendiri,
+  --ignore tidak wajib (scripts/qa/README.md, diperbarui sesi).
 
 Temuan sweep yang BUKAN bagian Batch FS (register 08_TECH_DEBT.md):
   TD-271 (HIGH, produksi; RESOLVED 21 Sep 2026 sore) — deep-link ?menu= & restore
