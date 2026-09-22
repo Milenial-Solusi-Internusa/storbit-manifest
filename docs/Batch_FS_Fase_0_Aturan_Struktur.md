@@ -433,11 +433,11 @@ G1 — mekanisme alamat ditukar: `?menu=<id>` → PATH (22 Sep 2026, branch yang
   +160 tujuan baru (32 id × 5) identik 160/160 vs main · nol gagal-muat.
   Uji interaktif super_admin (laporan sesi): sidebar, alur detail/handoff,
   Back/Forward, `/?menu=` → path, `/foo/bar` → `/`, drawer mobile, logout —
-  lolos. BELUM: login dari path dalam · akun sales via sidebar · Vercel
-  Preview (vercel.json masih belum terbukti; CI run pertama juga) —
-  diputuskan Den 22 Sep: branch di-push ke origin (tanpa merge) supaya Preview
-  terbentuk; vercel.json belum terbukti sampai Preview dicek (status push =
-  git, tidak dicatat di sini).
+  lolos. BELUM saat itu: login dari path dalam · akun sales via sidebar ·
+  Vercel Preview — diputuskan Den 22 Sep: branch di-push ke origin (tanpa
+  merge) supaya Preview terbentuk (status push = git, tidak dicatat di sini).
+  [→ Preview TERBUKTI + login dari path dalam LOLOS, lihat ekor blok ini;
+  sisa: uji akun sales via sidebar + CI run pertama.]
   Register: nol TD baru, nol Keputusan Terbuka baru (TD-12 tetap; TD-272 TETAP
   OPEN — gate tidak diubah; TD-08 ErrorBoundary Sentry sengaja tidak
   dikerjakan) — keduanya DIKONFIRMASI Den 22 Sep 2026: tetap di luar scope G1.
@@ -454,6 +454,23 @@ G1 — mekanisme alamat ditukar: `?menu=<id>` → PATH (22 Sep 2026, branch yang
   restore 199 (39 + 160 baru) · path = folder baru, isinya ≡ restore (hanya
   `url` yang dibuka berbeda). Sejak ini tiap mode ↔ baseline mode-nya sendiri,
   --ignore tidak wajib (scripts/qa/README.md, diperbarui sesi).
+  Vercel Preview TERBUKTI (laporan sesi + uji Den): rewrite vercel.json jalan
+  (/crm/dashboard, /crm/quotation terbuka; path dalam → 200 text/html index
+  yang sama, /icons.svg & /assets/*.js tetap aset) dan LOGIN DARI PATH DALAM
+  mendarat di Quotation List, bukan Home (butir 6 checklist README tertutup).
+  Den memberi lampu hijau merge (PR akan dibuka) — status merge/CI = git.
+  BATAS G1 YANG DISENGAJA (bukan temuan/gap baru; koreksi atas dugaan saat uji
+  Preview): halaman detail & form yang dibuka DARI dalam satu menu — Detail
+  Deal, Detail Quotation, Detail PRF, Detail SP, Detail Picking/Surat Jalan,
+  Detail MOM, seluruh form — TIDAK punya alamat sendiri: 18 state jadi kondisi
+  cabang render di LegacyMenuOutlet (+ payload spt editingQuotation) yang tak
+  pernah menyentuh URL, persis seperti sebelum G1 (kondisi render Detail Deal
+  byte-identik main 7e3660c). Ini BUKAN "id sintetis detail" — id sintetis
+  tetap 4 (customer-detail/product-detail/assets-detail/user-edit); string
+  `deal-detail` nol hit di kode (src/, scripts/) dan nol kunci di baseline
+  sweep — id itu tidak pernah ada. Diselesaikan
+  G2+ lewat rute ber-:id (DETAIL_ROUTE_TEMPLATES), sekaligus mencabut overlay
+  location.state untuk 3 id sintetis.
 
 Temuan sweep yang BUKAN bagian Batch FS (register 08_TECH_DEBT.md):
   TD-271 (HIGH, produksi; RESOLVED 21 Sep 2026 sore) — deep-link ?menu= & restore
