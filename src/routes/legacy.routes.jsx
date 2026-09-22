@@ -13,10 +13,16 @@
 // dipakai dinavigasi programatik lewat location.state (lihat setActiveMenu di
 // App.jsx), yang keempat tak punya pemanggil.
 //
-// Nama file mengikuti keputusan #11 (`.routes.jsx`); file per modul (crm.routes.jsx
-// dst.) lahir saat halamannya dipindah di G2–G6 dan menggantikan entri di sini.
+// Nama file mengikuti keputusan #11 (`.routes.jsx`); file per modul lahir saat
+// halamannya dipindah di G2–G6 dan MENGGANTIKAN entri di sini — id yang sudah
+// punya rute sendiri dikecualikan lewat MOVED_MENU_IDS di bawah supaya tidak
+// pernah ada dua rute untuk path yang sama.
 import { LegacyMenuOutlet } from '@/App.jsx';
 import { MENU_PATHS, PLANNED_MENU_IDS, PLANNED_PREFIX, SYNTHETIC_DETAIL_IDS } from './menu-paths.js';
+import { LOGISTICS_WAREHOUSE_MENU_IDS } from './logistics-warehouse.routes.jsx';
+
+/** Id yang sudah keluar dari LegacyMenuOutlet (G2: modul Logistics & Warehouse). */
+const MOVED_MENU_IDS = new Set([...LOGISTICS_WAREHOUSE_MENU_IDS]);
 
 // Satu instance elemen dibagi semua rute: pindah rute → Outlet menerima elemen
 // yang identik → React tidak me-remount LegacyMenuOutlet (state detail di App.jsx
@@ -25,7 +31,7 @@ const LEGACY_OUTLET = <LegacyMenuOutlet />;
 
 export const legacyMenuRoutes = [
   ...Object.entries(MENU_PATHS)
-    .filter(([id]) => !SYNTHETIC_DETAIL_IDS.includes(id))
+    .filter(([id]) => !SYNTHETIC_DETAIL_IDS.includes(id) && !MOVED_MENU_IDS.has(id))
     .map(([id, path]) => ({ path: `${path}/*`, handle: { menuId: id }, element: LEGACY_OUTLET })),
   ...PLANNED_MENU_IDS
     .map((id) => ({ path: `${PLANNED_PREFIX}/${id}/*`, handle: { menuId: id }, element: LEGACY_OUTLET })),

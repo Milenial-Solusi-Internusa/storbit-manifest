@@ -498,17 +498,24 @@ export default function SalesOrderPage({
             Kelola surat pesanan masuk dari customer Storbit
           </p>
         </div>
-        <button
-          onClick={onAddSP}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7,
-            background: C.orange, color: '#fff', border: 'none',
-            padding: '0 18px', height: 40, borderRadius: 9,
-            fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >
-          <Plus size={16}/> Input SP
-        </button>
+        {/* onAddSP undefined = user tidak berhak membuat SP → tombolnya HILANG,
+            bukan sekadar mati. Sebelum Batch FS Fase 2.5 G2 tombol ini tak punya
+            gate sama sekali padahal InputSPPage tidak punya guard sendiri; sejak
+            G2 ia digerbangi izin yang SAMA dengan rutenya (canInputSP), jadi tak
+            ada lagi tombol yang pasti berujung Akses Ditolak. */}
+        {onAddSP && (
+          <button
+            onClick={onAddSP}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7,
+              background: C.orange, color: '#fff', border: 'none',
+              padding: '0 18px', height: 40, borderRadius: 9,
+              fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            <Plus size={16}/> Input SP
+          </button>
+        )}
       </div>
 
       {/* ── Filter bar (card) ─────────────────────────────────────────── */}

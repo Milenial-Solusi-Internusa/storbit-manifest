@@ -5,7 +5,9 @@
 //   /                 root  — <AuthGate><App/></AuthGate>: App = shell/layout
 //                              (sidebar, topbar, state halaman) + <Outlet/>
 //     index           IndexRedirect  → path terakhir tersimpan, atau /home
-//     <path>/*        legacyMenuRoutes (legacy.routes.jsx) — 167 rute kanonik,
+//     <modul>         rute modul yang sudah dipindah — G2: logistics-warehouse
+//                     (12 rute, termasuk 3 halaman detail ber-:id)
+//     <path>/*        legacyMenuRoutes (legacy.routes.jsx) — sisa rute kanonik,
 //                     semuanya merender LegacyMenuOutlet (region render lama)
 //     *               alamat tak dikenal → `/` (= menu terakhir / home; perilaku
 //                     yang sama dengan sebelum G1, ketika pathname diabaikan)
@@ -17,7 +19,7 @@ import { createBrowserRouter, Navigate } from 'react-router';
 import App from '@/App.jsx';
 import AuthGate from '@/components/AuthGate.jsx';
 import IndexRedirect from './IndexRedirect.jsx';
-import { legacyMenuRoutes } from './legacy.routes.jsx';
+import { childRoutes } from './route-table.jsx';
 
 export const routes = [
   {
@@ -29,7 +31,11 @@ export const routes = [
     ),
     children: [
       { index: true, element: <IndexRedirect /> },
-      ...legacyMenuRoutes,
+      // Rute modul yang sudah dipindah + sisa rute legacy — satu daftar di
+      // route-table.jsx, dibaca router INI dan IndexRedirect (validasi
+      // `nexus_last_path`). Urutan di dalamnya bukan soal presedensi:
+      // react-router memberi peringkat per spesifisitas, bukan per urutan.
+      ...childRoutes,
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },
