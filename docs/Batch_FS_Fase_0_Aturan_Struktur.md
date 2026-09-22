@@ -623,24 +623,58 @@ G2 — modul PERTAMA keluar dari LegacyMenuOutlet: Logistics & Warehouse
   Uji rute detail 18/18 LOLOS (laporan sesi; detail-routes.mjs, build G2 via vite
   preview, staging, akun zzztest.warehouse) = 3 flow × 5 butir + 3 deep-link
   palsu; struktur 3×5+3 diverifikasi doc-keeper dari isi skripnya.
-  SWEEP 5 akun × 194 tujuan — HASIL: restore ✔ IDENTIK BASELINE · path ✔ IDENTIK
-  BASELINE (gagal-muat 0 kelima akun; penghitung per akun persis baseline:
-  denied 3 · coming-soon 11 [hrga 13] · console-error 4 [warehouse 1]). path =
-  perbandingan PERTAMA terhadap baseline/menu-sweep-path sejak folder itu lahir
-  22 Sep 2026, dan ia identik → 12 rute modul + 3 rute detail nol menggeser
-  fingerprint tujuan menu. Ekspektasi sebelum run (identik baseline G1) TERBUKTI
-  untuk dua mode itu.
-  MODE `menu` BELUM SAH — JANGAN DIKUTIP SEBAGAI LOLOS. Skrip ronde 2
-  menjalankan menu BERBARENGAN dengan restore (10 konteks browser ke satu vite
-  preview); tiga akun kena kegagalan muat HTTP 404 atas chunk pada tujuan ke-163
-  / 171 / 172 — jendela waktu yang SAMA, bukan tujuan yang sama. Gejala: lastMenu
-  /lastPath null, surfaceHash = hash string kosong, lalu cascade "page.goto: …
-  interrupted by another navigation"; satu akun menggantung >30 menit (node 0 %
-  CPU) karena page.evaluate di ekor loop tak ber-timeout. Parsialnya: 914 dari
-  970 pembanding NOL perbedaan, 56 entri artefak, nol perbedaan perilaku di
-  entri yang sah — informatif, bukan pengganti run bersih. Ulangi mode menu
-  SENDIRIAN. Aturan baru di scripts/qa/README.md: gagal-muat > 0 = run tidak
-  layak dibandingkan.
+  SWEEP — SELESAI, KETIGA MODE IDENTIK dengan baseline G1. 5 akun × 194 tujuan
+  × 3 mode = 2.910 pembanding, NOL gagal-muat, NOL loginShown. Dihitung ulang
+  doc-keeper dari JSON scripts/qa/out/ dan --diff dijalankan ulang sendiri:
+    menu    (label g2d-menu,   startedAt 16:07:35Z) vs baseline/menu-sweep
+            -> ✔ identik (5/5 akun); 970 · gagal-muat 0 · denied 0 · coming-soon 1
+    restore (label g2b-restore, 14:37:28Z) vs baseline/menu-sweep-restore
+            -> ✔ identik; 970 · gagal-muat 0 · denied 15 · coming-soon 57
+    path    (label g2b-path,    15:28:40Z) vs baseline/menu-sweep-path
+            -> ✔ identik; 970 · gagal-muat 0 · denied 15 · coming-soon 57
+  Ketiganya project staging oovmlhilhqzejnawqkvt, meta.targets 194.
+  Ekspektasi yang ditulis SEBELUM hasilnya ada TERBUKTI: memindahkan 9 id ke rute
+  modulnya sendiri tidak menggeser satu pun fingerprint halaman. Dua hal yang
+  layak digarisbawahi: (1) path = perbandingan PERTAMA terhadap
+  baseline/menu-sweep-path sejak folder itu lahir 22 Sep 2026, dan ia identik ->
+  12 rute modul + 3 rute detail nol menggeser fingerprint tujuan MENU (rute /:id
+  diuji terpisah); (2) restore identik sekaligus BUKTI bahwa perbaikan
+  IndexRedirect/route-table.jsx (bug (b) di atas) bekerja — tanpa itu 9 path
+  modul + 3 rute detail dianggap asing dan jatuh ke /home.
+  Catatan status sebelumnya ("mode menu BELUM SAH, ulangi sendirian") SUDAH
+  TERLAMPAUI — menu diulang bersih sebagai g2d-menu; jangan dihidupkan lagi.
+  CATATAN PROSES — dua run dibuang sebelum hasil yang sah (proses, bukan temuan
+  produk):
+    - Run mode menu yang pertama TERCEMAR, dan penyebabnya doc-keeper sendiri:
+      `npm run build` yang dijalankan agen dokumentasi di latar untuk mengukur
+      ulang gate MENIMPA dist/ yang sedang dilayani vite preview; nama chunk
+      ber-hash berubah -> 55 dari 970 tujuan gagal muat + 1 tujuan
+      (vendorPortal-invoice, akun hcga) bergejala sama = 56 "perbedaan" yang
+      seluruhnya artefak. Gejala: lastMenu/lastPath null, surfaceHash = hash
+      string kosong, consoleErrors melonjak, lalu cascade "page.goto: …
+      interrupted by another navigation"; satu akun menggantung >30 menit (node
+      0 % CPU) karena page.evaluate di ekor loop tak ber-timeout. Yang sah dari
+      run itu: 914 dari 970 pembanding nol perbedaan.
+      KOREKSI DIAGNOSIS: catatan pertama menduga penyebabnya KONTENSI (menu +
+      restore paralel, 10 konteks browser ke satu server). Itu bukan akarnya —
+      restore yang jalan berbarengan justru BERSIH, dan 404 atas chunk tertentu
+      adalah tanda khas dist/ ditimpa, bukan tanda beban. PELAJARAN YANG BENAR
+      untuk G3–G6: jangan menjalankan build — termasuk lewat agen/alat lain —
+      selama vite preview melayani dist/. Saran "mode dijalankan berurutan"
+      tetap berguna sebagai kehati-hatian, tapi BUKAN obat kelas kegagalan ini.
+    - Run berikutnya gagal login kelima akun (invalid_credentials), DAN skrip
+      tetap mencetak "✔ identik dengan baseline" padahal NOL data terkumpul —
+      kesimpulan persis terbalik dari kenyataan. Itulah pemicu pengerasan alat.
+  ALAT DIPERKERAS (scripts/qa/menu-sweep.mjs +22/−3, dibaca doc-keeper — bukan
+  kode aplikasi): (a) compare() mengembalikan -1 bila nol akun menghasilkan data
+  -> "✖ pembandingan DIBATALKAN — nol data" + exit 1 (nol data = TIDAK ADA
+  pembanding, bukan nol perbedaan); (b) jalur sweep selalu menyebut cakupan
+  ("✔ identik dengan baseline (5/5 akun)" / "✖ … (HANYA 3/5 akun)") dan exit
+  code gagal juga saat nol perbedaan tapi akun tak lengkap; (c) jalur --diff
+  ikut diselaraskan. Nuansa: baris cakupan hanya dicetak jalur sweep
+  (--compare); jalur --diff dua folder tetap mencetak "✔ identik" polos.
+  Cacat harness sesi (bukan file repo, tidak diperbaiki): output sweep lewat
+  `| tail -18` menyembunyikan progres ±15 menit — untuk G3–G6 pakai tee penuh.
   Register: +TD-273 (MEDIUM, lihat blok di bawah), nol Keputusan Terbuka baru.
   TD-12 (App.jsx pertama kali BERKURANG; LegacyMenuOutlet 48 → 39 id) · TD-129 (3 detail Storbit kini punya
   alamat + refresh-safe; 18 → 14 state cabang render; sisanya G3–G6; AdminHub

@@ -229,6 +229,17 @@ async function sweepAccount(browser, email) {
 // (muncul di satu run, hilang di run berikutnya); tetap DIREKAM untuk dibaca manual.
 const IGNORE_FIELDS = new Set(['url', 'consoleSample', 'consoleErrors', ...IGNORE_EXTRA]);
 function compare(baseDir, curByAccount) {
+  // Guard "identik palsu": kalau tak ada satu pun akun yang menghasilkan data
+  // (mis. SEMUA login gagal), loop di bawah tidak pernah jalan dan fungsi ini
+  // dulu melaporkan "identik dengan baseline" — kesimpulan terbalik dari
+  // kenyataan. Terjadi sungguhan 22 Sep 2026 (G2, sweep ulang mode menu:
+  // 5/5 login gagal → "✔ identik"). Nol data = TIDAK ADA pembanding, bukan
+  // nol perbedaan.
+  const accounts = Object.keys(curByAccount);
+  if (accounts.length === 0) {
+    console.error('  ✖ nol akun menghasilkan data — tidak ada yang bisa dibandingkan (cek kegagalan login di atas)');
+    return -1;
+  }
   let diffs = 0;
   for (const [email, cur] of Object.entries(curByAccount)) {
     const f = join(baseDir, `${email}.json`);
@@ -252,7 +263,7 @@ if (has('diff')) {
   for (const f of (existsSync(b) ? readdirSync(b) : []).filter(x => x.endsWith('.json'))) cur[f.replace(/\.json$/, '')] = JSON.parse(readFileSync(join(b, f), 'utf8')).results;
   console.log(`diff ${a}  vs  ${b}${IGNORE_EXTRA.length ? ` (abaikan: ${IGNORE_EXTRA.join(', ')})` : ''}`);
   const d = compare(a, cur);
-  console.log(d ? `✖ ${d} perbedaan` : '✔ identik');
+  console.log(d < 0 ? '✖ pembandingan DIBATALKAN — nol data' : d ? `✖ ${d} perbedaan` : '✔ identik');
   process.exit(d ? 1 : 0);
 }
 
@@ -278,7 +289,15 @@ if (has('diff')) {
   if (COMPARE) {
     console.log(`\nbanding dengan ${COMPARE}${IGNORE_EXTRA.length ? ` (abaikan: ${IGNORE_EXTRA.join(', ')})` : ''}:`);
     const d = compare(resolve(ROOT, COMPARE), all);
-    console.log(d ? `✖ ${d} perbedaan` : '✔ identik dengan baseline');
-    if (d) process.exitCode = 1;
+    if (d < 0) { console.log('✖ pembandingan DIBATALKAN — nol data'); process.exitCode = 1; }
+    else {
+      // Akun yang gagal (login/error fatal) tidak masuk `all`; katakan berapa
+      // yang benar-benar dibandingkan supaya "identik" tak pernah terbaca lebih
+      // kuat dari cakupannya.
+      const done = Object.keys(all).length;
+      const cover = done === ACCOUNTS.length ? `${done}/${ACCOUNTS.length} akun` : `HANYA ${done}/${ACCOUNTS.length} akun`;
+      console.log(d ? `✖ ${d} perbedaan (${cover})` : `✔ identik dengan baseline (${cover})`);
+      if (d || done !== ACCOUNTS.length) process.exitCode = 1;
+    }
   }
 })();
