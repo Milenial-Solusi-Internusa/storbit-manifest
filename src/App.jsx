@@ -55,28 +55,12 @@ const AssetShell     = lazy(() => import('./modules/assets/AssetShell'));
 const HrgaShell      = lazy(() => import('./modules/hrga/HrgaShell'));
 // 11 halaman Storbit/Inventory di-lazy-import oleh modulnya sendiri sejak
 // Batch FS Fase 2.5 G2 — src/routes/logistics-warehouse.routes.jsx.
-const ProspectListPage     = lazy(() => import('./modules/crm/ProspectListPage'));
-const ProspectFormPage     = lazy(() => import('./modules/crm/ProspectFormPage'));
-const InquiryListPage      = lazy(() => import('./modules/crm/InquiryListPage'));
-const InquiryFormPage      = lazy(() => import('./modules/crm/InquiryFormPage'));
 const PRFFormPage          = lazy(() => import('./modules/procurement/PRFFormPage'));
 const ProcInquiryForwardingPage = lazy(() => import('./modules/procurement/ProcInquiryForwardingPage'));
 const PRFDetailPage        = lazy(() => import('./modules/procurement/PRFDetailPage'));
 const VendorListPage       = lazy(() => import('./modules/procurement/VendorListPage'));
 const SalesOrderDocListPage   = lazy(() => import('./modules/sales-order/SalesOrderDocListPage'));
-const SalesOrderDocFormPage   = lazy(() => import('./modules/sales-order/SalesOrderDocFormPage'));
 const SalesOrderDocDetailPage = lazy(() => import('./modules/sales-order/SalesOrderDocDetailPage'));
-const QuotationFormPage    = lazy(() => import('./modules/crm/QuotationFormPage'));
-const QuotationListPage    = lazy(() => import('./modules/crm/QuotationListPage'));
-const QuotationDetailPage  = lazy(() => import('./modules/crm/QuotationDetailPage'));
-const DealDetailPage       = lazy(() => import('./modules/crm/DealDetailPage'));
-const PipelineKanbanPage   = lazy(() => import('./modules/crm/PipelineKanbanPage'));
-const CRMDashboardPage     = lazy(() => import('./modules/crm/CRMDashboardPage'));
-const CustomerListPage     = lazy(() => import('./modules/crm/CustomerListPage'));
-const CRMReportPage        = lazy(() => import('./modules/crm/CRMReportPage'));
-const RiwayatVisitPage     = lazy(() => import('./modules/crm/RiwayatVisitPage'));
-const IndomarcoDashboardPage = lazy(() => import('./modules/crm/IndomarcoDashboardPage'));
-const RateListPage         = lazy(() => import('./modules/crm/RateListPage'));
 const MOMListPage          = lazy(() => import('./modules/reporting/MOMListPage'));
 const MOMFormPage          = lazy(() => import('./modules/reporting/MOMFormPage'));
 const MOMDetailPage        = lazy(() => import('./modules/reporting/MOMDetailPage'));
@@ -84,11 +68,6 @@ const BNFListPage          = lazy(() => import('./modules/bnf/BNFListPage'));
 const BNFOrgRolesPage      = lazy(() => import('./modules/bnf/BNFOrgRolesPage'));
 const BriefingHarianPage   = lazy(() => import('./modules/briefing-harian/BriefingHarianPage'));
 const MeetingMingguanPage  = lazy(() => import('./modules/meeting-mingguan/MeetingMingguanPage'));
-const CustomerDetailPage   = lazy(() => import('./modules/crm/CustomerDetailPage'));
-const ActivitiesPage       = lazy(() => import('./modules/crm/ActivitiesPage'));
-const ActivityLogPage      = lazy(() => import('./modules/crm/ActivityLogPage'));
-const LeadPoolPage         = lazy(() => import('./modules/crm/LeadPoolPage'));
-const LeadPoolApprovalPage = lazy(() => import('./modules/crm/LeadPoolApprovalPage'));
 const ProductsPage         = lazy(() => import('./modules/admin/pages/ProductsPage'));
 const BulkEditPricePage    = lazy(() => import('./modules/admin/pages/BulkEditPricePage'));
 const ProductDetailModal   = lazy(() => import('./modules/admin/pages/ProductDetailPage'));
@@ -531,26 +510,25 @@ const CRM_MENU_ITEMS = [
 // Tahap 2b: tabs inside the merged "Account" menu. activeMenu stays one of these
 // ids; the tab id IS the route. Gates live on the matching children of the
 // 'crm-account' node in CRM_MENU_ITEMS (found via findMenuItemById).
-const ACCOUNT_TABS = [
-  { id: 'crm-prospects',          label: 'Prospects' },
-  { id: 'crm-lead-pool',          label: 'Lead Pool' },
-];
-const ACCOUNT_TAB_IDS = ACCOUNT_TABS.map(t => t.id);
-const isAccountTab = (id) => ACCOUNT_TAB_IDS.includes(id);
 
 // Tahap 2c: tabs inside the merged "Aktivitas" menu (gates on the matching
 // children of 'crm-aktivitas' in CRM_MENU_ITEMS). activeMenu stays the tab id.
-const ACTIVITY_TABS = [
-  { id: 'crm-calls',        label: 'Jadwal & Tugas' },
-  { id: 'crm-activity-log', label: 'Log Aktivitas'  },
-  { id: 'riwayat-visit',    label: 'Riwayat Visit'  },
-];
-const ACTIVITY_TAB_IDS = ACTIVITY_TABS.map(t => t.id);
-const isActivityTab = (id) => ACTIVITY_TAB_IDS.includes(id);
 
 // Presentational tab strip shared by the tabbed CRM menus (Account, Aktivitas).
 // `tabs` is already gate-filtered by the caller; active tab = navy underline
 // (var(--navy), matches sidebar/CRM).
+/** Tab bar CRM untuk file rute modul (G3). Sengaja TIDAK menyalin markup
+ *  MenuTabBar maupun logika filternya ke src/routes/ — pelajaran TD-273:
+ *  satu penjaga, satu rumah. Dipakai ACCOUNT_TABS & ACTIVITY_TABS. */
+export function CrmTabBar({ tabs }) {
+  const { activeMenu, navigateTo, hasMenuPermission, isBnfAuthorized } = useAppShell();
+  const visible = tabs.filter(t => {
+    const it = findMenuItemById(t.id);
+    return it && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized);
+  });
+  return <MenuTabBar tabs={visible} active={activeMenu} onSelect={navigateTo} />;
+}
+
 function MenuTabBar({ tabs, active, onSelect }) {
   return (
     <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--line, #E8ECF2)', marginBottom: 20, flexWrap: 'wrap' }}>
@@ -1392,7 +1370,14 @@ const SYNTHETIC_MENU_IDS = ['home', 'users', 'customer-detail', 'assets-detail',
 // punya path sendiri di kontrak URL → dibawa sebagai location.state.menu di path
 // daftar induknya (lihat blok "activeMenu = turunan URL" di StorbitManifest).
 // 'user-edit' tidak ada di sini: nol pemanggil setActiveMenu('user-edit').
-const DETAIL_OVERLAY_IDS = ['customer-detail', 'assets-detail', 'product-detail'];
+// G3: `customer-detail` KELUAR dari daftar ini — ia punya alamat sendiri
+// (/crm/customer/:id), jadi id-nya tak perlu lagi dititipkan sebagai
+// location.state. Perilakunya identik (tanpa payload, keduanya mendarat di
+// daftar Customer); yang hilang hanya penanda yang menyesatkan.
+// ⚠️ SYNTHETIC_MENU_IDS / SYNTHETIC_DETAIL_IDS SENGAJA tidak disentuh:
+// keduanya ikut menentukan GATE, dan giliran pemindahan tidak mengubah gate
+// (aturan G2; substansinya TD-272).
+const DETAIL_OVERLAY_IDS = ['assets-detail', 'product-detail'];
 
 // canSeeMenuItem — priority: public → hasMenuPermission (MENU_KEY_MAP) →
 // DEFAULT-DENY. SATU rezim gate sejak 11 Sep 2026: fallback `item.role`
@@ -1840,16 +1825,11 @@ export default function StorbitManifest() {
   // sama (pengganti yang memanggil navigate()).
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile module-menu drawer
   const [activeAssetId, setActiveAssetId] = useState(null);  // for assets-detail page
-  const [activeCustomerId, setActiveCustomerId] = useState(null); // for customer-detail page
-  const [prevCustomerMenu, setPrevCustomerMenu] = useState('crm-customers'); // back target
   // Edit Inquiry dari Detail Account (tab Riwayat). SENGAJA terpisah dari crmDealInquiry
   // (jalur DealDetailPage) supaya jalur DDP tak berubah. customerDetailTab = tab awal
   // saat CustomerDetailPage (re)mount → kembali ke Riwayat setelah simpan/batal edit.
-  const [customerInquiryEdit, setCustomerInquiryEdit] = useState(null); // inquiry id → InquiryForm mode=edit
-  const [customerDetailTab,   setCustomerDetailTab]   = useState('info');
   // Lihat Quotation & Cetak PRF dari Detail Account (tab Riwayat). Jalur TERPISAH dari
   // crmDealInquiry (DealDetailPage) supaya jalur DDP tak berubah. Balik → clear → remount tab Riwayat.
-  const [customerQuotationView, setCustomerQuotationView] = useState(null); // quotation id → QuotationDetail
   const [customerPrfInquiryId,  setCustomerPrfInquiryId]  = useState(null); // inquiry id → PRFFormPage prefill
   // Prefill "+ New Inquiry" dari Detail Account → InquiryFormPage (mode create).
   // Bentuk: { accountId, contactId } — contactId = kontak UTAMA akun itu bila ada,
@@ -1867,24 +1847,13 @@ export default function StorbitManifest() {
   const [spOrderMap, setSpOrderMap]       = useState({});    // FASE 2E L0: uid → {status, hadCancelledPicking}
   const [prevAssetMenu, setPrevAssetMenu] = useState('assets-it'); // where to go back from detail
   // CRM module state
-  const [showProspectForm,  setShowProspectForm]  = useState(false);
-  const [editingProspect,   setEditingProspect]   = useState(null);
-  const [showInquiryForm,   setShowInquiryForm]   = useState(false);
-  const [showQuotationForm,   setShowQuotationForm]   = useState(false);
-  const [crmQuotationDetail, setCrmQuotationDetail] = useState(null);  // quotation row for detail page
-  const [editingQuotation,   setEditingQuotation]   = useState(null);  // quotation row for edit mode
-  const [duplicatingQuotation, setDuplicatingQuotation] = useState(null);  // source row for duplicate (prefilled create)
-  const [crmDealInquiry,     setCrmDealInquiry]     = useState(null);  // inquiry row for deal detail page
   const [prfPrefillInquiryId, setPrfPrefillInquiryId] = useState(null);  // inquiry id → prefill PRF form (Cetak PRF)
   const [procPrfDetailId, setProcPrfDetailId] = useState(null);  // prf id → PRFDetailPage (dari list Forwarding MSI)
   const [procPrfEditId, setProcPrfEditId] = useState(null);  // prf id → PRFFormPage mode edit (TD-76, hanya status DRAFT)
-  const [quotationFromPrf, setQuotationFromPrf] = useState(null); // payload prefill PRF → QuotationFormPage ("Buat Quotation" di PRFDetailPage)
   // Inquiry asal untuk "Buat Quotation" dari Detail Deal — TANPA PRF, jadi hanya
   // identitas inquiry yang dibawa (item tetap kosong; sumber item cuma ada di PRF).
   // Berbeda dari quotationFromPrf yang membawa payload penuh.
-  const [quotationFromInquiryId, setQuotationFromInquiryId] = useState(null);
   const [soDetailId, setSoDetailId] = useState(null);  // SO id → tampilkan SO detail (crm/proc)
-  const [soFormOpen, setSoFormOpen] = useState(false); // buka SO create form (crm)
   const [reportingMomId,     setReportingMomId]     = useState(null);  // MOM being opened
   const [reportingMomMode,   setReportingMomMode]   = useState('list'); // list | create | edit | detail
   const [selectedProduct,    setSelectedProduct]    = useState(null);  // product detail page
@@ -1895,7 +1864,8 @@ export default function StorbitManifest() {
   // 3 effect adopsi/mirror/popstate — semuanya dicabut). Kini SUMBER-nya rute:
   // tiap path di src/routes/legacy.routes.jsx membawa `handle.menuId`; App hanya
   // membacanya (Back/Forward, deep link, restore = semuanya jalur react-router).
-  // Tiga id sintetis DETAIL (customer-detail / assets-detail / product-detail)
+  // Dua id sintetis DETAIL yang TERSISA (assets-detail / product-detail;
+  // customer-detail lulus jadi rute ber-:id di G3)
   // tidak punya path sendiri (kontrak menu-paths.js: mendarat di daftar induknya)
   // — mereka dibawa sebagai `location.state.menu` oleh setActiveMenu di bawah,
   // dan hanya berlaku selama payload detailnya masih ada (activeCustomerId /
@@ -1917,7 +1887,6 @@ export default function StorbitManifest() {
   }, [matches]);
   const stateMenu = location.state?.menu ?? null;
   const detailPayloadPresent =
-    stateMenu === 'customer-detail' ? !!activeCustomerId :
     stateMenu === 'assets-detail'   ? !!activeAssetId :
     stateMenu === 'product-detail'  ? !!selectedProduct : false;
   const activeMenu = detailPayloadPresent ? stateMenu : (routeMenuId ?? 'home');
@@ -2087,28 +2056,18 @@ export default function StorbitManifest() {
     );
     if (group) setActiveModule(group.label);
     setActiveMenu(menuId);
-    // Reset CRM sub-page state when navigating to a different menu
-    setShowProspectForm(false);
-    setEditingProspect(null);
-    setShowInquiryForm(false);
-    setShowQuotationForm(false);
-    setCrmQuotationDetail(null);
-    setEditingQuotation(null);
-    setDuplicatingQuotation(null);
-    setQuotationFromPrf(null);
-    setQuotationFromInquiryId(null);
-    setCrmDealInquiry(null);
-    setCustomerInquiryEdit(null);
-    setCustomerQuotationView(null);
+    // Reset sub-page state yang MASIH digerakkan state saat pindah menu.
+    // Seluruh sub-view CRM (form/detail inquiry, quotation, prospect, sales
+    // order dokumen) kini dimiliki URL sejak G3 → tak ada lagi yang di-reset
+    // di sini; yang tersisa milik Procurement/MOM + dua sub-view PRF di Detail
+    // Customer yang sengaja ditahan sampai Procurement pindah (keputusan #1).
     setCustomerPrfInquiryId(null);
     setCustomerPrfViewId(null);
-    setCustomerDetailTab('info');
     setInquiryPrefill(null);
     setPrfPrefillInquiryId(null);
     setProcPrfDetailId(null);
     setProcPrfEditId(null);
-    setSoDetailId(null);
-    setSoFormOpen(false);
+    setSoDetailId(null);   // dipakai BERSAMA proc-sales-order — bukan sisa CRM
     setReportingMomMode('list');
     setReportingMomId(null);
   }, [setActiveMenu]);
@@ -2131,7 +2090,10 @@ export default function StorbitManifest() {
     setActiveMenu(prevAssetMenu);
   }, [prevAssetMenu, setActiveMenu]);
 
-  // Customer list → detail page (state swap, mirrors asset pattern).
+  // Customer list → Detail Customer. Sejak G3 halaman itu punya ALAMAT sendiri
+  // (/crm/customer/:id), jadi id-nya tidak lagi dititipkan ke state: tak ada
+  // `activeCustomerId`, dan tak ada `prevCustomerMenu` — tombol kembali menuju
+  // daftar Customer, deterministik dari deep-link mana pun (aturan G2).
   const navigateToCustomerDetail = useCallback((customerId) => {
     // Defensively keep the CRM module active (mirror navigateToAssetDetail).
     const group = ERP_MENU_GROUPS.find(g =>
@@ -2139,22 +2101,13 @@ export default function StorbitManifest() {
         i.children?.some(c => c.id === 'crm-customers' ||
           c.children?.some(gc => gc.id?.startsWith('crm-customers-')))));
     if (group) setActiveModule(group.label);
-    setPrevCustomerMenu(activeMenu);
-    setActiveCustomerId(customerId);
-    // Buka akun selalu mulai bersih: tab default + tak ada sub-view (edit inquiry /
-    // lihat quotation / cetak PRF / lihat PRF) yang nyangkut.
-    setCustomerInquiryEdit(null);
-    setCustomerQuotationView(null);
+    // Buka akun selalu mulai bersih: dua sub-view PRF yang masih berbasis state
+    // (keputusan #1) + prefill inquiry tak boleh nyangkut dari akun sebelumnya.
     setCustomerPrfInquiryId(null);
     setCustomerPrfViewId(null);
-    setCustomerDetailTab('info');
     setInquiryPrefill(null);
-    setActiveMenu('customer-detail');
-  }, [activeMenu, setActiveMenu]);
-  const backFromCustomerDetail = useCallback(() => {
-    setActiveCustomerId(null);
-    setActiveMenu(prevCustomerMenu);
-  }, [prevCustomerMenu, setActiveMenu]);
+    navigate(`${pathFor('crm-customers')}/${customerId}`);
+  }, [navigate]);
 
   // ── Navbar: Notifications bell ──────────────────────────────────────────────
   // NOTE: declared AFTER navigateTo/navigateToAssetDetail/navigateToCustomerDetail
@@ -2428,9 +2381,7 @@ export default function StorbitManifest() {
           const group = ERP_MENU_GROUPS.find(g =>
             g.items.some(i => i.id === 'crm-inquiry' || i.children?.some(c => c.id === 'crm-inquiry')));
           if (group) setActiveModule(group.label);
-          setShowInquiryForm(false);
-          setCrmDealInquiry({ id: n.reference_id });
-          setActiveMenu('crm-inquiry');
+          navigate(`${pathFor('crm-inquiry')}/${n.reference_id}`);
         });
       return;
     }
@@ -2443,7 +2394,7 @@ export default function StorbitManifest() {
                : n.reference_type === 'mom'           ? 'reporting-mom'
                : null;
     if (dest) navigateTo(dest);
-  }, [navigateTo, showToast, setActiveMenu]);
+  }, [navigate, navigateTo, showToast]);
 
   // ============================
   // Derived
@@ -2767,27 +2718,26 @@ export default function StorbitManifest() {
   const updateShipmentRow = (r) => can(role, 'shipment') && setShipmentRow(r);
 
   const shell = {
-    ShipmentPage, activeAssetId, activeCustomerId, activeMenu, activeModule, adminInitialSection,
+    ShipmentPage, activeAssetId, activeMenu, activeModule, adminInitialSection,
     arData, arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail,
-    backFromCustomerDetail, bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canInputSP,
-    canManageTtf, canRenderPage, crmDealInquiry, crmQuotationDetail, currentRoleLabel,
-    customerBySpNo, customerByUid, customerDetailTab, customerInquiryEdit, customerPrfInquiryId,
-    customerPrfViewId, customerQuotationView, customers, dbRemoveRowsBySp, dbSaveRow, dcList,
-    duplicatingQuotation, editingProspect, editingQuotation, enrichedRows, exportCSV, filterMonth,
+    bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canInputSP,
+    canManageTtf, canRenderPage, currentRoleLabel,
+    customerBySpNo, customerByUid, customerPrfInquiryId,
+    customerPrfViewId, customers, dbRemoveRowsBySp, dbSaveRow, dcList,
+    enrichedRows, exportCSV, filterMonth,
     groupedSP, handleDelete, handleDeleteCustomer, hasMenuPermission, inquiryPrefill,
     isBnfAuthorized, monthList, navigateTo, navigateToAssetDetail, navigateToCustomerDetail,
     permissionsLoading, prfPrefillInquiryId, procPrfDetailId, procPrfEditId, profile,
-    quotationFromInquiryId, quotationFromPrf, refreshSp, reportingMomId, reportingMomMode, role,
+    refreshSp, reportingMomId, reportingMomMode, role,
     rows, selectedProduct, setActiveMenu, setArFilterCustomer, setArFilterStatus, setArSearch,
-    setCrmDealInquiry, setCrmQuotationDetail, setCustomerDetailTab, setCustomerInquiryEdit,
-    setCustomerPrfInquiryId, setCustomerPrfViewId, setCustomerQuotationView,
-    setDuplicatingQuotation, setEditingCustomer, setEditingProspect, setEditingQuotation,
+    setCustomerPrfInquiryId, setCustomerPrfViewId,
+    setEditingCustomer,
     setFilterMonth, setFinanceRow, setInquiryPrefill, setPrfPrefillInquiryId, setProcPrfDetailId,
-    setProcPrfEditId, setQuotationFromInquiryId, setQuotationFromPrf, setReportingMomId,
-    setReportingMomMode, setSelectedProduct, setShowAddAR, setShowAddCustomer, setShowInquiryForm,
-    setShowProspectForm, setShowQuotationForm, setSoDetailId, setSoFormOpen, setViewingAR,
-    setViewingProfileId, showInquiryForm, showProspectForm, showQuotationForm, showToast,
-    soDetailId, soFormOpen, spLoading, stats, updateShipmentRow,
+    setProcPrfEditId, setReportingMomId,
+    setReportingMomMode, setSelectedProduct, setShowAddAR, setShowAddCustomer,
+    setSoDetailId, setViewingAR,
+    setViewingProfileId, showToast,
+    soDetailId, spLoading, stats, updateShipmentRow,
   };
 
   return (
@@ -3233,26 +3183,28 @@ export default function StorbitManifest() {
 // dihapus dari sini pada gilirannya.
 export function LegacyMenuOutlet() {
   const {
-    activeAssetId, activeCustomerId, activeMenu, activeModule, adminInitialSection, arData,
-    arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail, backFromCustomerDetail,
+    activeAssetId, activeMenu, activeModule, adminInitialSection, arData,
+    arFilterCustomer, arFilterStatus, arSearch, backFromAssetDetail,
     bnfAuthLoading, canAccessActiveMenu, canAdminSettings, canManageTtf, canRenderPage,
-    crmDealInquiry, crmQuotationDetail, currentRoleLabel, customerDetailTab, customerInquiryEdit,
-    customerPrfInquiryId, customerPrfViewId, customerQuotationView, customers, dcList,
-    duplicatingQuotation, editingProspect, editingQuotation, enrichedRows, filterMonth, groupedSP,
-    handleDeleteCustomer, hasMenuPermission, inquiryPrefill, isBnfAuthorized, monthList,
-    navigateTo, navigateToAssetDetail, navigateToCustomerDetail, permissionsLoading,
-    prfPrefillInquiryId, procPrfDetailId, procPrfEditId, profile, quotationFromInquiryId,
-    quotationFromPrf, reportingMomId, reportingMomMode, role, rows, selectedProduct, setActiveMenu,
-    setArFilterCustomer, setArFilterStatus, setArSearch, setCrmDealInquiry, setCrmQuotationDetail,
-    setCustomerDetailTab, setCustomerInquiryEdit, setCustomerPrfInquiryId, setCustomerPrfViewId,
-    setCustomerQuotationView, setDuplicatingQuotation, setEditingCustomer, setEditingProspect,
-    setEditingQuotation, setFilterMonth, setFinanceRow, setInquiryPrefill, setPrfPrefillInquiryId,
-    setProcPrfDetailId, setProcPrfEditId, setQuotationFromInquiryId, setQuotationFromPrf,
+    currentRoleLabel,
+    customers, dcList,
+    enrichedRows, filterMonth, groupedSP,
+    handleDeleteCustomer, monthList,
+    navigateTo, navigateToAssetDetail, permissionsLoading,
+    prfPrefillInquiryId, procPrfDetailId, procPrfEditId, profile,
+    reportingMomId, reportingMomMode, role, rows, selectedProduct, setActiveMenu,
+    setArFilterCustomer, setArFilterStatus, setArSearch,
+    setEditingCustomer,
+    setFilterMonth, setFinanceRow,
+    setProcPrfDetailId, setProcPrfEditId,
     setReportingMomId, setReportingMomMode, setSelectedProduct, setShowAddAR, setShowAddCustomer,
-    setShowInquiryForm, setShowProspectForm, setShowQuotationForm, setSoDetailId, setSoFormOpen,
-    setViewingAR, setViewingProfileId, showInquiryForm, showProspectForm, showQuotationForm,
-    showToast, soDetailId, soFormOpen, stats,
+    setSoDetailId,
+    setViewingAR,
+    showToast, soDetailId, stats,
   } = useAppShell();
+  // PRF (belum pindah) menyerahkan payload ke FORM Quotation yang sudah punya
+  // alamat sendiri sejak G3 → handoff-nya navigasi, bukan setActiveMenu.
+  const navigate = useNavigate();
 
   return (
     <>
@@ -3480,323 +3432,6 @@ export function LegacyMenuOutlet() {
             </ErrorBoundary>
           )}
 
-          {/* CRM Account tabs (Pipeline / Prospects / Lead Pool / Approval) are
-              rendered together in the consolidated block below (search "CRM: Account"). */}
-
-          {/* ── CRM: Inquiry List ───────────────────────────────────────────── */}
-          {activeMenu === 'crm-inquiry' && !showInquiryForm && !crmDealInquiry && (
-            <ErrorBoundary title="CRM Inquiry temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                {/* Jalur "+" lama: SELALU tanpa konteks. Clear eksplisit supaya prefill
-                    sisa dari jalur Detail Account tak pernah bocor ke form kosong ini. */}
-                <InquiryListPage
-                  onAddInquiry={() => { setInquiryPrefill(null); setShowInquiryForm(true); }}
-                  onSelectInquiry={(inq) => setCrmDealInquiry(inq)}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'crm-inquiry' && showInquiryForm && !crmDealInquiry && (
-            <ErrorBoundary title="Inquiry Form temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <InquiryFormPage
-                  prefillAccountId={inquiryPrefill?.accountId || null}
-                  prefillContactId={inquiryPrefill?.contactId || null}
-                  onBack={() => { setShowInquiryForm(false); setInquiryPrefill(null); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'crm-inquiry' && crmDealInquiry && !showInquiryForm && (
-            <ErrorBoundary title="Deal Detail temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <DealDetailPage
-                  inquiryId={crmDealInquiry.id}
-                  onBack={() => setCrmDealInquiry(null)}
-                  onCreateQuotation={(inqId) => { setCrmDealInquiry(null); setEditingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(inqId || null); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
-                  onViewQuotation={(q) => { setCrmDealInquiry(null); setCrmQuotationDetail(q); setActiveMenu('quotation-draft'); }}
-                  onEditInquiry={() => setShowInquiryForm(true)}
-                  onCreatePRF={() => { setPrfPrefillInquiryId(crmDealInquiry.id); setCrmDealInquiry(null); setActiveMenu('prf'); }}
-                  onViewPRF={(p) => { setCrmDealInquiry(null); setProcPrfDetailId(p.id); setActiveMenu('proc-inquiry-fwd-msi'); }}
-                  onViewProfile={setViewingProfileId}
-                  onViewCustomer={(customerId) => { setCrmDealInquiry(null); navigateToCustomerDetail(customerId); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {activeMenu === 'crm-inquiry' && crmDealInquiry && showInquiryForm && (
-            <ErrorBoundary title="Edit Inquiry temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <InquiryFormPage
-                  inquiryId={crmDealInquiry.id}
-                  mode="edit"
-                  onBack={() => setShowInquiryForm(false)}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── CRM: Dashboard ──────────────────────────────────────────────── */}
-          {activeMenu === 'crm-dashboard' && (
-            <ErrorBoundary title="CRM Dashboard temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CRMDashboardPage />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── CRM: Pipeline — ditarik keluar dari tab 'crm-account' (batch
-              restrukturisasi menu CRM #2, 26 Jul 2026) jadi menu top-level
-              sendiri. Tab Lead/Deal per-inquiry (F4-6) belum ada — masih papan
-              Lead saja, tanpa tab internal. ── */}
-          {activeMenu === 'crm-pipeline' && (
-            <ErrorBoundary title="Pipeline Kanban temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                {/* B3: papan kini per-INQUIRY dan read-only. Prop lama yang
-                    melayani papan berbasis akun (setShowProspectForm /
-                    setEditingProspect / onSelectAccount / setActiveMenu) sudah
-                    tak dipakai — kartu membuka Detail Deal, bukan Detail Akun. */}
-                <PipelineKanbanPage
-                  showToast={showToast}
-                  onSelectInquiry={(inq) => { setCrmDealInquiry({ id: inq.id }); setActiveMenu('crm-inquiry'); }}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── CRM: Account (Prospects / Lead Pool — tabbed) ── Tahap 2b: one
-              menu, activeMenu stays the tab id. Tab bar shows only
-              gate-permitted tabs; hidden while the Prospect form is open
-              (full-page sub-view) so form isn't lost to an accidental tab
-              switch. Pipeline & Approval Lead Pool PINDAH keluar (batch
-              restrukturisasi menu CRM #2, 26 Jul 2026) — lihat blok
-              masing-masing di luar sini. */}
-          {isAccountTab(activeMenu) && (
-            <div>
-              {!(activeMenu === 'crm-prospects' && showProspectForm) && (
-                <MenuTabBar
-                  tabs={ACCOUNT_TABS.filter(t => {
-                    const it = findMenuItemById(t.id);
-                    return it && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized);
-                  })}
-                  active={activeMenu}
-                  onSelect={navigateTo}
-                />
-              )}
-              {activeMenu === 'crm-prospects' && !showProspectForm && (
-                <ErrorBoundary title="CRM Prospects temporarily unavailable">
-                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                    <ProspectListPage
-                      onAddProspect={() => { setEditingProspect(null); setShowProspectForm(true); }}
-                      onSelectProspect={(p) => navigateToCustomerDetail(p.id)}
-                      showToast={showToast}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              )}
-              {activeMenu === 'crm-prospects' && showProspectForm && (
-                <ErrorBoundary title="Prospect Form temporarily unavailable">
-                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                    <ProspectFormPage
-                      prospect={editingProspect}
-                      onBack={() => { setShowProspectForm(false); setEditingProspect(null); }}
-                      showToast={showToast}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              )}
-              {activeMenu === 'crm-lead-pool' && (
-                <ErrorBoundary title="Lead Pool temporarily unavailable">
-                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                    <LeadPoolPage showToast={showToast} />
-                  </Suspense>
-                </ErrorBoundary>
-              )}
-            </div>
-          )}
-
-          {/* ── CRM: Approval Lead Pool — ditarik keluar dari tab 'crm-account'
-              (batch restrukturisasi menu CRM #2, 26 Jul 2026) jadi menu
-              top-level sendiri, paling bawah. Keputusan bisnis "diganti alur
-              tarik-langsung" BELUM dikonfirmasi/dieksekusi — dipertahankan apa
-              adanya. ── */}
-          {activeMenu === 'crm-lead-pool-approval' && (!canRenderPage('crm-lead-pool-approval') ? (
-            <AccessDeniedPage />
-          ) : (
-            <ErrorBoundary title="Approval Lead Pool temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <LeadPoolApprovalPage showToast={showToast} />
-              </Suspense>
-            </ErrorBoundary>
-          ))}
-
-          {/* ── CRM: Quotation List ─────────────────────────────────────────── */}
-          {activeMenu === 'quotation-draft' && !crmQuotationDetail && !showQuotationForm && (
-            <ErrorBoundary title="Quotation List temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <QuotationListPage
-                  onAddQuotation={() => { setEditingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setShowQuotationForm(true); }}
-                  onSelectQuotation={(q) => setCrmQuotationDetail(q)}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {/* ── CRM: Quotation Detail ───────────────────────────────────────── */}
-          {activeMenu === 'quotation-draft' && crmQuotationDetail && !showQuotationForm && (
-            <ErrorBoundary title="Quotation Detail temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <QuotationDetailPage
-                  quotationId={crmQuotationDetail.id}
-                  onBack={() => setCrmQuotationDetail(null)}
-                  onEdit={(q) => { setDuplicatingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setEditingQuotation(q); setShowQuotationForm(true); }}
-                  onDuplicate={(q) => { setEditingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setDuplicatingQuotation(q); setShowQuotationForm(true); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {/* ── CRM: Master Customer ────────────────────────────────────────── */}
-          {/* Backward-compatible default (no entityFilter) — e.g. stale last-menu */}
-          {activeMenu === 'crm-customers' && (
-            <ErrorBoundary title="Master Customer temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CustomerListPage showToast={showToast} onSelectCustomer={navigateToCustomerDetail} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── CRM: Customer Detail (full page) ─────────────────────────────── */}
-          {activeMenu === 'customer-detail' && !customerInquiryEdit && !customerQuotationView && !customerPrfInquiryId && !customerPrfViewId && (
-            <ErrorBoundary title="Customer Detail temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CustomerDetailPage
-                  id={activeCustomerId}
-                  onBack={backFromCustomerDetail}
-                  showToast={showToast}
-                  initialTab={customerDetailTab}
-                  // "+ New Inquiry" — bawa akun (+ kontak utamanya) ke form create di menu
-                  // Inquiry. Digerbangi izin yang SAMA dengan Edit Inquiry (crm_inquiry.view),
-                  // supaya tombolnya tak muncul untuk user yang tak boleh masuk modul itu.
-                  onCreateInquiry={hasMenuPermission('crm_inquiry', 'view') ? (accountId, contactId) => { setInquiryPrefill({ accountId, contactId }); setActiveMenu('crm-inquiry'); setShowInquiryForm(true); } : undefined}
-                  onEditInquiry={hasMenuPermission('crm_inquiry', 'view') ? (inq) => { setCustomerDetailTab('riwayat'); setCustomerInquiryEdit(inq.id); } : undefined}
-                  onViewQuotation={(q) => { setCustomerDetailTab('riwayat'); setCustomerQuotationView(q.id); }}
-                  onCreatePRF={(inq) => { setCustomerDetailTab('riwayat'); setCustomerPrfInquiryId(inq.id); }}
-                  onViewPRF={(p) => { setCustomerDetailTab('dokumen'); setCustomerPrfViewId(p.id); }}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {/* Edit Inquiry dari Detail Account — jalur TERPISAH dari DealDetailPage
-              (blok crm-inquiry di atas tak disentuh). Balik → clear state → CustomerDetailPage
-              remount di tab Riwayat (initialTab) + re-fetch. */}
-          {activeMenu === 'customer-detail' && customerInquiryEdit && (
-            <ErrorBoundary title="Edit Inquiry temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <InquiryFormPage
-                  inquiryId={customerInquiryEdit}
-                  mode="edit"
-                  onBack={() => setCustomerInquiryEdit(null)}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {/* Lihat Quotation dari Detail Account — jalur TERPISAH dari DealDetailPage.
-              onBack → clear → CustomerDetailPage remount di tab Riwayat. onEdit/onDuplicate
-              DISALIN dari jalur lama (App: blok quotation-draft) + setActiveMenu('quotation-draft')
-              karena entry-menu di sini 'customer-detail' (jalur lama sudah di menu itu). */}
-          {activeMenu === 'customer-detail' && customerQuotationView && (
-            <ErrorBoundary title="Quotation Detail temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <QuotationDetailPage
-                  quotationId={customerQuotationView}
-                  onBack={() => setCustomerQuotationView(null)}
-                  onEdit={(q) => { setCustomerQuotationView(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setEditingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
-                  onDuplicate={(q) => { setCustomerQuotationView(null); setEditingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); setDuplicatingQuotation(q); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {/* Cetak PRF dari Detail Account (inquiry-scoped) — jalur TERPISAH; onBack (simpan
-              ATAU batal) → clear → CustomerDetailPage remount di tab Riwayat. */}
-          {activeMenu === 'customer-detail' && customerPrfInquiryId && (
-            <ErrorBoundary title="Cetak PRF temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <PRFFormPage
-                  prefillInquiryId={customerPrfInquiryId}
-                  onBack={() => setCustomerPrfInquiryId(null)}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {/* Lihat PRF dari tab Dokumen Detail Account — jalur TERPISAH dari
-              proc-inquiry-fwd-msi/procPrfDetailId (list Forwarding MSI). onBack →
-              clear → CustomerDetailPage remount di tab Dokumen, BUKAN pindah ke
-              list Forwarding MSI. */}
-          {activeMenu === 'customer-detail' && customerPrfViewId && (
-            <ErrorBoundary title="PRF Detail temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <PRFDetailPage
-                  prfId={customerPrfViewId}
-                  onBack={() => setCustomerPrfViewId(null)}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* ── CRM: Aktivitas (Jadwal & Tugas / Riwayat / Riwayat Visit — tabbed) ──
-              Tahap 2c: one menu, activeMenu stays the tab id. Tab bar shows only
-              gate-permitted tabs; riwayat-visit keeps its canRenderPage content-gate.
-              All sub-views here are modal overlays → tab bar always shown. */}
-          {isActivityTab(activeMenu) && (
-            <div>
-              <MenuTabBar
-                tabs={ACTIVITY_TABS.filter(t => {
-                  const it = findMenuItemById(t.id);
-                  return it && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized);
-                })}
-                active={activeMenu}
-                onSelect={navigateTo}
-              />
-              {activeMenu === 'crm-calls' && (
-                <ErrorBoundary title="Activities temporarily unavailable">
-                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                    <ActivitiesPage
-                      showToast={showToast}
-                      setActiveMenu={setActiveMenu}
-                      setShowProspectForm={setShowProspectForm}
-                      setEditingProspect={setEditingProspect}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              )}
-              {activeMenu === 'crm-activity-log' && (
-                <ErrorBoundary title="Activity Log temporarily unavailable">
-                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                    <ActivityLogPage showToast={showToast} />
-                  </Suspense>
-                </ErrorBoundary>
-              )}
-              {activeMenu === 'riwayat-visit' && (canRenderPage('riwayat-visit') ? (
-                <ErrorBoundary title="Riwayat Visit temporarily unavailable">
-                  <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                    <RiwayatVisitPage showToast={showToast} />
-                  </Suspense>
-                </ErrorBoundary>
-              ) : (
-                <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-              ))}
-            </div>
-          )}
-
           {/* ── Procurement: PRF (Price Request Form) ───────────────────────── */}
           {activeMenu === 'prf' && (canRenderPage('prf') ? (
             <ErrorBoundary title="PRF temporarily unavailable">
@@ -3823,7 +3458,7 @@ export function LegacyMenuOutlet() {
             <ErrorBoundary title="PRF Detail temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
                 <PRFDetailPage prfId={procPrfDetailId} onBack={() => setProcPrfDetailId(null)} showToast={showToast}
-                  onCreateQuotation={(payload) => { setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromInquiryId(null); setQuotationFromPrf(payload); setShowQuotationForm(true); setActiveMenu('quotation-draft'); }}
+                  onCreateQuotation={(payload) => navigate(`${pathFor('quotation-draft')}/new`, { state: { prf: payload } })}
                   onEditDraft={(id) => setProcPrfEditId(id)} />
               </Suspense>
             </ErrorBoundary>
@@ -3843,24 +3478,6 @@ export function LegacyMenuOutlet() {
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
           ))}
 
-          {/* ── Sales Order (SO) — CRM side: list (bikin+lihat) / form / detail ── */}
-          {activeMenu === 'crm-sales-order' && (canRenderPage('crm-sales-order') ? (
-            <ErrorBoundary title="Sales Order temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                {soDetailId ? (
-                  <SalesOrderDocDetailPage soId={soDetailId} onBack={() => setSoDetailId(null)} showToast={showToast} />
-                ) : soFormOpen ? (
-                  <SalesOrderDocFormPage onBack={() => setSoFormOpen(false)} onCreated={(id) => { setSoFormOpen(false); setSoDetailId(id); }} showToast={showToast} />
-                ) : (
-                  <SalesOrderDocListPage variant="crm" onCreate={() => setSoFormOpen(true)} onSelect={(r) => setSoDetailId(r.id)} showToast={showToast} />
-                )}
-              </Suspense>
-            </ErrorBoundary>
-          ) : (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          ))}
-
-          {/* ── Procurement: Master Vendor (Vendor Management → Vendor List) ──── */}
           {activeMenu === 'proc-vendor-list' && (canRenderPage('proc-vendor-list') ? (
             <ErrorBoundary title="Master Vendor temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
@@ -3870,15 +3487,6 @@ export function LegacyMenuOutlet() {
           ) : (
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
           ))}
-
-          {/* ── Shared Reference: Rate List (rate_sheets) ───────────────────── */}
-          {activeMenu === 'crm-rate-list' && (
-            <ErrorBoundary title="Rate List temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <RateListPage showToast={showToast} />
-              </Suspense>
-            </ErrorBoundary>
-          )}
 
           {/* ── Reporting & Governance: BNF (Bad News First) — cross-division incident reporting, gated to is_bnf_authorized() (see comment on the 'bnf' menu entry) ── */}
           {activeMenu === 'bnf' && !bnfAuthLoading && (canRenderPage('bnf') ? (
@@ -3928,30 +3536,6 @@ export function LegacyMenuOutlet() {
             <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
           ))}
 
-          {/* ── Reporting & Governance: Sales Report ────────────────────────── */}
-          {activeMenu === 'reporting-sales' && (
-            <ErrorBoundary title="Sales Report temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <CRMReportPage />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {/* Riwayat Visit moved into the consolidated "CRM: Aktivitas" tabbed
-              block above (Tahap 2c — pindah dari grup Reporting ke CRM). */}
-
-          {/* ── CRM: Indomarco Dashboard (internal — manager-or-above) ───────── */}
-          {activeMenu === 'indomarco-dashboard' && (canRenderPage('indomarco-dashboard') ? (
-            <ErrorBoundary title="Indomarco Dashboard temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <IndomarcoDashboardPage />
-              </Suspense>
-            </ErrorBoundary>
-          ) : (
-            <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
-          ))}
-
-          {/* ── Reporting & Governance: MOM ─────────────────────────────────── */}
           {activeMenu === 'reporting-mom' && (
             <ErrorBoundary title="MOM temporarily unavailable">
               <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
@@ -4002,22 +3586,6 @@ export function LegacyMenuOutlet() {
             ) : (
               <AccessDeniedPage onGoHome={() => setActiveMenu('home')} />
             )
-          )}
-
-          {/* ── CRM: Quotation Form (create + edit) ────────────────────────── */}
-          {activeMenu === 'quotation-draft' && showQuotationForm && (
-            <ErrorBoundary title="Quotation Form temporarily unavailable">
-              <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-                <QuotationFormPage
-                  quotation={editingQuotation}
-                  duplicateFrom={duplicatingQuotation}
-                  prefillFromPrf={quotationFromPrf}
-                  prefillInquiryId={quotationFromInquiryId}
-                  onBack={() => { setShowQuotationForm(false); setEditingQuotation(null); setDuplicatingQuotation(null); setQuotationFromPrf(null); setQuotationFromInquiryId(null); }}
-                  showToast={showToast}
-                />
-              </Suspense>
-            </ErrorBoundary>
           )}
 
           </>

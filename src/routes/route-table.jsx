@@ -9,10 +9,12 @@
 // modul itu (termasuk rute detail ber-`:id`) mendadak dianggap tidak dikenal
 // dan "kembali ke menu terakhir" jatuh ke /home. Menambah modul di G3–G6 cukup
 // satu baris di sini, dan kedua pembacanya ikut benar.
+import { crmRoutes } from './crm.routes.jsx';
 import { logisticsWarehouseRoutes } from './logistics-warehouse.routes.jsx';
 import { legacyMenuRoutes } from './legacy.routes.jsx';
 
 export const childRoutes = [
+  ...crmRoutes,
   ...logisticsWarehouseRoutes,
   ...legacyMenuRoutes,
 ];

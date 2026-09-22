@@ -27,13 +27,13 @@
 // daftar induk (deterministik: dari deep-link pun mendarat di daftar, bukan
 // keluar aplikasi), bukan `navigate(-1)`.
 // ============================================================================
-import { lazy, Suspense } from 'react';
+import { lazy } from 'react';
 import { Outlet, useNavigate, useParams } from 'react-router';
-import ErrorBoundary from '@/components/ErrorBoundary';
 import { useAppShell } from '@/contexts/useAppShell';
 import { AccessDeniedPage } from '@/App.jsx';
 import { generatePickingFromSp, generateDeliveryFromPicking } from '@/lib/db';
 import { MENU_PATHS, DETAIL_ROUTE_TEMPLATES } from './menu-paths.js';
+import Boundary from './Boundary.jsx';
 import ModuleShell from './ModuleShell.jsx';
 import RecordNotFound from './RecordNotFound.jsx';
 
@@ -49,18 +49,6 @@ const InventoryDashboardPage = lazy(() => import('@/modules/inventory/pages/Inve
 const StokBarangPage         = lazy(() => import('@/modules/inventory/pages/StokBarangPage'));
 const PenerimaanBarangPage   = lazy(() => import('@/modules/inventory/pages/PenerimaanBarangPage'));
 
-/** ErrorBoundary + Suspense dengan fallback yang PERSIS sama dengan blok-blok
- *  ini sebelum G2 (teks & gaya tidak berubah) — dulu ditulis ulang di tiap
- *  cabang di App.jsx, di sini cukup sekali. */
-function Boundary({ title, children }) {
-  return (
-    <ErrorBoundary title={title}>
-      <Suspense fallback={<div style={{ padding: '3rem', textAlign: 'center', fontSize: '0.875rem', color: '#9C948D' }}>Loading...</div>}>
-        {children}
-      </Suspense>
-    </ErrorBoundary>
-  );
-}
 
 // ── pembentuk path detail (satu sumber: kontrak menu-paths.js) ──────────────
 const LIST_SP       = MENU_PATHS.manifest;
