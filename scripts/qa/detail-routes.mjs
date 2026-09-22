@@ -10,8 +10,9 @@
 // plus: klik baris daftar mengubah alamat, tombol kembali mendarat di daftar,
 // dan Back/Forward browser bergerak di dalam aplikasi.
 //
-// Dipakai per giliran G2–G6 dengan `--suite <modul>`; hari ini satu suite:
-// `logistics-warehouse` (chain Storbit: SP → Picking → Surat Jalan).
+// Dipakai per giliran G2–G6 dengan `--suite <modul>`; hari ini dua suite:
+// `logistics-warehouse` (chain Storbit: SP → Picking → Surat Jalan) dan
+// `crm` (Deal / Quotation / Customer / SO dokumen).
 //
 // Pakai:
 //   QA_PASSWORD=… node scripts/qa/detail-routes.mjs --base http://localhost:4173 \
@@ -68,6 +69,25 @@ const SUITES = {
       `${MENU_PATHS.picking}/00000000-0000-0000-0000-000000000000`,
       `${MENU_PATHS['surat-jalan']}/00000000-0000-0000-0000-000000000000`,
       `${MENU_PATHS.manifest}/00000000-0000-0000-0000-000000000000/SP-TIDAK-ADA`,
+    ],
+  },
+  // G3 — CRM. Keempat halaman detail CRM punya keadaan "tidak ditemukan"
+  // SENDIRI (diperiksa sebelum rutenya dibuat), jadi tak satu pun dibungkus
+  // RecordNotFound: yang dibungkus hanya /crm/quotation/:id/edit, satu-satunya
+  // yang tidak punya. Kebalikan G2, di mana Detail SP justru ketahuan tak punya.
+  crm: {
+    flows: [
+      { label: 'Detail Deal',      list: MENU_PATHS['crm-inquiry'],      detail: /\/crm\/inquiry\/[^/]+$/,      back: /kembali|back/i },
+      { label: 'Detail Quotation', list: MENU_PATHS['quotation-draft'],  detail: /\/crm\/quotation\/[^/]+$/,    back: /kembali|back/i },
+      { label: 'Detail Customer',  list: MENU_PATHS['crm-customers'],    detail: /\/crm\/customer\/[^/]+$/,     back: /kembali|back/i },
+      { label: 'Detail SO (CRM)',  list: MENU_PATHS['crm-sales-order'],  detail: /\/crm\/sales-order\/[^/]+$/,  back: /kembali|back/i },
+    ],
+    bogus: [
+      `${MENU_PATHS['crm-inquiry']}/00000000-0000-0000-0000-000000000000`,
+      `${MENU_PATHS['quotation-draft']}/00000000-0000-0000-0000-000000000000`,
+      `${MENU_PATHS['quotation-draft']}/00000000-0000-0000-0000-000000000000/edit`,
+      `${MENU_PATHS['crm-customers']}/00000000-0000-0000-0000-000000000000`,
+      `${MENU_PATHS['crm-sales-order']}/00000000-0000-0000-0000-000000000000`,
     ],
   },
 };
