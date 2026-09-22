@@ -637,9 +637,10 @@ G2 — modul PERTAMA keluar dari LegacyMenuOutlet: Logistics & Warehouse
   (heading "Sales Order / SP") · (B) tombol "Input SP" TIDAK ADA = pengetatan
   keputusan #5 terbukti RUNTIME, bukan lagi deduksi kode · (C) path /new diketik
   langsung → Akses Ditolak = gate rute ikut menjaga (dua lapis) · (D) pembanding
-  warehouse tetap melihat tombolnya. Alatnya (scripts/qa/out/butir5.mjs) SENGAJA
-  di luar repo (folder gitignored) — resep manualnya di scripts/qa/README.md
-  §Checklist; masuk-repo atau tidak = keputusan Den. Ronde pertama sempat
+  warehouse tetap melihat tombolnya. Alatnya DI-COMMIT sejak 23 Sep 2026
+  (keputusan Den): scripts/qa/butir5.mjs, sekelas detail-routes.mjs — dipindah
+  dari scripts/qa/out/ (gitignored) supaya G3-G6 mewarisi alat DAN dua pelajaran
+  asersinya; resep manualnya tetap di scripts/qa/README.md §Butir 5. Ronde pertama sempat
   melaporkan "3/4 lolos" yang MENYESATKAN (asersi A terlalu longgar meloloskan
   pentalan ke Command Center; akarnya grant tercentang tapi belum tersimpan) —
   kelas yang sama dengan "identik palsu" menu-sweep.mjs: asersi lolos karena

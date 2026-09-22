@@ -8,6 +8,7 @@ Skrip QA yang **di-commit** (keputusan Den 21 Sep 2026, #12). Tiga gate determin
 | `lint-baseline.mjs` | Lint "net-zero": gagal kalau total error/warning ATAU angka per file **naik** dari `lint-baseline.json`. `--update` memperbarui baseline (hanya dengan keputusan sadar, di commit yang sama dengan penurunannya) | CI + lokal |
 | `menu-sweep.mjs` | Buka semua tujuan menu (`KNOWN_MENU_IDS` + probe tak sah) untuk beberapa akun uji, rekam fingerprint (hash, bukan teks), `--compare` dengan baseline | lokal, per giliran |
 | `detail-routes.mjs` | **[BARU, G2]** Uji rute **detail ber-`:id`** — bagian yang tidak bisa dibuktikan sweep (sweep hanya membuka tujuan MENU, cold load): **checklist butir 2** (refresh di detail → konteks bertahan) & **butir 4** (deep-link id tak sah → keadaan wajar, bukan layar putih), plus klik baris mengubah alamat, tombol kembali → path daftar induk, Back/Forward. Ber-`--suite <modul>`; hari ini satu suite `logistics-warehouse` (Detail SP · Picking · Surat Jalan = 3 flow × 5 butir + 3 deep-link palsu = 18 cek). Suite baru ditambahkan per giliran G3–G6 | lokal, per giliran |
+| `butir5.mjs` | Checklist butir 5 (role terbatas): aksi ber-gate ROLE hilang untuk user yang boleh membuka halamannya tapi tak berhak — G2: tombol "Input SP". Butuh grant menu sementara + **wajib dicabut** (resep di bawah) | lokal, tiap giliran yang mengubah gate |
 
 ## Sweep — cara pakai
 
@@ -65,7 +66,7 @@ Masalahnya berulang: gate yang mau diuji sering menolak **role** yang **tidak ad
 5. Sertakan **pembanding**: akun yang memang berhak (G2: `zzztest.warehouse`) harus tetap melihat tombol/halamannya — tanpa itu, "hilang" bisa berarti "rusak untuk semua orang".
 6. Uji **dua lapis**, bukan satu: tombol/menu disembunyikan **dan** path-nya diketik langsung → `AccessDenied`.
 
-⚠️ Alat uji butir 5 G2 (`scripts/qa/out/butir5.mjs`) **sengaja TIDAK masuk repo** — `scripts/qa/out/` di-gitignore, beda dari `menu-sweep.mjs`/`detail-routes.mjs` yang di-commit. Resep di atas ditulis supaya butir 5 tetap bisa diulang tanpa skrip itu; **memindahkannya ke repo = keputusan Den**, bukan diputuskan sendiri saat giliran berikutnya.
+Alat ujinya **di-commit** sejak 23 Sep 2026 (keputusan Den): `scripts/qa/butir5.mjs`, sekelas `detail-routes.mjs` — semula hidup di `scripts/qa/out/` yang di-gitignore, dipindah supaya G3–G6 mewarisi alat **dan** dua pelajaran asersinya (heading wajib + regex tanpa flag `i`, lihat kepala filenya) alih-alih menemukannya ulang. Resep manual di atas tetap berlaku sebagai jalur tanpa skrip.
 
 ⭐ **Pelajaran lintas-alat (23 Sep 2026) — asersi yang lolos karena PRASYARATNYA tak pernah terpenuhi.** Ronde pertama uji butir 5 melaporkan **"3/4 lolos"**, dan angka itu **menyesatkan**: asersi "halaman terbuka" ditulis terlalu longgar (`tidak ditolak && panjang teks > 200`), sehingga **pentalan ke Command Center lolos sebagai "halaman SP terbuka"** — lalu asersi berikutnya ("tombol X tidak ada") ikut "lolos" **karena alasan yang salah**, tombol itu memang tak ada di dashboard. Akarnya: grant baru **tercentang di layar tapi belum tersimpan**. Ini **kelas yang sama** dengan "identik palsu" `menu-sweep.mjs` di atas (nol data dibaca sebagai nol perbedaan). Dua aturan yang berlaku untuk **semua** alat QA di sini:
 
