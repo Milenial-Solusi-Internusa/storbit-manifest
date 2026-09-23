@@ -128,13 +128,22 @@ export const MENU_PATHS = Object.freeze({
 });
 
 /** Template rute detail/aksi yang akan lahir saat modulnya dipindah (G2–G6).
- *  Dokumentasi kontrak; belum dipakai kode mana pun (G1: detail sintetis masih
- *  dibawa lewat location.state di path daftar induknya). */
+ *  Sejak G2 sebagian SUDAH dipakai kode (file rute per modul membangun path-nya
+ *  dari sini); sisanya tetap dokumentasi kontrak sampai gilirannya tiba. */
 export const DETAIL_ROUTE_TEMPLATES = Object.freeze({
   'crm-inquiry':        ['/crm/inquiry/new', '/crm/inquiry/:id', '/crm/inquiry/:id/edit'],
   'quotation-draft':    ['/crm/quotation/new', '/crm/quotation/:id', '/crm/quotation/:id/edit'],
   'crm-prospects':      ['/crm/lead/new', '/crm/lead/:id/edit'],
-  'customer-detail':    ['/crm/customer/:id'],
+  // Dua bentuk BERSARANG lahir di G3 sebagai konsekuensi keputusan Den
+  // "kembali ke customer yang membukanya": tujuan itu hanya deterministik
+  // kalau ASAL-USULNYA ada di URL. Kalau dititipkan ke location.state,
+  // janji "tetap benar setelah refresh / deep-link" gugur persis di kasus
+  // yang jadi alasan memilihnya. Komponen yang dirender sama dengan bentuk
+  // tunggalnya ('/crm/inquiry/:id/edit', '/crm/quotation/:id'); yang berbeda
+  // hanya rute mana yang cocok — dan karenanya ke mana tombol kembali menuju.
+  'customer-detail':    ['/crm/customer/:id',
+                         '/crm/customer/:id/inquiry/:inquiryId/edit',
+                         '/crm/customer/:id/quotation/:quotationId'],
   'crm-sales-order':    ['/crm/sales-order/new', '/crm/sales-order/:id'],
   'proc-inquiry-fwd-msi': ['/procurement/prf/:id', '/procurement/prf/:id/edit'],
   'proc-sales-order':   ['/procurement/sales-order/:id'],
