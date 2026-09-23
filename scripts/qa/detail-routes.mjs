@@ -77,7 +77,7 @@ const SUITES = {
   // yang tidak punya. Kebalikan G2, di mana Detail SP justru ketahuan tak punya.
   crm: {
     flows: [
-      { label: 'Detail Deal',      list: MENU_PATHS['crm-inquiry'],      detail: /\/crm\/inquiry\/[^/]+$/,      back: /kembali|back/i },
+      { label: 'Detail Deal',      list: MENU_PATHS['crm-inquiry'],      detail: /\/crm\/inquiry\/[^/]+$/,      back: /kembali|back|deal list/i },
       { label: 'Detail Quotation', list: MENU_PATHS['quotation-draft'],  detail: /\/crm\/quotation\/[^/]+$/,    back: /kembali|back/i },
       { label: 'Detail Customer',  list: MENU_PATHS['crm-customers'],    detail: /\/crm\/customer\/[^/]+$/,     back: /kembali|back/i },
       { label: 'Detail SO (CRM)',  list: MENU_PATHS['crm-sales-order'],  detail: /\/crm\/sales-order\/[^/]+$/,  back: /kembali|back/i },
@@ -136,8 +136,21 @@ async function settle(page) {
     const listSnap = await page.evaluate(snap);
     if (listSnap.denied) { check(`${flow.label}: daftar terbuka`, false, 'Akses Ditolak — akun tidak berhak'); continue; }
 
-    const row = await page.$('.nexus-main-surface table tbody tr');
-    if (!row) { check(`${flow.label}: ada baris untuk diklik`, false, 'daftar kosong di staging'); continue; }
+    // Baris DATA saja. Keadaan kosong/memuat juga berupa <tr>, tapi isinya satu
+    // <td colSpan=N> tanpa onClick — mengkliknya tidak melakukan apa pun dan
+    // dulu terbaca sebagai "klik baris gagal", padahal yang salah datanya.
+    // (G3: Detail Customer & Detail SO sempat terbaca gagal karena ini.)
+    const rowIdx = await page.$$eval('.nexus-main-surface table tbody tr', (trs) =>
+      trs.findIndex(tr => tr.querySelectorAll('td').length > 1 && !tr.querySelector('td[colspan]')));
+    if (rowIdx < 0) {
+      const txt = await page.$eval('.nexus-main-surface', (e) => e.innerText).catch(() => '');
+      const why = /Memuat|Loading/i.test(txt)
+        ? 'daftar MASIH MEMUAT saat diuji'
+        : 'daftar KOSONG untuk akun ini — bukan kegagalan rute';
+      check(`${flow.label}: ada baris data untuk diklik`, false, why);
+      continue;
+    }
+    const row = (await page.$$('.nexus-main-surface table tbody tr'))[rowIdx];
     await row.click(); await settle(page);
     const d1 = await page.evaluate(snap);
     check(`${flow.label}: klik baris → alamat berubah ke rute detail`, flow.detail.test(d1.path), d1.path);
