@@ -318,7 +318,7 @@ SENGAJA TIDAK DISENTUH Fase 1 — sudah punya jadwal sendiri (instruksi Den
       biasa (lihat butir Order Handover di bawah)
 ```
 
-### Status Fase 2.5 — routing berbasis path (React Router v7), giliran G0 (21 Sep 2026) + G1 (22 Sep 2026) + G2 (22 Sep 2026)
+### Status Fase 2.5 — routing berbasis path (React Router v7), giliran G0 (21 Sep 2026) + G1 (22 Sep 2026) + G2 (22 Sep 2026) + G3 (23 Sep 2026)
 
 ```
 DIPUTUSKAN Den 21 Sep 2026 (15 asumsi + 2 tambahan dijawab di chat; label
@@ -727,9 +727,169 @@ G2 — modul PERTAMA keluar dari LegacyMenuOutlet: Logistics & Warehouse
   "RequireMenu" yang TIDAK ADA di src/ (sisa istilah rancangan G1; ranah Den,
   bukan doc-keeper).
 
+G3 — modul KEDUA (dan terbesar) keluar dari LegacyMenuOutlet: CRM,
+     23 Sep 2026, branch feat/fs-fase2-5-g3-crm:
+  SELESAI di branch (dibuat dari main eaf0576, sesudah G2 di-merge). PRODUKSI
+  BELUM BERUBAH — G3 belum naik; yang LIVE = G2. Nol migrasi/SQL; nol DB;
+  snapshot tidak terdampak; NOL file halaman DIPINDAH lokasi fisik; NOL file
+  halaman DISENTUH sama sekali (beda dari G2 yang menyentuh SalesOrderPage.jsx);
+  nol prop komponen halaman berubah. Angka diukur ulang doc-keeper; detail per
+  file: PROGRESS.md 2026-09-23 (entri G3).
+  CAKUPAN: 27 cabang render / 16 id menu = SELURUH id ber-path /crm/* menurut
+  kontrak G0. `prf` + ketiga `proc-*` SENGAJA di luar: kontrak G0 menaruh PRF di
+  /procurement/prf/*, jadi mereka milik giliran Procurement — walau CRM
+  memanggilnya (Detail Deal "Buat PRF"/"Lihat PRF"; tab Riwayat & Dokumen di
+  Detail Customer).
+  ⭐ 27 CABANG TERNYATA 29 KEADAAN TAMPILAN — crm-sales-order menyembunyikan
+  list/form/detail di dalam SATU cabang lewat ternary soDetailId/soFormOpen.
+  Menghitung cabang saja akan MELEWATKANNYA; reportingMomMode (App.jsx:3542-3546,
+  4 keadaan dalam satu cabang) adalah contoh berikutnya yang masih menunggu.
+  Bawa ke G4-G6: taksir dari KEADAAN, bukan dari jumlah `activeMenu === '…'`.
+  Keputusan Den 23 Sep 2026 (G3 punya spesifikasi tertulis sejak awal, beda G2):
+    #1 handoff Detail Customer dipecah SEPARUH — dua sub-view yang CRM-murni
+       (edit Inquiry, lihat Quotation) jadi RUTE BERSARANG di bawah customer-nya;
+       dua sub-view PRF (customerPrfInquiryId, customerPrfViewId) TETAP state
+       sampai Procurement pindah, supaya tidak melahirkan rute /procurement/* di
+       luar gilirannya
+    #2 crm-sales-order digarap PENUH: ternary dibongkar jadi /new + /:id
+    #3 tombol kembali dari sub-view handoff → ke CUSTOMER yang membukanya.
+       KONSEKUENSI TEKNIS YANG MENGIKAT BENTUKNYA: asal-usul HARUS ada di URL
+       (rute bersarang), BUKAN location.state — kalau di state, janji "tetap
+       benar saat di-refresh" gugur PERSIS di kasus yang jadi alasan memilihnya
+    #4 form ber-objek (QuotationFormPage/ProspectFormPage menerima OBJEK baris,
+       bukan id) pakai pola HYBRID: location.state sebagai cache (datang dari
+       daftar = nol fetch, perilaku persis sebelumnya) + fetch dari :id bila
+       state tak ada (refresh/deep-link). URL tetap pemilik kebenaran id;
+       state cuma optimasi yang boleh hilang
+  [x] src/routes/crm.routes.jsx (BARU, 627) — 28 rute: 1 rute layout
+      (ModuleShell) + 27 rute anak; 16 id menu (CRM_MENU_IDS). Alamat BARU:
+      /crm/inquiry/new · /crm/inquiry/:id (Detail Deal) · /crm/inquiry/:id/edit ·
+      /crm/quotation/new · /crm/quotation/:id · /crm/quotation/:id/edit ·
+      /crm/lead/new · /crm/customer/:id (Detail Customer) ·
+      /crm/customer/:id/inquiry/:inquiryId/edit ·
+      /crm/customer/:id/quotation/:quotationId · /crm/sales-order/new ·
+      /crm/sales-order/:id. handle.menuId rute detail = id daftar INDUK (kecuali
+      tiga rute customer yang memakai customer-detail, id yang memang punya path
+      sendiri di MENU_PATHS). 21 lazy() pindah dari App.jsx (19 halaman CRM +
+      3 dokumen Sales Order + 2 halaman PRF untuk sub-view Detail Customer).
+      Bentuknya tetap WRAPPER TIPIS (keputusan G2 #2): useParams()/
+      useSearchParams()/useAppShell() → render halaman apa adanya.
+  [x] src/routes/Boundary.jsx (BARU, 21) — ErrorBoundary+Suspense yang di G2
+      masih fungsi LOKAL di logistics-warehouse.routes.jsx, diangkat jadi file
+      sendiri SEBELUM salinan keduanya sempat lahir = penerapan PREEMPTIF
+      TD-273 (yang mahal bukan menyalin delapan baris, melainkan enam file rute
+      yang harus diingat bergerak bersama). File rute logistik ikut diubah
+      memakainya (+2/−14).
+  [x] src/routes/crmTabs.js (BARU, 24) — ACCOUNT_TABS/ACTIVITY_TABS keluar dari
+      App.jsx: eslint react-refresh/only-export-components benar, dan sejak G3
+      satu-satunya pembacanya adalah file rute CRM.
+  [x] src/App.jsx +29/−505 (5.479 → 5.047 baris; turun 432, kumulatif −671 dari
+      puncak G1 5.718): 27 cabang render dicabut · 16 deklarasi useState lenyap ·
+      21 lazy() + 2 konstanta tab pindah · CrmTabBar di-export ·
+      shell 105 → 75 kunci (30 dicabut, nol ditambah), destructure
+      LegacyMenuOutlet 94 → 53. KOREKSI angka laporan sesi: brief menulis
+      shell 76; terukur 75.
+  [x] route-table.jsx +2 (satu impor + satu spread) · legacy.routes.jsx +2/−1
+      (MOVED_MENU_IDS += CRM_MENU_IDS) = PERSIS "cukup +1 baris" yang dijanjikan
+      pelajaran (b) G2; restore nexus_last_path ke path CRM ikut sah tanpa
+      perubahan lain.
+  TIGA TEMUAN yang wajib dibawa ke G4–G6:
+    (a) soDetailId DIPAKAI BERSAMA proc-sales-order (App.jsx:3528-3529) — nyaris
+        terhapus sebagai "sisa CRM". Ia sengaja dipertahankan dan ikut giliran
+        Procurement. -> sebelum mencabut state cabang render, grep pemakaiannya
+        di SELURUH LegacyMenuOutlet, bukan hanya di cabang modul yang dipindah
+    (b) ActivitiesPage:824-828 memanggil TIGA SETTER BERURUTAN
+        (setEditingProspect → setShowProspectForm → setActiveMenu) di dalam satu
+        handler. Meneruskan setActiveMenu apa adanya akan menavigasi ke DAFTAR
+        dan MENIMPA perpindahan ke form. Bentuk yang dipakai: dua panggilan
+        pertama mencatat niat (useRef), panggilan KETIGA mengeksekusi
+        (navigate('/crm/lead/new?from=activity', { state })) — kontrak halaman
+        TIDAK berubah, ketiga prop tetap ada dengan nama & tanda tangan sama.
+        -> pola "tiga setter = satu niat" rapuh terhadap pemindahan rute
+    (c) /crm/lead/:id/edit SENGAJA TIDAK DIBUAT — diukur di kode: nol pemanggil
+        membuka form prospect dengan baris tersimpan (setEditingProspect hanya
+        menerima null atau objek DRAFT baru dari ActivitiesPage:824; memilih
+        prospect justru membuka Detail Customer). Templatnya dibiarkan di
+        kontrak sampai ada pintu masuk edit nyata. -> rute tanpa pintu masuk =
+        permukaan yang harus dijaga tanpa ada yang memakainya
+  PENAMBAHAN KONTRAK G0 (sekelas +32 id camelCase di G1): DETAIL_ROUTE_TEMPLATES
+  (menu-paths.js:133-148) hanya mencatat bentuk TUNGGAL. Dua bentuk BERSARANG
+  lahir di G3 sebagai konsekuensi keputusan #3 dan BELUM tercatat:
+  /crm/customer/:id/inquiry/:inquiryId/edit · /crm/customer/:id/quotation/:quotationId.
+  Kontraknya perlu disusul — ranah Den; menu-paths.js sengaja DIPAKAI, tidak
+  disunting G3.
+  customer-detail LULUS dari id sintetis ber-overlay jadi rute /:id sungguhan ->
+  DETAIL_OVERLAY_IDS (App.jsx:1380) tinggal 2 (assets-detail, product-detail).
+  ⚠️ SYNTHETIC_MENU_IDS / SYNTHETIC_DETAIL_IDS SENGAJA TIDAK DISENTUH (keduanya
+  masih memuat customer-detail): keduanya ikut menentukan GATE, dan aturan yang
+  ditetapkan G2 berlaku — giliran pemindahan tidak mengubah gate; substansinya
+  TD-272. Gate halaman ber-gate sendiri di cabang lama (indomarco-dashboard,
+  crm-lead-pool-approval, riwayat-visit, crm-sales-order) direplikasi PERSIS
+  lewat helper Gated (crm.routes.jsx:88-97), termasuk perbedaan onGoHome.
+  BATAS YANG DITERIMA (bukan bug, bukan janji yang gagal): prefillFromPrf adalah
+  PAYLOAD HITUNGAN, bukan baris — tak ada id yang bisa di-fetch ulang, jadi
+  refresh di form quotation-dari-PRF jatuh ke FORM KOSONG. Lebih baik dari
+  perilaku lama (refresh melempar KELUAR form sama sekali), tapi BUKAN pemulihan
+  penuh — jangan dibaca "semua form kini refresh-safe".
+  KEEMPAT halaman detail CRM sudah punya keadaan "tidak ditemukan" SENDIRI —
+  diperiksa SEBELUM rutenya dibuat, jadi RecordNotFound hanya dipasang di
+  /crm/quotation/:id/edit (crm.routes.jsx:360), satu-satunya yang tidak punya.
+  KEBALIKAN G2, di mana SalesOrderDetailPage baru ketahuan tak punya saat diuji.
+  -> memeriksa keadaan "record tidak ada" milik halaman SEBELUM memberinya
+  alamat lebih murah daripada menemukannya lewat layar kosong di harness.
+  Gate (diukur ulang doc-keeper): build clean 3.016 modul (G2 3.013; +3 file
+  baru) · lint-baseline 137/21 ✔ = baseline persis · check-menu-paths ✔ 176 id /
+  167 rute — TIDAK berubah (kontrak id tak disentuh), komposisinya bergeser lagi:
+  "id blok render" 39 → 24 (G1: 48 → G2: 39 → G3: 24).
+  VERIFIKASI RUNTIME — LENGKAP, SEMUA LOLOS (laporan sesi, staging; doc-keeper
+  tidak bisa mengulang uji browser):
+    SWEEP 3 mode × 5 akun × 194 tujuan = 2.910 pembanding, KETIGA MODE ✔ identik
+    baseline G1 (5/5 akun), NOL perbedaan, gagal-muat 0 di SELURUH 15 akun-run.
+    Mode dijalankan BERURUTAN (bukan paralel) dan tidak ada build yang jalan
+    selama vite preview melayani dist/ = penerapan langsung pelajaran G2 ->
+    NOL run dibuang di G3, lawan DUA run dibuang di G2.
+    UJI RUTE DETAIL `detail-routes.mjs --suite crm` (suite BARU): 25/25 LOLOS
+    dengan akun test@msi.com = 4 flow × 5 butir (klik baris → alamat · refresh →
+    tetap di detail · tombol kembali → daftar · Back → detail · Forward →
+    daftar) + 5 deep-link id palsu → keadaan "tidak ditemukan" yang wajar.
+    Struktur 4×5+5 diverifikasi doc-keeper dari isi skripnya.
+  CATATAN PROSES — run PERTAMA suite itu 14/25, dan SELURUH 11 ✖ adalah ARTEFAK
+  HARNESS, NOL bug produk:
+    (a) keadaan kosong & "memuat" juga berupa <tr> — satu <td colSpan> TANPA
+        onClick. Harness mengklik baris pertama, tidak terjadi apa-apa, lalu
+        melaporkan "klik baris gagal" -> MENUDUH RUTE padahal DATANYA yang
+        kosong (akun sales@msi.com: satu-satunya customer MSI dimiliki
+        test@msi.com; daftar SO memang "Belum ada SO"). Ditambal: pilih baris
+        DATA saja (td > 1 dan tanpa td[colspan]), dan kalau nihil bedakan
+        "daftar MASIH MEMUAT" vs "daftar KOSONG untuk akun ini — bukan
+        kegagalan rute".
+    (b) tombol kembali Detail Deal berbunyi "Deal List", bukan "Kembali" ->
+        regex harness tak menemukannya, dan dua butir Back/Forward ikut gagal
+        karena butir sebelumnya tak pernah berjalan. Ditambal: regex `back`
+        per-flow.
+    ⭐ Ini BENTUK BARU dari pelajaran G2 ("daftar kosong ternyata artefak
+    selector") — kali ini selector mengenai NON-data, bukan meleset dari data.
+    Kelas yang sama dengan "identik palsu" menu-sweep.mjs dan "3/4 lolos" butir
+    5: asersi yang hasilnya ditentukan oleh sesuatu di LUAR hal yang diuji.
+  Register: NOL TD baru, NOL Keputusan Terbuka baru.
+  TD-12 (App.jsx 5.479 → 5.047; LegacyMenuOutlet 39 → 24 id blok render) ·
+  TD-129 (16 state sub-view CRM lenyap; Detail Deal & Detail Customer — yang G1
+  catat sebagai "batas yang disengaja" — kini punya alamat + refresh-safe.
+  ⚠️ SISA 6, BUKAN 4 — koreksi atas laporan sesi: procPrfDetailId, procPrfEditId,
+  customerPrfInquiryId, customerPrfViewId, PLUS soDetailId (temuan (a)) dan
+  reportingMomMode) · TD-272 TETAP OPEN (gate tidak diubah sama sekali) ·
+  TD-273 TETAP OPEN (masih DUA salinan; G3 menambah PEMAKAI ModuleShell, bukan
+  salinan ketiga — sesuai perintah TD-nya — dan menerapkannya preemptif lewat
+  Boundary.jsx) · TD-08 tetap (Boundary = ErrorBoundary lama, bukan Sentry) ·
+  TD-181 (b) nomor baris bergeser (App.jsx:3366/:3379/:3392).
+  Sisa checklist manual scripts/qa/README.md untuk G3: butir 1 (masuk dari tiap
+  titik) · 3 (Back/Forward 3× berturut) · 6 (login dari path dalam). Butir 5
+  tidak relevan — G3 nol perubahan gate.
+
 G1: SELESAI — di-merge & LIVE di produksi 22 Sep 2026 (merge commit 0efec44).
   G2: SELESAI di branch (chain Storbit + Inventory keluar dari LegacyMenuOutlet;
-      produksi belum berubah). G3–G6: BELUM mulai; hanya atas instruksi Den.
+      produksi belum berubah). G3: SELESAI di branch (CRM keluar; produksi belum
+      berubah). G4–G6: BELUM mulai; hanya atas instruksi Den.
 ```
 
 ```
