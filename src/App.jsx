@@ -1398,6 +1398,18 @@ function navModuleHasLivePage(nodes, hasMenuPermission, isBnfAuthorized) {
     if (n.children) return navModuleHasLivePage(n.children, hasMenuPermission, isBnfAuthorized);
     const real = findMenuItemById(n.id);
     if (!real) return false;
+    // Halaman `public: true` juga TIDAK menghidupkan modulnya (keputusan Den).
+    // Gejalanya: ketiga halaman HRGA yang publik membuat modul HCGA muncul untuk
+    // SEMUA orang, jadi modul penuh hadir untuk sesuatu yang tak menandakan
+    // urusan departemen itu sama sekali. Modul kini bergantung pada halaman
+    // ber-key — yang izinnya memang bisa diatur dari Admin Settings.
+    // Halaman publiknya sendiri TIDAK disentuh: tetap public, tetap bisa dibuka
+    // lewat path/deep-link, dan tetap tampil di dalam modul begitu modulnya
+    // tampil. Yang berubah hanya perannya sebagai penentu.
+    // (`bnf`/`meeting-mingguan` juga ber-`public: true` tapi sebenarnya
+    // digerbang isBnfAuthorized; keduanya tidak dipasang di tab mana pun, jadi
+    // tidak pernah sampai ke sini.)
+    if (real.public === true) return false;
     return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
   });
 }
