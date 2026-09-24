@@ -32,7 +32,7 @@ import { SP_ITEM_WRITER_ROLES, NO_ROLE_LABEL, hasAnyRole, isAdminSettings, isSup
 // Batch FS Fase 2.5 G1 — routing berbasis path: activeMenu diturunkan dari rute
 // (handle.menuId, src/routes/legacy.routes.jsx); setActiveMenu = navigate(pathFor(id)).
 import { pathFor, ADMIN_SECTION_IDS } from './routes/menu-paths';
-import { SKELETON, SKELETON_PLACEHOLDER_KEYS } from './routes/menu-skeleton.js';
+import { SKELETON, SKELETON_PLACEHOLDER_KEYS, tabHasLivePage } from './routes/menu-skeleton.js';
 import { AppShellContext } from './contexts/appShellCtx';
 import { useAppShell } from './contexts/useAppShell';
 import LegacyMenuRedirect from './routes/LegacyMenuRedirect';
@@ -1008,6 +1008,12 @@ const SKELETON_NAV_ITEMS = (mod) =>
       icon: l2.icon,
       children: l2.tabs.map((t) => {
         if (!t.mounts.length) return { id: t.id, label: t.label, soon: true };
+        // Tab yang seluruh halamannya ComingSoon lama diperlakukan SAMA dengan
+        // tab Soon: redup, tak bisa diklik, dan tidak ikut menghidupkan modul
+        // (navModuleHasLivePage melewati node ber-`soon`). Id-nya tetap id menu
+        // lama supaya sorotan/auto-expand masih menemukannya kalau seseorang
+        // membuka rutenya langsung — rutenya sendiri tidak disentuh.
+        if (!tabHasLivePage(t)) return { id: t.mounts[0].menuId, label: t.label, soon: true };
         if (t.mounts.length === 1) return { id: t.mounts[0].menuId, label: t.label };
         return {
           id: `l3-${t.code.replace(/\./g, '-')}`,

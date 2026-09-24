@@ -31,7 +31,7 @@
 // (TD-273 tetap dua salinan, bukan tiga).
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router';
 import { useAppShell } from '@/contexts/useAppShell';
-import { l2ForPath, tabForPath } from './menu-skeleton.js';
+import { l2ForPath, tabForPath, tabHasLivePage, isLegacyComingSoon } from './menu-skeleton.js';
 
 /** Level 3 boleh dibuka kalau minimal SATU halaman di dalamnya boleh dibuka.
  *  Level 3 tanpa halaman hidup (Soon) dinilai lewat id-nya sendiri: menu key
@@ -48,14 +48,22 @@ function tabAccessible(tab, canRenderPage) {
  *  ada satu pun (keputusan Den Q-E, dipertahankan di desain tiga tingkat). */
 function firstUsefulTab(l2, canRenderPage) {
   const tabs = l2.tabs.length ? l2.tabs : [];
-  const live = tabs.find((t) => t.mounts.length && tabAccessible(t, canRenderPage));
+  // `tabHasLivePage`, bukan `t.mounts.length`: tab yang seluruh halamannya
+  // ComingSoon lama tidak lagi dihitung "punya halaman hidup", jadi ia tidak
+  // pernah jadi tujuan pertama path Level 2 telanjang.
+  const live = tabs.find((t) => tabHasLivePage(t) && tabAccessible(t, canRenderPage));
   if (live) return live;
+  // Cadangan: Level 2 yang TIDAK punya halaman hidup lain. Yang boleh dibuka
+  // user tetap dipakai — termasuk ComingSoon lama — karena alternatifnya
+  // memental pemegang izin ke Akses Ditolak di modul yang izinnya ia punya.
   return tabs.find((t) => tabAccessible(t, canRenderPage)) || null;
 }
 
 /** Halaman pertama di dalam sebuah Level 3 yang boleh dibuka user. */
 function firstUsefulMount(tab, canRenderPage) {
-  return tab.mounts.find((m) => canRenderPage(m.menuId)) || null;
+  return tab.mounts.find((m) => !isLegacyComingSoon(m.menuId) && canRenderPage(m.menuId))
+      ?? tab.mounts.find((m) => canRenderPage(m.menuId))
+      ?? null;
 }
 
 function Crumb({ children, current = false }) {

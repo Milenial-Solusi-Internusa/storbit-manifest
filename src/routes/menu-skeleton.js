@@ -1181,6 +1181,32 @@ export const SKELETON = [
 // Turunan — dihitung sekali saat modul dimuat.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Sebelas id yang halamannya sudah ada SEJAK LAMA tapi isinya masih
+ *  ComingSoon. Mereka punya rute, menu key, dan izin sendiri — semuanya TIDAK
+ *  disentuh — tapi di SIDEBAR diperlakukan sama dengan tab Soon: redup, tak
+ *  bisa diklik, dan TIDAK ikut menghidupkan modul Level 1 maupun grup Level 2
+ *  (keputusan Den).
+ *
+ *  Alasannya kelihatan dari gejalanya: tanpa aturan ini `zzztest.warehouse`
+ *  melihat modul Procurement semata-mata karena ia punya izin
+ *  `logistics_general_trading` untuk satu halaman yang isinya belum ada —
+ *  modul penuh muncul untuk sesuatu yang tidak bisa dikerjakan.
+ *
+ *  ⚠️ Ini murni aturan TAMPILAN. Rute, redirect, MENU_KEY_MAP, dan izin
+ *  kesebelasnya tetap apa adanya; deep-link ke path-nya tetap membuka
+ *  ComingSoon lama untuk yang berizin, persis seperti sebelumnya. */
+export const LEGACY_COMING_SOON_IDS = Object.freeze([
+  'purchaseOrder', 'trading', 'job', 'inventory-transfer', 'inventory-opname',
+  'cashBank', 'ap', 'accounting', 'it', 'docMgmt', 'audit',
+]);
+
+export const isLegacyComingSoon = (menuId) => LEGACY_COMING_SOON_IDS.includes(menuId);
+
+/** Tab punya halaman yang SUNGGUH hidup? Tab yang seluruh mount-nya ComingSoon
+ *  lama dijawab `false` — dipakai sidebar (jadi baris Soon) dan ContextHeader
+ *  (tidak dipilih sebagai "Level 3 pertama yang punya halaman hidup"). */
+export const tabHasLivePage = (tab) => tab.mounts.some((m) => !isLegacyComingSoon(m.menuId));
+
 /** Semua tab, rata, lengkap dengan konteks modul & Level 2-nya. */
 export const SKELETON_TABS = SKELETON.flatMap((mod) =>
   mod.items.flatMap((l2) =>
