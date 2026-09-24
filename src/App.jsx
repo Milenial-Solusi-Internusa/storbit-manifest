@@ -1380,6 +1380,21 @@ function navChildGate(c, hasMenuPermission, isBnfAuthorized) {
   if (!navHasGate(real)) return null;  // gateless → inherit parent module
   return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
 }
+// Apakah modul Level 1 memuat minimal satu halaman HIDUP yang boleh dibuka user.
+// Sengaja TIDAK memakai navChildGate: penjaga itu menganggap item Soon terlihat
+// (memang begitu aturannya untuk baris Level 2/Level 3), sementara di tingkat
+// modul Soon TIDAK boleh ikut menentukan (keputusan Den, revisi visibilitas).
+// Tanpa pemisahan ini setiap modul akan selalu tampil untuk semua orang, karena
+// tiap modul pasti punya Soon.
+function navModuleHasLivePage(nodes, hasMenuPermission, isBnfAuthorized) {
+  return (nodes || []).some((n) => {
+    if (n.soon) return false;                       // Soon tidak menghidupkan modul
+    if (n.children) return navModuleHasLivePage(n.children, hasMenuPermission, isBnfAuthorized);
+    const real = findMenuItemById(n.id);
+    if (!real) return false;
+    return canSeeMenuItem(real, hasMenuPermission, isBnfAuthorized);
+  });
+}
 function navModuleVisible(m, hasMenuPermission, isBnfAuthorized) {
   if (m.soon) return true;             // roadmap skeleton — shown, disabled
   if (m.target) {                      // direct-navigate leaf (Beranda)
@@ -1410,7 +1425,7 @@ function isMenuAccessible(id, hasMenuPermission, isBnfAuthorized) {
 
 function NexusSidebar({
   activeMenu, onNavigate, hasMenuPermission, isBnfAuthorized,
-  profile, currentRoleLabel,
+  profile, currentRoleLabel, isSuperAdminUser = false,
   asDrawer = false, isOpen = false, onClose,
 }) {
   // An item is "gated" only if it carries an explicit access rule (public flag
@@ -1422,7 +1437,18 @@ function NexusSidebar({
   // childGate → true (visible) / false (explicitly denied) / null (gateless → inherit).
   // Gating now lives in module-level nav* helpers (F4), shared with canAccessActiveMenu.
   const childVisible = (c) => navChildGate(c, hasMenuPermission, isBnfAuthorized) !== false;
-  const moduleVisible = (m) => navModuleVisible(m, hasMenuPermission, isBnfAuthorized);
+  // Level 1: tampil HANYA kalau user boleh membuka minimal satu Level 3 hidup di
+  // dalamnya (keputusan Den). super_admin dikecualikan — ia tetap melihat
+  // sembilan modul, termasuk Console & PPJK yang hari ini NOL halaman hidup dan
+  // karenanya akan hilang untuk semua orang kalau aturannya dipakai polos.
+  // Modul ber-`target` (Beranda, Admin Settings) tidak punya anak → tetap
+  // dinilai navModuleVisible seperti sebelumnya.
+  const moduleVisible = (m) => {
+    if (!navModuleVisible(m, hasMenuPermission, isBnfAuthorized)) return false;
+    if (!m.children) return true;
+    if (isSuperAdminUser) return true;
+    return navModuleHasLivePage(m.children, hasMenuPermission, isBnfAuthorized);
+  };
 
   const activeModId = (() => {
     for (const g of NEXUS_NAV) for (const m of g.items) if (moduleContainsMenu(m, activeMenu)) return m.id;
@@ -1472,9 +1498,9 @@ function NexusSidebar({
         <div key={c.id} title="Segera hadir"
           className="w-full flex items-center gap-2.5 rounded-[10px]"
           style={{ padding: '7px 10px', marginBottom: 1, color: 'var(--faint)', fontSize: 12.5, fontWeight: 500, cursor: 'default', opacity: 0.75, pointerEvents: 'none' }}>
-          {Icon
-            ? <Icon size={15} strokeWidth={1.7} style={{ flexShrink: 0, color: 'var(--faint)' }} />
-            : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: 0.4, flexShrink: 0 }} />}
+          {/* Tanpa bullet: Level 3 (satu-satunya node tanpa ikon) tampil teks saja —
+              hierarkinya dibawa indentasi, bukan titik. */}
+          {Icon && <Icon size={15} strokeWidth={1.7} style={{ flexShrink: 0, color: 'var(--faint)' }} />}
           <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
           <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.3px', padding: '1px 6px', borderRadius: 7, background: 'rgba(232,112,61,0.14)', color: '#E8703D', flexShrink: 0 }}>Soon</span>
         </div>
@@ -1503,9 +1529,7 @@ function NexusSidebar({
           onMouseEnter={e => { if (!tabbedActive) e.currentTarget.style.background = '#F5F7FA'; }}
           onMouseLeave={e => { if (!tabbedActive) e.currentTarget.style.background = 'transparent'; }}
         >
-          {Icon
-            ? <Icon size={15} strokeWidth={tabbedActive ? 2 : 1.8} style={{ flexShrink: 0, color: tabbedActive ? 'var(--navy)' : 'var(--faint)' }} />
-            : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: tabbedActive ? 1 : 0.5, flexShrink: 0 }} />}
+          {Icon && <Icon size={15} strokeWidth={tabbedActive ? 2 : 1.8} style={{ flexShrink: 0, color: tabbedActive ? 'var(--navy)' : 'var(--faint)' }} />}
           <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
         </button>
       );
@@ -1534,7 +1558,12 @@ function NexusSidebar({
             <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
           </button>
           {isExp && (
-            <div style={{ marginLeft: 12, paddingLeft: 8 }}>
+            // depth 0 = node Level 2, jadi anaknya adalah Level 3. Level 3 tak
+            // lagi punya ikon maupun bullet, sehingga tanpa tambahan indent
+            // teksnya justru mendarat 5 px di KIRI teks Level 2 (yang tergeser
+            // ikon 15 px + gap 10 px). paddingLeft 18 menaruhnya ~5 px di KANAN
+            // teks induknya — hierarki terbaca, tetap rapat.
+            <div style={{ marginLeft: 12, paddingLeft: depth === 0 ? 18 : 8 }}>
               {subVisible.map(gc => LeafRow(gc, depth + 1))}
             </div>
           )}
@@ -1548,9 +1577,7 @@ function NexusSidebar({
         onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#F5F7FA'; }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
       >
-        {Icon
-          ? <Icon size={15} strokeWidth={active ? 2 : 1.8} style={{ flexShrink: 0, color: active ? 'var(--navy)' : 'var(--faint)' }} />
-          : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: active ? 1 : 0.5, flexShrink: 0 }} />}
+        {Icon && <Icon size={15} strokeWidth={active ? 2 : 1.8} style={{ flexShrink: 0, color: active ? 'var(--navy)' : 'var(--faint)' }} />}
         <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
       </button>
     );
@@ -2691,6 +2718,7 @@ export default function StorbitManifest() {
           isBnfAuthorized={isBnfAuthorized}
           profile={profile}
           currentRoleLabel={currentRoleLabel}
+          isSuperAdminUser={isSuperAdmin(authErpRoles)}
         />
 
         {/* MOBILE DRAWER — reuses NexusSidebar (lg:hidden) */}
@@ -2715,6 +2743,7 @@ export default function StorbitManifest() {
             isBnfAuthorized={isBnfAuthorized}
             profile={profile}
             currentRoleLabel={currentRoleLabel}
+            isSuperAdminUser={isSuperAdmin(authErpRoles)}
           />
         </>
 
