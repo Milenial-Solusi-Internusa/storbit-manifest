@@ -980,29 +980,44 @@ const ERP_MENU_GROUPS = [
 // the real ERP_MENU_GROUPS entry (findMenuItemById + canSeeMenuItem); a `role`
 // on a child/module is used as a fallback when the id isn't in that tree.
 // ─────────────────────────────────────────────────────────────────────────────
+/** Node sidebar TIGA TINGKAT dari kerangka Bagian 1:
+ *    modul  →  Level 2 (grup, bisa dibuka/tutup, tak punya halaman sendiri)
+ *           →  Level 3 (yang diklik dan membuka halaman)
+ *
+ *  Tiga bentuk Level 3, dan gate-nya ikut bentuknya:
+ *    - satu halaman   → leaf biasa, id = id menu LAMA → izinnya juga yang lama
+ *    - banyak halaman → leaf `merged`: satu baris, gate = OR seluruh halaman di
+ *                       dalamnya, klik → halaman pertama yang boleh dibuka.
+ *                       Pemilihan antar-halaman terjadi DI DALAM halaman lewat
+ *                       pilihan sekunder (ContextHeader), bukan di sidebar.
+ *    - nol halaman    → leaf `soon`: tampil untuk SEMUA user, redup, tak bisa
+ *                       diklik. Rutenya tetap super_admin-only (menu key
+ *                       `skel_*` yang tak di-seed) — yang dibuka di sini cuma
+ *                       penanda bahwa fiturnya ada di peta Bagian 1.
+ *
+ *  Level 2 tanpa Level 3 (6.6 Payment Terms Master) jadi satu leaf `soon` di
+ *  posisi Level 2 — tidak dibungkus grup yang isinya cuma dirinya sendiri. */
 const SKELETON_NAV_ITEMS = (mod) =>
-  mod.items.map((l2) => ({
-    id: `l2-${l2.code.replace(/\./g, '-')}`,
-    label: l2.label,
-    icon: l2.icon,
-    // `tabbed`: dirender sebagai SATU leaf (bukan submenu yang mengembang) —
-    // isinya tab di dalam halaman, bukan menu. Anaknya tetap ada supaya
-    // navChildGate bisa meng-OR gate seluruh tab: item Level 2 terlihat kalau
-    // user boleh membuka minimal satu halaman di dalamnya.
-    tabbed: true,
-    children: (l2.tabs.length ? l2.tabs : [{ code: l2.code, label: l2.label, id: l2.placeholderId, mounts: [] }])
-      .map((t) => {
+  mod.items.map((l2) => {
+    if (!l2.tabs.length) {
+      return { id: l2.placeholderId, label: l2.label, icon: l2.icon, soon: true };
+    }
+    return {
+      id: `l2-${l2.code.replace(/\./g, '-')}`,
+      label: l2.label,
+      icon: l2.icon,
+      children: l2.tabs.map((t) => {
+        if (!t.mounts.length) return { id: t.id, label: t.label, soon: true };
         if (t.mounts.length === 1) return { id: t.mounts[0].menuId, label: t.label };
-        if (t.mounts.length > 1) {
-          return {
-            id: `tab-${t.code.replace(/\./g, '-')}`,
-            label: t.label,
-            children: t.mounts.map((m) => ({ id: m.menuId, label: m.label })),
-          };
-        }
-        return { id: t.id, label: t.label };
+        return {
+          id: `l3-${t.code.replace(/\./g, '-')}`,
+          label: t.label,
+          merged: true,
+          children: t.mounts.map((m) => ({ id: m.menuId, label: m.label })),
+        };
       }),
-  }));
+    };
+  });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NEXUS_NAV — sidebar yang dirender. Sejak kerangka Bagian 1 dipasang, isinya
@@ -1344,6 +1359,16 @@ function navHasGate(item) {
 }
 // tri-state: true = visible, false = explicitly denied, null = gateless (inherit)
 function navChildGate(c, hasMenuPermission, isBnfAuthorized) {
+  // Item Soon (Level 3 Bagian 1 yang belum punya halaman) tampil untuk SEMUA
+  // user — keputusan Den: kerangka menunya memang untuk dilihat semua orang.
+  // Ia tidak bisa diklik (lihat cabang `c.soon` di LeafRow) dan tidak membuka
+  // data apa pun, jadi ini murni visibilitas baris, bukan pemberian akses:
+  // gate KONTEN-nya tetap MENU_KEY_MAP → `skel_*` yang tidak di-seed, sehingga
+  // deep-link ke rutenya tetap super_admin-only.
+  // Ditaruh di penjaga BERSAMA ini supaya `childVisible` (baris Level 3),
+  // `navModuleVisible` (baris modul), dan OR grup Level 2 ikut benar sekaligus
+  // — tanpa logika kedua yang harus diingat bergerak bersama.
+  if (c.soon) return true;
   if (c.children) {
     const subs = c.children.map(gc => navChildGate(gc, hasMenuPermission, isBnfAuthorized));
     if (subs.some(s => s === true)) return true;
@@ -1438,7 +1463,10 @@ function NexusSidebar({
   // Leaf row (objek). `depth` controls indent for grandchildren.
   const LeafRow = (c, depth = 0) => {
     const Icon = c.icon;
-    // Soon objek — disabled skeleton + "soon" badge, non-clickable (no navigateTo).
+    // Level 3 Bagian 1 yang belum punya halaman: baris redup ber-badge "Soon",
+    // TIDAK bisa diklik oleh siapa pun (termasuk super_admin) — tidak ada
+    // onClick sama sekali, dan pointerEvents dimatikan. Tampil untuk semua user
+    // (lihat navChildGate); rutenya tetap super_admin-only.
     if (c.soon) {
       return (
         <div key={c.id} title="Segera hadir"
@@ -1447,36 +1475,26 @@ function NexusSidebar({
           {Icon
             ? <Icon size={15} strokeWidth={1.7} style={{ flexShrink: 0, color: 'var(--faint)' }} />
             : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: 0.4, flexShrink: 0 }} />}
-          <span className="flex-1 truncate">{c.label}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.3px', padding: '1px 6px', borderRadius: 7, background: 'rgba(232,112,61,0.14)', color: '#E8703D' }}>soon</span>
+          <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.3px', padding: '1px 6px', borderRadius: 7, background: 'rgba(232,112,61,0.14)', color: '#E8703D', flexShrink: 0 }}>Soon</span>
         </div>
       );
     }
     const active = activeMenu === c.id ||
       (depth === 0 && c.id === 'crm-customers' && (activeMenu === 'customer-detail' || activeMenu.startsWith('crm-customers')));
-    // Item Level 2 Bagian 1: dirender sebagai SATU leaf (bukan submenu yang
-    // mengembang), karena isinya tab DI DALAM halaman, bukan menu. Anaknya
-    // (tab → halaman) hanya dipakai untuk gate: terlihat kalau ≥1 keturunannya
-    // lolos (navChildGate OR, via childVisible); klik → halaman pertama yang
-    // boleh dibuka, dengan tab BERISI HALAMAN HIDUP didahulukan daripada tab
-    // placeholder (keputusan Den Q-E); aktif kalau activeMenu ada di dalamnya.
-    if (c.tabbed) {
-      const leafIds = [];
-      const liveIds = [];
-      for (const tab of (c.children || [])) {
-        if (tab.children) {
-          for (const p of tab.children) { leafIds.push(p.id); liveIds.push(p.id); }
-        } else {
-          leafIds.push(tab.id);
-          // Tab placeholder id-nya berawalan `ph-`; sisanya id halaman lama.
-          if (!String(tab.id).startsWith('ph-')) liveIds.push(tab.id);
-        }
-      }
+    // Level 3 yang memuat LEBIH DARI SATU halaman lama: dirender sebagai SATU
+    // baris, bukan submenu yang mengembang — pemilihan antar-halaman terjadi di
+    // dalam halaman lewat pilihan sekunder. Anaknya cuma dipakai untuk gate:
+    // baris terlihat kalau ≥1 halaman di dalamnya boleh dibuka (navChildGate OR,
+    // via childVisible); klik → halaman pertama yang boleh dibuka; aktif kalau
+    // activeMenu salah satu di antaranya.
+    if (c.merged) {
+      const leafIds = (c.children || []).map(gc => gc.id);
       const permitted = (id) => {
         const it = findMenuItemById(id);
         return it && canSeeMenuItem(it, hasMenuPermission, isBnfAuthorized);
       };
-      const firstTab = liveIds.find(permitted) ?? leafIds.find(permitted);
+      const firstTab = leafIds.find(permitted);
       const tabbedActive = leafIds.includes(activeMenu);
       return (
         <button key={c.id} type="button" onClick={() => firstTab && go(firstTab)}
@@ -1488,14 +1506,19 @@ function NexusSidebar({
           {Icon
             ? <Icon size={15} strokeWidth={tabbedActive ? 2 : 1.8} style={{ flexShrink: 0, color: tabbedActive ? 'var(--navy)' : 'var(--faint)' }} />
             : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: tabbedActive ? 1 : 0.5, flexShrink: 0 }} />}
-          <span className="flex-1 truncate">{c.label}</span>
+          <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
         </button>
       );
     }
     if (c.children) {
       const subVisible = c.children.filter(childVisible);
       if (!subVisible.length) return null;
-      const subActive = c.children.some(gc => gc.id === activeMenu) || active;
+      // Rekursif: sejak sidebar tiga tingkat, halaman aktif bisa duduk satu
+      // tingkat lebih dalam (Level 3 `merged` → halaman). Versi lama berhenti di
+      // anak langsung, sehingga grup Level 2 yang memuat halaman aktif TIDAK
+      // ikut terbuka sendiri (keputusan Den #7).
+      const holdsActive = (nodes) => (nodes || []).some(n => n.id === activeMenu || holdsActive(n.children));
+      const subActive = holdsActive(c.children) || active;
       const isExp = openSet[c.id] !== undefined ? openSet[c.id] : subActive;
       return (
         <div key={c.id}>
@@ -1507,7 +1530,7 @@ function NexusSidebar({
             onMouseLeave={e => { if (!subActive) e.currentTarget.style.background = 'transparent'; }}
           >
             {Icon && <Icon size={15} strokeWidth={1.8} style={{ flexShrink: 0, color: subActive ? 'var(--navy)' : 'var(--faint)' }} />}
-            <span className="flex-1 truncate">{c.label}</span>
+            <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
             <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
           </button>
           {isExp && (
@@ -1528,7 +1551,7 @@ function NexusSidebar({
         {Icon
           ? <Icon size={15} strokeWidth={active ? 2 : 1.8} style={{ flexShrink: 0, color: active ? 'var(--navy)' : 'var(--faint)' }} />
           : <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', opacity: active ? 1 : 0.5, flexShrink: 0 }} />}
-        <span className="flex-1 truncate">{c.label}</span>
+        <span className="flex-1 whitespace-normal break-words leading-snug">{c.label}</span>
       </button>
     );
   };
@@ -1577,7 +1600,7 @@ function NexusSidebar({
                       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
                     >
                       <NavBubble Icon={Icon} tone={m.tone} />
-                      <span className="flex-1 truncate">{m.label}</span>
+                      <span className="flex-1 whitespace-normal break-words leading-snug">{m.label}</span>
                     </button>
                   );
                 }
@@ -1595,7 +1618,7 @@ function NexusSidebar({
                         className="w-full flex items-center gap-3 rounded-[11px]"
                         style={{ padding: '8px 10px', marginBottom: 2, color: 'var(--faint)', fontSize: 13, fontWeight: 500, cursor: 'default', opacity: 0.7, pointerEvents: 'none' }}>
                         <NavBubble Icon={Icon} tone={m.tone} dim />
-                        <span className="flex-1 truncate">{m.label}</span>
+                        <span className="flex-1 whitespace-normal break-words leading-snug">{m.label}</span>
                         {soonBadge}
                       </div>
                     );
@@ -1610,7 +1633,7 @@ function NexusSidebar({
                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                       >
                         <NavBubble Icon={Icon} tone={m.tone} dim />
-                        <span className="flex-1 truncate">{m.label}</span>
+                        <span className="flex-1 whitespace-normal break-words leading-snug">{m.label}</span>
                         {soonBadge}
                         <ChevronDown size={14} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: soonExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
                       </button>
@@ -1635,7 +1658,7 @@ function NexusSidebar({
                       onMouseLeave={e => { if (!(modActive && !isExp)) e.currentTarget.style.background = 'transparent'; }}
                     >
                       <NavBubble Icon={Icon} tone={m.tone} />
-                      <span className="flex-1 truncate">{m.label}</span>
+                      <span className="flex-1 whitespace-normal break-words leading-snug">{m.label}</span>
                       <ChevronDown size={14} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--faint)', transform: isExp ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
                     </button>
                     {isExp && (
