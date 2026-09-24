@@ -60,6 +60,28 @@ const DIJELASKAN = [
           + 'di ketiga titik)',
   },
   {
+    // Ditambahkan 25 Sep 2026 setelah sweep malam 24-25 Sep. Keempat tujuan ini
+    // berubah dari "terbuka" jadi "dipental" HANYA untuk akun sales, dan itu
+    // PERUBAHAN DATA YANG DISENGAJA, bukan regresi kode.
+    //
+    // /!\ CATATAN KEJUJURAN: begitu baseline ketiga mode diperbarui dari run
+    // 24-25 Sep (commit terpisah, hari yang sama), entri ini menjadi INERT —
+    // baseline baru sudah merekam keadaan "dipental", jadi tidak ada lagi
+    // perbedaan untuk dijelaskan dan baris ini tidak akan pernah tercetak.
+    // Ia SENGAJA dipertahankan sebagai REKAMAN alasan baseline bergeser.
+    // Jangan membacanya sebagai penjelasan yang masih aktif, dan jangan
+    // menyimpulkan "sebabnya hilang" (aturan di kepala berkas) dari diamnya.
+    ids: ['crm-rate-list', 'prf', 'proc-inquiry-fwd-msi', 'reporting-mom'],
+    jenis: 'akses',
+    hanyaAkun: ['sales'],
+    alasan: 'PERUBAHAN DATA yang disengaja (keputusan Den 24 Sep 2026): izin role '
+          + 'bd_sales_executive untuk proc_prf, proc_inquiry_fwd_msi, report_mom, dan '
+          + 'crm_rate_list DICABUT lewat Role Defaults di staging. Akibatnya akun sales '
+          + 'dipental ke Beranda/Command Center di keempat tujuan itu. Migrasi '
+          + '20260912000005 dulu menyeed 14 key untuk role ini; kini tersisa 10 '
+          + '(semuanya crm_*). Tiga role BD saudaranya tidak disentuh. Bukan bug kode',
+  },
+  {
     ids: ['assets', 'assets-it', 'assets-kendaraan', 'assets-furniture', 'assets-properti',
           'assets-analytics', 'assets-docs', 'assets-kategori', 'assets-lokasi',
           'assets-vendor', 'assets-settings', 'assets-maint', 'assets-hist',
@@ -73,8 +95,15 @@ const DIJELASKAN = [
   },
 ];
 
-const cocokDijelaskan = (id, jenis) => DIJELASKAN.find(
-  (d) => d.jenis === jenis && d.ids.includes(id) && (!d.hanyaMode || d.hanyaMode === mode),
+// `hanyaAkun` (opsional, 25 Sep 2026): batasi entri ke akun tertentu. Tanpa
+// field ini entri berlaku untuk SEMUA akun — perilaku lama, tidak berubah.
+// Ditambahkan supaya penjelasan yang memang khusus satu akun tidak diam-diam
+// menelan kasus akun lain yang kebetulan ber-id sama.
+const cocokDijelaskan = (id, jenis, who) => DIJELASKAN.find(
+  (d) => d.jenis === jenis
+      && d.ids.includes(id)
+      && (!d.hanyaMode || d.hanyaMode === mode)
+      && (!d.hanyaAkun || d.hanyaAkun.includes(who)),
 );
 
 const o = {
@@ -99,14 +128,14 @@ for (const f of readdirSync(newDir).filter((x) => x.endsWith('.json'))) {
     const akses = ['accessDenied', 'bounced', 'homeShown', 'loginShown', 'notFound']
       .filter((k) => !!b[k] !== !!r[k]);
     if (akses.length) {
-      const d = cocokDijelaskan(id, 'akses');
+      const d = cocokDijelaskan(id, 'akses', who);
       if (d) o.dijelaskan.push({ who, id, jenis: 'akses', alasan: d.alasan });
       else o.regAkses.push({ who, id, akses, b, r });
       continue;
     }
 
     if (b.surfaceHash !== r.surfaceHash || b.structHash !== r.structHash) {
-      const d = cocokDijelaskan(id, 'hash');
+      const d = cocokDijelaskan(id, 'hash', who);
       if (d) o.dijelaskan.push({ who, id, jenis: 'hash', alasan: d.alasan });
       else o.regHash.push({ who, id, b, r });
       continue;
