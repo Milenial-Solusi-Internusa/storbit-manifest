@@ -56,13 +56,22 @@ if (REF === 'untmpqceexwxzuhlmyrg') { console.error('⛔ menolak jalan ke PRODUK
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); console.log(`  ${ok ? '✔' : '✖'} ${name}${detail ? ' — ' + detail : ''}`); };
 
+// Regex "path detail di bawah daftarnya", DITURUNKAN dari MENU_PATHS.
+// Sebelumnya bentuknya ditulis tangan (/\/crm\/inquiry\/[^/]+$/). Begitu halaman
+// pindah ke tab Level 3, alamat induknya bertambah satu segmen dan regex tangan
+// berhenti cocok — harness akan melaporkan "rute detail gagal" padahal rutenya
+// benar. `depth` = berapa segmen id setelah path daftar (Detail SP: dua,
+// customerId + spNo).
+const under = (base, depth = 1) =>
+  new RegExp(`^${base.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}${'/[^/]+'.repeat(depth)}$`);
+
 const SUITES = {
   'logistics-warehouse': {
     // [label, path daftar, regex path detail yang diharapkan, teks tombol kembali]
     flows: [
-      { label: 'Detail SP',    list: MENU_PATHS.manifest,      detail: /\/sales-order\/[^/]+\/[^/]+$/,     back: /back to list|kembali/i },
-      { label: 'Picking List', list: MENU_PATHS.picking,       detail: /\/picking-packing\/[^/]+$/,        back: /kembali ke daftar|kembali/i },
-      { label: 'Surat Jalan',  list: MENU_PATHS['surat-jalan'],detail: /\/delivery-note\/[^/]+$/,          back: /kembali ke daftar|kembali/i },
+      { label: 'Detail SP',    list: MENU_PATHS.manifest,       detail: under(MENU_PATHS.manifest, 2),        back: /back to list|kembali/i },
+      { label: 'Picking List', list: MENU_PATHS.picking,        detail: under(MENU_PATHS.picking),            back: /kembali ke daftar|kembali/i },
+      { label: 'Surat Jalan',  list: MENU_PATHS['surat-jalan'], detail: under(MENU_PATHS['surat-jalan']),     back: /kembali ke daftar|kembali/i },
     ],
     // deep link id tak sah → harus keadaan wajar, bukan layar putih
     bogus: [
@@ -77,10 +86,10 @@ const SUITES = {
   // yang tidak punya. Kebalikan G2, di mana Detail SP justru ketahuan tak punya.
   crm: {
     flows: [
-      { label: 'Detail Deal',      list: MENU_PATHS['crm-inquiry'],      detail: /\/crm\/inquiry\/[^/]+$/,      back: /kembali|back|deal list/i },
-      { label: 'Detail Quotation', list: MENU_PATHS['quotation-draft'],  detail: /\/crm\/quotation\/[^/]+$/,    back: /kembali|back/i },
-      { label: 'Detail Customer',  list: MENU_PATHS['crm-customers'],    detail: /\/crm\/customer\/[^/]+$/,     back: /kembali|back/i },
-      { label: 'Detail SO (CRM)',  list: MENU_PATHS['crm-sales-order'],  detail: /\/crm\/sales-order\/[^/]+$/,  back: /kembali|back/i },
+      { label: 'Detail Deal',      list: MENU_PATHS['crm-inquiry'],     detail: under(MENU_PATHS['crm-inquiry']),     back: /kembali|back|deal list/i },
+      { label: 'Detail Quotation', list: MENU_PATHS['quotation-draft'], detail: under(MENU_PATHS['quotation-draft']), back: /kembali|back/i },
+      { label: 'Detail Customer',  list: MENU_PATHS['crm-customers'],   detail: under(MENU_PATHS['crm-customers']),   back: /kembali|back/i },
+      { label: 'Detail SO (CRM)',  list: MENU_PATHS['crm-sales-order'], detail: under(MENU_PATHS['crm-sales-order']), back: /kembali|back/i },
     ],
     bogus: [
       `${MENU_PATHS['crm-inquiry']}/00000000-0000-0000-0000-000000000000`,

@@ -15,6 +15,7 @@ import {
   MENU_PATHS, PLANNED_MENU_IDS, PLANNED_PREFIX, LEGACY_MENU_PATHS,
   SYNTHETIC_DETAIL_IDS, pathFor, PATH_TO_MENU,
 } from '../../src/routes/menu-paths.js';
+import { SKELETON_PLACEHOLDER_KEYS } from '../../src/routes/menu-skeleton.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const app = readFileSync(resolve(ROOT, 'src/App.jsx'), 'utf8');
@@ -39,7 +40,15 @@ const synthLine = app.match(/const SYNTHETIC_MENU_IDS = \[([^\]]*)\]/);
 const synthIds = synthLine ? [...synthLine[1].matchAll(/'([A-Za-z0-9-]+)'/g)].map(m => m[1]) : [];
 const renderIds = [...new Set([...app.matchAll(/activeMenu === '([A-Za-z0-9-]+)'/g)].map(m => m[1]))];
 
-const reachable = [...new Set([...treeIds, ...synthIds, ...renderIds])].sort();
+// 3) Id tab placeholder kerangka Bagian 1. Mereka MASUK pohon gate App.jsx
+//    (grup "Bagian 1 — Registry" di ekor ERP_MENU_GROUPS), tapi lewat spread
+//    `...Object.keys(SKELETON_PLACEHOLDER_KEYS)` — jadi string id-nya tidak
+//    pernah muncul di teks App.jsx dan pemindai regex di atas tidak melihatnya.
+//    Tanpa baris ini seluruh 157 id akan dilaporkan "MENU_PATHS basi" padahal
+//    justru merekalah yang paling terjaga: sumbernya satu file, di-generate.
+const skeletonIds = Object.keys(SKELETON_PLACEHOLDER_KEYS);
+
+const reachable = [...new Set([...treeIds, ...synthIds, ...renderIds, ...skeletonIds])].sort();
 
 const problems = [];
 const info = [];
@@ -91,6 +100,7 @@ for (const [p, id] of Object.entries(PATH_TO_MENU)) {
 
 info.push(`id pohon App.jsx (CRM_MENU_ITEMS + ERP_MENU_GROUPS): ${treeIds.length}`);
 info.push(`id sintetis (SYNTHETIC_MENU_IDS): ${synthIds.length} · id blok render: ${renderIds.length}`);
+info.push(`id tab placeholder kerangka Bagian 1: ${skeletonIds.length}`);
 info.push(`total id yang bisa dicapai: ${reachable.length}`);
 info.push(`MENU_PATHS: ${inMenu.size} (sintetis detail ${SYNTHETIC_DETAIL_IDS.length}) · PLANNED: ${PLANNED_MENU_IDS.length} · LEGACY: ${Object.keys(LEGACY_MENU_PATHS).length}`);
 info.push(`rute kanonik unik: ${canon.size}`);
