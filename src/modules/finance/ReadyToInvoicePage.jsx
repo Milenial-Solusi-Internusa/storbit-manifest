@@ -33,13 +33,19 @@ const ALASAN_RINGKAS = {
   SP_TIDAK_DITEMUKAN:   'SP tidak ditemukan',
 };
 
-export default function ReadyToInvoicePage({ companyId = null, showToast, onOpenSp }) {
+export default function ReadyToInvoicePage({ showToast, onOpenSp }) {
   const [rows,    setRows]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [busyId,  setBusyId]  = useState(null);
 
-  const { erpRoles } = useAuth();
+  // activeCompanyId, BUKAN profile.company_id: yang menentukan "entitas yang
+  // sedang saya pakai" adalah CompanySwitcher, bukan home company. Pola sama
+  // dengan CRMDashboardPage/StorbitDashboardPage.
+  // ⚠️ Tanpa penyaring ini RPC-nya dipanggil dengan NULL = SELURUH entitas, dan
+  // user ber-role di dua entitas melihat data entitas lain walau switcher-nya
+  // menunjuk yang satu. Tidak terlihat selama data cuma ada di satu entitas.
+  const { erpRoles, activeCompanyId } = useAuth();
   const bolehTerbit = canIssueInvoice(erpRoles);
 
   // Muat pertama SENGAJA tidak memanggil `muat()`: effect yang memanggil fungsi
@@ -48,24 +54,24 @@ export default function ReadyToInvoicePage({ companyId = null, showToast, onOpen
   // callback promise, jadi tak ada setState sinkron di dalam effect.
   useEffect(() => {
     let batal = false;
-    getInvoiceReadinessAll(companyId).then(({ data, error: err }) => {
+    getInvoiceReadinessAll(activeCompanyId).then(({ data, error: err }) => {
       if (batal) return;
       setRows(data || []);
       setError(err || null);
       setLoading(false);
     });
     return () => { batal = true; };
-  }, [companyId]);
+  }, [activeCompanyId]);
 
   // Muat ulang MANUAL (tombol, dan sesudah invoice terbit) — bukan effect, jadi
   // boleh menyalakan indikator memuat lebih dulu.
   const muat = useCallback(async () => {
     setLoading(true);
-    const { data, error: err } = await getInvoiceReadinessAll(companyId);
+    const { data, error: err } = await getInvoiceReadinessAll(activeCompanyId);
     setRows(data || []);
     setError(err || null);
     setLoading(false);
-  }, [companyId]);
+  }, [activeCompanyId]);
 
   const siap     = useMemo(() => rows.filter(r => r.siap),  [rows]);
   const tertahan = useMemo(() => rows.filter(r => !r.siap), [rows]);

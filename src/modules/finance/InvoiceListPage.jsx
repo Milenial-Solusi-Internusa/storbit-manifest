@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { listInvoices } from '../../lib/db';
+import { useAuth } from '../../contexts/useAuth';
 import {
   C, FONT_DISPLAY, FONT_MONO, SP, RADIUS, kickerStyle, cardTitleStyle, thStyle,
   TAG_PALE, TAG_OUTLINE, TAG_NEUTRAL, TAG_ATTN, rp, fmtDate,
@@ -24,23 +25,27 @@ const STATUS_TAG = {
 // Urutan tombol filter. 'semua' pertama, lalu mengikuti alur hidup invoice.
 const FILTER = ['semua', 'issued', 'submitted', 'partial', 'paid', 'void'];
 
-export default function InvoiceListPage({ companyId = null, onOpenInvoice }) {
+export default function InvoiceListPage({ onOpenInvoice }) {
   const [rows,    setRows]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [filter,  setFilter]  = useState('semua');
   const [muatKe,  setMuatKe]  = useState(0);
 
+  // Entitas aktif = CompanySwitcher, bukan home company (lihat catatan yang
+  // sama di ReadyToInvoicePage).
+  const { activeCompanyId } = useAuth();
+
   useEffect(() => {
     let batal = false;
-    listInvoices({ companyId }).then(({ data, error: err }) => {
+    listInvoices({ companyId: activeCompanyId }).then(({ data, error: err }) => {
       if (batal) return;
       setRows(data || []);
       setError(err || null);
       setLoading(false);
     });
     return () => { batal = true; };
-  }, [companyId, muatKe]);
+  }, [activeCompanyId, muatKe]);
 
   const tampil = useMemo(
     () => (filter === 'semua' ? rows : rows.filter(r => r.status === filter)),

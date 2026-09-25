@@ -17,6 +17,13 @@
 // "halaman mana yang sedang dibuka" hidup di state, refresh dan Back berhenti
 // bisa dipercaya. Di sini /ready, /list, dan /:id semuanya punya alamat.
 //
+// ⚠️ Entitas aktif TIDAK diteruskan dari sini. Kedua halaman membacanya sendiri
+// dari useAuth().activeCompanyId — pola yang sudah hidup di CRMDashboardPage,
+// CRMReportPage, dan StorbitDashboardPage. `useAppShell()` sengaja TIDAK dipakai
+// untuk itu: ia tidak membawa activeCompanyId, dan meneruskan nilai yang tak ada
+// dari sana menghasilkan `undefined` yang jatuh jadi "semua entitas" — bug yang
+// sama, cuma berbaju rapi. (Nyaris terjadi saat perbaikan uji manual 25 Sep.)
+//
 // ⚠️ `:id` diletakkan PALING AKHIR supaya /ready dan /list (statis) menang.
 // Kalau urutannya dibalik, "ready" akan tertangkap sebagai invoiceId dan halaman
 // menampilkan "Invoice tidak ditemukan" untuk path yang sah.
