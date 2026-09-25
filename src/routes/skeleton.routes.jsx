@@ -14,8 +14,10 @@
 // logistics-warehouse.routes.jsx membangun path-nya dari MENU_PATHS, jadi
 // begitu kontrak URL-nya bergeser, rutenya ikut pindah sendiri.
 //
-// Tab bar-nya sendiri bukan urusan file ini — Level2Shell (layout tunggal di
-// route-table.jsx) yang merendernya untuk SEMUA rute di bawah sebuah Level 2.
+// Kepala konteksnya sendiri bukan urusan file ini — ContextHeader (layout
+// tunggal di route-table.jsx) yang merendernya untuk SEMUA rute anak; sejak
+// sidebar jadi tiga tingkat ia berisi breadcrumb + pilihan sekunder, bukan
+// tab bar.
 import { lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router';
 import { LegacyMenuOutlet, AccessDeniedPage } from '@/App.jsx';
@@ -60,9 +62,10 @@ function PlaceholderRoute({ tab }) {
   );
 }
 
-// Hanya tercapai kalau Level2Shell tidak menemukan SATU pun tab yang boleh
-// dibuka user di Level 2 ini — artinya ia memang tidak berhak. Tanpa komponen
-// ini rute index Level 2 akan menampilkan halaman kosong, bukan penolakan.
+// Hanya tercapai kalau ContextHeader tidak menemukan SATU pun Level 3 yang
+// boleh dibuka user di Level 2 ini — artinya ia memang tidak berhak. Tanpa
+// komponen ini rute index Level 2 akan menampilkan halaman kosong, bukan
+// penolakan. (Nama fungsinya dipertahankan: ia dirujuk di bawah.)
 function Level2NoAccess() {
   const navigate = useNavigate();
   return <AccessDeniedPage onGoHome={() => navigate('/home')} />;
@@ -102,7 +105,8 @@ for (const tab of SKELETON_TABS) {
   }
 }
 
-// Path Level 2 telanjang → Level2Shell melemparnya ke tab pertama yang layak.
+// Path Level 2 telanjang → ContextHeader melemparnya ke Level 3 pertama yang
+// layak (punya halaman hidup dan boleh dibuka user).
 // TIDAK didaftarkan kalau path itu sudah jadi sumber redirect path lama:
 // redirect eksplisit menuju tab yang TEPAT, sementara index Level 2 menuju tab
 // pertama — untuk 1.5 keduanya berbeda, dan yang lama harus menang.

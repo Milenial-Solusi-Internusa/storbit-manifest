@@ -515,10 +515,10 @@ const CRM_MENU_ITEMS = [
 // Aktivitas) tetap hidup di CRM_MENU_ITEMS sebagai REGISTRY GATE — gate tiap
 // tab dicari lewat findMenuItemById terhadap anak-anaknya. Yang hilang sejak
 // kerangka Bagian 1 dipasang hanyalah tab bar-nya: Prospects/Lead Pool kini dua
-// tab Level 3 terpisah (1.1.1 / 1.1.2) dan Jadwal/Log/Visit jadi satu tab
-// (1.7.3) dengan pilihan sekunder, keduanya dirender Level2Shell. Menyisakan
-// CrmTabBar berarti dua baris tab di satu halaman, dengan label lama yang
-// justru dilarang (label navigasi wajib nama Bagian 1).
+// ITEM Level 3 terpisah di sidebar (1.1.1 / 1.1.2) dan Jadwal/Log/Visit jadi
+// satu item Level 3 (1.7.3) yang pilihan sekundernya dirender ContextHeader.
+// Menyisakan CrmTabBar berarti dua baris navigasi untuk hal yang sama, dengan
+// label lama yang justru dilarang (label navigasi wajib nama Bagian 1).
 
 const ERP_MENU_GROUPS = [
   // ── CORE ──────────────────────────────────────────────────────────────────
@@ -1030,15 +1030,17 @@ const SKELETON_NAV_ITEMS = (mod) =>
 // PERSIS Grand Design Bagian 1: Beranda di atas, sembilan modul bisnis dalam
 // urutan Bagian 1, Admin Settings di bawah. Tidak ada grup atau item lain.
 //
-// Level 3 TIDAK muncul di sini — ia jadi tab di dalam halaman (Level2Shell).
+// Level 3 IKUT dirender di sini sebagai anak Level 2 (lihat SKELETON_NAV_ITEMS
+// di atas) — sejak sidebar jadi TIGA tingkat, tab bar di dalam halaman dibuang.
 // Yang keluar dari sidebar tapi rutenya tetap hidup: keluarga BNF, 19 id
 // PLANNED terparkir, seluruh id Level 3 PLANNED lama, master customer Storbit,
 // dan tiga kartu AdminHub (bulk-edit-price / bnf-org-roles / schema-manager).
 //
 // Sub-grup Level 1 Logistics & Warehouse ("Freight & Delivery Operations" /
 // "Warehouse & Inventory Operations") tidak jadi node sidebar — urutan ke-14
-// itemnya sudah mencerminkannya, dan Level2Shell menyebut sub-grupnya di kepala
-// halaman. Di URL ia tetap ada sebagai segmen (/freight/…, /warehouse/…).
+// itemnya sudah mencerminkannya. Ia juga TIDAK disebut di kepala halaman:
+// breadcrumb ContextHeader hanya "Modul > Level 2 > Level 3" (diperiksa 25 Sep
+// 2026). Di URL ia tetap ada sebagai segmen (/freight/…, /warehouse/…).
 //
 // Gate tiap leaf diselesaikan findMenuItemById + canSeeMenuItem terhadap
 // ERP_MENU_GROUPS, sama seperti sebelumnya — nol menu key berubah di sini.
